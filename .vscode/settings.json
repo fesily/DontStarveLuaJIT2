@@ -1,0 +1,16 @@
+{
+    "cmake.configureOnOpen": false,
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "python.formatting.provider": "none",
+    "Lua.runtime.version": "LuaJIT",
+    "Lua.runtime.special": {
+        "modimport":"require"
+    },
+    "cmake.configureSettings": {
+        "CMAKE_TOOLCHAIN_FILE":"C:/Program Files/Microsoft Visual Studio/2022/Community/VC/vcpkg/scripts/buildsystems/vcpkg.cmake",
+    },
+    "cmake.configureArgs": ["-DVCPKG_TARGET_TRIPLET=x64-windows-static-md"],
+    "cmake.generator": "Ninja"
+}

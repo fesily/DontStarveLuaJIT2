@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+	<Type Name="GCtab">
+		<DisplayString>hash={hmask+1} arr={asize}</DisplayString>
+		<Expand>
+			<Item Name="metatable" Condition="metatable.gcptr64!=0">((GCobj*)metatable.gcptr64)-&gt;tab</Item>
+			<Synthetic Name="Array" Condition="asize!=0">
+				<Expand>
+					<CustomListItems>
+						<Variable Name="index" InitialValue="0"/>
+						<Loop>
+							<Break Condition="index>=asize"/>
+							<Item Condition="(((TValue*)(array.ptr64))[index]).it64 != -1">(((TValue*)(array.ptr64))[index])</Item>
+							<Exec>index++</Exec>
+						</Loop>
+					</CustomListItems>
+				</Expand>
+			</Synthetic>
+			<Synthetic Name="Hash" Condition="hmask!=0">
+				<Expand>
+					<CustomListItems>
+						<Variable Name="index" InitialValue="0"/>
+						<Loop>
+							<Break Condition="index>=hmask+1"/>
+							<Item Condition="(((Node*)(node.ptr64))[index]).val.it64 != -1">(((Node*)(node.ptr64))[index])</Item>
+							<Exec>index++</Exec>
+						</Loop>
+					</CustomListItems>
+				</Expand>
+			</Synthetic>
+		</Expand>
+	</Type>
+	<Type Name="Node">
+		<DisplayString Condition="key.it64!=-1">key={key} val={val}</DisplayString>
+		<DisplayString Condition="key.it64==-1">[nil]</DisplayString>
+		<Expand>
+			<Item Name="[key]">key</Item>
+			<Item Name="[value]">val</Item>
+			<Item Name="Next" Condition="!next->isnil()">(Node*)next-&gt;ptr()</Item>
+		</Expand>
+	</Type>
+	<Type Name="MRef">
+		<Intrinsic Name="ptr" Expression="ptr64"></Intrinsic>
+		<Intrinsic Name="isnil" Expression="ptr64!=0"></Intrinsic>
+		<DisplayString>{(void*)ptr64}</DisplayString>
+	</Type>
+	<Type Name="GCRef">
+		<DisplayString>{(GCobj*)gcptr64}</DisplayString>
+		<Expand>
+			<ExpandedItem>(GCobj*)gcptr64</ExpandedItem>
+		</Expand>
+	</Type>
+	<Type Name="GCstr">
+		<DisplayString>{((const char*)&amp; len)+sizeof(MSize),s}</DisplayString>
+		<Expand>
+			<Item Name="len">len</Item>
+			<Item Name="string_id">sid</Item>
+			<Item Name="hash">hash</Item>
+		</Expand>
+	</Type>
+	<Type Name="GCproto">
+		<DisplayString>{chunkname}:{firstline}</DisplayString>
+		<Expand>
+			<Synthetic Name="flags" Condition="(flags &amp; 0x02) == 0x02">
+				<DisplayString>vararg</DisplayString>
+			</Synthetic>
+			<Item Name="nparams">numparams</Item>
+			<Item Name="source">chunkname</Item>
+			<Item Condition="(firstline || !numline)" Name="what"> "Lua"</Item>
+			<Item Condition="(!(firstline || !numline))" Name="what"> "Main"</Item>
+			<Item Name="linedefined">firstline</Item>
+			<Item Name="lastlinedefined">firstline+numline</Item>
+			<Item Condition="sizeuv!=0" Name="nupvalues">sizeuv</Item>
+			<Synthetic Name="Const Obj" Condition="sizekgc!=0">
+				<Expand>
+					<IndexListItems>
+						<Size>sizekgc</Size>
+						<ValueNode>((GCobj *)((((GCRef *)k.ptr64)-sizekgc)[$i]).gcptr64)</ValueNode>
+					</IndexListItems>
+				</Expand>
+			</Synthetic>
+			<Synthetic Name="Const Number" Condition="sizekn!=0">
+				<Expand>
+					<IndexListItems>
+						<Size>sizekn</Size>
+						<ValueNode>(&amp;((TValue *)k.ptr64)[$i])</ValueNode>
+					</IndexListItems>
+				</Expand>
+			</Synthetic>
+			<Synthetic Name="UpvalueName" Condition="sizeuv!=0">
+				<Expand>
+					<CustomListItems MaxItemsPerView="512" Condition="uvinfo.ptr64!=0">
+						<Variable Name="ptr" InitialValue="(const char*)(uvinfo.ptr64)"/>
+						<Size>sizeuv</Size>
+						<Loop>
+							<Item>ptr,s</Item>
+							<Exec>ptr += strlen(ptr)+1</Exec>
+						</Loop>
+					</CustomListItems>
+				</Expand>
+			</Synthetic>
+			<Synthetic Name="VarInfo" Condition="varinfo.ptr64!=0">
+				<Expand>
+					<CustomListItems MaxItemsPerView="512">
+						<Variable Name="ptr" InitialValue="(const char*)(varinfo.ptr64)"/>
+						<Variable Name="v" InitialValue="0"/>
+						<Variable Name="sh" InitialValue="0"/>
+						<Loop>
+							<Break Condition="*ptr==0"/>
+							<Item>ptr,s</Item>
+							<If Condition="*ptr &gt;= 7">
+								<Exec>ptr += strlen(ptr)+1</Exec>
+							</If>
+							<Exec>ptr++</Exec>
+							<Exec>v=*ptr++</Exec>
+							<If Condition="v &gt;= 0x80">
+								<Exec>sh=0</Exec>
+								<Exec>v &amp;= 0x7f</Exec>
+								<Loop>
+									<Exec>sh+=7</Exec>
+									<Exec> v |= ((*ptr &amp; 0x7f) &lt;&lt; sh)</Exec>
+									<Break Condition="*ptr++&gt;=0x80"/>
+								</Loop>
+							</If>
+						</Loop>
+					</CustomListItems>
+				</Expand>
+			</Synthetic>
+			<Item Condition="trace!=0" Name="[traceid]">trace</Item>
+		</Expand>
+	</Type>
+	<Type Name="GCudata">
+		<Intrinsic Name="uddata" Expression="(void*)(this+1)"></Intrinsic>
+		<DisplayString Condition="udtype==0">{uddata()}</DisplayString>
+		<DisplayString Condition="udtype==1">[IO_FILE]</DisplayString>
+		<DisplayString Condition="udtype==2">[FFI_CLIB]</DisplayString>
+		<DisplayString Condition="udtype==3">[BUFFER]</DisplayString>
+		<Expand>
+			<Item Condition="udtype==0" Name="address">uddata()</Item>
+			<Item Condition="udtype==0" Name="len">len</Item>
+			<Item Condition="udtype==1" Name="IOFileUD">(IOFileUD*)uddata()</Item>
+			<Item Condition="udtype==2" Name="CLibrary">(CLibrary*)uddata()</Item>
+			<Item Condition="udtype==3" Name="SBufExt">(SBufExt*)uddata()</Item>
+			<Item Name="metatable" Condition="metatable.gcptr64!=0">((GCobj*)metatable.gcptr64)->tab</Item>
+			<Item Name="type">udtype</Item>
+		</Expand>
+	</Type>
+	<Type Name="GCfuncL">
+		<Intrinsic Name="funcproto" Expression="(GCproto*)((const char*)pc.ptr64-sizeof(GCproto))" />
+		<DisplayString>{funcproto()}</DisplayString>
+		<Expand>
+			<Item Name="[proto]">funcproto()</Item>
+		</Expand>
+	</Type>
+	<Type Name="GCfuncC">
+		<DisplayString>{f}</DisplayString>
+		<Expand>
+			<Item Name="address">f</Item>
+			<Item Name="internal_id">ffid</Item>
+		</Expand>
+	</Type>
+	<Type Name="GCfunc">
+		<DisplayString Condition="c.ffid==0">LuaFunction:{l}</DisplayString>
+		<DisplayString Condition="c.ffid==1">LuaCFunction:{c}</DisplayString>
+		<DisplayString Condition="c.ffid&gt;1">LuaInternalCFunction:{c}</DisplayString>
+		<Expand>
+			<Item Condition="c.ffid==0" Name="LuaFunction">l</Item>
+			<Item Condition="c.ffid==1" Name="LuaCFunction">c</Item>
+			<Item Condition="c.ffid&gt;1" Name="LuaInternalCFunction">c</Item>
+		</Expand>
+	</Type>
+	<Type Name="GCcdata">
+		<DisplayString>id:{ctypeid}</DisplayString>
+		<Expand>
+			<Item Name="address">(void*)(this+1)</Item>
+		</Expand>
+	</Type>
+	<Type Name="lua_State">
+		<DisplayString Condition="status==0">status:LUA_OK</DisplayString>
+		<DisplayString Condition="status==1">status:LUA_YIELD</DisplayString>
+		<DisplayString Condition="status==2">status:LUA_ERRRUN</DisplayString>
+		<DisplayString Condition="status==3">status:LUA_ERRSYNTAX</DisplayString>
+		<DisplayString Condition="status==4">status:LUA_ERRMEM</DisplayString>
+		<DisplayString Condition="status==5">status:LUA_ERRERR</DisplayString>
+		<Expand>
+			<Item Name="[GetTop]">top-base</Item>
+			<Item Name="[G]">(global_State*)glref.ptr64</Item>
+			<Item Name="GC List">gclist</Item>
+			<Item Name="openupval">openupval</Item>
+			<Item Name="env">env</Item>
+			<Item Name="base">base</Item>
+			<Item Name="top">top</Item>
+			<Synthetic Name="Stack">
+				<Expand>
+					<IndexListItems>
+						<Size>stacksize</Size>
+						<ValueNode>((TValue*)stack.ptr64)[$i]</ValueNode>
+					</IndexListItems>
+				</Expand>
+			</Synthetic>
+			<Synthetic Name="traceback" Optional="true">
+				<Expand>
+					<CustomListItems>
+						<Variable Name="level" InitialValue="0"/>
+						<Variable Name="bot" InitialValue="((TValue*)stack.ptr64)+1"/>
+						<Variable Name="frame" InitialValue="base-1"/>
+						<Variable Name="nextframe" InitialValue="base-1"/>
+						<Loop>
+							<If Condition="frame &lt;= bot">
+								<Break/>
+							</If>
+							<If Condition="frame->frame_gc() == (GCobj*)this">
+								<Exec>level--</Exec>
+							</If>
+							<Exec>level++</Exec>
+							<Item>frame-&gt;frame_gc()-&gt;fn</Item>
+							<Exec>nextframe=frame</Exec>
+							<If Condition="frame->frame_islua()">
+								<Exec>frame=((frame) - (2+((uint32_t)(((((const uint32_t *)((ptrdiff_t)(frame)-&gt;ftsz))[-1])&gt;&gt;8)&amp;0xff))))</Exec>
+							</If>
+							<If Condition="!(frame->frame_islua())">
+								<If Condition="frame->frame_isvarg()">
+									<Exec>level--</Exec>
+								</If>
+								<Exec>frame = (TValue *)((char *)frame - frame-&gt;frame_sized())</Exec>
+							</If>
+						</Loop>
+					</CustomListItems>
+				</Expand>
+			</Synthetic>
+		</Expand>
+	</Type>
+	<Type Name="GCobj">
+		<Intrinsic Name="strdata" Expression="(const char*)(&amp;(str)+1)" />
+		<DisplayString Condition="gch.gct==4">[string] {strdata(),s}</DisplayString>
+		<DisplayString Condition="gch.gct==5">[upval]</DisplayString>
+		<DisplayString Condition="gch.gct==6">[thread]</DisplayString>
+		<DisplayString Condition="gch.gct==7">[proto]</DisplayString>
+		<DisplayString Condition="gch.gct==8">[function]</DisplayString>
+		<DisplayString Condition="gch.gct==9">[trace]</DisplayString>
+		<DisplayString Condition="gch.gct==10">[cdata]</DisplayString>
+		<DisplayString Condition="gch.gct==11">[table] {tab}</DisplayString>
+		<DisplayString Condition="gch.gct==12">[userdata]</DisplayString>
+		<Expand>
+			<Item Condition="gch.gct==4" Name="[string]">strdata(),s</Item>
+			<Item Condition="gch.gct==5" Name="[upval]">uv</Item>
+			<Item Condition="gch.gct==6" Name="[thread]">th</Item>
+			<Item Condition="gch.gct==7" Name="[proto]">pt</Item>
+			<Item Condition="gch.gct==8" Name="[function]">fn</Item>
+			<Item Condition="gch.gct==9" Name="[trace]">(GCtrace*)&amp;gch.nextgc</Item>
+			<Item Condition="gch.gct==10" Name="[cdata]">cd</Item>
+			<Item Condition="gch.gct==11" Name="[table]">tab</Item>
+			<Item Condition="gch.gct==12" Name="[userdata]">ud</Item>
+		</Expand>
+	</Type>
+	<Type Name="TValue">
+		<Intrinsic Name="frame_sized" Expression="((ptrdiff_t)ftsz) &amp; ~0x7"/>
+		<Intrinsic Name="frame_gc" Expression="(this-1)->gcval()"/>
+		<Intrinsic Name="frame_isvarg" Expression="(((ptrdiff_t)ftsz) &amp; (3|4)) == 3"/>
+		<Intrinsic Name="frame_islua" Expression="(((ptrdiff_t)ftsz) &amp; 0x3) == 0"/>
+		<Intrinsic Name="gcval" Expression="(GCobj*)(gcr.gcptr64 &amp; 140737488355327ULL )" />
+		<Intrinsic Name="itype" Expression="(uint32_t)(it64&gt;&gt;47)" />
+		<Intrinsic Name="isgcval" Expression="itype() -4294967292U&gt;4294967286U" />
+		<DisplayString Condition="it64==-1">[nil]</DisplayString>
+		<DisplayString Condition="itype()==~1u" Optional="true">[boolean] false</DisplayString>
+		<DisplayString Condition="itype()==~2u" Optional="true">[boolean] true</DisplayString>
+		<DisplayString Condition="itype()==~3u" Optional="true">[lightuserdata]</DisplayString>
+		<DisplayString Condition="itype()==~4u" Optional="true">{gcval()}</DisplayString>
+		<DisplayString Condition="itype()==~5u" Optional="true">[upval]</DisplayString>
+		<DisplayString Condition="itype()==~6u" Optional="true">[thread]</DisplayString>
+		<DisplayString Condition="itype()==~7u" Optional="true">[proto]</DisplayString>
+		<DisplayString Condition="itype()==~8u" Optional="true">[function]</DisplayString>
+		<DisplayString Condition="itype()==~9u" Optional="true">[trace]</DisplayString>
+		<DisplayString Condition="itype()==~10u" Optional="true">[cdata]</DisplayString>
+		<DisplayString Condition="itype()==~11u" Optional="true">{gcval()}</DisplayString>
+		<DisplayString Condition="itype()==~12u" Optional="true">[userdata]</DisplayString>
+		<DisplayString Condition="itype()==~13u" Optional="true">[int] {(int)i}</DisplayString>
+		<DisplayString Condition="itype()&lt;~13u" Optional="true">[number] {n}</DisplayString>
+		<DisplayString>[unknown] {itype()}</DisplayString>
+		<Expand>
+			<Item Name="Type" Condition="!isgcval()">lj_obj_itypename[itype()&lt;=~13u?13:~itype()]</Item>
+			<ExpandedItem Condition="isgcval()">gcval()</ExpandedItem>
+		</Expand>
+	</Type>
+</AutoVisualizer>

@@ -1,0 +1,46 @@
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.out
+*.app
+
+build/
+dist/
+.vs/
+
+# MacOS Cache
+.DS_Store
+
+*.ncb
+*.suo
+*.pdb
+*.exp
+.idea/
+
+cmake-build-debug/
+
+vcpkg_installed/
+src/missfunc.h
+src/signatures.hpp

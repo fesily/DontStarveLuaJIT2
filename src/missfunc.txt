@@ -1,0 +1,12 @@
+lua_gethookcount
+lua_gethookmask
+lua_sethook
+lua_gethook
+lua_getlocal
+lua_setlocal
+luaL_addstring
+lua_cpcall
+lua_getallocf
+lua_setallocf
+lua_isuserdata
+lua_setlevel
