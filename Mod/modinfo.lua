@@ -10,7 +10,7 @@ description = [[
 
 author = "fesil"
 
-version = "0.0.6"
+version = "0.0.7"
 
 forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 

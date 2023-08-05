@@ -226,7 +226,7 @@ static bool get_mod_folder(ISteamUGC *ugc, PublishedFileId_t id)
     {
         uint64_t punSizeOnDisk;
         uint32_t punTimeStamp;
-        char path[255];
+        char path[MAX_PATH];
         if (ugc->GetItemInstallInfo(id, &punSizeOnDisk, path, 255, &punTimeStamp))
         {
             workshop_dir = path;

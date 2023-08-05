@@ -1,4 +1,4 @@
-
+﻿
 //
 // created by AheadLib
 // github:https://github.com/strivexjun/AheadLib-x86-x64
@@ -9,7 +9,13 @@
 #include <string>
 #include <atomic>
 #include <unordered_map>
+#include <thread>
+#include <format>
+#include <shellapi.h>
+#include <ShlObj.h>
 #include "module.hpp"
+
+using namespace std::literals;
 
 #pragma comment(linker, "/EXPORT:Noname2=AheadLib_Unnamed2,@2,NONAME")
 #pragma comment(linker, "/EXPORT:mciExecute=AheadLib_mciExecute,@3")
@@ -195,187 +201,187 @@
 
 static HMODULE g_OldModule = NULL;
 
-#define FUNCTIONS(_)                     \
-	_(mciExecute)                       \
-		_(CloseDriver)                 \
-		_(DefDriverProc)              \
-		_(DriverCallback)               \
-		_(DrvGetModuleHandle)           \
-		_(GetDriverModuleHandle)        \
-		_(OpenDriver)                   \
-		_(PlaySound)                    \
-		_(PlaySoundA)                   \
-		_(PlaySoundW)                   \
-		_(SendDriverMessage)            \
-		_(WOWAppExit)                   \
-		_(auxGetDevCapsA)               \
-		_(auxGetDevCapsW)               \
-		_(auxGetNumDevs)                \
-		_(auxGetVolume)                 \
-		_(auxOutMessage)                \
-		_(auxSetVolume)                 \
-		_(joyConfigChanged)             \
-		_(joyGetDevCapsA)               \
-		_(joyGetDevCapsW)               \
-		_(joyGetNumDevs)                \
-		_(joyGetPos)                    \
-		_(joyGetPosEx)                  \
-		_(joyGetThreshold)              \
-		_(joyReleaseCapture)            \
-		_(joySetCapture)                \
-		_(joySetThreshold)              \
-		_(mciDriverNotify)              \
-		_(mciDriverYield)               \
-		_(mciFreeCommandResource)       \
-		_(mciGetCreatorTask)            \
-		_(mciGetDeviceIDA)              \
-		_(mciGetDeviceIDFromElementIDA) \
-		_(mciGetDeviceIDFromElementIDW) \
-		_(mciGetDeviceIDW)              \
-		_(mciGetDriverData)             \
-		_(mciGetErrorStringA)           \
-		_(mciGetErrorStringW)           \
-		_(mciGetYieldProc)              \
-		_(mciLoadCommandResource)       \
-		_(mciSendCommandA)              \
-		_(mciSendCommandW)              \
-		_(mciSendStringA)               \
-		_(mciSendStringW)               \
-		_(mciSetDriverData)             \
-		_(mciSetYieldProc)              \
-		_(midiConnect)                  \
-		_(midiDisconnect)               \
-		_(midiInAddBuffer)              \
-		_(midiInClose)                  \
-		_(midiInGetDevCapsA)            \
-		_(midiInGetDevCapsW)            \
-		_(midiInGetErrorTextA)          \
-		_(midiInGetErrorTextW)          \
-		_(midiInGetID)                  \
-		_(midiInGetNumDevs)             \
-		_(midiInMessage)                \
-		_(midiInOpen)                   \
-		_(midiInPrepareHeader)          \
-		_(midiInReset)                  \
-		_(midiInStart)                  \
-		_(midiInStop)                   \
-		_(midiInUnprepareHeader)        \
-		_(midiOutCacheDrumPatches)      \
-		_(midiOutCachePatches)          \
-		_(midiOutClose)                 \
-		_(midiOutGetDevCapsA)           \
-		_(midiOutGetDevCapsW)           \
-		_(midiOutGetErrorTextA)         \
-		_(midiOutGetErrorTextW)         \
-		_(midiOutGetID)                 \
-		_(midiOutGetNumDevs)            \
-		_(midiOutGetVolume)             \
-		_(midiOutLongMsg)               \
-		_(midiOutMessage)               \
-		_(midiOutOpen)                  \
-		_(midiOutPrepareHeader)         \
-		_(midiOutReset)                 \
-		_(midiOutSetVolume)             \
-		_(midiOutShortMsg)              \
-		_(midiOutUnprepareHeader)       \
-		_(midiStreamClose)              \
-		_(midiStreamOpen)               \
-		_(midiStreamOut)                \
-		_(midiStreamPause)              \
-		_(midiStreamPosition)           \
-		_(midiStreamProperty)           \
-		_(midiStreamRestart)            \
-		_(midiStreamStop)               \
-		_(mixerClose)                   \
-		_(mixerGetControlDetailsA)      \
-		_(mixerGetControlDetailsW)      \
-		_(mixerGetDevCapsA)             \
-		_(mixerGetDevCapsW)             \
-		_(mixerGetID)                   \
-		_(mixerGetLineControlsA)        \
-		_(mixerGetLineControlsW)        \
-		_(mixerGetLineInfoA)            \
-		_(mixerGetLineInfoW)            \
-		_(mixerGetNumDevs)              \
-		_(mixerMessage)                 \
-		_(mixerOpen)                    \
-		_(mixerSetControlDetails)       \
-		_(mmDrvInstall)                 \
-		_(mmGetCurrentTask)             \
-		_(mmTaskBlock)                  \
-		_(mmTaskCreate)                 \
-		_(mmTaskSignal)                 \
-		_(mmTaskYield)                  \
-		_(mmioAdvance)                  \
-		_(mmioAscend)                   \
-		_(mmioClose)                    \
-		_(mmioCreateChunk)              \
-		_(mmioDescend)                  \
-		_(mmioFlush)                    \
-		_(mmioGetInfo)                  \
-		_(mmioInstallIOProcA)           \
-		_(mmioInstallIOProcW)           \
-		_(mmioOpenA)                    \
-		_(mmioOpenW)                    \
-		_(mmioRead)                     \
-		_(mmioRenameA)                  \
-		_(mmioRenameW)                  \
-		_(mmioSeek)                     \
-		_(mmioSendMessage)              \
-		_(mmioSetBuffer)                \
-		_(mmioSetInfo)                  \
-		_(mmioStringToFOURCCA)          \
-		_(mmioStringToFOURCCW)          \
-		_(mmioWrite)                    \
-		_(mmsystemGetVersion)           \
-		_(sndPlaySoundA)                \
-		_(sndPlaySoundW)                \
-		_(timeBeginPeriod)              \
-		_(timeEndPeriod)                \
-		_(timeGetDevCaps)               \
-		_(timeGetSystemTime)            \
-		_(timeGetTime)                  \
-		_(timeKillEvent)                \
-		_(timeSetEvent)                 \
-		_(waveInAddBuffer)              \
-		_(waveInClose)                  \
-		_(waveInGetDevCapsA)            \
-		_(waveInGetDevCapsW)            \
-		_(waveInGetErrorTextA)          \
-		_(waveInGetErrorTextW)          \
-		_(waveInGetID)                  \
-		_(waveInGetNumDevs)             \
-		_(waveInGetPosition)            \
-		_(waveInMessage)                \
-		_(waveInOpen)                   \
-		_(waveInPrepareHeader)          \
-		_(waveInReset)                  \
-		_(waveInStart)                  \
-		_(waveInStop)                   \
-		_(waveInUnprepareHeader)        \
-		_(waveOutBreakLoop)             \
-		_(waveOutClose)                 \
-		_(waveOutGetDevCapsA)           \
-		_(waveOutGetDevCapsW)           \
-		_(waveOutGetErrorTextA)         \
-		_(waveOutGetErrorTextW)         \
-		_(waveOutGetID)                 \
-		_(waveOutGetNumDevs)            \
-		_(waveOutGetPitch)              \
-		_(waveOutGetPlaybackRate)       \
-		_(waveOutGetPosition)           \
-		_(waveOutGetVolume)             \
-		_(waveOutMessage)               \
-		_(waveOutOpen)                  \
-		_(waveOutPause)                 \
-		_(waveOutPrepareHeader)         \
-		_(waveOutReset)                 \
-		_(waveOutRestart)               \
-		_(waveOutSetPitch)              \
-		_(waveOutSetPlaybackRate)       \
-		_(waveOutSetVolume)             \
-		_(waveOutUnprepareHeader)       \
-		_(waveOutWrite)
+#define FUNCTIONS(_)                \
+	_(mciExecute)                   \
+	_(CloseDriver)                  \
+	_(DefDriverProc)                \
+	_(DriverCallback)               \
+	_(DrvGetModuleHandle)           \
+	_(GetDriverModuleHandle)        \
+	_(OpenDriver)                   \
+	_(PlaySound)                    \
+	_(PlaySoundA)                   \
+	_(PlaySoundW)                   \
+	_(SendDriverMessage)            \
+	_(WOWAppExit)                   \
+	_(auxGetDevCapsA)               \
+	_(auxGetDevCapsW)               \
+	_(auxGetNumDevs)                \
+	_(auxGetVolume)                 \
+	_(auxOutMessage)                \
+	_(auxSetVolume)                 \
+	_(joyConfigChanged)             \
+	_(joyGetDevCapsA)               \
+	_(joyGetDevCapsW)               \
+	_(joyGetNumDevs)                \
+	_(joyGetPos)                    \
+	_(joyGetPosEx)                  \
+	_(joyGetThreshold)              \
+	_(joyReleaseCapture)            \
+	_(joySetCapture)                \
+	_(joySetThreshold)              \
+	_(mciDriverNotify)              \
+	_(mciDriverYield)               \
+	_(mciFreeCommandResource)       \
+	_(mciGetCreatorTask)            \
+	_(mciGetDeviceIDA)              \
+	_(mciGetDeviceIDFromElementIDA) \
+	_(mciGetDeviceIDFromElementIDW) \
+	_(mciGetDeviceIDW)              \
+	_(mciGetDriverData)             \
+	_(mciGetErrorStringA)           \
+	_(mciGetErrorStringW)           \
+	_(mciGetYieldProc)              \
+	_(mciLoadCommandResource)       \
+	_(mciSendCommandA)              \
+	_(mciSendCommandW)              \
+	_(mciSendStringA)               \
+	_(mciSendStringW)               \
+	_(mciSetDriverData)             \
+	_(mciSetYieldProc)              \
+	_(midiConnect)                  \
+	_(midiDisconnect)               \
+	_(midiInAddBuffer)              \
+	_(midiInClose)                  \
+	_(midiInGetDevCapsA)            \
+	_(midiInGetDevCapsW)            \
+	_(midiInGetErrorTextA)          \
+	_(midiInGetErrorTextW)          \
+	_(midiInGetID)                  \
+	_(midiInGetNumDevs)             \
+	_(midiInMessage)                \
+	_(midiInOpen)                   \
+	_(midiInPrepareHeader)          \
+	_(midiInReset)                  \
+	_(midiInStart)                  \
+	_(midiInStop)                   \
+	_(midiInUnprepareHeader)        \
+	_(midiOutCacheDrumPatches)      \
+	_(midiOutCachePatches)          \
+	_(midiOutClose)                 \
+	_(midiOutGetDevCapsA)           \
+	_(midiOutGetDevCapsW)           \
+	_(midiOutGetErrorTextA)         \
+	_(midiOutGetErrorTextW)         \
+	_(midiOutGetID)                 \
+	_(midiOutGetNumDevs)            \
+	_(midiOutGetVolume)             \
+	_(midiOutLongMsg)               \
+	_(midiOutMessage)               \
+	_(midiOutOpen)                  \
+	_(midiOutPrepareHeader)         \
+	_(midiOutReset)                 \
+	_(midiOutSetVolume)             \
+	_(midiOutShortMsg)              \
+	_(midiOutUnprepareHeader)       \
+	_(midiStreamClose)              \
+	_(midiStreamOpen)               \
+	_(midiStreamOut)                \
+	_(midiStreamPause)              \
+	_(midiStreamPosition)           \
+	_(midiStreamProperty)           \
+	_(midiStreamRestart)            \
+	_(midiStreamStop)               \
+	_(mixerClose)                   \
+	_(mixerGetControlDetailsA)      \
+	_(mixerGetControlDetailsW)      \
+	_(mixerGetDevCapsA)             \
+	_(mixerGetDevCapsW)             \
+	_(mixerGetID)                   \
+	_(mixerGetLineControlsA)        \
+	_(mixerGetLineControlsW)        \
+	_(mixerGetLineInfoA)            \
+	_(mixerGetLineInfoW)            \
+	_(mixerGetNumDevs)              \
+	_(mixerMessage)                 \
+	_(mixerOpen)                    \
+	_(mixerSetControlDetails)       \
+	_(mmDrvInstall)                 \
+	_(mmGetCurrentTask)             \
+	_(mmTaskBlock)                  \
+	_(mmTaskCreate)                 \
+	_(mmTaskSignal)                 \
+	_(mmTaskYield)                  \
+	_(mmioAdvance)                  \
+	_(mmioAscend)                   \
+	_(mmioClose)                    \
+	_(mmioCreateChunk)              \
+	_(mmioDescend)                  \
+	_(mmioFlush)                    \
+	_(mmioGetInfo)                  \
+	_(mmioInstallIOProcA)           \
+	_(mmioInstallIOProcW)           \
+	_(mmioOpenA)                    \
+	_(mmioOpenW)                    \
+	_(mmioRead)                     \
+	_(mmioRenameA)                  \
+	_(mmioRenameW)                  \
+	_(mmioSeek)                     \
+	_(mmioSendMessage)              \
+	_(mmioSetBuffer)                \
+	_(mmioSetInfo)                  \
+	_(mmioStringToFOURCCA)          \
+	_(mmioStringToFOURCCW)          \
+	_(mmioWrite)                    \
+	_(mmsystemGetVersion)           \
+	_(sndPlaySoundA)                \
+	_(sndPlaySoundW)                \
+	_(timeBeginPeriod)              \
+	_(timeEndPeriod)                \
+	_(timeGetDevCaps)               \
+	_(timeGetSystemTime)            \
+	_(timeGetTime)                  \
+	_(timeKillEvent)                \
+	_(timeSetEvent)                 \
+	_(waveInAddBuffer)              \
+	_(waveInClose)                  \
+	_(waveInGetDevCapsA)            \
+	_(waveInGetDevCapsW)            \
+	_(waveInGetErrorTextA)          \
+	_(waveInGetErrorTextW)          \
+	_(waveInGetID)                  \
+	_(waveInGetNumDevs)             \
+	_(waveInGetPosition)            \
+	_(waveInMessage)                \
+	_(waveInOpen)                   \
+	_(waveInPrepareHeader)          \
+	_(waveInReset)                  \
+	_(waveInStart)                  \
+	_(waveInStop)                   \
+	_(waveInUnprepareHeader)        \
+	_(waveOutBreakLoop)             \
+	_(waveOutClose)                 \
+	_(waveOutGetDevCapsA)           \
+	_(waveOutGetDevCapsW)           \
+	_(waveOutGetErrorTextA)         \
+	_(waveOutGetErrorTextW)         \
+	_(waveOutGetID)                 \
+	_(waveOutGetNumDevs)            \
+	_(waveOutGetPitch)              \
+	_(waveOutGetPlaybackRate)       \
+	_(waveOutGetPosition)           \
+	_(waveOutGetVolume)             \
+	_(waveOutMessage)               \
+	_(waveOutOpen)                  \
+	_(waveOutPause)                 \
+	_(waveOutPrepareHeader)         \
+	_(waveOutReset)                 \
+	_(waveOutRestart)               \
+	_(waveOutSetPitch)              \
+	_(waveOutSetPlaybackRate)       \
+	_(waveOutSetVolume)             \
+	_(waveOutUnprepareHeader)       \
+	_(waveOutWrite)
 
 #define MAP_FUNCTION(name)      \
 	{                           \
@@ -417,7 +423,7 @@ static bool GumFoundCb(const ExportDetails *details,
 	if (real == 0 | fake == 0)
 	{
 		MessageBoxA(NULL, details->name, "can't find module function", 0);
-		exit(0);
+		std::exit(1);
 	}
 	Hook((uint8_t *)fake, (uint8_t *)real);
 	return true;
@@ -425,7 +431,6 @@ static bool GumFoundCb(const ExportDetails *details,
 
 static void wait_debugger()
 {
-	// TODO: code your application's behavior here.
 	TCHAR filePath[MAX_PATH];
 	::GetModuleFileName(NULL, filePath, MAX_PATH);
 
@@ -435,22 +440,87 @@ static void wait_debugger()
 
 		if (enableDebug)
 		{
-			MessageBoxA(NULL, "", "", 0);
+			if (!IsDebuggerPresent())
+			{
+				STARTUPINFO si;
+				ZeroMemory(&si, sizeof(si));
+				si.cb = sizeof(si);
+
+				PROCESS_INFORMATION pi;
+				ZeroMemory(&pi, sizeof(pi));
+				auto cmd = std::format("vsjitdebugger -p {}", GetCurrentProcessId());
+				CreateProcessA(NULL, cmd.data(), NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL,
+							   NULL,
+							   &si,
+							   &pi);
+				CloseHandle(pi.hProcess);
+				CloseHandle(pi.hThread);
+			}
+			while (!IsDebuggerPresent())
+			{
+				std::this_thread::yield();
+			}
+			DebugBreak();
 		}
 	}
 }
-#define DEF_FUNCTION(name)\
-EXTERN_C void AheadLib_##name(){\
-	OutputDebugStringA(#name);\
-	DebugBreak();\
-}
+#define DEF_FUNCTION(name)          \
+	EXTERN_C void AheadLib_##name() \
+	{                               \
+		OutputDebugStringA(#name);  \
+		DebugBreak();               \
+	}
 DEF_FUNCTION(Unnamed2)
 
 FUNCTIONS(DEF_FUNCTION)
+#include <optional>
+#include <filesystem>
+std::filesystem::path getUserDoctmentDir()
+{
+	char path[MAX_PATH];
+	SHGetFolderPathA(NULL, CSIDL_MYDOCUMENTS, NULL, 0, path);
+	return path;
+}
 
+std::filesystem::path getExePath()
+{
+	char path[MAX_PATH];
+	GetModuleFileNameA(NULL, path, 255);
+	return std::filesystem::path{path};
+}
 
-void DontStarveInjectorStart();
-void *uname2_ptr;
+std::filesystem::path getGameDir()
+{
+	return getExePath().parent_path().parent_path();
+}
+
+void DontStarveInjectorStart()
+{
+	auto dir = getGameDir();
+#if 0
+	// check version
+	auto version_path = dir / "version.txt";
+	if (std::filesystem::exists(version_path))
+	{
+		auto fp = fopen(version_path.string().c_str(), "r");
+		uint64_t version = 0;
+		fscanf(fp, "%lld", &version);
+		fclose(fp);
+	}
+#endif
+	// auto updater
+	void updater();
+	updater();
+	
+	auto mod = LoadLibraryA("injector");
+	if (!mod)
+	{
+		MessageBoxA(NULL, "can't load injector.dll", "Error!", 0);
+		std::exit(1);
+	}
+	auto ptr = (void (*)())GetProcAddress(mod, "Inject");
+	ptr();
+}
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, PVOID pvReserved)
 {
 	static std::atomic_bool loaded = false;
@@ -461,8 +531,24 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, PVOID pvReserved)
 			loaded = true;
 			wait_debugger();
 			module_enumerate_exports(hModule, GumFoundCb, hModule);
-			uname2_ptr = GetProcAddress(g_OldModule, (LPCSTR)2);
-			Hook((uint8_t*)&AheadLib_Unnamed2, (uint8_t*)uname2_ptr);
+			void *uname2_ptr = GetProcAddress(g_OldModule, (LPCSTR)2);
+			Hook((uint8_t *)&AheadLib_Unnamed2, (uint8_t *)uname2_ptr);
+			// check dump
+			auto dump_path = getUserDoctmentDir() / "klei" / "DoNotStarveTogether" / "donotstarvetogether_client.dmp";
+			if (std::filesystem::exists(dump_path))
+			{
+				auto msg = L"发现已有的游戏崩溃文件,是否加载模组?\n"
+						   L"Found existing game crash file, load module or not?";
+				int res = MessageBoxW(NULL,
+									  msg,
+									  L"MOD:LUAJIT-WARN",
+									  MB_YESNO);
+				if (res == IDNO)
+				{
+					return TRUE;
+				}
+				std::filesystem::remove(dump_path);
+			}
 			DontStarveInjectorStart();
 		}
 	}

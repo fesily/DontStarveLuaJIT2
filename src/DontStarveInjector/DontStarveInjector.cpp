@@ -40,7 +40,7 @@ using namespace std;
 G_NORETURN void showError(const char *msg)
 {
 	MessageBoxA(NULL, msg, "error!", 0);
-	exit(1);
+	std::exit(1);
 }
 
 static const char *luajitModuleName =
@@ -204,7 +204,7 @@ static void ReplaceLuaModule()
 
 #pragma endregion Attach
 
-void DontStarveInjectorStart()
+extern "C" __declspec(dllexport) void Inject()
 {
 	gum_init();
 #if USE_LISTENER
