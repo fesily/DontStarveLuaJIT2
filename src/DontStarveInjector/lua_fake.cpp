@@ -311,19 +311,21 @@ std::unordered_map<std::string_view, void *> lua_fake_apis = {
     FAKE_API(luaL_loadfile),
     FAKE_API(luaL_loadbuffer),
     FAKE_API(luaL_loadstring),
-
+#if !ONLY_LUA51
     FAKE_API(luaL_newstate),
-
+#endif
     FAKE_API(luaL_gsub),
 
     FAKE_API(luaL_findtable),
 
+#if !ONLY_LUA51
     /* From Lua 5.2. */
     FAKE_API(luaL_fileresult),
     FAKE_API(luaL_execresult),
     FAKE_API(luaL_loadfilex),
     FAKE_API(luaL_loadbufferx),
     FAKE_API(luaL_traceback),
+#endif
 
     /*
     ** {======================================================
@@ -346,9 +348,11 @@ std::unordered_map<std::string_view, void *> lua_fake_apis = {
     FAKE_API(luaopen_os),
     FAKE_API(luaopen_package),
     FAKE_API(luaopen_debug),
+#if !ONLY_LUA51
     FAKE_API(luaopen_bit),
     FAKE_API(luaopen_jit),
     FAKE_API(luaopen_ffi),
+#endif
 
     FAKE_API(luaL_openlibs),
 };

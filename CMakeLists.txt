@@ -14,7 +14,7 @@ file(REAL_PATH ${GAME_DIR} GAME_DIR)
 set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin64)
 set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod/bin64/windows/)
 
-add_custom_target(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h 
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h 
     COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/missfunc.py"
     DEPENDS src/missfunc.txt
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -52,18 +52,24 @@ add_custom_command(OUTPUT ${LUAJIT_PRODUCT}
     DEPENDS ${LUAJIT_SOURCE}
 )
 
-add_custom_target(luajit DEPENDS ${LUAJIT_PRODUCT})
+add_custom_target(build_luajit DEPENDS ${LUAJIT_PRODUCT})
 
-add_custom_target(lua51
+set(Lua51_output_dir ${PROJECT_SOURCE_DIR}/src/lua51/$<IF:$<CONFIG:Debug>,debug,release>/)
+
+add_custom_command(OUTPUT ${Lua51_output_dir}/lua51.dll ${Lua51_output_dir}/lua51.lib
     COMMAND src/build_lua51.bat Build $<$<CONFIG:Debug>:debug>
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
+
+add_custom_target(build_lua51 DEPENDS ${LUAJIT_PRODUCT})
+
 
 add_subdirectory("src/DontStarveInjector")
 add_subdirectory("tools/Checker")
 add_subdirectory("tools/mod_packer")
 
 install(FILES ${LUAJIT_PRODUCT} DESTINATION ${CMAKE_INSTALL_PREFIX})
-install(FILES src/lua51/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll DESTINATION ${CMAKE_INSTALL_PREFIX})
+#install(FILES src/lua51/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll DESTINATION ${CMAKE_INSTALL_PREFIX})
+install(FILES src/lua51/release/lua51.dll DESTINATION ${CMAKE_INSTALL_PREFIX})
 install(DIRECTORY ${CMAKE_INSTALL_PREFIX} DESTINATION ${GAME_INSTALL_PREFIX})
 

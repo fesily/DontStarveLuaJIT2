@@ -41,11 +41,18 @@ static std::filesystem::path to_path(const char *p)
 }
 
 static std::mutex mtx;
-static std::filesystem::path workshop_dir;
+static std::filesystem::path init_steam_workshop_dir();
+static std::filesystem::path get_workshop_dir()
+{
+    std::filesystem::path dir = init_steam_workshop_dir();
+    return dir;
+}
 static std::unordered_map<std::string, std::string> path_mapper;
 
-static const char* lj_path_map(const char* k){
-    if (path_mapper.contains(k)){
+static const char *lj_path_map(const char *k)
+{
+    if (path_mapper.contains(k))
+    {
         return path_mapper[k].c_str();
     }
     return k;
@@ -64,7 +71,7 @@ static FILE *lj_fopen(char const *f, const char *mode) noexcept
     {
         auto mod_path = std::filesystem::path(path_s.substr(mods_root.size()));
         // auto mod_name = *mod_path.begin();
-        auto real_path = workshop_dir / mod_path;
+        auto real_path = get_workshop_dir() / mod_path;
         auto fp = fopen(real_path.string().c_str(), mode);
         path_mapper[f] = real_path.string();
         return fp;
@@ -193,7 +200,6 @@ static void lj_clearerr(FILE *fp) noexcept
 }
 
 #include <Windows.h>
-static void init_steam_workshop_dir();
 void init_luajit_io(HMODULE hluajitModule)
 {
 #define INIT_LUAJIT_IO(name) \
@@ -211,7 +217,6 @@ void init_luajit_io(HMODULE hluajitModule)
     INIT_LUAJIT_IO(lj_clearerr);
     INIT_LUAJIT_IO(lj_path_map);
 #undef INIT_LUAJIT_IO
-    init_steam_workshop_dir();
 }
 
 #include <steam_api.h>
@@ -219,7 +224,7 @@ void init_luajit_io(HMODULE hluajitModule)
 #include <chrono>
 #include <vector>
 
-static bool get_mod_folder(ISteamUGC *ugc, PublishedFileId_t id)
+static bool get_mod_folder(ISteamUGC *ugc, PublishedFileId_t id, std::filesystem::path &res)
 {
     auto state = ugc->GetItemState(id);
     if (state & k_EItemStateInstalled)
@@ -229,24 +234,24 @@ static bool get_mod_folder(ISteamUGC *ugc, PublishedFileId_t id)
         char path[MAX_PATH];
         if (ugc->GetItemInstallInfo(id, &punSizeOnDisk, path, 255, &punTimeStamp))
         {
-            workshop_dir = path;
-            workshop_dir = workshop_dir.parent_path();
+            res = std::filesystem::path(path).parent_path();
             return true;
         }
     }
     return false;
 }
 
-static void init_steam_workshop_dir()
+static std::filesystem::path init_steam_workshop_dir()
 {
     if (!SteamAPI_Init())
     {
-        return;
+        return {};
     }
+    std::filesystem::path dir;
     auto ugc = SteamUGC();
-    if (get_mod_folder(ugc, 3010545764))
+    if (get_mod_folder(ugc, 3010545764, dir))
     {
-        return;
+        return dir;
     }
     auto len = ugc->GetNumSubscribedItems();
     std::vector<PublishedFileId_t> PublishedFileIds;
@@ -254,9 +259,10 @@ static void init_steam_workshop_dir()
     PublishedFileIds.resize(ugc->GetSubscribedItems(PublishedFileIds.data(), len));
     for (auto PublishedFileId : PublishedFileIds)
     {
-        if (get_mod_folder(ugc, PublishedFileId))
+        if (get_mod_folder(ugc, PublishedFileId, dir))
         {
-            return;
+            break;
         }
     }
+    return dir;
 }

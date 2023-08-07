@@ -494,6 +494,11 @@ std::filesystem::path getGameDir()
 	return getExePath().parent_path().parent_path();
 }
 
+bool isClientMod = []()
+{
+	return !getExePath().filename().string().contains("server");
+}();
+
 void DontStarveInjectorStart()
 {
 	auto dir = getGameDir();
@@ -510,8 +515,15 @@ void DontStarveInjectorStart()
 #endif
 	// auto updater
 	void updater();
-	updater();
-	
+	if (isClientMod)
+	{
+		updater();
+	}
+	else
+	{
+		std::atexit(updater);
+	}
+
 	auto mod = LoadLibraryA("injector");
 	if (!mod)
 	{

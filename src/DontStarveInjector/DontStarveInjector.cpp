@@ -72,10 +72,9 @@ static GumInterceptor *interceptor;
 #endif
 
 #if !ONLY_LUA51
-void *(*luajit_luaL_newstate)();
 static void *lua_newstate_hooker(void *, void *ud)
 {
-	auto L = luajit_luaL_newstate();
+	auto L = luaL_newstate();
 	char buf[64];
 	snprintf(buf, 64, "luaL_newstate:%p\n", L);
 	OutputDebugStringA(buf);
@@ -121,7 +120,6 @@ static bool ReplaceLuaFunc(const ExportDetails *details)
 	{
 		// TODO 2.1 delete this
 		replacer = &lua_newstate_hooker;
-		luajit_luaL_newstate = (decltype(luajit_luaL_newstate))GetLuaJitAddress("luaL_newstate");
 	}
 	if (details->name == "lua_setfield"sv)
 	{
@@ -136,6 +134,7 @@ static bool ReplaceLuaFunc(const ExportDetails *details)
 		showError(msg.c_str());
 		return false;
 	}
+	
 	char buf[255];
 	snprintf(buf, 255, "replace %s: %p\n", details->name, target);
 	OutputDebugStringA(buf);
