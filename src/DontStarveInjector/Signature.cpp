@@ -19,6 +19,7 @@ static gboolean findBaseAddrCb(const GumRangeDetails *details, gpointer user_dat
 
 GumAddress Signature::scan(const char *m)
 {
+    target_address = 0;
     match_pattern = gum_match_pattern_new_from_string(pattern);
     gum_module_enumerate_ranges(m, page, findBaseAddrCb, (gpointer)this);
     gum_match_pattern_unref(match_pattern);

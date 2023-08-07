@@ -530,8 +530,8 @@ void DontStarveInjectorStart()
 		MessageBoxA(NULL, "can't load injector.dll", "Error!", 0);
 		std::exit(1);
 	}
-	auto ptr = (void (*)())GetProcAddress(mod, "Inject");
-	ptr();
+	auto ptr = (void (*)(bool))GetProcAddress(mod, "Inject");
+	ptr(isClientMod);
 }
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, PVOID pvReserved)
 {

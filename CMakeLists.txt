@@ -22,13 +22,13 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h
 
 add_custom_target(create_missfuncs DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h)
 
-add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures.hpp
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_client.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_server.hpp
     COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/Signature.py"
-    DEPENDS src/missfunc.txt src/Signatures.txt
+    DEPENDS src/missfunc.txt src/Signatures_client.txt src/Signatures_server.txt
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
-add_custom_target(create_Signatures DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures.hpp)
+add_custom_target(create_Signatures DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_client.hpp)
 
 
 add_custom_target(make_karta_luamodule 

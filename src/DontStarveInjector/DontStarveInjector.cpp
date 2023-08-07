@@ -25,7 +25,8 @@
 #include <frida-gum.h>
 #endif
 #include "config.hpp"
-#include "../signatures.hpp"
+#include "../signatures_server.hpp"
+#include "../signatures_client.hpp"
 #include "../missfunc.h"
 #include "inlinehook.hpp"
 #include "LuaModule.hpp"
@@ -104,7 +105,7 @@ static gboolean PrintCallCb(const GumExportDetails *details,
 }
 #endif
 
-static bool ReplaceLuaFunc(const ExportDetails *details)
+static bool ReplaceLuaFunc(const ExportDetails *details, const Signatures &signatures)
 {
 	auto iter = signatures.funcs.find(details->name);
 	if (iter == signatures.funcs.end())
@@ -134,7 +135,7 @@ static bool ReplaceLuaFunc(const ExportDetails *details)
 		showError(msg.c_str());
 		return false;
 	}
-	
+
 	char buf[255];
 	snprintf(buf, 255, "replace %s: %p\n", details->name, target);
 	OutputDebugStringA(buf);
@@ -154,7 +155,8 @@ static bool ReplaceLuaFuncCb(const ExportDetails *details,
 		return true;
 	}
 #endif
-	ReplaceLuaFunc(details);
+	auto &signatures = *(decltype(&signatures_client))user_data;
+	ReplaceLuaFunc(details, signatures);
 	return true;
 }
 
@@ -162,7 +164,7 @@ void voidFunc()
 {
 }
 
-static void ReplaceLuaModule()
+static void ReplaceLuaModule(bool isClient)
 {
 	HMODULE hmain = GetModuleHandle(NULL);
 	char filename[255];
@@ -175,7 +177,7 @@ static void ReplaceLuaModule()
 	{
 		showError("can't find luamodule base address");
 	}
-	module_enumerate_exports(h51, ReplaceLuaFuncCb, NULL);
+	module_enumerate_exports(h51, ReplaceLuaFuncCb, (void *)(isClient ? &signatures_client : &signatures_server));
 
 #if DEBUG_GETSIZE_PATCH
 	if (luaRegisterDebugGetsizeSignature.scan(filename))
@@ -203,13 +205,13 @@ static void ReplaceLuaModule()
 
 #pragma endregion Attach
 
-extern "C" __declspec(dllexport) void Inject()
+extern "C" __declspec(dllexport) void Inject(bool isClient)
 {
 	gum_init();
 #if USE_LISTENER
 	interceptor = gum_interceptor_obtain();
 #endif
-	ReplaceLuaModule();
+	ReplaceLuaModule(isClient);
 #if 0
 	RedirectOpenGLEntries();
 #endif

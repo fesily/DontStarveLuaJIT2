@@ -1,5 +1,6 @@
 #include "frida-gum.h"
-#include "signatures.hpp"
+#include "signatures_server.hpp"
+#include "signatures_client.hpp"
 #include "LuaModule.hpp"
 #include <Windows.h>
 
@@ -149,9 +150,11 @@ static bool checkLuaFunc(void *func1, void *func2, std::string &ecmsg)
     return ret;
 }
 
-int check(const char* path){
+int check(const char *path, const Signatures &signatures)
+{
     fprintf(stderr, "game_path:\t%s\n", path);
-
+    if (!loadModule(path))
+        return 1;
     if (luaModuleSignature.scan(path) == 0)
     {
         fprintf(stderr, "%s", "can find lua module base addr\n");
@@ -183,19 +186,13 @@ int check(const char* path){
 int main()
 {
     gum_init_embedded();
-    auto game_path1 = getenv("GAME_PATH");
-    if (game_path1)
-    {
-        game_path = game_path1;
-    }
-    if (!loadModule(game_path))
-        return 1;
     auto lua51_path1 = getenv("GAME_PATH");
     if (lua51_path1)
     {
         game_path = lua51_path1;
     }
     fprintf(stderr, "lua51_path:\t%s\n", lua51_path);
-    if (!loadModule(lua51_path)) return 1;
-    return check(game_path) + check(game_server_path);
+    if (!loadModule(lua51_path))
+        return 1;
+    return check(game_path, signatures_client) + check(game_server_path, signatures_server);
 }

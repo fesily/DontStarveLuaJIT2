@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.15)
 set (SOURCES
 main.cpp
 ${PROJECT_SOURCE_DIR}/src/DontStarveInjector/signature.cpp
+${PROJECT_SOURCE_DIR}/src/signatures_server.hpp
+${PROJECT_SOURCE_DIR}/src/signatures_client.hpp
 )
 
 add_executable(signature_checker ${SOURCES})
