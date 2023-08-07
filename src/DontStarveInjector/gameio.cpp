@@ -55,7 +55,7 @@ static const char *lj_path_map(const char *k)
     {
         return path_mapper[k].c_str();
     }
-    return k;
+    return nullptr;
 }
 
 static FILE *lj_fopen(char const *f, const char *mode) noexcept
