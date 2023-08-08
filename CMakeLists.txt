@@ -42,7 +42,7 @@ set(LUAJIT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/LuaJIT/src)
 
 set(LUAJIT_SOURCE)
 
-file(GLOB_RECURSE LUAJIT_SOURCE "${LUAJIT_DIR}/*.c")
+file(GLOB_RECURSE LUAJIT_SOURCE "${LUAJIT_DIR}/*.c" "${LUAJIT_DIR}/*.h")
 
 set(LUAJIT_PRODUCT ${LUAJIT_DIR}/lua51DS.dll)
 
@@ -65,6 +65,7 @@ add_custom_target(build_lua51 DEPENDS ${LUAJIT_PRODUCT})
 
 
 add_subdirectory("src/DontStarveInjector")
+add_subdirectory("src/lua51")
 add_subdirectory("tools/Checker")
 add_subdirectory("tools/mod_packer")
 
