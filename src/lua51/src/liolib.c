@@ -161,12 +161,52 @@ static int io_tostring (lua_State *L) {
 static int io_open (lua_State *L) {
   const char *filename = luaL_checkstring(L, 1);
   const char *mode = luaL_optstring(L, 2, "r");
+  char *copy_filename = strdup(filename);
+  size_t len = strlen(copy_filename) + 1;
+  unsigned int strlen = len - 1;
+  if (len != 1)
+  {
+    char *filename1 = copy_filename;
+    do
+    {
+      if (*filename1 == '\\')
+      {
+        *filename1 = '/';
+      }
+      ++filename1;
+      --strlen;
+    } while (strlen);
+  }
+  if (*copy_filename == '/' || strchr(copy_filename, ';'))
+    luaL_error(L, "invalid filepath");
+  const char *delimite = "/";
+  const char *split = strtok(copy_filename, delimite);
+  int offset = 0;
+  while (split)
+  {
+    if (*split != '.')
+    {
+      offset++;
+    }
+    else if (split[1] == '.')
+    {
+      offset--;
+    }
+    else if (split[1])
+    {
+      offset++;
+    }
+    split = strtok(0, delimite);
+    if (offset < -1 || offset == -1 && strcmp(split, "data") && strcmp(split, "mods"))
+      luaL_error(L, "invalid filepath");
+  }
+
   FILE **pf = newfile(L);
   *pf = fopen(filename, mode);
   return (*pf == NULL) ? pushresult(L, 0, filename) : 1;
 }
 
-
+#if 0
 /*
 ** this function has a separated environment, which defines the
 ** correct __close for 'popen' files
@@ -178,7 +218,7 @@ static int io_popen (lua_State *L) {
   *pf = lua_popen(L, filename, mode);
   return (*pf == NULL) ? pushresult(L, 0, filename) : 1;
 }
-
+#endif
 
 static int io_tmpfile (lua_State *L) {
   FILE **pf = newfile(L);
@@ -481,7 +521,7 @@ static const luaL_Reg iolib[] = {
   {"lines", io_lines},
   {"open", io_open},
   {"output", io_output},
-  {"popen", io_popen},
+  //{"popen", io_popen},
   {"read", io_read},
   {"tmpfile", io_tmpfile},
   {"type", io_type},
