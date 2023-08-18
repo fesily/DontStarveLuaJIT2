@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 	<Type Name="GCtab">
-		<DisplayString>hash={hmask+1} arr={asize}</DisplayString>
+		<DisplayString>hash={hmask?hmask+1:0} arr={asize}</DisplayString>
 		<Expand>
 			<Item Name="metatable" Condition="metatable.gcptr64!=0">((GCobj*)metatable.gcptr64)-&gt;tab</Item>
 			<Synthetic Name="Array" Condition="asize!=0">
@@ -54,7 +54,7 @@
 		<DisplayString>{((const char*)&amp; len)+sizeof(MSize),s}</DisplayString>
 		<Expand>
 			<Item Name="len">len</Item>
-			<Item Name="string_id">sid</Item>
+			<Item Name="sid">sid</Item>
 			<Item Name="hash">hash</Item>
 		</Expand>
 	</Type>
@@ -242,7 +242,7 @@
 		<DisplayString Condition="gch.gct==11">[table] {tab}</DisplayString>
 		<DisplayString Condition="gch.gct==12">[userdata]</DisplayString>
 		<Expand>
-			<Item Condition="gch.gct==4" Name="[string]">strdata(),s</Item>
+			<Item Condition="gch.gct==4" Name="[string]">str</Item>
 			<Item Condition="gch.gct==5" Name="[upval]">uv</Item>
 			<Item Condition="gch.gct==6" Name="[thread]">th</Item>
 			<Item Condition="gch.gct==7" Name="[proto]">pt</Item>

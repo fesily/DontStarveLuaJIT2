@@ -38,22 +38,6 @@ add_custom_target(make_karta_luamodule
     )
 
 
-set(LUAJIT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/LuaJIT/src)
-
-set(LUAJIT_SOURCE)
-
-file(GLOB_RECURSE LUAJIT_SOURCE "${LUAJIT_DIR}/*.c" "${LUAJIT_DIR}/*.h")
-
-set(LUAJIT_PRODUCT ${LUAJIT_DIR}/lua51DS.dll)
-
-add_custom_command(OUTPUT ${LUAJIT_PRODUCT}
-    COMMAND cmd /K msvcbuild.bat $<$<CONFIG:Debug>:debug>
-    WORKING_DIRECTORY ${LUAJIT_DIR}
-    DEPENDS ${LUAJIT_SOURCE}
-)
-
-add_custom_target(build_luajit DEPENDS ${LUAJIT_PRODUCT})
-
 set(Lua51_output_dir ${PROJECT_SOURCE_DIR}/src/lua51/$<IF:$<CONFIG:Debug>,debug,release>/)
 
 add_custom_command(OUTPUT ${Lua51_output_dir}/lua51.dll ${Lua51_output_dir}/lua51.lib
@@ -61,15 +45,18 @@ add_custom_command(OUTPUT ${Lua51_output_dir}/lua51.dll ${Lua51_output_dir}/lua5
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
-add_custom_target(build_lua51 DEPENDS ${LUAJIT_PRODUCT})
-
+add_custom_target(build_lua51 DEPENDS ${Lua51_output_dir}/lua51.dll)
+add_subdirectory("luajit")
+set(LUAJIT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src)
+set(LUAJIT_LIBRARIES luajit)
+add_subdirectory("src/lua51")
+set(LUA_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/lua51/src)
+set(LUA_LIBRARIES luajit)
 
 add_subdirectory("src/DontStarveInjector")
-add_subdirectory("src/lua51")
 add_subdirectory("tools/Checker")
 add_subdirectory("tools/mod_packer")
 
-install(FILES ${LUAJIT_PRODUCT} DESTINATION ${CMAKE_INSTALL_PREFIX})
 #install(FILES src/lua51/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll DESTINATION ${CMAKE_INSTALL_PREFIX})
 install(FILES src/lua51/release/lua51.dll DESTINATION ${CMAKE_INSTALL_PREFIX})
 install(DIRECTORY ${CMAKE_INSTALL_PREFIX} DESTINATION ${GAME_INSTALL_PREFIX})

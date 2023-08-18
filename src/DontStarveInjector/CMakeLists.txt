@@ -20,7 +20,6 @@ target_include_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/frida-gum)
 target_link_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/frida-gum)
 target_link_libraries(Injector PRIVATE frida-gum)
 
-target_include_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/luajit/src)
 target_link_libraries(Injector PRIVATE libzip::zip)
 
 target_include_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/steam)
@@ -28,9 +27,10 @@ target_link_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/steam/redistri
 target_link_libraries(Injector PRIVATE steam_api64)
 
 if (NOT ENABLE_ONLY_LUA51)
-    target_link_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/luajit/src)
-    target_link_libraries(Injector PRIVATE lua51DS)
+    target_include_directories(Injector PUBLIC ${LUAJIT_INCLUDE_DIR})
+    target_link_libraries(Injector PRIVATE luajit-5.1)
 elseif(ENABLE_FAKE_API)
+    target_include_directories(Injector PUBLIC ${LUA_INCLUDE_DIR})
     target_link_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/lua51/$<IF:$<CONFIG:Debug>,Debug,Release>)
     target_link_libraries(Injector PRIVATE lua51)
 endif()
@@ -51,8 +51,7 @@ if(ENABLE_ONLY_LUA51)
     target_compile_definitions(Injector PUBLIC ENABLE_ONLY_LUA51)
 endif()
 
-add_dependencies(Injector create_missfuncs create_Signatures build_luajit)
-
+add_dependencies(Injector create_missfuncs create_Signatures)
 
 install(TARGETS Injector RUNTIME DESTINATION .)
 
