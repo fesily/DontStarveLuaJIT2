@@ -28,11 +28,11 @@ target_link_libraries(Injector PRIVATE steam_api64)
 
 if (NOT ENABLE_ONLY_LUA51)
     target_include_directories(Injector PUBLIC ${LUAJIT_INCLUDE_DIR})
-    target_link_libraries(Injector PRIVATE luajit-5.1)
+    target_link_libraries(Injector PRIVATE ${LUAJIT_LIBRARIES})
 elseif(ENABLE_FAKE_API)
     target_include_directories(Injector PUBLIC ${LUA_INCLUDE_DIR})
     target_link_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/lua51/$<IF:$<CONFIG:Debug>,Debug,Release>)
-    target_link_libraries(Injector PRIVATE lua51)
+    target_link_libraries(Injector PRIVATE ${LUA_LIBRARIES})
 endif()
 
 if (MSVC)

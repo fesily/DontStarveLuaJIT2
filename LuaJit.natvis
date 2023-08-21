@@ -59,6 +59,7 @@
 		</Expand>
 	</Type>
 	<Type Name="GCproto">
+		<Intrinsic Name="proto_bc" Expression="((BCIns *)((char *)(this) + sizeof(GCproto)))"></Intrinsic>
 		<DisplayString>{chunkname}:{firstline}</DisplayString>
 		<Expand>
 			<Synthetic Name="flags" Condition="(flags &amp; 0x02) == 0x02">
@@ -122,6 +123,20 @@
 									<Break Condition="*ptr++&gt;=0x80"/>
 								</Loop>
 							</If>
+						</Loop>
+					</CustomListItems>
+				</Expand>
+			</Synthetic>
+			<Synthetic Name="OpCodes">
+				<DisplayString>{sizebc}</DisplayString>
+				<Expand>
+					<CustomListItems>
+						<Variable Name="ops" InitialValue="proto_bc()"/>
+						<Variable Name="index" InitialValue="0"/>
+						<Loop>
+							<Break Condition="index>=sizebc"/>
+							<Item>ops[index]</Item>
+							<Exec>index++</Exec>
 						</Loop>
 					</CustomListItems>
 				</Expand>

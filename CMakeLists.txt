@@ -48,10 +48,10 @@ add_custom_command(OUTPUT ${Lua51_output_dir}/lua51.dll ${Lua51_output_dir}/lua5
 add_custom_target(build_lua51 DEPENDS ${Lua51_output_dir}/lua51.dll)
 add_subdirectory("luajit")
 set(LUAJIT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src)
-set(LUAJIT_LIBRARIES luajit)
+set(LUAJIT_LIBRARIES luajit-5.1)
 add_subdirectory("src/lua51")
 set(LUA_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/lua51/src)
-set(LUA_LIBRARIES luajit)
+set(LUA_LIBRARIES lua51)
 
 add_subdirectory("src/DontStarveInjector")
 add_subdirectory("tools/Checker")
