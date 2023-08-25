@@ -5,6 +5,9 @@ if not _G.rawget(_G, "jit") then
     _G.TheSim:Quit()
     return
 end
+
+_G.os.remove("luajit.mutex")
+
 local TEMPLATES = require "widgets/redux/templates"
 local old_getbuildstring = TEMPLATES.GetBuildString
 TEMPLATES.GetBuildString = function()

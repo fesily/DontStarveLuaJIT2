@@ -122,7 +122,7 @@ static bool ReplaceLuaFunc(const ExportDetails *details, const Signatures &signa
 		// TODO 2.1 delete this
 		replacer = &lua_newstate_hooker;
 	}
-	if (details->name == "lua_setfield"sv)
+	else if (details->name == "lua_setfield"sv)
 	{
 		replacer = &lua_setfield_fake;
 	}

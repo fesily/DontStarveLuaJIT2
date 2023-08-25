@@ -533,7 +533,16 @@ void DontStarveInjectorStart()
 	{
 		std::atexit(updater);
 	}
-
+	auto mutex_file = dir / "data" / "luajit.mutex";
+	if (std::filesystem::exists(mutex_file))
+	{
+		int res = MessageBoxW(NULL, L"发现上次没有正常退出游戏, 是否继续加载模组?\nNoticed that didn't exit the game properly last time, load module or not?", L"MOD:LUAJIT-WARN", MB_YESNO);
+		if (res == IDNO)
+			return;
+	}
+	auto fp = fopen(mutex_file.string().c_str(), "w");
+	if (fp)
+		fclose(fp);
 	auto mod = LoadLibraryA("injector");
 	if (!mod)
 	{

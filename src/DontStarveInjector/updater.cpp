@@ -42,7 +42,7 @@ bool need_updater()
         constexpr auto prefix = "version = \""sv;
         if (line.starts_with(prefix))
         {
-            auto version = line.substr(prefix.size(), line.find_last_of('"') - 1);
+            auto version = line.substr(prefix.size(), line.find_last_of('"') - prefix.size());
             if (version == MOD_VERSION)
             {
                 return false;

@@ -62,6 +62,7 @@ static FILE *lj_fopen(char const *f, const char *mode) noexcept
 {
     auto path = to_path(f);
     auto path_s = path.string();
+    //TODO：在w的情况下是不是行为不一致
     auto fp = fopen(path_s.c_str(), mode);
     if (fp)
         return fp;
