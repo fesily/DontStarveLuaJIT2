@@ -436,7 +436,8 @@ static void wait_debugger()
 
 	if (_tcsstr(filePath, _T("dontstarve")) != NULL)
 	{
-		BOOL enableDebug = ::GetFileAttributes(_T("Debug.config")) != INVALID_FILE_ATTRIBUTES;
+		const auto filename = "Debug.config";
+		BOOL enableDebug = ::GetFileAttributesA(filename) != INVALID_FILE_ATTRIBUTES;
 
 		if (enableDebug)
 		{
@@ -456,11 +457,20 @@ static void wait_debugger()
 				CloseHandle(pi.hProcess);
 				CloseHandle(pi.hThread);
 			}
+			auto limit = std::chrono::system_clock::now() + 15s;
 			while (!IsDebuggerPresent())
 			{
 				std::this_thread::yield();
+				if (std::chrono::system_clock::now() > limit)
+					break;
 			}
-			DebugBreak();
+			auto fp = fopen(filename, "r");
+			char buffer[1024] = {};
+			if (fread(buffer, sizeof(char), sizeof(buffer) / sizeof(char), fp) > 0)
+			{
+				_putenv_s("LUA_INIT", buffer);
+			}
+			fclose(fp);
 		}
 	}
 }

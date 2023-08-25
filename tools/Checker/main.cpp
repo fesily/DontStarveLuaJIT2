@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include "frida-gum.h"
 #include "signatures_server.hpp"
 #include "signatures_client.hpp"
@@ -162,6 +163,8 @@ int check(const char *path, const Signatures &signatures)
     }
 
     auto lua51_baseaddr = gum_module_find_base_address(lua51_path);
+    auto hlua51 = gum_module_find_base_address(lua51_path);
+    auto htarget = gum_module_find_base_address(path);
     auto count = 0;
     for (auto [func, offset] : signatures.funcs)
     {
@@ -174,6 +177,21 @@ int check(const char *path, const Signatures &signatures)
             continue;
         }
         std::string ecmsg;
+        auto k2 = create_signature((void *)dll_func, 0x128, (void *)hlua51);
+        auto k1 = create_signature((void *)func_addr, 0x128, (void *)htarget);
+        if (k1 != k2)
+        {
+            size_t limit = std::min(k1.size(), k2.size());
+            for (size_t i = 0; i < limit; i++)
+            {
+                if (k1[i] != k2[i])
+                {
+                    printf("");
+                }
+            }
+
+            fprintf(stderr, "%s signature not equal\n", func.data());
+        }
         if (!checkLuaFunc((void *)func_addr, (void *)dll_func, ecmsg))
         {
             count++;

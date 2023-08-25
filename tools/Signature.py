@@ -58,7 +58,7 @@ def generator(name):
 
         for i in range(len(funcs)):
             func = funcs[i]
-            if func in missfuncs:
+            if func[0] in missfuncs:
                 continue
             line = '\t{{"{}"sv, (void*){}}},\n'.format(func[0], func[1] - base_addr)
             output.append(line)

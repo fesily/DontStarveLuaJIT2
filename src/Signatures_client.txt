@@ -1,602 +1,263 @@
 Line	File Name	Source Function Name	Binary Address	Binary Function Name	Matching Rule \ Information
-0541	lapi	index2adr	0x1404CEEA0	sub_1404CEEA0	Agent - File-unique string / const
-0543	lapi	luaA_pushobject	0x1404CEF50	sub_1404CEF50	Neighbour matching
-0544	lapi	lua_checkstack	0x1404CEF70	sub_1404CEF70	Single called (xref) option
-0545	lapi	lua_xmove	0x1404CF010	sub_1404CF010	Single called (xref) option
-0546	lapi	lua_setlevel	0x1404CF070	sub_1404CF070	Single called (xref) option
-0547	lapi	lua_atpanic	0x1404CF080	sub_1404CF080	Neighbour matching
-0548	lapi	lua_newthread	0x1404CF0A0	sub_1404CF0A0	Single called (xref) option
-0549	lapi	lua_gettop	0x1404CF0F0	sub_1404CF0F0	Single called (xref) option
-0550	lapi	lua_settop	0x1404CF100	sub_1404CF100	Single called (xref) option
-0551	lapi	lua_remove	0x1404CF160	sub_1404CF160	Single called (xref) option
-0552	lapi	lua_insert	0x1404CF1B0	sub_1404CF1B0	Neighbour matching
-0553	lapi	lua_replace	0x1404CF210	sub_1404CF210	Agent - File-unique string / const
-0554	lapi	lua_pushvalue	0x1404CF2E0	sub_1404CF2E0	Single called (xref) option
-0555	lapi	lua_type	0x1404CF310	sub_1404CF310	Single called (xref) option
-0556	lapi	lua_typename	0x1404CF340	sub_1404CF340	Single called (xref) option
-0557	lapi	lua_iscfunction	0x1404CF360	sub_1404CF360	Single called (xref) option
-0558	lapi	lua_isnumber	0x1404CF390	sub_1404CF390	Single called (xref) option
-0559	lapi	lua_isstring	0x1404CF3C0	sub_1404CF3C0	Single called (xref) option
-0561	lapi	lua_rawequal	0x1404CF400	sub_1404CF400	Single called (xref) option
-0562	lapi	lua_equal	0x1404CF450	sub_1404CF450	Score-based Matching
-0563	lapi	lua_lessthan	0x1404CF4B0	sub_1404CF4B0	Single called (xref) option
-0564	lapi	lua_tonumber	0x1404CF500	sub_1404CF500	Single called (xref) option
-0565	lapi	lua_tointeger	0x1404CF540	sub_1404CF540	Single called (xref) option
-0566	lapi	lua_toboolean	0x1404CF570	sub_1404CF570	Single called (xref) option
-0567	lapi	lua_tolstring	0x1404CF5A0	sub_1404CF5A0	Score-based Matching
-0568	lapi	lua_objlen	0x1404CF650	sub_1404CF650	Single called (xref) option
-0569	lapi	lua_tocfunction	0x1404CF6D0	sub_1404CF6D0	Single called (xref) option
-0570	lapi	lua_touserdata	0x1404CF700	sub_1404CF700	Single called (xref) option
-0571	lapi	lua_tothread	0x1404CF740	sub_1404CF740	Single called (xref) option
-0572	lapi	lua_topointer	0x1404CF760	sub_1404CF760	Single called (xref) option
-0573	lapi	lua_pushnil	0x1404CF7D0	sub_1404CF7D0	Single called (xref) option
-0574	lapi	lua_pushnumber	0x1404CF7F0	sub_1404CF7F0	Single called (xref) option
-0575	lapi	lua_pushinteger	0x1404CF810	sub_1404CF810	Single called (xref) option
-0576	lapi	lua_pushlstring	0x1404CF830	sub_1404CF830	Single called (xref) option
-0577	lapi	lua_pushstring	0x1404CF8A0	sub_1404CF8A0	Single caller (xref) option
-0578	lapi	lua_pushvfstring	0x1404CF8F0	sub_1404CF8F0	Neighbour matching
-0579	lapi	lua_pushfstring	0x1404CF950	sub_1404CF950	Single called (xref) option
-0580	lapi	lua_pushcclosure	0x1404CF9A0	sub_1404CF9A0	Single called (xref) option
-0581	lapi	lua_pushboolean	0x1404CFA80	sub_1404CFA80	Single called (xref) option
-0582	lapi	lua_pushlightuserdata	0x1404CFAA0	sub_1404CFAA0	Single called (xref) option
-0583	lapi	lua_pushthread	0x1404CFAC0	sub_1404CFAC0	Single called (xref) option
-0584	lapi	lua_gettable	0x1404CFAF0	sub_1404CFAF0	Single called (xref) option
-0585	lapi	lua_getfield	0x1404CFB20	sub_1404CFB20	Single called (xref) option
-0586	lapi	lua_rawget	0x1404CFB90	sub_1404CFB90	Single called (xref) option
-0587	lapi	lua_rawgeti	0x1404CFBD0	sub_1404CFBD0	Single called (xref) option
-0588	lapi	lua_createtable	0x1404CFC10	sub_1404CFC10	Single called (xref) option
-0589	lapi	lua_getmetatable	0x1404CFC80	sub_1404CFC80	Single called (xref) option
-0590	lapi	lua_getfenv	0x1404CFCE0	sub_1404CFCE0	Single called (xref) option
-0591	lapi	lua_settable	0x1404CFD60	sub_1404CFD60	Single called (xref) option
-0592	lapi	lua_setfield	0x1404CFD90	sub_1404CFD90	Single called (xref) option
-0593	lapi	lua_rawset	0x1404CFE10	sub_1404CFE10	Single called (xref) option
-0594	lapi	lua_rawseti	0x1404CFE90	sub_1404CFE90	Single called (xref) option
-0595	lapi	lua_setmetatable	0x1404CFF10	sub_1404CFF10	Single called (xref) option
-0596	lapi	lua_setfenv	0x1404CFFD0	sub_1404CFFD0	Single called (xref) option
-0597	lapi	lua_call	0x1404D0070	sub_1404D0070	Single called (xref) option
-0598	lapi	f_call	0x1404D00C0	sub_1404D00C0	Neighbour matching
-0599	lapi	lua_pcall	0x1404D00D0	sub_1404D00D0	Single called (xref) option
-0602	lapi	lua_load	0x1404D0160	sub_1404D0160	Single called (xref) option
-0603	lapi	lua_dump	0x1404D01B0	sub_1404D01B0	Single called (xref) option
-0604	lapi	lua_status	0x1404D0200	sub_1404D0200	Neighbour matching
-0605	lapi	lua_gc	0x1404D0210	sub_1404D0210	Single called (xref) option
-0606	lapi	lua_error	0x1404D03D0	sub_1404D03D0	Neighbour matching
-0607	lapi	lua_next	0x1404D03E0	sub_1404D03E0	Single called (xref) option
-0608	lapi	lua_concat	0x1404D0420	sub_1404D0420	Single called (xref) option
-0611	lapi	lua_newuserdata	0x1404D04C0	sub_1404D04C0	Single called (xref) option
-0613	lapi	lua_getupvalue	0x1404D0540	sub_1404D0540	Score-based Matching
-0614	lapi	lua_setupvalue	0x1404D05D0	sub_1404D05D0	Score-based Matching
-0001	lauxlib	luaL_where	0x1404D06B0	sub_1404D06B0	Score-based Matching
-0002	lauxlib	luaL_error	0x1404D0740	sub_1404D0740	Single called (xref) option
-0003	lauxlib	luaL_newmetatable	0x1404D07A0	sub_1404D07A0	Single called (xref) option
-0004	lauxlib	luaL_checkstack	0x1404D0820	sub_1404D0820	Single called (xref) option
-0005	lauxlib	luaL_getmetafield	0x1404D0860	sub_1404D0860	Single called (xref) option
-0006	lauxlib	luaL_callmeta	0x1404D08E0	sub_1404D08E0	Single called (xref) option
-0008	lauxlib	luaL_findtable	0x1404D0960	sub_1404D0960	Single called (xref) option
-0010	lauxlib	adjuststack	0x1404D0A90	sub_1404D0A90	Neighbour matching
-0011	lauxlib	luaL_prepbuffer	0x1404D0B40	sub_1404D0B40	Single called (xref) option
-0012	lauxlib	luaL_addlstring	0x1404D0BA0	sub_1404D0BA0	Single called (xref) option
-0014	lauxlib	luaL_pushresult	0x1404D0C40	sub_1404D0C40	Score-based Matching
-0015	lauxlib	luaL_addvalue	0x1404D0C90	sub_1404D0C90	Single called (xref) option
-0016	lauxlib	luaL_buffinit	0x1404D0D50	sub_1404D0D50	Single called (xref) option
-0017	lauxlib	luaL_ref	0x1404D0D70	sub_1404D0D70	Neighbour matching
-0018	lauxlib	luaL_unref	0x1404D0E40	sub_1404D0E40	Neighbour matching
-0019	lauxlib	getF	0x1404D0EC0	sub_1404D0EC0	Single called (xref) option
-0020	lauxlib	errfile	0x1404D0F50	sub_1404D0F50	Neighbour matching
-0021	lauxlib	luaL_loadfile	0x1404D0FF0	sub_1404D0FF0	Anchor - Complex unique string / const
-0022	lauxlib	getS	0x1404D11D0	sub_1404D11D0	Neighbour matching
-0023	lauxlib	luaL_loadbuffer	0x1404D11F0	sub_1404D11F0	Single called (xref) option
-0024	lauxlib	luaL_loadstring	0x1404D1220	sub_1404D1220	Neighbour matching
-0025	lauxlib	luaL_argerror	0x1404D1270	sub_1404D1270	Anchor - Complex unique string / const
-0026	lauxlib	luaL_typerror	0x1404D1380	sub_1404D1380	Neighbour matching
-0028	lauxlib	luaL_checkudata	0x1404D13F0	sub_1404D13F0	Single called (xref) option
-0029	lauxlib	luaL_checktype	0x1404D14B0	sub_1404D14B0	Single called (xref) option
-0030	lauxlib	luaL_checkany	0x1404D14F0	sub_1404D14F0	Single called (xref) option
-0031	lauxlib	luaL_checklstring	0x1404D1530	sub_1404D1530	Single called (xref) option
-0032	lauxlib	luaL_optlstring	0x1404D15C0	sub_1404D15C0	Single called (xref) option
-0033	lauxlib	luaL_checknumber	0x1404D1640	sub_1404D1640	Single called (xref) option
-0034	lauxlib	luaL_optnumber	0x1404D16A0	sub_1404D16A0	Neighbour matching
-0035	lauxlib	luaL_checkinteger	0x1404D1710	sub_1404D1710	Single called (xref) option
-0036	lauxlib	luaL_checkboolean	0x1404D1760	sub_1404D1760	Score-based Matching
-0037	lauxlib	luaL_optboolean	0x1404D17E0	sub_1404D17E0	Neighbour matching
-0038	lauxlib	luaL_optinteger	0x1404D1830	sub_1404D1830	Neighbour matching
-0039	lauxlib	luaL_openlib	0x1404D18A0	sub_1404D18A0	Agent - File-unique string / const
-0040	lauxlib	luaL_gsub	0x1404D1A20	sub_1404D1A20	Neighbour matching
-0041	lauxlib	luaL_checkoption	0x1404D1E80	sub_1404D1E80	Score-based Matching
-0042	lauxlib	luaL_register	0x1404D1F40	sub_1404D1F40	Single called (xref) option
-0486	ldebug	currentline	0x1404D1F50	sub_1404D1F50	Single called (xref) option
-0487	ldebug	lua_sethook	0x1404D1FA0	sub_1404D1FA0	Single called (xref) option
-0489	ldebug	lua_gethookmask	0x1404D1FD0	?GetOwningRing@VirtualProcessor@details@Concurrency@@QEAAPEAVSchedulingRing@23@XZ_1	Neighbour matching
-0490	ldebug	lua_gethookcount	0x1404D1FE0	sub_1404D1FE0	Neighbour matching
-0491	ldebug	lua_getstack	0x1404D1FF0	sub_1404D1FF0	Agent - File-unique string / const
-0493	ldebug	findlocal	0x1404D2070	sub_1404D2070	Single called (xref) option
-0494	ldebug	lua_getlocal	0x1404D2120	sub_1404D2120	Single called (xref) option
-0495	ldebug	lua_setlocal	0x1404D2190	sub_1404D2190	Single called (xref) option
-0496	ldebug	funcinfo	0x1404D2200	sub_1404D2200	Score-based Matching
-0498	ldebug	collectvalidlines	0x1404D2290	sub_1404D2290	Single called (xref) option
-0500	ldebug	luaG_checkopenop	0x1404D2360	sub_1404D2360	Single called (xref) option
-0501	ldebug	checkArgMode	0x1404D2390	sub_1404D2390	Neighbour matching
-0502	ldebug	symbexec	0x1404D23E0	sub_1404D23E0	Single called (xref) option
-0503	ldebug	luaG_checkcode	0x1404D29D0	sub_1404D29D0	Single called (xref) option
-0505	ldebug	getobjname	0x1404D29F0	sub_1404D29F0	Anchor - Complex unique string / const
-0506	ldebug	getfuncname	0x1404D2C00	sub_1404D2C00	Neighbour matching
-0508	ldebug	addinfo	0x1404D2CC0	sub_1404D2CC0	Single called (xref) option
-0509	ldebug	luaG_errormsg	0x1404D2DC0	sub_1404D2DC0	Neighbour matching
-0510	ldebug	luaG_runerror	0x1404D2E70	sub_1404D2E70	Single called (xref) option
-0511	ldebug	auxgetinfo	0x1404D2EB0	sub_1404D2EB0	Neighbour matching
-0512	ldebug	lua_getinfo	0x1404D3050	sub_1404D3050	Neighbour matching
-0513	ldebug	luaG_typeerror	0x1404D3140	sub_1404D3140	Agent - File-unique string / const
-0514	ldebug	luaG_concaterror	0x1404D3210	sub_1404D3210	Neighbour matching
-0515	ldebug	luaG_aritherror	0x1404D3230	sub_1404D3230	Agent - File-unique string / const
-0516	ldebug	luaG_ordererror	0x1404D3280	sub_1404D3280	Agent - File-unique string / const
-0616	lgc	reallymarkobject	0x1404D32E0	sub_1404D32E0	Single called (xref) option
-0618	lgc	luaC_separateudata	0x1404D3400	sub_1404D3400	Score-based Matching
-0619	lgc	traversetable	0x1404D34E0	sub_1404D34E0	Score-based Matching
-0620	lgc	traverseproto	0x1404D36C0	sub_1404D36C0	Neighbour matching
-0621	lgc	traverseclosure	0x1404D37C0	sub_1404D37C0	Neighbour matching
-0622	lgc	checkstacksizes	0x1404D3870	sub_1404D3870	Score-based Matching
-0624	lgc	propagatemark	0x1404D39A0	sub_1404D39A0	Single caller (xref) option
-0627	lgc	cleartable	0x1404D3AE0	sub_1404D3AE0	Neighbour matching
-0628	lgc	freeobj	0x1404D3C20	sub_1404D3C20	Single called (xref) option
-0629	lgc	sweeplist	0x1404D3E10	sub_1404D3E10	Neighbour matching
-0630	lgc	checkSizes	0x1404D3ED0	sub_1404D3ED0	Score-based Matching
-0631	lgc	GCTM	0x1404D3F60	sub_1404D3F60	Neighbour matching
-0632	lgc	luaC_callGCTM	0x1404D41A0	sub_1404D41A0	Single called (xref) option
-0633	lgc	luaC_freeall	0x1404D4200	sub_1404D4200	Single called (xref) option
-0635	lgc	markroot	0x1404D43F0	sub_1404D43F0	Score-based Matching
-0637	lgc	atomic	0x1404D44A0	sub_1404D44A0	Single called (xref) option
-0625	lgc	propagateall	0x1404D4630	sub_1404D4630	Single caller (xref) option
-0638	lgc	singlestep	0x1404D4820	sub_1404D4820	Neighbour matching
-0639	lgc	luaC_step	0x1404D4B20	sub_1404D4B20	Single called (xref) option
-0640	lgc	luaC_fullgc	0x1404D4C20	sub_1404D4C20	Neighbour matching
-0641	lgc	luaC_barrierf	0x1404D4CD0	sub_1404D4CD0	Single called (xref) option
-0642	lgc	luaC_barrierback	0x1404D4D00	sub_1404D4D00	Single called (xref) option
-0643	lgc	luaC_link	0x1404D4D20	sub_1404D4D20	Neighbour matching
-0644	lgc	luaC_linkupval	0x1404D4D40	sub_1404D4D40	Single called (xref) option
-0132	linit	luaL_openlibs	0x1404D4DD0	sub_1404D4DD0	Single caller (xref) option
-0351	lstate	stack_init	0x1404D4E90	sub_1404D4E90	Single called (xref) option
-0353	lstate	f_luaopen	0x1404D4F40	sub_1404D4F40	Single caller (xref) option
-0355	lstate	close_state	0x1404D4FF0	sub_1404D4FF0	Single called (xref) option
-0356	lstate	luaE_newthread	0x1404D50A0	sub_1404D50A0	Single called (xref) option
-0357	lstate	luaE_freethread	0x1404D5180	sub_1404D5180	Score-based Matching
-0358	lstate	lua_newstate	0x1404D51F0	sub_1404D51F0	Single caller (xref) option
-0359	lstate	callallgcTM	0x1404D53C0	sub_1404D53C0	Last (referenced) function in file
-0360	lstate	lua_close	0x1404D53D0	sub_1404D53D0	Score-based Matching
-0517	ldo	luaD_seterrorobj	0x1404D5460	sub_1404D5460	Anchor - Complex unique string / const
-0518	ldo	luaD_rawrunprotected	0x1404D5510	sub_1404D5510	Neighbour matching
-0519	ldo	correctstack	0x1404D55C0	sub_1404D55C0	Neighbour matching
-0520	ldo	luaD_reallocstack	0x1404D5670	sub_1404D5670	Neighbour matching
-0521	ldo	luaD_reallocCI	0x1404D5700	sub_1404D5700	Agent - File-unique string / const
-0522	ldo	luaD_growstack	0x1404D57B0	sub_1404D57B0	Neighbour matching
-0523	ldo	luaD_callhook	0x1404D57D0	sub_1404D57D0	Neighbour matching
-0524	ldo	adjust_varargs	0x1404D5900	sub_1404D5900	Neighbour matching
-0525	ldo	tryfuncTM	0x1404D5AC0	sub_1404D5AC0	Score-based Matching
-0526	ldo	callrethooks	0x1404D5B80	sub_1404D5B80	Neighbour matching
-0527	ldo	luaD_poscall	0x1404D5C00	sub_1404D5C00	Single called (xref) option
-0528	ldo	resume_error	0x1404D5CA0	sub_1404D5CA0	Neighbour matching
-0529	ldo	lua_yield	0x1404D5D20	sub_1404D5D20	Anchor - Complex unique string / const
-0530	ldo	f_parser	0x1404D5DD0	sub_1404D5DD0	Single caller (xref) option
-0532	ldo	resetstack	0x1404D5EE0	sub_1404D5EE0	Score-based Matching
-0533	ldo	luaD_throw	0x1404D5F80	sub_1404D5F80	Single called (xref) option
-0535	ldo	luaD_precall	0x1404D5FF0	sub_1404D5FF0	Single called (xref) option
-0536	ldo	luaD_call	0x1404D62B0	sub_1404D62B0	Single called (xref) option
-0537	ldo	resume	0x1404D6360	sub_1404D6360	Neighbour matching
-0538	ldo	lua_resume	0x1404D63F0	sub_1404D63F0	Anchor - Complex unique string / const
-0539	ldo	luaD_pcall	0x1404D64B0	sub_1404D64B0	Neighbour matching
-0251	lobject	luaO_int2fb	0x1404D6630	sub_1404D6630	Neighbour matching
-0252	lobject	luaO_fb2int	0x1404D6660	sub_1404D6660	Single called (xref) option
-0253	lobject	luaO_log2	0x1404D6680	sub_1404D6680	Single called (xref) option
-0254	lobject	luaO_rawequalObj	0x1404D66B0	sub_1404D66B0	Single called (xref) option
-0255	lobject	luaO_str2d	0x1404D6720	sub_1404D6720	Single called (xref) option
-0256	lobject	pushstr	0x1404D67F0	sub_1404D67F0	Neighbour matching
-0257	lobject	luaO_pushvfstring	0x1404D6860	sub_1404D6860	Score-based Matching
-0258	lobject	luaO_pushfstring	0x1404D6CD0	sub_1404D6CD0	Single called (xref) option
-0259	lobject	luaO_chunkid	0x1404D6D00	sub_1404D6D00	Single called (xref) option
-0447	ltm	luaT_init	0x1404D6E60	sub_1404D6E60	Neighbour matching
-0448	ltm	luaT_gettm	0x1404D6EF0	sub_1404D6EF0	Neighbour matching
-0449	ltm	luaT_gettmbyobj	0x1404D6F30	sub_1404D6F30	Single called (xref) option
-0463	lvm	luaV_tonumber	0x1404D6F80	sub_1404D6F80	Single called (xref) option
-0464	lvm	luaV_tostring	0x1404D6FE0	sub_1404D6FE0	Single called (xref) option
-0465	lvm	traceexec	0x1404D7080	sub_1404D7080	Score-based Matching
-0466	lvm	callTMres	0x1404D7150	sub_1404D7150	Single called (xref) option
-0467	lvm	callTM	0x1404D7200	sub_1404D7200	Neighbour matching
-0468	lvm	luaV_gettable	0x1404D7290	sub_1404D7290	Single called (xref) option
-0469	lvm	luaV_settable	0x1404D73A0	sub_1404D73A0	Single called (xref) option
-0470	lvm	call_binTM	0x1404D74E0	sub_1404D74E0	Single called (xref) option
-0471	lvm	get_compTM	0x1404D7560	sub_1404D7560	Neighbour matching
-0472	lvm	call_orderTM	0x1404D7630	sub_1404D7630	Single called (xref) option
-0473	lvm	l_strcmp	0x1404D76E0	sub_1404D76E0	Neighbour matching
-0474	lvm	luaV_lessthan	0x1404D7790	sub_1404D7790	Single called (xref) option
-0475	lvm	lessequal	0x1404D7850	sub_1404D7850	Single caller (xref) option
-0476	lvm	luaV_equalval	0x1404D7940	sub_1404D7940	Neighbour matching
-0477	lvm	luaV_concat	0x1404D7A90	sub_1404D7A90	Agent - File-unique string / const
-0478	lvm	Arith	0x1404D7CE0	sub_1404D7CE0	Neighbour matching
-0479	lvm	luaV_execute	0x1404D7EE0	sub_1404D7EE0	Anchor - Complex unique string / const
-0408	ltable	mainposition	0x1404D9430	sub_1404D9430	Single called (xref) option
-0410	ltable	findindex	0x1404D9520	sub_1404D9520	Agent - File-unique string / const
-0411	ltable	luaH_next	0x1404D9630	sub_1404D9630	Neighbour matching
-0416	ltable	setarrayvector	0x1404D9730	sub_1404D9730	Neighbour matching
-0417	ltable	setnodevector	0x1404D97C0	sub_1404D97C0	Agent - File-unique string / const
-0418	ltable	luaH_new	0x1404D98C0	sub_1404D98C0	Neighbour matching
-0419	ltable	luaH_free	0x1404D9960	sub_1404D9960	Neighbour matching
-0421	ltable	luaH_getnum	0x1404D99E0	sub_1404D99E0	Single called (xref) option
-0422	ltable	luaH_getstr	0x1404D9A80	sub_1404D9A80	Single called (xref) option
-0423	ltable	luaH_get	0x1404D9AD0	sub_1404D9AD0	Neighbour matching
-0424	ltable	luaH_set	0x1404D9BA0	sub_1404D9BA0	Single called (xref) option
-0425	ltable	luaH_setnum	0x1404D9C30	sub_1404D9C30	Single called (xref) option
-0426	ltable	unbound_search	0x1404D9C90	sub_1404D9C90	Neighbour matching
-0427	ltable	luaH_getn	0x1404D9DE0	sub_1404D9DE0	Single called (xref) option
-0428	ltable	resize	0x1404D9E60	sub_1404D9E60	Single called (xref) option
-0429	ltable	luaH_resizearray	0x1404DA0B0	sub_1404DA0B0	Single called (xref) option
-0430	ltable	rehash	0x1404DA0E0	sub_1404DA0E0	Neighbour matching
-0431	ltable	newkey	0x1404DA2E0	sub_1404DA2E0	Neighbour matching
-0432	ltable	luaH_setstr	0x1404DA430	sub_1404DA430	Single called (xref) option
-0361	lstring	luaS_resize	0x1404DA4B0	sub_1404DA4B0	Single called (xref) option
-0362	lstring	newlstr	0x1404DA5A0	sub_1404DA5A0	Neighbour matching
-0363	lstring	luaS_newlstr	0x1404DA680	sub_1404DA680	Single called (xref) option
-0364	lstring	luaS_newudata	0x1404DA770	sub_1404DA770	Neighbour matching
-0121	lfunc	luaF_newCclosure	0x1404DA800	sub_1404DA800	Neighbour matching
-0122	lfunc	luaF_newLclosure	0x1404DA870	sub_1404DA870	Score-based Matching
-0123	lfunc	luaF_newupval	0x1404DA900	sub_1404DA900	Neighbour matching
-0124	lfunc	luaF_findupval	0x1404DA950	sub_1404DA950	Single called (xref) option
-0126	lfunc	luaF_freeupval	0x1404DAA20	sub_1404DAA20	Neighbour matching
-0127	lfunc	luaF_close	0x1404DAA50	sub_1404DAA50	Single called (xref) option
-0128	lfunc	luaF_newproto	0x1404DAB40	sub_1404DAB40	Single called (xref) option
-0129	lfunc	luaF_freeproto	0x1404DABD0	sub_1404DABD0	Neighbour matching
-0130	lfunc	luaF_freeclosure	0x1404DAC90	sub_1404DAC90	Neighbour matching
-0131	lfunc	luaF_getlocalname	0x1404DACC0	sub_1404DACC0	Single called (xref) option
-0480	lzio	luaZ_fill	0x1404DAD10	sub_1404DAD10	Single called (xref) option
-0481	lzio	luaZ_lookahead	0x1404DAD60	sub_1404DAD60	Neighbour matching
-0482	lzio	luaZ_init	0x1404DADD0	sub_1404DADD0	Neighbour matching
-0483	lzio	luaZ_read	0x1404DADF0	sub_1404DADF0	Single called (xref) option
-0484	lzio	luaZ_openspace	0x1404DAEB0	sub_1404DAEB0	Single called (xref) option
-0116	ldump	DumpConstants	0x1404DAF30	sub_1404DAF30	Locked and ordered neighbouring functions
-0117	ldump	DumpDebug	0x1404DAFC0	sub_1404DAFC0	Locked and ordered neighbouring functions
-0118	ldump	DumpFunction	0x1404DB130	sub_1404DB130	Locked and ordered neighbouring functions
-0119	ldump	DumpHeader	0x1404DB3A0	sub_1404DB3A0	Locked and ordered neighbouring functions
-0120	ldump	luaU_dump	0x1404DB530	sub_1404DB530	Single called (xref) option
-0222	lmem	luaM_toobig	0x1404DB5C0	sub_1404DB5C0	Single called (xref) option
-0223	lmem	luaM_realloc_	0x1404DB5E0	sub_1404DB5E0	Single called (xref) option
-0224	lmem	luaM_growaux_	0x1404DB650	sub_1404DB650	Single called (xref) option
-0271	loslib	os_clock	0x1404DB740	sub_1404DB740	Score-based Matching
-0276	loslib	os_date	0x1404DB780	sub_1404DB780	Last (referenced) function in file
-0277	loslib	os_time	0x1404DBA20	sub_1404DBA20	Score-based Matching
-0278	loslib	os_difftime	0x1404DBCD0	sub_1404DBCD0	Score-based Matching
-0281	loslib	luaopen_os	0x1404DBD30	sub_1404DBD30	Single caller (xref) option
-0086	ldblib	db_getregistry	0x1404DBD60	sub_1404DBD60	Neighbour matching
-0087	ldblib	db_getmetatable	0x1404DBD80	sub_1404DBD80	Neighbour matching
-0088	ldblib	db_setmetatable	0x1404DBDC0	sub_1404DBDC0	Agent - File-unique string / const
-0089	ldblib	db_getfenv	0x1404DBE20	sub_1404DBE20	Neighbour matching
-0090	ldblib	db_setfenv	0x1404DBE40	sub_1404DBE40	Agent - File-unique string / const
-0095	ldblib	db_getinfo	0x1404DBE90	sub_1404DBE90	Anchor - Complex unique string / const
-0096	ldblib	db_getlocal	0x1404DC230	sub_1404DC230	Neighbour matching
-0097	ldblib	db_setlocal	0x1404DC340	sub_1404DC340	Score-based Matching
-0098	ldblib	auxupvalue	0x1404DC440	sub_1404DC440	Neighbour matching
-0100	ldblib	db_setupvalue	0x1404DC4D0	sub_1404DC4D0	Score-based Matching
-0101	ldblib	hookf	0x1404DC570	sub_1404DC570	Score-based Matching
-0104	ldblib	gethooktable	0x1404DC610	sub_1404DC610	Single called (xref) option
-0105	ldblib	db_sethook	0x1404DC690	sub_1404DC690	Neighbour matching
-0106	ldblib	db_gethook	0x1404DC7F0	sub_1404DC7F0	Neighbour matching
-0107	ldblib	db_debug	0x1404DC920	sub_1404DC920	Agent - File-unique string / const
-0108	ldblib	db_errorfb	0x1404DCAA0	sub_1404DCAA0	Anchor - Complex unique string / const
-0109	ldblib	luaopen_debug	0x1404DCD70	sub_1404DCD70	Neighbour matching
-0193	lmathlib	math_abs	0x1404DCDA0	sub_1404DCDA0	Neighbour matching
-0194	lmathlib	math_sin	0x1404DCDE0	sub_1404DCDE0	Neighbour matching
-0195	lmathlib	math_sinh	0x1404DCE10	sub_1404DCE10	Neighbour matching
-0196	lmathlib	math_cos	0x1404DCE40	sub_1404DCE40	Neighbour matching
-0197	lmathlib	math_cosh	0x1404DCE70	sub_1404DCE70	Neighbour matching
-0198	lmathlib	math_tan	0x1404DCEA0	sub_1404DCEA0	Neighbour matching
-0199	lmathlib	math_tanh	0x1404DCED0	sub_1404DCED0	Neighbour matching
-0200	lmathlib	math_asin	0x1404DCF00	sub_1404DCF00	Neighbour matching
-0201	lmathlib	math_acos	0x1404DCF30	sub_1404DCF30	Neighbour matching
-0202	lmathlib	math_atan	0x1404DCF60	sub_1404DCF60	Neighbour matching
-0203	lmathlib	math_atan2	0x1404DCF90	sub_1404DCF90	Neighbour matching
-0204	lmathlib	math_ceil	0x1404DCFF0	sub_1404DCFF0	Neighbour matching
-0205	lmathlib	math_floor	0x1404DD020	sub_1404DD020	Neighbour matching
-0206	lmathlib	math_fmod	0x1404DD050	sub_1404DD050	Neighbour matching
-0207	lmathlib	math_modf	0x1404DD0B0	sub_1404DD0B0	Score-based Matching
-0208	lmathlib	math_sqrt	0x1404DD110	sub_1404DD110	Neighbour matching
-0209	lmathlib	math_pow	0x1404DD140	sub_1404DD140	Neighbour matching
-0210	lmathlib	math_log	0x1404DD1A0	sub_1404DD1A0	Neighbour matching
-0211	lmathlib	math_log10	0x1404DD1D0	sub_1404DD1D0	Neighbour matching
-0212	lmathlib	math_exp	0x1404DD200	sub_1404DD200	Neighbour matching
-0213	lmathlib	math_deg	0x1404DD230	sub_1404DD230	Neighbour matching
-0214	lmathlib	math_rad	0x1404DD270	sub_1404DD270	Neighbour matching
-0215	lmathlib	math_frexp	0x1404DD2B0	sub_1404DD2B0	Score-based Matching
-0216	lmathlib	math_ldexp	0x1404DD300	sub_1404DD300	Score-based Matching
-0217	lmathlib	math_min	0x1404DD350	sub_1404DD350	Neighbour matching
-0218	lmathlib	math_max	0x1404DD3D0	sub_1404DD3D0	Neighbour matching
-0219	lmathlib	math_random	0x1404DD450	sub_1404DD450	Agent - File-unique string / const
-0220	lmathlib	math_randomseed	0x1404DD5A0	sub_1404DD5A0	Neighbour matching
-0221	lmathlib	luaopen_math	0x1404DD5C0	sub_1404DD5C0	Neighbour matching
-0365	lstrlib	str_len	0x1404DD660	sub_1404DD660	Score-based Matching
-0367	lstrlib	str_sub	0x1404DD690	sub_1404DD690	Score-based Matching
-0368	lstrlib	str_reverse	0x1404DD770	sub_1404DD770	Neighbour matching
-0369	lstrlib	str_lower	0x1404DD840	sub_1404DD840	Last (referenced) function in file
-0370	lstrlib	str_upper	0x1404DD900	sub_1404DD900	Neighbour matching
-0371	lstrlib	str_rep	0x1404DD9C0	sub_1404DD9C0	Neighbour matching
-0372	lstrlib	str_byte	0x1404DDA70	sub_1404DDA70	Agent - File-unique string / const
-0373	lstrlib	str_char	0x1404DDB80	sub_1404DDB80	Neighbour matching
-0374	lstrlib	writer	0x1404DDC60	sub_1404DDC60	Neighbour matching
-0375	lstrlib	str_dump	0x1404DDC80	sub_1404DDC80	Agent - File-unique string / const
-0378	lstrlib	classend	0x1404DDD20	sub_1404DDD20	Anchor - Complex unique string / const
-0379	lstrlib	match_class	0x1404DDDC0	sub_1404DDDC0	Neighbour matching
-0380	lstrlib	matchbracketclass	0x1404DDF20	sub_1404DDF20	Single called (xref) option
-0382	lstrlib	matchbalance	0x1404DDFE0	sub_1404DDFE0	Score-based Matching
-0383	lstrlib	max_expand	0x1404DE080	sub_1404DE080	Score-based Matching
-0384	lstrlib	min_expand	0x1404DE150	sub_1404DE150	Score-based Matching
-0385	lstrlib	start_capture	0x1404DE210	sub_1404DE210	Score-based Matching
-0386	lstrlib	end_capture	0x1404DE2A0	sub_1404DE2A0	Single called (xref) option
-0387	lstrlib	match_capture	0x1404DE350	sub_1404DE350	Neighbour matching
-0388	lstrlib	match	0x1404DE3F0	sub_1404DE3F0	Agent - File-unique string / const
-0389	lstrlib	lmemfind	0x1404DE6B0	sub_1404DE6B0	Neighbour matching
-0390	lstrlib	push_onecapture	0x1404DE750	sub_1404DE750	Single called (xref) option
-0391	lstrlib	push_captures	0x1404DE820	sub_1404DE820	Single called (xref) option
-0392	lstrlib	str_find_aux	0x1404DE8B0	sub_1404DE8B0	Single called (xref) option
-0393	lstrlib	str_find	0x1404DEB50	sub_1404DEB50	Neighbour matching
-0394	lstrlib	str_match	0x1404DEB60	sub_1404DEB60	Neighbour matching
-0395	lstrlib	gmatch_aux	0x1404DEB70	sub_1404DEB70	Agent - File-unique string / const
-0396	lstrlib	gmatch	0x1404DED40	sub_1404DED40	Neighbour matching
-0397	lstrlib	gfind_nodef	0x1404DEDA0	sub_1404DEDA0	Anchor - Complex unique string / const
-0398	lstrlib	add_s	0x1404DEDB0	sub_1404DEDB0	Neighbour matching
-0399	lstrlib	add_value	0x1404DEEC0	sub_1404DEEC0	Agent - File-unique string / const
-0400	lstrlib	str_gsub	0x1404DEFF0	sub_1404DEFF0	Agent - File-unique string / const
-0401	lstrlib	addquoted	0x1404DF1E0	sub_1404DF1E0	Neighbour matching
-0402	lstrlib	scanformat	0x1404DF300	sub_1404DF300	Anchor - Complex unique string / const
-0404	lstrlib	str_format	0x1404DF410	sub_1404DF410	Agent - File-unique string / const
-0405	lstrlib	createmetatable	0x1404DF760	sub_1404DF760	Neighbour matching
-0406	lstrlib	luaopen_string	0x1404DF7E0	sub_1404DF7E0	Anchor - Complex unique string / const
-0433	ltablib	foreachi	0x1404DF840	sub_1404DF840	Score-based Matching
-0434	ltablib	foreach	0x1404DF910	sub_1404DF910	Score-based Matching
-0435	ltablib	maxn	0x1404DF9D0	sub_1404DF9D0	Neighbour matching
-0436	ltablib	getn	0x1404DFA70	sub_1404DFA70	Neighbour matching
-0437	ltablib	setn	0x1404DFAB0	sub_1404DFAB0	Anchor - Complex unique string / const
-0438	ltablib	tinsert	0x1404DFAF0	sub_1404DFAF0	Agent - File-unique string / const
-0439	ltablib	tremove	0x1404DFBD0	sub_1404DFBD0	Neighbour matching
-0440	ltablib	addfield	0x1404DFCB0	sub_1404DFCB0	Neighbour matching
-0444	ltablib	auxsort	0x1404DFE60	sub_1404DFE60	Anchor - Complex unique string / const
-0445	ltablib	sort	0x1404E03C0	sub_1404E03C0	Neighbour matching
-0446	ltablib	luaopen_table	0x1404E0450	sub_1404E0450	Neighbour matching
-0225	loadlib	setprogdir	0x1404E0480	sub_1404E0480	Agent - File-unique string / const
-0226	loadlib	pusherror	0x1404E0530	sub_1404E0530	Anchor - Complex unique string / const
-0230	loadlib	ll_register	0x1404E05D0	sub_1404E05D0	Score-based Matching
-0231	loadlib	gctm	0x1404E06C0	sub_1404E06C0	Single called (xref) option
-0232	loadlib	ll_loadfunc	0x1404E0710	sub_1404E0710	Single called (xref) option
-0233	loadlib	ll_loadlib	0x1404E07A0	sub_1404E07A0	Neighbour matching
-0236	loadlib	findfile	0x1404E0830	sub_1404E0830	Agent - File-unique string / const
-0237	loadlib	loaderror	0x1404E09B0	sub_1404E09B0	Anchor - Complex unique string / const
-0238	loadlib	loader_Lua	0x1404E0A10	sub_1404E0A10	Neighbour matching
-0239	loadlib	mkfuncname	0x1404E0A70	sub_1404E0A70	Single caller (xref) option
-0240	loadlib	loader_C	0x1404E0AE0	sub_1404E0AE0	Neighbour matching
-0241	loadlib	loader_Croot	0x1404E0B60	sub_1404E0B60	Agent - File-unique string / const
-0242	loadlib	loader_preload	0x1404E0C30	sub_1404E0C30	Anchor - Complex unique string / const
-0243	loadlib	ll_require	0x1404E0CC0	sub_1404E0CC0	Anchor - Complex unique string / const
-0244	loadlib	setfenv	0x1404E0F00	sub_1404E0F00	Agent - File-unique string / const
-0246	loadlib	modinit	0x1404E0FB0	sub_1404E0FB0	Neighbour matching
-0247	loadlib	ll_module	0x1404E1050	sub_1404E1050	Agent - File-unique string / const
-0248	loadlib	ll_seeall	0x1404E11B0	sub_1404E11B0	Neighbour matching
-0250	loadlib	luaopen_package	0x1404E1230	sub_1404E1230	Agent - File-unique string / const
-0043	lbaselib	luaB_print	0x1404E1430	sub_1404E1430	Agent - File-unique string / const
-0044	lbaselib	luaB_tonumber	0x1404E1530	sub_1404E1530	Neighbour matching
-0045	lbaselib	luaB_error	0x1404E1660	sub_1404E1660	Neighbour matching
-0046	lbaselib	luaB_getmetatable	0x1404E16E0	sub_1404E16E0	Neighbour matching
-0047	lbaselib	luaB_setmetatable	0x1404E1740	sub_1404E1740	Agent - File-unique string / const
-0048	lbaselib	getfunc	0x1404E17E0	sub_1404E17E0	Agent - File-unique string / const
-0049	lbaselib	luaB_getfenv	0x1404E18D0	sub_1404E18D0	Neighbour matching
-0050	lbaselib	luaB_setfenv	0x1404E1920	sub_1404E1920	Agent - File-unique string / const
-0051	lbaselib	luaB_rawequal	0x1404E19E0	sub_1404E19E0	Neighbour matching
-0052	lbaselib	luaB_rawget	0x1404E1A30	sub_1404E1A30	Neighbour matching
-0053	lbaselib	luaB_rawset	0x1404E1A80	sub_1404E1A80	Single caller (xref) option
-0054	lbaselib	luaB_gcinfo	0x1404E1AE0	sub_1404E1AE0	Last (referenced) function in file
-0055	lbaselib	luaB_collectgarbage	0x1404E1B10	sub_1404E1B10	Single caller (xref) option
-0056	lbaselib	luaB_type	0x1404E1BE0	sub_1404E1BE0	Neighbour matching
-0057	lbaselib	luaB_next	0x1404E1C20	sub_1404E1C20	Score-based Matching
-0058	lbaselib	luaB_pairs	0x1404E1C80	sub_1404E1C80	Score-based Matching
-0059	lbaselib	ipairsaux	0x1404E1CD0	sub_1404E1CD0	Single called (xref) option
-0060	lbaselib	luaB_ipairs	0x1404E1D40	sub_1404E1D40	Score-based Matching
-0062	lbaselib	luaB_loadstring	0x1404E1D90	sub_1404E1D90	Neighbour matching
-0063	lbaselib	luaB_loadfile	0x1404E1E10	sub_1404E1E10	Neighbour matching
-0064	lbaselib	generic_reader	0x1404E1E70	sub_1404E1E70	Agent - File-unique string / const
-0065	lbaselib	luaB_load	0x1404E1F20	sub_1404E1F20	Neighbour matching
-0066	lbaselib	luaB_dofile	0x1404E1FB0	sub_1404E1FB0	Score-based Matching
-0067	lbaselib	luaB_assert	0x1404E2020	sub_1404E2020	Neighbour matching
-0068	lbaselib	luaB_unpack	0x1404E2080	sub_1404E2080	Agent - File-unique string / const
-0069	lbaselib	luaB_select	0x1404E2170	sub_1404E2170	Neighbour matching
-0070	lbaselib	luaB_pcall	0x1404E2220	sub_1404E2220	Neighbour matching
-0071	lbaselib	luaB_xpcall	0x1404E2280	sub_1404E2280	Neighbour matching
-0072	lbaselib	luaB_tostring	0x1404E22F0	sub_1404E22F0	Agent - File-unique string / const
-0073	lbaselib	luaB_newproxy	0x1404E2430	sub_1404E2430	Agent - File-unique string / const
-0074	lbaselib	costatus	0x1404E2530	sub_1404E2530	Neighbour matching
-0075	lbaselib	luaB_costatus	0x1404E25D0	sub_1404E25D0	Neighbour matching
-0076	lbaselib	auxresume	0x1404E2640	sub_1404E2640	Anchor - Complex unique string / const
-0077	lbaselib	luaB_coresume	0x1404E2740	sub_1404E2740	Neighbour matching
-0078	lbaselib	luaB_auxwrap	0x1404E27E0	sub_1404E27E0	Neighbour matching
-0079	lbaselib	luaB_cocreate	0x1404E2870	sub_1404E2870	Agent - File-unique string / const
-0080	lbaselib	luaB_cowrap	0x1404E28F0	sub_1404E28F0	Neighbour matching
-0081	lbaselib	luaB_yield	0x1404E2920	sub_1404E2920	Score-based Matching
-0082	lbaselib	luaB_corunning	0x1404E2940	sub_1404E2940	Neighbour matching
-0084	lbaselib	base_open	0x1404E2970	sub_1404E2970	Agent - File-unique string / const
-0085	lbaselib	luaopen_base	0x1404E2AD0	sub_1404E2AD0	Neighbour matching
-0134	liolib	fileerror	0x1404E2B00	sub_1404E2B00	Score-based Matching
-0135	liolib	io_type	0x1404E2B70	sub_1404E2B70	Neighbour matching
-0136	liolib	tofile	0x1404E2C40	sub_1404E2C40	Single called (xref) option
-0137	liolib	newfile	0x1404E2CA0	sub_1404E2CA0	Score-based Matching
-0139	liolib	io_pclose	0x1404E2CF0	sub_1404E2CF0	Neighbour matching
-0140	liolib	io_fclose	0x1404E2DB0	sub_1404E2DB0	Neighbour matching
-0141	liolib	aux_close	0x1404E2E60	sub_1404E2E60	Score-based Matching
-0142	liolib	io_close	0x1404E2EA0	sub_1404E2EA0	Score-based Matching
-0143	liolib	io_gc	0x1404E2F30	sub_1404E2F30	Neighbour matching
-0144	liolib	io_tostring	0x1404E2FA0	sub_1404E2FA0	Agent - File-unique string / const
-0146	liolib	io_popen	0x1404E3000	sub_1404E3000	Last (referenced) function in file
-0147	liolib	io_tmpfile	0x1404E3240	sub_1404E3240	Score-based Matching
-0149	liolib	g_iofile	0x1404E32F0	sub_1404E32F0	Score-based Matching
-0150	liolib	io_input	0x1404E33C0	sub_1404E33C0	Neighbour matching
-0151	liolib	io_output	0x1404E33E0	sub_1404E33E0	Single caller (xref) option
-0154	liolib	read_line	0x1404E3400	sub_1404E3400	Single called (xref) option
-0155	liolib	read_chars	0x1404E3510	sub_1404E3510	Neighbour matching
-0156	liolib	g_read	0x1404E35D0	sub_1404E35D0	Agent - File-unique string / const
-0157	liolib	io_read	0x1404E37D0	sub_1404E37D0	Neighbour matching
-0158	liolib	f_read	0x1404E3840	sub_1404E3840	Neighbour matching
-0159	liolib	io_readline	0x1404E38A0	sub_1404E38A0	Agent - File-unique string / const
-0160	liolib	g_write	0x1404E39A0	sub_1404E39A0	Neighbour matching
-0161	liolib	io_write	0x1404E3B00	sub_1404E3B00	Score-based Matching
-0162	liolib	f_write	0x1404E3B70	sub_1404E3B70	Score-based Matching
-0163	liolib	f_seek	0x1404E3BD0	sub_1404E3BD0	Score-based Matching
-0164	liolib	f_setvbuf	0x1404E3CD0	sub_1404E3CD0	Score-based Matching
-0148	liolib	getiofile	0x1404E3DC0	sub_1404E3DC0	Score-based Matching
-0166	liolib	f_flush	0x1404E3E90	sub_1404E3E90	Score-based Matching
-0170	liolib	luaopen_io	0x1404E3F50	sub_1404E3F50	Agent - File-unique string / const
-0172	liolib	f_lines	0x1404E41C0	sub_1404E41C0	Single called (xref) option
-0173	liolib	io_lines	0x1404E4230	sub_1404E4230	Score-based Matching
-0174	llex	save	0x1404E4330	sub_1404E4330	Agent - File-unique string / const
-0175	llex	luaX_init	0x1404E43E0	sub_1404E43E0	Neighbour matching
-0176	llex	luaX_token2str	0x1404E4450	sub_1404E4450	Single called (xref) option
-0177	llex	txtToken	0x1404E44C0	sub_1404E44C0	Single called (xref) option
-0178	llex	luaX_lexerror	0x1404E4560	sub_1404E4560	Single called (xref) option
-0179	llex	luaX_syntaxerror	0x1404E4610	sub_1404E4610	Single called (xref) option
-0180	llex	luaX_newstring	0x1404E4620	sub_1404E4620	Neighbour matching
-0181	llex	inclinenumber	0x1404E4680	sub_1404E4680	Anchor - Complex unique string / const
-0182	llex	luaX_setinput	0x1404E4730	sub_1404E4730	Neighbour matching
-0185	llex	trydecpoint	0x1404E47D0	sub_1404E47D0	Last (referenced) function in file
-0186	llex	read_numeral	0x1404E4890	sub_1404E4890	Single called (xref) option
-0187	llex	skip_sep	0x1404E4A00	sub_1404E4A00	Neighbour matching
-0188	llex	read_long_string	0x1404E4AC0	sub_1404E4AC0	Anchor - Complex unique string / const
-0189	llex	read_string	0x1404E4D60	sub_1404E4D60	Agent - File-unique string / const
-0190	llex	llex	0x1404E5270	sub_1404E5270	Agent - File-unique string / const
-0191	llex	luaX_next	0x1404E5A80	sub_1404E5A80	Neighbour matching
-0192	llex	luaX_lookahead	0x1404E5AD0	sub_1404E5AD0	Neighbour matching
-0288	lparser	check_match	0x1404E5AF0	sub_1404E5AF0	Agent - File-unique string / const
-0293	lparser	registerlocalvar	0x1404E5BB0	sub_1404E5BB0	Agent - File-unique string / const
-0294	lparser	new_localvar	0x1404E5C90	sub_1404E5C90	Neighbour matching
-0297	lparser	indexupvalue	0x1404E5D50	sub_1404E5D50	Score-based Matching
-0300	lparser	singlevaraux	0x1404E5EF0	sub_1404E5EF0	Last (referenced) function in file
-0301	lparser	singlevar	0x1404E6030	sub_1404E6030	Single called (xref) option
-0305	lparser	leaveblock	0x1404E60C0	sub_1404E60C0	Single called (xref) option
-0306	lparser	pushclosure	0x1404E6160	sub_1404E6160	Neighbour matching
-0307	lparser	open_func	0x1404E62C0	sub_1404E62C0	Single caller (xref) option
-0308	lparser	close_func	0x1404E63C0	sub_1404E63C0	Single called (xref) option
-0309	lparser	field	0x1404E65F0	sub_1404E65F0	Single called (xref) option
-0314	lparser	listfield	0x1404E66B0	sub_1404E66B0	Neighbour matching
-0315	lparser	constructor	0x1404E68B0	sub_1404E68B0	Neighbour matching
-0316	lparser	parlist	0x1404E6BB0	sub_1404E6BB0	Agent - File-unique string / const
-0317	lparser	body	0x1404E6CE0	sub_1404E6CE0	Neighbour matching
-0319	lparser	funcargs	0x1404E6E50	sub_1404E6E50	Anchor - Complex unique string / const
-0320	lparser	prefixexp	0x1404E6FE0	sub_1404E6FE0	Neighbour matching
-0321	lparser	primaryexp	0x1404E7070	sub_1404E7070	Neighbour matching
-0322	lparser	simpleexp	0x1404E7340	sub_1404E7340	Agent - File-unique string / const
-0324	lparser	getbinopr	0x1404E7600	sub_1404E7600	Neighbour matching
-0325	lparser	subexpr	0x1404E77C0	sub_1404E77C0	Single called (xref) option
-0328	lparser	block	0x1404E7910	sub_1404E7910	Single caller (xref) option
-0330	lparser	assignment	0x1404E7960	sub_1404E7960	Anchor - Complex unique string / const
-0332	lparser	breakstat	0x1404E7C40	sub_1404E7C40	Neighbour matching
-0333	lparser	whilestat	0x1404E7CD0	sub_1404E7CD0	Score-based Matching
-0334	lparser	repeatstat	0x1404E7E40	sub_1404E7E40	Score-based Matching
-0336	lparser	forbody	0x1404E7F90	sub_1404E7F90	Neighbour matching
-0337	lparser	fornum	0x1404E81B0	sub_1404E81B0	Agent - File-unique string / const
-0338	lparser	forlist	0x1404E83A0	sub_1404E83A0	Agent - File-unique string / const
-0339	lparser	forstat	0x1404E85F0	sub_1404E85F0	Agent - File-unique string / const
-0340	lparser	test_then_block	0x1404E8700	sub_1404E8700	Neighbour matching
-0341	lparser	ifstat	0x1404E87E0	sub_1404E87E0	Score-based Matching
-0342	lparser	localfunc	0x1404E8910	sub_1404E8910	Neighbour matching
-0343	lparser	localstat	0x1404E8A20	sub_1404E8A20	Score-based Matching
-0345	lparser	funcstat	0x1404E8BD0	sub_1404E8BD0	Single called (xref) option
-0347	lparser	retstat	0x1404E8D80	sub_1404E8D80	Neighbour matching
-0348	lparser	statement	0x1404E8EA0	sub_1404E8EA0	Score-based Matching
-0349	lparser	chunk	0x1404E90B0	sub_1404E90B0	Neighbour matching
-0350	lparser	luaY_parser	0x1404E9150	sub_1404E9150	Single called (xref) option
-0453	lundump	LoadInt	0x1404E92D0	sub_1404E92D0	Single called (xref) option
-0455	lundump	LoadString	0x1404E9360	sub_1404E9360	Score-based Matching
-0456	lundump	LoadCode	0x1404E9430	sub_1404E9430	Score-based Matching
-0457	lundump	LoadConstants	0x1404E94E0	sub_1404E94E0	Single called (xref) option
-0458	lundump	LoadDebug	0x1404E97F0	sub_1404E97F0	Neighbour matching
-0459	lundump	LoadFunction	0x1404E9B20	sub_1404E9B20	Agent - File-unique string / const
-0460	lundump	luaU_header	0x1404E9D80	sub_1404E9D80	Neighbour matching
-0461	lundump	LoadHeader	0x1404E9DB0	sub_1404E9DB0	Neighbour matching
-0462	lundump	luaU_undump	0x1404E9EC0	sub_1404E9EC0	Score-based Matching
-0646	lcode	fixjump	0x1404E9F40	sub_1404E9F40	Single called (xref) option
-0647	lcode	luaK_getlabel	0x1404E9FB0	sub_1404E9FB0	Single called (xref) option
-0650	lcode	need_value	0x1404E9FC0	sub_1404E9FC0	Single called (xref) option
-0652	lcode	removevalues	0x1404EA020	sub_1404EA020	Neighbour matching
-0653	lcode	patchlistaux	0x1404EA0B0	sub_1404EA0B0	Single called (xref) option
-0655	lcode	luaK_concat	0x1404EA260	sub_1404EA260	Neighbour matching
-0656	lcode	luaK_checkstack	0x1404EA2C0	sub_1404EA2C0	Single called (xref) option
-0657	lcode	luaK_reserveregs	0x1404EA310	sub_1404EA310	Single called (xref) option
-0660	lcode	addk	0x1404EA380	sub_1404EA380	Agent - File-unique string / const
-0661	lcode	luaK_stringK	0x1404EA4A0	sub_1404EA4A0	Neighbour matching
-0662	lcode	luaK_numberK	0x1404EA4D0	sub_1404EA4D0	Single called (xref) option
-0665	lcode	luaK_setreturns	0x1404EA500	sub_1404EA500	Single called (xref) option
-0666	lcode	luaK_setoneret	0x1404EA590	sub_1404EA590	Score-based Matching
-0667	lcode	invertjump	0x1404EA5F0	sub_1404EA5F0	Neighbour matching
-0668	lcode	constfolding	0x1404EA640	sub_1404EA640	Neighbour matching
-0669	lcode	luaK_fixline	0x1404EA7A0	sub_1404EA7A0	Single called (xref) option
-0670	lcode	luaK_code	0x1404EA7C0	sub_1404EA7C0	Single called (xref) option
-0671	lcode	luaK_codeABC	0x1404EA8B0	sub_1404EA8B0	Single called (xref) option
-0672	lcode	luaK_codeABx	0x1404EA8E0	sub_1404EA8E0	Neighbour matching
-0673	lcode	luaK_setlist	0x1404EA900	sub_1404EA900	Agent - File-unique string / const
-0674	lcode	luaK_nil	0x1404EA9A0	sub_1404EA9A0	Neighbour matching
-0675	lcode	luaK_jump	0x1404EAA40	sub_1404EAA40	Neighbour matching
-0676	lcode	luaK_ret	0x1404EAAE0	sub_1404EAAE0	Single called (xref) option
-0678	lcode	luaK_patchtohere	0x1404EAB00	sub_1404EAB00	Single called (xref) option
-0679	lcode	luaK_dischargevars	0x1404EAB60	sub_1404EAB60	Single called (xref) option
-0681	lcode	discharge2reg	0x1404EAC40	sub_1404EAC40	Score-based Matching
-0682	lcode	discharge2anyreg	0x1404EAD90	sub_1404EAD90	Neighbour matching
-0683	lcode	exp2reg	0x1404EADD0	sub_1404EADD0	Neighbour matching
-0684	lcode	luaK_exp2nextreg	0x1404EAFB0	sub_1404EAFB0	Single called (xref) option
-0685	lcode	luaK_exp2anyreg	0x1404EB040	sub_1404EB040	Neighbour matching
-0686	lcode	luaK_exp2val	0x1404EB0B0	sub_1404EB0B0	Neighbour matching
-0687	lcode	luaK_exp2RK	0x1404EB130	sub_1404EB130	Score-based Matching
-0688	lcode	luaK_storevar	0x1404EB270	sub_1404EB270	Single called (xref) option
-0689	lcode	luaK_self	0x1404EB370	sub_1404EB370	Neighbour matching
-0690	lcode	jumponcond	0x1404EB490	sub_1404EB490	Single called (xref) option
-0691	lcode	luaK_goiftrue	0x1404EB570	sub_1404EB570	Single called (xref) option
-0692	lcode	luaK_goiffalse	0x1404EB6A0	sub_1404EB6A0	Neighbour matching
-0693	lcode	codenot	0x1404EB7C0	sub_1404EB7C0	Single called (xref) option
-0694	lcode	luaK_indexed	0x1404EB8C0	sub_1404EB8C0	Single called (xref) option
-0695	lcode	codearith	0x1404EB8E0	sub_1404EB8E0	Single called (xref) option
-0696	lcode	codecomp	0x1404EB9F0	sub_1404EB9F0	Single called (xref) option
-0697	lcode	luaK_prefix	0x1404EBAD0	sub_1404EBAD0	Single called (xref) option
-0698	lcode	luaK_infix	0x1404EBBF0	sub_1404EBBF0	Score-based Matching
-0699	lcode	luaK_posfix	0x1404EBC60	sub_1404EBC60	Score-based Matching
-0700	lcode	luaK_patchlist	0x1404EBEF0	sub_1404EBEF0	Single called (xref) option
+0001	lauxlib	luaL_where	0x1404CDD20	sub_1404CDD20	Score-based Matching
+0002	lauxlib	luaL_error	0x1404CDDB0	sub_1404CDDB0	Single called (xref) option
+0003	lauxlib	luaL_newmetatable	0x1404CDE10	sub_1404CDE10	Single called (xref) option
+0004	lauxlib	luaL_checkstack	0x1404CDE90	sub_1404CDE90	Single called (xref) option
+0005	lauxlib	luaL_getmetafield	0x1404CDED0	sub_1404CDED0	Single called (xref) option
+0006	lauxlib	luaL_callmeta	0x1404CDF50	sub_1404CDF50	Single called (xref) option
 0007	lauxlib	libsize	N/A	N/A	ifdeffed out / inlined
+0008	lauxlib	luaL_findtable	0x1404CDFD0	sub_1404CDFD0	Single called (xref) option
 0009	lauxlib	emptybuffer	N/A	N/A	ifdeffed out / inlined
+0010	lauxlib	adjuststack	0x1404CE100	sub_1404CE100	Neighbour matching
+0011	lauxlib	luaL_prepbuffer	0x1404CE1B0	sub_1404CE1B0	Single called (xref) option
+0012	lauxlib	luaL_addlstring	0x1404CE210	sub_1404CE210	Single called (xref) option
 0013	lauxlib	luaL_addstring	N/A	N/A	ifdeffed out / inlined
+0014	lauxlib	luaL_pushresult	0x1404CE2B0	sub_1404CE2B0	Score-based Matching
+0015	lauxlib	luaL_addvalue	0x1404CE300	sub_1404CE300	Single called (xref) option
+0016	lauxlib	luaL_buffinit	0x1404CE3C0	sub_1404CE3C0	Single called (xref) option
+0017	lauxlib	luaL_ref	0x1404CE3E0	sub_1404CE3E0	Neighbour matching
+0018	lauxlib	luaL_unref	0x1404CE4B0	sub_1404CE4B0	Neighbour matching
+0019	lauxlib	getF	0x1404CE530	sub_1404CE530	Single called (xref) option
+0020	lauxlib	errfile	0x1404CE5C0	sub_1404CE5C0	Neighbour matching
+0021	lauxlib	luaL_loadfile	0x1404CE660	sub_1404CE660	Anchor - Complex unique string / const
+0022	lauxlib	getS	0x1404CE840	sub_1404CE840	Neighbour matching
+0023	lauxlib	luaL_loadbuffer	0x1404CE860	sub_1404CE860	Single called (xref) option
+0024	lauxlib	luaL_loadstring	0x1404CE890	sub_1404CE890	Neighbour matching
+0025	lauxlib	luaL_argerror	0x1404CE8E0	sub_1404CE8E0	Anchor - Complex unique string / const
+0026	lauxlib	luaL_typerror	0x1404CE9F0	sub_1404CE9F0	Neighbour matching
 0027	lauxlib	tag_error	N/A	N/A	ifdeffed out / inlined
+0028	lauxlib	luaL_checkudata	0x1404CEA60	sub_1404CEA60	Single called (xref) option
+0029	lauxlib	luaL_checktype	0x1404CEB20	sub_1404CEB20	Single called (xref) option
+0030	lauxlib	luaL_checkany	0x1404CEB60	sub_1404CEB60	Single called (xref) option
+0031	lauxlib	luaL_checklstring	0x1404CEBA0	sub_1404CEBA0	Single called (xref) option
+0032	lauxlib	luaL_optlstring	0x1404CEC30	sub_1404CEC30	Single called (xref) option
+0033	lauxlib	luaL_checknumber	0x1404CECB0	sub_1404CECB0	Single called (xref) option
+0034	lauxlib	luaL_optnumber	0x1404CED10	sub_1404CED10	Neighbour matching
+0035	lauxlib	luaL_checkinteger	0x1404CED80	sub_1404CED80	Single called (xref) option
+0036	lauxlib	luaL_checkboolean	0x1404CEDD0	sub_1404CEDD0	Score-based Matching
+0037	lauxlib	luaL_optboolean	0x1404CEE50	sub_1404CEE50	Neighbour matching
+0038	lauxlib	luaL_optinteger	0x1404CEEA0	sub_1404CEEA0	Neighbour matching
+0039	lauxlib	luaL_openlib	0x1404CEF10	sub_1404CEF10	Agent - File-unique string / const
+0040	lauxlib	luaL_gsub	0x1404CF090	sub_1404CF090	Neighbour matching
+0041	lauxlib	luaL_checkoption	0x1404CF4F0	sub_1404CF4F0	Score-based Matching
+0042	lauxlib	luaL_register	0x1404CF5B0	sub_1404CF5B0	Single called (xref) option
+0043	lbaselib	luaB_print	0x1404DEA90	sub_1404DEA90	Agent - File-unique string / const
+0044	lbaselib	luaB_tonumber	0x1404DEB90	sub_1404DEB90	Neighbour matching
+0045	lbaselib	luaB_error	0x1404DECC0	sub_1404DECC0	Neighbour matching
+0046	lbaselib	luaB_getmetatable	0x1404DED40	sub_1404DED40	Neighbour matching
+0047	lbaselib	luaB_setmetatable	0x1404DEDA0	sub_1404DEDA0	Agent - File-unique string / const
+0048	lbaselib	getfunc	0x1404DEE40	sub_1404DEE40	Agent - File-unique string / const
+0049	lbaselib	luaB_getfenv	0x1404DEF30	sub_1404DEF30	Neighbour matching
+0050	lbaselib	luaB_setfenv	0x1404DEF80	sub_1404DEF80	Agent - File-unique string / const
+0051	lbaselib	luaB_rawequal	0x1404DF040	sub_1404DF040	Neighbour matching
+0052	lbaselib	luaB_rawget	0x1404DF090	sub_1404DF090	Neighbour matching
+0053	lbaselib	luaB_rawset	0x1404DF0E0	sub_1404DF0E0	Single caller (xref) option
+0054	lbaselib	luaB_gcinfo	0x1404DF140	sub_1404DF140	Single caller (xref) option
+0055	lbaselib	luaB_collectgarbage	0x1404DF170	sub_1404DF170	Single caller (xref) option
+0056	lbaselib	luaB_type	0x1404DF240	sub_1404DF240	Neighbour matching
+0057	lbaselib	luaB_next	0x1404DF280	sub_1404DF280	Score-based Matching
+0058	lbaselib	luaB_pairs	0x1404DF2E0	sub_1404DF2E0	Score-based Matching
+0059	lbaselib	ipairsaux	0x1404DF330	sub_1404DF330	Score-based Matching
+0060	lbaselib	luaB_ipairs	0x1404DF3A0	sub_1404DF3A0	Single called (xref) option
 0061	lbaselib	load_aux	N/A	N/A	ifdeffed out / inlined
+0062	lbaselib	luaB_loadstring	0x1404DF3F0	sub_1404DF3F0	Neighbour matching
+0063	lbaselib	luaB_loadfile	0x1404DF470	sub_1404DF470	Neighbour matching
+0064	lbaselib	generic_reader	0x1404DF4D0	sub_1404DF4D0	Agent - File-unique string / const
+0065	lbaselib	luaB_load	0x1404DF580	sub_1404DF580	Neighbour matching
+0066	lbaselib	luaB_dofile	0x1404DF610	sub_1404DF610	Score-based Matching
+0067	lbaselib	luaB_assert	0x1404DF680	sub_1404DF680	Neighbour matching
+0068	lbaselib	luaB_unpack	0x1404DF6E0	sub_1404DF6E0	Agent - File-unique string / const
+0069	lbaselib	luaB_select	0x1404DF7D0	sub_1404DF7D0	Neighbour matching
+0070	lbaselib	luaB_pcall	0x1404DF880	sub_1404DF880	Neighbour matching
+0071	lbaselib	luaB_xpcall	0x1404DF8E0	sub_1404DF8E0	Neighbour matching
+0072	lbaselib	luaB_tostring	0x1404DF950	sub_1404DF950	Agent - File-unique string / const
+0073	lbaselib	luaB_newproxy	0x1404DFA90	sub_1404DFA90	Agent - File-unique string / const
+0074	lbaselib	costatus	0x1404DFB90	sub_1404DFB90	Neighbour matching
+0075	lbaselib	luaB_costatus	0x1404DFC30	sub_1404DFC30	Neighbour matching
+0076	lbaselib	auxresume	0x1404DFCA0	sub_1404DFCA0	Anchor - Complex unique string / const
+0077	lbaselib	luaB_coresume	0x1404DFDA0	sub_1404DFDA0	Neighbour matching
+0078	lbaselib	luaB_auxwrap	0x1404DFE40	sub_1404DFE40	Neighbour matching
+0079	lbaselib	luaB_cocreate	0x1404DFED0	sub_1404DFED0	Agent - File-unique string / const
+0080	lbaselib	luaB_cowrap	0x1404DFF50	sub_1404DFF50	Neighbour matching
+0081	lbaselib	luaB_yield	0x1404DFF80	sub_1404DFF80	Score-based Matching
+0082	lbaselib	luaB_corunning	0x1404DFFA0	sub_1404DFFA0	Neighbour matching
 0083	lbaselib	auxopen	N/A	N/A	ifdeffed out / inlined
+0084	lbaselib	base_open	0x1404DFFD0	sub_1404DFFD0	Agent - File-unique string / const
+0085	lbaselib	luaopen_base	0x1404E0130	sub_1404E0130	Neighbour matching
+0086	ldblib	db_getregistry	0x1404D93C0	sub_1404D93C0	Neighbour matching
+0087	ldblib	db_getmetatable	0x1404D93E0	sub_1404D93E0	Neighbour matching
+0088	ldblib	db_setmetatable	0x1404D9420	sub_1404D9420	Agent - File-unique string / const
+0089	ldblib	db_getfenv	0x1404D9480	sub_1404D9480	Neighbour matching
+0090	ldblib	db_setfenv	0x1404D94A0	sub_1404D94A0	Agent - File-unique string / const
 0091	ldblib	settabss	N/A	N/A	ifdeffed out / inlined
 0092	ldblib	settabsi	N/A	N/A	ifdeffed out / inlined
 0093	ldblib	getthread	N/A	N/A	ifdeffed out / inlined
 0094	ldblib	treatstackoption	N/A	N/A	ifdeffed out / inlined
+0095	ldblib	db_getinfo	0x1404D94F0	sub_1404D94F0	Anchor - Complex unique string / const
+0096	ldblib	db_getlocal	0x1404D9890	sub_1404D9890	Neighbour matching
+0097	ldblib	db_setlocal	0x1404D99A0	sub_1404D99A0	Score-based Matching
+0098	ldblib	auxupvalue	0x1404D9AA0	sub_1404D9AA0	Neighbour matching
 0099	ldblib	db_getupvalue	N/A	N/A	ifdeffed out / inlined
+0100	ldblib	db_setupvalue	0x1404D9B30	sub_1404D9B30	Score-based Matching
+0101	ldblib	hookf	0x1404D9BD0	sub_1404D9BD0	Single called (xref) option
 0102	ldblib	makemask	N/A	N/A	ifdeffed out / inlined
 0103	ldblib	unmakemask	N/A	N/A	ifdeffed out / inlined
+0104	ldblib	gethooktable	0x1404D9C70	sub_1404D9C70	Score-based Matching
+0105	ldblib	db_sethook	0x1404D9CF0	sub_1404D9CF0	Neighbour matching
+0106	ldblib	db_gethook	0x1404D9E50	sub_1404D9E50	Neighbour matching
+0107	ldblib	db_debug	0x1404D9F80	sub_1404D9F80	Agent - File-unique string / const
+0108	ldblib	db_errorfb	0x1404DA100	sub_1404DA100	Anchor - Complex unique string / const
+0109	ldblib	luaopen_debug	0x1404DA3D0	sub_1404DA3D0	Neighbour matching
 0110	ldump	DumpBlock	N/A	N/A	ifdeffed out / inlined
 0111	ldump	DumpChar	N/A	N/A	ifdeffed out / inlined
 0112	ldump	DumpInt	N/A	N/A	ifdeffed out / inlined
 0113	ldump	DumpNumber	N/A	N/A	ifdeffed out / inlined
 0114	ldump	DumpVector	N/A	N/A	ifdeffed out / inlined
 0115	ldump	DumpString	N/A	N/A	ifdeffed out / inlined
+0116	ldump	DumpConstants	0x1404D8590	sub_1404D8590	Locked and ordered neighbouring functions
+0117	ldump	DumpDebug	0x1404D8620	sub_1404D8620	Locked and ordered neighbouring functions
+0118	ldump	DumpFunction	0x1404D8790	sub_1404D8790	Locked and ordered neighbouring functions
+0119	ldump	DumpHeader	0x1404D8A00	sub_1404D8A00	Locked and ordered neighbouring functions
+0120	ldump	luaU_dump	0x1404D8B90	sub_1404D8B90	Single called (xref) option
+0121	lfunc	luaF_newCclosure	0x1404D7E60	sub_1404D7E60	Neighbour matching
+0122	lfunc	luaF_newLclosure	0x1404D7ED0	sub_1404D7ED0	Score-based Matching
+0123	lfunc	luaF_newupval	0x1404D7F60	sub_1404D7F60	Neighbour matching
+0124	lfunc	luaF_findupval	0x1404D7FB0	sub_1404D7FB0	Single called (xref) option
 0125	lfunc	unlinkupval	N/A	N/A	ifdeffed out / inlined
+0126	lfunc	luaF_freeupval	0x1404D8080	sub_1404D8080	Neighbour matching
+0127	lfunc	luaF_close	0x1404D80B0	sub_1404D80B0	Single called (xref) option
+0128	lfunc	luaF_newproto	0x1404D81A0	sub_1404D81A0	Single called (xref) option
+0129	lfunc	luaF_freeproto	0x1404D8230	sub_1404D8230	Neighbour matching
+0130	lfunc	luaF_freeclosure	0x1404D82F0	sub_1404D82F0	Neighbour matching
+0131	lfunc	luaF_getlocalname	0x1404D8320	sub_1404D8320	Single called (xref) option
+0132	linit	luaL_openlibs	0x1404D2430	sub_1404D2430	Single caller (xref) option
 0133	liolib	pushresult	N/A	N/A	ifdeffed out / inlined
+0134	liolib	fileerror	0x1404E0160	sub_1404E0160	Score-based Matching
+0135	liolib	io_type	0x1404E01D0	sub_1404E01D0	Neighbour matching
+0136	liolib	tofile	0x1404E02A0	sub_1404E02A0	Single called (xref) option
+0137	liolib	newfile	0x1404E0300	sub_1404E0300	Score-based Matching
 0138	liolib	io_noclose	N/A	N/A	ifdeffed out / inlined
+0139	liolib	io_pclose	0x1404E0350	sub_1404E0350	Neighbour matching
+0140	liolib	io_fclose	0x1404E0410	sub_1404E0410	Neighbour matching
+0141	liolib	aux_close	0x1404E04C0	sub_1404E04C0	Score-based Matching
+0142	liolib	io_close	0x1404E0500	sub_1404E0500	Score-based Matching
+0143	liolib	io_gc	0x1404E0590	sub_1404E0590	Neighbour matching
+0144	liolib	io_tostring	0x1404E0600	sub_1404E0600	Agent - File-unique string / const
 0145	liolib	io_open	N/A	N/A	ifdeffed out / inlined
+0146	liolib	io_popen	0x1404E0660	sub_1404E0660	Last (referenced) function in file
+0147	liolib	io_tmpfile	0x1404E08A0	sub_1404E08A0	Score-based Matching
+0148	liolib	getiofile	0x1404E1160	sub_1404E1160	Score-based Matching
+0149	liolib	g_iofile	0x1404E0950	sub_1404E0950	Score-based Matching
+0150	liolib	io_input	0x1404E0A20	sub_1404E0A20	Neighbour matching
+0151	liolib	io_output	0x1404E0A40	sub_1404E0A40	Single caller (xref) option
 0152	liolib	read_number	N/A	N/A	ifdeffed out / inlined
 0153	liolib	test_eof	N/A	N/A	ifdeffed out / inlined
-0165	liolib	io_flush	N/A	N/A	ifdeffed out / inlined
+0154	liolib	read_line	0x1404E0A60	sub_1404E0A60	Single called (xref) option
+0155	liolib	read_chars	0x1404E0B70	sub_1404E0B70	Neighbour matching
+0156	liolib	g_read	0x1404E0C30	sub_1404E0C30	Agent - File-unique string / const
+0157	liolib	io_read	0x1404E0E30	sub_1404E0E30	Neighbour matching
+0158	liolib	f_read	0x1404E0EA0	sub_1404E0EA0	Neighbour matching
+0159	liolib	io_readline	0x1404E0F00	sub_1404E0F00	Agent - File-unique string / const
+0160	liolib	g_write	0x1404E1000	sub_1404E1000	Neighbour matching
+0161	liolib	io_write	N/A	N/A	ifdeffed out / inlined
+0162	liolib	f_write	0x1404E11D0	sub_1404E11D0	Score-based Matching
+0163	liolib	f_seek	0x1404E1230	sub_1404E1230	Score-based Matching
+0164	liolib	f_setvbuf	0x1404E1330	sub_1404E1330	Score-based Matching
+0165	liolib	io_flush	0x1404E1420	sub_1404E1420	Score-based Matching
+0166	liolib	f_flush	0x1404E14F0	sub_1404E14F0	Score-based Matching
 0167	liolib	createmeta	N/A	N/A	ifdeffed out / inlined
 0168	liolib	createstdfile	N/A	N/A	ifdeffed out / inlined
 0169	liolib	newfenv	N/A	N/A	ifdeffed out / inlined
+0170	liolib	luaopen_io	0x1404E15B0	sub_1404E15B0	Agent - File-unique string / const
 0171	liolib	aux_lines	N/A	N/A	ifdeffed out / inlined
+0172	liolib	f_lines	0x1404E1820	sub_1404E1820	Single called (xref) option
+0173	liolib	io_lines	0x1404E1890	sub_1404E1890	Score-based Matching
+0174	llex	save	0x1404E1990	sub_1404E1990	Agent - File-unique string / const
+0175	llex	luaX_init	0x1404E1A40	sub_1404E1A40	Neighbour matching
+0176	llex	luaX_token2str	0x1404E1AB0	sub_1404E1AB0	Single called (xref) option
+0177	llex	txtToken	0x1404E1B20	sub_1404E1B20	Single called (xref) option
+0178	llex	luaX_lexerror	0x1404E1BC0	sub_1404E1BC0	Single called (xref) option
+0179	llex	luaX_syntaxerror	0x1404E1C70	sub_1404E1C70	Single called (xref) option
+0180	llex	luaX_newstring	0x1404E1C80	sub_1404E1C80	Neighbour matching
+0181	llex	inclinenumber	0x1404E1CE0	sub_1404E1CE0	Anchor - Complex unique string / const
+0182	llex	luaX_setinput	0x1404E1D90	sub_1404E1D90	Neighbour matching
 0183	llex	check_next	N/A	N/A	ifdeffed out / inlined
 0184	llex	buffreplace	N/A	N/A	ifdeffed out / inlined
+0185	llex	trydecpoint	0x1404E1E30	sub_1404E1E30	Last (referenced) function in file
+0186	llex	read_numeral	0x1404E1EF0	sub_1404E1EF0	Single called (xref) option
+0187	llex	skip_sep	0x1404E2060	sub_1404E2060	Neighbour matching
+0188	llex	read_long_string	0x1404E2120	sub_1404E2120	Anchor - Complex unique string / const
+0189	llex	read_string	0x1404E23C0	sub_1404E23C0	Agent - File-unique string / const
+0190	llex	llex	0x1404E28D0	sub_1404E28D0	Agent - File-unique string / const
+0191	llex	luaX_next	0x1404E30E0	sub_1404E30E0	Neighbour matching
+0192	llex	luaX_lookahead	0x1404E3130	sub_1404E3130	Neighbour matching
+0193	lmathlib	math_abs	0x1404DA400	sub_1404DA400	Neighbour matching
+0194	lmathlib	math_sin	0x1404DA440	sub_1404DA440	Neighbour matching
+0195	lmathlib	math_sinh	0x1404DA470	sub_1404DA470	Neighbour matching
+0196	lmathlib	math_cos	0x1404DA4A0	sub_1404DA4A0	Neighbour matching
+0197	lmathlib	math_cosh	0x1404DA4D0	sub_1404DA4D0	Neighbour matching
+0198	lmathlib	math_tan	0x1404DA500	sub_1404DA500	Neighbour matching
+0199	lmathlib	math_tanh	0x1404DA530	sub_1404DA530	Neighbour matching
+0200	lmathlib	math_asin	0x1404DA560	sub_1404DA560	Neighbour matching
+0201	lmathlib	math_acos	0x1404DA590	sub_1404DA590	Neighbour matching
+0202	lmathlib	math_atan	0x1404DA5C0	sub_1404DA5C0	Neighbour matching
+0203	lmathlib	math_atan2	0x1404DA5F0	sub_1404DA5F0	Neighbour matching
+0204	lmathlib	math_ceil	0x1404DA650	sub_1404DA650	Neighbour matching
+0205	lmathlib	math_floor	0x1404DA680	sub_1404DA680	Neighbour matching
+0206	lmathlib	math_fmod	0x1404DA6B0	sub_1404DA6B0	Neighbour matching
+0207	lmathlib	math_modf	0x1404DA710	sub_1404DA710	Score-based Matching
+0208	lmathlib	math_sqrt	0x1404DA770	sub_1404DA770	Neighbour matching
+0209	lmathlib	math_pow	0x1404DA7A0	sub_1404DA7A0	Neighbour matching
+0210	lmathlib	math_log	0x1404DA800	sub_1404DA800	Neighbour matching
+0211	lmathlib	math_log10	0x1404DA830	sub_1404DA830	Neighbour matching
+0212	lmathlib	math_exp	0x1404DA860	sub_1404DA860	Neighbour matching
+0213	lmathlib	math_deg	0x1404DA890	sub_1404DA890	Neighbour matching
+0214	lmathlib	math_rad	0x1404DA8D0	sub_1404DA8D0	Neighbour matching
+0215	lmathlib	math_frexp	0x1404DA910	sub_1404DA910	Score-based Matching
+0216	lmathlib	math_ldexp	0x1404DA960	sub_1404DA960	Score-based Matching
+0217	lmathlib	math_min	0x1404DA9B0	sub_1404DA9B0	Neighbour matching
+0218	lmathlib	math_max	0x1404DAA30	sub_1404DAA30	Neighbour matching
+0219	lmathlib	math_random	0x1404DAAB0	sub_1404DAAB0	Agent - File-unique string / const
+0220	lmathlib	math_randomseed	0x1404DAC00	sub_1404DAC00	Neighbour matching
+0221	lmathlib	luaopen_math	0x1404DAC20	sub_1404DAC20	Neighbour matching
+0222	lmem	luaM_toobig	0x1404D8C20	sub_1404D8C20	Score-based Matching
+0223	lmem	luaM_realloc_	0x1404D8C40	sub_1404D8C40	Single called (xref) option
+0224	lmem	luaM_growaux_	0x1404D8CB0	sub_1404D8CB0	Single called (xref) option
+0225	loadlib	setprogdir	0x1404DDAE0	sub_1404DDAE0	Agent - File-unique string / const
+0226	loadlib	pusherror	0x1404DDB90	sub_1404DDB90	Anchor - Complex unique string / const
 0227	loadlib	ll_unloadlib	N/A	N/A	ifdeffed out / inlined
 0228	loadlib	ll_load	N/A	N/A	ifdeffed out / inlined
 0229	loadlib	ll_sym	N/A	N/A	ifdeffed out / inlined
+0230	loadlib	ll_register	0x1404DDC30	sub_1404DDC30	Score-based Matching
+0231	loadlib	gctm	0x1404DDD20	sub_1404DDD20	Single called (xref) option
+0232	loadlib	ll_loadfunc	0x1404DDD70	sub_1404DDD70	Single called (xref) option
+0233	loadlib	ll_loadlib	0x1404DDE00	sub_1404DDE00	Neighbour matching
 0234	loadlib	readable	N/A	N/A	ifdeffed out / inlined
 0235	loadlib	pushnexttemplate	N/A	N/A	ifdeffed out / inlined
+0236	loadlib	findfile	0x1404DDE90	sub_1404DDE90	Agent - File-unique string / const
+0237	loadlib	loaderror	0x1404DE010	sub_1404DE010	Anchor - Complex unique string / const
+0238	loadlib	loader_Lua	0x1404DE070	sub_1404DE070	Neighbour matching
+0239	loadlib	mkfuncname	0x1404DE0D0	sub_1404DE0D0	Single caller (xref) option
+0240	loadlib	loader_C	0x1404DE140	sub_1404DE140	Neighbour matching
+0241	loadlib	loader_Croot	0x1404DE1C0	sub_1404DE1C0	Agent - File-unique string / const
+0242	loadlib	loader_preload	0x1404DE290	sub_1404DE290	Anchor - Complex unique string / const
+0243	loadlib	ll_require	0x1404DE320	sub_1404DE320	Anchor - Complex unique string / const
+0244	loadlib	setfenv	0x1404DE560	sub_1404DE560	Agent - File-unique string / const
 0245	loadlib	dooptions	N/A	N/A	ifdeffed out / inlined
+0246	loadlib	modinit	0x1404DE610	sub_1404DE610	Neighbour matching
+0247	loadlib	ll_module	0x1404DE6B0	sub_1404DE6B0	Agent - File-unique string / const
+0248	loadlib	ll_seeall	0x1404DE810	sub_1404DE810	Neighbour matching
 0249	loadlib	setpath	N/A	N/A	ifdeffed out / inlined
+0250	loadlib	luaopen_package	0x1404DE890	sub_1404DE890	Agent - File-unique string / const
+0251	lobject	luaO_int2fb	0x1404D3C90	sub_1404D3C90	Neighbour matching
+0252	lobject	luaO_fb2int	0x1404D3CC0	sub_1404D3CC0	Score-based Matching
+0253	lobject	luaO_log2	0x1404D3CE0	sub_1404D3CE0	Single called (xref) option
+0254	lobject	luaO_rawequalObj	0x1404D3D10	sub_1404D3D10	Single called (xref) option
+0255	lobject	luaO_str2d	0x1404D3D80	sub_1404D3D80	Single called (xref) option
+0256	lobject	pushstr	0x1404D3E50	sub_1404D3E50	Neighbour matching
+0257	lobject	luaO_pushvfstring	0x1404D3EC0	sub_1404D3EC0	Score-based Matching
+0258	lobject	luaO_pushfstring	0x1404D4330	sub_1404D4330	Single called (xref) option
+0259	lobject	luaO_chunkid	0x1404D4360	sub_1404D4360	Single called (xref) option
 0260	loslib	difftime	N/A	N/A	ifdeffed out / inlined
 0261	loslib	gmtime	N/A	N/A	ifdeffed out / inlined
 0262	loslib	localtime	N/A	N/A	ifdeffed out / inlined
@@ -608,94 +269,433 @@ Line	File Name	Source Function Name	Binary Address	Binary Function Name	Matching
 0268	loslib	os_rename	N/A	N/A	ifdeffed out / inlined
 0269	loslib	os_tmpname	N/A	N/A	ifdeffed out / inlined
 0270	loslib	os_getenv	N/A	N/A	ifdeffed out / inlined
+0271	loslib	os_clock	0x1404D8DA0	sub_1404D8DA0	Single caller (xref) option
 0272	loslib	setfield	N/A	N/A	ifdeffed out / inlined
 0273	loslib	setboolfield	N/A	N/A	ifdeffed out / inlined
 0274	loslib	getboolfield	N/A	N/A	ifdeffed out / inlined
 0275	loslib	getfield	N/A	N/A	ifdeffed out / inlined
+0276	loslib	os_date	0x1404D8DE0	sub_1404D8DE0	Last (referenced) function in file
+0277	loslib	os_time	0x1404D9080	sub_1404D9080	Score-based Matching
+0278	loslib	os_difftime	0x1404D9330	sub_1404D9330	Score-based Matching
 0279	loslib	os_setlocale	N/A	N/A	ifdeffed out / inlined
 0280	loslib	os_exit	N/A	N/A	ifdeffed out / inlined
+0281	loslib	luaopen_os	0x1404D9390	sub_1404D9390	Single caller (xref) option
 0282	lparser	anchor_token	N/A	N/A	ifdeffed out / inlined
 0283	lparser	error_expected	N/A	N/A	ifdeffed out / inlined
 0284	lparser	errorlimit	N/A	N/A	ifdeffed out / inlined
 0285	lparser	testnext	N/A	N/A	ifdeffed out / inlined
 0286	lparser	check	N/A	N/A	ifdeffed out / inlined
 0287	lparser	checknext	N/A	N/A	ifdeffed out / inlined
+0288	lparser	check_match	0x1404E3150	sub_1404E3150	Agent - File-unique string / const
 0289	lparser	str_checkname	N/A	N/A	ifdeffed out / inlined
 0290	lparser	init_exp	N/A	N/A	ifdeffed out / inlined
 0291	lparser	codestring	N/A	N/A	ifdeffed out / inlined
 0292	lparser	checkname	N/A	N/A	ifdeffed out / inlined
+0293	lparser	registerlocalvar	0x1404E3210	sub_1404E3210	Agent - File-unique string / const
+0294	lparser	new_localvar	0x1404E32F0	sub_1404E32F0	Neighbour matching
 0295	lparser	adjustlocalvars	N/A	N/A	ifdeffed out / inlined
 0296	lparser	removevars	N/A	N/A	ifdeffed out / inlined
+0297	lparser	indexupvalue	0x1404E33B0	sub_1404E33B0	Score-based Matching
 0298	lparser	searchvar	N/A	N/A	ifdeffed out / inlined
 0299	lparser	markupval	N/A	N/A	ifdeffed out / inlined
+0300	lparser	singlevaraux	0x1404E3550	sub_1404E3550	Last (referenced) function in file
+0301	lparser	singlevar	0x1404E3690	sub_1404E3690	Single called (xref) option
 0302	lparser	adjust_assign	N/A	N/A	ifdeffed out / inlined
 0303	lparser	enterlevel	N/A	N/A	ifdeffed out / inlined
 0304	lparser	enterblock	N/A	N/A	ifdeffed out / inlined
+0305	lparser	leaveblock	0x1404E3720	sub_1404E3720	Single called (xref) option
+0306	lparser	pushclosure	0x1404E37C0	sub_1404E37C0	Neighbour matching
+0307	lparser	open_func	0x1404E3920	sub_1404E3920	Single caller (xref) option
+0308	lparser	close_func	0x1404E3A20	sub_1404E3A20	Single called (xref) option
+0309	lparser	field	0x1404E3C50	sub_1404E3C50	Single called (xref) option
 0310	lparser	yindex	N/A	N/A	ifdeffed out / inlined
 0311	lparser	recfield	N/A	N/A	ifdeffed out / inlined
 0312	lparser	closelistfield	N/A	N/A	ifdeffed out / inlined
 0313	lparser	lastlistfield	N/A	N/A	ifdeffed out / inlined
+0314	lparser	listfield	0x1404E3D10	sub_1404E3D10	Neighbour matching
+0315	lparser	constructor	0x1404E3F10	sub_1404E3F10	Neighbour matching
+0316	lparser	parlist	0x1404E4210	sub_1404E4210	Agent - File-unique string / const
+0317	lparser	body	0x1404E4340	sub_1404E4340	Neighbour matching
 0318	lparser	explist1	N/A	N/A	ifdeffed out / inlined
+0319	lparser	funcargs	0x1404E44B0	sub_1404E44B0	Anchor - Complex unique string / const
+0320	lparser	prefixexp	0x1404E4640	sub_1404E4640	Neighbour matching
+0321	lparser	primaryexp	0x1404E46D0	sub_1404E46D0	Neighbour matching
+0322	lparser	simpleexp	0x1404E49A0	sub_1404E49A0	Agent - File-unique string / const
 0323	lparser	getunopr	N/A	N/A	ifdeffed out / inlined
+0324	lparser	getbinopr	0x1404E4C60	sub_1404E4C60	Neighbour matching
+0325	lparser	subexpr	0x1404E4E20	sub_1404E4E20	Single called (xref) option
 0326	lparser	expr	N/A	N/A	ifdeffed out / inlined
 0327	lparser	block_follow	N/A	N/A	ifdeffed out / inlined
+0328	lparser	block	0x1404E4F70	sub_1404E4F70	Single caller (xref) option
 0329	lparser	check_conflict	N/A	N/A	ifdeffed out / inlined
+0330	lparser	assignment	0x1404E4FC0	sub_1404E4FC0	Anchor - Complex unique string / const
 0331	lparser	cond	N/A	N/A	ifdeffed out / inlined
+0332	lparser	breakstat	0x1404E52A0	sub_1404E52A0	Neighbour matching
+0333	lparser	whilestat	0x1404E5330	sub_1404E5330	Score-based Matching
+0334	lparser	repeatstat	0x1404E54A0	sub_1404E54A0	Score-based Matching
 0335	lparser	exp1	N/A	N/A	ifdeffed out / inlined
+0336	lparser	forbody	0x1404E55F0	sub_1404E55F0	Neighbour matching
+0337	lparser	fornum	0x1404E5810	sub_1404E5810	Agent - File-unique string / const
+0338	lparser	forlist	0x1404E5A00	sub_1404E5A00	Agent - File-unique string / const
+0339	lparser	forstat	0x1404E5C50	sub_1404E5C50	Agent - File-unique string / const
+0340	lparser	test_then_block	0x1404E5D60	sub_1404E5D60	Neighbour matching
+0341	lparser	ifstat	0x1404E5E40	sub_1404E5E40	Score-based Matching
+0342	lparser	localfunc	0x1404E5F70	sub_1404E5F70	Neighbour matching
+0343	lparser	localstat	0x1404E6080	sub_1404E6080	Score-based Matching
 0344	lparser	funcname	N/A	N/A	ifdeffed out / inlined
+0345	lparser	funcstat	0x1404E6230	sub_1404E6230	Single called (xref) option
 0346	lparser	exprstat	N/A	N/A	ifdeffed out / inlined
+0347	lparser	retstat	0x1404E63E0	sub_1404E63E0	Neighbour matching
+0348	lparser	statement	0x1404E6500	sub_1404E6500	Score-based Matching
+0349	lparser	chunk	0x1404E6710	sub_1404E6710	Neighbour matching
+0350	lparser	luaY_parser	0x1404E67B0	sub_1404E67B0	Single called (xref) option
+0351	lstate	stack_init	0x1404D24F0	sub_1404D24F0	Single called (xref) option
 0352	lstate	freestack	N/A	N/A	ifdeffed out / inlined
+0353	lstate	f_luaopen	0x1404D25A0	sub_1404D25A0	Single caller (xref) option
 0354	lstate	preinit_state	N/A	N/A	ifdeffed out / inlined
+0355	lstate	close_state	0x1404D2650	sub_1404D2650	Single called (xref) option
+0356	lstate	luaE_newthread	0x1404D2700	sub_1404D2700	Single called (xref) option
+0357	lstate	luaE_freethread	0x1404D27E0	sub_1404D27E0	Score-based Matching
+0358	lstate	lua_newstate	0x1404D2850	sub_1404D2850	Single caller (xref) option
+0359	lstate	callallgcTM	0x1404D2A20	sub_1404D2A20	Last (referenced) function in file
+0360	lstate	lua_close	0x1404D2A30	sub_1404D2A30	Score-based Matching
+0361	lstring	luaS_resize	0x1404D7B10	sub_1404D7B10	Single called (xref) option
+0362	lstring	newlstr	0x1404D7C00	sub_1404D7C00	Neighbour matching
+0363	lstring	luaS_newlstr	0x1404D7CE0	sub_1404D7CE0	Single called (xref) option
+0364	lstring	luaS_newudata	0x1404D7DD0	sub_1404D7DD0	Neighbour matching
+0365	lstrlib	str_len	0x1404DACC0	sub_1404DACC0	Score-based Matching
 0366	lstrlib	posrelat	N/A	N/A	ifdeffed out / inlined
+0367	lstrlib	str_sub	0x1404DACF0	sub_1404DACF0	Score-based Matching
+0368	lstrlib	str_reverse	0x1404DADD0	sub_1404DADD0	Neighbour matching
+0369	lstrlib	str_lower	0x1404DAEA0	sub_1404DAEA0	Last (referenced) function in file
+0370	lstrlib	str_upper	0x1404DAF60	sub_1404DAF60	Neighbour matching
+0371	lstrlib	str_rep	0x1404DB020	sub_1404DB020	Neighbour matching
+0372	lstrlib	str_byte	0x1404DB0D0	sub_1404DB0D0	Agent - File-unique string / const
+0373	lstrlib	str_char	0x1404DB1E0	sub_1404DB1E0	Neighbour matching
+0374	lstrlib	writer	0x1404DB2C0	sub_1404DB2C0	Neighbour matching
+0375	lstrlib	str_dump	0x1404DB2E0	sub_1404DB2E0	Agent - File-unique string / const
 0376	lstrlib	check_capture	N/A	N/A	ifdeffed out / inlined
 0377	lstrlib	capture_to_close	N/A	N/A	ifdeffed out / inlined
+0378	lstrlib	classend	0x1404DB380	sub_1404DB380	Anchor - Complex unique string / const
+0379	lstrlib	match_class	0x1404DB420	sub_1404DB420	Neighbour matching
+0380	lstrlib	matchbracketclass	0x1404DB580	sub_1404DB580	Single called (xref) option
 0381	lstrlib	singlematch	N/A	N/A	ifdeffed out / inlined
+0382	lstrlib	matchbalance	0x1404DB640	sub_1404DB640	Score-based Matching
+0383	lstrlib	max_expand	0x1404DB6E0	sub_1404DB6E0	Single called (xref) option
+0384	lstrlib	min_expand	0x1404DB7B0	sub_1404DB7B0	Score-based Matching
+0385	lstrlib	start_capture	0x1404DB870	sub_1404DB870	Score-based Matching
+0386	lstrlib	end_capture	0x1404DB900	sub_1404DB900	Score-based Matching
+0387	lstrlib	match_capture	0x1404DB9B0	sub_1404DB9B0	Neighbour matching
+0388	lstrlib	match	0x1404DBA50	sub_1404DBA50	Agent - File-unique string / const
+0389	lstrlib	lmemfind	0x1404DBD10	sub_1404DBD10	Neighbour matching
+0390	lstrlib	push_onecapture	0x1404DBDB0	sub_1404DBDB0	Single called (xref) option
+0391	lstrlib	push_captures	0x1404DBE80	sub_1404DBE80	Single called (xref) option
+0392	lstrlib	str_find_aux	0x1404DBF10	sub_1404DBF10	Single called (xref) option
+0393	lstrlib	str_find	0x1404DC1B0	sub_1404DC1B0	Neighbour matching
+0394	lstrlib	str_match	0x1404DC1C0	sub_1404DC1C0	Neighbour matching
+0395	lstrlib	gmatch_aux	0x1404DC1D0	sub_1404DC1D0	Agent - File-unique string / const
+0396	lstrlib	gmatch	0x1404DC3A0	sub_1404DC3A0	Neighbour matching
+0397	lstrlib	gfind_nodef	0x1404DC400	sub_1404DC400	Anchor - Complex unique string / const
+0398	lstrlib	add_s	0x1404DC410	sub_1404DC410	Neighbour matching
+0399	lstrlib	add_value	0x1404DC520	sub_1404DC520	Agent - File-unique string / const
+0400	lstrlib	str_gsub	0x1404DC650	sub_1404DC650	Agent - File-unique string / const
+0401	lstrlib	addquoted	0x1404DC840	sub_1404DC840	Neighbour matching
+0402	lstrlib	scanformat	0x1404DC960	sub_1404DC960	Anchor - Complex unique string / const
 0403	lstrlib	addintlen	N/A	N/A	ifdeffed out / inlined
+0404	lstrlib	str_format	0x1404DCA70	sub_1404DCA70	Agent - File-unique string / const
+0405	lstrlib	createmetatable	0x1404DCDC0	sub_1404DCDC0	Neighbour matching
+0406	lstrlib	luaopen_string	0x1404DCE40	sub_1404DCE40	Anchor - Complex unique string / const
 0407	ltable	hashnum	N/A	N/A	ifdeffed out / inlined
+0408	ltable	mainposition	0x1404D6A90	sub_1404D6A90	Single called (xref) option
 0409	ltable	arrayindex	N/A	N/A	ifdeffed out / inlined
+0410	ltable	findindex	0x1404D6B80	sub_1404D6B80	Agent - File-unique string / const
+0411	ltable	luaH_next	0x1404D6C90	sub_1404D6C90	Neighbour matching
 0412	ltable	computesizes	N/A	N/A	ifdeffed out / inlined
 0413	ltable	countint	N/A	N/A	ifdeffed out / inlined
 0414	ltable	numusearray	N/A	N/A	ifdeffed out / inlined
 0415	ltable	numusehash	N/A	N/A	ifdeffed out / inlined
+0416	ltable	setarrayvector	0x1404D6D90	sub_1404D6D90	Neighbour matching
+0417	ltable	setnodevector	0x1404D6E20	sub_1404D6E20	Agent - File-unique string / const
+0418	ltable	luaH_new	0x1404D6F20	sub_1404D6F20	Neighbour matching
+0419	ltable	luaH_free	0x1404D6FC0	sub_1404D6FC0	Neighbour matching
 0420	ltable	getfreepos	N/A	N/A	ifdeffed out / inlined
+0421	ltable	luaH_getnum	0x1404D7040	sub_1404D7040	Single called (xref) option
+0422	ltable	luaH_getstr	0x1404D70E0	sub_1404D70E0	Last (referenced) function in file
+0423	ltable	luaH_get	0x1404D7130	sub_1404D7130	Neighbour matching
+0424	ltable	luaH_set	0x1404D7200	sub_1404D7200	Single called (xref) option
+0425	ltable	luaH_setnum	0x1404D7290	sub_1404D7290	Single called (xref) option
+0426	ltable	unbound_search	0x1404D72F0	sub_1404D72F0	Neighbour matching
+0427	ltable	luaH_getn	0x1404D7440	sub_1404D7440	Single called (xref) option
+0428	ltable	resize	0x1404D74C0	sub_1404D74C0	Single called (xref) option
+0429	ltable	luaH_resizearray	0x1404D7710	sub_1404D7710	Single called (xref) option
+0430	ltable	rehash	0x1404D7740	sub_1404D7740	Neighbour matching
+0431	ltable	newkey	0x1404D7940	sub_1404D7940	Neighbour matching
+0432	ltable	luaH_setstr	0x1404D7A90	sub_1404D7A90	Single called (xref) option
+0433	ltablib	foreachi	0x1404DCEA0	sub_1404DCEA0	Score-based Matching
+0434	ltablib	foreach	0x1404DCF70	sub_1404DCF70	Score-based Matching
+0435	ltablib	maxn	0x1404DD030	sub_1404DD030	Neighbour matching
+0436	ltablib	getn	0x1404DD0D0	sub_1404DD0D0	Neighbour matching
+0437	ltablib	setn	0x1404DD110	sub_1404DD110	Anchor - Complex unique string / const
+0438	ltablib	tinsert	0x1404DD150	sub_1404DD150	Agent - File-unique string / const
+0439	ltablib	tremove	0x1404DD230	sub_1404DD230	Neighbour matching
+0440	ltablib	addfield	0x1404DD310	sub_1404DD310	Neighbour matching
 0441	ltablib	tconcat	N/A	N/A	ifdeffed out / inlined
 0442	ltablib	set2	N/A	N/A	ifdeffed out / inlined
 0443	ltablib	sort_comp	N/A	N/A	ifdeffed out / inlined
-0450	lundump	error	N/A	N/A	ifdeffed out / inlined
-0451	lundump	LoadBlock	N/A	N/A	ifdeffed out / inlined
-0452	lundump	LoadChar	N/A	N/A	ifdeffed out / inlined
-0454	lundump	LoadNumber	N/A	N/A	ifdeffed out / inlined
+0444	ltablib	auxsort	0x1404DD4C0	sub_1404DD4C0	Anchor - Complex unique string / const
+0445	ltablib	sort	0x1404DDA20	sub_1404DDA20	Neighbour matching
+0446	ltablib	luaopen_table	0x1404DDAB0	sub_1404DDAB0	Neighbour matching
+0447	lundump	error	N/A	N/A	ifdeffed out / inlined
+0448	lundump	LoadBlock	N/A	N/A	ifdeffed out / inlined
+0449	lundump	LoadChar	N/A	N/A	ifdeffed out / inlined
+0450	lundump	LoadInt	0x1404E6930	sub_1404E6930	Score-based Matching
+0451	lundump	LoadNumber	N/A	N/A	ifdeffed out / inlined
+0452	lundump	LoadString	0x1404E69C0	sub_1404E69C0	Single called (xref) option
+0453	lundump	LoadCode	0x1404E6A90	sub_1404E6A90	Single called (xref) option
+0454	lundump	LoadConstants	0x1404E6B40	sub_1404E6B40	Score-based Matching
+0455	lundump	LoadDebug	0x1404E6E50	sub_1404E6E50	Neighbour matching
+0456	lundump	LoadFunction	0x1404E7180	sub_1404E7180	Agent - File-unique string / const
+0457	lundump	luaU_header	0x1404E73E0	sub_1404E73E0	Neighbour matching
+0458	lundump	LoadHeader	0x1404E7410	sub_1404E7410	Neighbour matching
+0459	lundump	luaU_undump	0x1404E7520	sub_1404E7520	Score-based Matching
+0460	lvm	luaV_tonumber	0x1404D45E0	sub_1404D45E0	Single called (xref) option
+0461	lvm	luaV_tostring	0x1404D4640	sub_1404D4640	Single called (xref) option
+0462	lvm	traceexec	0x1404D46E0	sub_1404D46E0	Score-based Matching
+0463	lvm	callTMres	0x1404D47B0	sub_1404D47B0	Single called (xref) option
+0464	lvm	callTM	0x1404D4860	sub_1404D4860	Neighbour matching
+0465	lvm	luaV_gettable	0x1404D48F0	sub_1404D48F0	Single called (xref) option
+0466	lvm	luaV_settable	0x1404D4A00	sub_1404D4A00	Single called (xref) option
+0467	lvm	call_binTM	0x1404D4B40	sub_1404D4B40	Single called (xref) option
+0468	lvm	get_compTM	0x1404D4BC0	sub_1404D4BC0	Neighbour matching
+0469	lvm	call_orderTM	0x1404D4C90	sub_1404D4C90	Single called (xref) option
+0470	lvm	l_strcmp	0x1404D4D40	sub_1404D4D40	Neighbour matching
+0471	lvm	luaV_lessthan	0x1404D4DF0	sub_1404D4DF0	Single called (xref) option
+0472	lvm	lessequal	0x1404D4EB0	sub_1404D4EB0	Single called (xref) option
+0473	lvm	luaV_equalval	0x1404D4FA0	sub_1404D4FA0	Neighbour matching
+0474	lvm	luaV_concat	0x1404D50F0	sub_1404D50F0	Agent - File-unique string / const
+0475	lvm	Arith	0x1404D5340	sub_1404D5340	Neighbour matching
+0476	lvm	luaV_execute	0x1404D5540	sub_1404D5540	Anchor - Complex unique string / const
+0477	lzio	luaZ_fill	0x1404D8370	sub_1404D8370	Single called (xref) option
+0478	lzio	luaZ_lookahead	0x1404D83C0	sub_1404D83C0	Neighbour matching
+0479	lzio	luaZ_init	0x1404D8430	sub_1404D8430	Neighbour matching
+0480	lzio	luaZ_read	0x1404D8450	sub_1404D8450	Single called (xref) option
+0481	lzio	luaZ_openspace	0x1404D8510	sub_1404D8510	Single called (xref) option
+0482	ltm	luaT_init	N/A	N/A	N/A
+0483	ltm	luaT_gettm	0x1404EA202	malloc_0	Locked and ordered neighbouring functions
+0484	ltm	luaT_gettmbyobj	0x1404EA208	memcpy	Single called (xref) option
 0485	ldebug	currentpc	N/A	N/A	Unused - Static function without internal xrefs
+0486	ldebug	currentline	0x1404CF5C0	sub_1404CF5C0	Single called (xref) option
+0487	ldebug	lua_sethook	0x1404CF610	sub_1404CF610	Single called (xref) option
 0488	ldebug	lua_gethook	N/A	N/A	N/A
+0489	ldebug	lua_gethookmask	N/A	N/A	N/A
+0490	ldebug	lua_gethookcount	0x1404CF640	sub_1404CF640	Neighbour matching
+0491	ldebug	lua_getstack	0x1404CF650	sub_1404CF650	Agent - File-unique string / const
 0492	ldebug	getluaproto	N/A	N/A	Unused - Static function without internal xrefs
+0493	ldebug	findlocal	0x1404CF6D0	sub_1404CF6D0	Single called (xref) option
+0494	ldebug	lua_getlocal	0x1404CF780	sub_1404CF780	Single called (xref) option
+0495	ldebug	lua_setlocal	0x1404CF7F0	sub_1404CF7F0	Single called (xref) option
+0496	ldebug	funcinfo	0x1404CF860	sub_1404CF860	Score-based Matching
 0497	ldebug	info_tailcall	N/A	N/A	N/A
+0498	ldebug	collectvalidlines	0x1404CF8F0	sub_1404CF8F0	Single called (xref) option
 0499	ldebug	precheck	N/A	N/A	Unused - Static function without internal xrefs
+0500	ldebug	luaG_checkopenop	0x1404CF9C0	sub_1404CF9C0	Single called (xref) option
+0501	ldebug	checkArgMode	0x1404CF9F0	sub_1404CF9F0	Neighbour matching
+0502	ldebug	symbexec	0x1404CFA40	sub_1404CFA40	Single called (xref) option
+0503	ldebug	luaG_checkcode	0x1404D0030	sub_1404D0030	Single called (xref) option
 0504	ldebug	kname	N/A	N/A	Unused - Static function without internal xrefs
+0505	ldebug	getobjname	0x1404D0050	sub_1404D0050	Anchor - Complex unique string / const
+0506	ldebug	getfuncname	0x1404D0260	sub_1404D0260	Neighbour matching
 0507	ldebug	isinstack	N/A	N/A	Unused - Static function without internal xrefs
+0508	ldebug	addinfo	0x1404D0320	sub_1404D0320	Single called (xref) option
+0509	ldebug	luaG_errormsg	0x1404D0420	sub_1404D0420	Neighbour matching
+0510	ldebug	luaG_runerror	0x1404D04D0	sub_1404D04D0	Single called (xref) option
+0511	ldebug	auxgetinfo	0x1404D0510	sub_1404D0510	Neighbour matching
+0512	ldebug	lua_getinfo	0x1404D06B0	sub_1404D06B0	Neighbour matching
+0513	ldebug	luaG_typeerror	0x1404D07A0	sub_1404D07A0	Agent - File-unique string / const
+0514	ldebug	luaG_concaterror	0x1404D0870	sub_1404D0870	Neighbour matching
+0515	ldebug	luaG_aritherror	0x1404D0890	sub_1404D0890	Agent - File-unique string / const
+0516	ldebug	luaG_ordererror	0x1404D08E0	sub_1404D08E0	Agent - File-unique string / const
+0517	ldo	luaD_seterrorobj	0x1404D2AC0	sub_1404D2AC0	Anchor - Complex unique string / const
+0518	ldo	luaD_rawrunprotected	0x1404D2B70	sub_1404D2B70	Neighbour matching
+0519	ldo	correctstack	0x1404D2C20	sub_1404D2C20	Neighbour matching
+0520	ldo	luaD_reallocstack	0x1404D2CD0	sub_1404D2CD0	Neighbour matching
+0521	ldo	luaD_reallocCI	0x1404D2D60	sub_1404D2D60	Agent - File-unique string / const
+0522	ldo	luaD_growstack	0x1404D2E10	sub_1404D2E10	Neighbour matching
+0523	ldo	luaD_callhook	0x1404D2E30	sub_1404D2E30	Neighbour matching
+0524	ldo	adjust_varargs	0x1404D2F60	sub_1404D2F60	Neighbour matching
+0525	ldo	tryfuncTM	0x1404D3120	sub_1404D3120	Score-based Matching
+0526	ldo	callrethooks	0x1404D31E0	sub_1404D31E0	Neighbour matching
+0527	ldo	luaD_poscall	0x1404D3260	sub_1404D3260	Single called (xref) option
+0528	ldo	resume_error	0x1404D3300	sub_1404D3300	Neighbour matching
+0529	ldo	lua_yield	0x1404D3380	sub_1404D3380	Anchor - Complex unique string / const
+0530	ldo	f_parser	0x1404D3430	sub_1404D3430	Single caller (xref) option
 0531	ldo	restore_stack_limit	N/A	N/A	N/A
+0532	ldo	resetstack	0x1404D3540	sub_1404D3540	Score-based Matching
+0533	ldo	luaD_throw	0x1404D35E0	sub_1404D35E0	Single called (xref) option
 0534	ldo	growCI	N/A	N/A	N/A
+0535	ldo	luaD_precall	0x1404D3650	sub_1404D3650	Score-based Matching
+0536	ldo	luaD_call	0x1404D3910	sub_1404D3910	Single called (xref) option
+0537	ldo	resume	0x1404D39C0	sub_1404D39C0	Neighbour matching
+0538	ldo	lua_resume	0x1404D3A50	sub_1404D3A50	Anchor - Complex unique string / const
+0539	ldo	luaD_pcall	0x1404D3B10	sub_1404D3B10	Neighbour matching
 0540	ldo	luaD_protectedparser	N/A	N/A	N/A
+0541	lapi	index2adr	0x1404CC510	sub_1404CC510	Agent - File-unique string / const
 0542	lapi	getcurrenv	N/A	N/A	Unused - Static function without internal xrefs
+0543	lapi	luaA_pushobject	0x1404CC5C0	sub_1404CC5C0	Neighbour matching
+0544	lapi	lua_checkstack	0x1404CC5E0	sub_1404CC5E0	Single called (xref) option
+0545	lapi	lua_xmove	0x1404CC680	sub_1404CC680	Single called (xref) option
+0546	lapi	lua_setlevel	0x1404CC6E0	sub_1404CC6E0	Single called (xref) option
+0547	lapi	lua_atpanic	0x1404CC6F0	sub_1404CC6F0	Neighbour matching
+0548	lapi	lua_newthread	0x1404CC710	sub_1404CC710	Single called (xref) option
+0549	lapi	lua_gettop	0x1404CC760	sub_1404CC760	Single called (xref) option
+0550	lapi	lua_settop	0x1404CC770	sub_1404CC770	Single called (xref) option
+0551	lapi	lua_remove	0x1404CC7D0	sub_1404CC7D0	Single called (xref) option
+0552	lapi	lua_insert	0x1404CC820	sub_1404CC820	Neighbour matching
+0553	lapi	lua_replace	0x1404CC880	sub_1404CC880	Agent - File-unique string / const
+0554	lapi	lua_pushvalue	0x1404CC950	sub_1404CC950	Neighbour matching
+0555	lapi	lua_type	0x1404CC980	sub_1404CC980	Single called (xref) option
+0556	lapi	lua_typename	0x1404CC9B0	sub_1404CC9B0	Single called (xref) option
+0557	lapi	lua_iscfunction	0x1404CC9D0	sub_1404CC9D0	Single called (xref) option
+0558	lapi	lua_isnumber	0x1404CCA00	sub_1404CCA00	Single called (xref) option
+0559	lapi	lua_isstring	0x1404CCA30	sub_1404CCA30	Single called (xref) option
 0560	lapi	lua_isuserdata	N/A	N/A	N/A
+0561	lapi	lua_rawequal	0x1404CCA70	sub_1404CCA70	Single called (xref) option
+0562	lapi	lua_equal	0x1404CCAC0	sub_1404CCAC0	Score-based Matching
+0563	lapi	lua_lessthan	0x1404CCB20	sub_1404CCB20	Single called (xref) option
+0564	lapi	lua_tonumber	0x1404CCB70	sub_1404CCB70	Single called (xref) option
+0565	lapi	lua_tointeger	0x1404CCBB0	sub_1404CCBB0	Single called (xref) option
+0566	lapi	lua_toboolean	0x1404CCBE0	sub_1404CCBE0	Single called (xref) option
+0567	lapi	lua_tolstring	0x1404CCC10	sub_1404CCC10	Score-based Matching
+0568	lapi	lua_objlen	0x1404CCCC0	sub_1404CCCC0	Single called (xref) option
+0569	lapi	lua_tocfunction	0x1404CCD40	sub_1404CCD40	Single called (xref) option
+0570	lapi	lua_touserdata	0x1404CCD70	sub_1404CCD70	Single called (xref) option
+0571	lapi	lua_tothread	0x1404CCDB0	sub_1404CCDB0	Single called (xref) option
+0572	lapi	lua_topointer	0x1404CCDD0	sub_1404CCDD0	Single called (xref) option
+0573	lapi	lua_pushnil	0x1404CCE40	sub_1404CCE40	Single called (xref) option
+0574	lapi	lua_pushnumber	0x1404CCE60	sub_1404CCE60	Single called (xref) option
+0575	lapi	lua_pushinteger	0x1404CCE80	sub_1404CCE80	Single called (xref) option
+0576	lapi	lua_pushlstring	0x1404CCEA0	sub_1404CCEA0	Single called (xref) option
+0577	lapi	lua_pushstring	0x1404CCF10	sub_1404CCF10	Single caller (xref) option
+0578	lapi	lua_pushvfstring	0x1404CCF60	sub_1404CCF60	Neighbour matching
+0579	lapi	lua_pushfstring	0x1404CCFC0	sub_1404CCFC0	Single called (xref) option
+0580	lapi	lua_pushcclosure	0x1404CD010	sub_1404CD010	Single called (xref) option
+0581	lapi	lua_pushboolean	0x1404CD0F0	sub_1404CD0F0	Single called (xref) option
+0582	lapi	lua_pushlightuserdata	0x1404CD110	sub_1404CD110	Single called (xref) option
+0583	lapi	lua_pushthread	0x1404CD130	sub_1404CD130	Single called (xref) option
+0584	lapi	lua_gettable	0x1404CD160	sub_1404CD160	Single called (xref) option
+0585	lapi	lua_getfield	0x1404CD190	sub_1404CD190	Single called (xref) option
+0586	lapi	lua_rawget	0x1404CD200	sub_1404CD200	Single called (xref) option
+0587	lapi	lua_rawgeti	0x1404CD240	sub_1404CD240	Single called (xref) option
+0588	lapi	lua_createtable	0x1404CD280	sub_1404CD280	Single called (xref) option
+0589	lapi	lua_getmetatable	0x1404CD2F0	sub_1404CD2F0	Single called (xref) option
+0590	lapi	lua_getfenv	0x1404CD350	sub_1404CD350	Single called (xref) option
+0591	lapi	lua_settable	0x1404CD3D0	sub_1404CD3D0	Single called (xref) option
+0592	lapi	lua_setfield	0x1404CD400	sub_1404CD400	Single called (xref) option
+0593	lapi	lua_rawset	0x1404CD480	sub_1404CD480	Single called (xref) option
+0594	lapi	lua_rawseti	0x1404CD500	sub_1404CD500	Single called (xref) option
+0595	lapi	lua_setmetatable	0x1404CD580	sub_1404CD580	Single called (xref) option
+0596	lapi	lua_setfenv	0x1404CD640	sub_1404CD640	Single called (xref) option
+0597	lapi	lua_call	0x1404CD6E0	sub_1404CD6E0	Single called (xref) option
+0598	lapi	f_call	0x1404CD730	sub_1404CD730	Neighbour matching
+0599	lapi	lua_pcall	0x1404CD740	sub_1404CD740	Single called (xref) option
 0600	lapi	f_Ccall	N/A	N/A	N/A
 0601	lapi	lua_cpcall	N/A	N/A	N/A
+0602	lapi	lua_load	0x1404CD7D0	sub_1404CD7D0	Single called (xref) option
+0603	lapi	lua_dump	0x1404CD820	sub_1404CD820	Single called (xref) option
+0604	lapi	lua_status	0x1404CD870	sub_1404CD870	Neighbour matching
+0605	lapi	lua_gc	0x1404CD880	sub_1404CD880	Single called (xref) option
+0606	lapi	lua_error	0x1404CDA40	sub_1404CDA40	Neighbour matching
+0607	lapi	lua_next	0x1404CDA50	sub_1404CDA50	Single called (xref) option
+0608	lapi	lua_concat	0x1404CDA90	sub_1404CDA90	Single called (xref) option
 0609	lapi	lua_getallocf	N/A	N/A	Unused - No xrefs inside the open source
 0610	lapi	lua_setallocf	N/A	N/A	Unused - No xrefs inside the open source
+0611	lapi	lua_newuserdata	0x1404CDB30	sub_1404CDB30	Single called (xref) option
 0612	lapi	aux_upvalue	N/A	N/A	Unused - Static function without internal xrefs
+0613	lapi	lua_getupvalue	0x1404CDBB0	sub_1404CDBB0	Score-based Matching
+0614	lapi	lua_setupvalue	0x1404CDC40	sub_1404CDC40	Score-based Matching
 0615	lgc	removeentry	N/A	N/A	Unused - Static function without internal xrefs
+0616	lgc	reallymarkobject	0x1404D0940	sub_1404D0940	Single called (xref) option
 0617	lgc	marktmu	N/A	N/A	N/A
-0623	lgc	traversestack	N/A	N/A	N/A
+0618	lgc	luaC_separateudata	0x1404D0A60	sub_1404D0A60	Score-based Matching
+0619	lgc	traversetable	0x1404D0B40	sub_1404D0B40	Score-based Matching
+0620	lgc	traverseproto	0x1404D0D20	sub_1404D0D20	Single called (xref) option
+0621	lgc	traverseclosure	0x1404D0E20	sub_1404D0E20	Score-based Matching
+0622	lgc	checkstacksizes	N/A	N/A	N/A
+0623	lgc	traversestack	0x1404D0ED0	sub_1404D0ED0	Score-based Matching
+0624	lgc	propagatemark	0x1404D1000	sub_1404D1000	Neighbour matching
+0625	lgc	propagateall	0x1404D1C90	sub_1404D1C90	Single caller (xref) option
 0626	lgc	iscleared	N/A	N/A	Unused - Static function without internal xrefs
+0627	lgc	cleartable	0x1404D1140	sub_1404D1140	Neighbour matching
+0628	lgc	freeobj	0x1404D1280	sub_1404D1280	Single called (xref) option
+0629	lgc	sweeplist	0x1404D1470	sub_1404D1470	Neighbour matching
+0630	lgc	checkSizes	0x1404D1530	sub_1404D1530	Score-based Matching
+0631	lgc	GCTM	0x1404D15C0	sub_1404D15C0	Single caller (xref) option
+0632	lgc	luaC_callGCTM	0x1404D1800	sub_1404D1800	Single called (xref) option
+0633	lgc	luaC_freeall	0x1404D1860	sub_1404D1860	Single called (xref) option
 0634	lgc	markmt	N/A	N/A	N/A
+0635	lgc	markroot	0x1404D1A50	sub_1404D1A50	Score-based Matching
 0636	lgc	remarkupvals	N/A	N/A	N/A
+0637	lgc	atomic	0x1404D1B00	sub_1404D1B00	Single called (xref) option
+0638	lgc	singlestep	0x1404D1E80	sub_1404D1E80	Neighbour matching
+0639	lgc	luaC_step	0x1404D2180	sub_1404D2180	Single called (xref) option
+0640	lgc	luaC_fullgc	0x1404D2280	sub_1404D2280	Neighbour matching
+0641	lgc	luaC_barrierf	0x1404D2330	sub_1404D2330	Single called (xref) option
+0642	lgc	luaC_barrierback	0x1404D2360	sub_1404D2360	Single called (xref) option
+0643	lgc	luaC_link	0x1404D2380	sub_1404D2380	Neighbour matching
+0644	lgc	luaC_linkupval	0x1404D23A0	sub_1404D23A0	Single called (xref) option
 0645	lcode	isnumeral	N/A	N/A	Unused - Static function without internal xrefs
+0646	lcode	fixjump	0x1404E75A0	sub_1404E75A0	Single called (xref) option
+0647	lcode	luaK_getlabel	0x1404E7610	sub_1404E7610	Single called (xref) option
 0648	lcode	getjump	N/A	N/A	Unused - Static function without internal xrefs
 0649	lcode	getjumpcontrol	N/A	N/A	Unused - Static function without internal xrefs
+0650	lcode	need_value	0x1404E7620	sub_1404E7620	Single called (xref) option
 0651	lcode	patchtestreg	N/A	N/A	Unused - Static function without internal xrefs
+0652	lcode	removevalues	0x1404E7680	sub_1404E7680	Neighbour matching
+0653	lcode	patchlistaux	0x1404E7710	sub_1404E7710	Single called (xref) option
 0654	lcode	dischargejpc	N/A	N/A	N/A
+0655	lcode	luaK_concat	0x1404E78C0	sub_1404E78C0	Neighbour matching
+0656	lcode	luaK_checkstack	0x1404E7920	sub_1404E7920	Single called (xref) option
+0657	lcode	luaK_reserveregs	0x1404E7970	sub_1404E7970	Single called (xref) option
 0658	lcode	freereg	N/A	N/A	Unused - Static function without internal xrefs
 0659	lcode	freeexp	N/A	N/A	Unused - Static function without internal xrefs
+0660	lcode	addk	0x1404E79E0	sub_1404E79E0	Agent - File-unique string / const
+0661	lcode	luaK_stringK	0x1404E7B00	sub_1404E7B00	Neighbour matching
+0662	lcode	luaK_numberK	0x1404E7B30	sub_1404E7B30	Single called (xref) option
 0663	lcode	boolK	N/A	N/A	N/A
 0664	lcode	nilK	N/A	N/A	N/A
+0665	lcode	luaK_setreturns	0x1404E7B60	sub_1404E7B60	Score-based Matching
+0666	lcode	luaK_setoneret	0x1404E7BF0	sub_1404E7BF0	Score-based Matching
+0667	lcode	invertjump	0x1404E7C50	sub_1404E7C50	Neighbour matching
+0668	lcode	constfolding	0x1404E7CA0	sub_1404E7CA0	Neighbour matching
+0669	lcode	luaK_fixline	0x1404E7E00	sub_1404E7E00	Single called (xref) option
+0670	lcode	luaK_code	0x1404E7E20	sub_1404E7E20	Single called (xref) option
+0671	lcode	luaK_codeABC	0x1404E7F10	sub_1404E7F10	Single called (xref) option
+0672	lcode	luaK_codeABx	0x1404E7F40	sub_1404E7F40	Neighbour matching
+0673	lcode	luaK_setlist	0x1404E7F60	sub_1404E7F60	Agent - File-unique string / const
+0674	lcode	luaK_nil	0x1404E8000	sub_1404E8000	Neighbour matching
+0675	lcode	luaK_jump	0x1404E80A0	sub_1404E80A0	Neighbour matching
+0676	lcode	luaK_ret	0x1404E8140	sub_1404E8140	Single called (xref) option
 0677	lcode	condjump	N/A	N/A	N/A
+0678	lcode	luaK_patchtohere	0x1404E8160	sub_1404E8160	Single called (xref) option
+0679	lcode	luaK_dischargevars	0x1404E81C0	sub_1404E81C0	Single called (xref) option
 0680	lcode	code_label	N/A	N/A	N/A
+0681	lcode	discharge2reg	0x1404E82A0	sub_1404E82A0	Score-based Matching
+0682	lcode	discharge2anyreg	0x1404E83F0	sub_1404E83F0	Neighbour matching
+0683	lcode	exp2reg	0x1404E8430	sub_1404E8430	Neighbour matching
+0684	lcode	luaK_exp2nextreg	0x1404E8610	sub_1404E8610	Single called (xref) option
+0685	lcode	luaK_exp2anyreg	0x1404E86A0	sub_1404E86A0	Neighbour matching
+0686	lcode	luaK_exp2val	0x1404E8710	sub_1404E8710	Neighbour matching
+0687	lcode	luaK_exp2RK	0x1404E8790	sub_1404E8790	Score-based Matching
+0688	lcode	luaK_storevar	0x1404E88D0	sub_1404E88D0	Single called (xref) option
+0689	lcode	luaK_self	0x1404E89D0	sub_1404E89D0	Neighbour matching
+0690	lcode	jumponcond	0x1404E8AF0	sub_1404E8AF0	Score-based Matching
+0691	lcode	luaK_goiftrue	0x1404E8BD0	sub_1404E8BD0	Single called (xref) option
+0692	lcode	luaK_goiffalse	0x1404E8D00	sub_1404E8D00	Neighbour matching
+0693	lcode	codenot	0x1404E8E20	sub_1404E8E20	Single called (xref) option
+0694	lcode	luaK_indexed	0x1404E8F20	sub_1404E8F20	Single called (xref) option
+0695	lcode	codearith	0x1404E8F40	sub_1404E8F40	Single called (xref) option
+0696	lcode	codecomp	0x1404E9050	sub_1404E9050	Single called (xref) option
+0697	lcode	luaK_prefix	0x1404E9130	sub_1404E9130	Single called (xref) option
+0698	lcode	luaK_infix	0x1404E9250	sub_1404E9250	Score-based Matching
+0699	lcode	luaK_posfix	0x1404E92C0	sub_1404E92C0	Score-based Matching
+0700	lcode	luaK_patchlist	0x1404E9550	sub_1404E9550	Single called (xref) option

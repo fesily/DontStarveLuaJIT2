@@ -18,7 +18,7 @@
 			</Synthetic>
 			<Synthetic Name="Hash" Condition="hmask!=0">
 				<Expand>
-					<CustomListItems>
+					<CustomListItems MaxItemsPerView="256">
 						<Variable Name="index" InitialValue="0"/>
 						<Loop>
 							<Break Condition="index>=hmask+1"/>
@@ -31,21 +31,21 @@
 		</Expand>
 	</Type>
 	<Type Name="Node">
-		<DisplayString Condition="key.it64!=-1">key={key} val={val}</DisplayString>
+		<DisplayString Condition="key.it64!=-1">{key}</DisplayString>
 		<DisplayString Condition="key.it64==-1">[nil]</DisplayString>
 		<Expand>
 			<Item Name="[key]">key</Item>
 			<Item Name="[value]">val</Item>
-			<Item Name="Next" Condition="!next->isnil()">(Node*)next-&gt;ptr()</Item>
+			<Item Name="Next" Condition="!next.isnil()">(Node*)next.ptr()</Item>
 		</Expand>
 	</Type>
 	<Type Name="MRef">
 		<Intrinsic Name="ptr" Expression="ptr64"></Intrinsic>
-		<Intrinsic Name="isnil" Expression="ptr64!=0"></Intrinsic>
+		<Intrinsic Name="isnil" Expression="ptr64==0"></Intrinsic>
 		<DisplayString>{(void*)ptr64}</DisplayString>
 	</Type>
 	<Type Name="GCRef">
-		<DisplayString>{(GCobj*)gcptr64}</DisplayString>
+		<DisplayString>{*(GCobj*)gcptr64}</DisplayString>
 		<Expand>
 			<ExpandedItem>(GCobj*)gcptr64</ExpandedItem>
 		</Expand>
@@ -161,27 +161,47 @@
 		</Expand>
 	</Type>
 	<Type Name="GCfuncL">
-		<Intrinsic Name="funcproto" Expression="(GCproto*)((const char*)pc.ptr64-sizeof(GCproto))" />
+		<Intrinsic Name="funcproto" Expression="*(GCproto*)((const char*)pc.ptr64-sizeof(GCproto))" />
 		<DisplayString>{funcproto()}</DisplayString>
 		<Expand>
 			<Item Name="[proto]">funcproto()</Item>
+			<Item Name="env">env</Item>
+			<Synthetic Name="upvals">
+				<DisplayString>{nupvalues}</DisplayString>
+				<Expand>
+					<ArrayItems>
+						<Size>nupvalues</Size>
+						<ValuePointer>uvptr</ValuePointer>
+					</ArrayItems>
+				</Expand>
+			</Synthetic>
 		</Expand>
 	</Type>
 	<Type Name="GCfuncC">
 		<DisplayString>{f}</DisplayString>
 		<Expand>
 			<Item Name="address">f</Item>
+			<Item Name="env">env</Item>
 			<Item Name="internal_id">ffid</Item>
+			<Synthetic Name="upvals">
+				<DisplayString>{nupvalues}</DisplayString>
+				<Expand>
+					<ArrayItems>
+						<Size>nupvalues</Size>
+						<ValuePointer>upvalue</ValuePointer>
+					</ArrayItems>
+				</Expand>
+			</Synthetic>
 		</Expand>
 	</Type>
 	<Type Name="GCfunc">
-		<DisplayString Condition="c.ffid==0">LuaFunction:{l}</DisplayString>
-		<DisplayString Condition="c.ffid==1">LuaCFunction:{c}</DisplayString>
-		<DisplayString Condition="c.ffid&gt;1">LuaInternalCFunction:{c}</DisplayString>
+		<DisplayString Condition="c.ffid==0">[Lua] {l.funcproto()}</DisplayString>
+		<DisplayString Condition="c.ffid==1">[C] {c.f}</DisplayString>
+		<DisplayString Condition="c.ffid&gt;1">[builtin] {c.f}</DisplayString>
 		<Expand>
-			<Item Condition="c.ffid==0" Name="LuaFunction">l</Item>
-			<Item Condition="c.ffid==1" Name="LuaCFunction">c</Item>
-			<Item Condition="c.ffid&gt;1" Name="LuaInternalCFunction">c</Item>
+			<Item Condition="c.ffid==0" Name="func">l</Item>
+			<Item Condition="c.ffid==1" Name="func">c</Item>
+			<Item Condition="c.ffid&gt;1" Name="func">c</Item>
 		</Expand>
 	</Type>
 	<Type Name="GCcdata">
@@ -198,7 +218,6 @@
 		<DisplayString Condition="status==4">status:LUA_ERRMEM</DisplayString>
 		<DisplayString Condition="status==5">status:LUA_ERRERR</DisplayString>
 		<Expand>
-			<Item Name="[GetTop]">top-base</Item>
 			<Item Name="[G]">(global_State*)glref.ptr64</Item>
 			<Item Name="GC List">gclist</Item>
 			<Item Name="openupval">openupval</Item>
@@ -211,6 +230,15 @@
 						<Size>stacksize</Size>
 						<ValueNode>((TValue*)stack.ptr64)[$i]</ValueNode>
 					</IndexListItems>
+				</Expand>
+			</Synthetic>
+			<Synthetic Name="CurrentStack">
+				<DisplayString>len={top-base}</DisplayString>
+				<Expand>
+					<ArrayItems>
+						<Size>top-base</Size>
+						<ValuePointer>base</ValuePointer>
+					</ArrayItems>
 				</Expand>
 			</Synthetic>
 			<Synthetic Name="traceback" Optional="true">

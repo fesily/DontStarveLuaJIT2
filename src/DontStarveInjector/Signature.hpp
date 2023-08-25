@@ -1,5 +1,6 @@
 #pragma once
 #include "frida-gum.h"
+#include <string>
 struct Signature
 {
 	const char *pattern;
@@ -11,3 +12,5 @@ struct Signature
 	Signature(const char *p, int offset) : pattern{p}, pattern_offset{offset} {}
 	GumAddress scan(const char *m);
 };
+
+std::string create_signature(void *func, size_t len, void *module_base);

@@ -32,6 +32,8 @@ bool need_updater()
     auto dir = getModDir();
     if (dir.empty())
         return false;
+    if (!std::filesystem::exists(dir))
+        return true;
     auto modinfo_path = dir / "modinfo.lua";
     std::ifstream ss(modinfo_path);
     std::string line;
@@ -72,10 +74,6 @@ void updater()
     if (!need_updater())
         return;
 
-    auto bin_dir = getModBinDir();
-    auto game_dir = getGameDir() / "bin64";
-    auto bin_dir_copy = bin_dir.make_preferred().string();
-    auto game_dir_copy = game_dir.make_preferred().string();
     STARTUPINFO si;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
@@ -84,16 +82,35 @@ void updater()
     ZeroMemory(&pi, sizeof(pi));
     char path[MAX_PATH];
     HMODULE hmod;
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (const char *)&updater, &hmod);
-    GetModuleFileNameA(hmod, path, MAX_PATH);
-    SetEnvironmentVariableA("GAME_DIR", game_dir_copy.c_str());
-    SetEnvironmentVariableA("BIN_DIR", bin_dir_copy.c_str());
+
+    auto bin_dir = getModBinDir();
+    auto game_dir = getGameDir() / "bin64";
+    std::string update_cmd;
+    if (!std::filesystem::exists(bin_dir))
+    {
+        // unsetup
+        SetEnvironmentVariableW(L"GAME_FILE", (game_dir / "Winmm.dll").c_str());
+
+        update_cmd = "rm $Env:GAME_FILE";
+    }
+    else
+    {
+
+        auto bin_dir_copy = bin_dir.make_preferred().string();
+        auto game_dir_copy = game_dir.make_preferred().string();
+
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (const char *)&updater, &hmod);
+        GetModuleFileNameA(hmod, path, MAX_PATH);
+        SetEnvironmentVariableA("GAME_DIR", game_dir_copy.c_str());
+        SetEnvironmentVariableA("BIN_DIR", bin_dir_copy.c_str());
+        update_cmd = "xcopy $Env:BIN_DIR $Env:GAME_DIR /C /Y";
+    }
     auto cmd = std::format("powershell"
 #ifndef NDEBUG
-                           "-NoExit"
+                           " -NoExit"
 #endif
-                           "-Command $Host.UI.RawUI.WindowTitle='LUAJIT_UPDATER';Wait-Process {}; xcopy $Env:BIN_DIR $Env:GAME_DIR /C /Y;start steam://rungameid/322330;",
-                           GetCurrentProcessId());
+                           " -Command $Host.UI.RawUI.WindowTitle='LUAJIT_UPDATER';Wait-Process {}; {};start steam://rungameid/322330;",
+                           GetCurrentProcessId(), update_cmd);
     OutputDebugStringA(cmd.c_str());
     if (CreateProcessA(NULL, cmd.data(), NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
     {

@@ -28,7 +28,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_client.hpp 
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
-add_custom_target(create_Signatures DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_client.hpp)
+add_custom_target(create_Signatures DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_client.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_server.hpp)
 
 
 add_custom_target(make_karta_luamodule 
