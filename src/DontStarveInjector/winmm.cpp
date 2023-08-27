@@ -509,6 +509,9 @@ bool isClientMod = []()
 	return !getExePath().filename().string().contains("server");
 }();
 
+void updater();
+void Installer(bool unsetup);
+
 void DontStarveInjectorStart()
 {
 	auto dir = getGameDir();
@@ -524,7 +527,7 @@ void DontStarveInjectorStart()
 	}
 #endif
 	// auto updater
-	void updater();
+	
 	if (isClientMod)
 	{
 		updater();
@@ -536,9 +539,12 @@ void DontStarveInjectorStart()
 	auto mutex_file = dir / "data" / "luajit.mutex";
 	if (std::filesystem::exists(mutex_file))
 	{
-		int res = MessageBoxW(NULL, L"发现上次没有正常退出游戏, 是否继续加载模组?\nNoticed that didn't exit the game properly last time, load module or not?", L"MOD:LUAJIT-WARN", MB_YESNO);
-		if (res == IDNO)
+		int res = MessageBoxW(NULL, L"发现上次没有正常退出游戏, 是否卸载模组?\nNoticed that didn't exit the game properly last time, unsetup module or not?", L"MOD:LUAJIT-WARN", MB_YESNO);
+		if (res == IDYES)
+		{
+			Installer(false);
 			return;
+		}
 	}
 	auto fp = fopen(mutex_file.string().c_str(), "w");
 	if (fp)
@@ -568,14 +574,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, PVOID pvReserved)
 			auto dump_path = getUserDoctmentDir() / "klei" / "DoNotStarveTogether" / "donotstarvetogether_client.dmp";
 			if (std::filesystem::exists(dump_path))
 			{
-				auto msg = L"发现已有的游戏崩溃文件,是否加载模组?\n"
-						   L"Found existing game crash file, load module or not?";
+				auto msg = L"发现已有的游戏崩溃文件,是否卸载模组?\n"
+						   L"Found existing game crash file, unsetup module or not?";
 				int res = MessageBoxW(NULL,
 									  msg,
 									  L"MOD:LUAJIT-WARN",
 									  MB_YESNO);
-				if (res == IDNO)
+				if (res == IDYES)
 				{
+					Installer(false);
 					return TRUE;
 				}
 				std::filesystem::remove(dump_path);

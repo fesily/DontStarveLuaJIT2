@@ -69,11 +69,11 @@ auto hashfile(std::filesystem::path path)
     }
     return std::hash<std::string>{}(filecontext);
 }
-void updater()
-{
-    if (!need_updater())
-        return;
 
+void updater();
+
+void Installer(bool setup) 
+{
     STARTUPINFO si;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
@@ -86,7 +86,7 @@ void updater()
     auto bin_dir = getModBinDir();
     auto game_dir = getGameDir() / "bin64";
     std::string update_cmd;
-    if (!std::filesystem::exists(bin_dir))
+    if (!setup || !std::filesystem::exists(bin_dir))
     {
         // unsetup
         SetEnvironmentVariableW(L"GAME_FILE", (game_dir / "Winmm.dll").c_str());
@@ -99,18 +99,19 @@ void updater()
         auto bin_dir_copy = bin_dir.make_preferred().string();
         auto game_dir_copy = game_dir.make_preferred().string();
 
-        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (const char *)&updater, &hmod);
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (const char*)&updater, &hmod);
         GetModuleFileNameA(hmod, path, MAX_PATH);
         SetEnvironmentVariableA("GAME_DIR", game_dir_copy.c_str());
         SetEnvironmentVariableA("BIN_DIR", bin_dir_copy.c_str());
         update_cmd = "xcopy $Env:BIN_DIR $Env:GAME_DIR /C /Y";
     }
+#define DEBUG_SHELL 0
     auto cmd = std::format("powershell"
-#ifndef NDEBUG
-                           " -NoExit"
+#if DEBUG_SHELL
+        " -NoExit"
 #endif
-                           " -Command $Host.UI.RawUI.WindowTitle='LUAJIT_UPDATER';Wait-Process {}; {};start steam://rungameid/322330;",
-                           GetCurrentProcessId(), update_cmd);
+        " -Command $Host.UI.RawUI.WindowTitle='LUAJIT_UPDATER';Wait-Process {}; {};start steam://rungameid/322330;",
+        GetCurrentProcessId(), update_cmd);
     OutputDebugStringA(cmd.c_str());
     if (CreateProcessA(NULL, cmd.data(), NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
     {
@@ -118,4 +119,11 @@ void updater()
         CloseHandle(pi.hThread);
         std::exit(0);
     }
+}
+
+void updater()
+{
+    if (!need_updater())
+        return;
+    Installer(true);
 }
