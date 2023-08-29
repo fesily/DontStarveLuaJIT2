@@ -24,3 +24,4 @@ dst_compatible = true
 client_only_mod = true
 
 configuration_options = {}
+restart_required = true

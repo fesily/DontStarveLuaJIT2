@@ -1,4 +1,3 @@
-#include <steam_api.h>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -8,34 +7,23 @@
 #ifndef MOD_VERSION
 #error "not define MOD_VERSION"
 #endif
+#include "steam.hpp"
+#include "PersistentString.hpp"
 
 using namespace std::literals;
 
 std::filesystem::path getGameDir();
-std::filesystem::path getModDir()
+static std::filesystem::path getModinfoLuaPath()
 {
-    uint64_t punSizeOnDisk;
-    uint32_t punTimeStamp;
-    char path[MAX_PATH];
-    if (SteamUGC()->GetItemInstallInfo(3010545764, &punSizeOnDisk, path, 255, &punTimeStamp))
-    {
-        return path;
-    }
-    return {};
+    return getModDir() / "modinfo.lua";
 }
-
-bool need_updater()
+static bool mod_has_removed()
 {
-    if (!SteamAPI_Init())
-        return false;
-
-    auto dir = getModDir();
-    if (dir.empty())
-        return false;
-    if (!std::filesystem::exists(dir))
-        return true;
-    auto modinfo_path = dir / "modinfo.lua";
-    std::ifstream ss(modinfo_path);
+    return !std::filesystem::exists(getModinfoLuaPath());
+}
+static bool need_updater()
+{
+    std::ifstream ss(getModinfoLuaPath());
     std::string line;
     while (std::getline(ss, line))
     {
@@ -52,10 +40,7 @@ bool need_updater()
     }
     return true;
 }
-auto getModBinDir()
-{
-    return getModDir() / "bin64" / "windows";
-}
+
 auto hashfile(std::filesystem::path path)
 {
     std::string filecontext;
@@ -71,8 +56,49 @@ auto hashfile(std::filesystem::path path)
 }
 
 void updater();
+std::filesystem::path getModindexPath();
+std::filesystem::path getLuajitMtxPath();
 
-void Installer(bool setup) 
+static auto unsetup_pre(std::filesystem::path game_dir)
+{
+    // disabale luajit mod
+    auto path = getModindexPath();
+    auto modindex = GetPersistentString(path.string());
+    if (modindex.has_value())
+    {
+        auto &v = modindex.value();
+        auto modid_str = std::to_string(modid);
+        auto pos = v.find(modid_str);
+        if (pos != std::string::npos)
+        {
+            auto new_modindex = v.replace(pos, modid_str.length(), modid_str + "_");
+            SetPersistentString(path.string(), new_modindex, false);
+        }
+    }
+
+    // unsetup
+    SetEnvironmentVariableW(L"GAME_FILE", (game_dir / "Winmm.dll").c_str());
+
+    return "rm $Env:GAME_FILE";
+}
+
+static auto setup_pre(std::filesystem::path game_dir)
+{
+    std::filesystem::remove(getLuajitMtxPath());
+    auto bin_dir = getModDir() / "bin64" / "windows";
+    auto bin_dir_copy = bin_dir.make_preferred().string();
+    auto game_dir_copy = game_dir.make_preferred().string();
+
+    char path[MAX_PATH];
+    HMODULE hmod;
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (const char *)&updater, &hmod);
+    GetModuleFileNameA(hmod, path, MAX_PATH);
+    SetEnvironmentVariableA("GAME_DIR", game_dir_copy.c_str());
+    SetEnvironmentVariableA("BIN_DIR", bin_dir_copy.c_str());
+    return "xcopy $Env:BIN_DIR $Env:GAME_DIR /C /Y";
+}
+
+static void installer(bool setup)
 {
     STARTUPINFO si;
     ZeroMemory(&si, sizeof(si));
@@ -80,38 +106,17 @@ void Installer(bool setup)
 
     PROCESS_INFORMATION pi;
     ZeroMemory(&pi, sizeof(pi));
-    char path[MAX_PATH];
-    HMODULE hmod;
 
-    auto bin_dir = getModBinDir();
     auto game_dir = getGameDir() / "bin64";
-    std::string update_cmd;
-    if (!setup || !std::filesystem::exists(bin_dir))
-    {
-        // unsetup
-        SetEnvironmentVariableW(L"GAME_FILE", (game_dir / "Winmm.dll").c_str());
-
-        update_cmd = "rm $Env:GAME_FILE";
-    }
-    else
-    {
-
-        auto bin_dir_copy = bin_dir.make_preferred().string();
-        auto game_dir_copy = game_dir.make_preferred().string();
-
-        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (const char*)&updater, &hmod);
-        GetModuleFileNameA(hmod, path, MAX_PATH);
-        SetEnvironmentVariableA("GAME_DIR", game_dir_copy.c_str());
-        SetEnvironmentVariableA("BIN_DIR", bin_dir_copy.c_str());
-        update_cmd = "xcopy $Env:BIN_DIR $Env:GAME_DIR /C /Y";
-    }
+    std::string update_cmd = (setup ? setup_pre: unsetup_pre)(game_dir);
+    
 #define DEBUG_SHELL 0
     auto cmd = std::format("powershell"
 #if DEBUG_SHELL
-        " -NoExit"
+                           " -NoExit"
 #endif
-        " -Command $Host.UI.RawUI.WindowTitle='LUAJIT_UPDATER';Wait-Process {}; {};start steam://rungameid/322330;",
-        GetCurrentProcessId(), update_cmd);
+                           " -Command $Host.UI.RawUI.WindowTitle='LUAJIT_UPDATER';Wait-Process {}; {};start steam://rungameid/322330;",
+                           GetCurrentProcessId(), update_cmd);
     OutputDebugStringA(cmd.c_str());
     if (CreateProcessA(NULL, cmd.data(), NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
     {
@@ -123,7 +128,12 @@ void Installer(bool setup)
 
 void updater()
 {
+    if (mod_has_removed())
+    {
+        installer(false);
+        return;
+    }
     if (!need_updater())
         return;
-    Installer(true);
+    installer(true);
 }

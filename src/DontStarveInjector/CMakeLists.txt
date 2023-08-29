@@ -13,6 +13,7 @@ signature.cpp
 )
 
 find_package(libzip CONFIG REQUIRED)
+find_package(ZLIB REQUIRED)
 
 add_library(Injector SHARED ${SOURCES})
 
@@ -57,9 +58,12 @@ install(TARGETS Injector RUNTIME DESTINATION .)
 
 set (Winmm_SOURCES
 winmm.cpp
+winmm_main.cpp
 updater.cpp
 inlinehook.cpp
 module.cpp
+steam.cpp
+PersistentString.cpp
 ${PROJECT_SOURCE_DIR}/version.txt
 )
 add_library(Winmm SHARED ${Winmm_SOURCES})
@@ -67,6 +71,8 @@ add_library(Winmm SHARED ${Winmm_SOURCES})
 target_include_directories(Winmm PUBLIC ${PROJECT_SOURCE_DIR}/src/steam)
 target_link_directories(Winmm PUBLIC ${PROJECT_SOURCE_DIR}/src/steam/redistributable_bin/win64)
 target_link_libraries(Winmm PRIVATE steam_api64)
+
+target_link_libraries(Winmm PRIVATE ZLIB::ZLIB)
 
 file(STRINGS "${PROJECT_SOURCE_DIR}/version.txt" MOD_VERSION LIMIT_COUNT 1)
 

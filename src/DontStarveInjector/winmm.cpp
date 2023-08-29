@@ -5,17 +5,9 @@
 //
 
 #include <windows.h>
-#include <TCHAR.h>
-#include <string>
-#include <atomic>
-#include <unordered_map>
-#include <thread>
-#include <format>
 #include <shellapi.h>
-#include <ShlObj.h>
+#include <atomic>
 #include "module.hpp"
-
-using namespace std::literals;
 
 #pragma comment(linker, "/EXPORT:Noname2=AheadLib_Unnamed2,@2,NONAME")
 #pragma comment(linker, "/EXPORT:mciExecute=AheadLib_mciExecute,@3")
@@ -429,51 +421,6 @@ static bool GumFoundCb(const ExportDetails *details,
 	return true;
 }
 
-static void wait_debugger()
-{
-	TCHAR filePath[MAX_PATH];
-	::GetModuleFileName(NULL, filePath, MAX_PATH);
-
-	if (_tcsstr(filePath, _T("dontstarve")) != NULL)
-	{
-		const auto filename = "Debug.config";
-		BOOL enableDebug = ::GetFileAttributesA(filename) != INVALID_FILE_ATTRIBUTES;
-
-		if (enableDebug)
-		{
-			if (!IsDebuggerPresent())
-			{
-				STARTUPINFO si;
-				ZeroMemory(&si, sizeof(si));
-				si.cb = sizeof(si);
-
-				PROCESS_INFORMATION pi;
-				ZeroMemory(&pi, sizeof(pi));
-				auto cmd = std::format("vsjitdebugger -p {}", GetCurrentProcessId());
-				CreateProcessA(NULL, cmd.data(), NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL,
-							   NULL,
-							   &si,
-							   &pi);
-				CloseHandle(pi.hProcess);
-				CloseHandle(pi.hThread);
-			}
-			auto limit = std::chrono::system_clock::now() + 15s;
-			while (!IsDebuggerPresent())
-			{
-				std::this_thread::yield();
-				if (std::chrono::system_clock::now() > limit)
-					break;
-			}
-			auto fp = fopen(filename, "r");
-			char buffer[1024] = {};
-			if (fread(buffer, sizeof(char), sizeof(buffer) / sizeof(char), fp) > 0)
-			{
-				_putenv_s("LUA_INIT", buffer);
-			}
-			fclose(fp);
-		}
-	}
-}
 #define DEF_FUNCTION(name)          \
 	EXTERN_C void AheadLib_##name() \
 	{                               \
@@ -483,81 +430,9 @@ static void wait_debugger()
 DEF_FUNCTION(Unnamed2)
 
 FUNCTIONS(DEF_FUNCTION)
-#include <optional>
-#include <filesystem>
-std::filesystem::path getUserDoctmentDir()
-{
-	char path[MAX_PATH];
-	SHGetFolderPathA(NULL, CSIDL_MYDOCUMENTS, NULL, 0, path);
-	return path;
-}
 
-std::filesystem::path getExePath()
-{
-	char path[MAX_PATH];
-	GetModuleFileNameA(NULL, path, 255);
-	return std::filesystem::path{path};
-}
-
-std::filesystem::path getGameDir()
-{
-	return getExePath().parent_path().parent_path();
-}
-
-bool isClientMod = []()
-{
-	return !getExePath().filename().string().contains("server");
-}();
-
-void updater();
-void Installer(bool unsetup);
-
-void DontStarveInjectorStart()
-{
-	auto dir = getGameDir();
-#if 0
-	// check version
-	auto version_path = dir / "version.txt";
-	if (std::filesystem::exists(version_path))
-	{
-		auto fp = fopen(version_path.string().c_str(), "r");
-		uint64_t version = 0;
-		fscanf(fp, "%lld", &version);
-		fclose(fp);
-	}
-#endif
-	// auto updater
-	
-	if (isClientMod)
-	{
-		updater();
-	}
-	else
-	{
-		std::atexit(updater);
-	}
-	auto mutex_file = dir / "data" / "luajit.mutex";
-	if (std::filesystem::exists(mutex_file))
-	{
-		int res = MessageBoxW(NULL, L"发现上次没有正常退出游戏, 是否卸载模组?\nNoticed that didn't exit the game properly last time, unsetup module or not?", L"MOD:LUAJIT-WARN", MB_YESNO);
-		if (res == IDYES)
-		{
-			Installer(false);
-			return;
-		}
-	}
-	auto fp = fopen(mutex_file.string().c_str(), "w");
-	if (fp)
-		fclose(fp);
-	auto mod = LoadLibraryA("injector");
-	if (!mod)
-	{
-		MessageBoxA(NULL, "can't load injector.dll", "Error!", 0);
-		std::exit(1);
-	}
-	auto ptr = (void (*)(bool))GetProcAddress(mod, "Inject");
-	ptr(isClientMod);
-}
+void wait_debugger();
+void DontStarveInjectorStart();
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, PVOID pvReserved)
 {
 	static std::atomic_bool loaded = false;
@@ -570,23 +445,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, PVOID pvReserved)
 			module_enumerate_exports(hModule, GumFoundCb, hModule);
 			void *uname2_ptr = GetProcAddress(g_OldModule, (LPCSTR)2);
 			Hook((uint8_t *)&AheadLib_Unnamed2, (uint8_t *)uname2_ptr);
-			// check dump
-			auto dump_path = getUserDoctmentDir() / "klei" / "DoNotStarveTogether" / "donotstarvetogether_client.dmp";
-			if (std::filesystem::exists(dump_path))
-			{
-				auto msg = L"发现已有的游戏崩溃文件,是否卸载模组?\n"
-						   L"Found existing game crash file, unsetup module or not?";
-				int res = MessageBoxW(NULL,
-									  msg,
-									  L"MOD:LUAJIT-WARN",
-									  MB_YESNO);
-				if (res == IDYES)
-				{
-					Installer(false);
-					return TRUE;
-				}
-				std::filesystem::remove(dump_path);
-			}
 			DontStarveInjectorStart();
 		}
 	}
