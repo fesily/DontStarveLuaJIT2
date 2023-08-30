@@ -1,5 +1,8 @@
 #pragma once
 #include <filesystem>
-constexpr auto modid = 3010545764;
+#define MODIDS(id) \
+constexpr auto modid = id; \
+constexpr auto modid_name = "workshop-"#id;
+MODIDS(3010545764)
 std::filesystem::path getModDir();
 int64_t getUserId();

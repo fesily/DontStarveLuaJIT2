@@ -412,7 +412,7 @@ static bool GumFoundCb(const ExportDetails *details,
 	HMODULE mod = (HMODULE)user_data;
 	void *fake = GetProcAddress(mod, details->name);
 	void *real = GetProcAddress(g_OldModule, details->name);
-	if (real == 0 | fake == 0)
+	if (real == 0 || fake == 0)
 	{
 		MessageBoxA(NULL, details->name, "can't find module function", 0);
 		std::exit(1);

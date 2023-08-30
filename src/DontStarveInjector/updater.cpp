@@ -56,25 +56,13 @@ auto hashfile(std::filesystem::path path)
 }
 
 void updater();
-std::filesystem::path getModindexPath();
 std::filesystem::path getLuajitMtxPath();
+void enable_mod(bool enabled);
 
 static auto unsetup_pre(std::filesystem::path game_dir)
 {
     // disabale luajit mod
-    auto path = getModindexPath();
-    auto modindex = GetPersistentString(path.string());
-    if (modindex.has_value())
-    {
-        auto &v = modindex.value();
-        auto modid_str = std::to_string(modid);
-        auto pos = v.find(modid_str);
-        if (pos != std::string::npos)
-        {
-            auto new_modindex = v.replace(pos, modid_str.length(), modid_str + "_");
-            SetPersistentString(path.string(), new_modindex, false);
-        }
-    }
+    enable_mod(false);
 
     // unsetup
     SetEnvironmentVariableW(L"GAME_FILE", (game_dir / "Winmm.dll").c_str());
@@ -108,8 +96,8 @@ static void installer(bool setup)
     ZeroMemory(&pi, sizeof(pi));
 
     auto game_dir = getGameDir() / "bin64";
-    std::string update_cmd = (setup ? setup_pre: unsetup_pre)(game_dir);
-    
+    std::string update_cmd = (setup ? setup_pre : unsetup_pre)(game_dir);
+
 #define DEBUG_SHELL 0
     auto cmd = std::format("powershell"
 #if DEBUG_SHELL
