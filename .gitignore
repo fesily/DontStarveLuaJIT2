@@ -27,6 +27,7 @@
 *.app
 
 build/
+buildvs/
 dist/
 .vs/
 
