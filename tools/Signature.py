@@ -1,3 +1,6 @@
+current_game_version = 0
+with open("../version.txt","r") as fp:
+    current_game_version = fp.readline()
 def generator(name):
     base_addr = 0
     max_addr = 0
@@ -41,18 +44,19 @@ def generator(name):
             f"#ifndef SIGNATURES_{name}_H\n",
             f"#define SIGNATURES_{name}_H\n",
             "#include <unordered_map>\n",
-            "#include <string_view>\n",
-            "using namespace std::string_view_literals;\n",
+            "#include <string>\n",
+            "#include <cstdint>\n",
+            "using namespace std::literals;\n",
             "#ifndef SIGNATURES_DEF\n"
             "#define SIGNATURES_DEF\n"
             "struct Signatures {\n",
-            "\tvoid* offset;\n",
-            "\tstd::unordered_map<std::string_view, void*> funcs;\n",
+            "\tintptr_t version;\n",
+            "\tstd::unordered_map<std::string, intptr_t> funcs;\n",
             "};\n",
             "#endif\n"
             f"static Signatures signatures_{name} = \n",
             "{\n",
-            f"(void*){max_addr-base_addr},\n",
+            f"{current_game_version},\n",
             "\t{\n",
         ]
 
@@ -60,7 +64,7 @@ def generator(name):
             func = funcs[i]
             if func[0] in missfuncs:
                 continue
-            line = '\t{{"{}"sv, (void*){}}},\n'.format(func[0], func[1] - base_addr)
+            line = '\t{{"{}"s, {}}},\n'.format(func[0], func[1] - base_addr)
             output.append(line)
 
         output.append("}};\n#endif\n")

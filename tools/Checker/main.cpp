@@ -177,8 +177,8 @@ int check(const char *path, const Signatures &signatures)
             continue;
         }
         std::string ecmsg;
-        auto k2 = create_signature((void *)dll_func, 0x128, (void *)hlua51);
-        auto k1 = create_signature((void *)func_addr, 0x128, (void *)htarget);
+        auto k2 = create_signature((void *)dll_func, (void*)hlua51, {});
+        auto k1 = create_signature((void *)func_addr, (void*)htarget, {});
         if (k1 != k2)
         {
             size_t limit = std::min(k1.size(), k2.size());

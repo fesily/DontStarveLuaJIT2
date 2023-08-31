@@ -13,3 +13,9 @@ local old_getbuildstring = TEMPLATES.GetBuildString
 TEMPLATES.GetBuildString = function()
     return (old_getbuildstring() or "") .. "(LuaJIT)"
 end
+
+local jit = require 'jit'
+
+AddSimPostInit(function()
+    jit.on()
+end)

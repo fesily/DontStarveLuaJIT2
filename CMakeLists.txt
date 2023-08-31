@@ -24,7 +24,7 @@ add_custom_target(create_missfuncs DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missf
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_client.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_server.hpp
     COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/Signature.py"
-    DEPENDS src/missfunc.txt src/Signatures_client.txt src/Signatures_server.txt
+    DEPENDS src/missfunc.txt src/Signatures_client.txt src/Signatures_server.txt ${CMAKE_CURRENT_SOURCE_DIR}/tools/Signature.py
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
@@ -51,13 +51,15 @@ set(LUAJIT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src)
 set(LUAJIT_LIBRARIES luajit-5.1)
 add_subdirectory("src/lua51")
 set(LUA_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/lua51/src)
+set(LUA_LIBRARIES_PATH ${CMAKE_CURRENT_SOURCE_DIR}/src/lua51/release/lua51.dll)
+set(LUA_CONFIG_LIBRARIES_PATH ${CMAKE_CURRENT_SOURCE_DIR}/src/lua51/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll)
 set(LUA_LIBRARIES lua51)
 
 add_subdirectory("src/DontStarveInjector")
 add_subdirectory("tools/Checker")
 add_subdirectory("tools/mod_packer")
 
-#install(FILES src/lua51/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll DESTINATION ${CMAKE_INSTALL_PREFIX})
-install(FILES src/lua51/release/lua51.dll DESTINATION ${CMAKE_INSTALL_PREFIX})
+#install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})
+install(FILES ${LUA_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})
 install(DIRECTORY ${CMAKE_INSTALL_PREFIX} DESTINATION ${GAME_INSTALL_PREFIX})
 

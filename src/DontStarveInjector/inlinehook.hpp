@@ -3,15 +3,7 @@
 #include <array>
 #include <cassert>
 
-template <typename T, size_t len>
-inline void HookWriteCode(uint8_t *from, std::array<T, len> code)
-{
-    DWORD oldProtect = 0;
-    ::VirtualProtect(from, len, PAGE_EXECUTE_READWRITE, &oldProtect);
-    assert(oldProtect & PAGE_EXECUTE_READ);
-    memcpy(from, code.data(), len);
-    ::VirtualProtect(from, len, PAGE_EXECUTE_READ, &oldProtect);
-}
-
+void HookWriteCode(void *from, const void *code, size_t len);
+void ResetHook(uint8_t *from);
 bool HookByReg(uint8_t *from, uint8_t *to);
 bool Hook(uint8_t *from, uint8_t *to);

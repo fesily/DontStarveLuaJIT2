@@ -4,6 +4,7 @@
 #include <string_view>
 #include <format>
 #include <Windows.h>
+#include <spdlog/spdlog.h>
 #ifndef MOD_VERSION
 #error "not define MOD_VERSION"
 #endif
@@ -32,12 +33,12 @@ static bool need_updater()
         {
             auto version = line.substr(prefix.size(), line.find_last_of('"') - prefix.size());
             if (version == MOD_VERSION)
-            {
                 return false;
-            }
-            break;
+            spdlog::info("need update, mod version is not " MOD_VERSION);
+            return true;
         }
     }
+    spdlog::info("need update, no mod version");
     return true;
 }
 
@@ -105,7 +106,7 @@ static void installer(bool setup)
 #endif
                            " -Command $Host.UI.RawUI.WindowTitle='LUAJIT_UPDATER';Wait-Process {}; {};start steam://rungameid/322330;",
                            GetCurrentProcessId(), update_cmd);
-    OutputDebugStringA(cmd.c_str());
+    spdlog::info("run shell:{}", cmd);
     if (CreateProcessA(NULL, cmd.data(), NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
     {
         CloseHandle(pi.hProcess);
@@ -118,6 +119,7 @@ void updater()
 {
     if (mod_has_removed())
     {
+        spdlog::info("mod removed, unsetup it!");
         installer(false);
         return;
     }

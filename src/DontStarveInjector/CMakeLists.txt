@@ -14,6 +14,8 @@ signature.cpp
 
 find_package(libzip CONFIG REQUIRED)
 find_package(ZLIB REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 
 add_library(Injector SHARED ${SOURCES})
 
@@ -22,6 +24,8 @@ target_link_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/frida-gum)
 target_link_libraries(Injector PRIVATE frida-gum)
 
 target_link_libraries(Injector PRIVATE libzip::zip)
+target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(Injector PRIVATE spdlog::spdlog)
 
 target_include_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/steam)
 target_link_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/steam/redistributable_bin/win64)
@@ -73,6 +77,7 @@ target_link_directories(Winmm PUBLIC ${PROJECT_SOURCE_DIR}/src/steam/redistribut
 target_link_libraries(Winmm PRIVATE steam_api64)
 
 target_link_libraries(Winmm PRIVATE ZLIB::ZLIB)
+target_link_libraries(Winmm PRIVATE spdlog::spdlog)
 
 file(STRINGS "${PROJECT_SOURCE_DIR}/version.txt" MOD_VERSION LIMIT_COUNT 1)
 

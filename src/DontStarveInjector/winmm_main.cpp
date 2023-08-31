@@ -8,6 +8,9 @@
 #include <TCHAR.h>
 #include <ShlObj.h>
 #include <cassert>
+#include <memory>
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/msvc_sink.h>
 
 #include "PersistentString.hpp"
 #include "steam.hpp"
@@ -180,16 +183,25 @@ static bool shouldloadmod()
 {
     auto mutex_file = getLuajitMtxPath();
     if (std::filesystem::exists(mutex_file))
+    {
+        spdlog::info("find luajit.mutex");
         return false;
+    }
     auto clientSaveDir = GetClientSaveDir();
     auto boot_modindex_path = clientSaveDir / "boot_modindex";
     // check root_modindex
     auto boot_modindex = GetPersistentString(boot_modindex_path.string());
     if (boot_modindex.value_or("").find("loading") != std::string::npos)
+    {
+        spdlog::info("boot_modindex is loading");
         return false;
+    }
     // check enable luajit
     if (!mod_enabled())
+    {
+        spdlog::info("luajit mod not enabled");
         return false;
+    }
     auto fp = fopen(mutex_file.string().c_str(), "w");
     if (fp)
         fclose(fp);
@@ -198,6 +210,7 @@ static bool shouldloadmod()
 
 void DontStarveInjectorStart()
 {
+    spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>()));
     std::filesystem::remove(getGameUserDoctmentDir() / "Cluster_65534.bat");
     auto dir = getGameDir();
     // auto updater
@@ -218,8 +231,8 @@ void DontStarveInjectorStart()
     auto mod = LoadLibraryA("injector");
     if (!mod)
     {
-        MessageBoxA(NULL, "can't load injector.dll", "Error!", 0);
-        std::exit(1);
+        spdlog::error("can't load injector.dll");
+        return;
     }
     auto ptr = (void (*)(bool))GetProcAddress(mod, "Inject");
     ptr(isClientMod);
