@@ -30,3 +30,4 @@
 #define DEBUG_GETSIZE_PATCH 1
 #endif
 
+constexpr auto lua51_name = "lua51";

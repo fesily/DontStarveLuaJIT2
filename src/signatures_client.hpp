@@ -1,16 +1,7 @@
 #ifndef SIGNATURES_client_H
 #define SIGNATURES_client_H
-#include <unordered_map>
-#include <string>
-#include <cstdint>
+#include "Signature.hpp"
 using namespace std::literals;
-#ifndef SIGNATURES_DEF
-#define SIGNATURES_DEF
-struct Signatures {
-	intptr_t version;
-	std::unordered_map<std::string, intptr_t> funcs;
-};
-#endif
 static Signatures signatures_client = 
 {
 570654

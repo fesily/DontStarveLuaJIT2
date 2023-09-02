@@ -4,12 +4,14 @@ option(ENABLE_USE_LISTENER "use api listener" OFF)
 
 set (SOURCES
 DontStarveInjector.cpp
+DontStarveSignature.cpp
 lua_fake.cpp
 inlinehook.cpp
 gameio.cpp
 zipfile.cpp
 module.cpp
 signature.cpp
+SignatureJson.cpp
 )
 
 find_package(libzip CONFIG REQUIRED)
@@ -55,8 +57,6 @@ endif()
 if(ENABLE_ONLY_LUA51)
     target_compile_definitions(Injector PUBLIC ENABLE_ONLY_LUA51)
 endif()
-
-add_dependencies(Injector create_missfuncs create_Signatures)
 
 install(TARGETS Injector RUNTIME DESTINATION .)
 

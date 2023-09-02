@@ -15,12 +15,10 @@ target_link_libraries(signature_checker frida-gum)
 
 file(TO_NATIVE_PATH "${GAME_DIR}" GAMEDIR)
 string(REPLACE "\\" "\\\\" GAMEDIR ${GAMEDIR})
-file(TO_NATIVE_PATH "${PROJECT_SOURCE_DIR}/src/lua51/Release/lua51.dll" LUA51_PATH)
+file(TO_NATIVE_PATH "${LUA_LIBRARIES_PATH}" LUA51_PATH)
 string(REPLACE "\\" "\\\\" LUA51_PATH ${LUA51_PATH})
 target_compile_definitions(signature_checker PUBLIC GAMEDIR="${GAMEDIR}" LUA51_PATH="${LUA51_PATH}")
 
 if (MSVC)
     target_link_options(signature_checker PUBLIC "/NODEFAULTLIB:LIBCMT")
 endif()
-
-add_dependencies(signature_checker create_Signatures)

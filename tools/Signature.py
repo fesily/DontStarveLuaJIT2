@@ -43,17 +43,9 @@ def generator(name):
         output = [
             f"#ifndef SIGNATURES_{name}_H\n",
             f"#define SIGNATURES_{name}_H\n",
-            "#include <unordered_map>\n",
-            "#include <string>\n",
-            "#include <cstdint>\n",
+            "#include \"Signature.hpp\"\n",
             "using namespace std::literals;\n",
-            "#ifndef SIGNATURES_DEF\n"
-            "#define SIGNATURES_DEF\n"
-            "struct Signatures {\n",
-            "\tintptr_t version;\n",
-            "\tstd::unordered_map<std::string, intptr_t> funcs;\n",
-            "};\n",
-            "#endif\n"
+           
             f"static Signatures signatures_{name} = \n",
             "{\n",
             f"{current_game_version},\n",

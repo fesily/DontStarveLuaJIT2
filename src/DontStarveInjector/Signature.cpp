@@ -1,8 +1,13 @@
-﻿#include "Signature.hpp"
-#include <Windows.h>
+﻿#include <Windows.h>
 #include <string_view>
 #include <functional>
 #include <cassert>
+
+#include <frida-gum.h>
+
+#include "Signature.hpp"
+
+constexpr auto page = GUM_PAGE_EXECUTE;
 
 static gboolean sacnBaseAddrCb(GumAddress address, gsize size, gpointer user_data)
 {
@@ -19,7 +24,7 @@ static gboolean findBaseAddrCb(const GumRangeDetails *details, gpointer user_dat
     return true;
 }
 
-GumAddress MemorySignature::scan(const char *m)
+uintptr_t MemorySignature::scan(const char *m)
 {
     target_address = 0;
     match_pattern = gum_match_pattern_new_from_string(pattern);
