@@ -14,8 +14,21 @@ TEMPLATES.GetBuildString = function()
     return (old_getbuildstring() or "") .. "(LuaJIT)"
 end
 
-local jit = require 'jit'
+if GetModConfigData("EnabledJIT") then
+    local jit = require 'jit'
 
-AddSimPostInit(function()
-    jit.on()
-end)
+    if GetModConfigData("JitOpt") then
+        require("jit.opt").start("minstitch=2", "maxtrace=4000",
+        "maxrecord=8000", "sizemcode=64",
+        "maxmcode=4000", "maxirconst=1000")
+    end
+
+    if GetModConfigData("ModBlackList") then
+
+    end
+
+    AddSimPostInit(function()
+        jit.on()
+        --TODO : add jit blacklists scripts/mods
+    end)
+end
