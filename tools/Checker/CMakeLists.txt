@@ -7,11 +7,12 @@ ${PROJECT_SOURCE_DIR}/src/DontStarveInjector/signature.cpp
 
 add_executable(signature_checker ${SOURCES})
 
-target_include_directories(signature_checker PUBLIC ${PROJECT_SOURCE_DIR}/src/frida-gum)
 target_include_directories(signature_checker PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(signature_checker PUBLIC ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
-target_link_directories(signature_checker PUBLIC ${PROJECT_SOURCE_DIR}/src/frida-gum)
-target_link_libraries(signature_checker frida-gum)
+
+target_include_directories(signature_checker PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
+target_link_directories(signature_checker PUBLIC ${FRIDA_GUM_LIBRARY_DIR})
+target_link_libraries(signature_checker PRIVATE ${FRIDA_GUM_LIBRARIES})
 
 file(TO_NATIVE_PATH "${GAME_DIR}" GAMEDIR)
 string(REPLACE "\\" "\\\\" GAMEDIR ${GAMEDIR})

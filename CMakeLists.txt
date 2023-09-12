@@ -61,6 +61,10 @@ set(LUA_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/release/lua51.dll)
 set(LUA_CONFIG_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll)
 set(LUA_LIBRARIES lua51)
 
+set(FRIDA_GUM_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/src/frida-gum)
+set(FRIDA_GUM_LIBRARY_DIR ${FRIDA_GUM_INCLUDE_DIR})
+set(FRIDA_GUM_LIBRARIES frida-gum)
+
 add_subdirectory("src/DontStarveInjector")
 add_subdirectory("tools/Checker")
 add_subdirectory("tools/Creater")

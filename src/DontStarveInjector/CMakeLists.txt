@@ -21,9 +21,9 @@ find_package(spdlog CONFIG REQUIRED)
 
 add_library(Injector SHARED ${SOURCES})
 
-target_include_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/frida-gum)
-target_link_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/frida-gum)
-target_link_libraries(Injector PRIVATE frida-gum)
+target_include_directories(Injector PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
+target_link_directories(Injector PUBLIC ${FRIDA_GUM_LIBRARY_DIR})
+target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})
 
 target_link_libraries(Injector PRIVATE libzip::zip)
 target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
