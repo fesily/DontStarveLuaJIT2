@@ -4,7 +4,7 @@
 using namespace std::literals;
 static Signatures signatures_server = 
 {
-570654
+572130
 ,
 	{
 	{"luaL_addlstring"s, 7424},

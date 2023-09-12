@@ -1,5 +1,7 @@
+import os
+GameDir = os.getenv("GAME_DIR")
 current_game_version = 0
-with open("../version.txt","r") as fp:
+with open(f"{GameDir}/version.txt","r") as fp:
     current_game_version = fp.readline()
 def generator(name):
     base_addr = 0

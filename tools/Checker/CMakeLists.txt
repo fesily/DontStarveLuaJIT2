@@ -22,3 +22,5 @@ target_compile_definitions(signature_checker PUBLIC GAMEDIR="${GAMEDIR}" LUA51_P
 if (MSVC)
     target_link_options(signature_checker PUBLIC "/NODEFAULTLIB:LIBCMT")
 endif()
+
+add_dependencies(signature_checker create_Signatures)
