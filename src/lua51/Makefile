@@ -122,7 +122,11 @@ lecho:
 	@$(MAKE) echo | grep = | sed -e 's/= /= "/' -e 's/$$/"/' #-e 's/""/nil/'
 	@echo "-- EOF"
 
+docker:
+	docker build -t dontstarvelua51 .
+	docker run -it --rm -v $(shell pwd)/x64/release/:/home/output/ dontstarvelua51
+
 # list targets that do not create files (but not all makes understand .PHONY)
-.PHONY: all $(PLATS) clean test install local none dummy echo pecho lecho
+.PHONY: all $(PLATS) clean test install local none dummy echo pecho lecho docker
 
 # (end of Makefile)

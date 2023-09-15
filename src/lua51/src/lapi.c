@@ -192,9 +192,6 @@ LUA_API void lua_insert (lua_State *L, int idx) {
   StkId p;
   StkId q;
   lua_lock(L);
-#ifdef __GNUC__
-  luaC_checkGC_(L);
-#endif
   p = index2adr(L, idx);
   api_checkvalidindex(L, p);
   for (q = L->top; q>p; q--) setobjs2s(L, q, q-1);
