@@ -36,7 +36,7 @@ static std::filesystem::path to_path(const char *p)
     }
     catch (const std::exception &)
     {
-        return std::filesystem::u8path(p);
+        return std::filesystem::path((const char8_t *)p);
     }
 }
 
@@ -62,7 +62,7 @@ static FILE *lj_fopen(char const *f, const char *mode) noexcept
 {
     auto path = to_path(f);
     auto path_s = path.string();
-    //TODO：在w的情况下是不是行为不一致
+    // TODO：在w的情况下是不是行为不一致
     auto fp = fopen(path_s.c_str(), mode);
     if (fp)
         return fp;
@@ -170,6 +170,7 @@ static int lj_ferror(FILE *fp) noexcept
     return ferror(fp);
 }
 
+#ifdef _WIN32
 static int lj_fseeki64(
     FILE *fp,
     __int64 _Offset,
@@ -190,6 +191,24 @@ static __int64 lj_ftelli64(FILE *fp) noexcept
     }
     return _ftelli64(fp);
 }
+#else
+static int lj_fseeko(FILE *fp, __off_t _Offset, int _Origin)
+{
+    if (NoFileHandlers.contains((file_interface *)fp))
+    {
+        return ((file_interface *)fp)->fseeko(_Offset, _Origin);
+    }
+    return fseeko(fp, _Offset, _Origin);
+}
+static __off64_t lj_ftello(FILE *fp)
+{
+    if (NoFileHandlers.contains((file_interface *)fp))
+    {
+        return ((file_interface *)fp)->ftello();
+    }
+    return ftello(fp);
+}
+#endif
 
 static void lj_clearerr(FILE *fp) noexcept
 {
@@ -200,11 +219,11 @@ static void lj_clearerr(FILE *fp) noexcept
     return clearerr(fp);
 }
 
-#include <Windows.h>
-void init_luajit_io(HMODULE hluajitModule)
+#include "platform.hpp"
+void init_luajit_io(module_handler_t hluajitModule)
 {
 #define INIT_LUAJIT_IO(name) \
-    *(void **)GetProcAddress(hluajitModule, #name) = (void *)&name
+    *(void **)loadlibproc(hluajitModule, #name) = (void *)&name
 
     INIT_LUAJIT_IO(lj_fclose);
     INIT_LUAJIT_IO(lj_ferror);
@@ -212,8 +231,13 @@ void init_luajit_io(HMODULE hluajitModule)
     INIT_LUAJIT_IO(lj_fopen);
     INIT_LUAJIT_IO(lj_fread);
     INIT_LUAJIT_IO(lj_fscanf);
+#ifdef _WIN32
     INIT_LUAJIT_IO(lj_fseeki64);
     INIT_LUAJIT_IO(lj_ftelli64);
+#else
+    INIT_LUAJIT_IO(lj_fseeko);
+    INIT_LUAJIT_IO(lj_ftello);
+#endif
     INIT_LUAJIT_IO(lj_fwrite);
     INIT_LUAJIT_IO(lj_clearerr);
     INIT_LUAJIT_IO(lj_path_map);
@@ -230,9 +254,9 @@ static bool get_mod_folder(ISteamUGC *ugc, PublishedFileId_t id, std::filesystem
     auto state = ugc->GetItemState(id);
     if (state & k_EItemStateInstalled)
     {
-        uint64_t punSizeOnDisk;
+        uint64 punSizeOnDisk;
         uint32_t punTimeStamp;
-        char path[MAX_PATH];
+        char path[255];
         if (ugc->GetItemInstallInfo(id, &punSizeOnDisk, path, 255, &punTimeStamp))
         {
             res = std::filesystem::path(path).parent_path();

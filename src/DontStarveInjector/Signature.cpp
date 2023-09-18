@@ -1,10 +1,12 @@
-﻿#include <Windows.h>
-#include <string_view>
+﻿#include <string_view>
 #include <functional>
 #include <cassert>
 
 #include <frida-gum.h>
-
+#include <spdlog/spdlog.h>
+#ifndef _WIN32
+#include <sys/mman.h>
+#endif
 #include "Signature.hpp"
 
 constexpr auto page = GUM_PAGE_EXECUTE;
@@ -32,14 +34,21 @@ uintptr_t MemorySignature::scan(const char *m)
     gum_match_pattern_unref(match_pattern);
     char buf[128];
     snprintf(buf, 128, "Signature %s: %p\n", pattern, (void *)target_address);
-    OutputDebugStringA(buf);
+
+    spdlog::info(buf);
     return target_address;
 }
+
 static bool is_data(void *ptr)
 {
+#ifdef _WIN32
     MEMORY_BASIC_INFORMATION info = {};
     VirtualQuery(ptr, &info, sizeof(info));
     return !(info.Protect & PAGE_EXECUTE);
+#else
+    //TODO:
+    return false;
+#endif
 }
 
 std::string create_signature(void *func, void *module_base, const in_function_t &in_func)

@@ -22,20 +22,30 @@ set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin64)
 set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod/bin64/windows/)
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h 
-    COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/missfunc.py"
+    COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tools/missfunc.py"
     DEPENDS src/missfunc.txt
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
 add_custom_target(create_missfuncs DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h)
 
-add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_client.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_server.hpp
-    COMMAND ${CMAKE_COMMAND} -E env GAME_DIR=${GAME_DIR} python "${CMAKE_CURRENT_SOURCE_DIR}/tools/Signature.py" 
-    DEPENDS src/missfunc.txt src/Signatures_client.txt src/Signatures_server.txt ${CMAKE_CURRENT_SOURCE_DIR}/tools/Signature.py
+add_custom_command(
+    OUTPUT
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_client.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_server.h
+    COMMAND ${CMAKE_COMMAND} -E env GAME_DIR=${GAME_DIR} python3 "${CMAKE_CURRENT_SOURCE_DIR}/tools/Signature.py" 
+    DEPENDS
+        src/missfunc.txt
+        src/Signatures_client.txt
+        src/Signatures_server.txt
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/Signature.py
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
-add_custom_target(create_Signatures DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_client.hpp ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_server.hpp)
+add_custom_target(create_Signatures
+    DEPENDS 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_client.h 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_server.h)
 
 set(Lua51_output_dir ${PROJECT_SOURCE_DIR}/src/lua51/$<IF:$<CONFIG:Debug>,debug,release>/)
 
@@ -60,9 +70,12 @@ set(LUA_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/release/lua51.dll)
 set(LUA_CONFIG_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll)
 set(LUA_LIBRARIES lua51)
 
-set(FRIDA_GUM_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/src/frida-gum)
+set(FRIDA_GUM_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/src/frida-gum/${CMAKE_SYSTEM_NAME})
 set(FRIDA_GUM_LIBRARY_DIR ${FRIDA_GUM_INCLUDE_DIR})
 set(FRIDA_GUM_LIBRARIES frida-gum)
+
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+find_package(Steam REQUIRED)
 
 add_subdirectory("src/DontStarveInjector")
 add_subdirectory("tools/Checker")
@@ -74,7 +87,7 @@ install(DIRECTORY ${CMAKE_INSTALL_PREFIX} DESTINATION ${GAME_INSTALL_PREFIX})
 
 
 add_custom_target(make_karta_luamodule 
-    COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_karta.py"
+    COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_karta.py"
     DEPENDS ${LUA_LIBRARIES_PATH}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 
 set (SOURCES
 main.cpp
-${PROJECT_SOURCE_DIR}/src/DontStarveInjector/signature.cpp
+${PROJECT_SOURCE_DIR}/src/DontStarveInjector/Signature.cpp
 )
 
 add_executable(signature_checker ${SOURCES})
@@ -19,6 +19,10 @@ string(REPLACE "\\" "\\\\" GAMEDIR ${GAMEDIR})
 file(TO_NATIVE_PATH "${LUA_LIBRARIES_PATH}" LUA51_PATH)
 string(REPLACE "\\" "\\\\" LUA51_PATH ${LUA51_PATH})
 target_compile_definitions(signature_checker PUBLIC GAMEDIR="${GAMEDIR}" LUA51_PATH="${LUA51_PATH}")
+
+find_package(spdlog CONFIG REQUIRED)
+
+target_link_libraries(signature_checker PRIVATE spdlog::spdlog)
 
 if (MSVC)
     target_link_options(signature_checker PUBLIC "/NODEFAULTLIB:LIBCMT")

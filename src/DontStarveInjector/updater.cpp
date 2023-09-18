@@ -3,13 +3,17 @@
 #include <string>
 #include <string_view>
 #include <format>
+#ifdef _WIN32
 #include <Windows.h>
+#else
+#endif
 #include <spdlog/spdlog.h>
 #ifndef MOD_VERSION
 #error "not define MOD_VERSION"
 #endif
 #include "steam.hpp"
 #include "PersistentString.hpp"
+#include "platform.hpp"
 
 using namespace std::literals;
 
@@ -66,10 +70,15 @@ static auto unsetup_pre(std::filesystem::path game_dir)
     enable_mod(false);
 
     // unsetup
+#ifdef _WIN32
     SetEnvironmentVariableW(L"GAME_FILE", (game_dir / "Winmm.dll").c_str());
-
     return "rm $Env:GAME_FILE";
+#else
+    setenv("GAME_FILE", (game_dir / "Winmm.so").c_str(), 1);
+    return "rm $(GAME_FILE)";
+#endif
 }
+
 
 static auto setup_pre(std::filesystem::path game_dir)
 {
@@ -77,27 +86,28 @@ static auto setup_pre(std::filesystem::path game_dir)
     auto bin_dir = getModDir() / "bin64" / "windows";
     auto bin_dir_copy = bin_dir.make_preferred().string();
     auto game_dir_copy = game_dir.make_preferred().string();
-
-    char path[MAX_PATH];
-    HMODULE hmod;
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (const char *)&updater, &hmod);
-    GetModuleFileNameA(hmod, path, MAX_PATH);
+#ifdef _WIN32
     SetEnvironmentVariableA("GAME_DIR", game_dir_copy.c_str());
     SetEnvironmentVariableA("BIN_DIR", bin_dir_copy.c_str());
     return "xcopy $Env:BIN_DIR $Env:GAME_DIR /C /Y";
+#else
+    setenv("GAME_DIR", game_dir_copy.c_str(), 1);
+    setenv("BIN_DIR", bin_dir_copy.c_str(), 1);
+    return "cp -f $(BIN_DIR) $(GAME_DIR)";
+#endif
 }
 
 static void installer(bool setup)
 {
+    auto game_dir = getGameDir() / "bin64";
+    std::string update_cmd = (setup ? setup_pre : unsetup_pre)(game_dir);
+#ifdef _WIN32
     STARTUPINFO si;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
 
     PROCESS_INFORMATION pi;
     ZeroMemory(&pi, sizeof(pi));
-
-    auto game_dir = getGameDir() / "bin64";
-    std::string update_cmd = (setup ? setup_pre : unsetup_pre)(game_dir);
 
 #define DEBUG_SHELL 0
     auto cmd = std::format("powershell"
@@ -113,6 +123,11 @@ static void installer(bool setup)
         CloseHandle(pi.hThread);
         std::exit(0);
     }
+#else
+    auto cmd = std::format("/usr/bin/bash -c \"tail --pid={} -f /dev/null && {} && open steam://rungameid/322330\"", getpid(), update_cmd);
+    spdlog::info("run shell:{}", cmd);
+    system(cmd.c_str());
+#endif
 }
 
 void updater()

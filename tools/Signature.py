@@ -1,8 +1,13 @@
 import os
 GameDir = os.getenv("GAME_DIR")
+
 current_game_version = 0
-with open(f"{GameDir}/version.txt","r") as fp:
-    current_game_version = fp.readline()
+try:
+    with open(f"{GameDir}/version.txt","r") as fp:
+        current_game_version = fp.readline()
+except FileNotFoundError:
+    pass
+    
 def generator(name):
     base_addr = 0
     max_addr = 0
@@ -41,13 +46,10 @@ def generator(name):
             missfuncs.add(line)
 
     funcs.sort()
-    with open(f"src/signatures_{name}.hpp", "w") as f:
+    with open(f"{os.getcwd()}/src/signatures_{name}.h", "w") as f:
         output = [
             f"#ifndef SIGNATURES_{name}_H\n",
             f"#define SIGNATURES_{name}_H\n",
-            "#include \"Signature.hpp\"\n",
-            "using namespace std::literals;\n",
-           
             f"static Signatures signatures_{name} = \n",
             "{\n",
             f"{current_game_version},\n",

@@ -4,9 +4,14 @@
 #include <thread>
 #include <format>
 #include <filesystem>
+#ifdef _WIN32
 #include <Windows.h>
 #include <TCHAR.h>
 #include <ShlObj.h>
+#else
+#include <dlfcn.h>
+#include <unistd.h>
+#endif
 #include <cassert>
 #include <memory>
 #include <spdlog/spdlog.h>
@@ -14,11 +19,13 @@
 
 #include "PersistentString.hpp"
 #include "steam.hpp"
+#include "platform.hpp"
 
 using namespace std::literals;
 
 void wait_debugger()
 {
+#ifdef _WIN32
     TCHAR filePath[MAX_PATH];
     ::GetModuleFileName(NULL, filePath, MAX_PATH);
 
@@ -61,39 +68,37 @@ void wait_debugger()
             fclose(fp);
         }
     }
+#endif
 }
 
 std::filesystem::path getUserDoctmentDir()
 {
     static auto p = []() -> std::filesystem::path
     {
+#ifdef _WIN32
         char path[MAX_PATH];
         SHGetFolderPathA(NULL, CSIDL_MYDOCUMENTS, NULL, 0, path);
         return path;
+#else
+        return "~";
+#endif
     }();
     return p;
 }
 
 std::filesystem::path getKleiDoctmentDir()
 {
-    return getUserDoctmentDir() / "klei";
+    return getUserDoctmentDir() /
+#ifndef _WIN32
+           "."
+#endif
+           "klei";
 }
 
 std::filesystem::path getKleiGameDoctmentDir()
 {
     constexpr auto game_doctment_name = "DoNotStarveTogether";
     return getKleiDoctmentDir() / game_doctment_name;
-}
-
-std::filesystem::path getExePath()
-{
-    static std::filesystem::path p = []
-    {
-        char path[MAX_PATH];
-        GetModuleFileNameA(NULL, path, 255);
-        return std::filesystem::path{path};
-    }();
-    return p;
 }
 
 std::filesystem::path getGameDir()
@@ -210,8 +215,10 @@ static bool shouldloadmod()
 
 void DontStarveInjectorStart()
 {
+#ifdef _WIN32
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>()));
     std::filesystem::remove(getGameUserDoctmentDir() / "Cluster_65534.bat");
+#endif
     auto dir = getGameDir();
     // auto updater
     if (isClientMod)
@@ -228,12 +235,13 @@ void DontStarveInjectorStart()
     {
         std::atexit(updater);
     }
-    auto mod = LoadLibraryA("injector");
+
+    auto mod = loadlib("injector");
     if (!mod)
     {
         spdlog::error("can't load injector.dll");
         return;
     }
-    auto ptr = (void (*)(bool))GetProcAddress(mod, "Inject");
+    auto ptr = (void (*)(bool))loadlibproc(mod, "Inject");
     ptr(isClientMod);
 }

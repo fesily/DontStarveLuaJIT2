@@ -36,7 +36,7 @@ struct memory_file final : public file_interface
     }
     int ferror() override
     {
-        return ss.eof() ? 0: ss.rdstate();
+        return ss.eof() ? 0 : ss.rdstate();
     }
     int fscanf(char const *const _Format, ...) override
     {
@@ -70,16 +70,21 @@ struct memory_file final : public file_interface
                     { // got a character, add it to string
                         *_Str++ = _Traits::to_char_type(_Meta);
                         _Chcount++;
-                        if (_Traits::to_char_type(_Meta) == _Delim){
+                        if (_Traits::to_char_type(_Meta) == _Delim)
+                        {
                             ss.rdbuf()->snextc();
                             break;
-                        } 
+                        }
                     }
                 }
             }
             catch (...)
             {
+#ifdef _WIN32
                 ss.setstate(std::ios_base::badbit, true);
+#else
+                ss.setstate(std::ios_base::badbit);
+#endif
             }
         }
 
@@ -94,7 +99,7 @@ struct memory_file final : public file_interface
     }
     int fseeko(off_t _Offset, int _Origin) override
     {
-        ss.seekg(_Offset, _Origin);
+        ss.seekg(_Offset, (std::ios_base::seekdir)_Origin);
         return ss ? 0 : -1;
     }
     off_t ftello() override

@@ -4,6 +4,7 @@ set (SOURCES
 main.cpp
 ${PROJECT_SOURCE_DIR}/src/DontStarveInjector/DontStarveSignature.cpp
 ${PROJECT_SOURCE_DIR}/src/DontStarveInjector/Signature.cpp
+${PROJECT_SOURCE_DIR}/src/DontStarveInjector/platform.cpp
 )
 find_package(spdlog CONFIG REQUIRED)
 

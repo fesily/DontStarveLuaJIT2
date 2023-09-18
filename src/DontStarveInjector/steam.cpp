@@ -26,8 +26,8 @@ std::filesystem::path getModDir()
     {
         return {};
     }
-    uint64_t punSizeOnDisk;
-    uint32_t punTimeStamp;
+    uint64 punSizeOnDisk;
+    uint32 punTimeStamp;
     char path[MAX_PATH];
     if (SteamUGC()->GetItemInstallInfo(modid, &punSizeOnDisk, path, 255, &punTimeStamp))
     {

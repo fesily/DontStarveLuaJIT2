@@ -1,9 +1,11 @@
 #define NOMINMAX
 #include "frida-gum.h"
-#include "signatures_server.hpp"
-#include "signatures_client.hpp"
 #include "LuaModule.hpp"
-#include <Windows.h>
+
+#include "Signature.hpp"
+using namespace std::literals;
+#include "signatures_server.h"
+#include "signatures_client.h"
 
 #ifndef GAMEDIR
 #error "not defined GAME_DIR"

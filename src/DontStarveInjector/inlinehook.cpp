@@ -1,4 +1,9 @@
+#ifdef _WIN32
 #include <Windows.h>
+#else
+#include <sys/mman.h>
+#endif
+#include <string.h>
 #include <cassert>
 #include <format>
 #include <memory>
@@ -17,11 +22,26 @@ static std::unordered_map<uint8_t *, std::string> hooked;
 
 void HookWriteCode(void *from, const void *code, size_t len)
 {
+    constexpr auto prot =
+#ifdef _WIN32
+        VirtualProtect;
     DWORD oldProtect = 0;
+#else
+        mprotect;
+#endif
+#ifdef _WIN32
     ::VirtualProtect(from, len, PAGE_EXECUTE_READWRITE, &oldProtect);
     assert(oldProtect & PAGE_EXECUTE_READ);
+#else
+    auto oldProtect = mprotect(from, len, PROT_READ | PROT_WRITE);
+    assert(oldProtect & PROT_EXEC);
+#endif
     memcpy(from, code, len);
+#ifdef _WIN32
     ::VirtualProtect(from, len, PAGE_EXECUTE_READ, &oldProtect);
+#else
+    mprotect(from, len, PROT_READ | PROT_EXEC);
+#endif
 }
 
 bool HookByReg(uint8_t *from, uint8_t *to)
@@ -40,7 +60,7 @@ void ResetHook(uint8_t *from)
     auto node = hooked.extract(from);
     if (node)
     {
-        auto& original = node.mapped();
+        auto &original = node.mapped();
         HookWriteCode(from, original.c_str(), original.size());
     }
 }

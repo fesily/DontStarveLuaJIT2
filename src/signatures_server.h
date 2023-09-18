@@ -1,11 +1,8 @@
-#ifndef SIGNATURES_client_H
-#define SIGNATURES_client_H
-#include "Signature.hpp"
-using namespace std::literals;
-static Signatures signatures_client = 
+#ifndef SIGNATURES_server_H
+#define SIGNATURES_server_H
+static Signatures signatures_server = 
 {
-572130
-,
+0,
 	{
 	{"luaL_addlstring"s, 7424},
 	{"luaL_addvalue"s, 7664},

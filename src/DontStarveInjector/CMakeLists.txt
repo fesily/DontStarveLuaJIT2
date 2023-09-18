@@ -9,9 +9,9 @@ lua_fake.cpp
 inlinehook.cpp
 gameio.cpp
 zipfile.cpp
-module.cpp
-signature.cpp
+Signature.cpp
 SignatureJson.cpp
+platform.cpp
 )
 
 find_package(libzip CONFIG REQUIRED)
@@ -19,7 +19,16 @@ find_package(ZLIB REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
+include_directories(${STEAM_INCLUDE_DIRS})
+link_libraries(${STEAM_LIBRARIES})
+
+if (WIN32)
+    list(APPEND SOURCES module.cpp)
+endif()
+
 add_library(Injector SHARED ${SOURCES})
+
+target_include_directories(Injector PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 target_include_directories(Injector PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
 target_link_directories(Injector PUBLIC ${FRIDA_GUM_LIBRARY_DIR})
@@ -28,10 +37,6 @@ target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})
 target_link_libraries(Injector PRIVATE libzip::zip)
 target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(Injector PRIVATE spdlog::spdlog)
-
-target_include_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/steam)
-target_link_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/steam/redistributable_bin/win64)
-target_link_libraries(Injector PRIVATE steam_api64)
 
 if (NOT ENABLE_ONLY_LUA51)
     target_include_directories(Injector PUBLIC ${LUAJIT_INCLUDE_DIR})
@@ -61,20 +66,21 @@ endif()
 install(TARGETS Injector RUNTIME DESTINATION .)
 
 set (Winmm_SOURCES
-winmm.cpp
 winmm_main.cpp
 updater.cpp
 inlinehook.cpp
-module.cpp
 steam.cpp
 PersistentString.cpp
+platform.cpp
 ${PROJECT_SOURCE_DIR}/version.txt
 )
+if (WIN32)
+    list(APPEND Winmm_SOURCES winmm_win.cpp)
+    list(APPEND Winmm_SOURCES module.cpp)
+else()
+    list(APPEND Winmm_SOURCES winmm.cpp)
+endif()
 add_library(Winmm SHARED ${Winmm_SOURCES})
-
-target_include_directories(Winmm PUBLIC ${PROJECT_SOURCE_DIR}/src/steam)
-target_link_directories(Winmm PUBLIC ${PROJECT_SOURCE_DIR}/src/steam/redistributable_bin/win64)
-target_link_libraries(Winmm PRIVATE steam_api64)
 
 target_link_libraries(Winmm PRIVATE ZLIB::ZLIB)
 target_link_libraries(Winmm PRIVATE spdlog::spdlog)

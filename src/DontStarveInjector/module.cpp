@@ -1,4 +1,3 @@
-#pragma once 
 #include <Windows.h>
 #include "module.hpp"
 void module_enumerate_exports (HMODULE module,

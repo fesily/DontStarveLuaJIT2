@@ -1,5 +1,3 @@
-#define NOMINMAX
-#include <Windows.h>
 #include <format>
 #include <fstream>
 #include <iostream>
@@ -8,12 +6,15 @@
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
 
-#include "missfunc.h"
-#include "signatures_server.hpp"
-#include "signatures_client.hpp"
 #include "LuaModule.hpp"
 #include "DontStarveSignature.hpp"
 #include "GameVersionFile.hpp"
+
+#include "Signature.hpp"
+using namespace std::literals;
+#include "missfunc.h"
+#include "signatures_server.h"
+#include "signatures_client.h"
 
 #ifndef GAMEDIR
 #error "not defined GAME_DIR"
@@ -23,8 +24,14 @@
 #error "not defined LUA51_PATH"
 #endif
 
-const char *game_path = GAMEDIR R"(\bin64\dontstarve_steam_x64.exe)";
-const char *game_server_path = GAMEDIR R"(\bin64\dontstarve_dedicated_server_nullrenderer_x64.exe)";
+#ifdef _WIN32
+#define EXEC_EXT ".exe"
+#else
+#define EXEC_EXT
+#endif
+
+const char *game_path = GAMEDIR R"(\bin64\dontstarve_steam_x64)" EXEC_EXT;
+const char *game_server_path = GAMEDIR R"(\bin64\dontstarve_dedicated_server_nullrenderer_x64)" EXEC_EXT;
 const char *lua51_path = LUA51_PATH;
 
 bool loadModule(const char *path)
@@ -56,7 +63,7 @@ int update(bool isClient)
     auto hlua51 = gum_module_find_base_address(lua51_path);
     auto htarget = gum_module_find_base_address(path);
     ListExports_t exports;
-    exports.assign_range(signatures.funcs);
+    exports.assign(signatures.funcs.cbegin(), signatures.funcs.cend());
     auto msg = update_signatures(signatures, luaModuleSignature.target_address, exports);
     if (!msg.empty())
     {
@@ -75,7 +82,7 @@ int update(bool isClient)
         "{\n" +
         std::format("{}\n,\n", readGameVersion(PROJECT_DIR "/../version.txt")) +
         "\t{\n";
-    exports.assign_range(signatures.funcs);
+    exports.assign(signatures.funcs.cbegin(), signatures.funcs.cend());
     std::ranges::sort(exports, [](auto &l, auto &r)
                       { return l.first < r.first; });
     for (auto [func, offset] : exports)
