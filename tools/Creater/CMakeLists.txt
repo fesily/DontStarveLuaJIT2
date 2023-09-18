@@ -15,8 +15,7 @@ target_include_directories(signature_Creater PUBLIC ${PROJECT_SOURCE_DIR}/src/Do
 target_link_libraries(signature_Creater PRIVATE spdlog::spdlog)
 
 
-target_include_directories(signature_Creater PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
-target_link_directories(signature_Creater PUBLIC ${FRIDA_GUM_LIBRARY_DIR})
+target_include_directories(signature_Creater PUBLIC ${FRIDA_GUM_INCLUDE_DIRS})
 target_link_libraries(signature_Creater PRIVATE ${FRIDA_GUM_LIBRARIES})
 
 

@@ -10,3 +10,5 @@ module_handler_t loadlib(const char* name);
 void* loadlibproc(module_handler_t h, const char* name);
 
 void unloadlib(module_handler_t h);
+
+bool memory_is_execute(void* address);

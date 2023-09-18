@@ -22,6 +22,9 @@ find_package(spdlog CONFIG REQUIRED)
 include_directories(${STEAM_INCLUDE_DIRS})
 link_libraries(${STEAM_LIBRARIES})
 
+include_directories(${FRIDA_GUM_INCLUDE_DIRS})
+link_libraries(${FRIDA_GUM_LIBRARIES})
+
 if (WIN32)
     list(APPEND SOURCES module.cpp)
 endif()
@@ -29,10 +32,6 @@ endif()
 add_library(Injector SHARED ${SOURCES})
 
 target_include_directories(Injector PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
-
-target_include_directories(Injector PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
-target_link_directories(Injector PUBLIC ${FRIDA_GUM_LIBRARY_DIR})
-target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})
 
 target_link_libraries(Injector PRIVATE libzip::zip)
 target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)

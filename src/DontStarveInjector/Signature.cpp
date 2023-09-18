@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #endif
 #include "Signature.hpp"
+#include "platform.hpp"
 
 constexpr auto page = GUM_PAGE_EXECUTE;
 
@@ -41,14 +42,7 @@ uintptr_t MemorySignature::scan(const char *m)
 
 static bool is_data(void *ptr)
 {
-#ifdef _WIN32
-    MEMORY_BASIC_INFORMATION info = {};
-    VirtualQuery(ptr, &info, sizeof(info));
-    return !(info.Protect & PAGE_EXECUTE);
-#else
-    //TODO:
-    return false;
-#endif
+    return !memory_is_execute(ptr);
 }
 
 std::string create_signature(void *func, void *module_base, const in_function_t &in_func)

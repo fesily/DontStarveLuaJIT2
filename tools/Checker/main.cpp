@@ -1,5 +1,5 @@
 #define NOMINMAX
-#include "frida-gum.h"
+#include <frida-gum.h>
 #include "LuaModule.hpp"
 
 #include "Signature.hpp"

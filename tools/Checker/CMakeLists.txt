@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.15)
 set (SOURCES
 main.cpp
 ${PROJECT_SOURCE_DIR}/src/DontStarveInjector/Signature.cpp
+${PROJECT_SOURCE_DIR}/src/DontStarveInjector/platform.cpp
 )
 
 add_executable(signature_checker ${SOURCES})
@@ -10,8 +11,7 @@ add_executable(signature_checker ${SOURCES})
 target_include_directories(signature_checker PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(signature_checker PUBLIC ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
 
-target_include_directories(signature_checker PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
-target_link_directories(signature_checker PUBLIC ${FRIDA_GUM_LIBRARY_DIR})
+target_include_directories(signature_checker PUBLIC ${FRIDA_GUM_INCLUDE_DIRS})
 target_link_libraries(signature_checker PRIVATE ${FRIDA_GUM_LIBRARIES})
 
 file(TO_NATIVE_PATH "${GAME_DIR}" GAMEDIR)
