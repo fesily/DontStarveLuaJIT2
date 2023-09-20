@@ -23,7 +23,7 @@ set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod/bin64/windows/)
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h 
     COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tools/missfunc.py"
-    DEPENDS src/missfunc.txt
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.txt
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
@@ -31,21 +31,21 @@ add_custom_target(create_missfuncs DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missf
 
 add_custom_command(
     OUTPUT
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_client.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_server.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/signatures_client.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/signatures_server.h
     COMMAND ${CMAKE_COMMAND} -E env GAME_DIR=${GAME_DIR} python3 "${CMAKE_CURRENT_SOURCE_DIR}/tools/Signature.py" 
     DEPENDS
-        src/missfunc.txt
-        src/Signatures_client.txt
-        src/Signatures_server.txt
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.txt
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/signatures_client.txt
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/signatures_server.txt
         ${CMAKE_CURRENT_SOURCE_DIR}/tools/Signature.py
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
-add_custom_target(create_Signatures
+add_custom_target(create_signatures
     DEPENDS 
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_client.h 
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/Signatures_server.h)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/signatures_client.h 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/signatures_server.h)
 
 set(Lua51_output_dir ${PROJECT_SOURCE_DIR}/src/lua51/$<IF:$<CONFIG:Debug>,debug,release>/)
 

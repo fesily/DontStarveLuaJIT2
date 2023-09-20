@@ -28,4 +28,4 @@ if (MSVC)
     target_link_options(signature_checker PUBLIC "/NODEFAULTLIB:LIBCMT")
 endif()
 
-add_dependencies(signature_checker create_Signatures)
+add_dependencies(signature_checker create_signatures)

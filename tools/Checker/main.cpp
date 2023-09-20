@@ -188,7 +188,7 @@ int check(const char *path, const Signatures &signatures)
             {
                 if (k1[i] != k2[i])
                 {
-                    printf("");
+                    printf("k1[i] != k2[i]");
                 }
             }
 
