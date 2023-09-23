@@ -55,7 +55,6 @@ else()
     set(LUA_LIBRARIES_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/src)
 endif()
 
-add_subdirectory("src/lua51")
 set(LUA_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/lua51/src)
 set(LUA_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/release/lua51.dll)
 set(LUA_CONFIG_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll)
