@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 #include <format>
+#include <charconv>
 #include <Windows.h>
 #include <spdlog/spdlog.h>
 #ifndef MOD_VERSION
@@ -22,6 +23,39 @@ static bool mod_has_removed()
 {
     return !std::filesystem::exists(getModinfoLuaPath());
 }
+
+static uint32_t toversion(const std::string_view& view)
+{
+    size_t offset = 0;
+    auto npos = view.find('.', offset);
+    if (npos == view.npos)
+        return 0;
+    auto m = view.substr(offset, npos - offset);
+    offset = npos + 1;
+    npos = view.find('.', offset);
+    if (npos == view.npos)
+        return 0;
+    auto s = view.substr(offset, npos - offset);
+    auto p = view.substr(npos + 1);
+    union alignas(alignof(uint32_t))
+    {
+        struct
+        {
+
+            uint8_t m;
+            uint8_t s;
+            uint8_t s1;
+            uint8_t p;
+        };
+        uint32_t v;
+    } version;
+
+    std::from_chars(m.data(), m.data() + m.size(), version.m);
+    std::from_chars(s.data(), s.data() + s.size(), *(uint16_t*)&version.s);
+    std::from_chars(p.data(), p.data() + p.size(), version.p);
+    return version.v;
+}
+
 static bool need_updater()
 {
     std::ifstream ss(getModinfoLuaPath());
@@ -32,9 +66,9 @@ static bool need_updater()
         if (line.starts_with(prefix))
         {
             auto version = line.substr(prefix.size(), line.find_last_of('"') - prefix.size());
-            if (version == MOD_VERSION)
+            if (toversion(version) <= toversion(MOD_VERSION))
                 return false;
-            spdlog::info("need update, mod version is not " MOD_VERSION);
+            spdlog::info("need update, mod version [{}] is not " MOD_VERSION, version);
             return true;
         }
     }
