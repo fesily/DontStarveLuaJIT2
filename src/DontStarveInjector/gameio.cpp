@@ -204,7 +204,10 @@ static void lj_clearerr(FILE *fp) noexcept
 void init_luajit_io(HMODULE hluajitModule)
 {
 #define INIT_LUAJIT_IO(name) \
-    *(void **)GetProcAddress(hluajitModule, #name) = (void *)&name
+    {\
+    auto ptr = (void **)GetProcAddress(hluajitModule, #name);\
+    if (ptr) *ptr = (void*)&name;\
+    }
 
     INIT_LUAJIT_IO(lj_fclose);
     INIT_LUAJIT_IO(lj_ferror);

@@ -36,6 +36,12 @@ std::filesystem::path getModDir()
     return {};
 }
 
+bool isModNeedUpdated() {
+    if (!get())
+        return true;
+    return SteamUGC()->GetItemState(modid) & k_EItemStateNeedsUpdate;
+}
+
 int64_t getUserId()
 {
     if (!get())

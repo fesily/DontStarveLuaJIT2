@@ -6,3 +6,4 @@ constexpr auto modid_name = "workshop-"#id;
 MODIDS(3010545764)
 std::filesystem::path getModDir();
 int64_t getUserId();
+bool isModNeedUpdated();

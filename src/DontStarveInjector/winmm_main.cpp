@@ -196,6 +196,10 @@ static bool shouldloadmod()
         spdlog::info("boot_modindex is loading");
         return false;
     }
+    if (isModNeedUpdated()) {
+        spdlog::info("find new mod version");
+        return false;
+    }
     // check enable luajit
     if (!mod_enabled())
     {
@@ -214,20 +218,6 @@ void DontStarveInjectorStart()
     std::filesystem::remove(getGameUserDoctmentDir() / "Cluster_65534.bat");
     auto dir = getGameDir();
     // auto updater
-    if (isClientMod)
-    {
-        updater();
-        if (!shouldloadmod())
-        {
-            std::filesystem::remove(getLuajitMtxPath());
-            enable_mod(false);
-            return;
-        }
-    }
-    else
-    {
-        std::atexit(updater);
-    }
     auto mod = LoadLibraryA("injector");
     if (!mod)
     {

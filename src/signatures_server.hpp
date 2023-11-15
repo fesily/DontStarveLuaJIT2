@@ -4,7 +4,7 @@
 using namespace std::literals;
 static Signatures signatures_server = 
 {
-572130
+18446744073709551615
 ,
 	{
 	{"luaL_addlstring"s, 7424},
@@ -29,7 +29,7 @@ static Signatures signatures_server =
 	{"luaL_loadstring"s, 9088},
 	{"luaL_newmetatable"s, 6400},
 	{"luaL_openlib"s, 10752},
-	{"luaL_openlibs"s, 24352},
+	{"luaL_openlibs"s, 24368},
 	{"luaL_optboolean"s, 10560},
 	{"luaL_optinteger"s, 10640},
 	{"luaL_optlstring"s, 10016},
@@ -43,7 +43,7 @@ static Signatures signatures_server =
 	{"lua_atpanic"s, 480},
 	{"lua_call"s, 4560},
 	{"lua_checkstack"s, 208},
-	{"lua_close"s, 25888},
+	{"lua_close"s, 25904},
 	{"lua_concat"s, 5504},
 	{"lua_createtable"s, 3440},
 	{"lua_dump"s, 4880},
@@ -52,9 +52,9 @@ static Signatures signatures_server =
 	{"lua_gc"s, 4976},
 	{"lua_getfenv"s, 3648},
 	{"lua_getfield"s, 3200},
-	{"lua_getinfo"s, 16800},
+	{"lua_getinfo"s, 16816},
 	{"lua_getmetatable"s, 3552},
-	{"lua_getstack"s, 12608},
+	{"lua_getstack"s, 12624},
 	{"lua_gettable"s, 3152},
 	{"lua_gettop"s, 592},
 	{"lua_getupvalue"s, 5792},
@@ -64,7 +64,7 @@ static Signatures signatures_server =
 	{"lua_isstring"s, 1312},
 	{"lua_lessthan"s, 1552},
 	{"lua_load"s, 4800},
-	{"lua_newstate"s, 25408},
+	{"lua_newstate"s, 25424},
 	{"lua_newthread"s, 512},
 	{"lua_newuserdata"s, 5664},
 	{"lua_next"s, 5440},
@@ -89,7 +89,7 @@ static Signatures signatures_server =
 	{"lua_rawseti"s, 4080},
 	{"lua_remove"s, 704},
 	{"lua_replace"s, 880},
-	{"lua_resume"s, 30016},
+	{"lua_resume"s, 30032},
 	{"lua_setfenv"s, 4400},
 	{"lua_setfield"s, 3824},
 	{"lua_setmetatable"s, 4208},
@@ -108,6 +108,6 @@ static Signatures signatures_server =
 	{"lua_type"s, 1136},
 	{"lua_typename"s, 1184},
 	{"lua_xmove"s, 368},
-	{"lua_yield"s, 28272},
+	{"lua_yield"s, 28288},
 }};
 #endif
