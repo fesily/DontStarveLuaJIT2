@@ -131,6 +131,31 @@ bool isClientMod = []()
 void updater();
 void installer(bool unsetup);
 auto enabled_key = "enabled="sv;
+auto enabled_key1 = "[\"enabled\"]="sv;
+static std::optional<bool> _mod_enabled(std::string_view key,size_t pos, std::string_view view, std::tuple<std::string, size_t>& out)
+{
+    size_t enabled_pos = pos;
+    for (size_t i = 0; i < 3; i++)
+    {
+        enabled_pos = view.find(key, enabled_pos + 1);
+        // skip tem_enabled=
+        if (enabled_pos == std::string::npos)
+            return std::nullopt;
+        auto c = view[enabled_pos - 1];
+        if (c == ',' || c == '{')
+            break;
+    }
+    std::string modid_str = modid_name;
+    auto next_mod_pos = view.find("workshop-", pos + modid_str.length());
+    if (next_mod_pos != std::string::npos && enabled_pos > next_mod_pos)
+    {
+        // invaild enabled
+        return std::nullopt;
+    }
+    std::get<1>(out) = enabled_pos;
+    return view.substr(enabled_pos + key.size()).starts_with("true");
+}
+
 std::optional<bool> _mod_enabled(std::tuple<std::string, size_t> &out)
 {
     auto modindex = GetPersistentString(getModindexPath().string());
@@ -141,25 +166,16 @@ std::optional<bool> _mod_enabled(std::tuple<std::string, size_t> &out)
     auto pos = view.find(modid_str);
     if (pos == std::string::npos)
         return std::nullopt;
-    size_t enabled_pos = pos;
-    for (size_t i = 0; i < 3; i++)
+    auto res = _mod_enabled(enabled_key, pos, view, out);
+    if (!res)
     {
-        enabled_pos = view.find(enabled_key, enabled_pos + 1);
-        // skip tem_enabled=
-        if (enabled_pos == std::string::npos)
-            return std::nullopt;
-        auto c = view[enabled_pos - 1];
-        if (c == ',' || c == '{')
-            break;
+        res = _mod_enabled(enabled_key1, pos, view, out);
     }
-    auto next_mod_pos = view.find("workshop-", pos + modid_str.length());
-    if (next_mod_pos != std::string::npos && enabled_pos > next_mod_pos)
+    if (res) 
     {
-        // invaild enabled
-        return std::nullopt;
+        std::get<0>(out) = std::string(view);
     }
-    out = std::make_tuple(modindex.value(), enabled_pos);
-    return view.substr(enabled_pos + enabled_key.size()).starts_with("true");
+    return res;
 }
 
 bool mod_enabled()

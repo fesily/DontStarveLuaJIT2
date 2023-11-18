@@ -3,8 +3,11 @@ import json
 
 GameDir = os.getenv("GAME_DIR")
 current_game_version = 0
-with open(f"{GameDir}/version.txt","r") as fp:
-    current_game_version = fp.readline().strip()
+try:
+    with open(f"{GameDir}/version.txt","r") as fp:
+        current_game_version = fp.readline().strip()
+except FileNotFoundError:
+    pass
 
 missfuncs = set()
 with open("src/missfunc.txt", "r") as f:

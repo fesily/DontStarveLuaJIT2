@@ -66,8 +66,6 @@ add_custom_command(
     COMMENT "Generatiog signatures"
 )
 
-add_dependencies(Injector create_Signatures)
-
 install(TARGETS Injector RUNTIME DESTINATION .)
 
 set (Winmm_SOURCES

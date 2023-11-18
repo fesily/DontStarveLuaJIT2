@@ -30,14 +30,6 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h
 
 add_custom_target(create_missfuncs DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h)
 
-add_custom_command(OUTPUT ${CMAKE_INSTALL_PREFIX}Signatures_client ${CMAKE_INSTALL_PREFIX}Signatures_server
-    COMMAND ${CMAKE_COMMAND} -E env GAME_DIR=${GAME_DIR} python "${CMAKE_CURRENT_SOURCE_DIR}/tools/Signature.py" 
-    DEPENDS src/missfunc.txt src/Signatures_client.txt src/Signatures_server.txt ${CMAKE_CURRENT_SOURCE_DIR}/tools/Signature.py
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-
-add_custom_target(create_Signatures DEPENDS ${CMAKE_INSTALL_PREFIX}Signatures_client ${CMAKE_INSTALL_PREFIX}Signatures_server)
-
 set(Lua51_output_dir ${PROJECT_SOURCE_DIR}/src/lua51/$<IF:$<CONFIG:Debug>,debug,release>/)
 
 add_custom_command(OUTPUT ${Lua51_output_dir}/lua51.dll ${Lua51_output_dir}/lua51.lib
