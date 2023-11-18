@@ -1,7 +1,6 @@
 #define NOMINMAX
 #include "frida-gum.h"
-#include "signatures_server.hpp"
-#include "signatures_client.hpp"
+#include "SignatureJson.hpp"
 #include "LuaModule.hpp"
 #include <Windows.h>
 
@@ -13,9 +12,14 @@
 #error "not defined LUA51_PATH"
 #endif
 
+#ifndef PROJECT_DIR
+#error "not defined PROJECT_DIR"
+#endif
+
 const char *game_path = GAMEDIR R"(\bin64\dontstarve_steam_x64.exe)";
 const char *game_server_path = GAMEDIR R"(\bin64\dontstarve_dedicated_server_nullrenderer_x64.exe)";
 const char *lua51_path = LUA51_PATH;
+const char* worker_dir = PROJECT_DIR "/Mod/bin64/windows";
 
 bool loadModule(const char *path)
 {
@@ -151,8 +155,10 @@ static bool checkLuaFunc(void *func1, void *func2, std::string &ecmsg)
     return ret;
 }
 
-int check(const char *path, const Signatures &signatures)
+int check(const char *path, bool isClient)
 {
+    SignatureJson sj{ isClient };
+    auto signatures = sj.read_from_signatures().value();
     fprintf(stderr, "game_path:\t%s\n", path);
     if (!loadModule(path))
         return 1;
@@ -212,5 +218,7 @@ int main()
     fprintf(stderr, "lua51_path:\t%s\n", lua51_path);
     if (!loadModule(lua51_path))
         return 1;
-    return check(game_path, signatures_client) + check(game_server_path, signatures_server);
+    SetCurrentDirectoryA(worker_dir);
+    SignatureJson::version_path = GAMEDIR "/version.txt";
+    return check(game_path, true) + check(game_server_path, false);
 }

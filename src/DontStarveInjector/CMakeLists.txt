@@ -58,6 +58,16 @@ if(ENABLE_ONLY_LUA51)
     target_compile_definitions(Injector PUBLIC ENABLE_ONLY_LUA51)
 endif()
 
+add_custom_command(
+    TARGET Injector
+    PRE_BUILD
+    COMMAND signature_updater
+    DEPENDS ${GAME_DIR}/../version.txt
+    COMMENT "Generatiog signatures"
+)
+
+add_dependencies(Injector create_Signatures)
+
 install(TARGETS Injector RUNTIME DESTINATION .)
 
 set (Winmm_SOURCES

@@ -24,8 +24,6 @@
 #include "SignatureJson.hpp"
 
 #include "../missfunc.h"
-#include "../signatures_client.hpp"
-#include "../signatures_server.hpp"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -224,7 +222,7 @@ static std::expected<ListExports_t, std::string> get_signatures(Signatures &sign
 		FreeLibrary(h51);
 		return std::unexpected(errormsg);
 	}
-	if (SignatureJson::current_version != signatures.version)
+	if (SignatureJson::current_version() != signatures.version)
 	{
 		errormsg = update_signatures(signatures, targetLuaModuleBase, exports);
 		if (!errormsg.empty())
@@ -232,7 +230,7 @@ static std::expected<ListExports_t, std::string> get_signatures(Signatures &sign
 			FreeLibrary(h51);
 			return std::unexpected(errormsg);
 		}
-		signatures.version = SignatureJson::current_version;
+		signatures.version = SignatureJson::current_version();
 		updated(signatures);
 	}
 	FreeLibrary(h51);
@@ -256,9 +254,7 @@ extern "C" __declspec(dllexport) void Inject(bool isClient)
 		return;
 	}
 	SignatureJson json(isClient);
-	auto &internal_signatures = isClient ? signatures_client : signatures_server;
-	auto json_signatures = json.read_from_signatures().value_or(internal_signatures);
-	auto &signatures = json_signatures.version > internal_signatures.version ? json_signatures : internal_signatures;
+	auto signatures = json.read_from_signatures().value();
 
 	auto res = get_signatures(signatures, luaModuleSignature.target_address, [&json](auto &v)
 							  { json.update_signatures(v); });

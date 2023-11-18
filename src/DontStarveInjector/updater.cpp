@@ -133,9 +133,9 @@ static void installer(bool setup)
     auto game_dir = getGameDir() / "bin64";
     std::string update_cmd = (setup ? setup_pre : unsetup_pre)(game_dir);
 
-#define DEBUG_SHELL 0
+#define DEBUG_SHELL !NDEBUG
     auto cmd = std::format("powershell"
-#if DEBUG_SHELL
+#if !NDEBUG
                            " -NoExit"
 #endif
                            " -Command $Host.UI.RawUI.WindowTitle='LUAJIT_UPDATER';Wait-Process {}; {};start steam://rungameid/322330;",

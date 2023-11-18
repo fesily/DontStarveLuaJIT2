@@ -15,13 +15,15 @@ static std::unordered_map<uint8_t *, std::string> hooked;
 
 #define GUM_INTERCEPTOR_NEAR_REDIRECT_SIZE 5
 
-void HookWriteCode(void *from, const void *code, size_t len)
+bool HookWriteCode(void *from, const void *code, size_t len)
 {
     DWORD oldProtect = 0;
     ::VirtualProtect(from, len, PAGE_EXECUTE_READWRITE, &oldProtect);
+    if (!(oldProtect & 0xf0)) return false;
     assert(oldProtect & PAGE_EXECUTE_READ);
     memcpy(from, code, len);
     ::VirtualProtect(from, len, PAGE_EXECUTE_READ, &oldProtect);
+    return true;
 }
 
 bool HookByReg(uint8_t *from, uint8_t *to)
@@ -31,8 +33,7 @@ bool HookByReg(uint8_t *from, uint8_t *to)
     *(uint64_t *)(code.data() + 2) = (uint64_t)to;
 
     hooked[from] = {(char *)from, code.size()};
-    HookWriteCode(from, code.data(), code.size());
-    return true;
+    return HookWriteCode(from, code.data(), code.size());
 }
 
 void ResetHook(uint8_t *from)
@@ -49,7 +50,7 @@ bool Hook(uint8_t *from, uint8_t *to)
 {
     if (*from == 0xe9)
     { // jmp
-        from = (uint8_t *)((uint64_t)from + *(uint32_t *)(from + 1) + 5);
+        from = (uint8_t *)((uint64_t)from + *(int32_t *)(from + 1) + 5);
     }
     assert(to != 0);
 #if 0

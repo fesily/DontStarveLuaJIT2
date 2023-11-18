@@ -15,10 +15,15 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(Signatures, version, funcs);
 
 static std::string get_signatures_filename(bool isClient)
 {
-    return "sigantures_"s + (isClient ? "client" : "server");
+    return "signatures_"s + (isClient ? "client" : "server");
 }
 
-intptr_t SignatureJson::current_version = readGameVersion("../version.txt");
+const char* SignatureJson::version_path = "../version.txt";
+intptr_t SignatureJson::current_version()
+{
+    static auto v = readGameVersion(version_path);
+    return v;
+} 
 
 std::optional<Signatures> SignatureJson::read_from_signatures()
 {
@@ -32,7 +37,7 @@ std::optional<Signatures> SignatureJson::read_from_signatures()
 
 void SignatureJson::update_signatures(const Signatures &signatures)
 {
-    assert(current_version == signatures.version);
+    assert(current_version() == signatures.version);
     std::ofstream sf(get_signatures_filename(isClient));
     nlohmann::json j;
     nlohmann::to_json(j, signatures);

@@ -1,8 +1,17 @@
 import os
+import json
+
 GameDir = os.getenv("GAME_DIR")
 current_game_version = 0
 with open(f"{GameDir}/version.txt","r") as fp:
-    current_game_version = fp.readline()
+    current_game_version = fp.readline().strip()
+
+missfuncs = set()
+with open("src/missfunc.txt", "r") as f:
+    for line in f:
+        line = line.strip()
+        missfuncs.add(line)
+
 def generator(name):
     base_addr = 0
     max_addr = 0
@@ -34,35 +43,18 @@ def generator(name):
                 continue
             funcs.append((func, addr))
 
-    missfuncs = set()
-    with open("src/missfunc.txt", "r") as f:
-        for line in f:
-            line = line.strip()
-            missfuncs.add(line)
-
     funcs.sort()
-    with open(f"src/signatures_{name}.hpp", "w") as f:
-        output = [
-            f"#ifndef SIGNATURES_{name}_H\n",
-            f"#define SIGNATURES_{name}_H\n",
-            "#include \"Signature.hpp\"\n",
-            "using namespace std::literals;\n",
-           
-            f"static Signatures signatures_{name} = \n",
-            "{\n",
-            f"{current_game_version},\n",
-            "\t{\n",
-        ]
 
-        for i in range(len(funcs)):
-            func = funcs[i]
-            if func[0] in missfuncs:
-                continue
-            line = '\t{{"{}"s, {}}},\n'.format(func[0], func[1] - base_addr)
-            output.append(line)
-
-        output.append("}};\n#endif\n")
-        f.writelines(output)
+    outputs = dict()
+    
+    for i in range(len(funcs)):
+        func = funcs[i]
+        if func[0] in missfuncs:
+            continue
+        outputs[func[0]] = func[1] - base_addr
+    
+    with open(f'Mod/bin64/windows/signatures_{name}', mode='w+') as f:
+        f.write(json.dumps({'version': int(current_game_version), 'funcs':outputs}))
 
 generator("client")
 generator("server")

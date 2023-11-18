@@ -11,6 +11,7 @@
 #include <memory>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/msvc_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "PersistentString.hpp"
 #include "steam.hpp"
@@ -29,6 +30,8 @@ void wait_debugger()
 
         if (enableDebug)
         {
+            ::AllocConsole();
+#ifndef NDEBUG
             if (!IsDebuggerPresent())
             {
                 STARTUPINFO si;
@@ -52,6 +55,7 @@ void wait_debugger()
                 if (std::chrono::system_clock::now() > limit)
                     break;
             }
+#endif // NDEBUG
             auto fp = fopen(filename, "r");
             char buffer[1024] = {};
             if (fread(buffer, sizeof(char), sizeof(buffer) / sizeof(char), fp) > 0)
@@ -214,10 +218,25 @@ static bool shouldloadmod()
 
 void DontStarveInjectorStart()
 {
-    spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>()));
+    std::initializer_list<std::shared_ptr<spdlog::sinks::sink>> sinks = {std::make_shared<spdlog::sinks::msvc_sink_st>() , std::make_shared<spdlog::sinks::stdout_color_sink_st>()};
+    spdlog::set_default_logger(std::make_shared<spdlog::logger>("", sinks.begin(), sinks.end()));
     std::filesystem::remove(getGameUserDoctmentDir() / "Cluster_65534.bat");
     auto dir = getGameDir();
     // auto updater
+    if (isClientMod)
+    {
+        updater();
+        if (!shouldloadmod())
+        {
+            std::filesystem::remove(getLuajitMtxPath());
+            enable_mod(false);
+            return;
+        }
+    }
+    else
+    {
+        std::atexit(updater);
+    }
     auto mod = LoadLibraryA("injector");
     if (!mod)
     {
