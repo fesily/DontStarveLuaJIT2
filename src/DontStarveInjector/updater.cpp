@@ -15,16 +15,22 @@
 using namespace std::literals;
 
 std::filesystem::path getGameDir();
-static std::filesystem::path getModinfoLuaPath()
+static std::optional<std::filesystem::path> getModinfoLuaPath()
 {
-    return getModDir() / "modinfo.lua";
+    auto dir = getModDir();
+    if (dir)
+        return dir.value() / "modinfo.lua";
+    return std::nullopt;
 }
 static bool mod_has_removed()
 {
-    return !std::filesystem::exists(getModinfoLuaPath());
+    auto p = getModinfoLuaPath();
+    if (p)
+        return !std::filesystem::exists(p.value());
+    return false;
 }
 
-static uint32_t toversion(const std::string_view& view)
+static uint32_t toversion(const std::string_view &view)
 {
     size_t offset = 0;
     auto npos = view.find('.', offset);
@@ -51,14 +57,17 @@ static uint32_t toversion(const std::string_view& view)
     } version;
 
     std::from_chars(m.data(), m.data() + m.size(), version.m);
-    std::from_chars(s.data(), s.data() + s.size(), *(uint16_t*)&version.s);
+    std::from_chars(s.data(), s.data() + s.size(), *(uint16_t *)&version.s);
     std::from_chars(p.data(), p.data() + p.size(), version.p);
     return version.v;
 }
 
 static bool need_updater()
 {
-    std::ifstream ss(getModinfoLuaPath());
+    auto modinfoLuaPath = getModinfoLuaPath();
+    if (!modinfoLuaPath)
+        return false;
+    std::ifstream ss(modinfoLuaPath.value());
     std::string line;
     while (std::getline(ss, line))
     {
@@ -105,10 +114,15 @@ static auto unsetup_pre(std::filesystem::path game_dir)
     return "rm $Env:GAME_FILE";
 }
 
-static auto setup_pre(std::filesystem::path game_dir)
+static std::optional<const char *> setup_pre(std::filesystem::path game_dir)
 {
     std::filesystem::remove(getLuajitMtxPath());
-    auto bin_dir = getModDir() / "bin64" / "windows";
+    auto modDir = getModDir();
+    if (!modDir)
+    {
+        return std::nullopt;
+    }
+    auto bin_dir = modDir.value() / "bin64" / "windows";
     auto bin_dir_copy = bin_dir.make_preferred().string();
     auto game_dir_copy = game_dir.make_preferred().string();
 
@@ -131,7 +145,18 @@ static void installer(bool setup)
     ZeroMemory(&pi, sizeof(pi));
 
     auto game_dir = getGameDir() / "bin64";
-    std::string update_cmd = (setup ? setup_pre : unsetup_pre)(game_dir);
+    std::string update_cmd;
+    if (setup)
+    {
+        auto cmd = setup_pre(game_dir);
+        if (!cmd)
+            return;
+        update_cmd = cmd.value();
+    }
+    else
+    {
+        update_cmd = unsetup_pre(game_dir);
+    }
 
 #define DEBUG_SHELL !NDEBUG
     auto cmd = std::format("powershell"

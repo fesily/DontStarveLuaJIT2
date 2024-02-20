@@ -73,7 +73,7 @@ int update(bool isClient)
         fprintf(stderr, "%s\n", msg.c_str());
         return 1;
     }
-
+	signatures.version = SignatureJson::current_version();
     auto name = isClient ? "client" : "server";
     sj.update_signatures(signatures);
     return 0;

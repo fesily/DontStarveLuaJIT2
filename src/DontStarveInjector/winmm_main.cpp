@@ -17,7 +17,20 @@
 #include "steam.hpp"
 
 using namespace std::literals;
-
+void printenv()
+{
+    char **env;
+#if defined(WIN) && (_MSC_VER >= 1900)
+    env = *__p__environ();
+#else
+    extern char **environ;
+    env = environ;
+#endif
+    for (env; *env; ++env)
+    {
+        fprintf(stdout, "%s\n", *env);
+    }
+}
 void wait_debugger()
 {
     TCHAR filePath[MAX_PATH];
@@ -63,6 +76,7 @@ void wait_debugger()
                 _putenv_s("LUA_INIT", buffer);
             }
             fclose(fp);
+            printenv();
         }
     }
 }
@@ -105,20 +119,29 @@ std::filesystem::path getGameDir()
     static std::filesystem::path p = getExePath().parent_path().parent_path();
     return p;
 }
-std::filesystem::path getGameUserDoctmentDir()
+std::optional<std::filesystem::path> getGameUserDoctmentDir()
 {
     auto userid = getUserId();
-    return getKleiGameDoctmentDir() / std::to_string(userid);
+    if (userid)
+        return getKleiGameDoctmentDir() / std::to_string(userid.value());
+    return std::nullopt;
 }
-std::filesystem::path GetClientSaveDir()
+std::optional<std::filesystem::path> GetClientSaveDir()
 {
-    return getGameUserDoctmentDir() / "client_save";
+    auto dir = getGameUserDoctmentDir();
+    if (dir)
+        return dir.value() / "client_save";
+    return std::nullopt;
 }
 
-std::filesystem::path getModindexPath()
+std::optional<std::filesystem::path> getModindexPath()
 {
-    return GetClientSaveDir() / "modindex";
+    auto dir = GetClientSaveDir();
+    if (dir)
+        return dir.value() / "modindex";
+    return std::nullopt;
 }
+
 std::filesystem::path getLuajitMtxPath()
 {
     return getGameDir() / "data" / "luajit.mutex";
@@ -132,7 +155,7 @@ void updater();
 void installer(bool unsetup);
 auto enabled_key = "enabled="sv;
 auto enabled_key1 = "[\"enabled\"]="sv;
-static std::optional<bool> _mod_enabled(std::string_view key,size_t pos, std::string_view view, std::tuple<std::string, size_t>& out)
+static std::optional<bool> _mod_enabled(std::string_view key, size_t pos, std::string_view view, std::tuple<std::string, size_t> &out)
 {
     size_t enabled_pos = pos;
     for (size_t i = 0; i < 3; i++)
@@ -158,7 +181,10 @@ static std::optional<bool> _mod_enabled(std::string_view key,size_t pos, std::st
 
 std::optional<bool> _mod_enabled(std::tuple<std::string, size_t> &out)
 {
-    auto modindex = GetPersistentString(getModindexPath().string());
+    auto modindexPath = getModindexPath();
+    if (!modindexPath)
+        return std::nullopt;
+    auto modindex = GetPersistentString(modindexPath->string());
     if (!modindex.has_value())
         return std::nullopt;
     std::string_view view = modindex.value();
@@ -171,7 +197,7 @@ std::optional<bool> _mod_enabled(std::tuple<std::string, size_t> &out)
     {
         res = _mod_enabled(enabled_key1, pos, view, out);
     }
-    if (res) 
+    if (res)
     {
         std::get<0>(out) = std::string(view);
     }
@@ -196,7 +222,9 @@ void enable_mod(bool enabled)
         return;
     auto &[modindex, enabled_pos] = out;
     auto new_modindex = modindex.replace(enabled_pos + enabled_key.length(), (orignal_enabled ? "true"sv : "false"sv).length(), enabled ? "true" : "false");
-    SetPersistentString(getModindexPath().string(), new_modindex, false);
+    auto modindexPath = getModindexPath();
+    if (modindexPath)
+        SetPersistentString(modindexPath->string(), new_modindex, false);
 }
 
 static bool shouldloadmod()
@@ -208,7 +236,9 @@ static bool shouldloadmod()
         return false;
     }
     auto clientSaveDir = GetClientSaveDir();
-    auto boot_modindex_path = clientSaveDir / "boot_modindex";
+    if (!clientSaveDir)
+        return false;
+    auto boot_modindex_path = clientSaveDir.value() / "boot_modindex";
     // check root_modindex
     auto boot_modindex = GetPersistentString(boot_modindex_path.string());
     if (boot_modindex.value_or("").find("loading") != std::string::npos)
@@ -216,7 +246,8 @@ static bool shouldloadmod()
         spdlog::info("boot_modindex is loading");
         return false;
     }
-    if (isModNeedUpdated()) {
+    if (isModNeedUpdated())
+    {
         spdlog::info("find new mod version");
         return false;
     }
@@ -232,11 +263,18 @@ static bool shouldloadmod()
     return true;
 }
 
+void removeBat()
+{
+    const auto gameUserDoctmentDir = getGameUserDoctmentDir();
+    if (gameUserDoctmentDir)
+        std::filesystem::remove(gameUserDoctmentDir.value() / "Cluster_65534.bat");
+}
+
 void DontStarveInjectorStart()
 {
-    std::initializer_list<std::shared_ptr<spdlog::sinks::sink>> sinks = {std::make_shared<spdlog::sinks::msvc_sink_st>() , std::make_shared<spdlog::sinks::stdout_color_sink_st>()};
+    std::initializer_list<std::shared_ptr<spdlog::sinks::sink>> sinks = {std::make_shared<spdlog::sinks::msvc_sink_st>(), std::make_shared<spdlog::sinks::stdout_color_sink_st>()};
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", sinks.begin(), sinks.end()));
-    std::filesystem::remove(getGameUserDoctmentDir() / "Cluster_65534.bat");
+    removeBat();
     auto dir = getGameDir();
     // auto updater
     if (isClientMod)
