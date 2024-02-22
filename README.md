@@ -120,3 +120,6 @@ end
 ```
 3. changed `local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"` to your path
 4. `DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated()` remove `CONFIGURATION ~= "PRODUCTION"`
+
+### force enable the mod
+1. add process arg `-disable_check_luajit_mod`
