@@ -29,16 +29,17 @@ Be sure to back up your archives, there are no guarantees that there are no bugs
 ## Installation: 
 
 ### Windows
+Just order the mod at [workshop/DontStarveLuaJit2](https://steamcommunity.com/sharedfiles/filedetails/?id=3010545764)
 
-	Copy all files to the bin64 folder in the game directory
+Copy all files to the bin64 folder in the game directory
 
-	like: C:\\steamapps\\Don't Starve Together\\bin64\
+like: C:\\steamapps\\Don't Starve Together\\bin64\
 	
-	Launch the game, press ` and type:
+Launch the game, press ` and type:
 	
-	print(_Version)
+print(_Version)
 	
-	And you can see message started with "LuaJIT".
+And you can see message started with "LuaJIT".
 
 ## How to build
 
@@ -79,8 +80,14 @@ If you start with stream, please set game config, process start config: "-enable
 ```
 
 ### data/scripts/main.lua:73
-1. changed `local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"` to your path
-2. `DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated()` remove `CONFIGURATION ~= "PRODUCTION"`
+1. find the code
+```lua
+DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated(
+if DEBUGGER_ENABLED then
+	Debuggee = require 'debuggee'
+end
+```
+2. replace the code to
 ```lua
 if jit then
 	package.preload.debuggee = function()
@@ -111,3 +118,5 @@ if DEBUGGER_ENABLED then
 	Debuggee = require 'debuggee'
 end
 ```
+3. changed `local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"` to your path
+4. `DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated()` remove `CONFIGURATION ~= "PRODUCTION"`
