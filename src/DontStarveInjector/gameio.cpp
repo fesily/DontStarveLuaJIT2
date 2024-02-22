@@ -275,7 +275,7 @@ static int lj_need_transform_path() noexcept
 {
     static bool has_lua_debug_flag = []{
         std::string_view cmd = GetCommandLineA();
-        return cmd.contains("--lua-debug");
+        return cmd.contains("-enable_lua_debugger");
     }();
     return has_lua_debug_flag;
 }

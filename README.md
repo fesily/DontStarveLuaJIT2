@@ -62,8 +62,8 @@ We need `vscode` + `lua-debug` plugin
 1. create new file `steam_appid.txt` at gamedir/bin64
 2. the file context is 322330
 
-### Pass process args "lua-debug"
-If you start with stream, please set game config, process start config: "--lua-debug"
+### Pass process args "-enable_lua_debugger"
+If you start with stream, please set game config, process start config: "-enable_lua_debugger"
 
 ### vscode launch.json
 ```json
@@ -78,33 +78,36 @@ If you start with stream, please set game config, process start config: "--lua-d
       }
 ```
 
-### data/scripts/main.lua:
-changed `local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"` to your path
+### data/scripts/main.lua:73
+1. changed `local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"` to your path
+2. `DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated()` remove `CONFIGURATION ~= "PRODUCTION"`
 ```lua
-DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated()
+if jit then
+	package.preload.debuggee = function()
+		local function dofile(filename)
+			local load = _VERSION == "Lua 5.1" and loadstring or load
+			local f = assert(io.open(filename))
+			local str = f:read "*a"
+			f:close()
+			return assert(load(str, "=(debugger.lua)"))(filename)
+		end
+		local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"
+		local debugger = dofile(path .. "/script/debugger.lua")
+		local Debuggee = {}
+		Debuggee.start = function ()
+			local host = {address = "127.0.0.1:12306", client= true}
+			debugger:start(host):event ("autoUpdate", false)
+			return "ok", host
+		end
+		Debuggee.poll = function ()
+			debugger:event "update"
+		end
+		return Debuggee
+	end
+end
+
+DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and not TheNet:IsDedicated()
 if DEBUGGER_ENABLED then
 	Debuggee = require 'debuggee'
-end
--- new debugger
-local function dofile(filename)
-	local load = _VERSION == "Lua 5.1" and loadstring or load
-	local f = assert(io.open(filename))
-	local str = f:read "*a"
-	f:close()
-	return assert(load(str, "=(debugger.lua)"))(filename)
-end
-if jit then
-	local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"
-	local debugger = dofile(path .. "/script/debugger.lua")
-	Debuggee = {}
-	Debuggee.start = function ()
-		local host = {address = "127.0.0.1:12306", client= true}
-		debugger:start(host):event ("autoUpdate", false)
-		return "ok", host
-	end
-	Debuggee.poll = function ()
-		debugger:event "update"
-	end
-	DEBUGGER_ENABLED = true
 end
 ```
