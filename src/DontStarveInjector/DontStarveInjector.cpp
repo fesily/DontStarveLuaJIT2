@@ -19,7 +19,6 @@
 #include "inlinehook.hpp"
 #include "module.hpp"
 #include "LuaModule.hpp"
-#include "DontStarveInjector.h"
 #include "DontStarveSignature.hpp"
 #include "SignatureJson.hpp"
 
