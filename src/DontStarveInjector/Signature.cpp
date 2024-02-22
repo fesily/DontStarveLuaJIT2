@@ -195,7 +195,7 @@ static constexpr size_t func_aligned()
 #endif
 }
 
-void *fix_func_address_by_signature(void *target, void *module_base, void *original, void *original_module_base, const in_function_t &in_func)
+void *fix_func_address_by_signature(void *target, void *module_base, void *original, void *original_module_base, const in_function_t &in_func, uint32_t range, bool updated)
 {
     constexpr auto short_signature_len = 16;
     if (create_signature(target, module_base, nullptr) == create_signature(original, original_module_base, in_func))
@@ -204,8 +204,7 @@ void *fix_func_address_by_signature(void *target, void *module_base, void *origi
     }
     // 基于以下假设，函数地址必然被对齐分配
     constexpr auto aligned = func_aligned();
-    constexpr auto range = 512;
-    constexpr auto limit = range / aligned;
+    auto limit = range / aligned;
     auto original_s = create_signature(original, original_module_base, in_func);
 
     for (size_t i = 1; i < limit; i++)
@@ -216,11 +215,14 @@ void *fix_func_address_by_signature(void *target, void *module_base, void *origi
         {
             return fix_target;
         }
-        fix_target = (void *)((intptr_t)target - i * aligned);
-        target_s = create_signature(fix_target, module_base, nullptr);
-        if (target_s == original_s)
+        if (updated)
         {
-            return fix_target;
+            fix_target = (void *)((intptr_t)target - i * aligned);
+            target_s = create_signature(fix_target, module_base, nullptr);
+            if (target_s == original_s)
+            {
+                return fix_target;
+            }
         }
     }
     return nullptr;

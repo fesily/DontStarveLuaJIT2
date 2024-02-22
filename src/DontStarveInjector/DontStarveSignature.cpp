@@ -10,7 +10,7 @@
 #include "Signature.hpp"
 #include "DontStarveSignature.hpp"
 
-std::string update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports)
+std::string update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports, uint32_t range, bool updated)
 {
 	HMODULE h51 = LoadLibraryA(lua51_name);
 	spdlog::warn("try fix all signatures");
@@ -23,7 +23,7 @@ std::string update_signatures(Signatures &signatures, uintptr_t targetLuaModuleB
 		auto original = GetProcAddress(h51, name.c_str());
 		auto old_offset = GPOINTER_TO_INT(funcs.at(name));
 		void *target = GSIZE_TO_POINTER(targetLuaModuleBase + old_offset);
-		auto target1 = fix_func_address_by_signature(target, hMain, original, h51, nullptr);
+		auto target1 = fix_func_address_by_signature(target, hMain, original, h51, nullptr, range, updated);
 		if (!target1)
 		{
 			auto msg = std::format("func[{}] can't fix address, wait for mod update", name);
