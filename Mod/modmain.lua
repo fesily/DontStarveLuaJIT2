@@ -23,12 +23,34 @@ if GetModConfigData("EnabledJIT") then
         "maxmcode=4000", "maxirconst=1000")
     end
 
-    if GetModConfigData("ModBlackList") then
-
-    end
+    local enbaleBlackList = GetModConfigData("ModBlackList")
 
     AddSimPostInit(function()
         jit.on()
-        --TODO : add jit blacklists scripts/mods
+
+        local prefix = "../mods/workshop-"
+        local blacklists = {
+        }
+        if enbaleBlackList and #blacklists > 0 then
+            for i in ipairs(blacklists) do
+                blacklists[i] = prefix .. blacklists[i]
+            end
+            local function startWith(str, prefix)
+                return str:find(prefix, 1, true) == 1
+            end
+            local _kleiloadlua = _G.kleiloadlua
+            _G.kleiloadlua = function(script, ...)
+                local m = _kleiloadlua(script, ...)
+                if (type(script) == "string") then
+                    for _, blacklist in ipairs(blacklists) do
+                        if startWith(script, blacklist) then
+                            jit.off(m, true)
+                            break
+                        end
+                    end
+                end
+                return m
+            end
+        end
     end)
 end
