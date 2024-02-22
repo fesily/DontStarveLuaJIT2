@@ -270,6 +270,16 @@ static void lj_clearerr(FILE *fp) noexcept
 }
 
 #include <Windows.h>
+
+static int lj_need_transform_path() noexcept
+{
+    static bool has_lua_debug_flag = []{
+        std::string_view cmd = GetCommandLineA();
+        return cmd.contains("--lua-debug");
+    }();
+    return has_lua_debug_flag;
+}
+
 void init_luajit_io(HMODULE hluajitModule)
 {
 #define INIT_LUAJIT_IO(name)                                      \
@@ -290,5 +300,6 @@ void init_luajit_io(HMODULE hluajitModule)
     INIT_LUAJIT_IO(lj_fwrite);
     INIT_LUAJIT_IO(lj_clearerr);
     INIT_LUAJIT_IO(lj_path_map);
+    INIT_LUAJIT_IO(lj_need_transform_path);
 #undef INIT_LUAJIT_IO
 }
