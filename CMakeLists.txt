@@ -19,8 +19,14 @@ else()
     set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin)
 endif()
 
+if(WIN32)
+    set(PLATFORM_NAME "windows")
+else()
+    message(FATAL_ERROR "Not supported platform")
+endif()
+
 set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin64)
-set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod/bin64/windows/)
+set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod/bin64/${PLATFORM_NAME}/)
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h 
     COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/missfunc.py"
@@ -30,10 +36,11 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h
 
 add_custom_target(create_missfuncs DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h)
 
-set(Lua51_output_dir ${PROJECT_SOURCE_DIR}/src/lua51/$<IF:$<CONFIG:Debug>,debug,release>/)
+set(lua51_root ${CMAKE_CURRENT_SOURCE_DIR}/src/lua51)
+set(Lua51_output_dir ${lua51_root}/$<IF:$<CONFIG:Debug>,debug,release>/)
 
 add_custom_command(OUTPUT ${Lua51_output_dir}/lua51.dll ${Lua51_output_dir}/lua51.lib
-    COMMAND src/build_lua51.bat Build $<$<CONFIG:Debug>:debug>
+    COMMAND ${lua51_root}/build_lua51.bat Build $<$<CONFIG:Debug>:debug>
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
@@ -48,12 +55,13 @@ else()
     set(LUA_LIBRARIES_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/src)
 endif()
 
-set(LUA_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/lua51/src)
+set(LUA_INCLUDE_DIR ${lua51_root}/src)
 set(LUA_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/release/lua51.dll)
 set(LUA_CONFIG_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll)
 set(LUA_LIBRARIES lua51)
 
-set(FRIDA_GUM_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/src/frida-gum)
+
+set(FRIDA_GUM_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/src/frida-gum/${PLATFORM_NAME})
 set(FRIDA_GUM_LIBRARY_DIR ${FRIDA_GUM_INCLUDE_DIR})
 set(FRIDA_GUM_LIBRARIES frida-gum)
 

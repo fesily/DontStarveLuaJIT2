@@ -277,7 +277,7 @@ void DontStarveInjectorStart()
     removeBat();
     auto dir = getGameDir();
     // auto updater
-    if (isClientMod)
+    if (isClientMod && !std::string_view(GetCommandLineA()).contains("-disable_check_luajit_mod"))
     {
         updater();
         if (!shouldloadmod())
