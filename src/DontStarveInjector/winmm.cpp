@@ -417,7 +417,8 @@ static bool GumFoundCb(const ExportDetails *details,
 		MessageBoxA(NULL, details->name, "can't find module function", 0);
 		std::exit(1);
 	}
-	if (!Hook((uint8_t*)fake, (uint8_t*)real)) {
+	if (!Hook((uint8_t *)fake, (uint8_t *)real))
+	{
 		MessageBoxA(NULL, details->name, "can't hook winmm.dll", 0);
 		std::exit(1);
 	}

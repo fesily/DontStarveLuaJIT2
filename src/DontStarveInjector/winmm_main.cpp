@@ -208,7 +208,7 @@ bool mod_enabled()
 {
     std::tuple<std::string, size_t> out;
     auto opt_enabled = _mod_enabled(out);
-    return opt_enabled.value_or(false);
+    return opt_enabled.value_or(true);
 }
 
 void enable_mod(bool enabled)
@@ -237,7 +237,7 @@ static bool shouldloadmod()
     }
     auto clientSaveDir = GetClientSaveDir();
     if (!clientSaveDir)
-        return false;
+        return true;
     auto boot_modindex_path = clientSaveDir.value() / "boot_modindex";
     // check root_modindex
     auto boot_modindex = GetPersistentString(boot_modindex_path.string());

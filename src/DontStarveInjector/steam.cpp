@@ -51,7 +51,7 @@ std::optional<int64_t> getUserId()
 {
     if (!get())
     {
-        return -1;
+        return std::nullopt;
     }
     return SteamUser()->GetSteamID().GetAccountID();
 }
