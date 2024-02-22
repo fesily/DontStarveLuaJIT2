@@ -40,7 +40,30 @@ Be sure to back up your archives, there are no guarantees that there are no bugs
 	
 	And you can see message started with "LuaJIT".
 
+## How to build
+
+### Dept
+install `CMake`, `Ninja`, `vcpkg`
+1. Need `VCPKG_ROOT` env
+2. copy `lua51.dll` to `src/x64/release/lua51.dll`
+3. download `frida-gum.lib` from [github/frida](https://github.com/frida), name like `frida-gum-devkit-16.2.1-windows-x86_64.exe`
+4. copy `frida-gum.lib` to `src/frida-gum/frida-gum.lib`
+5. in `CMakeLists.txt` set var `GAME_DIR` = your game dir
+6. build by cmake
+
+### lua51.dll
+Need vs2008 compiler the lua51.dll, also you can use which one in the mod
+
 ## How to debug game:
+
+We need `vscode` + `lua-debug` plugin
+
+### How to debug game without steam
+1. create new file `steam_appid.txt` at gamedir/bin64
+2. the file context is 322330
+
+### Pass process args "lua-debug"
+If you start with stream, please set game config, process start config: "--lua-debug"
 
 ### vscode launch.json
 ```json
@@ -56,6 +79,7 @@ Be sure to back up your archives, there are no guarantees that there are no bugs
 ```
 
 ### data/scripts/main.lua:
+changed `local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"` to your path
 ```lua
 DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated()
 if DEBUGGER_ENABLED then
