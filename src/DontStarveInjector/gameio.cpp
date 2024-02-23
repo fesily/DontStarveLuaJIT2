@@ -59,7 +59,7 @@ static std::filesystem::path to_path(const char *p)
     }
     catch (const std::exception &)
     {
-        return std::filesystem::u8path(p);
+        return std::filesystem::path((char8_t*)p);
     }
 }
 
@@ -239,6 +239,8 @@ static int lj_ferror(FILE *fp) noexcept
     return ferror(fp);
 }
 
+#ifdef _WIN32
+
 static int lj_fseeki64(
     FILE *fp,
     __int64 _Offset,
@@ -260,6 +262,26 @@ static __int64 lj_ftelli64(FILE *fp) noexcept
     return _ftelli64(fp);
 }
 
+#else
+
+static int lj_fseeko(FILE *fp, __off_t _Offset, int _Origin)
+{
+    if (NoFileHandlers.contains((file_interface *)fp))
+    {
+        return ((file_interface *)fp)->fseeko(_Offset, _Origin);
+    }
+    return fseeko(fp, _Offset, _Origin);
+}
+static __off64_t lj_ftello(FILE *fp)
+{
+    if (NoFileHandlers.contains((file_interface *)fp))
+    {
+        return ((file_interface *)fp)->ftello();
+    }
+    return ftello(fp);
+}
+#endif
+
 static void lj_clearerr(FILE *fp) noexcept
 {
     if (NoFileHandlers.contains((file_interface *)fp))
@@ -269,22 +291,22 @@ static void lj_clearerr(FILE *fp) noexcept
     return clearerr(fp);
 }
 
-#include <Windows.h>
+#include "util/platform.hpp"
 
 static int lj_need_transform_path() noexcept
 {
     static bool has_lua_debug_flag = []{
-        std::string_view cmd = GetCommandLineA();
+        std::string_view cmd = get_cwd();
         return cmd.contains("-enable_lua_debugger");
     }();
     return has_lua_debug_flag;
 }
 
-void init_luajit_io(HMODULE hluajitModule)
+void init_luajit_io(module_handler_t hluajitModule)
 {
 #define INIT_LUAJIT_IO(name)                                      \
     {                                                             \
-        auto ptr = (void **)GetProcAddress(hluajitModule, #name); \
+        auto ptr = (void **)loadlibproc(hluajitModule, #name); \
         if (ptr)                                                  \
             *ptr = (void *)&name;                                 \
     }

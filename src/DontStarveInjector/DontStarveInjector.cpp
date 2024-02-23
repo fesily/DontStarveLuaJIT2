@@ -1,26 +1,30 @@
 // DontStarveInjector.cpp : Defines the exported functions for the DLL application.
 //
-
+#include <spdlog/spdlog.h>
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #define _CRT_NONSTDC_NO_WARNINGS
+#include <windows.h>
+#include <spdlog/sinks/msvc_sink.h>
+#else
+
+#endif
 #include <string>
 #include <algorithm>
 
-#include <windows.h>
-
 #include <lua.hpp>
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/msvc_sink.h>
 #if USE_LISTENER
 #include <frida-gum.h>
 #endif
+
 #include "config.hpp"
 #include "util/inlinehook.hpp"
 #include "util/module.hpp"
 #include "LuaModule.hpp"
 #include "DontStarveSignature.hpp"
 #include "SignatureJson.hpp"
+#include "util/platform.hpp"
 
 #include "../missfunc.h"
 
@@ -32,7 +36,11 @@ using namespace std;
 
 G_NORETURN void showError(const std::string_view &msg)
 {
+#ifdef _WIN32
 	MessageBoxA(NULL, msg.data(), "error!", 0);
+#else
+	spdlog::error("error: {}", msg);
+#endif
 	std::exit(1);
 }
 
@@ -42,7 +50,7 @@ static const char *luajitModuleName =
 #else
 	"Lua51DS";
 #endif
-static HMODULE hluajitModule;
+static module_handler_t hluajitModule;
 #include "api_listener.hpp"
 
 #if USE_FAKE_API
@@ -56,7 +64,7 @@ void *GetLuaJitAddress(const char *name)
 	return lua_fake_apis[name];
 }
 #else
-#define GetLuaJitAddress(name) GetProcAddress(hluajitModule, name)
+#define GetLuaJitAddress(name) loadlibproc(hluajitModule, name)
 #endif
 #pragma region Attach
 
@@ -68,9 +76,7 @@ static GumInterceptor *interceptor;
 static void *lua_newstate_hooker(void *, void *ud)
 {
 	auto L = luaL_newstate();
-	char buf[64];
-	snprintf(buf, 64, "luaL_newstate:%p\n", L);
-	OutputDebugStringA(buf);
+	spdlog::info("luaL_newstate:{}", (void *)L);
 	return L;
 }
 #if USE_FAKE_API
@@ -105,11 +111,11 @@ static void *get_luajit_address(const std::string_view &name)
 	if (name == "lua_newstate"sv)
 	{
 		// TODO 2.1 delete this
-		replacer = &lua_newstate_hooker;
+		replacer = (void *)&lua_newstate_hooker;
 	}
 	else if (name == "lua_setfield"sv)
 	{
-		replacer = &lua_setfield_fake;
+		replacer = (void *)&lua_setfield_fake;
 	}
 #endif
 	return replacer;
@@ -119,17 +125,9 @@ static void voidFunc()
 {
 }
 
-static std::string getMainPath()
-{
-	HMODULE hmain = GetModuleHandle(NULL);
-	char filename[MAX_PATH];
-	GetModuleFileNameA(hmain, filename, MAX_PATH);
-	return filename;
-}
-
 static void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures, const ListExports_t &exports)
 {
-	hluajitModule = LoadLibraryA(luajitModuleName);
+	hluajitModule = loadlib(luajitModuleName);
 
 	std::list<uint8_t *> hookeds;
 	for (auto &[name, _] : exports)
@@ -169,7 +167,7 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
 #endif
 
 #if REPLACE_IO
-	extern void init_luajit_io(HMODULE hluajitModule);
+	extern void init_luajit_io(module_handler_t hluajitModule);
 	init_luajit_io(hluajitModule);
 #endif
 
@@ -179,8 +177,8 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
 #endif
 }
 
-static bool ListLuaFuncCb(const ExportDetails *details,
-						  void *user_data)
+static gboolean ListLuaFuncCb(const GumExportDetails *details,
+							  void *user_data)
 {
 	if (missfuncs.find(details->name) != missfuncs.end())
 	{
@@ -199,9 +197,9 @@ static bool ListLuaFuncCb(const ExportDetails *details,
 
 static auto get_lua51_exports()
 {
-	HMODULE h51 = LoadLibraryA(lua51_name);
+	auto h51 = loadlib(lua51_name);
 	ListExports_t exports;
-	module_enumerate_exports(h51, ListLuaFuncCb, &exports);
+	gum_module_enumerate_exports(lua51_name, ListLuaFuncCb, &exports);
 	std::sort(exports.begin(), exports.end(), [](auto &l, auto &r)
 			  { return l.second > r.second; });
 	return std::tuple(exports, h51);
@@ -219,7 +217,7 @@ static std::expected<std::tuple<ListExports_t, Signatures>, std::string> create_
 	auto errormsg = update_signatures(signatures, targetLuaModuleBase, exports, 1024, false);
 	if (!errormsg.empty())
 	{
-		FreeLibrary(h51);
+		unloadlib(h51);
 		return std::unexpected(errormsg);
 	}
 	return std::make_tuple(std::move(exports), std::move(signatures));
@@ -241,7 +239,7 @@ static std::expected<ListExports_t, std::string> get_signatures(Signatures &sign
 	}
 	if (!errormsg.empty())
 	{
-		FreeLibrary(h51);
+		unloadlib(h51);
 		return std::unexpected(errormsg);
 	}
 	if (SignatureJson::current_version() != signatures.version)
@@ -249,27 +247,33 @@ static std::expected<ListExports_t, std::string> get_signatures(Signatures &sign
 		errormsg = update_signatures(signatures, targetLuaModuleBase, exports);
 		if (!errormsg.empty())
 		{
-			FreeLibrary(h51);
+			unloadlib(h51);
 			return std::unexpected(errormsg);
 		}
 		signatures.version = SignatureJson::current_version();
 		updated(signatures);
 	}
-	FreeLibrary(h51);
+	unloadlib(h51);
 	return exports;
 }
 
 #pragma endregion Attach
-
-extern "C" __declspec(dllexport) void Inject(bool isClient)
+#ifdef _WIN32
+#define DONTSTARVEINJECTOR_API __declspec(dllexport)
+#else
+#define DONTSTARVEINJECTOR_API
+#endif
+extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient)
 {
 	gum_init();
+#ifdef _WIN32
 	spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>()));
+#endif
 #if USE_LISTENER
 	interceptor = gum_interceptor_obtain();
 #endif
 
-	auto mainPath = getMainPath();
+	auto mainPath = getExePath().string();
 	if (luaModuleSignature.scan(mainPath.c_str()) == NULL)
 	{
 		spdlog::error("can't find luamodule base address");

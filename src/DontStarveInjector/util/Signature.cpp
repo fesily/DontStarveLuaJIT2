@@ -1,9 +1,9 @@
-﻿#include <Windows.h>
-#include <string_view>
+﻿#include <string_view>
 #include <functional>
 #include <cassert>
 
 #include <frida-gum.h>
+#include "platform.hpp"
 
 #include "Signature.hpp"
 
@@ -30,16 +30,12 @@ uintptr_t MemorySignature::scan(const char *m)
     match_pattern = gum_match_pattern_new_from_string(pattern);
     gum_module_enumerate_ranges(m, page, findBaseAddrCb, (gpointer)this);
     gum_match_pattern_unref(match_pattern);
-    char buf[128];
-    snprintf(buf, 128, "Signature %s: %p\n", pattern, (void *)target_address);
-    OutputDebugStringA(buf);
+    fprintf(stdout, "Signature %s: %p\n", pattern, (void *)target_address);
     return target_address;
 }
 static bool is_data(void *ptr)
 {
-    MEMORY_BASIC_INFORMATION info = {};
-    VirtualQuery(ptr, &info, sizeof(info));
-    return !(info.Protect & PAGE_EXECUTE);
+    return !memory_is_execute(ptr);
 }
 
 std::string create_signature(void *func, void *module_base, const in_function_t &in_func)

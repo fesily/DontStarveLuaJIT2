@@ -1,9 +1,14 @@
+#ifdef _WIN32
 #include <Windows.h>
+#else
+#include <sys/mman.h>
+#endif
 #include <cassert>
 #include <format>
 #include <memory>
 #include <memory_resource>
 #include <unordered_map>
+#include <frida-gum.h>
 
 #include "inlinehook.hpp"
 
@@ -17,13 +22,22 @@ static std::unordered_map<uint8_t *, std::string> hooked;
 
 bool HookWriteCode(void *from, const void *code, size_t len)
 {
+#ifdef _WIN32
     DWORD oldProtect = 0;
     ::VirtualProtect(from, len, PAGE_EXECUTE_READWRITE, &oldProtect);
-    if (!(oldProtect & 0xf0)) return false;
+    if (!(oldProtect & 0xf0))
+        return false;
     assert(oldProtect & PAGE_EXECUTE_READ);
     memcpy(from, code, len);
-    ::VirtualProtect(from, len, PAGE_EXECUTE_READ, &oldProtect);
-    return true;
+    return ::VirtualProtect(from, len, PAGE_EXECUTE_READ, &oldProtect);
+#else
+    if (mprotect(from, len, PROT_READ | PROT_WRITE) != 0)
+    {
+        return false;
+    }
+    memcpy(from, code, len);
+    return mprotect(from, len, PROT_READ | PROT_EXEC) == 0;
+#endif
 }
 
 bool HookByReg(uint8_t *from, uint8_t *to)
@@ -32,26 +46,33 @@ bool HookByReg(uint8_t *from, uint8_t *to)
     auto code = std::to_array<uint8_t>({0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xE0});
     *(uint64_t *)(code.data() + 2) = (uint64_t)to;
 
-    hooked[from] = {(char *)from, code.size()};
-    return HookWriteCode(from, code.data(), code.size());
+    if (HookWriteCode(from, code.data(), code.size()))
+    {
+        hooked[from] = {(char *)from, code.size()};
+        return true;
+    }
+    return false;
+}
+
+inline auto format_address(uint8_t *from)
+{
+    return *from == 0xe9 ? (uint8_t *)((uint64_t)from + *(int32_t *)(from + 1) + 5) : from;
 }
 
 void ResetHook(uint8_t *from)
 {
+    from = format_address(from);
     auto node = hooked.extract(from);
     if (node)
     {
-        auto& original = node.mapped();
+        auto &original = node.mapped();
         HookWriteCode(from, original.c_str(), original.size());
     }
 }
 
 bool Hook(uint8_t *from, uint8_t *to)
 {
-    if (*from == 0xe9)
-    { // jmp
-        from = (uint8_t *)((uint64_t)from + *(int32_t *)(from + 1) + 5);
-    }
+    from = format_address(from);
     assert(to != 0);
 #if 0
     auto offset = (uint64_t)to - (uint64_t)from - 6;
