@@ -1,7 +1,9 @@
 if (WIN32)
-    Set(FRIDA_GUM_LIBRARIES_PREFIX "windows")
+    Set(FRIDA_GUM_LIBRARIES_PREFIX "win64")
+elseif(APPLE)
+    Set(FRIDA_GUM_LIBRARIES_PREFIX "osx")
 else()
-    Set(FRIDA_GUM_LIBRARIES_PREFIX "linux")
+    Set(FRIDA_GUM_LIBRARIES_PREFIX "linux64")
 endif()
 
 find_path(FRIDA_GUM_INCLUDE_DIR 
@@ -10,7 +12,7 @@ find_path(FRIDA_GUM_INCLUDE_DIR
     REQUIRED)
 
 find_library(FRIDA_GUM_LIBRARIES
-    NAMES frida-gum libfrida-gum
+    NAMES frida-gum.lib libfrida-gum.a
     PATHS ${PROJECT_SOURCE_DIR}/3rd/frida-gum/${FRIDA_GUM_LIBRARIES_PREFIX}
     REQUIRED)
 
