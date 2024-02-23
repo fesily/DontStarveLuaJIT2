@@ -17,7 +17,6 @@ target_link_libraries(signature_updater PRIVATE spdlog::spdlog)
 
 
 target_include_directories(signature_updater PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
-target_link_directories(signature_updater PUBLIC ${FRIDA_GUM_LIBRARY_DIR})
 target_link_libraries(signature_updater PRIVATE ${FRIDA_GUM_LIBRARIES})
 
 target_link_libraries(signature_updater PRIVATE nlohmann_json::nlohmann_json)

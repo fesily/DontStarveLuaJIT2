@@ -13,7 +13,6 @@ target_include_directories(signature_checker PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(signature_checker PUBLIC ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
 
 target_include_directories(signature_checker PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
-target_link_directories(signature_checker PUBLIC ${FRIDA_GUM_LIBRARY_DIR})
 target_link_libraries(signature_checker PRIVATE ${FRIDA_GUM_LIBRARIES})
 
 target_link_libraries(signature_checker PRIVATE nlohmann_json::nlohmann_json)
