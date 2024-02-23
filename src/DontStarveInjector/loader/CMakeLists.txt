@@ -9,6 +9,7 @@ winmm_main.cpp
 updater.cpp
 ${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
 ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
+${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
 steam.cpp
 PersistentString.cpp
 ${PROJECT_SOURCE_DIR}/version.txt
@@ -21,6 +22,7 @@ target_link_libraries(Winmm PRIVATE ${STEAM_LIBRARIES})
 
 target_link_libraries(Winmm PRIVATE ZLIB::ZLIB)
 target_link_libraries(Winmm PRIVATE spdlog::spdlog)
+add_compile_definitions(NO_FRIDA_GUM=1)
 
 file(STRINGS "${PROJECT_SOURCE_DIR}/version.txt" MOD_VERSION LIMIT_COUNT 1)
 

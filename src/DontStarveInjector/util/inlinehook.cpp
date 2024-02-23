@@ -8,7 +8,6 @@
 #include <memory>
 #include <memory_resource>
 #include <unordered_map>
-#include <frida-gum.h>
 
 #include "inlinehook.hpp"
 

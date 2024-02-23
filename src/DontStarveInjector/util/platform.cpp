@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <dlfcn.h>
 #endif
+#include <filesystem>
+#include "platform.hpp"
 
 std::filesystem::path getExePath()
 {
@@ -25,9 +27,9 @@ std::filesystem::path getExePath()
 module_handler_t loadlib(const char *name)
 {
         if (auto p = getExePath() / name; std::filesystem::exists(p))
-                return loadlib(p.c_str());
+                return loadlib(p.string().c_str());
         if (auto p = std::filesystem::current_path() / name; std::filesystem::exists(p))
-                return loadlib(p.c_str());
+                return loadlib(p.string().c_str());
         return
 #ifdef _WIN32
             LoadLibraryA(name);
@@ -40,22 +42,21 @@ void *loadlibproc(module_handler_t h, const char *name)
 {
         return
 #ifdef _WIN32
-            GetProcAddress
+            GetProcAddress((HMODULE)h, name);
 #else
-            dlsym
+            dlsym(h, name);
 #endif
-            (h, name);
 }
 
 void unloadlib(module_handler_t h)
 {
 #ifdef _WIN32
-        FreeLibrary(h);
+        FreeLibrary((HMODULE)h);
 #else
         dlclose(h);
 #endif
 }
-
+#ifdef NO_FRIDA_GUM
 #include <frida-gum.h>
 #ifndef _WIN32
 #include <gumlinux-priv.h>
@@ -154,7 +155,7 @@ gum_memory_get_protection(gconstpointer address,
 }
 
 #else
-
+#include <gumwindows.h>
 static gboolean
 gum_memory_get_protection(gconstpointer address,
                           gsize len,
@@ -234,7 +235,7 @@ memory_is_execute(void *address)
 {
         return gum_memory_is_execute(address, 4);
 }
-
+#endif
 #include <fstream>
 #include <iostream>
 #include <string>
