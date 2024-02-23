@@ -1,6 +1,4 @@
-#ifndef GUM_STATIC
-# define GUM_STATIC
-#endif
+#ifdef _MSC_VER
 
 #pragma comment(lib, "frida-gum.lib")
 
@@ -10,6 +8,8 @@
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "ws2_32.lib")
+
+#endif
 
 /*
  * Copyright (C) 2008-2023 Ole André Vadla Ravnås <oleavr@nowsecure.com>
@@ -30859,12 +30859,16 @@ GType gum_replace_return_get_type (void) G_GNUC_CONST;
 #define GUM_TYPE_REPLACE_RETURN (gum_replace_return_get_type ())
 
 /* Enumerations from "gumprocess.h" */
+GType gum_teardown_requirement_get_type (void) G_GNUC_CONST;
+#define GUM_TYPE_TEARDOWN_REQUIREMENT (gum_teardown_requirement_get_type ())
 GType gum_code_signing_policy_get_type (void) G_GNUC_CONST;
 #define GUM_TYPE_CODE_SIGNING_POLICY (gum_code_signing_policy_get_type ())
 GType gum_modify_thread_flags_get_type (void) G_GNUC_CONST;
 #define GUM_TYPE_MODIFY_THREAD_FLAGS (gum_modify_thread_flags_get_type ())
 GType gum_thread_state_get_type (void) G_GNUC_CONST;
 #define GUM_TYPE_THREAD_STATE (gum_thread_state_get_type ())
+GType gum_dependency_type_get_type (void) G_GNUC_CONST;
+#define GUM_TYPE_DEPENDENCY_TYPE (gum_dependency_type_get_type ())
 G_END_DECLS
 
 #endif
@@ -31472,7 +31476,7 @@ G_END_DECLS
 #endif
 
 /*
- * Copyright (C) 2016-2022 Ole André Vadla Ravnås <oleavr@nowsecure.com>
+ * Copyright (C) 2016-2023 Ole André Vadla Ravnås <oleavr@nowsecure.com>
  *
  * Licence: wxWindows Library Licence, Version 3.1
  */
@@ -31482,6 +31486,8 @@ G_END_DECLS
 
 
 G_BEGIN_DECLS
+
+#define GUM_API_SIZE_NONE -1
 
 #define GUM_TYPE_API_RESOLVER (gum_api_resolver_get_type ())
 GUM_DECLARE_INTERFACE (GumApiResolver, gum_api_resolver, GUM, API_RESOLVER,
@@ -31508,6 +31514,7 @@ struct _GumApiDetails
 {
   const gchar * name;
   GumAddress address;
+  gssize size;
 };
 
 GUM_API GumApiResolver * gum_api_resolver_make (const gchar * type);
@@ -31702,6 +31709,8 @@ GUM_API guint gum_query_page_size (void);
 GUM_API gboolean gum_query_is_rwx_supported (void);
 GUM_API GumRwxSupport gum_query_rwx_support (void);
 GUM_API gboolean gum_memory_is_readable (gconstpointer address, gsize len);
+GUM_API gboolean gum_memory_query_protection (gconstpointer address,
+    GumPageProtection * prot);
 GUM_API guint8 * gum_memory_read (gconstpointer address, gsize len,
     gsize * n_bytes_read);
 GUM_API gboolean gum_memory_write (gpointer address, const guint8 * bytes,
@@ -31785,7 +31794,8 @@ G_END_DECLS
 #endif
 /*
  * Copyright (C) 2008-2023 Ole André Vadla Ravnås <oleavr@nowsecure.com>
- * Copyright (C) 2020 Francesco Tamagni <mrmacete@protonmail.ch>
+ * Copyright (C) 2020-2024 Francesco Tamagni <mrmacete@protonmail.ch>
+ * Copyright (C) 2023 Grant Douglas <me@hexplo.it>
  *
  * Licence: wxWindows Library Licence, Version 3.1
  */
@@ -31813,7 +31823,14 @@ typedef struct _GumSymbolDetails GumSymbolDetails;
 typedef struct _GumSymbolSection GumSymbolSection;
 typedef struct _GumRangeDetails GumRangeDetails;
 typedef struct _GumFileMapping GumFileMapping;
+typedef struct _GumSectionDetails GumSectionDetails;
+typedef struct _GumDependencyDetails GumDependencyDetails;
 typedef struct _GumMallocRangeDetails GumMallocRangeDetails;
+
+typedef enum {
+  GUM_TEARDOWN_REQUIREMENT_FULL,
+  GUM_TEARDOWN_REQUIREMENT_MINIMAL
+} GumTeardownRequirement;
 
 typedef enum {
   GUM_CODE_SIGNING_OPTIONAL,
@@ -31836,6 +31853,7 @@ typedef enum {
 struct _GumThreadDetails
 {
   GumThreadId id;
+  const gchar * name;
   GumThreadState state;
   GumCpuContext cpu_context;
 };
@@ -31926,6 +31944,27 @@ struct _GumFileMapping
   gsize size;
 };
 
+struct _GumSectionDetails
+{
+  const gchar * id;
+  const gchar * name;
+  GumAddress address;
+  gsize size;
+};
+
+typedef enum {
+  GUM_DEPENDENCY_REGULAR,
+  GUM_DEPENDENCY_WEAK,
+  GUM_DEPENDENCY_REEXPORT,
+  GUM_DEPENDENCY_UPWARD,
+} GumDependencyType;
+
+struct _GumDependencyDetails
+{
+  const gchar * name;
+  GumDependencyType type;
+};
+
 struct _GumMallocRangeDetails
 {
   const GumMemoryRange * range;
@@ -31945,12 +31984,19 @@ typedef gboolean (* GumFoundSymbolFunc) (const GumSymbolDetails * details,
     gpointer user_data);
 typedef gboolean (* GumFoundRangeFunc) (const GumRangeDetails * details,
     gpointer user_data);
+typedef gboolean (* GumFoundSectionFunc) (const GumSectionDetails * details,
+    gpointer user_data);
+typedef gboolean (* GumFoundDependencyFunc) (
+    const GumDependencyDetails * details, gpointer user_data);
 typedef gboolean (* GumFoundMallocRangeFunc) (
     const GumMallocRangeDetails * details, gpointer user_data);
 typedef GumAddress (* GumResolveExportFunc) (const char * module_name,
     const char * symbol_name, gpointer user_data);
 
 GUM_API GumOS gum_process_get_native_os (void);
+GUM_API GumTeardownRequirement gum_process_get_teardown_requirement (void);
+GUM_API void gum_process_set_teardown_requirement (
+    GumTeardownRequirement requirement);
 GUM_API GumCodeSigningPolicy gum_process_get_code_signing_policy (void);
 GUM_API void gum_process_set_code_signing_policy (GumCodeSigningPolicy policy);
 GUM_API const gchar * gum_process_query_libc_name (void);
@@ -31962,6 +32008,7 @@ GUM_API gboolean gum_process_modify_thread (GumThreadId thread_id,
     GumModifyThreadFunc func, gpointer user_data, GumModifyThreadFlags flags);
 GUM_API void gum_process_enumerate_threads (GumFoundThreadFunc func,
     gpointer user_data);
+GUM_API const GumModuleDetails * gum_process_get_main_module (void);
 GUM_API gboolean gum_process_resolve_module_pointer (gconstpointer ptr,
     gchar ** path, GumMemoryRange * range);
 GUM_API void gum_process_enumerate_modules (GumFoundModuleFunc func,
@@ -31986,6 +32033,10 @@ GUM_API void gum_module_enumerate_symbols (const gchar * module_name,
     GumFoundSymbolFunc func, gpointer user_data);
 GUM_API void gum_module_enumerate_ranges (const gchar * module_name,
     GumPageProtection prot, GumFoundRangeFunc func, gpointer user_data);
+GUM_API void gum_module_enumerate_sections (const gchar * module_name,
+    GumFoundSectionFunc func, gpointer user_data);
+GUM_API void gum_module_enumerate_dependencies (const gchar * module_name,
+    GumFoundDependencyFunc func, gpointer user_data);
 GUM_API GumAddress gum_module_find_base_address (const gchar * module_name);
 GUM_API GumAddress gum_module_find_export_by_name (const gchar * module_name,
     const gchar * symbol_name);
@@ -32189,7 +32240,8 @@ G_END_DECLS
 
 #endif
 /*
- * Copyright (C) 2015-2022 Ole André Vadla Ravnås <oleavr@nowsecure.com>
+ * Copyright (C) 2015-2023 Ole André Vadla Ravnås <oleavr@nowsecure.com>
+ * Copyright (C) 2023 Fabian Freyer <fabian.freyer@physik.tu-berlin.de>
  *
  * Licence: wxWindows Library Licence, Version 3.1
  */
@@ -32221,6 +32273,8 @@ typedef struct _GumDarwinChainedFixupsDetails GumDarwinChainedFixupsDetails;
 typedef struct _GumDarwinRebaseDetails GumDarwinRebaseDetails;
 typedef struct _GumDarwinBindDetails GumDarwinBindDetails;
 typedef struct _GumDarwinThreadedItem GumDarwinThreadedItem;
+typedef struct _GumDarwinTlvParameters GumDarwinTlvParameters;
+typedef struct _GumDarwinTlvDescriptorDetails GumDarwinTlvDescriptorDetails;
 typedef struct _GumDarwinInitPointersDetails GumDarwinInitPointersDetails;
 typedef struct _GumDarwinInitOffsetsDetails GumDarwinInitOffsetsDetails;
 typedef struct _GumDarwinTermPointersDetails GumDarwinTermPointersDetails;
@@ -32252,14 +32306,16 @@ typedef gboolean (* GumFoundDarwinRebaseFunc) (
     const GumDarwinRebaseDetails * details, gpointer user_data);
 typedef gboolean (* GumFoundDarwinBindFunc) (
     const GumDarwinBindDetails * details, gpointer user_data);
+
+typedef gboolean (* GumFoundDarwinTlvDescriptorFunc) (
+    const GumDarwinTlvDescriptorDetails * details, gpointer user_data);
+
 typedef gboolean (* GumFoundDarwinInitPointersFunc) (
     const GumDarwinInitPointersDetails * details, gpointer user_data);
 typedef gboolean (* GumFoundDarwinInitOffsetsFunc) (
     const GumDarwinInitOffsetsDetails * details, gpointer user_data);
 typedef gboolean (* GumFoundDarwinTermPointersFunc) (
     const GumDarwinTermPointersDetails * details, gpointer user_data);
-typedef gboolean (* GumFoundDarwinDependencyFunc) (const gchar * path,
-    gpointer user_data);
 typedef gboolean (* GumFoundDarwinFunctionStartsFunc) (
     const GumDarwinFunctionStartsDetails * details, gpointer user_data);
 
@@ -32343,7 +32399,7 @@ struct _GumDarwinModule
   const guint8 * exports_end;
   gpointer exports_malloc_data;
 
-  GPtrArray * dependencies;
+  GArray * dependencies;
   GPtrArray * reexports;
 };
 
@@ -32458,6 +32514,23 @@ struct _GumDarwinThreadedItem
   guint16 bind_ordinal;
 
   GumAddress rebase_address;
+};
+
+struct _GumDarwinTlvParameters
+{
+  guint num_descriptors;
+  guint descriptors_offset;
+  guint data_offset;
+  gsize data_size;
+  gsize bss_size;
+};
+
+struct _GumDarwinTlvDescriptorDetails
+{
+  guint64 file_offset;
+  GumAddress thunk;
+  guint64 key;
+  gsize offset;
 };
 
 struct _GumDarwinInitPointersDetails
@@ -32796,6 +32869,11 @@ GUM_API void gum_darwin_module_enumerate_binds (GumDarwinModule * self,
     GumFoundDarwinBindFunc func, gpointer user_data);
 GUM_API void gum_darwin_module_enumerate_lazy_binds (GumDarwinModule * self,
     GumFoundDarwinBindFunc func, gpointer user_data);
+GUM_API void gum_darwin_module_query_tlv_parameters (GumDarwinModule * self,
+    GumDarwinTlvParameters * params);
+GUM_API void gum_darwin_module_enumerate_tlv_descriptors (
+    GumDarwinModule * self, GumFoundDarwinTlvDescriptorFunc func,
+    gpointer user_data);
 GUM_API void gum_darwin_module_enumerate_init_pointers (GumDarwinModule * self,
     GumFoundDarwinInitPointersFunc func, gpointer user_data);
 GUM_API void gum_darwin_module_enumerate_init_offsets (GumDarwinModule * self,
@@ -32803,7 +32881,7 @@ GUM_API void gum_darwin_module_enumerate_init_offsets (GumDarwinModule * self,
 GUM_API void gum_darwin_module_enumerate_term_pointers (GumDarwinModule * self,
     GumFoundDarwinTermPointersFunc func, gpointer user_data);
 GUM_API void gum_darwin_module_enumerate_dependencies (GumDarwinModule * self,
-    GumFoundDarwinDependencyFunc func, gpointer user_data);
+    GumFoundDependencyFunc func, gpointer user_data);
 GUM_API void gum_darwin_module_enumerate_function_starts (
     GumDarwinModule * self, GumFoundDarwinFunctionStartsFunc func,
     gpointer user_data);
@@ -33703,7 +33781,6 @@ typedef struct _GumElfSegmentDetails GumElfSegmentDetails;
 typedef struct _GumElfSectionDetails GumElfSectionDetails;
 typedef struct _GumElfRelocationDetails GumElfRelocationDetails;
 typedef struct _GumElfDynamicEntryDetails GumElfDynamicEntryDetails;
-typedef struct _GumElfDependencyDetails GumElfDependencyDetails;
 typedef struct _GumElfSymbolDetails GumElfSymbolDetails;
 
 typedef gboolean (* GumFoundElfSegmentFunc) (
@@ -33714,8 +33791,6 @@ typedef gboolean (* GumFoundElfRelocationFunc) (
     const GumElfRelocationDetails * details, gpointer user_data);
 typedef gboolean (* GumFoundElfDynamicEntryFunc) (
     const GumElfDynamicEntryDetails * details, gpointer user_data);
-typedef gboolean (* GumFoundElfDependencyFunc) (
-    const GumElfDependencyDetails * details, gpointer user_data);
 typedef gboolean (* GumFoundElfSymbolFunc) (const GumElfSymbolDetails * details,
     gpointer user_data);
 
@@ -33757,11 +33832,6 @@ struct _GumElfDynamicEntryDetails
 {
   GumElfDynamicTag tag;
   guint64 val;
-};
-
-struct _GumElfDependencyDetails
-{
-  const gchar * name;
 };
 
 struct _GumElfSymbolDetails
@@ -33809,8 +33879,6 @@ GUM_API void gum_elf_module_enumerate_relocations (GumElfModule * self,
     GumFoundElfRelocationFunc func, gpointer user_data);
 GUM_API void gum_elf_module_enumerate_dynamic_entries (GumElfModule * self,
     GumFoundElfDynamicEntryFunc func, gpointer user_data);
-GUM_API void gum_elf_module_enumerate_dependencies (GumElfModule * self,
-    GumFoundElfDependencyFunc func, gpointer user_data);
 GUM_API void gum_elf_module_enumerate_imports (GumElfModule * self,
     GumFoundImportFunc func, gpointer user_data);
 GUM_API void gum_elf_module_enumerate_exports (GumElfModule * self,
@@ -33819,6 +33887,8 @@ GUM_API void gum_elf_module_enumerate_dynamic_symbols (GumElfModule * self,
     GumFoundElfSymbolFunc func, gpointer user_data);
 GUM_API void gum_elf_module_enumerate_symbols (GumElfModule * self,
     GumFoundElfSymbolFunc func, gpointer user_data);
+GUM_API void gum_elf_module_enumerate_dependencies (GumElfModule * self,
+    GumFoundDependencyFunc func, gpointer user_data);
 
 GUM_API GumAddress gum_elf_module_translate_to_offline (GumElfModule * self,
     GumAddress online_address);
@@ -34938,7 +35008,66 @@ typedef unsigned long long uint64_t;
 // Capstone package version
 #define CS_VERSION_MAJOR CS_API_MAJOR
 #define CS_VERSION_MINOR CS_API_MINOR
-#define CS_VERSION_EXTRA 0
+#define CS_VERSION_EXTRA 1
+
+/// Macro for meta programming.
+/// Meant for projects using Capstone and need to support multiple
+/// versions of it.
+/// These macros replace several instances of the old "ARM64" with
+/// the new "AArch64" name depending on the CS version.
+#if CS_NEXT_VERSION < 6
+#define CS_AARCH64(x) ARM64##x
+#else
+#define CS_AARCH64(x) AArch64##x
+#endif
+
+#if CS_NEXT_VERSION < 6
+#define CS_AARCH64pre(x) x##ARM64
+#else
+#define CS_AARCH64pre(x) x##AARCH64
+#endif
+
+#if CS_NEXT_VERSION < 6
+#define CS_AARCH64CC(x) ARM64_CC##x
+#else
+#define CS_AARCH64CC(x) AArch64CC##x
+#endif
+
+#if CS_NEXT_VERSION < 6
+#define CS_AARCH64_VL_(x) ARM64_VAS_##x
+#else
+#define CS_AARCH64_VL_(x) AArch64Layout_VL_##x
+#endif
+
+#if CS_NEXT_VERSION < 6
+#define CS_aarch64_ arm64
+#else
+#define CS_aarch64_ aarch64
+#endif
+
+#if CS_NEXT_VERSION < 6
+#define CS_aarch64(x) arm64##x
+#else
+#define CS_aarch64(x) aarch64##x
+#endif
+
+#if CS_NEXT_VERSION < 6
+#define CS_aarch64_op() cs_arm64_op
+#define CS_aarch64_reg() arm64_reg
+#define CS_aarch64_cc() arm64_cc
+#define CS_cs_aarch64() cs_arm64
+#define CS_aarch64_extender() arm64_extender
+#define CS_aarch64_shifter() arm64_shifter
+#define CS_aarch64_vas() arm64_vas
+#else
+#define CS_aarch64_op() cs_aarch64_op
+#define CS_aarch64_reg() aarch64_reg
+#define CS_aarch64_cc() AArch64CC_CondCode
+#define CS_cs_aarch64() cs_aarch64
+#define CS_aarch64_extender() aarch64_extender
+#define CS_aarch64_shifter() aarch64_shifter
+#define CS_aarch64_vas() AArch64Layout_VectorLayout
+#endif
 
 /// Macro to create combined version which can be compared to
 /// result of cs_version() API.
@@ -34968,6 +35097,8 @@ typedef enum cs_arch {
 	CS_ARCH_WASM,		///< WebAssembly architecture
 	CS_ARCH_BPF,		///< Berkeley Packet Filter architecture (including eBPF)
 	CS_ARCH_RISCV,          ///< RISCV architecture
+	CS_ARCH_SH,             ///< SH architecture
+	CS_ARCH_TRICORE,	///< TriCore architecture
 	CS_ARCH_MAX,
 	CS_ARCH_ALL = 0xFFFF, // All architectures - for cs_support()
 } cs_arch;
@@ -35030,9 +35161,23 @@ typedef enum cs_mode {
 	CS_MODE_MOS65XX_65C02 = 1 << 2, ///< MOS65XXX WDC 65c02
 	CS_MODE_MOS65XX_W65C02 = 1 << 3, ///< MOS65XXX WDC W65c02
 	CS_MODE_MOS65XX_65816 = 1 << 4, ///< MOS65XXX WDC 65816, 8-bit m/x
-	CS_MODE_MOS65XX_65816_LONG_M = (1 << 5), ///< MOS65XXX WDC 65816, 16-bit m, 8-bit x 
+	CS_MODE_MOS65XX_65816_LONG_M = (1 << 5), ///< MOS65XXX WDC 65816, 16-bit m, 8-bit x
 	CS_MODE_MOS65XX_65816_LONG_X = (1 << 6), ///< MOS65XXX WDC 65816, 8-bit m, 16-bit x
 	CS_MODE_MOS65XX_65816_LONG_MX = CS_MODE_MOS65XX_65816_LONG_M | CS_MODE_MOS65XX_65816_LONG_X,
+	CS_MODE_SH2 = 1 << 1,    ///< SH2
+	CS_MODE_SH2A = 1 << 2,   ///< SH2A
+	CS_MODE_SH3 = 1 << 3,    ///< SH3
+	CS_MODE_SH4 = 1 << 4,    ///< SH4
+	CS_MODE_SH4A = 1 << 5,   ///< SH4A
+	CS_MODE_SHFPU = 1 << 6,  ///< w/ FPU
+	CS_MODE_SHDSP = 1 << 7,  ///< w/ DSP
+	CS_MODE_TRICORE_110 = 1 << 1, ///< Tricore 1.1
+	CS_MODE_TRICORE_120 = 1 << 2, ///< Tricore 1.2
+	CS_MODE_TRICORE_130 = 1 << 3, ///< Tricore 1.3
+	CS_MODE_TRICORE_131 = 1 << 4, ///< Tricore 1.3.1
+	CS_MODE_TRICORE_160 = 1 << 5, ///< Tricore 1.6
+	CS_MODE_TRICORE_161 = 1 << 6, ///< Tricore 1.6.1
+	CS_MODE_TRICORE_162 = 1 << 7, ///< Tricore 1.6.2
 } cs_mode;
 
 typedef void* (CAPSTONE_API *cs_malloc_t)(size_t size);
@@ -35065,15 +35210,16 @@ typedef struct cs_opt_mnem {
 
 /// Runtime option for the disassembled engine
 typedef enum cs_opt_type {
-	CS_OPT_INVALID = 0,	///< No option specified
-	CS_OPT_SYNTAX,	///< Assembly output syntax
-	CS_OPT_DETAIL,	///< Break down instruction structure into details
-	CS_OPT_MODE,	///< Change engine's mode at run-time
-	CS_OPT_MEM,	///< User-defined dynamic memory related functions
+	CS_OPT_INVALID = 0, ///< No option specified
+	CS_OPT_SYNTAX,	    ///< Assembly output syntax
+	CS_OPT_DETAIL,	    ///< Break down instruction structure into details
+	CS_OPT_MODE,	    ///< Change engine's mode at run-time
+	CS_OPT_MEM,	    ///< User-defined dynamic memory related functions
 	CS_OPT_SKIPDATA, ///< Skip data when disassembling. Then engine is in SKIPDATA mode.
 	CS_OPT_SKIPDATA_SETUP, ///< Setup user-defined function for SKIPDATA option
-	CS_OPT_MNEMONIC, ///< Customize instruction mnemonic
-	CS_OPT_UNSIGNED, ///< print immediate operands in unsigned form
+	CS_OPT_MNEMONIC,       ///< Customize instruction mnemonic
+	CS_OPT_UNSIGNED,       ///< print immediate operands in unsigned form
+	CS_OPT_NO_BRANCH_OFFSET, ///< ARM, prints branch immediates without offset.
 } cs_opt_type;
 
 /// Runtime option value (associated with option type above)
@@ -35090,11 +35236,12 @@ typedef enum cs_opt_value {
 
 /// Common instruction operand types - to be consistent across all architectures.
 typedef enum cs_op_type {
-	CS_OP_INVALID = 0,  ///< uninitialized/invalid operand.
-	CS_OP_REG,          ///< Register operand.
-	CS_OP_IMM,          ///< Immediate operand.
-	CS_OP_MEM,          ///< Memory operand.
-	CS_OP_FP,           ///< Floating-Point operand.
+	CS_OP_INVALID = 0, ///< uninitialized/invalid operand.
+	CS_OP_REG,	   ///< Register operand.
+	CS_OP_IMM,	   ///< Immediate operand.
+	CS_OP_FP,	   ///< Floating-Point operand.
+	CS_OP_MEM =
+		0x80, ///< Memory operand. Can be ORed with another operand type.
 } cs_op_type;
 
 /// Common instruction operand access types - to be consistent across all architectures.
@@ -35161,6 +35308,7 @@ typedef struct cs_opt_skipdata {
 	/// WASM:    1 bytes.
 	/// MOS65XX: 1 bytes.
 	/// BPF:     8 bytes.
+	/// TriCore: 2 bytes.
 	cs_skipdata_cb_t callback; 	// default value is NULL
 
 	/// User-defined data to be passed to @callback function pointer.
@@ -35615,6 +35763,7 @@ typedef struct cs_arm {
 	arm_cc cc;			///< conditional code for this insn
 	bool update_flags;	///< does this insn update flags?
 	bool writeback;		///< does this insn write-back?
+	bool post_index;	///< only set if writeback is 'True', if 'False' pre-index, otherwise post.
 	arm_mem_barrier mem_barrier;	///< Option for some memory barrier instructions
 
 	/// Number of operands of this instruction,
@@ -37956,6 +38105,7 @@ typedef struct cs_arm64 {
   arm64_cc cc;	     ///< conditional code for this insn
   bool update_flags; ///< does this insn update flags?
   bool writeback;    ///< does this insn request writeback? 'True' means 'yes'
+  bool post_index;   ///< only set if writeback is 'True', if 'False' pre-index, otherwise post.
 
   /// Number of operands of this instruction,
   /// or 0 when instruction has no operand.
@@ -49887,9 +50037,25 @@ typedef enum riscv_insn {
 
 //> Group of RISCV instructions
 typedef enum riscv_insn_group {
-  	RISCV_GRP_INVALID = 0, // = CS_GRP_INVALID
-  	RISCV_GRP_JUMP,
+  	RISCV_GRP_INVALID = 0, ///< = CS_GRP_INVALID
+
+  	// Generic groups
+  	// all jump instructions (conditional+direct+indirect jumps)
+  	RISCV_GRP_JUMP,	///< = CS_GRP_JUMP
+  	// all call instructions
+  	RISCV_GRP_CALL,	///< = CS_GRP_CALL
+  	// all return instructions
+  	RISCV_GRP_RET,	///< = CS_GRP_RET
+  	// all interrupt instructions (int+syscall)
+  	RISCV_GRP_INT,	///< = CS_GRP_INT
+  	// all interrupt return instructions
+  	RISCV_GRP_IRET,	///< = CS_GRP_IRET
+  	// all privileged instructions
+  	RISCV_GRP_PRIVILEGE,	///< = CS_GRP_PRIVILEGE
+  	// all relative branching instructions
+  	RISCV_GRP_BRANCH_RELATIVE, ///< = CS_GRP_BRANCH_RELATIVE
   
+  	// Architecture-specific groups
   	RISCV_GRP_ISRV32 = 128,
   	RISCV_GRP_ISRV64,
   	RISCV_GRP_HASSTDEXTA,
@@ -50581,6 +50747,1040 @@ typedef enum bpf_insn_group {
 #endif
 
 #endif
+#ifndef CAPSTONE_SH_H
+#define CAPSTONE_SH_H
+
+/* Capstone Disassembly Engine */
+/* By Yoshinori Sato, 2022 */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+#ifdef _MSC_VER
+#pragma warning(disable:4201)
+#endif
+
+/// SH registers and special registers
+typedef enum {
+	SH_REG_INVALID = 0,
+
+	SH_REG_R0,
+	SH_REG_R1,
+	SH_REG_R2,
+	SH_REG_R3,
+	SH_REG_R4,
+	SH_REG_R5,
+	SH_REG_R6,
+	SH_REG_R7,
+
+	SH_REG_R8,
+	SH_REG_R9,
+	SH_REG_R10,
+	SH_REG_R11,
+	SH_REG_R12,
+	SH_REG_R13,
+	SH_REG_R14,
+	SH_REG_R15,
+
+	SH_REG_R0_BANK,
+	SH_REG_R1_BANK,
+	SH_REG_R2_BANK,
+	SH_REG_R3_BANK,
+	SH_REG_R4_BANK,
+	SH_REG_R5_BANK,
+	SH_REG_R6_BANK,
+	SH_REG_R7_BANK,
+
+	SH_REG_FR0,
+	SH_REG_FR1,
+	SH_REG_FR2,
+	SH_REG_FR3,
+	SH_REG_FR4,
+	SH_REG_FR5,
+	SH_REG_FR6,
+	SH_REG_FR7,
+	SH_REG_FR8,
+	SH_REG_FR9,
+	SH_REG_FR10,
+	SH_REG_FR11,
+	SH_REG_FR12,
+	SH_REG_FR13,
+	SH_REG_FR14,
+	SH_REG_FR15,
+
+	SH_REG_DR0,
+	SH_REG_DR2,
+	SH_REG_DR4,
+	SH_REG_DR6,
+	SH_REG_DR8,
+	SH_REG_DR10,
+	SH_REG_DR12,
+	SH_REG_DR14,
+
+	SH_REG_XD0,
+	SH_REG_XD2,
+	SH_REG_XD4,
+	SH_REG_XD6,
+	SH_REG_XD8,
+	SH_REG_XD10,
+	SH_REG_XD12,
+	SH_REG_XD14,
+
+	SH_REG_XF0,
+	SH_REG_XF1,
+	SH_REG_XF2,
+	SH_REG_XF3,
+	SH_REG_XF4,
+	SH_REG_XF5,
+	SH_REG_XF6,
+	SH_REG_XF7,
+	SH_REG_XF8,
+	SH_REG_XF9,
+	SH_REG_XF10,
+	SH_REG_XF11,
+	SH_REG_XF12,
+	SH_REG_XF13,
+	SH_REG_XF14,
+	SH_REG_XF15,
+
+	SH_REG_FV0,
+	SH_REG_FV4,
+	SH_REG_FV8,
+	SH_REG_FV12,
+
+	SH_REG_XMATRX,
+
+	SH_REG_PC,
+	SH_REG_PR,
+	SH_REG_MACH,
+	SH_REG_MACL,
+
+	SH_REG_SR,
+	SH_REG_GBR,
+	SH_REG_SSR,
+	SH_REG_SPC,
+	SH_REG_SGR,
+	SH_REG_DBR,
+	SH_REG_VBR,
+	SH_REG_TBR,
+	SH_REG_RS,
+	SH_REG_RE,
+	SH_REG_MOD,
+
+	SH_REG_FPUL,
+	SH_REG_FPSCR,
+
+	SH_REG_DSP_X0,
+	SH_REG_DSP_X1,
+	SH_REG_DSP_Y0,
+	SH_REG_DSP_Y1,
+	SH_REG_DSP_A0,
+	SH_REG_DSP_A1,
+	SH_REG_DSP_A0G,
+	SH_REG_DSP_A1G,
+	SH_REG_DSP_M0,
+	SH_REG_DSP_M1,
+	SH_REG_DSP_DSR,
+
+	SH_REG_DSP_RSV0,
+	SH_REG_DSP_RSV1,
+	SH_REG_DSP_RSV2,
+	SH_REG_DSP_RSV3,
+	SH_REG_DSP_RSV4,
+	SH_REG_DSP_RSV5,
+	SH_REG_DSP_RSV6,
+	SH_REG_DSP_RSV7,
+	SH_REG_DSP_RSV8,
+	SH_REG_DSP_RSV9,
+	SH_REG_DSP_RSVA,
+	SH_REG_DSP_RSVB,
+	SH_REG_DSP_RSVC,
+	SH_REG_DSP_RSVD,
+	SH_REG_DSP_RSVE,
+	SH_REG_DSP_RSVF,
+
+	SH_REG_ENDING,   // <-- mark the end of the list of registers
+} sh_reg;
+
+typedef enum {
+	SH_OP_INVALID = 0,  ///< = CS_OP_INVALID (Uninitialized).
+	SH_OP_REG, ///< = CS_OP_REG (Register operand).
+	SH_OP_IMM, ///< = CS_OP_IMM (Immediate operand).
+	SH_OP_MEM, ///< = CS_OP_MEM (Memory operand).
+} sh_op_type;	
+
+typedef enum {
+	SH_OP_MEM_INVALID = 0,   /// <= Invalid
+	SH_OP_MEM_REG_IND,   /// <= Register indirect
+	SH_OP_MEM_REG_POST,  /// <= Register post increment
+	SH_OP_MEM_REG_PRE,   /// <= Register pre decrement
+	SH_OP_MEM_REG_DISP,  /// <= displacement
+	SH_OP_MEM_REG_R0,    /// <= R0 indexed
+	SH_OP_MEM_GBR_DISP,  /// <= GBR based displacement
+	SH_OP_MEM_GBR_R0,    /// <= GBR based R0 indexed
+	SH_OP_MEM_PCR,       /// <= PC relative
+	SH_OP_MEM_TBR_DISP,  /// <= TBR based displaysment
+} sh_op_mem_type;
+
+typedef struct sh_op_mem {
+	sh_op_mem_type address;  /// <= memory address
+	sh_reg reg;              /// <= base register
+	uint32_t disp;           /// <= displacement
+} sh_op_mem;
+
+// SH-DSP instcutions define
+typedef enum sh_dsp_insn_type {
+	SH_INS_DSP_INVALID,
+	SH_INS_DSP_DOUBLE,
+	SH_INS_DSP_SINGLE,
+	SH_INS_DSP_PARALLEL,
+} sh_dsp_insn_type;
+
+typedef enum sh_dsp_insn {
+	SH_INS_DSP_NOP = 1,
+	SH_INS_DSP_MOV,
+	SH_INS_DSP_PSHL,
+	SH_INS_DSP_PSHA,
+	SH_INS_DSP_PMULS,
+	SH_INS_DSP_PCLR_PMULS,
+	SH_INS_DSP_PSUB_PMULS,
+	SH_INS_DSP_PADD_PMULS,
+	SH_INS_DSP_PSUBC,
+	SH_INS_DSP_PADDC,
+	SH_INS_DSP_PCMP,
+	SH_INS_DSP_PABS,
+	SH_INS_DSP_PRND,
+	SH_INS_DSP_PSUB,
+	SH_INS_DSP_PSUBr,
+	SH_INS_DSP_PADD,
+	SH_INS_DSP_PAND,
+	SH_INS_DSP_PXOR,
+	SH_INS_DSP_POR,
+	SH_INS_DSP_PDEC,
+	SH_INS_DSP_PINC,
+	SH_INS_DSP_PCLR,
+	SH_INS_DSP_PDMSB,
+	SH_INS_DSP_PNEG, 
+	SH_INS_DSP_PCOPY,
+	SH_INS_DSP_PSTS,
+	SH_INS_DSP_PLDS,
+	SH_INS_DSP_PSWAP,
+	SH_INS_DSP_PWAD,
+	SH_INS_DSP_PWSB,
+} sh_dsp_insn;
+
+typedef enum sh_dsp_operand {
+	SH_OP_DSP_INVALID,
+	SH_OP_DSP_REG_PRE,
+	SH_OP_DSP_REG_IND,
+	SH_OP_DSP_REG_POST,
+	SH_OP_DSP_REG_INDEX,
+	SH_OP_DSP_REG,
+	SH_OP_DSP_IMM,
+	
+} sh_dsp_operand;
+
+typedef enum sh_dsp_cc {
+	SH_DSP_CC_INVALID,
+	SH_DSP_CC_NONE,
+	SH_DSP_CC_DCT,
+	SH_DSP_CC_DCF,
+} sh_dsp_cc;
+
+typedef struct sh_op_dsp {
+	sh_dsp_insn insn;
+	sh_dsp_operand operand[2];
+	sh_reg r[6];
+	sh_dsp_cc cc;
+	uint8_t imm;
+	int size;
+} sh_op_dsp;
+	
+/// Instruction operand
+typedef struct cs_sh_op {
+	sh_op_type type;
+	union {
+		uint64_t imm;       ///< immediate value for IMM operand
+		sh_reg reg;	    ///< register value for REG operand
+		sh_op_mem mem; 	    ///< data when operand is targeting memory
+		sh_op_dsp dsp;	    ///< dsp instruction
+	};
+} cs_sh_op;
+
+/// SH instruction
+typedef enum sh_insn {
+	SH_INS_INVALID,
+	SH_INS_ADD_r,
+	SH_INS_ADD,
+	SH_INS_ADDC,
+	SH_INS_ADDV,
+	SH_INS_AND,
+	SH_INS_BAND,
+	SH_INS_BANDNOT,
+	SH_INS_BCLR,
+	SH_INS_BF,
+	SH_INS_BF_S,
+	SH_INS_BLD,
+	SH_INS_BLDNOT,
+	SH_INS_BOR,
+	SH_INS_BORNOT,
+	SH_INS_BRA,
+	SH_INS_BRAF,
+	SH_INS_BSET,
+	SH_INS_BSR,
+	SH_INS_BSRF,
+	SH_INS_BST,
+	SH_INS_BT,
+	SH_INS_BT_S,
+	SH_INS_BXOR,
+	SH_INS_CLIPS,
+	SH_INS_CLIPU,
+	SH_INS_CLRDMXY,
+	SH_INS_CLRMAC,
+	SH_INS_CLRS,
+	SH_INS_CLRT,
+	SH_INS_CMP_EQ,
+	SH_INS_CMP_GE,
+	SH_INS_CMP_GT,
+	SH_INS_CMP_HI,
+	SH_INS_CMP_HS,
+	SH_INS_CMP_PL,
+	SH_INS_CMP_PZ,
+	SH_INS_CMP_STR,
+	SH_INS_DIV0S,
+	SH_INS_DIV0U,
+	SH_INS_DIV1,
+	SH_INS_DIVS,
+	SH_INS_DIVU,
+	SH_INS_DMULS_L,
+	SH_INS_DMULU_L,
+	SH_INS_DT,
+	SH_INS_EXTS_B,
+	SH_INS_EXTS_W,
+	SH_INS_EXTU_B,
+	SH_INS_EXTU_W,
+	SH_INS_FABS,
+	SH_INS_FADD,
+	SH_INS_FCMP_EQ,
+	SH_INS_FCMP_GT,
+	SH_INS_FCNVDS,
+	SH_INS_FCNVSD,
+	SH_INS_FDIV,
+	SH_INS_FIPR,
+	SH_INS_FLDI0,
+	SH_INS_FLDI1,
+	SH_INS_FLDS,
+	SH_INS_FLOAT,
+	SH_INS_FMAC,
+	SH_INS_FMOV,
+	SH_INS_FMUL,
+	SH_INS_FNEG,
+	SH_INS_FPCHG,
+	SH_INS_FRCHG,
+	SH_INS_FSCA,
+	SH_INS_FSCHG,
+	SH_INS_FSQRT,
+	SH_INS_FSRRA,
+	SH_INS_FSTS,
+	SH_INS_FSUB,
+	SH_INS_FTRC,
+	SH_INS_FTRV,
+	SH_INS_ICBI,
+	SH_INS_JMP,
+	SH_INS_JSR,
+	SH_INS_JSR_N,
+	SH_INS_LDBANK,
+	SH_INS_LDC,
+	SH_INS_LDRC,
+	SH_INS_LDRE,
+	SH_INS_LDRS,
+	SH_INS_LDS,
+	SH_INS_LDTLB,
+	SH_INS_MAC_L,
+	SH_INS_MAC_W,
+	SH_INS_MOV,
+	SH_INS_MOVA,
+	SH_INS_MOVCA,
+	SH_INS_MOVCO,
+	SH_INS_MOVI20,
+	SH_INS_MOVI20S,
+	SH_INS_MOVLI,
+	SH_INS_MOVML,
+	SH_INS_MOVMU,
+	SH_INS_MOVRT,
+	SH_INS_MOVT,
+	SH_INS_MOVU,
+	SH_INS_MOVUA,
+	SH_INS_MUL_L,
+	SH_INS_MULR,
+	SH_INS_MULS_W,
+	SH_INS_MULU_W,
+	SH_INS_NEG,
+	SH_INS_NEGC,
+	SH_INS_NOP,
+	SH_INS_NOT,
+	SH_INS_NOTT,
+	SH_INS_OCBI,
+	SH_INS_OCBP,
+	SH_INS_OCBWB,
+	SH_INS_OR,
+	SH_INS_PREF,
+	SH_INS_PREFI,
+	SH_INS_RESBANK,
+	SH_INS_ROTCL,
+	SH_INS_ROTCR,
+	SH_INS_ROTL,
+	SH_INS_ROTR,
+	SH_INS_RTE,
+	SH_INS_RTS,
+	SH_INS_RTS_N,
+	SH_INS_RTV_N,
+	SH_INS_SETDMX,
+	SH_INS_SETDMY,
+	SH_INS_SETRC,
+	SH_INS_SETS,
+	SH_INS_SETT,
+	SH_INS_SHAD,
+	SH_INS_SHAL,
+	SH_INS_SHAR,
+	SH_INS_SHLD,
+	SH_INS_SHLL,
+	SH_INS_SHLL16,
+	SH_INS_SHLL2,
+	SH_INS_SHLL8,
+	SH_INS_SHLR,
+	SH_INS_SHLR16,
+	SH_INS_SHLR2,
+	SH_INS_SHLR8,
+	SH_INS_SLEEP,
+	SH_INS_STBANK,
+	SH_INS_STC,
+	SH_INS_STS,
+	SH_INS_SUB,
+	SH_INS_SUBC,
+	SH_INS_SUBV,
+	SH_INS_SWAP_B,
+	SH_INS_SWAP_W,
+	SH_INS_SYNCO,
+	SH_INS_TAS,
+	SH_INS_TRAPA,
+	SH_INS_TST,
+	SH_INS_XOR,
+	SH_INS_XTRCT,
+	SH_INS_DSP,
+	SH_INS_ENDING,   // <-- mark the end of the list of instructions
+} sh_insn;
+
+/// Instruction structure
+typedef struct cs_sh {
+	sh_insn insn;
+	uint8_t size;
+	uint8_t op_count;
+	cs_sh_op operands[3];
+} cs_sh;
+
+/// Group of SH instructions
+typedef enum sh_insn_group {
+	SH_GRP_INVALID = 0,  ///< CS_GRUP_INVALID
+	SH_GRP_JUMP,  ///< = CS_GRP_JUMP
+	SH_GRP_CALL,  ///< = CS_GRP_CALL
+	SH_GRP_INT,  ///< = CS_GRP_INT
+	SH_GRP_RET,  ///< = CS_GRP_RET
+	SH_GRP_IRET, ///< = CS_GRP_IRET
+        SH_GRP_PRIVILEGE,     ///< = CS_GRP_PRIVILEGE
+	SH_GRP_BRANCH_RELATIVE, ///< = CS_GRP_BRANCH_RELATIVE
+
+	SH_GRP_SH1,
+	SH_GRP_SH2,
+	SH_GRP_SH2E,
+	SH_GRP_SH2DSP,
+	SH_GRP_SH2A,
+	SH_GRP_SH2AFPU,
+	SH_GRP_SH3,
+	SH_GRP_SH3DSP,
+	SH_GRP_SH4,
+	SH_GRP_SH4A,
+	
+	SH_GRP_ENDING,// <-- mark the end of the list of groups
+} sh_insn_group;
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+#ifndef CAPSTONE_TRICORE_H
+#define CAPSTONE_TRICORE_H
+
+/* Capstone Disassembly Engine */
+/* By Nguyen Anh Quynh <aquynh@gmail.com>, 2014 */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#if !defined(_MSC_VER) || !defined(_KERNEL_MODE)
+#include <stdint.h>
+#endif
+
+
+#ifdef _MSC_VER
+#pragma warning(disable : 4201)
+#endif
+
+/// Operand type for instruction's operands
+typedef enum tricore_op_type {
+	TRICORE_OP_INVALID = CS_OP_INVALID, ///< CS_OP_INVALID (Uninitialized).
+	TRICORE_OP_REG = CS_OP_REG,	    ///< CS_OP_REG (Register operand).
+	TRICORE_OP_IMM = CS_OP_IMM,	    ///< CS_OP_IMM (Immediate operand).
+	TRICORE_OP_MEM = CS_OP_MEM,	    ///< CS_OP_MEM (Memory operand).
+} tricore_op_type;
+
+/// Instruction's operand referring to memory
+/// This is associated with TRICORE_OP_MEM operand type above
+typedef struct tricore_op_mem {
+	uint8_t base; ///< base register
+	int32_t disp; ///< displacement/offset value
+} tricore_op_mem;
+
+/// Instruction operand
+typedef struct cs_tricore_op {
+	tricore_op_type type;	    ///< operand type
+	union {
+		unsigned int reg;   ///< register value for REG operand
+		int32_t imm;	    ///< immediate value for IMM operand
+		tricore_op_mem mem; ///< base/disp value for MEM operand
+	};
+	/// This field is combined of cs_ac_type.
+	/// NOTE: this field is irrelevant if engine is compiled in DIET mode.
+	uint8_t access; ///< How is this operand accessed? (READ, WRITE or READ|WRITE)
+} cs_tricore_op;
+
+#define TRICORE_OP_COUNT 8
+
+/// Instruction structure
+typedef struct cs_tricore {
+	uint8_t op_count; ///< number of operands of this instruction.
+	cs_tricore_op
+		operands[TRICORE_OP_COUNT]; ///< operands for this instruction.
+	/// TODO: Mark the modified flags register in td files and regenerate inc files
+	bool update_flags; ///< whether the flags register is updated.
+} cs_tricore;
+
+/// TriCore registers
+typedef enum tricore_reg {
+	// generate content <TriCoreGenCSRegEnum.inc> begin
+	// clang-format off
+
+	TRICORE_REG_INVALID = 0,
+	TRICORE_REG_FCX = 1,
+	TRICORE_REG_PC = 2,
+	TRICORE_REG_PCXI = 3,
+	TRICORE_REG_PSW = 4,
+	TRICORE_REG_A0 = 5,
+	TRICORE_REG_A1 = 6,
+	TRICORE_REG_A2 = 7,
+	TRICORE_REG_A3 = 8,
+	TRICORE_REG_A4 = 9,
+	TRICORE_REG_A5 = 10,
+	TRICORE_REG_A6 = 11,
+	TRICORE_REG_A7 = 12,
+	TRICORE_REG_A8 = 13,
+	TRICORE_REG_A9 = 14,
+	TRICORE_REG_A10 = 15,
+	TRICORE_REG_A11 = 16,
+	TRICORE_REG_A12 = 17,
+	TRICORE_REG_A13 = 18,
+	TRICORE_REG_A14 = 19,
+	TRICORE_REG_A15 = 20,
+	TRICORE_REG_D0 = 21,
+	TRICORE_REG_D1 = 22,
+	TRICORE_REG_D2 = 23,
+	TRICORE_REG_D3 = 24,
+	TRICORE_REG_D4 = 25,
+	TRICORE_REG_D5 = 26,
+	TRICORE_REG_D6 = 27,
+	TRICORE_REG_D7 = 28,
+	TRICORE_REG_D8 = 29,
+	TRICORE_REG_D9 = 30,
+	TRICORE_REG_D10 = 31,
+	TRICORE_REG_D11 = 32,
+	TRICORE_REG_D12 = 33,
+	TRICORE_REG_D13 = 34,
+	TRICORE_REG_D14 = 35,
+	TRICORE_REG_D15 = 36,
+	TRICORE_REG_E0 = 37,
+	TRICORE_REG_E2 = 38,
+	TRICORE_REG_E4 = 39,
+	TRICORE_REG_E6 = 40,
+	TRICORE_REG_E8 = 41,
+	TRICORE_REG_E10 = 42,
+	TRICORE_REG_E12 = 43,
+	TRICORE_REG_E14 = 44,
+	TRICORE_REG_P0 = 45,
+	TRICORE_REG_P2 = 46,
+	TRICORE_REG_P4 = 47,
+	TRICORE_REG_P6 = 48,
+	TRICORE_REG_P8 = 49,
+	TRICORE_REG_P10 = 50,
+	TRICORE_REG_P12 = 51,
+	TRICORE_REG_P14 = 52,
+	TRICORE_REG_A0_A1 = 53,
+	TRICORE_REG_A2_A3 = 54,
+	TRICORE_REG_A4_A5 = 55,
+	TRICORE_REG_A6_A7 = 56,
+	TRICORE_REG_A8_A9 = 57,
+	TRICORE_REG_A10_A11 = 58,
+	TRICORE_REG_A12_A13 = 59,
+	TRICORE_REG_A14_A15 = 60,
+	TRICORE_REG_ENDING, // 61
+
+	// clang-format on
+	// generate content <TriCoreGenCSRegEnum.inc> end
+} tricore_reg;
+
+/// TriCore instruction
+typedef enum tricore_insn {
+	TRICORE_INS_INVALID = 0,
+	// generate content <TriCoreGenCSInsnEnum.inc> begin
+	// clang-format off
+
+	TRICORE_INS_XOR_T,
+	TRICORE_INS_ABSDIFS_B,
+	TRICORE_INS_ABSDIFS_H,
+	TRICORE_INS_ABSDIFS,
+	TRICORE_INS_ABSDIF_B,
+	TRICORE_INS_ABSDIF_H,
+	TRICORE_INS_ABSDIF,
+	TRICORE_INS_ABSS_B,
+	TRICORE_INS_ABSS_H,
+	TRICORE_INS_ABSS,
+	TRICORE_INS_ABS_B,
+	TRICORE_INS_ABS_H,
+	TRICORE_INS_ABS,
+	TRICORE_INS_ADDC,
+	TRICORE_INS_ADDIH_A,
+	TRICORE_INS_ADDIH,
+	TRICORE_INS_ADDI,
+	TRICORE_INS_ADDSC_AT,
+	TRICORE_INS_ADDSC_A,
+	TRICORE_INS_ADDS_BU,
+	TRICORE_INS_ADDS_B,
+	TRICORE_INS_ADDS_H,
+	TRICORE_INS_ADDS_HU,
+	TRICORE_INS_ADDS_U,
+	TRICORE_INS_ADDS,
+	TRICORE_INS_ADDX,
+	TRICORE_INS_ADD_A,
+	TRICORE_INS_ADD_B,
+	TRICORE_INS_ADD_F,
+	TRICORE_INS_ADD_H,
+	TRICORE_INS_ADD,
+	TRICORE_INS_ANDN_T,
+	TRICORE_INS_ANDN,
+	TRICORE_INS_AND_ANDN_T,
+	TRICORE_INS_AND_AND_T,
+	TRICORE_INS_AND_EQ,
+	TRICORE_INS_AND_GE_U,
+	TRICORE_INS_AND_GE,
+	TRICORE_INS_AND_LT_U,
+	TRICORE_INS_AND_LT,
+	TRICORE_INS_AND_NE,
+	TRICORE_INS_AND_NOR_T,
+	TRICORE_INS_AND_OR_T,
+	TRICORE_INS_AND_T,
+	TRICORE_INS_AND,
+	TRICORE_INS_BISR,
+	TRICORE_INS_BMERGE,
+	TRICORE_INS_BSPLIT,
+	TRICORE_INS_CACHEA_I,
+	TRICORE_INS_CACHEA_WI,
+	TRICORE_INS_CACHEA_W,
+	TRICORE_INS_CACHEI_I,
+	TRICORE_INS_CACHEI_WI,
+	TRICORE_INS_CACHEI_W,
+	TRICORE_INS_CADDN_A,
+	TRICORE_INS_CADDN,
+	TRICORE_INS_CADD_A,
+	TRICORE_INS_CADD,
+	TRICORE_INS_CALLA,
+	TRICORE_INS_CALLI,
+	TRICORE_INS_CALL,
+	TRICORE_INS_CLO_B,
+	TRICORE_INS_CLO_H,
+	TRICORE_INS_CLO,
+	TRICORE_INS_CLS_B,
+	TRICORE_INS_CLS_H,
+	TRICORE_INS_CLS,
+	TRICORE_INS_CLZ_B,
+	TRICORE_INS_CLZ_H,
+	TRICORE_INS_CLZ,
+	TRICORE_INS_CMOVN,
+	TRICORE_INS_CMOV,
+	TRICORE_INS_CMPSWAP_W,
+	TRICORE_INS_CMP_F,
+	TRICORE_INS_CRC32B_W,
+	TRICORE_INS_CRC32L_W,
+	TRICORE_INS_CRC32_B,
+	TRICORE_INS_CRCN,
+	TRICORE_INS_CSUBN_A,
+	TRICORE_INS_CSUBN,
+	TRICORE_INS_CSUB_A,
+	TRICORE_INS_CSUB,
+	TRICORE_INS_DEBUG,
+	TRICORE_INS_DEXTR,
+	TRICORE_INS_DIFSC_A,
+	TRICORE_INS_DISABLE,
+	TRICORE_INS_DIV_F,
+	TRICORE_INS_DIV_U,
+	TRICORE_INS_DIV,
+	TRICORE_INS_DSYNC,
+	TRICORE_INS_DVADJ,
+	TRICORE_INS_DVINIT_BU,
+	TRICORE_INS_DVINIT_B,
+	TRICORE_INS_DVINIT_HU,
+	TRICORE_INS_DVINIT_H,
+	TRICORE_INS_DVINIT_U,
+	TRICORE_INS_DVINIT,
+	TRICORE_INS_DVSTEP_U,
+	TRICORE_INS_DVSTEP,
+	TRICORE_INS_ENABLE,
+	TRICORE_INS_EQANY_B,
+	TRICORE_INS_EQANY_H,
+	TRICORE_INS_EQZ_A,
+	TRICORE_INS_EQ_A,
+	TRICORE_INS_EQ_B,
+	TRICORE_INS_EQ_H,
+	TRICORE_INS_EQ_W,
+	TRICORE_INS_EQ,
+	TRICORE_INS_EXTR_U,
+	TRICORE_INS_EXTR,
+	TRICORE_INS_FCALLA,
+	TRICORE_INS_FCALLI,
+	TRICORE_INS_FCALL,
+	TRICORE_INS_FRET,
+	TRICORE_INS_FTOHP,
+	TRICORE_INS_FTOIZ,
+	TRICORE_INS_FTOI,
+	TRICORE_INS_FTOQ31Z,
+	TRICORE_INS_FTOQ31,
+	TRICORE_INS_FTOUZ,
+	TRICORE_INS_FTOU,
+	TRICORE_INS_GE_A,
+	TRICORE_INS_GE_U,
+	TRICORE_INS_GE,
+	TRICORE_INS_HPTOF,
+	TRICORE_INS_IMASK,
+	TRICORE_INS_INSERT,
+	TRICORE_INS_INSN_T,
+	TRICORE_INS_INS_T,
+	TRICORE_INS_ISYNC,
+	TRICORE_INS_ITOF,
+	TRICORE_INS_IXMAX_U,
+	TRICORE_INS_IXMAX,
+	TRICORE_INS_IXMIN_U,
+	TRICORE_INS_IXMIN,
+	TRICORE_INS_JA,
+	TRICORE_INS_JEQ_A,
+	TRICORE_INS_JEQ,
+	TRICORE_INS_JGEZ,
+	TRICORE_INS_JGE_U,
+	TRICORE_INS_JGE,
+	TRICORE_INS_JGTZ,
+	TRICORE_INS_JI,
+	TRICORE_INS_JLA,
+	TRICORE_INS_JLEZ,
+	TRICORE_INS_JLI,
+	TRICORE_INS_JLTZ,
+	TRICORE_INS_JLT_U,
+	TRICORE_INS_JLT,
+	TRICORE_INS_JL,
+	TRICORE_INS_JNED,
+	TRICORE_INS_JNEI,
+	TRICORE_INS_JNE_A,
+	TRICORE_INS_JNE,
+	TRICORE_INS_JNZ_A,
+	TRICORE_INS_JNZ_T,
+	TRICORE_INS_JNZ,
+	TRICORE_INS_JZ_A,
+	TRICORE_INS_JZ_T,
+	TRICORE_INS_JZ,
+	TRICORE_INS_J,
+	TRICORE_INS_LDLCX,
+	TRICORE_INS_LDMST,
+	TRICORE_INS_LDUCX,
+	TRICORE_INS_LD_A,
+	TRICORE_INS_LD_BU,
+	TRICORE_INS_LD_B,
+	TRICORE_INS_LD_DA,
+	TRICORE_INS_LD_D,
+	TRICORE_INS_LD_HU,
+	TRICORE_INS_LD_H,
+	TRICORE_INS_LD_Q,
+	TRICORE_INS_LD_W,
+	TRICORE_INS_LEA,
+	TRICORE_INS_LHA,
+	TRICORE_INS_LOOPU,
+	TRICORE_INS_LOOP,
+	TRICORE_INS_LT_A,
+	TRICORE_INS_LT_B,
+	TRICORE_INS_LT_BU,
+	TRICORE_INS_LT_H,
+	TRICORE_INS_LT_HU,
+	TRICORE_INS_LT_U,
+	TRICORE_INS_LT_W,
+	TRICORE_INS_LT_WU,
+	TRICORE_INS_LT,
+	TRICORE_INS_MADDMS_H,
+	TRICORE_INS_MADDMS_U,
+	TRICORE_INS_MADDMS,
+	TRICORE_INS_MADDM_H,
+	TRICORE_INS_MADDM_Q,
+	TRICORE_INS_MADDM_U,
+	TRICORE_INS_MADDM,
+	TRICORE_INS_MADDRS_H,
+	TRICORE_INS_MADDRS_Q,
+	TRICORE_INS_MADDR_H,
+	TRICORE_INS_MADDR_Q,
+	TRICORE_INS_MADDSUMS_H,
+	TRICORE_INS_MADDSUM_H,
+	TRICORE_INS_MADDSURS_H,
+	TRICORE_INS_MADDSUR_H,
+	TRICORE_INS_MADDSUS_H,
+	TRICORE_INS_MADDSU_H,
+	TRICORE_INS_MADDS_H,
+	TRICORE_INS_MADDS_Q,
+	TRICORE_INS_MADDS_U,
+	TRICORE_INS_MADDS,
+	TRICORE_INS_MADD_F,
+	TRICORE_INS_MADD_H,
+	TRICORE_INS_MADD_Q,
+	TRICORE_INS_MADD_U,
+	TRICORE_INS_MADD,
+	TRICORE_INS_MAX_B,
+	TRICORE_INS_MAX_BU,
+	TRICORE_INS_MAX_H,
+	TRICORE_INS_MAX_HU,
+	TRICORE_INS_MAX_U,
+	TRICORE_INS_MAX,
+	TRICORE_INS_MFCR,
+	TRICORE_INS_MIN_B,
+	TRICORE_INS_MIN_BU,
+	TRICORE_INS_MIN_H,
+	TRICORE_INS_MIN_HU,
+	TRICORE_INS_MIN_U,
+	TRICORE_INS_MIN,
+	TRICORE_INS_MOVH_A,
+	TRICORE_INS_MOVH,
+	TRICORE_INS_MOVZ_A,
+	TRICORE_INS_MOV_AA,
+	TRICORE_INS_MOV_A,
+	TRICORE_INS_MOV_D,
+	TRICORE_INS_MOV_U,
+	TRICORE_INS_MOV,
+	TRICORE_INS_MSUBADMS_H,
+	TRICORE_INS_MSUBADM_H,
+	TRICORE_INS_MSUBADRS_H,
+	TRICORE_INS_MSUBADR_H,
+	TRICORE_INS_MSUBADS_H,
+	TRICORE_INS_MSUBAD_H,
+	TRICORE_INS_MSUBMS_H,
+	TRICORE_INS_MSUBMS_U,
+	TRICORE_INS_MSUBMS,
+	TRICORE_INS_MSUBM_H,
+	TRICORE_INS_MSUBM_Q,
+	TRICORE_INS_MSUBM_U,
+	TRICORE_INS_MSUBM,
+	TRICORE_INS_MSUBRS_H,
+	TRICORE_INS_MSUBRS_Q,
+	TRICORE_INS_MSUBR_H,
+	TRICORE_INS_MSUBR_Q,
+	TRICORE_INS_MSUBS_H,
+	TRICORE_INS_MSUBS_Q,
+	TRICORE_INS_MSUBS_U,
+	TRICORE_INS_MSUBS,
+	TRICORE_INS_MSUB_F,
+	TRICORE_INS_MSUB_H,
+	TRICORE_INS_MSUB_Q,
+	TRICORE_INS_MSUB_U,
+	TRICORE_INS_MSUB,
+	TRICORE_INS_MTCR,
+	TRICORE_INS_MULMS_H,
+	TRICORE_INS_MULM_H,
+	TRICORE_INS_MULM_U,
+	TRICORE_INS_MULM,
+	TRICORE_INS_MULR_H,
+	TRICORE_INS_MULR_Q,
+	TRICORE_INS_MULS_U,
+	TRICORE_INS_MULS,
+	TRICORE_INS_MUL_F,
+	TRICORE_INS_MUL_H,
+	TRICORE_INS_MUL_Q,
+	TRICORE_INS_MUL_U,
+	TRICORE_INS_MUL,
+	TRICORE_INS_NAND_T,
+	TRICORE_INS_NAND,
+	TRICORE_INS_NEZ_A,
+	TRICORE_INS_NE_A,
+	TRICORE_INS_NE,
+	TRICORE_INS_NOP,
+	TRICORE_INS_NOR_T,
+	TRICORE_INS_NOR,
+	TRICORE_INS_NOT,
+	TRICORE_INS_ORN_T,
+	TRICORE_INS_ORN,
+	TRICORE_INS_OR_ANDN_T,
+	TRICORE_INS_OR_AND_T,
+	TRICORE_INS_OR_EQ,
+	TRICORE_INS_OR_GE_U,
+	TRICORE_INS_OR_GE,
+	TRICORE_INS_OR_LT_U,
+	TRICORE_INS_OR_LT,
+	TRICORE_INS_OR_NE,
+	TRICORE_INS_OR_NOR_T,
+	TRICORE_INS_OR_OR_T,
+	TRICORE_INS_OR_T,
+	TRICORE_INS_OR,
+	TRICORE_INS_PACK,
+	TRICORE_INS_PARITY,
+	TRICORE_INS_POPCNT_W,
+	TRICORE_INS_Q31TOF,
+	TRICORE_INS_QSEED_F,
+	TRICORE_INS_RESTORE,
+	TRICORE_INS_RET,
+	TRICORE_INS_RFE,
+	TRICORE_INS_RFM,
+	TRICORE_INS_RSLCX,
+	TRICORE_INS_RSTV,
+	TRICORE_INS_RSUBS_U,
+	TRICORE_INS_RSUBS,
+	TRICORE_INS_RSUB,
+	TRICORE_INS_SAT_BU,
+	TRICORE_INS_SAT_B,
+	TRICORE_INS_SAT_HU,
+	TRICORE_INS_SAT_H,
+	TRICORE_INS_SELN_A,
+	TRICORE_INS_SELN,
+	TRICORE_INS_SEL_A,
+	TRICORE_INS_SEL,
+	TRICORE_INS_SHAS,
+	TRICORE_INS_SHA_B,
+	TRICORE_INS_SHA_H,
+	TRICORE_INS_SHA,
+	TRICORE_INS_SHUFFLE,
+	TRICORE_INS_SH_ANDN_T,
+	TRICORE_INS_SH_AND_T,
+	TRICORE_INS_SH_B,
+	TRICORE_INS_SH_EQ,
+	TRICORE_INS_SH_GE_U,
+	TRICORE_INS_SH_GE,
+	TRICORE_INS_SH_H,
+	TRICORE_INS_SH_LT_U,
+	TRICORE_INS_SH_LT,
+	TRICORE_INS_SH_NAND_T,
+	TRICORE_INS_SH_NE,
+	TRICORE_INS_SH_NOR_T,
+	TRICORE_INS_SH_ORN_T,
+	TRICORE_INS_SH_OR_T,
+	TRICORE_INS_SH_XNOR_T,
+	TRICORE_INS_SH_XOR_T,
+	TRICORE_INS_SH,
+	TRICORE_INS_STLCX,
+	TRICORE_INS_STUCX,
+	TRICORE_INS_ST_A,
+	TRICORE_INS_ST_B,
+	TRICORE_INS_ST_DA,
+	TRICORE_INS_ST_D,
+	TRICORE_INS_ST_H,
+	TRICORE_INS_ST_Q,
+	TRICORE_INS_ST_T,
+	TRICORE_INS_ST_W,
+	TRICORE_INS_SUBC,
+	TRICORE_INS_SUBSC_A,
+	TRICORE_INS_SUBS_BU,
+	TRICORE_INS_SUBS_B,
+	TRICORE_INS_SUBS_HU,
+	TRICORE_INS_SUBS_H,
+	TRICORE_INS_SUBS_U,
+	TRICORE_INS_SUBS,
+	TRICORE_INS_SUBX,
+	TRICORE_INS_SUB_A,
+	TRICORE_INS_SUB_B,
+	TRICORE_INS_SUB_F,
+	TRICORE_INS_SUB_H,
+	TRICORE_INS_SUB,
+	TRICORE_INS_SVLCX,
+	TRICORE_INS_SWAPMSK_W,
+	TRICORE_INS_SWAP_A,
+	TRICORE_INS_SWAP_W,
+	TRICORE_INS_SYSCALL,
+	TRICORE_INS_TLBDEMAP,
+	TRICORE_INS_TLBFLUSH_A,
+	TRICORE_INS_TLBFLUSH_B,
+	TRICORE_INS_TLBMAP,
+	TRICORE_INS_TLBPROBE_A,
+	TRICORE_INS_TLBPROBE_I,
+	TRICORE_INS_TRAPSV,
+	TRICORE_INS_TRAPV,
+	TRICORE_INS_UNPACK,
+	TRICORE_INS_UPDFL,
+	TRICORE_INS_UTOF,
+	TRICORE_INS_WAIT,
+	TRICORE_INS_XNOR_T,
+	TRICORE_INS_XNOR,
+	TRICORE_INS_XOR_EQ,
+	TRICORE_INS_XOR_GE_U,
+	TRICORE_INS_XOR_GE,
+	TRICORE_INS_XOR_LT_U,
+	TRICORE_INS_XOR_LT,
+	TRICORE_INS_XOR_NE,
+	TRICORE_INS_XOR,
+
+	// clang-format on
+	// generate content <TriCoreGenCSInsnEnum.inc> end
+	TRICORE_INS_ENDING, // <-- mark the end of the list of instructions
+} tricore_insn;
+
+/// Group of TriCore instructions
+typedef enum tricore_insn_group {
+	TRICORE_GRP_INVALID, ///< = CS_GRP_INVALID
+	/// Generic groups
+	TRICORE_GRP_CALL,   ///< = CS_GRP_CALL
+	TRICORE_GRP_JUMP,   ///< = CS_GRP_JUMP
+	TRICORE_GRP_ENDING, ///< mark the end of the list of groups
+} tricore_insn_group;
+
+typedef enum tricore_feature_t {
+	TRICORE_FEATURE_INVALID = 0,
+	// generate content <TriCoreGenCSFeatureEnum.inc> begin
+	// clang-format off
+
+	TRICORE_FEATURE_HasV110 = 128,
+	TRICORE_FEATURE_HasV120_UP,
+	TRICORE_FEATURE_HasV130_UP,
+	TRICORE_FEATURE_HasV161,
+	TRICORE_FEATURE_HasV160_UP,
+	TRICORE_FEATURE_HasV131_UP,
+	TRICORE_FEATURE_HasV161_UP,
+	TRICORE_FEATURE_HasV162,
+	TRICORE_FEATURE_HasV162_UP,
+
+	// clang-format on
+	// generate content <TriCoreGenCSFeatureEnum.inc> end
+	TRICORE_FEATURE_ENDING, ///< mark the end of the list of features
+} tricore_feature;
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+
+#define MAX_IMPL_W_REGS 20
+#define MAX_IMPL_R_REGS 20
+#define MAX_NUM_GROUPS 8
 
 /// NOTE: All information in cs_detail is only available when CS_OPT_DETAIL = CS_OPT_ON
 /// Initialized as memset(., 0, offsetof(cs_detail, ARCH)+sizeof(cs_ARCH))
@@ -50588,14 +51788,18 @@ typedef enum bpf_insn_group {
 /// if cs_detail changes, in particular if a field is added after the union,
 /// then update arch/ARCH/ARCHDisassembler.c accordingly
 typedef struct cs_detail {
-	uint16_t regs_read[16]; ///< list of implicit registers read by this insn
+	uint16_t regs_read
+		[MAX_IMPL_R_REGS]; ///< list of implicit registers read by this insn
 	uint8_t regs_read_count; ///< number of implicit registers read by this insn
 
-	uint16_t regs_write[20]; ///< list of implicit registers modified by this insn
+	uint16_t regs_write
+		[MAX_IMPL_W_REGS]; ///< list of implicit registers modified by this insn
 	uint8_t regs_write_count; ///< number of implicit registers modified by this insn
 
-	uint8_t groups[8]; ///< list of group this instruction belong to
+	uint8_t groups[MAX_NUM_GROUPS]; ///< list of group this instruction belong to
 	uint8_t groups_count; ///< number of groups this insn belongs to
+
+	bool writeback;	      ///< Instruction has writeback operands.
 
 	/// Architecture-specific instruction info
 	union {
@@ -50615,6 +51819,8 @@ typedef struct cs_detail {
 		cs_wasm wasm;	///< Web Assembly architecture
 		cs_bpf bpf;	///< Berkeley Packet Filter architecture (including eBPF)
 		cs_riscv riscv; ///< RISCV architecture
+		cs_sh sh;        ///< SH architecture
+		cs_tricore tricore; ///< TriCore architecture
 	};
 } cs_detail;
 
@@ -50737,6 +51943,10 @@ CAPSTONE_EXPORT
 void CAPSTONE_API cs_arch_register_bpf(void);
 CAPSTONE_EXPORT
 void CAPSTONE_API cs_arch_register_riscv(void);
+CAPSTONE_EXPORT
+void CAPSTONE_API cs_arch_register_sh(void);
+CAPSTONE_EXPORT
+void CAPSTONE_API cs_arch_register_tricore(void);
 
 /**
  This API can be used to either ask for archs supported by this library,
@@ -51095,6 +52305,7 @@ cs_err CAPSTONE_API cs_regs_access(csh handle, const cs_insn *insn,
 #endif
 /*
  * Copyright (C) 2009-2022 Ole André Vadla Ravnås <oleavr@nowsecure.com>
+ * Copyright (C) 2023 Fabian Freyer <fabian.freyer@physik.tu-berlin.de>
  *
  * Licence: wxWindows Library Licence, Version 3.1
  */
@@ -51369,10 +52580,18 @@ GUM_API gboolean gum_x86_writer_put_mov_fs_u32_ptr_reg (GumX86Writer * self,
     guint32 fs_offset, GumX86Reg src_reg);
 GUM_API gboolean gum_x86_writer_put_mov_reg_fs_u32_ptr (GumX86Writer * self,
     GumX86Reg dst_reg, guint32 fs_offset);
+GUM_API void gum_x86_writer_put_mov_fs_reg_ptr_reg (GumX86Writer * self,
+    GumX86Reg fs_offset, GumX86Reg src_reg);
+GUM_API void gum_x86_writer_put_mov_reg_fs_reg_ptr (GumX86Writer * self,
+    GumX86Reg dst_reg, GumX86Reg fs_offset);
 GUM_API gboolean gum_x86_writer_put_mov_gs_u32_ptr_reg (GumX86Writer * self,
     guint32 fs_offset, GumX86Reg src_reg);
 GUM_API gboolean gum_x86_writer_put_mov_reg_gs_u32_ptr (GumX86Writer * self,
     GumX86Reg dst_reg, guint32 fs_offset);
+GUM_API void gum_x86_writer_put_mov_gs_reg_ptr_reg (GumX86Writer * self,
+    GumX86Reg gs_offset, GumX86Reg src_reg);
+GUM_API void gum_x86_writer_put_mov_reg_gs_reg_ptr (GumX86Writer * self,
+    GumX86Reg dst_reg, GumX86Reg gs_offset);
 
 GUM_API void gum_x86_writer_put_movq_xmm0_esp_offset_ptr (GumX86Writer * self,
     gint8 offset);
@@ -51795,8 +53014,9 @@ G_END_DECLS
 #endif
 /*
  * Copyright (C) 2014-2023 Ole André Vadla Ravnås <oleavr@nowsecure.com>
- * Copyright (C)      2017 Antonio Ken Iannillo <ak.iannillo@gmail.com>
- * Copyright (C)      2023 Håvard Sørbø <havard@hsorbo.no>
+ * Copyright (C) 2017 Antonio Ken Iannillo <ak.iannillo@gmail.com>
+ * Copyright (C) 2023 Håvard Sørbø <havard@hsorbo.no>
+ * Copyright (C) 2023 Fabian Freyer <fabian.freyer@physik.tu-berlin.de>
  *
  * Licence: wxWindows Library Licence, Version 3.1
  */
@@ -51807,6 +53027,16 @@ G_END_DECLS
 
 #define GUM_ARM64_ADRP_MAX_DISTANCE 0xfffff000
 #define GUM_ARM64_B_MAX_DISTANCE 0x07fffffc
+
+#define GUM_ARM64_SYSREG(op0, op1, crn, crm, op2) \
+    ( \
+      (((op0 == 2) ? 0 : 1) << 14) | \
+      (op1 << 11) | \
+      (crn << 7) | \
+      (crm << 3) | \
+      op2 \
+    )
+#define GUM_ARM64_SYSREG_TPIDRRO_EL0 GUM_ARM64_SYSREG (3, 3, 13, 0, 3)
 
 G_BEGIN_DECLS
 
@@ -51981,6 +53211,12 @@ GUM_API gboolean gum_arm64_writer_put_and_reg_reg_imm (GumArm64Writer * self,
     arm64_reg dst_reg, arm64_reg left_reg, guint64 right_value);
 GUM_API gboolean gum_arm64_writer_put_eor_reg_reg_reg (GumArm64Writer * self,
     arm64_reg dst_reg, arm64_reg left_reg, arm64_reg right_reg);
+GUM_API gboolean gum_arm64_writer_put_ubfm (GumArm64Writer * self,
+    arm64_reg dst_reg, arm64_reg src_reg, guint8 imms, guint8 immr);
+GUM_API gboolean gum_arm64_writer_put_lsl_reg_imm (GumArm64Writer * self,
+    arm64_reg dst_reg, arm64_reg src_reg, guint8 shift);
+GUM_API gboolean gum_arm64_writer_put_lsr_reg_imm (GumArm64Writer * self,
+    arm64_reg dst_reg, arm64_reg src_reg, guint8 shift);
 GUM_API gboolean gum_arm64_writer_put_tst_reg_imm (GumArm64Writer * self,
     arm64_reg reg, guint64 imm_value);
 GUM_API gboolean gum_arm64_writer_put_cmp_reg_reg (GumArm64Writer * self,
@@ -51991,6 +53227,8 @@ GUM_API gboolean gum_arm64_writer_put_xpaci_reg (GumArm64Writer * self,
 
 GUM_API void gum_arm64_writer_put_nop (GumArm64Writer * self);
 GUM_API void gum_arm64_writer_put_brk_imm (GumArm64Writer * self, guint16 imm);
+GUM_API gboolean gum_arm64_writer_put_mrs (GumArm64Writer * self,
+    arm64_reg dst_reg, guint16 system_reg);
 
 GUM_API void gum_arm64_writer_put_instruction (GumArm64Writer * self,
     guint32 insn);

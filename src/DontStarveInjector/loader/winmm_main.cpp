@@ -13,6 +13,7 @@
 #include <spdlog/sinks/msvc_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
+#include "platform.hpp"
 #include "PersistentString.hpp"
 #include "steam.hpp"
 
@@ -103,16 +104,6 @@ std::filesystem::path getKleiGameDoctmentDir()
     return getKleiDoctmentDir() / game_doctment_name;
 }
 
-std::filesystem::path getExePath()
-{
-    static std::filesystem::path p = []
-    {
-        char path[MAX_PATH];
-        GetModuleFileNameA(NULL, path, 255);
-        return std::filesystem::path{path};
-    }();
-    return p;
-}
 
 std::filesystem::path getGameDir()
 {
