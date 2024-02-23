@@ -6,12 +6,12 @@ set (SOURCES
 DontStarveInjector.cpp
 DontStarveSignature.cpp
 lua_fake.cpp
-inlinehook.cpp
 gameio.cpp
-zipfile.cpp
-module.cpp
-signature.cpp
 SignatureJson.cpp
+${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
+${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
+${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
+${DONTSTARVEINJECTOR_UTIL_DIR}/signature.cpp
 )
 
 find_package(libzip CONFIG REQUIRED)
@@ -66,28 +66,4 @@ add_custom_command(
 
 install(TARGETS Injector RUNTIME DESTINATION .)
 
-set (Winmm_SOURCES
-winmm.cpp
-winmm_main.cpp
-updater.cpp
-inlinehook.cpp
-module.cpp
-steam.cpp
-PersistentString.cpp
-${PROJECT_SOURCE_DIR}/version.txt
-)
-add_library(Winmm SHARED ${Winmm_SOURCES})
-
-target_include_directories(Winmm PUBLIC ${PROJECT_SOURCE_DIR}/3rd/steam)
-target_link_directories(Winmm PUBLIC ${PROJECT_SOURCE_DIR}/3rd/steam/redistributable_bin/win64)
-target_link_libraries(Winmm PRIVATE steam_api64)
-
-target_link_libraries(Winmm PRIVATE ZLIB::ZLIB)
-target_link_libraries(Winmm PRIVATE spdlog::spdlog)
-
-file(STRINGS "${PROJECT_SOURCE_DIR}/version.txt" MOD_VERSION LIMIT_COUNT 1)
-
-target_compile_definitions(Winmm PRIVATE MOD_VERSION="${MOD_VERSION}")
-
-install(TARGETS Winmm RUNTIME DESTINATION .)
-
+add_subdirectory(loader)

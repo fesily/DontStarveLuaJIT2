@@ -1,7 +1,7 @@
 #pragma once
 
 #include "frida-gum.h"
-#include "Signature.hpp"
+#include "util/Signature.hpp"
 
 static MemorySignature luaModuleSignature{"41 B8 EE D8 FF FF 41 3B D0 74 64 81 FA EF D8 FF FF 74 3B", -0x37};
 

@@ -64,6 +64,10 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 find_package(Steam REQUIRED)
 find_package(Frida-gum REQUIRED)
 
+set(DONTSTARVEINJECTOR_ROOT ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
+set(DONTSTARVEINJECTOR_UTIL_DIR ${DONTSTARVEINJECTOR_ROOT}/util)
+
+
 add_subdirectory("src/DontStarveInjector")
 add_subdirectory("tools/Checker")
 add_subdirectory("tools/Creater")

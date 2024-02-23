@@ -2,15 +2,15 @@ cmake_minimum_required(VERSION 3.15)
 
 set (SOURCES
 main.cpp
-${PROJECT_SOURCE_DIR}/src/DontStarveInjector/Signature.cpp
-${PROJECT_SOURCE_DIR}/src/DontStarveInjector/SignatureJson.cpp
+${DONTSTARVEINJECTOR_UTIL_DIR}/Signature.cpp
+${DONTSTARVEINJECTOR_ROOT}/SignatureJson.cpp
 )
 find_package(nlohmann_json CONFIG REQUIRED)
 
 add_executable(signature_checker ${SOURCES})
 
 target_include_directories(signature_checker PUBLIC ${PROJECT_SOURCE_DIR}/src)
-target_include_directories(signature_checker PUBLIC ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
+target_include_directories(signature_checker PUBLIC ${DONTSTARVEINJECTOR_ROOT})
 
 target_include_directories(signature_checker PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
 target_link_libraries(signature_checker PRIVATE ${FRIDA_GUM_LIBRARIES})

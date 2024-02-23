@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.15)
 
 set (SOURCES
 main.cpp
-${PROJECT_SOURCE_DIR}/src/DontStarveInjector/DontStarveSignature.cpp
-${PROJECT_SOURCE_DIR}/src/DontStarveInjector/Signature.cpp
-${PROJECT_SOURCE_DIR}/src/DontStarveInjector/SignatureJson.cpp
+${DONTSTARVEINJECTOR_ROOT}/DontStarveSignature.cpp
+${DONTSTARVEINJECTOR_UTIL_DIR}/Signature.cpp
+${DONTSTARVEINJECTOR_ROOT}/SignatureJson.cpp
 )
 find_package(spdlog CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
@@ -12,7 +12,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 add_executable(signature_updater ${SOURCES})
 
 target_include_directories(signature_updater PUBLIC ${PROJECT_SOURCE_DIR}/src)
-target_include_directories(signature_updater PUBLIC ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
+target_include_directories(signature_updater PUBLIC ${DONTSTARVEINJECTOR_ROOT})
 target_link_libraries(signature_updater PRIVATE spdlog::spdlog)
 
 

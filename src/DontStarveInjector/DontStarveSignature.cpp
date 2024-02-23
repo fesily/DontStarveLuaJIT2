@@ -7,7 +7,6 @@
 #include <Windows.h>
 
 #include "config.hpp"
-#include "Signature.hpp"
 #include "DontStarveSignature.hpp"
 
 std::string update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports, uint32_t range, bool updated)

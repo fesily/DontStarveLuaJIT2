@@ -16,8 +16,8 @@
 #include <frida-gum.h>
 #endif
 #include "config.hpp"
-#include "inlinehook.hpp"
-#include "module.hpp"
+#include "util/inlinehook.hpp"
+#include "util/module.hpp"
 #include "LuaModule.hpp"
 #include "DontStarveSignature.hpp"
 #include "SignatureJson.hpp"

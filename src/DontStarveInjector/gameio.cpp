@@ -8,7 +8,7 @@
 #include <string_view>
 #include <mutex>
 #include <optional>
-#include "zipfile.hpp"
+#include "util/zipfile.hpp"
 
 #include <steam_api.h>
 #include <thread>
