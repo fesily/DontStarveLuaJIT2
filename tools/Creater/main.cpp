@@ -1,5 +1,3 @@
-#define NOMINMAX
-#include <Windows.h>
 #include <format>
 #include <fstream>
 #include <iostream>
@@ -8,6 +6,7 @@
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
 
+#include "platform.hpp"
 #include "missfunc.h"
 #include "SignatureJson.hpp"
 #include "LuaModule.hpp"
@@ -90,7 +89,7 @@ int main()
     fprintf(stderr, "lua51_path:\t%s\n", lua51_path);
     if (!loadModule(lua51_path))
         return 1;
-    SetCurrentDirectoryA(worker_dir);
+    set_worker_directory(worker_dir);
     SignatureJson::version_path = GAMEDIR "/version.txt";
     return update(true) + update(false);
 }

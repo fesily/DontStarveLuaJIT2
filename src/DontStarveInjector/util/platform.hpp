@@ -14,3 +14,5 @@ void unloadlib(module_handler_t h);
 bool memory_is_execute(void* address);
 
 const char* get_cwd();
+
+void set_worker_directory(const char* path);

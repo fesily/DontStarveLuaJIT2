@@ -11,6 +11,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 add_executable(signature_checker ${SOURCES})
 
 target_include_directories(signature_checker PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(signature_checker PUBLIC ${DONTSTARVEINJECTOR_UTIL_DIR})
 target_include_directories(signature_checker PUBLIC ${DONTSTARVEINJECTOR_ROOT})
 
 target_include_directories(signature_checker PUBLIC ${FRIDA_GUM_INCLUDE_DIR})

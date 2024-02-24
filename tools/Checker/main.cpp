@@ -1,8 +1,9 @@
 #define NOMINMAX
 #include "frida-gum.h"
 #include "SignatureJson.hpp"
+
 #include "LuaModule.hpp"
-#include <direct.h>
+#include "platform.hpp"
 
 #ifndef GAMEDIR
 #error "not defined GAME_DIR"
@@ -218,7 +219,7 @@ int main()
     fprintf(stderr, "lua51_path:\t%s\n", lua51_path);
     if (!loadModule(lua51_path))
         return 1;
-    _chdir(worker_dir);
+    set_worker_directory(worker_dir);
     SignatureJson::version_path = GAMEDIR "/version.txt";
     return check(game_path, true) + check(game_server_path, false);
 }

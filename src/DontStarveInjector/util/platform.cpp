@@ -101,3 +101,12 @@ const char *get_cwd()
         return cmd.c_str();
 #endif
 }
+
+void set_worker_directory(const char* path)
+{
+#ifdef _WIN32
+    SetCurrentDirectoryA(path);
+#else
+    chdir(path);
+#endif
+}

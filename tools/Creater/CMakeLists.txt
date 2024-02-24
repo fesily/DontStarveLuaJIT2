@@ -13,6 +13,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 add_executable(signature_updater ${SOURCES})
 
 target_include_directories(signature_updater PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(signature_updater PUBLIC ${DONTSTARVEINJECTOR_UTIL_DIR})
 target_include_directories(signature_updater PUBLIC ${DONTSTARVEINJECTOR_ROOT})
 target_link_libraries(signature_updater PRIVATE spdlog::spdlog)
 
