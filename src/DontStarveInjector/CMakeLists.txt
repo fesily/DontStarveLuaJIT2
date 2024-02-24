@@ -67,4 +67,6 @@ add_custom_command(
 
 install(TARGETS Injector RUNTIME DESTINATION .)
 
-add_subdirectory(loader)
+if(WIN32)
+    add_subdirectory(loader)
+endif()

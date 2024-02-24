@@ -1,0 +1,65 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "linux",
+            "description": "Linux GCC",
+            "hidden": false,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/linux",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "YES"
+            },
+            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+            "environment": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux-static"
+            }
+        },
+        {
+            "name": "windows",
+            "description": "Windows MSVC",
+            "hidden": false,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/windows",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "YES"
+            },
+            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+            "environment": {
+                "VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "linux debug",
+            "configurePreset": "linux",
+            "environment": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "windows debug",
+            "configurePreset": "windows",
+            "environment": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "linux release",
+            "configurePreset": "linux",
+            "environment": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "windows release",
+            "configurePreset": "windows",
+            "environment": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        }
+    ]
+}

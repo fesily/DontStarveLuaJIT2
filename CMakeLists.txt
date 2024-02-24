@@ -19,8 +19,12 @@ else()
     set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin)
 endif()
 
+set(PYTHON_EXECUTABLE_NAME "python3")
 if(WIN32)
     set(PLATFORM_NAME "windows")
+    set(PYTHON_EXECUTABLE_NAME "python")
+elseif(UNIX AND NOT APPLE)
+    set(PLATFORM_NAME "Linux")
 else()
     message(FATAL_ERROR "Not supported platform")
 endif()
@@ -29,7 +33,7 @@ set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin64)
 set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod/bin64/${PLATFORM_NAME}/)
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h 
-    COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/missfunc.py"
+    COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/missfunc.py"
     DEPENDS src/missfunc.txt
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
@@ -78,7 +82,7 @@ install(DIRECTORY ${CMAKE_INSTALL_PREFIX} DESTINATION ${GAME_INSTALL_PREFIX})
 
 
 add_custom_target(make_karta_luamodule 
-    COMMAND python "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_karta.py"
+    COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_karta.py"
     DEPENDS ${LUA_LIBRARIES_PATH}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
