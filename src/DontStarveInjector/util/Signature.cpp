@@ -163,10 +163,10 @@ void *fix_func_address_by_signature(void *target, void *original, const in_funct
 {
     constexpr auto short_signature_len = 16;
     auto original_s = create_signature(original, in_func);
-    fprintf(stdout, "---%p---\n%s\n\n\n", original, original_s.c_str());
+    //fprintf(stdout, "---%p---\n%s\n\n\n", original, original_s.c_str());
     {
         auto target_s = create_signature(target, nullptr);
-        fprintf(stdout, "---%p---\n%s\n\n\n", target, target_s.c_str());
+        //fprintf(stdout, "---%p---\n%s\n\n\n", target, target_s.c_str());
         if (target_s == original_s)
         {
             return target;
