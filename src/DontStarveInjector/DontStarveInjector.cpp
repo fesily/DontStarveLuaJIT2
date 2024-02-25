@@ -214,7 +214,8 @@ static std::expected<std::tuple<ListExports_t, Signatures>, std::string> create_
 	{
 		signatures.funcs[name] = 0;
 	}
-	auto errormsg = update_signatures(signatures, targetLuaModuleBase, exports, 1024, false);
+	constexpr auto lua_module_range = 30720;
+	auto errormsg = update_signatures(signatures, targetLuaModuleBase, exports, lua_module_range, false);
 	if (!errormsg.empty())
 	{
 		unloadlib(h51);

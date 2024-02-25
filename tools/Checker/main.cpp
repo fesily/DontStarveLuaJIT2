@@ -20,7 +20,7 @@
 const char *game_path = GAMEDIR R"(\bin64\dontstarve_steam_x64.exe)";
 const char *game_server_path = GAMEDIR R"(\bin64\dontstarve_dedicated_server_nullrenderer_x64.exe)";
 const char *lua51_path = LUA51_PATH;
-const char* worker_dir = PROJECT_DIR "/Mod/bin64/windows";
+const char *worker_dir = PROJECT_DIR "/Mod/bin64/windows";
 
 bool loadModule(const char *path)
 {
@@ -158,7 +158,7 @@ static bool checkLuaFunc(void *func1, void *func2, std::string &ecmsg)
 
 int check(const char *path, bool isClient)
 {
-    SignatureJson sj{ isClient };
+    SignatureJson sj{isClient};
     auto signatures = sj.read_from_signatures().value();
     fprintf(stderr, "game_path:\t%s\n", path);
     if (!loadModule(path))
@@ -169,9 +169,6 @@ int check(const char *path, bool isClient)
         return 1;
     }
 
-    auto lua51_baseaddr = gum_module_find_base_address(lua51_path);
-    auto hlua51 = gum_module_find_base_address(lua51_path);
-    auto htarget = gum_module_find_base_address(path);
     auto count = 0;
     for (auto [func, offset] : signatures.funcs)
     {
@@ -184,8 +181,8 @@ int check(const char *path, bool isClient)
             continue;
         }
         std::string ecmsg;
-        auto k2 = create_signature((void *)dll_func, (void*)hlua51, {});
-        auto k1 = create_signature((void *)func_addr, (void*)htarget, {});
+        auto k2 = create_signature((void *)dll_func, {});
+        auto k1 = create_signature((void *)func_addr, {});
         if (k1 != k2)
         {
             size_t limit = std::min(k1.size(), k2.size());

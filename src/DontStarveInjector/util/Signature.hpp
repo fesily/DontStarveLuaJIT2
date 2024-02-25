@@ -22,5 +22,6 @@ struct Signatures
 };
 
 using in_function_t = std::function<bool(void *)>;
-std::string create_signature(void *func, void *module_base, const in_function_t &in_func);
-void *fix_func_address_by_signature(void *target, void *module_base, void *original, void *original_module_base, const in_function_t &in_func, uint32_t range = 512, bool updated = true);
+std::string create_signature(void *func, const in_function_t &in_func);
+void *fix_func_address_by_signature(void *target, void *original, const in_function_t &in_func, uint32_t range = 512, bool updated = true);
+void release_signature_cache();

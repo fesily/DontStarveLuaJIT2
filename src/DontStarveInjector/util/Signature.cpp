@@ -1,10 +1,12 @@
 ﻿#include <string_view>
 #include <functional>
 #include <cassert>
-
+#include <regex>
+#include <array>
 #include <frida-gum.h>
-#include "platform.hpp"
 
+#include "platform.hpp"
+#include <charconv>
 #include "Signature.hpp"
 
 constexpr auto page = GUM_PAGE_EXECUTE;
@@ -38,7 +40,7 @@ static bool is_data(void *ptr)
     return !memory_is_execute(ptr);
 }
 
-std::string create_signature(void *func, void *module_base, const in_function_t &in_func)
+std::string create_signature(void *func, const in_function_t &in_func)
 {
     csh hcs;
     cs_arch_register_x86();
@@ -47,128 +49,88 @@ std::string create_signature(void *func, void *module_base, const in_function_t 
         return {};
     cs_option(hcs, CS_OPT_DETAIL, CS_OPT_ON);
     std::string ret;
+
+    auto push_asm = [&ret](auto s)
+    {
+        ret.append(s);
+        ret.append(" ");
+    };
     const uint8_t *binary = (uint8_t *)func;
     auto insn = cs_malloc(hcs);
     uint64_t address = (uint64_t)func;
-    x86_reg module_base_reg = x86_reg::X86_REG_INVALID;
     size_t insn_len = 1024;
+    auto regx = std::regex(R"(\[rip \+ 0x([0-9a-z]+)\])");
+    auto regx1 = std::regex(R"(\[r(.)x \+ rax\*(\d+) \+ 0x([0-9a-z]+)\])");
+    auto regx2 = std::regex("0x[0-9a-z]+");
     while (cs_disasm_iter(hcs, &binary, &insn_len, &address, insn))
     {
-        static const char const_data[4] = {43, 53, 63, 73};
-        static const char jmp_data[4] = {83, 93, 103, 113};
-        auto jmp_transform = [](const char *mem) -> const char *
+        ret.append("\n");
+        push_asm(insn->mnemonic);
+        std::string op_str = insn->op_str;
+        int64_t imm = 0;
+        if (op_str.find("[rip") != std::string_view::npos)
         {
-            return jmp_data;
-        };
+            std::smatch result;
+            if (std::regex_match(op_str, result, regx))
+            {
+                push_asm(std::regex_replace(op_str, regx, "[rip + 0x??????]"));
+                if (result.size() == 1)
+                {
+                    const auto &imm_str = result[1].str();
+                    std::from_chars(imm_str.c_str(), imm_str.c_str() + imm_str.size(), imm, 16);
+                    if (imm != 0)
+                    {
+                        auto data = (uint64_t)insn->address + insn->size + imm;
+                        ret.append(is_data((void *)data) ? "(data)" : "(code)");
+                    }
+                }
+            }
+        }
+        else if (op_str.find("rax*") != std::string_view::npos)
+        {
+            push_asm(std::regex_replace(op_str, regx1, "[r$1x + rax*$2 + 0x??????]"));
+        }
+        else
+        {
+            if (std::regex_match(op_str, regx2))
+            {
+                // skip 0x
+                std::from_chars(op_str.c_str() + 2, op_str.c_str() + op_str.length() + 2, imm, 16);
+                if (insn->id < X86_INS_JAE || insn->id > X86_INS_JS)
+                {
+                    push_asm("0x???????");
+                }
+                else
+                {
+                    auto offset = imm - (insn->address + insn->size);
+                    push_asm(std::regex_replace(op_str, regx2, std::to_string(offset)));
+                }
+            }
+            else
+            {
+                push_asm(op_str);
+            }
+        }
         switch (insn->id)
         {
-        case X86_INS_UCOMISD:
-        case X86_INS_MOV:
-        case X86_INS_LEA:
-        {
-            std::string_view op_str = insn->op_str;
-            if (op_str.find("[rip") != std::string_view::npos)
-            {
-                auto &operand = insn->detail->x86.operands[1];
-                assert(insn->size <= 8 && insn->size >= 6);
-                auto insn_op_len = insn->size == 8 ? 4 : (insn->size == 6 ? 2 : 3);
-                if (operand.type == x86_op_type::X86_OP_IMM)
-                {
-                    auto remote_mem = (char *)operand.imm;
-                    // maybe data/func
-                    ret.append((char *)insn->bytes, insn_op_len);
-                    ret.append(is_data(remote_mem) ? const_data : jmp_transform(remote_mem), 4);
-                    continue;
-                }
-                else if (operand.type == x86_op_type::X86_OP_MEM)
-                {
-                    auto remote_mem = (char *)(operand.mem.disp + insn->address + insn->size);
-                    if (module_base == remote_mem)
-                    {
-                        assert(insn->detail->x86.operands[0].type == x86_op_type::X86_OP_REG);
-                        module_base_reg = insn->detail->x86.operands[0].reg;
-                    }
-                    else
-                        module_base_reg = X86_REG_INVALID;
-
-                    // maybe data/func
-                    ret.append((char *)insn->bytes, insn_op_len);
-                    ret.append(is_data(remote_mem) ? const_data : jmp_transform(remote_mem), 4);
-                    continue;
-                }
-            }
-            else
-            {
-                if (module_base_reg != X86_REG_INVALID)
-                {
-                    // handler opcode reg, [moude_base_reg + offset_reg + offset]
-                    auto &operand = insn->detail->x86.operands[1];
-                    if (operand.type == X86_OP_MEM && operand.mem.base == module_base_reg)
-                    {
-                        assert(insn->size == 7);
-                        if (insn->size == 7)
-                        {
-                            ret.append((char *)insn->bytes, 3);
-                            ret.append(const_data, 4);
-                        }
-                    }
-                    module_base_reg = X86_REG_INVALID;
-                    continue;
-                }
-            }
-            module_base_reg = X86_REG_INVALID;
-            break;
-        }
-
+        case X86_INS_CALL:
         case X86_INS_JMP:
         {
-            auto &operand = insn->detail->x86.operands[0];
-            if (operand.type == x86_op_type::X86_OP_IMM)
+            if (imm != 0)
             {
-                auto remote_mem = (char *)operand.imm;
-                ret.append((char *)insn->bytes, 1);
-                ret.append(jmp_transform(remote_mem), 4);
-            }
-            else if (operand.type == x86_op_type::X86_OP_MEM)
-            {
-                auto remote_mem = (char *)(operand.mem.disp + insn->address + insn->size);
-                ret.append((char *)insn->bytes, 1);
-                ret.append(jmp_transform(remote_mem), 4);
-            }
-            else
-            {
-                ret.append((char *)insn->bytes, insn->size);
+                // 假设远端是一个无关地址的指令
+                auto data = (void *)imm;
+                ret.append(is_data(data) ? "(data)" : ("(code)" + std::to_string(*(uint32_t *)data)));
             }
             goto IS_END_FUNC;
         }
         case X86_INS_INT3:
             goto IS_END_FUNC;
         case X86_INS_RET:
-            ret.append((char *)insn->bytes, insn->size);
             goto IS_END_FUNC;
-        case X86_INS_CALL:
-        {
-            auto &operand = insn->detail->x86.operands[0];
-            if (operand.type == x86_op_type::X86_OP_IMM)
-            {
-                auto remote_mem = (char *)operand.imm;
-                ret.append((char *)insn->bytes, 1);
-                ret.append(jmp_transform(remote_mem), 4);
-                continue;
-            }
-            else if (operand.type == x86_op_type::X86_OP_MEM)
-            {
-                auto remote_mem = (char *)(operand.mem.disp + insn->address + insn->size);
-                ret.append((char *)insn->bytes, 1);
-                ret.append(jmp_transform(remote_mem), 4);
-                continue;
-            }
-            break;
-        }
         default:
-            break;
+            continue;
         }
-        ret.append((char *)insn->bytes, insn->size);
     IS_END_FUNC:
         if (!in_func || !in_func((void *)((char *)address + insn->size)))
         {
@@ -191,22 +153,42 @@ static constexpr size_t func_aligned()
 #endif
 }
 
-void *fix_func_address_by_signature(void *target, void *module_base, void *original, void *original_module_base, const in_function_t &in_func, uint32_t range, bool updated)
+static std::unordered_map<void *, std::string> signature_cache;
+void release_signature_cache()
+{
+    signature_cache.clear();
+}
+
+void *fix_func_address_by_signature(void *target, void *original, const in_function_t &in_func, uint32_t range, bool updated)
 {
     constexpr auto short_signature_len = 16;
-    if (create_signature(target, module_base, nullptr) == create_signature(original, original_module_base, in_func))
+    auto original_s = create_signature(original, in_func);
+    fprintf(stderr, "---%p---\n%s\n\n\n", original, original_s.c_str());
     {
-        return target;
+        auto target_s = create_signature(target, nullptr);
+        fprintf(stderr, "---%p---\n%s\n\n\n", target, target_s.c_str());
+        if (target_s == original_s)
+        {
+            return target;
+        }
     }
     // 基于以下假设，函数地址必然被对齐分配
     constexpr auto aligned = func_aligned();
     auto limit = range / aligned;
-    auto original_s = create_signature(original, original_module_base, in_func);
 
     for (size_t i = 1; i < limit; i++)
     {
         auto fix_target = (void *)((intptr_t)target + i * aligned);
-        auto target_s = create_signature(fix_target, module_base, nullptr);
+        std::string target_s;
+        if (signature_cache.find(fix_target) != signature_cache.end())
+        {
+            target_s = signature_cache[fix_target];
+        }
+        else
+        {
+            target_s = create_signature(fix_target, nullptr);
+            signature_cache[fix_target] = target_s;
+        }
         if (target_s == original_s)
         {
             return fix_target;
@@ -214,7 +196,7 @@ void *fix_func_address_by_signature(void *target, void *module_base, void *origi
         if (updated)
         {
             fix_target = (void *)((intptr_t)target - i * aligned);
-            target_s = create_signature(fix_target, module_base, nullptr);
+            target_s = create_signature(fix_target, nullptr);
             if (target_s == original_s)
             {
                 return fix_target;
