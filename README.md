@@ -75,7 +75,13 @@ If you start with stream, please set game config, process start config: "-enable
         "stopOnEntry": true,
         "type": "lua",
         "luaVersion": "luajit",
-        "client": false
+        "client": false,
+		"sourceMaps":[	//如果你想调试创意工坊的mod就开这个配置,不然不要开.因为开了之后在原来游戏目录下的mods文件夹的mod将无法调试
+			[
+				"../mods/workshop-*",
+				"E:/SteamLibrary/steamapps/workshop/content/322330"
+			]
+		]
       }
 ```
 
