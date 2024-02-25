@@ -26,6 +26,8 @@ add_compile_definitions(NO_FRIDA_GUM=1)
 
 file(STRINGS "${PROJECT_SOURCE_DIR}/version.txt" MOD_VERSION LIMIT_COUNT 1)
 
+message(STATUS "MOD_VERSION: ${MOD_VERSION}")
+
 target_compile_definitions(Winmm PRIVATE MOD_VERSION="${MOD_VERSION}")
 
 install(TARGETS Winmm RUNTIME DESTINATION .)
