@@ -2,64 +2,86 @@
     "version": 3,
     "configurePresets": [
         {
-            "name": "linux",
-            "description": "Linux GCC",
-            "hidden": false,
-            "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/linux",
+            "name": "base",
+            "description": "Base Configuration",
+            "hidden": true,
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "YES"
             },
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+            "generator": "Ninja"
+        },
+        {
+            "name": "linux",
+            "description": "Linux GCC",
+            "hidden": false,
+            "binaryDir": "${sourceDir}/build/linux",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            },
+            "inherits": "base",
             "environment": {
                 "VCPKG_TARGET_TRIPLET": "x64-linux-static"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "linux-release",
+            "inherits": "linux",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
             }
         },
         {
             "name": "windows",
             "description": "Windows MSVC",
             "hidden": false,
-            "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/windows",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_EXPORT_COMPILE_COMMANDS": "YES"
+                "CMAKE_BUILD_TYPE": "Debug"
             },
-            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+            "inherits": "base",
             "environment": {
                 "VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
+            }
+        },
+        {
+            "name": "windows-release",
+            "inherits": "windows",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
             }
         }
     ],
     "buildPresets": [
         {
-            "name": "linux debug",
+            "name": "default-build-linux",
+            "displayName": "Default",
+            "configurePreset": "linux-release",
+            "description": "Vanilla build"
+          },
+          {
+            "name": "default-build-windows",
+            "displayName": "Default",
+            "configurePreset": "windows-release",
+            "description": "Vanilla build"
+          },
+          {
+            "name": "verbose-build-linux",
+            "displayName": "Verbose Build",
+            "description": "Passes -v to Ninja",
             "configurePreset": "linux",
-            "environment": {
-                "CMAKE_BUILD_TYPE": "Debug"
-            }
-        },
-        {
-            "name": "windows debug",
+            "nativeToolOptions": [ "-v" ]
+          },
+          {
+            "name": "verbose-build-windows",
+            "displayName": "Verbose Build",
             "configurePreset": "windows",
-            "environment": {
-                "CMAKE_BUILD_TYPE": "Debug"
-            }
-        },
-        {
-            "name": "linux release",
-            "configurePreset": "linux",
-            "environment": {
-                "CMAKE_BUILD_TYPE": "Release"
-            }
-        },
-        {
-            "name": "windows release",
-            "configurePreset": "windows",
-            "environment": {
-                "CMAKE_BUILD_TYPE": "Release"
-            }
-        }
+            "inherits": "verbose-build-linux"
+          }
     ]
 }
