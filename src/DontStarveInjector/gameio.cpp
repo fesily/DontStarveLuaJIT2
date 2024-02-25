@@ -96,36 +96,6 @@ static std::optional<std::filesystem::path> get_workshop_dir()
     static auto dir = init_steam_workshop_dir();
     return dir;
 }
-static std::unordered_map<std::string, std::string> path_mapper;
-
-static const char *lj_path_map(const char *k)
-{
-    if (path_mapper.contains(k))
-    {
-        return path_mapper[k].c_str();
-    }
-    else
-    {
-        if (std::filesystem::exists(k)) {
-            return k;
-        }
-        auto workshopdir = get_workshop_dir();
-        if (workshopdir)
-        {
-            const auto key = std::string_view(k);
-            constexpr auto mods_root = "../mods/workshop-"sv;
-            if (key.starts_with(mods_root))
-            {
-                auto mod_path = std::filesystem::path(key.substr(mods_root.size()));
-                // auto mod_name = *mod_path.begin();
-                auto real_path = workshopdir.value() / mod_path;
-                path_mapper[k] = real_path.lexically_normal().string();
-                return path_mapper[k].c_str();
-            }
-        }
-    }
-    return nullptr;
-}
 
 static FILE *lj_fopen(char const *f, const char *mode) noexcept
 {
@@ -143,7 +113,6 @@ static FILE *lj_fopen(char const *f, const char *mode) noexcept
         // auto mod_name = *mod_path.begin();
         auto real_path = get_workshop_dir().value() / mod_path;
         auto fp = fopen(real_path.string().c_str(), mode);
-        path_mapper[f] = real_path.string();
         return fp;
     }
 
@@ -321,7 +290,6 @@ void init_luajit_io(module_handler_t hluajitModule)
     INIT_LUAJIT_IO(lj_ftelli64);
     INIT_LUAJIT_IO(lj_fwrite);
     INIT_LUAJIT_IO(lj_clearerr);
-    INIT_LUAJIT_IO(lj_path_map);
     INIT_LUAJIT_IO(lj_need_transform_path);
 #undef INIT_LUAJIT_IO
 }
