@@ -61,9 +61,6 @@ int update(bool isClient)
         return 1;
     }
 
-    auto lua51_baseaddr = gum_module_find_base_address(lua51_path);
-    auto hlua51 = gum_module_find_base_address(lua51_path);
-    auto htarget = gum_module_find_base_address(path);
     ListExports_t exports;
     exports.assign_range(signatures.funcs);
     auto msg = update_signatures(signatures, luaModuleSignature.target_address, exports);

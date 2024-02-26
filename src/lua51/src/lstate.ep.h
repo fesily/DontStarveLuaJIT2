@@ -8244,3 +8244,8 @@ extern void luaE_freethread (lua_State *L, lua_State *L1);
 
 
 
+typedef struct LG {
+  lua_State l;
+  global_State g;
+} LG;
+  

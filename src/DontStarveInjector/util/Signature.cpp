@@ -40,7 +40,36 @@ static bool is_data(void *ptr)
     return !memory_is_execute(ptr);
 }
 
-std::string create_signature(void *func, const in_function_t &in_func)
+std::string Signature::to_string()
+{
+    size_t length = 0;
+    for (auto &code : this->asm_codes)
+    {
+        length += code.size();
+    }
+    std::string ret;
+    ret.reserve(length + 1);
+    for (auto &code : this->asm_codes)
+    {
+        ret.append(code);
+        ret.append("\n");
+    }
+    return ret;
+}
+
+bool Signature::operator==(const Signature &other) const
+{
+    if (this->asm_codes.size() != other.asm_codes.size())
+        return false;
+    for (size_t i = 0; i < this->asm_codes.size(); i++)
+    {
+        if (this->asm_codes[i] != other.asm_codes[i])
+            return false;
+    }
+    return true;
+}
+
+Signature create_signature(void *func, const in_function_t &in_func, size_t limit)
 {
     csh hcs;
     cs_arch_register_x86();
@@ -48,13 +77,8 @@ std::string create_signature(void *func, const in_function_t &in_func)
     if (ec != CS_ERR_OK)
         return {};
     cs_option(hcs, CS_OPT_DETAIL, CS_OPT_ON);
-    std::string ret;
+    Signature ret;
 
-    auto push_asm = [&ret](auto s)
-    {
-        ret.append(s);
-        ret.append(" ");
-    };
     const uint8_t *binary = (uint8_t *)func;
     auto insn = cs_malloc(hcs);
     uint64_t address = (uint64_t)func;
@@ -62,9 +86,23 @@ std::string create_signature(void *func, const in_function_t &in_func)
     auto regx = std::regex(R"(\[rip \+ 0x([0-9a-z]+)\])");
     auto regx1 = std::regex(R"(\[r(.)x \+ rax\*(\d+) \+ 0x([0-9a-z]+)\])");
     auto regx2 = std::regex("0x[0-9a-z]+");
+    size_t count = 0;
+    uint64_t maybe_end = 0;
     while (cs_disasm_iter(hcs, &binary, &insn_len, &address, insn))
     {
-        ret.append("\n");
+        if (count >= limit)
+            break;
+
+        count++;
+
+        ret.asm_codes.push_back({});
+        std::string &signature = ret.asm_codes.back();
+        auto push_asm = [&signature](auto s)
+        {
+            signature.append(s);
+            signature.append(" ");
+        };
+
         push_asm(insn->mnemonic);
         std::string op_str = insn->op_str;
         int64_t imm = 0;
@@ -81,7 +119,7 @@ std::string create_signature(void *func, const in_function_t &in_func)
                     if (imm != 0)
                     {
                         auto data = (uint64_t)insn->address + insn->size + imm;
-                        ret.append(is_data((void *)data) ? "(data)" : "(code)");
+                        signature.append(is_data((void *)data) ? "(data)" : "(code)");
                     }
                 }
             }
@@ -102,7 +140,9 @@ std::string create_signature(void *func, const in_function_t &in_func)
                 }
                 else
                 {
-                    auto offset = imm - (insn->address + insn->size);
+                    if (imm > maybe_end && imm < 512)
+                        maybe_end = imm;
+                    int64_t offset = imm - (insn->address + insn->size);
                     push_asm(std::regex_replace(op_str, regx2, std::to_string(offset)));
                 }
             }
@@ -118,11 +158,16 @@ std::string create_signature(void *func, const in_function_t &in_func)
         {
             if (imm != 0)
             {
-                // 假设远端是一个无关地址的指令
                 auto data = (void *)imm;
-                ret.append(is_data(data) ? "(data)" : ("(code)" + std::to_string(*(uint32_t *)data)));
+                if (is_data(data))
+                    signature.append("(data)");
+                else
+                    signature.append("(code)" + create_signature(data, nullptr, 1).to_string());
             }
-            goto IS_END_FUNC;
+            if (insn->id == X86_INS_JMP)
+                goto IS_END_FUNC;
+            else
+                continue;
         }
         case X86_INS_INT3:
             goto IS_END_FUNC;
@@ -132,6 +177,8 @@ std::string create_signature(void *func, const in_function_t &in_func)
             continue;
         }
     IS_END_FUNC:
+        if (maybe_end >= (insn->address + insn->size))
+            continue;
         if (!in_func || !in_func((void *)((char *)address + insn->size)))
         {
             break;
@@ -153,33 +200,57 @@ static constexpr size_t func_aligned()
 #endif
 }
 
-static std::unordered_map<void *, std::string> signature_cache;
+static std::unordered_map<void *, Signature> signature_cache;
 void release_signature_cache()
 {
     signature_cache.clear();
 }
 
+#if 0
+#define OUTPUT_SIGNATURE(addr, s) fprintf(stderr, "---%p---\n%s\n\n\n", addr, s.c_str())
+#else
+#define OUTPUT_SIGNATURE(addr, s)
+#endif
 void *fix_func_address_by_signature(void *target, void *original, const in_function_t &in_func, uint32_t range, bool updated)
 {
     constexpr auto short_signature_len = 16;
-    auto original_s = create_signature(original, in_func);
-    //fprintf(stdout, "---%p---\n%s\n\n\n", original, original_s.c_str());
+    if (create_signature(target, nullptr, short_signature_len) == create_signature(original, in_func, short_signature_len))
     {
-        auto target_s = create_signature(target, nullptr);
-        //fprintf(stdout, "---%p---\n%s\n\n\n", target, target_s.c_str());
-        if (target_s == original_s)
-        {
-            return target;
-        }
+        return target;
     }
+    auto original_s = create_signature(original, in_func);
+    OUTPUT_SIGNATURE(original, original_s.to_string());
     // 基于以下假设，函数地址必然被对齐分配
     constexpr auto aligned = func_aligned();
     auto limit = range / aligned;
 
-    for (size_t i = 1; i < limit; i++)
+    size_t maybe_target_count = 16;
+    void *maybe_target_addr = nullptr;
+    auto is_target_fn = [&original_s, &maybe_target_count, &maybe_target_addr](Signature target_s, auto fix_target)
+    {
+        if (target_s == original_s)
+        {
+            return true;
+        }
+        if (target_s.size() < original_s.size())
+            return false;
+        auto count = 0;
+        for (size_t i = 0; i < original_s.size(); i++)
+        {
+            if (target_s[i] == original_s[i])
+                count++;
+        }
+        if (count > maybe_target_count)
+        {
+            maybe_target_count = count;
+            maybe_target_addr = fix_target;
+        }
+        return false;
+    };
+    for (size_t i = 0; i < limit; i++)
     {
         auto fix_target = (void *)((intptr_t)target + i * aligned);
-        std::string target_s;
+        Signature target_s;
         if (signature_cache.find(fix_target) != signature_cache.end())
         {
             target_s = signature_cache[fix_target];
@@ -189,19 +260,26 @@ void *fix_func_address_by_signature(void *target, void *original, const in_funct
             target_s = create_signature(fix_target, nullptr);
             signature_cache[fix_target] = target_s;
         }
-        if (target_s == original_s)
+        if (is_target_fn(target_s, fix_target))
         {
+            OUTPUT_SIGNATURE(fix_target, target_s.to_string());
             return fix_target;
         }
         if (updated)
         {
             fix_target = (void *)((intptr_t)target - i * aligned);
             target_s = create_signature(fix_target, nullptr);
-            if (target_s == original_s)
+            if (is_target_fn(target_s, fix_target))
             {
+                OUTPUT_SIGNATURE(fix_target, target_s.to_string());
                 return fix_target;
             }
         }
+    }
+    if (maybe_target_addr)
+    {
+        fprintf(stderr, "maybe target:%p\n", maybe_target_addr);
+        return maybe_target_addr;
     }
     return nullptr;
 }

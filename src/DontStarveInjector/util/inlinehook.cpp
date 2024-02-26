@@ -11,7 +11,7 @@
 
 #include "inlinehook.hpp"
 
-static std::unordered_map<uint8_t *, std::string> hooked;
+static std::unordered_map<void *, std::string> hooked;
 
 #define GUM_X86_JMP_MAX_DISTANCE (MAXINT32 - 16384)
 

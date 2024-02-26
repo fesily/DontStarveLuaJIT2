@@ -15,7 +15,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(Signatures, version, funcs);
 
 static std::string get_signatures_filename(bool isClient)
 {
-    return "signatures_"s + (isClient ? "client" : "server");
+    return "signatures_"s + (isClient ? "client" : "server") + ".json";
 }
 
 const char* SignatureJson::version_path = "../version.txt";

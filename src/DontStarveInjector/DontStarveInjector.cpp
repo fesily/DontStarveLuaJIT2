@@ -139,7 +139,8 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
 		auto offset = signatures.funcs.at(name);
 		auto target = (uint8_t *)GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
 		auto replacer = (uint8_t *)get_luajit_address(name);
-		if (replace_hook.contains(name)) {
+		if (replace_hook.contains(name))
+		{
 			spdlog::info("ReplaceLuaModule hook {} to {}", name, replace_hook[name]);
 			auto replacer1 = (uint8_t *)get_luajit_address(replace_hook[name]);
 			if (replacer1)
@@ -215,7 +216,8 @@ static auto get_lua51_exports()
 	return std::tuple(exports, h51);
 }
 
-static std::expected<std::tuple<ListExports_t, Signatures>, std::string> create_signature(uintptr_t targetLuaModuleBase)
+template <typename T>
+static std::expected<std::tuple<ListExports_t, Signatures>, std::string> create_signature(uintptr_t targetLuaModuleBase, T &&updated)
 {
 	spdlog::warn("try create all signatures");
 	auto [exports, h51] = get_lua51_exports();
@@ -230,6 +232,12 @@ static std::expected<std::tuple<ListExports_t, Signatures>, std::string> create_
 	{
 		unloadlib(h51);
 		return std::unexpected(errormsg);
+	}
+	signatures.version = SignatureJson::current_version();
+	updated(signatures);
+	for (auto &[name, offset] : signatures.funcs)
+	{
+		spdlog::info("create signature [{}]: {}", name, offset);
 	}
 	return std::make_tuple(std::move(exports), std::move(signatures));
 }
@@ -295,7 +303,8 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient)
 	auto signatures = json.read_from_signatures();
 	if (!signatures)
 	{
-		auto res = create_signature(luaModuleSignature.target_address);
+		auto res = create_signature(luaModuleSignature.target_address, [&json](auto &v)
+									{ json.update_signatures(v); });
 		if (!res)
 		{
 			showError(res.error());

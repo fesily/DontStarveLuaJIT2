@@ -1,13 +1,7 @@
-import os
 import json
+import util.GameVersion as util
 
-GameDir = os.getenv("GAME_DIR")
-current_game_version = 0
-try:
-    with open(f"{GameDir}/version.txt","r") as fp:
-        current_game_version = fp.readline().strip()
-except FileNotFoundError:
-    pass
+current_game_version = util.read_version()
 
 missfuncs = set()
 with open("src/missfunc.txt", "r") as f:
@@ -56,7 +50,7 @@ def generator(name):
             continue
         outputs[func[0]] = func[1] - base_addr
     
-    with open(f'Mod/bin64/windows/signatures_{name}', mode='w+') as f:
+    with open(f'Mod/bin64/windows/signatures_{name}.json', mode='w+') as f:
         f.write(json.dumps({'version': int(current_game_version), 'funcs':outputs}))
 
 generator("client")

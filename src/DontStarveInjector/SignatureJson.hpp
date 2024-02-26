@@ -1,6 +1,6 @@
 #pragma once
 #include <optional>
-#include "util/Signature.hpp"
+#include "DontStarveSignature.hpp"
 
 struct SignatureJson
 {
