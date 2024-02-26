@@ -141,7 +141,9 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
 		auto replacer = (uint8_t *)get_luajit_address(name);
 		if (replace_hook.contains(name)) {
 			spdlog::info("ReplaceLuaModule hook {} to {}", name, replace_hook[name]);
-			replacer = (uint8_t *)get_luajit_address(replace_hook[name]);
+			auto replacer1 = (uint8_t *)get_luajit_address(replace_hook[name]);
+			if (replacer1)
+				replacer = replacer1;
 		}
 		if (!Hook(target, replacer))
 		{
