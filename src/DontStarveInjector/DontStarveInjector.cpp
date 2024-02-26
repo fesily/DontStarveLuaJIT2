@@ -12,6 +12,7 @@
 #endif
 #include <string>
 #include <algorithm>
+#include <map>
 
 #include <lua.hpp>
 #if USE_LISTENER
@@ -125,6 +126,9 @@ static void voidFunc()
 {
 }
 
+static std::map<std::string, std::string> replace_hook = {
+	{"lua_getinfo", "lua_getinfo_game"}};
+
 static void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures, const ListExports_t &exports)
 {
 	hluajitModule = loadlib(luajitModuleName);
@@ -135,6 +139,10 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
 		auto offset = signatures.funcs.at(name);
 		auto target = (uint8_t *)GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
 		auto replacer = (uint8_t *)get_luajit_address(name);
+		if (replace_hook.contains(name)) {
+			spdlog::info("ReplaceLuaModule hook {} to {}", name, replace_hook[name]);
+			replacer = (uint8_t *)get_luajit_address(replace_hook[name]);
+		}
 		if (!Hook(target, replacer))
 		{
 			spdlog::error("replace {} failed", name);
