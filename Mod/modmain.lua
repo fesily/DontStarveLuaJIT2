@@ -1,8 +1,8 @@
 _G = GLOBAL
 
 if not _G.rawget(_G, "jit") then
-    modimport "installer"
-    _G.TheSim:Quit()
+    --modimport "installer"
+    --_G.TheSim:Quit()
     return
 end
 

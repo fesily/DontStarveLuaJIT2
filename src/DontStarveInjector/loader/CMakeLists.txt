@@ -3,17 +3,22 @@ find_package(ZLIB REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
+option(ENABLE_STEAM_SUPPORT "Enable Steam support" OFF)
+
 set (Winmm_SOURCES
 winmm.cpp
 winmm_main.cpp
-updater.cpp
 ${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
 ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
 ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
-steam.cpp
 PersistentString.cpp
-${PROJECT_SOURCE_DIR}/version.txt
 )
+if(ENABLE_STEAM_SUPPORT)
+    list(APPEND Winmm_SOURCES steam.cpp)
+    list(APPEND Winmm_SOURCES updater.cpp)
+    list(APPEND Winmm_SOURCES ${PROJECT_SOURCE_DIR}/version.txt)
+endif()
+
 add_library(Winmm SHARED ${Winmm_SOURCES})
 
 target_include_directories(Winmm PUBLIC ${DONTSTARVEINJECTOR_UTIL_DIR})
@@ -29,6 +34,8 @@ file(STRINGS "${PROJECT_SOURCE_DIR}/version.txt" MOD_VERSION LIMIT_COUNT 1)
 message(STATUS "MOD_VERSION: ${MOD_VERSION}")
 
 target_compile_definitions(Winmm PRIVATE MOD_VERSION="${MOD_VERSION}")
+if(ENABLE_STEAM_SUPPORT)
+    target_compile_definitions(Winmm PRIVATE ENABLE_STEAM_SUPPORT=1)
+endif()
 
 install(TARGETS Winmm RUNTIME DESTINATION .)
-

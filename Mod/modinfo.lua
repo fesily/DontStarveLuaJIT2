@@ -74,4 +74,4 @@ configuration_options = {
         default = true
     }
 }
-restart_required = true
+--restart_required = true

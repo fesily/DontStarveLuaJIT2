@@ -104,12 +104,13 @@ std::filesystem::path getKleiGameDoctmentDir()
     return getKleiDoctmentDir() / game_doctment_name;
 }
 
-
 std::filesystem::path getGameDir()
 {
     static std::filesystem::path p = getExePath().parent_path().parent_path();
     return p;
 }
+
+#ifdef ENABLE_STEAM_SUPPORT
 std::optional<std::filesystem::path> getGameUserDoctmentDir()
 {
     auto userid = getUserId();
@@ -132,6 +133,7 @@ std::optional<std::filesystem::path> getModindexPath()
         return dir.value() / "modindex";
     return std::nullopt;
 }
+#endif
 
 std::filesystem::path getLuajitMtxPath()
 {
@@ -141,6 +143,8 @@ bool isClientMod = []()
 {
     return !getExePath().filename().string().contains("server");
 }();
+
+#ifdef ENABLE_STEAM_SUPPORT
 
 void updater();
 void installer(bool unsetup);
@@ -254,6 +258,7 @@ static bool shouldloadmod()
     return true;
 }
 
+
 void removeBat()
 {
     const auto gameUserDoctmentDir = getGameUserDoctmentDir();
@@ -261,12 +266,18 @@ void removeBat()
         std::filesystem::remove(gameUserDoctmentDir.value() / "Cluster_65534.bat");
 }
 
+#endif
+
 void DontStarveInjectorStart()
 {
     std::initializer_list<std::shared_ptr<spdlog::sinks::sink>> sinks = {std::make_shared<spdlog::sinks::msvc_sink_st>(), std::make_shared<spdlog::sinks::stdout_color_sink_st>()};
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", sinks.begin(), sinks.end()));
-    removeBat();
     auto dir = getGameDir();
+// no workshop
+#ifdef ENABLE_STEAM_SUPPORT
+
+    removeBat();
+
     // auto updater
     if (isClientMod && !std::string_view(GetCommandLineA()).contains("-disable_check_luajit_mod"))
     {
@@ -282,6 +293,7 @@ void DontStarveInjectorStart()
     {
         std::atexit(updater);
     }
+#endif
     auto mod = LoadLibraryA("injector");
     if (!mod)
     {
