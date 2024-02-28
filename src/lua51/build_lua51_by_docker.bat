@@ -1,7 +1,7 @@
 @echo off
 
 REM Docker镜像的名称
-set image_name=my_image
+set image_name=build_ds_lua51
 
 REM 构建Docker镜像
 docker build -t %image_name% .

@@ -11,15 +11,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(GAME_NAME "Don't Starve Together")
 #set(GAME_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(GAME_DIR "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Don't Starve Together")
-file(REAL_PATH ${GAME_DIR} GAME_DIR)
-
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin64)
-else()
-    set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin)
+if(WIN32)
+    set(GAME_DIR "E:\\SteamLibrary\\steamapps\\common\\Don't Starve Together")
+else(UNIX AND NOT APPLE)
+    set(GAME_DIR "/home/ubuntu/.steam/steam/steamapps/common/Don't Starve Together")
 endif()
 
+file(REAL_PATH ${GAME_DIR} GAME_DIR)
+
 set(PYTHON_EXECUTABLE_NAME "python3")
+
 if(WIN32)
     set(PLATFORM_NAME "windows")
     set(PYTHON_EXECUTABLE_NAME "python")
@@ -29,8 +30,17 @@ else()
     message(FATAL_ERROR "Not supported platform")
 endif()
 
-set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin64)
-set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod/bin64/${PLATFORM_NAME}/)
+set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod)
+
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin64)
+    set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/bin64)
+else()
+    set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin)
+    set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/bin)
+endif()
+
+set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/${PLATFORM_NAME})
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h 
     COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/missfunc.py"
@@ -60,7 +70,7 @@ else()
 endif()
 
 set(LUA_INCLUDE_DIR ${lua51_root}/src)
-set(LUA_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/release/lua51.dll)
+set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/lua51.dll)
 set(LUA_CONFIG_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll)
 set(LUA_LIBRARIES lua51)
 
@@ -73,7 +83,9 @@ set(DONTSTARVEINJECTOR_UTIL_DIR ${DONTSTARVEINJECTOR_ROOT}/util)
 
 
 add_subdirectory("src/DontStarveInjector")
+if(msvc)
 add_subdirectory("tools/Checker")
+endif()
 add_subdirectory("tools/Creater")
 
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})

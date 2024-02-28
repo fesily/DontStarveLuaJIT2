@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
+#include <filesystem>
 
 #include "platform.hpp"
 #include "missfunc.h"
@@ -21,14 +22,14 @@
 #error "not defined LUA51_PATH"
 #endif
 
-#ifndef PROJECT_DIR
-#error "not defined PROJECT_DIR"
+#ifndef WORKER_DIR
+#error "not defined WORKER_DIR"
 #endif
 
-const char *game_path = GAMEDIR R"(\bin64\dontstarve_steam_x64.exe)";
-const char *game_server_path = GAMEDIR R"(\bin64\dontstarve_dedicated_server_nullrenderer_x64.exe)";
-const char* lua51_path = LUA51_PATH;
-const char *worker_dir = PROJECT_DIR "/Mod/bin64/windows";
+const char *game_path = GAMEDIR R"(/bin64/dontstarve_steam_x64)" EXECUTABLE_SUFFIX;
+const char *game_server_path = GAMEDIR R"(/bin64/dontstarve_dedicated_server_nullrenderer_x64)" EXECUTABLE_SUFFIX;
+const char *lua51_path = LUA51_PATH;
+const char *worker_dir = WORKER_DIR;
 
 bool loadModule(const char *path)
 {
@@ -42,16 +43,16 @@ bool loadModule(const char *path)
     return true;
 }
 
-int update(bool isClient)
+int update(bool isClient, const char *path)
 {
-    SignatureJson sj{ isClient };
+    SignatureJson sj{isClient};
     auto signatures_op = sj.read_from_signatures();
-    if (!signatures_op.has_value()) {
+    if (!signatures_op.has_value())
+    {
         fprintf(stderr, "can't read from json\n");
         return 1;
     }
-    auto& signatures = signatures_op.value();
-    auto path = isClient ? game_path : game_server_path;
+    auto &signatures = signatures_op.value();
     fprintf(stderr, "game_path:\t%s\n", path);
     if (!loadModule(path))
         return 1;
@@ -69,24 +70,34 @@ int update(bool isClient)
         fprintf(stderr, "%s\n", msg.c_str());
         return 1;
     }
-	signatures.version = SignatureJson::current_version();
+    signatures.version = SignatureJson::current_version();
     auto name = isClient ? "client" : "server";
     sj.update_signatures(signatures);
     return 0;
 }
 
-int main()
+bool pre_updater()
 {
     gum_init_embedded();
-    auto lua51_path1 = getenv("GAME_PATH");
-    if (lua51_path1)
-    {
-        game_path = lua51_path1;
-    }
-    fprintf(stderr, "lua51_path:\t%s\n", lua51_path);
-    if (!loadModule(lua51_path))
-        return 1;
     set_worker_directory(worker_dir);
     SignatureJson::version_path = GAMEDIR "/version.txt";
-    return update(true) + update(false);
+    return loadModule(lua51_path);
 }
+
+#ifdef _WIN32
+int main()
+{
+    if (pre_updater())
+        return update(true, game_path) + update(false, game_server_path);
+    return -1;
+}
+#else
+__attribute__(constructor) void init()
+{
+    auto path = std::path(gum_process_get_main_module()->path).string();
+    bool isClient = !path.contains("nullrenderer");
+    if (pre_updater())
+        _exit(update(isClient, path.c_str()));
+    _exit(-1);
+}
+#endif

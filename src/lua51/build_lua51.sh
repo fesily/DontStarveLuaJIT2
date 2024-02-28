@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Docker镜像的名称
-image_name="my_image"
+image_name="build_ds_lua51"
 
 # 构建Docker镜像
 docker build -t $image_name .

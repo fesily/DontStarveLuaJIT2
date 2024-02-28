@@ -12,8 +12,6 @@ std::string update_signatures(Signatures &signatures, uintptr_t targetLuaModuleB
 {
 	module_handler_t h51 = loadlib(lua51_name);
 	spdlog::warn("try fix all signatures");
-	auto main = gum_process_get_main_module();
-	auto hMain = (module_handler_t)gum_module_find_base_address(main->name);
 	auto &funcs = signatures.funcs;
 	// fix all signatures
 	for (size_t i = 0; i < exports.size(); i++)

@@ -17,7 +17,9 @@
             "hidden": false,
             "binaryDir": "${sourceDir}/build/linux",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_C_COMPILER": "/usr/bin/gcc-13",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++-13"
             },
             "inherits": "base",
             "environment": {
