@@ -22,8 +22,6 @@ endif()
 add_library(Winmm SHARED ${Winmm_SOURCES})
 
 target_include_directories(Winmm PUBLIC ${DONTSTARVEINJECTOR_UTIL_DIR})
-target_include_directories(Winmm PUBLIC ${STEAM_INCLUDE_DIR})
-target_link_libraries(Winmm PRIVATE ${STEAM_LIBRARIES})
 
 target_link_libraries(Winmm PRIVATE ZLIB::ZLIB)
 target_link_libraries(Winmm PRIVATE spdlog::spdlog)
@@ -36,6 +34,8 @@ message(STATUS "MOD_VERSION: ${MOD_VERSION}")
 target_compile_definitions(Winmm PRIVATE MOD_VERSION="${MOD_VERSION}")
 if(ENABLE_STEAM_SUPPORT)
     target_compile_definitions(Winmm PRIVATE ENABLE_STEAM_SUPPORT=1)
+    target_include_directories(Winmm PUBLIC ${STEAM_INCLUDE_DIR})
+    target_link_libraries(Winmm PRIVATE ${STEAM_LIBRARIES})
 endif()
 
 install(TARGETS Winmm RUNTIME DESTINATION .)
