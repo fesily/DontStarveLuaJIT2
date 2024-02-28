@@ -1,14 +1,14 @@
 {
-    "version": 3,
+    "version": 5,
     "configurePresets": [
         {
             "name": "base",
             "description": "Base Configuration",
             "hidden": true,
             "cacheVariables": {
-                "CMAKE_EXPORT_COMPILE_COMMANDS": "YES"
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
             },
-            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
             "generator": "Ninja"
         },
         {
@@ -22,9 +22,6 @@
                 "CMAKE_CXX_COMPILER": "/usr/bin/g++-13"
             },
             "inherits": "base",
-            "environment": {
-                "VCPKG_TARGET_TRIPLET": "x64-linux-static"
-            },
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
@@ -46,10 +43,7 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
             },
-            "inherits": "base",
-            "environment": {
-                "VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
-            }
+            "inherits": "base"
         },
         {
             "name": "windows-release",
