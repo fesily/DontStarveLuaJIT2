@@ -49,3 +49,10 @@ jobs:
         with:
           name: Mod
           path: ${{ github.workspace }}/Mod
+
+      - name: Publish release asserts
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+            files: |
+                ${{ github.workspace }}/Mod

@@ -1,19 +1,11 @@
-def increment_version(version_str):
-    major, minor, patch = version_str.split(".")
+import os
+import re
 
-    patch = int(patch) + 1
-
-    new_version_str = f"{major}.{minor}.{patch}"
-    return new_version_str
-
-
-with open("version.txt", "r+") as f:
-    current_version = f.readline()
-    new_version = increment_version(current_version)
-    f.seek(0)
-    f.write(new_version)
-    with open("mod/modinfo.lua", "br+") as modinfo:
-        info = modinfo.read()
-        info = info.replace(bytes(current_version, "utf8"), bytes(new_version, "utf8"))
-        modinfo.seek(0)
-        modinfo.write(info)
+MOD_VERSION = os.getenv("MOD_VERSION")
+assert MOD_VERSION is not None, "MOD_VERSION is not set"
+with open("mod/modinfo.lua", "r+", encoding="utf-8") as modinfo:
+    info = modinfo.read()
+    info = re.sub(r"version \= \"\d+\.\d+\.\d+\"\n", f"version = \"{MOD_VERSION}\"\n", info)
+    modinfo.seek(0)
+    modinfo.write(info)
+    modinfo.truncate()

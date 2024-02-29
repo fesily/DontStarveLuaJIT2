@@ -29,7 +29,7 @@ else()
     message(FATAL_ERROR "Not supported platform")
 endif()
 
-project(DontStarveLuaJIT VERSION 0.3.9)
+project(DontStarveLuaJIT VERSION 0.3.10)
 
 set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod)
 
@@ -98,9 +98,12 @@ add_subdirectory("tools/Creater")
 if (GAME_DIR)
     install(DIRECTORY ${CMAKE_INSTALL_PREFIX}/ DESTINATION ${GAME_INSTALL_PREFIX})
 endif()
+set(BUILD_CMD ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/update_version.py")
+execute_process(COMMAND ${CMAKE_COMMAND} -E env MOD_VERSION=${CMAKE_PROJECT_VERSION} ${BUILD_CMD} 
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
-
-add_custom_target(make_karta_luamodule 
+add_custom_target(make_karta_luamodule
     COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_karta.py"
     DEPENDS ${LUA_LIBRARIES_PATH}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
