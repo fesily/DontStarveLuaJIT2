@@ -28,6 +28,7 @@
 
 build/
 buildvs/
+builds/
 dist/
 .vs/
 

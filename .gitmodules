@@ -2,3 +2,6 @@
 	path = luajit
 	url = https://github.com/fesily/luajit.git
 	branch = dontstarve
+[submodule "vcpkg"]
+	path = vcpkg
+	url = https://github.com/microsoft/vcpkg

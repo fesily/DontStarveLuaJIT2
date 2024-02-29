@@ -44,13 +44,12 @@ And you can see message started with "LuaJIT".
 ## How to build
 
 ### Dept
-install `CMake`, `Ninja`, `vcpkg`
-1. Need `VCPKG_ROOT` env
-2. copy `lua51.dll` to `src/x64/release/lua51.dll`
-3. download `frida-gum.lib` from [github/frida](https://github.com/frida), name like `frida-gum-devkit-16.2.1-windows-x86_64.exe`
-4. copy `frida-gum.lib` to `src/frida-gum/frida-gum.lib`
-5. in `CMakeLists.txt` set var `GAME_DIR` = your game dir
-6. build by cmake
+install `CMake`, `Ninja`
+- copy `lua51.dll` to `src/x64/release/lua51.dll`
+- download `frida-gum.lib` from [github/frida](https://github.com/frida), name like `frida-gum-devkit-16.2.1-windows-x86_64.exe`
+- copy `frida-gum.lib` to `src/frida-gum/frida-gum.lib`
+- in `CMakeLists.txt` set var `GAME_DIR` = your game dir
+- build by cmake
 
 ### lua51.dll
 Need vs2008 compiler the lua51.dll, also you can use which one in the mod

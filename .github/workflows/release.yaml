@@ -1,0 +1,54 @@
+name: build
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "*"
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  compile:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04,   target: linux,   platform: linux-x64,   container: 'ubuntu:23.04' }
+          - { os: windows-latest, target: windows, platform: win32-x64    }
+    runs-on: ${{ matrix.os }}
+    container:
+      image: ${{ matrix.container }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+            submodules: true
+    
+      - uses: lukka/get-cmake@latest
+
+      - name: Restore from cache and setup vcpkg executable and data files.
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonGlob: 'vcpkg.json'
+        
+      - name: Run CMake+vcpkg+Ninja+CTest to build packages and generate/build/test the code.
+        uses: lukka/run-cmake@v10
+        with:
+          configurePreset: 'ninja-multi-vcpkg'
+          buildPreset: 'ninja-vcpkg-release'
+      
+      - name: CMake install
+        run: |
+            cmake --build ./builds/ninja-multi-vcpkg --config Release --target install
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mod
+          path: ${{ github.workspace }}/Mod

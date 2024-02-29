@@ -2,82 +2,34 @@
     "version": 5,
     "configurePresets": [
         {
-            "name": "base",
-            "description": "Base Configuration",
-            "hidden": true,
-            "cacheVariables": {
-                "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
-                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-            },
-            "generator": "Ninja"
-        },
-        {
-            "name": "linux",
-            "description": "Linux GCC",
-            "hidden": false,
-            "binaryDir": "${sourceDir}/build/linux",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_C_COMPILER": "/usr/bin/gcc-13",
-                "CMAKE_CXX_COMPILER": "/usr/bin/g++-13"
-            },
-            "inherits": "base",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Linux"
-            }
-        },
-        {
-            "name": "linux-release",
-            "inherits": "linux",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
-            }
-        },
-        {
-            "name": "windows",
-            "description": "Windows MSVC",
-            "hidden": false,
-            "binaryDir": "${sourceDir}/build/windows",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
-            },
-            "inherits": "base"
-        },
-        {
-            "name": "windows-release",
-            "inherits": "windows",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
-            }
+            "name": "ninja-multi-vcpkg",
+            "displayName": "Ninja Multi-Config",
+            "description": "Configure with vcpkg toolchain and generate Ninja project files for all configurations",
+            "binaryDir": "${sourceDir}/builds/${presetName}",
+            "generator": "Ninja Multi-Config",
+            "toolchainFile": "${workspaceFolder}/vcpkg/scripts/buildsystems/vcpkg.cmake"
         }
     ],
     "buildPresets": [
         {
-            "name": "default-build-linux",
-            "displayName": "Default",
-            "configurePreset": "linux-release",
-            "description": "Vanilla build"
-          },
-          {
-            "name": "default-build-windows",
-            "displayName": "Default",
-            "configurePreset": "windows-release",
-            "description": "Vanilla build"
-          },
-          {
-            "name": "verbose-build-linux",
-            "displayName": "Verbose Build",
-            "description": "Passes -v to Ninja",
-            "configurePreset": "linux",
-            "nativeToolOptions": [ "-v" ]
-          },
-          {
-            "name": "verbose-build-windows",
-            "displayName": "Verbose Build",
-            "configurePreset": "windows",
-            "inherits": "verbose-build-linux"
-          }
+            "name": "ninja-vcpkg-debug",
+            "configurePreset": "ninja-multi-vcpkg",
+            "displayName": "Build (Debug)",
+            "description": "Build with Ninja/vcpkg (Debug)",
+            "configuration": "Debug"
+        },
+        {
+            "name": "ninja-vcpkg-release",
+            "configurePreset": "ninja-multi-vcpkg",
+            "displayName": "Build (Release)",
+            "description": "Build with Ninja/vcpkg (Release)",
+            "configuration": "Release"
+        },
+        {
+            "name": "ninja-vcpkg",
+            "configurePreset": "ninja-multi-vcpkg",
+            "displayName": "Build",
+            "description": "Build with Ninja/vcpkg"
+        }
     ]
 }
