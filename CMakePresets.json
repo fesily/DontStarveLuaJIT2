@@ -1,5 +1,5 @@
 {
-    "version": 5,
+    "version": 8,
     "configurePresets": [
         {
             "name": "ninja-multi-vcpkg",
@@ -7,7 +7,7 @@
             "description": "Configure with vcpkg toolchain and generate Ninja project files for all configurations",
             "binaryDir": "${sourceDir}/builds/${presetName}",
             "generator": "Ninja Multi-Config",
-            "toolchainFile": "${workspaceFolder}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+            "toolchainFile": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake"
         }
     ],
     "buildPresets": [
