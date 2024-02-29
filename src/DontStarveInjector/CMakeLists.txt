@@ -62,3 +62,4 @@ install(TARGETS Injector RUNTIME DESTINATION .)
 if(WIN32)
     add_subdirectory(loader)
 endif()
+ 
