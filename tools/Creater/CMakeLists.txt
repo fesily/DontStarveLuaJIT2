@@ -12,8 +12,19 @@ find_package(nlohmann_json CONFIG REQUIRED)
 
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_library(signature_updater SHARED ${SOURCES})
+    set(GAME_EXECUTABLE_NAME "dontstarve_steam_x64")
+    set(GAME_SERVER_EXECUTABLE_NAME "dontstarve_dedicated_server_nullrenderer_x64")
+    set(INJECT_LOADER ${PROJECT_SOURCE_DIR}/tools/inject_loader.py)
+    add_custom_target(update_signatures
+        COMMAND ${PYTHON_EXECUTABLE_NAME} ${INJECT_LOADER} --game_target=${GAME_EXECUTABLE_NAME} --inject=$<TARGET_FILE:signature_updater>
+        COMMAND ${PYTHON_EXECUTABLE_NAME} ${INJECT_LOADER} --game_target=${GAME_SERVER_EXECUTABLE_NAME} --inject=$<TARGET_FILE:signature_updater>
+        WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
+    )
 else()
     add_executable(signature_updater ${SOURCES})
+    add_custom_target(update_signatures
+        COMMAND signature_updater
+    )
 endif()
 
 target_include_directories(signature_updater PUBLIC ${PROJECT_SOURCE_DIR}/src)
