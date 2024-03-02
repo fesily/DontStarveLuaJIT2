@@ -7,8 +7,8 @@
 # Your platform. See PLATS for possible values.
 PLAT= none
 
-CC= gcc -fPIC
-CFLAGS= -O2 -Wall $(MYCFLAGS) -DDST
+CC= gcc
+CFLAGS= -O2 -Wall $(MYCFLAGS) -DDST -fPIC
 AR= ar rcu
 RANLIB= ranlib
 RM= rm -f
@@ -36,8 +36,8 @@ LUA_O=	lua.o
 LUAC_T=	luac
 LUAC_O=	luac.o print.o
 
-ALL_O= $(CORE_O) $(LIB_O) $(LUA_O) $(LUAC_O)
-ALL_T= $(LUA_A) $(LUA_SO)
+ALL_O= $(CORE_O) $(LIB_O)
+ALL_T= $(LUA_SO)
 ALL_A= $(LUA_A)
 
 default: $(PLAT)
