@@ -1,8 +1,13 @@
 _G = GLOBAL
 
 if not _G.rawget(_G, "jit") then
-    --modimport "installer"
-    --_G.TheSim:Quit()
+    local fp = _G.io.open("luajit_config.json", "w");
+    if fp then
+        local config = {
+            modmain_path = _G.debug.getinfo(1).source
+        }
+        fp:write(_G.json.encode(config))
+    end
     return
 end
 
@@ -19,8 +24,8 @@ if GetModConfigData("EnabledJIT") then
 
     if GetModConfigData("JitOpt") then
         require("jit.opt").start("minstitch=2", "maxtrace=4000",
-        "maxrecord=8000", "sizemcode=64",
-        "maxmcode=4000", "maxirconst=1000")
+            "maxrecord=8000", "sizemcode=64",
+            "maxmcode=4000", "maxirconst=1000")
     end
 
     local enbaleBlackList = GetModConfigData("ModBlackList")

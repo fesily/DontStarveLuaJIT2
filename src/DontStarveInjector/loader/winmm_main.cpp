@@ -17,6 +17,10 @@
 #include "PersistentString.hpp"
 #include "steam.hpp"
 
+extern "C" {
+#include <lua.hpp>
+}
+
 using namespace std::literals;
 void printenv()
 {
@@ -144,35 +148,10 @@ bool isClientMod = []()
     return !getExePath().filename().string().contains("server");
 }();
 
-#ifdef ENABLE_STEAM_SUPPORT
 
 void updater();
 void installer(bool unsetup);
-auto enabled_key = "enabled="sv;
-auto enabled_key1 = "[\"enabled\"]="sv;
-static std::optional<bool> _mod_enabled(std::string_view key, size_t pos, std::string_view view, std::tuple<std::string, size_t> &out)
-{
-    size_t enabled_pos = pos;
-    for (size_t i = 0; i < 3; i++)
-    {
-        enabled_pos = view.find(key, enabled_pos + 1);
-        // skip tem_enabled=
-        if (enabled_pos == std::string::npos)
-            return std::nullopt;
-        auto c = view[enabled_pos - 1];
-        if (c == ',' || c == '{')
-            break;
-    }
-    std::string modid_str = modid_name;
-    auto next_mod_pos = view.find("workshop-", pos + modid_str.length());
-    if (next_mod_pos != std::string::npos && enabled_pos > next_mod_pos)
-    {
-        // invaild enabled
-        return std::nullopt;
-    }
-    std::get<1>(out) = enabled_pos;
-    return view.substr(enabled_pos + key.size()).starts_with("true");
-}
+#ifdef ENABLE_AUTOINSTALLER
 
 std::optional<bool> _mod_enabled(std::tuple<std::string, size_t> &out)
 {
@@ -183,19 +162,23 @@ std::optional<bool> _mod_enabled(std::tuple<std::string, size_t> &out)
     if (!modindex.has_value())
         return std::nullopt;
     std::string_view view = modindex.value();
-    std::string modid_str = modid_name;
-    auto pos = view.find(modid_str);
-    if (pos == std::string::npos)
-        return std::nullopt;
-    auto res = _mod_enabled(enabled_key, pos, view, out);
-    if (!res)
-    {
-        res = _mod_enabled(enabled_key1, pos, view, out);
-    }
-    if (res)
-    {
-        std::get<0>(out) = std::string(view);
-    }
+    auto L = luaL_newstate();
+    luaL_openlibs(L);
+    luaL_dostring(L, view.data());
+    lua_setglobal(L, "mod");
+    luaL_dostring(L, R"(
+        if not mod then
+            return false
+        
+        for k,info in pair(mod.known_mods) do
+            if k:find('luajit',1, true) then
+                return info.enabled
+            end
+        end
+        return false;
+    )");
+    auto res = lua_toboolean(L, -1);
+    lua_close(L);
     return res;
 }
 
@@ -206,21 +189,13 @@ bool mod_enabled()
     return opt_enabled.value_or(true);
 }
 
-void enable_mod(bool enabled)
+void removeBat()
 {
-    std::tuple<std::string, size_t> out;
-    auto opt_enabled = _mod_enabled(out);
-    if (!opt_enabled.has_value())
-        return;
-    auto orignal_enabled = opt_enabled.value();
-    if (orignal_enabled == enabled)
-        return;
-    auto &[modindex, enabled_pos] = out;
-    auto new_modindex = modindex.replace(enabled_pos + enabled_key.length(), (orignal_enabled ? "true"sv : "false"sv).length(), enabled ? "true" : "false");
-    auto modindexPath = getModindexPath();
-    if (modindexPath)
-        SetPersistentString(modindexPath->string(), new_modindex, false);
+    const auto gameUserDoctmentDir = getGameUserDoctmentDir();
+    if (gameUserDoctmentDir)
+        std::filesystem::remove(gameUserDoctmentDir.value() / "Cluster_65534.bat");
 }
+#endif
 
 static bool shouldloadmod()
 {
@@ -230,6 +205,7 @@ static bool shouldloadmod()
         spdlog::info("find luajit.mutex");
         return false;
     }
+#ifdef ENABLE_AUTOINSTALLER
     auto clientSaveDir = GetClientSaveDir();
     if (!clientSaveDir)
         return true;
@@ -241,17 +217,13 @@ static bool shouldloadmod()
         spdlog::info("boot_modindex is loading");
         return false;
     }
-    if (isModNeedUpdated())
-    {
-        spdlog::info("find new mod version");
-        return false;
-    }
     // check enable luajit
     if (!mod_enabled())
     {
         spdlog::info("luajit mod not enabled");
         return false;
     }
+#endif
     auto fp = fopen(mutex_file.string().c_str(), "w");
     if (fp)
         fclose(fp);
@@ -259,14 +231,6 @@ static bool shouldloadmod()
 }
 
 
-void removeBat()
-{
-    const auto gameUserDoctmentDir = getGameUserDoctmentDir();
-    if (gameUserDoctmentDir)
-        std::filesystem::remove(gameUserDoctmentDir.value() / "Cluster_65534.bat");
-}
-
-#endif
 
 void DontStarveInjectorStart()
 {
@@ -274,9 +238,9 @@ void DontStarveInjectorStart()
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", sinks.begin(), sinks.end()));
     auto dir = getGameDir();
 // no workshop
-#ifdef ENABLE_STEAM_SUPPORT
-
+#ifdef ENABLE_AUTOINSTALLER
     removeBat();
+#endif
 
     // auto updater
     if (isClientMod && !std::string_view(GetCommandLineA()).contains("-disable_check_luajit_mod"))
@@ -285,7 +249,6 @@ void DontStarveInjectorStart()
         if (!shouldloadmod())
         {
             std::filesystem::remove(getLuajitMtxPath());
-            enable_mod(false);
             return;
         }
     }
@@ -293,7 +256,6 @@ void DontStarveInjectorStart()
     {
         std::atexit(updater);
     }
-#endif
     auto mod = LoadLibraryA("injector");
     if (!mod)
     {

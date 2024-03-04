@@ -6,15 +6,42 @@
 #include <charconv>
 #include <Windows.h>
 #include <spdlog/spdlog.h>
-#ifndef MOD_VERSION
-#error "not define MOD_VERSION"
-#endif
+#include <nlohmann/json.hpp>
+#include <fstream>
+#include <string>
+#include "platform.hpp"
 #include "steam.hpp"
 #include "PersistentString.hpp"
 
 using namespace std::literals;
-
 std::filesystem::path getGameDir();
+
+struct luajit_config
+{
+    std::string modmain_path;
+};
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(luajit_config, modmain_path);
+
+static std::optional<luajit_config> read_from_file()
+{
+    auto path = getGameDir() / "data" / "luajit_config.json";
+    std::ifstream sf(path.string().c_str());
+    if (!sf.is_open())
+        return std::nullopt;
+    nlohmann::json j;
+    sf >> j;
+    return j.get<luajit_config>();
+}
+
+static std::optional<std::filesystem::path> getModDir()
+{
+    static std::optional<luajit_config> config = read_from_file();
+    if (config)
+        return std::filesystem::path(config->modmain_path).parent_path();
+    return std::nullopt;
+}
+
 static std::optional<std::filesystem::path> getModinfoLuaPath()
 {
     auto dir = getModDir();
@@ -30,84 +57,81 @@ static bool mod_has_removed()
     return false;
 }
 
-static uint32_t toversion(const std::string_view &view)
-{
-    size_t offset = 0;
-    auto npos = view.find('.', offset);
-    if (npos == view.npos)
-        return 0;
-    auto m = view.substr(offset, npos - offset);
-    offset = npos + 1;
-    npos = view.find('.', offset);
-    if (npos == view.npos)
-        return 0;
-    auto s = view.substr(offset, npos - offset);
-    auto p = view.substr(npos + 1);
-    union alignas(alignof(uint32_t))
-    {
-        struct
-        {
-
-            uint8_t m;
-            uint8_t s;
-            uint8_t s1;
-            uint8_t p;
-        };
-        uint32_t v;
-    } version;
-
-    std::from_chars(m.data(), m.data() + m.size(), version.m);
-    std::from_chars(s.data(), s.data() + s.size(), *(uint16_t *)&version.s);
-    std::from_chars(p.data(), p.data() + p.size(), version.p);
-    return version.v;
-}
-
-static bool need_updater()
-{
-    auto modinfoLuaPath = getModinfoLuaPath();
-    if (!modinfoLuaPath)
-        return false;
-    std::ifstream ss(modinfoLuaPath.value());
-    std::string line;
-    while (std::getline(ss, line))
-    {
-        constexpr auto prefix = "version = \""sv;
-        if (line.starts_with(prefix))
-        {
-            auto version = line.substr(prefix.size(), line.find_last_of('"') - prefix.size());
-            if (toversion(version) <= toversion(MOD_VERSION))
-                return false;
-            spdlog::info("need update, mod version [{}] is not " MOD_VERSION, version);
-            return true;
-        }
-    }
-    spdlog::info("need update, no mod version");
-    return true;
-}
-
 auto hashfile(std::filesystem::path path)
 {
-    std::string filecontext;
+    std::string hash;
     std::ifstream ss(path);
     while (!ss.eof())
     {
-        char buf[4096];
-        ss.read(buf, 4096);
-        auto read_bytes = ss.gcount();
-        filecontext.append(buf, read_bytes);
+        std::string buf;
+        buf.resize(512);
+        ss.read(buf.data(), 512);
+        size_t read_bytes = ss.gcount();
+        hash += std::hash<std::string_view>{}({buf.data(), read_bytes});
     }
-    return std::hash<std::string>{}(filecontext);
+    return std::hash<std::string>{}(hash);
+}
+
+// md5 整个文件夹内的所有文件
+static std::string md5_dir(std::filesystem::path dir)
+{
+    std::string result;
+    for (auto &p : std::filesystem::recursive_directory_iterator(dir))
+    {
+        if (p.is_regular_file())
+        {
+            result += std::to_string(hashfile(p));
+        }
+    }
+    return std::to_string(std::hash<std::string>{}(result));
+}
+
+static auto need_updater()
+{
+    auto modDir = getModDir();
+    if (!modDir)
+        return std::tuple{false, false};
+
+    auto binDir = modDir.value() / "bin64" /
+#ifdef _WIN32
+                  "windows"
+#else
+                  "linux"
+#endif
+        ;
+    bool needRestart = false;
+    bool needUpdate = false;
+    auto gameBinDir = getExePath().parent_path();
+    for (auto &p : std::filesystem::recursive_directory_iterator(binDir))
+    {
+        if (p.is_regular_file())
+        {
+            auto filename = p.path().filename().string();
+
+            if (filename.ends_with(".dll") || filename.ends_with(".so"))
+            {
+                auto gamePath = gameBinDir / filename;
+                if (!std::filesystem::exists(gamePath) || hashfile(gamePath) != hashfile(p))
+                {
+                    needUpdate = true;
+#ifdef _WIN32
+                    if (filename == "Winmm.dll")
+                    {
+                        needRestart = true;
+                    }
+#endif
+                }
+            }
+        }
+    }
+    return std::tuple{needUpdate, needRestart};
 }
 
 void updater();
 std::filesystem::path getLuajitMtxPath();
-void enable_mod(bool enabled);
 
 static auto unsetup_pre(std::filesystem::path game_dir)
 {
-    // disabale luajit mod
-    enable_mod(false);
-
     // unsetup
     SetEnvironmentVariableW(L"GAME_FILE", (game_dir / "Winmm.dll").c_str());
 
@@ -135,7 +159,7 @@ static std::optional<const char *> setup_pre(std::filesystem::path game_dir)
     return "xcopy $Env:BIN_DIR $Env:GAME_DIR /C /Y";
 }
 
-static void installer(bool setup)
+static void installer(bool setup, bool restart)
 {
     STARTUPINFO si;
     ZeroMemory(&si, sizeof(si));
@@ -163,14 +187,22 @@ static void installer(bool setup)
 #if !NDEBUG
                            " -NoExit"
 #endif
-                           " -Command $Host.UI.RawUI.WindowTitle='LUAJIT_UPDATER';Wait-Process {}; {};start steam://rungameid/322330;",
+                           " -Command $Host.UI.RawUI.WindowTitle='LUAJIT_UPDATER';Wait-Process {}; {};"
+#ifdef ENABLE_STEAM_SUPPORT
+                           "start steam://rungameid/322330;"
+#endif
+                           ,
                            GetCurrentProcessId(), update_cmd);
+#ifndef ENABLE_STEAM_SUPPORT
+    cmd += "start " + getExePath().string();
+#endif
     spdlog::info("run shell:{}", cmd);
     if (CreateProcessA(NULL, cmd.data(), NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
     {
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
-        std::exit(0);
+        if (!restart)
+            std::exit(0);
     }
 }
 
@@ -179,10 +211,11 @@ void updater()
     if (mod_has_removed())
     {
         spdlog::info("mod removed, unsetup it!");
-        installer(false);
+        installer(false, true);
         return;
     }
-    if (!need_updater())
+    auto [needUpdate, needRestart] = need_updater();
+    if (!needUpdate)
         return;
-    installer(true);
+    installer(true, needRestart);
 }
