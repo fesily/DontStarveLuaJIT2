@@ -16,8 +16,8 @@ if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     set(GAME_SERVER_EXECUTABLE_NAME "dontstarve_dedicated_server_nullrenderer_x64")
     set(INJECT_LOADER ${PROJECT_SOURCE_DIR}/tools/inject_loader.py)
     add_custom_target(update_signatures
-        COMMAND ${PYTHON_EXECUTABLE_NAME} ${INJECT_LOADER} --game_target=${GAME_EXECUTABLE_NAME} --inject=$<TARGET_FILE:signature_updater>
-        COMMAND ${PYTHON_EXECUTABLE_NAME} ${INJECT_LOADER} --game_target=${GAME_SERVER_EXECUTABLE_NAME} --inject=$<TARGET_FILE:signature_updater>
+        COMMAND ${PYTHON_EXECUTABLE_NAME} ${INJECT_LOADER} --game_target ${GAME_EXECUTABLE_NAME} --inject "$<TARGET_FILE:signature_updater>"
+        COMMAND ${PYTHON_EXECUTABLE_NAME} ${INJECT_LOADER} --game_target ${GAME_SERVER_EXECUTABLE_NAME} --inject "$<TARGET_FILE:signature_updater>"
         WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
     )
 else()

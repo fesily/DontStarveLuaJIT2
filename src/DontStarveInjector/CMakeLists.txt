@@ -10,8 +10,7 @@ gameio.cpp
 SignatureJson.cpp
 ${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
 ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
-${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
-${DONTSTARVEINJECTOR_UTIL_DIR}/signature.cpp
+${DONTSTARVEINJECTOR_UTIL_DIR}/Signature.cpp
 ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
 )
 

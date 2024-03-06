@@ -79,7 +79,7 @@ struct memory_file final : public file_interface
             }
             catch (...)
             {
-                ss.setstate(std::ios_base::badbit, true);
+                ss.setstate(std::ios_base::badbit);
             }
         }
 
@@ -94,7 +94,7 @@ struct memory_file final : public file_interface
     }
     int fseeko(off_t _Offset, int _Origin) override
     {
-        ss.seekg(_Offset, _Origin);
+        ss.seekg(_Offset, (std::ios_base::seekdir)_Origin);
         return ss ? 0 : -1;
     }
     off_t ftello() override

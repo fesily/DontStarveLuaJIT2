@@ -20,8 +20,8 @@ static bool get_mod_folder(ISteamUGC *ugc, PublishedFileId_t id, std::filesystem
     auto state = ugc->GetItemState(id);
     if (state & k_EItemStateInstalled)
     {
-        uint64_t punSizeOnDisk;
-        uint32_t punTimeStamp;
+        uint64 punSizeOnDisk;
+        uint32 punTimeStamp;
         char path[260];
         if (ugc->GetItemInstallInfo(id, &punSizeOnDisk, path, 255, &punTimeStamp))
         {
@@ -286,8 +286,13 @@ void init_luajit_io(module_handler_t hluajitModule)
     INIT_LUAJIT_IO(lj_fopen);
     INIT_LUAJIT_IO(lj_fread);
     INIT_LUAJIT_IO(lj_fscanf);
+#ifdef _WIN32
     INIT_LUAJIT_IO(lj_fseeki64);
     INIT_LUAJIT_IO(lj_ftelli64);
+#else
+    INIT_LUAJIT_IO(lj_fseeko)
+    INIT_LUAJIT_IO(lj_ftello)
+#endif
     INIT_LUAJIT_IO(lj_fwrite);
     INIT_LUAJIT_IO(lj_clearerr);
     INIT_LUAJIT_IO(lj_need_transform_path);

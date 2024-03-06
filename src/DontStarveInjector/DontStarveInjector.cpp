@@ -13,6 +13,8 @@
 #include <string>
 #include <algorithm>
 #include <map>
+#include <cstdint>
+#include <list>
 
 #include <lua.hpp>
 #if USE_LISTENER
@@ -21,13 +23,11 @@
 
 #include "config.hpp"
 #include "util/inlinehook.hpp"
-#include "util/module.hpp"
 #include "LuaModule.hpp"
 #include "DontStarveSignature.hpp"
 #include "SignatureJson.hpp"
 #include "util/platform.hpp"
 
-#include "../missfunc.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -62,7 +62,7 @@ void *GetLuaJitAddress(const char *name)
 {
 	char buf[64];
 	snprintf(buf, 64, "fake_%s", name);
-	return lua_fake_apis[name];
+		return lua_fake_apis[name];
 }
 #else
 #define GetLuaJitAddress(name) loadlibproc(hluajitModule, name)
@@ -188,94 +188,6 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
 #endif
 }
 
-static gboolean ListLuaFuncCb(const GumExportDetails *details,
-							  void *user_data)
-{
-	if (missfuncs.find(details->name) != missfuncs.end())
-	{
-		return true;
-	}
-#if USE_GAME_IO
-	if (details->name == "luaL_openlibs"sv || details->name == "luaopen_io"sv)
-	{
-		return true;
-	}
-#endif
-	auto &exports = *(ListExports_t *)user_data;
-	exports.emplace_back(details->name, (GumAddress)details->address);
-	return true;
-}
-
-static auto get_lua51_exports()
-{
-	auto h51 = loadlib(lua51_name);
-	ListExports_t exports;
-	gum_module_enumerate_exports(lua51_name, ListLuaFuncCb, &exports);
-	std::sort(exports.begin(), exports.end(), [](auto &l, auto &r)
-			  { return l.second > r.second; });
-	return std::tuple(exports, h51);
-}
-
-template <typename T>
-static std::expected<std::tuple<ListExports_t, Signatures>, std::string> create_signature(uintptr_t targetLuaModuleBase, T &&updated)
-{
-	spdlog::warn("try create all signatures");
-	auto [exports, h51] = get_lua51_exports();
-	Signatures signatures;
-	for (auto &[name, address] : exports)
-	{
-		signatures.funcs[name] = 0;
-	}
-	constexpr auto lua_module_range = 30720;
-	auto errormsg = update_signatures(signatures, targetLuaModuleBase, exports, lua_module_range, false);
-	if (!errormsg.empty())
-	{
-		unloadlib(h51);
-		return std::unexpected(errormsg);
-	}
-	signatures.version = SignatureJson::current_version();
-	updated(signatures);
-	for (auto &[name, offset] : signatures.funcs)
-	{
-		spdlog::info("create signature [{}]: {}", name, offset);
-	}
-	return std::make_tuple(std::move(exports), std::move(signatures));
-}
-
-template <typename T>
-static std::expected<ListExports_t, std::string> get_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, T &&updated)
-{
-	auto &funcs = signatures.funcs;
-	std::string errormsg;
-
-	auto [exports, h51] = get_lua51_exports();
-	for (auto &[name, address] : exports)
-	{
-		if (!funcs.contains(name))
-		{
-			errormsg += name + ";";
-		}
-	}
-	if (!errormsg.empty())
-	{
-		unloadlib(h51);
-		return std::unexpected(errormsg);
-	}
-	if (SignatureJson::current_version() != signatures.version)
-	{
-		errormsg = update_signatures(signatures, targetLuaModuleBase, exports);
-		if (!errormsg.empty())
-		{
-			unloadlib(h51);
-			return std::unexpected(errormsg);
-		}
-		signatures.version = SignatureJson::current_version();
-		updated(signatures);
-	}
-	unloadlib(h51);
-	return exports;
-}
-
 #pragma endregion Attach
 #ifdef _WIN32
 #define DONTSTARVEINJECTOR_API __declspec(dllexport)
@@ -298,34 +210,13 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient)
 		spdlog::error("can't find luamodule base address");
 		return;
 	}
-	SignatureJson json(isClient);
-	ListExports_t exports;
-	auto signatures = json.read_from_signatures();
-	if (!signatures)
-	{
-		auto res = create_signature(luaModuleSignature.target_address, [&json](auto &v)
-									{ json.update_signatures(v); });
-		if (!res)
-		{
-			showError(res.error());
-			return;
-		}
-		exports = std::get<0>(res.value());
-		signatures = std::get<1>(res.value());
+	auto res = SignatureUpdater::create(isClient, luaModuleSignature.target_address);
+	if (!res){
+		showError(res.error());
+		return;
 	}
-	else
-	{
-		auto res = get_signatures(signatures.value(), luaModuleSignature.target_address, [&json](auto &v)
-								  { json.update_signatures(v); });
-		if (!res)
-		{
-			showError(res.error());
-			return;
-		}
-		exports = res.value();
-	}
-
-	ReplaceLuaModule(mainPath, signatures.value(), exports);
+	auto& val = res.value();
+	ReplaceLuaModule(mainPath, val.signatures, val.exports);
 #if 0
 	RedirectOpenGLEntries();
 #endif

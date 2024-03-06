@@ -4,10 +4,37 @@
 #include <regex>
 #include <array>
 #include <frida-gum.h>
+#include <optional>
 
 #include "platform.hpp"
 #include <charconv>
 #include "Signature.hpp"
+
+static auto getCtx()
+{
+    struct Ctx
+    {
+        csh hcs;
+        ~Ctx()
+        {
+            if (hcs)
+                cs_close(&hcs);
+        }
+    };
+    static auto ctx = []()->std::optional<Ctx>
+    {
+        csh hcs;
+        cs_arch_register_x86();
+        auto ec = cs_open(CS_ARCH_X86, CS_MODE_64, &hcs);
+        if (ec == CS_ERR_OK)
+        {
+            cs_option(hcs, CS_OPT_DETAIL, CS_OPT_ON);
+            return std::optional{Ctx{hcs}};
+        }
+        return std::nullopt;
+    }();
+    return ctx;
+}
 
 constexpr auto page = GUM_PAGE_EXECUTE;
 
@@ -34,10 +61,6 @@ uintptr_t MemorySignature::scan(const char *m)
     gum_match_pattern_unref(match_pattern);
     fprintf(stdout, "Signature %s: %p\n", pattern, (void *)target_address);
     return target_address;
-}
-static bool is_data(void *ptr)
-{
-    return !memory_is_execute(ptr);
 }
 
 std::string Signature::to_string()
@@ -69,23 +92,130 @@ bool Signature::operator==(const Signature &other) const
     return true;
 }
 
+static std::string read_data_string(const char *data)
+{
+    constexpr auto data_limit = 256;
+    if (!gum_memory_is_readable(data - 1, 256 + 1))
+        return {};
+    if (data[-1] != 0)
+        return {};
+    for (size_t i = 0; i < data_limit; i++)
+    {
+        if (!std::isgraph(data[i]))
+            return {};
+        if (data[i] == 0)
+        {
+            return std::string(data, data + i);
+        }
+    }
+    return {};
+}
+
+static std::string conver_data_ptr(const char *data)
+{
+    if (!gum_memory_is_readable(data, sizeof(void *)))
+    {
+        return "(unknown)";
+    }
+    if (!memory_is_execute((void *)data))
+        return "(data)" + read_data_string(data);
+    else
+    {
+        auto str = read_data_string(data);
+        if (str.empty())
+            return "code";
+        return str;
+    }
+}
+static auto regx = std::regex(R"(\[rip \+ 0x([0-9a-z]+)\])");
+static auto regx_match = std::regex(R"(.+\[rip \+ 0x([0-9a-z]+)\])");
+static auto regx1 = std::regex(R"(\[r(.)x \+ rax\*(\d+) \+ 0x([0-9a-z]+)\])");
+static auto regx2 = std::regex("0x[0-9a-z]+");
+static std::string filter_signature(cs_insn *insn, bool readRva, uint64_t &maybe_end)
+{
+    std::string signature;
+    std::string op_str = insn->op_str;
+    int64_t imm = 0;
+    bool rva = false;
+    if (op_str.find("[rip") != std::string_view::npos)
+    {
+        std::smatch result;
+        if (std::regex_match(op_str, result, regx_match))
+        {
+            signature.append(std::regex_replace(op_str, regx, "[rip + 0x??????]"));
+            if (readRva && result.size() >= 1)
+            {
+                const auto &imm_str = result[1].str();
+                std::from_chars(imm_str.c_str(), imm_str.c_str() + imm_str.size(), imm, 16);
+                if (imm != 0)
+                {
+                    imm = (uint64_t)insn->address + insn->size + imm;
+                    if (insn->id != X86_INS_JMP && insn->id != X86_INS_CALL)
+                    {
+                        signature.push_back(' ');
+                        signature.append(conver_data_ptr((char *)imm));
+                    }
+                    else
+                        rva = true;
+                }
+            }
+        }
+    }
+    else if (op_str.find("rax*") != std::string_view::npos)
+    {
+        signature.append((std::regex_replace(op_str, regx1, "[r$1x + rax*$2 + 0x??????]")));
+    }
+    else
+    {
+        if (std::regex_match(op_str, regx2))
+        {
+            // skip 0x
+            std::from_chars(op_str.c_str() + 2, op_str.c_str() + op_str.length() + 2, imm, 16);
+            if (insn->id < X86_INS_JAE || insn->id > X86_INS_JS)
+            {
+                signature.append("0x???????");
+            }
+            else
+            {
+                if (imm > maybe_end && imm < 512)
+                    maybe_end = imm;
+                int64_t offset = imm - (insn->address + insn->size);
+                signature.append(std::regex_replace(op_str, regx2, std::to_string(offset)));
+            }
+        }
+        else
+        {
+            signature.append(op_str);
+        }
+    }
+    if (insn->id == X86_INS_JMP || insn->id == X86_INS_CALL)
+    {
+        if (readRva && imm != 0)
+        {
+            auto data = (void *)imm;
+            if (rva && !memory_is_execute(data))
+            {
+                data = *(void **)data;
+            }
+            signature.clear();
+            auto sub_signatures = create_signature(data, nullptr, 1);
+            if (sub_signatures.size() > 0)
+                signature = sub_signatures.asm_codes.front();
+        }
+    }
+    return signature;
+}
+
 Signature create_signature(void *func, const in_function_t &in_func, size_t limit)
 {
-    csh hcs;
-    cs_arch_register_x86();
-    auto ec = cs_open(CS_ARCH_X86, CS_MODE_64, &hcs);
-    if (ec != CS_ERR_OK)
-        return {};
-    cs_option(hcs, CS_OPT_DETAIL, CS_OPT_ON);
+    auto ctx = getCtx();
+    auto hcs = ctx.value().hcs;
     Signature ret;
 
     const uint8_t *binary = (uint8_t *)func;
     auto insn = cs_malloc(hcs);
     uint64_t address = (uint64_t)func;
     size_t insn_len = 1024;
-    auto regx = std::regex(R"(\[rip \+ 0x([0-9a-z]+)\])");
-    auto regx1 = std::regex(R"(\[r(.)x \+ rax\*(\d+) \+ 0x([0-9a-z]+)\])");
-    auto regx2 = std::regex("0x[0-9a-z]+");
     size_t count = 0;
     uint64_t maybe_end = 0;
     while (cs_disasm_iter(hcs, &binary, &insn_len, &address, insn))
@@ -96,92 +226,19 @@ Signature create_signature(void *func, const in_function_t &in_func, size_t limi
         count++;
 
         ret.asm_codes.push_back({});
+        ret.memory_ranges.push_back({insn->address, insn->size});
         std::string &signature = ret.asm_codes.back();
-        auto push_asm = [&signature](auto s)
+        signature.append(insn->mnemonic);
+        signature.push_back(' ');
+        signature.append(filter_signature(insn, false, maybe_end));
+        if (insn->id == X86_INS_JMP || insn->id == X86_INS_INT3 || insn->id == X86_INS_RET)
         {
-            signature.append(s);
-            signature.append(" ");
-        };
-
-        push_asm(insn->mnemonic);
-        std::string op_str = insn->op_str;
-        int64_t imm = 0;
-        if (op_str.find("[rip") != std::string_view::npos)
-        {
-            std::smatch result;
-            if (std::regex_match(op_str, result, regx))
-            {
-                push_asm(std::regex_replace(op_str, regx, "[rip + 0x??????]"));
-                if (result.size() == 1)
-                {
-                    const auto &imm_str = result[1].str();
-                    std::from_chars(imm_str.c_str(), imm_str.c_str() + imm_str.size(), imm, 16);
-                    if (imm != 0)
-                    {
-                        auto data = (uint64_t)insn->address + insn->size + imm;
-                        signature.append(is_data((void *)data) ? "(data)" : "(code)");
-                    }
-                }
-            }
-        }
-        else if (op_str.find("rax*") != std::string_view::npos)
-        {
-            push_asm(std::regex_replace(op_str, regx1, "[r$1x + rax*$2 + 0x??????]"));
-        }
-        else
-        {
-            if (std::regex_match(op_str, regx2))
-            {
-                // skip 0x
-                std::from_chars(op_str.c_str() + 2, op_str.c_str() + op_str.length() + 2, imm, 16);
-                if (insn->id < X86_INS_JAE || insn->id > X86_INS_JS)
-                {
-                    push_asm("0x???????");
-                }
-                else
-                {
-                    if (imm > maybe_end && imm < 512)
-                        maybe_end = imm;
-                    int64_t offset = imm - (insn->address + insn->size);
-                    push_asm(std::regex_replace(op_str, regx2, std::to_string(offset)));
-                }
-            }
-            else
-            {
-                push_asm(op_str);
-            }
-        }
-        switch (insn->id)
-        {
-        case X86_INS_CALL:
-        case X86_INS_JMP:
-        {
-            if (imm != 0)
-            {
-                auto data = (void *)imm;
-                if (is_data(data))
-                    signature.append("(data)");
-                else
-                    signature.append("(code)" + create_signature(data, nullptr, 1).to_string());
-            }
-            if (insn->id == X86_INS_JMP)
-                goto IS_END_FUNC;
-            else
+            if (maybe_end >= (insn->address + insn->size))
                 continue;
-        }
-        case X86_INS_INT3:
-            goto IS_END_FUNC;
-        case X86_INS_RET:
-            goto IS_END_FUNC;
-        default:
-            continue;
-        }
-    IS_END_FUNC:
-        if (maybe_end >= (insn->address + insn->size))
-            continue;
-        if (!in_func || !in_func((void *)((char *)address + insn->size)))
-        {
-            break;
+            if (!in_func || !in_func((void *)((char *)address + insn->size)))
+            {
+                break;
+            }
         }
     }
     cs_free(insn, 1);
@@ -206,7 +263,7 @@ void release_signature_cache()
     signature_cache.clear();
 }
 
-#if 0
+#if 1
 #define OUTPUT_SIGNATURE(addr, s) fprintf(stderr, "---%p---\n%s\n\n\n", addr, s.c_str())
 #else
 #define OUTPUT_SIGNATURE(addr, s)
@@ -224,7 +281,7 @@ void *fix_func_address_by_signature(void *target, void *original, const in_funct
     constexpr auto aligned = func_aligned();
     auto limit = range / aligned;
 
-    size_t maybe_target_count = 16;
+    size_t maybe_target_count = 1;
     void *maybe_target_addr = nullptr;
     auto is_target_fn = [&original_s, &maybe_target_count, &maybe_target_addr](Signature target_s, auto fix_target)
     {
@@ -232,10 +289,9 @@ void *fix_func_address_by_signature(void *target, void *original, const in_funct
         {
             return true;
         }
-        if (target_s.size() < original_s.size())
-            return false;
+        auto limit = std::min(original_s.size(), target_s.size());
         auto count = 0;
-        for (size_t i = 0; i < original_s.size(); i++)
+        for (size_t i = 0; i < limit; i++)
         {
             if (target_s[i] == original_s[i])
                 count++;
@@ -247,6 +303,7 @@ void *fix_func_address_by_signature(void *target, void *original, const in_funct
         }
         return false;
     };
+
     for (size_t i = 0; i < limit; i++)
     {
         auto fix_target = (void *)((intptr_t)target + i * aligned);
@@ -265,16 +322,7 @@ void *fix_func_address_by_signature(void *target, void *original, const in_funct
             OUTPUT_SIGNATURE(fix_target, target_s.to_string());
             return fix_target;
         }
-        if (updated)
-        {
-            fix_target = (void *)((intptr_t)target - i * aligned);
-            target_s = create_signature(fix_target, nullptr);
-            if (is_target_fn(target_s, fix_target))
-            {
-                OUTPUT_SIGNATURE(fix_target, target_s.to_string());
-                return fix_target;
-            }
-        }
+        return fix_target;
     }
     if (maybe_target_addr)
     {

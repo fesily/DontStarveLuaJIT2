@@ -18,7 +18,12 @@ struct MemorySignature
 
 struct Signature
 {
+	struct memory_range {
+		uintptr_t start;
+		size_t len;
+	};
 	std::vector<std::string> asm_codes;
+	std::vector<memory_range> memory_ranges;
 	std::string to_string();
 	bool operator==(const Signature &other) const;
 	inline size_t size() const { return asm_codes.size(); }

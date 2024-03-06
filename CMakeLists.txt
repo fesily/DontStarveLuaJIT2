@@ -8,28 +8,27 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(GAME_NAME "Don't Starve Together")
 #set(GAME_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
-set(GAME_DIR "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Don't Starve Together")
 if(WIN32)
     set(GAME_DIR "E:\\SteamLibrary\\steamapps\\common\\Don't Starve Together")
 else(UNIX AND NOT APPLE)
-    set(GAME_DIR "/home/ubuntu/.steam/steam/steamapps/common/Don't Starve Together")
+    set(GAME_DIR "/home/parallels/.steam/debian-installation/steamapps/common/Don't Starve Together")
 endif()
 
 file(REAL_PATH ${GAME_DIR} GAME_DIR)
 
 set(PYTHON_EXECUTABLE_NAME "python3")
-set(VCPKG_TARGET_TRIPLET "x64-linux-static")
+set(VCPKG_TARGET_TRIPLET "x64-linux-release")
 if(WIN32)
     set(PLATFORM_NAME "windows")
     set(PYTHON_EXECUTABLE_NAME "python")
     set(VCPKG_TARGET_TRIPLET "x64-windows-static-md")
 elseif(UNIX AND NOT APPLE)
-    set(PLATFORM_NAME "Linux")
+    set(PLATFORM_NAME "linux")
 else()
     message(FATAL_ERROR "Not supported platform")
 endif()
 
-project(DontStarveLuaJIT VERSION 0.3.11)
+project(DontStarveLuaJIT VERSION 0.3.10)
 
 set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod)
 
@@ -75,7 +74,7 @@ else()
 endif()
 
 set(LUA_INCLUDE_DIR ${lua51_root}/src)
-set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
+set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
 set(LUA_CONFIG_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll)
 set(LUA_LIBRARIES lua51)
 

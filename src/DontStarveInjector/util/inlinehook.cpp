@@ -8,6 +8,7 @@
 #include <memory>
 #include <memory_resource>
 #include <unordered_map>
+#include <cstring>
 
 #include "inlinehook.hpp"
 

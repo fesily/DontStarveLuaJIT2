@@ -26,10 +26,13 @@ std::filesystem::path getExePath()
 
 module_handler_t loadlib(const char *name)
 {
-        if (auto p = getExePath() / name; std::filesystem::exists(p))
-                return loadlib(p.string().c_str());
-        if (auto p = std::filesystem::current_path() / name; std::filesystem::exists(p))
-                return loadlib(p.string().c_str());
+        if (!std::filesystem::exists(name))
+        {
+                if (auto p = getExePath().parent_path() / name; std::filesystem::exists(p))
+                        return loadlib(p.string().c_str());
+                if (auto p = std::filesystem::current_path() / name; std::filesystem::exists(p))
+                        return loadlib(p.string().c_str());
+        }
         return
 #ifdef _WIN32
             LoadLibraryA(name);
@@ -50,6 +53,7 @@ void *loadlibproc(module_handler_t h, const char *name)
 
 void unloadlib(module_handler_t h)
 {
+        if (!h) return;
 #ifdef _WIN32
         FreeLibrary((HMODULE)h);
 #else

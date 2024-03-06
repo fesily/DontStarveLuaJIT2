@@ -20,3 +20,4 @@ luaopen_math
 luaopen_debug
 luaopen_os
 luaopen_io
+lua_ident
