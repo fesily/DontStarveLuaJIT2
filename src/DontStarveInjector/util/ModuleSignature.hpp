@@ -1,6 +1,9 @@
 #pragma once
 #include <optional>
 #include <string>
+#include <vector>
+#include "Signature.hpp"
+
 struct cs_insn;
 typedef size_t csh;
 struct ModuleSignature
@@ -11,7 +14,9 @@ struct ModuleSignature
     cs_insn *insn;
     size_t count;
     int **dp;
+    std::vector<std::string> asm_codes;
     ~ModuleSignature();
-    int longestCommonSubsequence(std::string text1, std::string text2);
     static std::optional<ModuleSignature> create(void *start_address, void *end_address);
+
+    void *try_find_pattern(const Signature &target);
 };

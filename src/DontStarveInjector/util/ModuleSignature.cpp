@@ -1,5 +1,7 @@
 #include "ModuleSignature.hpp"
 #include <frida-gum.h>
+#include <span>
+
 ModuleSignature::~ModuleSignature()
 {
     if (insn)
@@ -16,7 +18,7 @@ ModuleSignature::~ModuleSignature()
     }
 }
 
-int ModuleSignature::longestCommonSubsequence(std::string text1, std::string text2)
+static int longestCommonSubsequence(int **&dp, std::span<const std::string> text1, std::span<const std::string> text2)
 {
     int text1Length = text1.size(), text2Length = text2.size();
     // Create a 2D array to store lengths of common subsequence at each index.
@@ -51,6 +53,8 @@ int ModuleSignature::longestCommonSubsequence(std::string text1, std::string tex
     return dp[text1Length][text2Length];
 }
 
+extern std::string filter_signature(const cs_insn *insn);
+
 std::optional<ModuleSignature> ModuleSignature::create(void *start_address, void *end_address)
 {
     csh hcs = 0;
@@ -61,5 +65,39 @@ std::optional<ModuleSignature> ModuleSignature::create(void *start_address, void
     }
     auto res = ModuleSignature{start_address, end_address, hcs};
     res.count = cs_disasm(res.hcs, (uint8_t *)start_address, (size_t)end_address - (size_t)start_address, (uint64_t)start_address, 0, &res.insn);
+    const auto count = res.count;
+    for (size_t i = 0; i < count; i++)
+    {
+        const auto &insn = res.insn[i];
+        res.asm_codes.push_back(filter_signature(&insn));
+    }
     return res;
+}
+
+void *ModuleSignature::try_find_pattern(const Signature &target)
+{
+    if (target.asm_codes.empty())
+        return nullptr;
+
+    int maybe_matched = 0;
+    size_t matached_offset = 0;
+    auto target_spn = std::span{target.asm_codes.cbegin(), target.size()};
+    const auto target_code = target.asm_codes[0];
+    for (auto iter = asm_codes.cbegin(), end = asm_codes.cend(); iter != end; iter++)
+    {
+        const auto &code = *iter;
+        if (code != target_code)
+            continue;
+        auto const offset = iter - end;
+
+        int matched = longestCommonSubsequence(dp, target_spn, {iter, std::min(target.size() + 16, (size_t)(end - iter))});
+        if (matched / (float)target.size() > maybe_matched)
+        {
+            maybe_matched = matched;
+            matached_offset = offset;
+        }
+    }
+    if (maybe_matched / (float)target.asm_codes.size() < 0.5)
+        return nullptr;
+    return (void *)insn[matached_offset].address;
 }
