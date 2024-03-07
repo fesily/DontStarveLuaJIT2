@@ -10,32 +10,6 @@
 #include <charconv>
 #include "Signature.hpp"
 
-static auto getCtx()
-{
-    struct Ctx
-    {
-        csh hcs;
-        ~Ctx()
-        {
-            if (hcs)
-                cs_close(&hcs);
-        }
-    };
-    static auto ctx = []()->std::optional<Ctx>
-    {
-        csh hcs;
-        cs_arch_register_x86();
-        auto ec = cs_open(CS_ARCH_X86, CS_MODE_64, &hcs);
-        if (ec == CS_ERR_OK)
-        {
-            cs_option(hcs, CS_OPT_DETAIL, CS_OPT_ON);
-            return std::optional{Ctx{hcs}};
-        }
-        return std::nullopt;
-    }();
-    return ctx;
-}
-
 constexpr auto page = GUM_PAGE_EXECUTE;
 
 static gboolean sacnBaseAddrCb(GumAddress address, gsize size, gpointer user_data)
@@ -63,7 +37,7 @@ uintptr_t MemorySignature::scan(const char *m)
     return target_address;
 }
 
-std::string Signature::to_string()
+std::string Signature::to_string() const
 {
     size_t length = 0;
     for (auto &code : this->asm_codes)
@@ -131,7 +105,7 @@ static auto regx = std::regex(R"(\[rip \+ 0x([0-9a-z]+)\])");
 static auto regx_match = std::regex(R"(.+\[rip \+ 0x([0-9a-z]+)\])");
 static auto regx1 = std::regex(R"(\[r(.)x \+ rax\*(\d+) \+ 0x([0-9a-z]+)\])");
 static auto regx2 = std::regex("0x[0-9a-z]+");
-static std::string filter_signature(cs_insn *insn, bool readRva, uint64_t &maybe_end)
+static std::string filter_signature(cs_insn *insn, bool readRva, uint64_t &maybe_end, bool &is_replaced)
 {
     std::string signature;
     std::string op_str = insn->op_str;
@@ -193,10 +167,15 @@ static std::string filter_signature(cs_insn *insn, bool readRva, uint64_t &maybe
         if (readRva && imm != 0)
         {
             auto data = (void *)imm;
+            if (!gum_memory_is_readable(data, 4))
+                return signature;
             if (rva && !memory_is_execute(data))
             {
                 data = *(void **)data;
+                if (!gum_memory_is_readable(data, 4))
+                    return signature;
             }
+            is_replaced = true;
             signature.clear();
             auto sub_signatures = create_signature(data, nullptr, 1);
             if (sub_signatures.size() > 0)
@@ -206,10 +185,14 @@ static std::string filter_signature(cs_insn *insn, bool readRva, uint64_t &maybe
     return signature;
 }
 
-Signature create_signature(void *func, const in_function_t &in_func, size_t limit)
+Signature create_signature(void *func, const in_function_t &in_func, size_t limit, bool readRva)
 {
-    auto ctx = getCtx();
-    auto hcs = ctx.value().hcs;
+    csh hcs;
+    cs_arch_register_x86();
+    auto ec = cs_open(CS_ARCH_X86, CS_MODE_64, &hcs);
+    if (ec != CS_ERR_OK)
+        return {};
+    cs_option(hcs, CS_OPT_DETAIL, CS_OPT_ON);
     Signature ret;
 
     const uint8_t *binary = (uint8_t *)func;
@@ -228,9 +211,14 @@ Signature create_signature(void *func, const in_function_t &in_func, size_t limi
         ret.asm_codes.push_back({});
         ret.memory_ranges.push_back({insn->address, insn->size});
         std::string &signature = ret.asm_codes.back();
-        signature.append(insn->mnemonic);
-        signature.push_back(' ');
-        signature.append(filter_signature(insn, false, maybe_end));
+        bool is_replaced = false;
+        const auto s2 = filter_signature(insn, readRva, maybe_end, is_replaced);
+        if (!is_replaced)
+        {
+            signature.append(insn->mnemonic);
+            signature.push_back(' ');
+        }
+        signature.append(std::move(s2));
         if (insn->id == X86_INS_JMP || insn->id == X86_INS_INT3 || insn->id == X86_INS_RET)
         {
             if (maybe_end >= (insn->address + insn->size))
@@ -258,9 +246,55 @@ static constexpr size_t func_aligned()
 }
 
 static std::unordered_map<void *, Signature> signature_cache;
+static std::unordered_map<void *, std::string> signature_first_cache;
 void release_signature_cache()
 {
     signature_cache.clear();
+    signature_first_cache.clear();
+}
+const Signature *get_signature_cache(void *fix_target, const std::string &first)
+{
+    Signature *target_s;
+    if (signature_cache.find(fix_target) != signature_cache.end())
+    {
+        target_s = &signature_cache[fix_target];
+    }
+    else
+    {
+        auto first_s = create_signature(fix_target, nullptr, 1);
+        if (first_s.empty())
+            return nullptr;
+        if (first_s[0] != first)
+        {
+            return nullptr;
+        }
+        signature_cache[fix_target] = create_signature(fix_target, nullptr, size_t(-1), true);
+        target_s = &signature_cache[fix_target];
+    }
+    return target_s;
+}
+
+static int longestCommonSubstring(const std::vector<std::string> &text1, const std::vector<std::string> &text2)
+{
+    int m = text1.size(), n = text2.size();
+    std::vector<std::vector<int>> dp(m + 1, std::vector<int>(n + 1));
+    for (int i = 1; i <= m; i++)
+    {
+        auto c1 = text1.at(i - 1);
+        for (int j = 1; j <= n; j++)
+        {
+            auto c2 = text2.at(j - 1);
+            if (c1 == c2)
+            {
+                dp[i][j] = dp[i - 1][j - 1] + 1;
+            }
+            else
+            {
+                dp[i][j] = std::max(dp[i - 1][j], dp[i][j - 1]);
+            }
+        }
+    }
+    return dp[m][n];
 }
 
 #if 1
@@ -271,63 +305,55 @@ void release_signature_cache()
 void *fix_func_address_by_signature(void *target, void *original, const in_function_t &in_func, uint32_t range, bool updated)
 {
     constexpr auto short_signature_len = 16;
-    if (create_signature(target, nullptr, short_signature_len) == create_signature(original, in_func, short_signature_len))
+    if (create_signature(target, nullptr, short_signature_len, false) == create_signature(original, in_func, short_signature_len, false))
     {
         return target;
     }
     auto original_s = create_signature(original, in_func);
-    OUTPUT_SIGNATURE(original, original_s.to_string());
     // 基于以下假设，函数地址必然被对齐分配
     constexpr auto aligned = func_aligned();
     auto limit = range / aligned;
 
     size_t maybe_target_count = 1;
     void *maybe_target_addr = nullptr;
-    auto is_target_fn = [&original_s, &maybe_target_count, &maybe_target_addr](Signature target_s, auto fix_target)
-    {
-        if (target_s == original_s)
-        {
-            return true;
-        }
-        auto limit = std::min(original_s.size(), target_s.size());
-        auto count = 0;
-        for (size_t i = 0; i < limit; i++)
-        {
-            if (target_s[i] == original_s[i])
-                count++;
-        }
-        if (count > maybe_target_count)
-        {
-            maybe_target_count = count;
-            maybe_target_addr = fix_target;
-        }
-        return false;
-    };
 
     for (size_t i = 0; i < limit; i++)
     {
         auto fix_target = (void *)((intptr_t)target + i * aligned);
-        Signature target_s;
-        if (signature_cache.find(fix_target) != signature_cache.end())
-        {
-            target_s = signature_cache[fix_target];
-        }
-        else
-        {
-            target_s = create_signature(fix_target, nullptr);
-            signature_cache[fix_target] = target_s;
-        }
-        if (is_target_fn(target_s, fix_target))
-        {
-            OUTPUT_SIGNATURE(fix_target, target_s.to_string());
+        auto target_s = get_signature_cache(fix_target, original_s[0]);
+        if (!target_s)
+            continue;
+        auto max = longestCommonSubstring(original_s.asm_codes, target_s->asm_codes);
+        if (max == original_s.size())
             return fix_target;
+        if (max > maybe_target_count)
+        {
+            maybe_target_count = max;
+            maybe_target_addr = fix_target;
         }
-        return fix_target;
+        if (updated)
+        {
+            fix_target = (void *)((intptr_t)target - i * aligned);
+            auto target_s = get_signature_cache(fix_target, original_s[0]);
+            if (!target_s)
+                continue;
+            auto max = longestCommonSubstring(original_s.asm_codes, target_s->asm_codes);
+            if (max == original_s.size())
+                return fix_target;
+            if (max > maybe_target_count)
+            {
+                maybe_target_count = max;
+                maybe_target_addr = fix_target;
+            }
+        }
     }
     if (maybe_target_addr)
     {
-        fprintf(stderr, "maybe target:%p\n", maybe_target_addr);
+        OUTPUT_SIGNATURE(original, original_s.to_string());
+        fprintf(stderr, "maybe target:\n");
+        OUTPUT_SIGNATURE(maybe_target_addr, get_signature_cache(maybe_target_addr, original_s[0])->to_string());
         return maybe_target_addr;
     }
+    OUTPUT_SIGNATURE(original, original_s.to_string());
     return nullptr;
 }
