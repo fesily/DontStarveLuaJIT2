@@ -1,5 +1,6 @@
 #include <string>
 #include <expected>
+#include <algorithm>
 
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>

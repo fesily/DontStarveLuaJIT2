@@ -30,7 +30,8 @@ struct Signature
 	inline size_t empty() const { return asm_codes.empty(); }
 	const std::string &operator[](size_t index) const { return asm_codes[index]; }
 };
-
+bool signature_init();
+void signature_deinit();
 using in_function_t = std::function<bool(void *)>;
 Signature create_signature(void *func, const in_function_t &in_func, size_t limit = size_t(-1), bool readRva = true);
 void *fix_func_address_by_signature(void *target, void *original, const in_function_t &in_func, uint32_t range = 512, bool updated = true);

@@ -1,9 +1,7 @@
 {
-  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
-  "dependencies": [
-    "libzip",
-    "zlib",
-    "nlohmann-json",
-    "spdlog"
-  ]
+  "$schema" : "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "dependencies" : [ "libzip", "zlib", "nlohmann-json", "spdlog", {
+    "name" : "libzip",
+    "version>=" : "1.9.2#1"
+  } ]
 }
