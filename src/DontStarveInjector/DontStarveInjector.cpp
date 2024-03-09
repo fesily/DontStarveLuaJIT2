@@ -205,7 +205,7 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient)
 #endif
 
 	auto mainPath = getExePath().string();
-	if (luaModuleSignature.scan(mainPath.c_str()) == NULL)
+	if (luaModuleSignature.scan(mainPath.c_str()) == 0)
 	{
 		spdlog::error("can't find luamodule base address");
 		return;

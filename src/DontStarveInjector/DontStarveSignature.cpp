@@ -1,5 +1,6 @@
 #include <string>
 #include <expected>
+#include <algorithm>
 
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
@@ -105,12 +106,15 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(bool isCli
 	SignatureUpdater updater;
 	SignatureJson json(isClient);
 	auto signatures = json.read_from_signatures();
+	signature_init();
+	init_module_signature(gum_process_get_main_module()->path);
 	if (!signatures)
 	{
 		auto res = create_signature(luaModuleBaseAddress, [&json](auto &v)
 									{ json.update_signatures(v); });
 		if (!res)
 		{
+			signature_deinit();
 			return std::unexpected(res.error());
 		}
 		updater.exports = std::move(std::get<0>(res.value()));
@@ -122,11 +126,13 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(bool isCli
 								  { json.update_signatures(v); });
 		if (!res)
 		{
+			signature_deinit();
 			return std::unexpected(res.error());
 		}
 		updater.exports = std::move(res.value());
 		updater.signatures = std::move(signatures.value());
 	}
+	signature_deinit();
 	return updater;
 }
 
@@ -157,10 +163,6 @@ std::string update_signatures(Signatures &signatures, uintptr_t targetLuaModuleB
 {
 	const auto &lua51_path = get_lua51_path();
 	spdlog::warn("try fix all signatures");
-	const auto luaModuleSignatures = create_signature(
-		(void*)targetLuaModuleBase, [limit = targetLuaModuleBase + range](void *address)
-		{ return address <= (void  *)limit; },
-		range);
 	auto &funcs = signatures.funcs;
 	// fix all signatures
 	for (size_t i = 0; i < exports.size(); i++)
