@@ -75,34 +75,20 @@ bool Signature::operator==(const Signature &other) const {
     return true;
 }
 
-static std::string read_data_string(const char *data) {
+static const char* read_data_string(const char *data) {
     constexpr auto data_limit = 256;
     if (!gum_memory_is_readable(data - 1, 256 + 1))
-        return {};
+        return nullptr;
     if (data[-1] != 0)
-        return {};
+        return nullptr;
     for (size_t i = 0; i < data_limit; i++) {
         if (!std::isgraph(data[i]))
-            return {};
+            return nullptr;
         if (data[i] == 0) {
-            return std::string(data, data + i);
+            return data;
         }
     }
     return {};
-}
-
-static std::string conver_data_ptr(const char *data) {
-    if (!gum_memory_is_readable(data, sizeof(void *))) {
-        return "(unknown)";
-    }
-    if (!memory_is_execute((void *) data))
-        return "(data)" + read_data_string(data);
-    else {
-        auto str = read_data_string(data);
-        if (str.empty())
-            return "code";
-        return str;
-    }
 }
 
 static auto regx1 = std::regex(R"(\[r(.)x \+ rax\*(\d+) (\+\-) 0x([0-9a-z]+)\])");
@@ -323,49 +309,172 @@ void *fix_func_address_by_signature(void *target, void *original, const in_funct
 }
 
 #include <unordered_set>
+    struct Const {
+        const char* value;
+        size_t ref;
+    };
+    struct Function
+    {
+        uint64_t address;
+        std::vector<Const*> consts;
+        std::vector<uint64_t> call_functions;
+        const char* const_key;
+        uint64_t consts_hash;
+    };
+struct ModuleSections {
+    GumModuleDetails details;
+    GumMemoryRange text;
+    GumMemoryRange rodata;
+    GumMemoryRange plt;
+    GumMemoryRange got_plt;
+    bool in_plt(intptr_t address) const {
+        return plt.base_address <= address && address <= plt.base_address + plt.size;
+    }
+    bool in_got_plt(intptr_t address) const {
+        return got_plt.base_address <= address && address <= got_plt.base_address + got_plt.size;
+    }
+    bool in_rodata(intptr_t address) const {
+        return rodata.base_address <= address && address <= rodata.base_address + rodata.size;
+    }
 
-std::unordered_set<void *> get_function_address(const GumMemoryRange &text, uint64_t address) {
+    std::unordered_map<uint64_t, Function> functions;
+    std::unordered_map<const char*, Const> Consts;
+
+    Function* get_function(uint64_t address){
+        auto iter = functions.begin(),end = functions.end();
+        auto finder = end;
+        for(; iter != end ; ++iter){
+            if (address >= iter->first){
+                finder = iter;
+            }else {
+                break;
+            }
+        }
+        return finder != end ? &finder->second : nullptr;
+    }
+};
+
+void scan_module(ModuleSections& m, uint64_t address) {
     cs_insn *insns;
-    std::unordered_set<void *> res;
+    // .text
+    const auto& text = m.text;
     auto count = cs_disasm(hcs, reinterpret_cast<const uint8_t *>(text.base_address), text.size, address, size_t(-1),
                            &insns);
-
+    std::unordered_map<uint64_t, Const*> consts;
+    std::unordered_set<uint64_t> nops;
+    std::unordered_multimap<uint64_t, uint64_t> calls;
     for (int i = 0; i < count; ++i) {
         const auto &insn = insns[i];
         const auto &x86_details = insn.detail->x86;
         if (insn.id == X86_INS_JMP || insn.id == X86_INS_JMP) {
             const auto &operand = x86_details.operands[0];
             if (operand.type != x86_op_type::X86_OP_INVALID) {
-                if (x86_details.disp == 0) {
-                    res.insert((void *) operand.imm);
-                } else {
-                    res.insert((void *) (insn.address + insn.size + x86_details.disp));
+                uint64_t imm = x86_details.disp == 0 ? operand.imm : insn.address + insn.size + x86_details.disp;
+#ifndef _WIN32
+                if (m.in_plt(imm)){
+                    auto insn = cs_malloc(hcs);
+                    auto addr = address;
+                    size_t size = 32;
+                    auto code = (const uint8_t*)imm;
+                    if (cs_disasm_iter(hcs, &code, &size, &addr, insn)){
+                        if (insn->id == X86_INS_JMP)
+                        {
+                            auto& op = insn->detail->x86.operands[0];
+                            if (op.type == x86_op_type::X86_OP_MEM){
+                                auto target = insn->address + insn->size + op.mem.disp;
+                                if (m.in_got_plt(target)){
+                                    imm = (intptr_t)*(void**)target;
+                                }
+                            }else if (op.type == x86_op_type::X86_OP_IMM) {
+                                imm = op.imm;
+                            }
+                        }
+                    }
+                    cs_free(insn, 1);
+                }
+#endif
+                calls.emplace(insn.address, imm);
+                m.functions[imm] = {imm};
+            }
+        }else if (insn.id == X86_INS_LEA || insn.id == X86_INS_MOV){
+            const char *str = nullptr;
+            if (x86_details.op_count == 2 && x86_details.operands[0].type == x86_op_type::X86_OP_REG)
+            {
+                const auto &op = x86_details.operands[1];
+                if (insn.id == X86_INS_LEA)
+                {
+                    if (op.type == x86_op_type::X86_OP_MEM && op.mem.base == x86_reg::X86_REG_RIP && op.mem.index == x86_reg::X86_REG_INVALID && op.mem.segment == x86_reg::X86_REG_INVALID)
+                    {
+                        auto target = insn.address + insn.size + op.mem.disp;
+                        if (m.in_rodata(target))
+                            str = read_data_string((char *)target);
+                    }
+                }
+                else if (insn.id == X86_INS_MOV)
+                {
+                    if (op.type == x86_op_type::X86_OP_IMM)
+                    {
+                        auto target = op.imm;
+                        if (m.in_rodata(target))
+                            str = read_data_string((char *)target);
+                    }
+                }
+                if (str != nullptr)
+                {
+                    if (m.Consts.contains(str))
+                    {
+                        m.Consts[str].ref++;
+                    }
+                    else
+                    {
+                        m.Consts[str] = {str, 1};
+                    }
+                    consts[insn.address] = &m.Consts[str];
                 }
             }
+        }else if (insn.id == X86_INS_NOP){
+            nops.insert(insn.address);
         }
     }
     cs_free(insns, count);
-    return res;
+    for (const auto& [address, constStr]: consts)
+    {
+        auto func = m.get_function(address);
+        if (!func) continue;
+        func->consts.push_back(constStr);
+        if (constStr->ref == 1){
+            func->const_key = constStr->value;
+        }
+    }
+    for (const auto& [address, callAddr]: calls){
+        auto func = m.get_function(address);
+        if (!func) continue;
+        func->call_functions.push_back(callAddr);
+    }
 }
 
-struct ModuleSections {
-    GumModuleDetails details;
-    GumMemoryRange text;
-    GumMemoryRange rodata;
-};
-
-ModuleSections get_module_sections(const char *path, GumAddress base_address) {
+ModuleSections get_module_sections(const char *path) {
 #ifdef _WIN32
 #error "not support"
 #else
 
     ModuleSections sections;
     gum_module_enumerate_sections(path, +[](const GumSectionDetails *details, gpointer user_data) -> gboolean {
-        if (details->name == ".text") {
+        if (details->name == ".text")
             (*(ModuleSections *) user_data).text = {details->address, details->size};
-        } else if (details->name == ".rodata")
+        else if (details->name == ".rodata")
             (*(ModuleSections *) user_data).rodata = {details->address, details->size};
+        else if (details->name == ".plt")
+            (*(ModuleSections *) user_data).plt = {details->address, details->size};
+        else if (details->name == ".got.plt")
+            (*(ModuleSections *) user_data).got_plt = {details->address, details->size};
         return TRUE;
     }, (void *) &sections);
+    return sections;
 #endif
+}
+
+void init_module_signature(const char* path) {
+    auto sections = get_module_sections(path);
+    scan_module(sections, gum_module_find_base_address(path));
 }
