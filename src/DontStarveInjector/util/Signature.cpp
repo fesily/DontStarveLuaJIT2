@@ -139,9 +139,8 @@ filter_signature(cs_insn *insn, uint64_t &maybe_end, decltype(Signature::asm_cod
         const auto& operand = csX86.operands[1];
         if (operand.type == x86_op_type::X86_OP_MEM){
             if (operand.mem.base == x86_reg::X86_REG_RIP){
-
                 signature = std::regex_replace(op_str, regx2,
-                                               imm > 0 ? "[rip + 0x????????]" : "[rip - 0x????????]");
+                                               csX86.disp > 0 ? "[rip + 0x????????]" : "[rip - 0x????????]");
                 rva = insn->id == X86_INS_JMP || insn->id == X86_INS_CALL;
             }else if (operand.mem.index != x86_reg::X86_REG_INVALID) {
                 signature = std::regex_replace(op_str, regx1, "[r$1x + rax*$2 $3 0x??]");
@@ -150,7 +149,7 @@ filter_signature(cs_insn *insn, uint64_t &maybe_end, decltype(Signature::asm_cod
     }else if(csX86.op_count == 1) {
         const auto& operand = csX86.operands[0];
         if (operand.type == x86_op_type::X86_OP_IMM){
-            auto imm = operand.imm;
+            imm = operand.imm;
             if (insn->id < X86_INS_JAE || insn->id > X86_INS_JS) {
                 signature = "0x????????";
             }else {
