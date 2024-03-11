@@ -8,52 +8,52 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(GAME_NAME "Don't Starve Together")
 #set(GAME_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
-if(WIN32)
+if (WIN32)
     set(GAME_DIR "E:\\SteamLibrary\\steamapps\\common\\Don't Starve Together")
-else(UNIX AND NOT APPLE)
+else (UNIX AND NOT APPLE)
     set(GAME_DIR "/home/parallels/.steam/debian-installation/steamapps/common/Don't Starve Together")
-endif()
+endif ()
 
 file(REAL_PATH ${GAME_DIR} GAME_DIR)
 
 set(PYTHON_EXECUTABLE_NAME "python3")
 set(VCPKG_TARGET_TRIPLET "x64-linux-release")
-if(WIN32)
+if (WIN32)
     set(PLATFORM_NAME "windows")
     set(PYTHON_EXECUTABLE_NAME "python")
     set(VCPKG_TARGET_TRIPLET "x64-windows-static-md")
-elseif(UNIX AND NOT APPLE)
+elseif (UNIX AND NOT APPLE)
     set(PLATFORM_NAME "linux")
 elseif (UNIX AND APPLE)
     set(PLATFORM_NAME "osx")
     set(VCPKG_TARGET_TRIPLET "x64-osx-release")
-else()
+else ()
     message(FATAL_ERROR "Not supported platform")
-endif()
+endif ()
 
 project(DontStarveLuaJIT VERSION 0.3.10)
 
 set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod)
 
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+if (CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin64)
     set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/bin64)
-else()
+else ()
     set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin)
     set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/bin)
-endif()
+endif ()
 
 set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/${PLATFORM_NAME})
 
-if($ENV{GITHUB_ACTIONS})
+if ($ENV{GITHUB_ACTIONS})
     set(GAME_DIR OFF)
-endif()
+endif ()
 
-add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h 
-    COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/missfunc.py"
-    DEPENDS src/missfunc.txt
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    )
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h
+        COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/missfunc.py"
+        DEPENDS src/missfunc.txt
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
 add_custom_target(create_missfuncs DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h)
 
@@ -61,20 +61,20 @@ set(lua51_root ${CMAKE_CURRENT_SOURCE_DIR}/src/lua51)
 set(Lua51_output_dir ${lua51_root}/$<IF:$<CONFIG:Debug>,debug,release>/)
 
 add_custom_command(OUTPUT ${Lua51_output_dir}/lua51.dll ${Lua51_output_dir}/lua51.lib
-    COMMAND ${lua51_root}/build_lua51.bat Build $<$<CONFIG:Debug>:debug>
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    )
+        COMMAND ${lua51_root}/build_lua51.bat Build $<$<CONFIG:Debug>:debug>
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
 add_custom_target(build_lua51 DEPENDS ${Lua51_output_dir}/lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
 add_subdirectory("luajit")
 set(LUAJIT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src)
 set(LUAJIT_LIBRARIES luajit-5.1)
 
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+if (CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(LUA_LIBRARIES_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/src/x64)
-else()
+else ()
     set(LUA_LIBRARIES_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/src)
-endif()
+endif ()
 
 set(LUA_INCLUDE_DIR ${lua51_root}/src)
 set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
@@ -90,23 +90,23 @@ set(DONTSTARVEINJECTOR_UTIL_DIR ${DONTSTARVEINJECTOR_ROOT}/util)
 
 
 add_subdirectory("src/DontStarveInjector")
-if(msvc)
+if (msvc)
     add_subdirectory("tools/Checker")
-endif()
+endif ()
 add_subdirectory("tools/Creater")
 
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX}
 #install(FILES ${LUA_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})
 if (GAME_DIR)
     install(DIRECTORY ${CMAKE_INSTALL_PREFIX}/ DESTINATION ${GAME_INSTALL_PREFIX})
-endif()
+endif ()
 set(BUILD_CMD ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/update_version.py")
-execute_process(COMMAND ${CMAKE_COMMAND} -E env MOD_VERSION=${CMAKE_PROJECT_VERSION} ${BUILD_CMD} 
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+execute_process(COMMAND ${CMAKE_COMMAND} -E env MOD_VERSION=${CMAKE_PROJECT_VERSION} ${BUILD_CMD}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 add_custom_target(make_karta_luamodule
-    COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_karta.py"
-    DEPENDS ${LUA_LIBRARIES_PATH}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    )
+        COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/make_karta.py"
+        DEPENDS ${LUA_LIBRARIES_PATH}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)

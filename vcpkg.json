@@ -1,7 +1,25 @@
 {
-  "$schema" : "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
-  "dependencies" : [ "libzip", "zlib", "nlohmann-json", "spdlog", {
-    "name" : "libzip",
-    "version>=" : "1.9.2#1"
-  } ]
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "dependencies": [
+    {
+      "name": "libzip",
+      "version>=": "1.9.2#1"
+    },
+    {
+      "name": "pe-parse",
+      "version>=": "2.1.0#1"
+    },
+    {
+      "name": "zlib",
+      "version>=": "1.2.13"
+    },
+    {
+      "name": "nlohmann-json",
+      "version>=": "3.11.2"
+    },
+    {
+      "name": "spdlog",
+      "version>=": "1.11.0#1"
+    }
+  ]
 }

@@ -18,6 +18,7 @@ find_package(libzip CONFIG REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(pe-parse CONFIG REQUIRED)
 
 add_library(Injector SHARED ${SOURCES})
 
@@ -27,6 +28,9 @@ target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})
 target_link_libraries(Injector PRIVATE libzip::zip)
 target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(Injector PRIVATE spdlog::spdlog)
+if(MSVC)
+    target_link_libraries(Injector PRIVATE pe-parse::pe-parse)
+endif()
 
 target_include_directories(Injector PUBLIC ${STEAM_INCLUDE_DIR})
 target_link_libraries(Injector PRIVATE ${STEAM_LIBRARIES})
