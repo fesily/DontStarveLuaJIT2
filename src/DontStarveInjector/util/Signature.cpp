@@ -2,14 +2,16 @@
 #include <functional>
 #include <cassert>
 #include <regex>
-#include <array>
-#include <frida-gum.h>
 #include <optional>
+#include <algorithm>
+#include <ranges>
+#include <frida-gum.h>
+#include <pe-parse/parse.h>
 
 #include "platform.hpp"
-#include <charconv>
 #include "Signature.hpp"
 
+using namespace std::literals;
 static csh hcs;
 
 bool signature_init() {
@@ -75,7 +77,7 @@ bool Signature::operator==(const Signature &other) const {
     return true;
 }
 
-static const char* read_data_string(const char *data) {
+static const char *read_data_string(const char *data) {
     constexpr auto data_limit = 256;
     if (!gum_memory_is_readable(data - 1, 256 + 1))
         return nullptr;
@@ -122,23 +124,23 @@ filter_signature(cs_insn *insn, uint64_t &maybe_end, decltype(Signature::asm_cod
     int64_t imm = 0;
     bool rva = false;
     if (csX86.disp != 0 && csX86.op_count == 2) {
-        const auto& operand = csX86.operands[1];
-        if (operand.type == x86_op_type::X86_OP_MEM){
-            if (operand.mem.base == x86_reg::X86_REG_RIP){
+        const auto &operand = csX86.operands[1];
+        if (operand.type == x86_op_type::X86_OP_MEM) {
+            if (operand.mem.base == x86_reg::X86_REG_RIP) {
                 signature = std::regex_replace(op_str, regx2,
                                                csX86.disp > 0 ? "[rip + 0x????????]" : "[rip - 0x????????]");
                 rva = insn->id == X86_INS_JMP || insn->id == X86_INS_CALL;
-            }else if (operand.mem.index != x86_reg::X86_REG_INVALID) {
+            } else if (operand.mem.index != x86_reg::X86_REG_INVALID) {
                 signature = std::regex_replace(op_str, regx1, "[r$1x + rax*$2 $3 0x??]");
             }
         }
-    }else if(csX86.op_count == 1) {
-        const auto& operand = csX86.operands[0];
-        if (operand.type == x86_op_type::X86_OP_IMM){
+    } else if (csX86.op_count == 1) {
+        const auto &operand = csX86.operands[0];
+        if (operand.type == x86_op_type::X86_OP_IMM) {
             imm = operand.imm;
             if (insn->id < X86_INS_JAE || insn->id > X86_INS_JS) {
                 signature = "0x????????";
-            }else {
+            } else {
                 if (imm > maybe_end)
                     maybe_end = imm;
                 int64_t offset = imm - (insn->address + insn->size);
@@ -156,9 +158,10 @@ filter_signature(cs_insn *insn, uint64_t &maybe_end, decltype(Signature::asm_cod
                         break;
                 }
                 signature.clear();
-                auto sub_signatures = create_signature(data, nullptr, insn->id == X86_INS_CALL?4:1);
+                auto sub_signatures = create_signature(data, nullptr, insn->id == X86_INS_CALL ? 4 : 1);
                 if (sub_signatures.size() > 0) {
-                    asm_codes.insert(asm_codes.end(), sub_signatures.asm_codes.cbegin(), sub_signatures.asm_codes.cend());
+                    asm_codes.insert(asm_codes.end(), sub_signatures.asm_codes.cbegin(),
+                                     sub_signatures.asm_codes.cend());
                     return;
                 }
             }
@@ -167,7 +170,6 @@ filter_signature(cs_insn *insn, uint64_t &maybe_end, decltype(Signature::asm_cod
     asm_codes.push_back(insn->mnemonic);
     asm_codes.push_back(std::move(signature));
 }
-
 
 
 Signature create_signature(void *func, const in_function_t &in_func, size_t limit, bool readRva) {
@@ -308,165 +310,170 @@ void *fix_func_address_by_signature(void *target, void *original, const in_funct
     return nullptr;
 }
 
-#include <unordered_set>
-    struct Const {
-        const char* value;
-        size_t ref;
-    };
-    struct Function
-    {
-        uint64_t address;
-        std::vector<Const*> consts;
-        std::vector<uint64_t> call_functions;
-        const char* const_key;
-        uint64_t consts_hash;
-    };
-struct ModuleSections {
-    GumModuleDetails details;
-    GumMemoryRange text;
-    GumMemoryRange rodata;
-    GumMemoryRange plt;
-    GumMemoryRange got_plt;
-    bool in_plt(intptr_t address) const {
-        return plt.base_address <= address && address <= plt.base_address + plt.size;
-    }
-    bool in_got_plt(intptr_t address) const {
-        return got_plt.base_address <= address && address <= got_plt.base_address + got_plt.size;
-    }
-    bool in_rodata(intptr_t address) const {
-        return rodata.base_address <= address && address <= rodata.base_address + rodata.size;
-    }
+bool ModuleSections::in_plt(intptr_t address) const {
+    return plt.base_address <= address && address <= plt.base_address + plt.size;
+}
 
-    std::unordered_map<uint64_t, Function> functions;
-    std::unordered_map<const char*, Const> Consts;
+bool ModuleSections::in_got_plt(intptr_t address) const {
+    return got_plt.base_address <= address && address <= got_plt.base_address + got_plt.size;
+}
 
-    Function* get_function(uint64_t address){
-        auto iter = functions.begin(),end = functions.end();
-        auto finder = end;
-        for(; iter != end ; ++iter){
-            if (address >= iter->first){
-                finder = iter;
-            }else {
-                break;
-            }
+bool ModuleSections::in_rodata(intptr_t address) const {
+    return rodata.base_address <= address && address <= rodata.base_address + rodata.size;
+}
+
+ModuleSections::~ModuleSections() {
+    if (details)
+        gum_module_details_free(details);
+}
+
+Function *ModuleSections::get_function(uint64_t address) {
+    auto iter = functions.begin(), end = functions.end();
+    auto finder = end;
+    for (; iter != end; ++iter) {
+        if (address >= iter->first) {
+            finder = iter;
+        } else {
+            break;
         }
-        return finder != end ? &finder->second : nullptr;
     }
-};
+    return finder != end ? &finder->second : nullptr;
+}
 
-void scan_module(ModuleSections& m, uint64_t address) {
+static void scan_module(ModuleSections &m, uint64_t scan_address) {
     cs_insn *insns;
+    const auto address = m.details->range->base_address;
     // .text
-    const auto& text = m.text;
-    auto count = cs_disasm(hcs, reinterpret_cast<const uint8_t *>(text.base_address), text.size, address, size_t(-1),
+    scan_address = std::max(m.text.base_address, scan_address);
+    const GumMemoryRange &text = {scan_address, (m.text.base_address + m.text.size - scan_address) / sizeof(char)};
+    auto count = cs_disasm(hcs, reinterpret_cast<const uint8_t *>(text.base_address), text.size,
+                           address,
+                           size_t(-1),
                            &insns);
-    std::unordered_map<uint64_t, Const*> consts;
+    std::unordered_map<uint64_t, Const *> consts;
     std::unordered_set<uint64_t> nops;
     std::unordered_multimap<uint64_t, uint64_t> calls;
+    std::unordered_map<uint64_t, int64_t> const_numbers;
     for (int i = 0; i < count; ++i) {
         const auto &insn = insns[i];
         const auto &x86_details = insn.detail->x86;
-        if (insn.id == X86_INS_JMP || insn.id == X86_INS_JMP) {
-            const auto &operand = x86_details.operands[0];
-            if (operand.type != x86_op_type::X86_OP_INVALID) {
-                uint64_t imm = x86_details.disp == 0 ? operand.imm : insn.address + insn.size + x86_details.disp;
+        switch (insn.id) {
+            case X86_INS_JMP:
+            case X86_INS_CALL: {
+                const auto &operand = x86_details.operands[0];
+                if (operand.type != x86_op_type::X86_OP_INVALID) {
+                    uint64_t imm = x86_details.disp == 0 ? operand.imm : insn.address + insn.size + x86_details.disp;
 #ifndef _WIN32
-                if (m.in_plt(imm)){
-                    auto insn = cs_malloc(hcs);
-                    auto addr = address;
-                    size_t size = 32;
-                    auto code = (const uint8_t*)imm;
-                    if (cs_disasm_iter(hcs, &code, &size, &addr, insn)){
-                        if (insn->id == X86_INS_JMP)
-                        {
-                            auto& op = insn->detail->x86.operands[0];
-                            if (op.type == x86_op_type::X86_OP_MEM){
-                                auto target = insn->address + insn->size + op.mem.disp;
-                                if (m.in_got_plt(target)){
-                                    imm = (intptr_t)*(void**)target;
+                    // 计算相对转跳的最终地址
+                    if (m.in_plt(imm)) {
+                        auto insn = cs_malloc(hcs);
+                        auto addr = address;
+                        size_t size = 32;
+                        auto code = (const uint8_t *) imm;
+                        if (cs_disasm_iter(hcs, &code, &size, &addr, insn)) {
+                            if (insn->id == X86_INS_JMP) {
+                                auto &op = insn->detail->x86.operands[0];
+                                if (op.type == x86_op_type::X86_OP_MEM) {
+                                    auto target = insn->address + insn->size + op.mem.disp;
+                                    if (m.in_got_plt(target)) {
+                                        imm = (intptr_t) *(void **) target;
+                                    }
+                                } else if (op.type == x86_op_type::X86_OP_IMM) {
+                                    imm = op.imm;
                                 }
-                            }else if (op.type == x86_op_type::X86_OP_IMM) {
-                                imm = op.imm;
                             }
                         }
+                        cs_free(insn, 1);
                     }
-                    cs_free(insn, 1);
-                }
 #endif
-                calls.emplace(insn.address, imm);
-                m.functions[imm] = {imm};
-            }
-        }else if (insn.id == X86_INS_LEA || insn.id == X86_INS_MOV){
-            const char *str = nullptr;
-            if (x86_details.op_count == 2 && x86_details.operands[0].type == x86_op_type::X86_OP_REG)
-            {
-                const auto &op = x86_details.operands[1];
-                if (insn.id == X86_INS_LEA)
-                {
-                    if (op.type == x86_op_type::X86_OP_MEM && op.mem.base == x86_reg::X86_REG_RIP && op.mem.index == x86_reg::X86_REG_INVALID && op.mem.segment == x86_reg::X86_REG_INVALID)
-                    {
-                        auto target = insn.address + insn.size + op.mem.disp;
-                        if (m.in_rodata(target))
-                            str = read_data_string((char *)target);
-                    }
-                }
-                else if (insn.id == X86_INS_MOV)
-                {
-                    if (op.type == x86_op_type::X86_OP_IMM)
-                    {
-                        auto target = op.imm;
-                        if (m.in_rodata(target))
-                            str = read_data_string((char *)target);
-                    }
-                }
-                if (str != nullptr)
-                {
-                    if (m.Consts.contains(str))
-                    {
-                        m.Consts[str].ref++;
-                    }
-                    else
-                    {
-                        m.Consts[str] = {str, 1};
-                    }
-                    consts[insn.address] = &m.Consts[str];
+                    calls.emplace(insn.address, imm);
+                    m.functions[imm] = {imm};
                 }
             }
-        }else if (insn.id == X86_INS_NOP){
-            nops.insert(insn.address);
+                break;
+            case X86_INS_MOV:
+                if (x86_details.op_count == 2 && x86_details.disp != 0) {
+                    const_numbers.emplace(insn.address, x86_details.disp);
+                }
+            case X86_INS_LEA: {
+                const char *str = nullptr;
+                // 尝试读取一个指向const常量的字符串
+                if (x86_details.op_count == 2 && x86_details.operands[0].type == x86_op_type::X86_OP_REG) {
+                    const auto &op = x86_details.operands[1];
+                    if (insn.id == X86_INS_LEA) {
+                        if (op.type == x86_op_type::X86_OP_MEM && op.mem.base == x86_reg::X86_REG_RIP &&
+                            op.mem.index == x86_reg::X86_REG_INVALID && op.mem.segment == x86_reg::X86_REG_INVALID) {
+                            auto target = insn.address + insn.size + op.mem.disp;
+                            if (m.in_rodata(target))
+                                str = read_data_string((char *) target);
+                        }
+                    } else if (insn.id == X86_INS_MOV) {
+                        if (op.type == x86_op_type::X86_OP_IMM) {
+                            auto target = op.imm;
+                            if (m.in_rodata(target))
+                                str = read_data_string((char *) target);
+                        }
+                    }
+                    if (str != nullptr) {
+                        if (m.Consts.contains(str)) {
+                            m.Consts[str].ref++;
+                        } else {
+                            m.Consts[str] = {str, 1};
+                        }
+                        consts[insn.address] = &m.Consts[str];
+                    }
+                }
+            }
+                break;
+            case X86_INS_NOP: {
+                // 有可能是函数之间的分割填充
+                nops.insert(insn.address);
+            }
+            default:
+                break;
         }
+
     }
     cs_free(insns, count);
-    for (const auto& [address, constStr]: consts)
-    {
-        auto func = m.get_function(address);
+    for (const auto &[addr, constStr]: consts) {
+        auto func = m.get_function(addr);
         if (!func) continue;
         func->consts.push_back(constStr);
-        if (constStr->ref == 1){
+        if (constStr->ref == 1) {
             func->const_key = constStr->value;
         }
     }
-    for (const auto& [address, callAddr]: calls){
-        auto func = m.get_function(address);
+    for (const auto &[addr, callAddr]: calls) {
+        auto func = m.get_function(addr);
         if (!func) continue;
         func->call_functions.push_back(callAddr);
     }
+    for (const auto &[addr, num]: const_numbers) {
+        auto func = m.get_function(addr);
+        if (!func) continue;
+        func->const_numbers.push_back(num);
+    }
+    for (auto &[_, func]: m.functions) {
+        std::ranges::sort(func.call_functions);
+        std::ranges::sort(func.const_numbers);
+        std::ranges::sort(func.consts, [](auto &l, auto &r) { return l->value < r->value; });
+    }
 }
 
-ModuleSections get_module_sections(const char *path) {
+static ModuleSections get_module_sections(const char *path) {
 #ifdef _WIN32
 #error "not support"
 #else
 
     ModuleSections sections;
     gum_module_enumerate_sections(path, +[](const GumSectionDetails *details, gpointer user_data) -> gboolean {
-        if (details->name == ".text")
+        if (details->name == ".text"sv)
             (*(ModuleSections *) user_data).text = {details->address, details->size};
-        else if (details->name == ".rodata")
+        else if (details->name == ".rodata"sv)
             (*(ModuleSections *) user_data).rodata = {details->address, details->size};
-        else if (details->name == ".plt")
+        else if (details->name == ".plt"sv)
             (*(ModuleSections *) user_data).plt = {details->address, details->size};
-        else if (details->name == ".got.plt")
+        else if (details->name == ".got.plt"sv)
             (*(ModuleSections *) user_data).got_plt = {details->address, details->size};
         return TRUE;
     }, (void *) &sections);
@@ -474,7 +481,76 @@ ModuleSections get_module_sections(const char *path) {
 #endif
 }
 
-void init_module_signature(const char* path) {
+void init_module_signature(const char *path, uintptr_t scan_start_address) {
     auto sections = get_module_sections(path);
-    scan_module(sections, gum_module_find_base_address(path));
+    if (path == nullptr) {
+        sections.details = gum_module_details_copy(gum_process_get_main_module());
+    } else {
+        auto fn = [&](const GumModuleDetails *details) -> gboolean {
+            if (strcmp(details->path, path) == 0
+                || std::string_view(details->path).ends_with(path)) {
+                sections.details = gum_module_details_copy(details);
+                return FALSE;
+            }
+            return TRUE;
+        };
+        gum_process_enumerate_modules(+[](const GumModuleDetails *details,
+                                          gpointer user_data) -> gboolean {
+            return (*((decltype(fn) *) user_data))(details);
+        }, (void *) &fn);
+    }
+    scan_module(sections, scan_start_address);
+}
+
+Function *match_function(const char *key, ModuleSections &sections) {
+    auto iter = std::ranges::find_if(sections.functions, [key](const auto &func1) {
+        return std::string_view(func1.second.const_key) == key;
+    });
+    return iter != sections.functions.end() ? &iter->second : nullptr;
+}
+
+template<typename T>
+size_t hash_vector(const std::vector<T> &vec) {
+    auto seed = vec.size();
+    for (const auto &v: vec) {
+        seed ^= std::hash<T>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    }
+    return seed;
+}
+
+Function *match_function(Function &func1, ModuleSections &sections) {
+    const auto target = func1.get_consts_hash();
+    // 全部字符串组合
+    for (auto &func: sections.functions) {
+        if (target == func.second.get_consts_hash())
+            return &func.second;
+    }
+    auto iter = std::ranges::max_element(sections.functions, [&func1](auto &l, auto &r) {
+        auto fn = [&func1](const Const *str) {
+            return std::ranges::find(func1.consts, str) != func1.consts.cend();
+        };
+        return std::ranges::count_if(l.second.consts, fn) >
+               std::ranges::count_if(r.second.consts, fn);
+    });
+    if (iter != sections.functions.end())
+        return &iter->second;
+    return nullptr;
+}
+
+void try_fix_func_address(ModuleSections &target, ModuleSections &original) {
+    for (const auto &[addr, func]: target.functions) {
+        if (func.const_key) {
+
+        } else {
+            // 尝试用字符串组来匹配函数
+
+        }
+    }
+}
+
+size_t Function::get_consts_hash() {
+    if (consts_hash == 0) {
+        consts_hash = get_consts_hash();
+    }
+    return consts_hash;
 }
