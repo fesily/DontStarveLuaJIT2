@@ -7,6 +7,7 @@
 #include <ranges>
 #include <frida-gum.h>
 #include <pe-parse/parse.h>
+#include <range/v3/all.hpp>
 
 #include "platform.hpp"
 #include "Signature.hpp"
@@ -564,7 +565,7 @@ struct FunctionMatchCtx {
                     return func1.second.const_key && std::string_view(func1.second.const_key) == key;
                 }) | std::views::transform([this](const auto &func1) {
                     return Match{&func1.second, config.match_score};
-                }) | std::ranges::to<std::vector>();
+                }) | ranges::to<std::vector>();
     }
 
     std::vector<Match> match_function(Function &func1) {
@@ -585,7 +586,7 @@ struct FunctionMatchCtx {
 
             auto view = sections.functions | std::views::transform([&fn](auto &p) {
                 return std::pair{&p.second, std::ranges::count_if(p.second.consts, fn)};
-            }) | std::ranges::to<std::vector>();
+            }) | ranges::to<std::vector>();
 
             std::ranges::sort(view, [](auto &l, auto &r) {
                 return l.second > r.second;
