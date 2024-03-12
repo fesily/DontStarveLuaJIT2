@@ -395,6 +395,7 @@ static void scan_module(ModuleSections &m, uint64_t scan_address) {
                 if (x86_details.op_count == 2 && x86_details.disp != 0) {
                     const_numbers.emplace(insn.address, x86_details.disp);
                 }
+				[[fallthrough]]
             case X86_INS_LEA: {
                 const char *str = nullptr;
                 // 尝试读取一个指向const常量的字符串
@@ -460,12 +461,52 @@ static void scan_module(ModuleSections &m, uint64_t scan_address) {
     }
 }
 
+static GumModuleDetails* get_module_details(const char* path){
+    if (path == nullptr) {
+        return gum_module_details_copy(gum_process_get_main_module());
+    }
+    GumModuleDetails* out_details;
+    auto fn = [&](const GumModuleDetails* details) -> gboolean {
+        if (strcmp(details->path, path) == 0
+            || std::string_view(details->path).ends_with(path)) {
+            out_details = gum_module_details_copy(details);
+            return FALSE;
+        }
+        return TRUE;
+        };
+    gum_process_enumerate_modules(+[](const GumModuleDetails* details,
+        gpointer user_data) -> gboolean {
+            return (*static_cast<decltype(fn)*>(user_data))(details);
+        }, (void*)&fn);
+    return out_details;
+}
+
 static ModuleSections get_module_sections(const char *path) {
+    ModuleSections sections;
 #ifdef _WIN32
-#error "not support"
+
+    const auto details = get_module_details(path);
+    
+    const auto pe = peparse::ParsePEFromPointer((uint8_t*)details->range->base_address, details->range->size);
+    if (pe)
+    {
+        peparse::IterSec(pe, +[](void* user_data,
+            const peparse::VA& secBase,
+            const std::string& secName,
+            const peparse::image_section_header& s,
+            const peparse::bounded_buffer* data)
+            {
+            if (secName == ".text")
+                ((ModuleSections*)user_data)->text = { secBase, data?0: data->bufLen };
+            else if (secName == ".rdata")
+                ((ModuleSections*)user_data)->rodata = { secBase, data ? 0 : data->bufLen };
+                return 1;
+            }, (void*)&sections);
+    }
+    peparse::DestructParsedPE(pe);
+	gum_module_details_free(details);
 #else
 
-    ModuleSections sections;
     gum_module_enumerate_sections(path, +[](const GumSectionDetails *details, gpointer user_data) -> gboolean {
         if (details->name == ".text"sv)
             (*(ModuleSections *) user_data).text = {details->address, details->size};
@@ -477,28 +518,13 @@ static ModuleSections get_module_sections(const char *path) {
             (*(ModuleSections *) user_data).got_plt = {details->address, details->size};
         return TRUE;
     }, (void *) &sections);
-    return sections;
 #endif
+    return sections;
 }
 
 void init_module_signature(const char *path, uintptr_t scan_start_address) {
     auto sections = get_module_sections(path);
-    if (path == nullptr) {
-        sections.details = gum_module_details_copy(gum_process_get_main_module());
-    } else {
-        auto fn = [&](const GumModuleDetails *details) -> gboolean {
-            if (strcmp(details->path, path) == 0
-                || std::string_view(details->path).ends_with(path)) {
-                sections.details = gum_module_details_copy(details);
-                return FALSE;
-            }
-            return TRUE;
-        };
-        gum_process_enumerate_modules(+[](const GumModuleDetails *details,
-                                          gpointer user_data) -> gboolean {
-            return (*((decltype(fn) *) user_data))(details);
-        }, (void *) &fn);
-    }
+    sections.details = get_module_details(path);
     scan_module(sections, scan_start_address);
 }
 
