@@ -593,10 +593,13 @@ struct FunctionMatchCtx {
             });
 
             const auto score = view.front().second;
-            res.insert_range(res.cend(), view | std::views::take_while([score](auto &v) {
+            auto v1 = view | std::views::take_while([score](auto &v) {
                 return v.second == score;
-            }) | std::views::transform([this](auto &v) { return Match{v.first, v.second * config.consts_score}; }));
-
+            }) | std::views::transform([this](auto &v) { return Match{v.first, v.second * config.consts_score}; });
+            
+            for(const auto& m : v1){
+                res.emplace_back(m);
+            }
         }
         return res;
     }
