@@ -11,6 +11,11 @@
 #include "platform.hpp"
 #include "Signature.hpp"
 
+using in_function_t = std::function<bool(void *)>;
+
+static Signature
+create_signature(void *func, const in_function_t &in_func, size_t limit = size_t(-1));
+
 using namespace std::literals;
 static csh hcs;
 
@@ -114,7 +119,7 @@ filter_signature(cs_insn *insn, uint64_t &maybe_end, decltype(Signature::asm_cod
             if (is_valid_remote_offset(imm)) {
                 asm_codes.push_back("lea");
                 asm_codes.push_back(std::regex_replace(op_str, regx2,
-                                                       imm > 0 ? "[rip + 0x??????]" : "[rip - 0x??????]"));
+                                                       imm > 0 ? "[rip + 0x?]" : "[rip - 0x?]"));
                 return;
             }
         }
@@ -128,10 +133,10 @@ filter_signature(cs_insn *insn, uint64_t &maybe_end, decltype(Signature::asm_cod
         if (operand.type == x86_op_type::X86_OP_MEM) {
             if (operand.mem.base == x86_reg::X86_REG_RIP) {
                 signature = std::regex_replace(op_str, regx2,
-                                               csX86.disp > 0 ? "[rip + 0x????????]" : "[rip - 0x????????]");
+                                               csX86.disp > 0 ? "[rip + 0x?]" : "[rip - 0x?]");
                 rva = insn->id == X86_INS_JMP || insn->id == X86_INS_CALL;
             } else if (operand.mem.index != x86_reg::X86_REG_INVALID) {
-                signature = std::regex_replace(op_str, regx1, "[r$1x + rax*$2 $3 0x??]");
+                signature = std::regex_replace(op_str, regx1, "[r$1x + rax*$2 $3 0x?]");
             }
         }
     } else if (csX86.op_count == 1) {
@@ -139,7 +144,7 @@ filter_signature(cs_insn *insn, uint64_t &maybe_end, decltype(Signature::asm_cod
         if (operand.type == x86_op_type::X86_OP_IMM) {
             imm = operand.imm;
             if (insn->id < X86_INS_JAE || insn->id > X86_INS_JS) {
-                signature = "0x????????";
+                signature = "0x?";
             } else {
                 if (imm > maybe_end)
                     maybe_end = imm;
@@ -172,7 +177,7 @@ filter_signature(cs_insn *insn, uint64_t &maybe_end, decltype(Signature::asm_cod
 }
 
 
-Signature create_signature(void *func, const in_function_t &in_func, size_t limit, bool readRva) {
+Signature create_signature(void *func, const in_function_t &in_func, size_t limit) {
     Signature ret;
 
     const uint8_t *binary = (uint8_t *) func;
@@ -187,7 +192,6 @@ Signature create_signature(void *func, const in_function_t &in_func, size_t limi
 
         count++;
 
-        ret.memory_ranges.push_back({insn->address, insn->size});
         filter_signature(insn, maybe_end, ret.asm_codes);
         if (insn->id == X86_INS_JMP || insn->id == X86_INS_INT3 || insn->id == X86_INS_RET) {
             if (maybe_end >= (insn->address + insn->size))
@@ -201,16 +205,6 @@ Signature create_signature(void *func, const in_function_t &in_func, size_t limi
     return ret;
 }
 
-static constexpr size_t func_aligned() {
-#ifdef _M_X86
-    return 8;
-#elif defined(__i386__)
-    return 8;
-#else
-    return 16;
-#endif
-}
-
 static std::unordered_map<void *, Signature> signature_cache;
 static std::unordered_map<void *, std::string> signature_first_cache;
 
@@ -219,7 +213,7 @@ void release_signature_cache() {
     signature_first_cache.clear();
 }
 
-const Signature *get_signature_cache(void *fix_target, const std::string &first) {
+static const Signature *get_signature_cache(void *fix_target, const std::string &first) {
     Signature *target_s;
     if (signature_cache.find(fix_target) != signature_cache.end()) {
         target_s = &signature_cache[fix_target];
@@ -230,7 +224,7 @@ const Signature *get_signature_cache(void *fix_target, const std::string &first)
         if (first_s[0] != first) {
             return nullptr;
         }
-        signature_cache[fix_target] = create_signature(fix_target, nullptr, size_t(-1), true);
+        signature_cache[fix_target] = create_signature(fix_target, nullptr, size_t(-1));
         target_s = &signature_cache[fix_target];
     }
     return target_s;
@@ -259,23 +253,24 @@ static int longestCommonSubstring(const std::vector<std::string> &text1, const s
 #define OUTPUT_SIGNATURE(addr, s)
 #endif
 
-void *fix_func_address_by_signature(void *target, void *original, const in_function_t &in_func, uint32_t range,
-                                    bool updated) {
+
+bool is_same_signature_fast(void *target, void *original) {
     constexpr auto short_signature_len = 16;
-    if (create_signature(target, nullptr, short_signature_len, false) ==
-        create_signature(original, in_func, short_signature_len, false)) {
-        return target;
-    }
-    auto original_s = create_signature(original, in_func);
-    // 基于以下假设，函数地址必然被对齐分配
-    constexpr auto aligned = func_aligned();
-    auto limit = range / aligned;
+    return create_signature(target, nullptr, short_signature_len) ==
+           create_signature(original, nullptr, short_signature_len);
+}
+
+static void *
+fix_func_address_by_signature(ModuleSections &target, Function &original) {
+    auto original_s = create_signature((void *) original.address, [&original](auto address) {
+        return original.in_function((uintptr_t) address);
+    });
 
     size_t maybe_target_count = 1;
     void *maybe_target_addr = nullptr;
 
-    for (size_t i = 0; i < limit; i++) {
-        auto fix_target = (void *) ((intptr_t) target + i * aligned);
+    for (const auto &[addr, func]: target.functions) {
+        auto fix_target = (void *) addr;
         auto target_s = get_signature_cache(fix_target, original_s[0]);
         if (!target_s)
             continue;
@@ -286,27 +281,14 @@ void *fix_func_address_by_signature(void *target, void *original, const in_funct
             maybe_target_count = max;
             maybe_target_addr = fix_target;
         }
-        if (updated) {
-            fix_target = (void *) ((intptr_t) target - i * aligned);
-            auto target_s = get_signature_cache(fix_target, original_s[0]);
-            if (!target_s)
-                continue;
-            auto max = longestCommonSubstring(original_s.asm_codes, target_s->asm_codes);
-            if (max == original_s.size())
-                return fix_target;
-            if (max > maybe_target_count) {
-                maybe_target_count = max;
-                maybe_target_addr = fix_target;
-            }
-        }
     }
     if (maybe_target_addr) {
-        OUTPUT_SIGNATURE(original, original_s.to_string());
+        OUTPUT_SIGNATURE((void *) original.address, original_s.to_string());
         fprintf(stderr, "maybe target:\n");
         OUTPUT_SIGNATURE(maybe_target_addr, get_signature_cache(maybe_target_addr, original_s[0])->to_string());
         return maybe_target_addr;
     }
-    OUTPUT_SIGNATURE(original, original_s.to_string());
+    OUTPUT_SIGNATURE((void *) original.address, original_s.to_string());
     return nullptr;
 }
 
@@ -393,9 +375,9 @@ static void scan_module(ModuleSections &m, uint64_t scan_address) {
                 break;
             case X86_INS_MOV:
                 if (x86_details.op_count == 2 && x86_details.disp != 0) {
-                    const_numbers.emplace(insn.address, x86_details.disp);
+                    //const_numbers.emplace(insn.address, x86_details.disp);
                 }
-				[[fallthrough]]
+                [[fallthrough]];
             case X86_INS_LEA: {
                 const char *str = nullptr;
                 // 尝试读取一个指向const常量的字符串
@@ -439,10 +421,9 @@ static void scan_module(ModuleSections &m, uint64_t scan_address) {
     for (const auto &[addr, constStr]: consts) {
         auto func = m.get_function(addr);
         if (!func) continue;
-        func->consts.push_back(constStr);
-        if (constStr->ref == 1) {
-            func->const_key = constStr->value;
-        }
+        // unique const str
+        if (std::ranges::find(func->consts, constStr) != func->consts.end())
+            func->consts.push_back(constStr);
     }
     for (const auto &[addr, callAddr]: calls) {
         auto func = m.get_function(addr);
@@ -458,33 +439,42 @@ static void scan_module(ModuleSections &m, uint64_t scan_address) {
         std::ranges::sort(func.call_functions);
         std::ranges::sort(func.const_numbers);
         std::ranges::sort(func.consts, [](auto &l, auto &r) { return l->value < r->value; });
+        for (const auto &c: func.consts) {
+            if (c->ref == 1) {
+                func.const_key = c->value;
+            } else {
+                // maybe same const ref by same function
+                if (std::ranges::count(func.consts, c) == c->ref) {
+                    func.const_key = c->value;
+                }
+            }
+        }
     }
 }
 
-static GumModuleDetails* get_module_details(const char* path){
+static GumModuleDetails *get_module_details(const char *path) {
     if (path == nullptr) {
         return gum_module_details_copy(gum_process_get_main_module());
     }
-    GumModuleDetails* out_details;
-    auto fn = [&](const GumModuleDetails* details) -> gboolean {
+    GumModuleDetails *out_details;
+    auto fn = [&](const GumModuleDetails *details) -> gboolean {
         if (strcmp(details->path, path) == 0
             || std::string_view(details->path).ends_with(path)) {
             out_details = gum_module_details_copy(details);
             return FALSE;
         }
         return TRUE;
-        };
-    gum_process_enumerate_modules(+[](const GumModuleDetails* details,
-        gpointer user_data) -> gboolean {
-            return (*static_cast<decltype(fn)*>(user_data))(details);
-        }, (void*)&fn);
+    };
+    gum_process_enumerate_modules(+[](const GumModuleDetails *details,
+                                      gpointer user_data) -> gboolean {
+        return (*static_cast<decltype(fn) *>(user_data))(details);
+    }, (void *) &fn);
     return out_details;
 }
 
 static ModuleSections get_module_sections(const char *path) {
     ModuleSections sections;
 #ifdef _WIN32
-
     const auto details = get_module_details(path);
     
     const auto pe = peparse::ParsePEFromPointer((uint8_t*)details->range->base_address, details->range->size);
@@ -504,7 +494,7 @@ static ModuleSections get_module_sections(const char *path) {
             }, (void*)&sections);
     }
     peparse::DestructParsedPE(pe);
-	gum_module_details_free(details);
+    gum_module_details_free(details);
 #else
 
     gum_module_enumerate_sections(path, +[](const GumSectionDetails *details, gpointer user_data) -> gboolean {
@@ -522,17 +512,11 @@ static ModuleSections get_module_sections(const char *path) {
     return sections;
 }
 
-void init_module_signature(const char *path, uintptr_t scan_start_address) {
+ModuleSections init_module_signature(const char *path, uintptr_t scan_start_address) {
     auto sections = get_module_sections(path);
     sections.details = get_module_details(path);
     scan_module(sections, scan_start_address);
-}
-
-Function *match_function(const char *key, ModuleSections &sections) {
-    auto iter = std::ranges::find_if(sections.functions, [key](const auto &func1) {
-        return std::string_view(func1.second.const_key) == key;
-    });
-    return iter != sections.functions.end() ? &iter->second : nullptr;
+    return sections;
 }
 
 template<typename T>
@@ -544,34 +528,105 @@ size_t hash_vector(const std::vector<T> &vec) {
     return seed;
 }
 
-Function *match_function(Function &func1, ModuleSections &sections) {
-    const auto target = func1.get_consts_hash();
-    // 全部字符串组合
-    for (auto &func: sections.functions) {
-        if (target == func.second.get_consts_hash())
-            return &func.second;
+struct MatchConfig {
+    const float consts_score = 1;
+    const float call_score = 0.8;
+    const float const_numbers_score = 0.2;
+
+    int string_huge_limit = 48;
+    int string_huge_group = 1;
+    int string_long_limit = 24;
+    int string_long_group = 2;
+    int string_medium_limit = 16;
+    int string_medium_group = 3;
+    int const_complex_limit = 16;
+    int const_complex_group = 1;
+    const float match_score = 999;
+};
+
+struct FunctionMatchCtx {
+    struct Match {
+        const Function *matched;
+        float score;
+
+        operator bool() const {
+            return matched != nullptr;
+        }
+    };
+
+    ModuleSections &sections;
+
+    MatchConfig &config;
+
+    std::vector<Match> match_function(const char *key) {
+        return
+                sections.functions | std::views::filter([key, this](const auto &func1) {
+                    return func1.second.const_key && std::string_view(func1.second.const_key) == key;
+                }) | std::views::transform([this](const auto &func1) {
+                    return Match{&func1.second, config.match_score};
+                }) | std::ranges::to<std::vector>();
     }
-    auto iter = std::ranges::max_element(sections.functions, [&func1](auto &l, auto &r) {
-        auto fn = [&func1](const Const *str) {
-            return std::ranges::find(func1.consts, str) != func1.consts.cend();
-        };
-        return std::ranges::count_if(l.second.consts, fn) >
-               std::ranges::count_if(r.second.consts, fn);
-    });
-    if (iter != sections.functions.end())
-        return &iter->second;
-    return nullptr;
-}
 
-void try_fix_func_address(ModuleSections &target, ModuleSections &original) {
-    for (const auto &[addr, func]: target.functions) {
-        if (func.const_key) {
+    std::vector<Match> match_function(Function &func1) {
+        const auto target = func1.get_consts_hash();
+        std::vector<Match> res;
+        // 全部字符串组合
+        for (auto &func: sections.functions) {
+            if (target == func.second.get_consts_hash())
+                res.emplace_back(Match{&func.second, config.match_score});
+        }
+        if (res.empty()) {
 
-        } else {
-            // 尝试用字符串组来匹配函数
+            auto fn = [&func1](const Const *str) {
+                return std::ranges::find_if(func1.consts, [target = std::string_view(str->value)](const auto v) {
+                    return v->value == target;
+                }) != func1.consts.cend();
+            };
+
+            auto view = sections.functions | std::views::transform([&fn](auto &p) {
+                return std::pair{&p.second, std::ranges::count_if(p.second.consts, fn)};
+            }) | std::ranges::to<std::vector>();
+
+            std::ranges::sort(view, [](auto &l, auto &r) {
+                return l.second > r.second;
+            });
+
+            const auto score = view.front().second;
+            res.insert_range(res.cend(), view | std::views::take_while([score](auto &v) {
+                return v.second == score;
+            }) | std::views::transform([this](auto &v) { return Match{v.first, v.second * config.consts_score}; }));
 
         }
+        return res;
     }
+
+};
+
+static float calc_score(Function &func, MatchConfig &config) {
+    return func.consts.size() * config.consts_score + func.call_functions.size() * config.call_score +
+           func.const_numbers.size() * config.const_numbers_score;
+}
+
+static bool is_simple_function(Function &func) {
+    return func.consts.empty() && func.call_functions.empty();
+}
+
+uintptr_t ModuleSections::try_fix_func_address(Function &original, uint64_t maybe_addr) {
+    MatchConfig config;
+    FunctionMatchCtx ctx{*this, config};
+    if (!is_simple_function(original)) {
+        const auto targetScore = calc_score(original, config);
+        auto res = original.const_key ? ctx.match_function(original.const_key) : ctx.match_function(original);
+        if (!res.empty()) {
+            for (const auto func: res) {
+                if (!func) continue;
+                if (func.score >= targetScore) {
+                    return func.matched->address;
+                }
+            }
+        }
+    }
+    return (uintptr_t) fix_func_address_by_signature(*this, original);
 }
 
 size_t Function::get_consts_hash() {

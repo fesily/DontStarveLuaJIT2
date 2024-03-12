@@ -23,12 +23,7 @@ struct MemorySignature {
 };
 
 struct Signature {
-    struct memory_range {
-        uintptr_t start;
-        size_t len;
-    };
     std::vector<std::string> asm_codes;
-    std::vector<memory_range> memory_ranges;
 
     std::string to_string() const;
 
@@ -48,6 +43,10 @@ struct Const {
 
 struct Function {
     uint64_t address;
+    size_t size;
+
+    bool in_function(uint64_t addr) const { return address >= addr && address <= addr + size; }
+
     std::vector<Const *> consts;
     std::vector<uint64_t> call_functions;
     std::vector<int64_t> const_numbers;
@@ -64,6 +63,18 @@ struct ModuleSections {
     GumMemoryRange plt;
     GumMemoryRange got_plt;
 
+    ModuleSections() = default;
+
+    ModuleSections(const ModuleSections &) = delete;
+
+    ModuleSections(ModuleSections &&other) noexcept: details{other.details} {
+        other.details = nullptr;
+        text = other.text;
+        rodata = other.rodata;
+        plt = other.plt;
+        got_plt = other.got_plt;
+    }
+
     ~ModuleSections();
 
     bool in_plt(intptr_t address) const;
@@ -74,21 +85,19 @@ struct ModuleSections {
 
     std::unordered_map<uint64_t, Function> functions;
     std::unordered_map<const char *, Const> Consts;
+    std::unordered_map<Function *, uint64_t> known_functions;
 
     Function *get_function(uint64_t address);
+
+    uintptr_t try_fix_func_address(Function &original, uint64_t maybe_addr);
 };
 
 bool signature_init();
 
 void signature_deinit();
 
-void init_module_signature(const char *path, uintptr_t scan_address);
+ModuleSections init_module_signature(const char *path, uintptr_t scan_start_address);
 
-using in_function_t = std::function<bool(void *)>;
-
-Signature create_signature(void *func, const in_function_t &in_func, size_t limit = size_t(-1), bool readRva = true);
-
-void *fix_func_address_by_signature(void *target, void *original, const in_function_t &in_func, uint32_t range = 512,
-                                    bool updated = true);
+bool is_same_signature_fast(void *target, void *original);
 
 void release_signature_cache();

@@ -78,6 +78,7 @@ get_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase,
         return std::unexpected(errormsg);
     }
     if (SignatureJson::current_version() != signatures.version) {
+        spdlog::warn("try fix all signatures");
         errormsg = update_signatures(signatures, targetLuaModuleBase, exports);
         if (!errormsg.empty()) {
             return std::unexpected(errormsg);
@@ -142,19 +143,27 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         return "can't init signature";
     }
     const auto &lua51_path = get_lua51_path();
-    spdlog::warn("try fix all signatures");
+    auto modulelua51 = init_module_signature(lua51_path.c_str(), 0);
+    auto moduleMain = init_module_signature(gum_process_get_main_module()->path, targetLuaModuleBase);
     auto &funcs = signatures.funcs;
     // fix all signatures
     for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
         auto original = (void *) gum_module_find_export_by_name(lua51_path.c_str(), name.c_str());
-        if (original == nullptr) {
+        if (original == nullptr || modulelua51.functions.contains((uintptr_t) original)) {
             return std::format("can't find address: {}", name.c_str());
         }
+        auto &originalFunc = modulelua51.functions.find((uintptr_t) original)->second;
         auto old_offset = GPOINTER_TO_INT(funcs.at(name));
         spdlog::info("try fix signature [{}]: {}", name, old_offset);
         void *target = GSIZE_TO_POINTER(targetLuaModuleBase + old_offset);
-        auto target1 = fix_func_address_by_signature(target, original, nullptr, range, updated);
+        if (moduleMain.functions.contains((uintptr_t) target)) {
+            if (is_same_signature_fast(target, original)) {
+                spdlog::info("should not fix signature [{}]: {}", name, target);
+                continue;
+            }
+        }
+        auto target1 = (void *) moduleMain.try_fix_func_address(originalFunc, old_offset == 0 ? 0 : (uintptr_t) target);
         if (!target1) {
             return std::format("func[{}] can't fix address, wait for mod update", name);;
         }
