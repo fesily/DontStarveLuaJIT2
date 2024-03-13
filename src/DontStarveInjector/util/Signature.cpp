@@ -323,6 +323,10 @@ Function *ModuleSections::get_function(uint64_t address) {
     return finder != end ? &finder->second : nullptr;
 }
 
+static bool reg_is_ip(x86_reg reg) {
+    return reg == x86_reg::X86_REG_RIP || reg == x86_reg::X86_REG_EIP || reg == x86_reg::X86_REG_IP;
+};
+
 static void scan_module(ModuleSections &m, uint64_t scan_address) {
     cs_insn *insns;
     const auto address = m.details->range->base_address;
@@ -375,9 +379,14 @@ static void scan_module(ModuleSections &m, uint64_t scan_address) {
                 }
             }
                 break;
-        case X86_INS_MOV:
-                if (x86_details.op_count == 2  ) {
-                    if (x86_details.disp != 0 && (x86_details.operands[1].type == x86_op_type::X86_OP_MEM || x86_details.operands[0].type == x86_op_type::X86_OP_MEM))
+            case X86_INS_MOV:
+
+                if (x86_details.op_count == 2) {
+                    if (x86_details.disp != 0 &&
+                        ((x86_details.operands[1].type == x86_op_type::X86_OP_MEM &&
+                          !reg_is_ip(x86_details.operands[1].mem.base)) ||
+                         (x86_details.operands[0].type == x86_op_type::X86_OP_MEM &&
+                          !reg_is_ip(x86_details.operands[0].mem.base))))
                         const_offset_numbers.emplace(insn.address, x86_details.disp);
                     else if (x86_details.operands[1].type == X86_OP_IMM)
                         const_numbers.emplace(insn.address, x86_details.operands[1].imm);
@@ -440,12 +449,12 @@ static void scan_module(ModuleSections &m, uint64_t scan_address) {
         if (!func) continue;
         func->const_numbers.push_back(num);
     }
-    for (const auto& [addr, num] : const_offset_numbers) {
+    for (const auto &[addr, num]: const_offset_numbers) {
         auto func = m.get_function(addr);
         if (!func) continue;
         func->const_offset_numbers.push_back(num);
     }
-    for (auto& func : m.functions | std::views::values) {
+    for (auto &func: m.functions | std::views::values) {
         std::ranges::sort(func.call_functions);
         std::ranges::sort(func.const_numbers);
         std::ranges::sort(func.consts, [](auto &l, auto &r) { return l->value < r->value; });
@@ -606,8 +615,8 @@ struct FunctionMatchCtx {
             auto v1 = view | std::views::take_while([score](auto &v) {
                 return v.second == score;
             }) | std::views::transform([this](auto &v) { return Match{v.first, v.second * config.consts_score}; });
-            
-            for(const auto& m : v1){
+
+            for (const auto &m: v1) {
                 res.emplace_back(m);
             }
         }
