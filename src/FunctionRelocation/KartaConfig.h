@@ -12,8 +12,7 @@
 #include <optional>
 #include <span>
 #include <set>
-
-namespace Karta {
+namespace function_relocation::Karta {
     struct Function {
         std::string functionName;
         size_t instructionCount;

@@ -9,7 +9,7 @@
 #include <ranges>
 #include <algorithm>
 
-namespace Karta {
+namespace function_relocation::Karta {
     inline void from_json(const nlohmann::json &nlohmann_json_j, Function &nlohmann_json_t) {
         nlohmann_json_j.at("Function Name").get_to(nlohmann_json_t.functionName);
         nlohmann_json_j.at("Instruction Count").get_to(nlohmann_json_t.instructionCount);

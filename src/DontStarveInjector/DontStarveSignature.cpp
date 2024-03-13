@@ -8,6 +8,9 @@
 #include "util/platform.hpp"
 #include "config.hpp"
 #include "DontStarveSignature.hpp"
+
+#include "ctx.hpp"
+#include "ModuleSections.hpp"
 #include "SignatureJson.hpp"
 #include "../missfunc.h"
 
@@ -93,12 +96,13 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(bool isCli
     SignatureUpdater updater;
     SignatureJson json{isClient};
     auto signatures = json.read_from_signatures();
-    signature_init();
-    init_module_signature(gum_process_get_main_module()->path, luaModuleBaseAddress);
+    if (!function_relocation::init_ctx())
+        return std::unexpected("can't init signature");
+    function_relocation::init_module_signature(gum_process_get_main_module()->path, luaModuleBaseAddress);
     if (!signatures) {
         auto res = create_signature(luaModuleBaseAddress, [&json](auto &v) { json.update_signatures(v); });
         if (!res) {
-            signature_deinit();
+	        function_relocation::deinit_ctx();
             return std::unexpected(res.error());
         }
         updater.exports = std::move(std::get<0>(res.value()));
@@ -107,13 +111,13 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(bool isCli
         auto res = get_signatures(signatures.value(), luaModuleBaseAddress,
                                   [&json](auto &v) { json.update_signatures(v); });
         if (!res) {
-            signature_deinit();
+            function_relocation::deinit_ctx();
             return std::unexpected(res.error());
         }
         updater.exports = std::move(res.value());
         updater.signatures = std::move(signatures.value());
     }
-    signature_deinit();
+    function_relocation::deinit_ctx();
     return updater;
 }
 
@@ -139,12 +143,9 @@ static const std::string &get_lua51_path() {
 std::string
 update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports, uint32_t range,
                   bool updated) {
-    if (!signature_init()) {
-        return "can't init signature";
-    }
     const auto &lua51_path = get_lua51_path();
-    auto modulelua51 = init_module_signature(lua51_path.c_str(), 0);
-    auto moduleMain = init_module_signature(gum_process_get_main_module()->path, targetLuaModuleBase);
+    auto modulelua51 = function_relocation::init_module_signature(lua51_path.c_str(), 0);
+    auto moduleMain = function_relocation::init_module_signature(gum_process_get_main_module()->path, targetLuaModuleBase);
     auto &funcs = signatures.funcs;
     // fix all signatures
     for (size_t i = 0; i < exports.size(); i++) {
@@ -158,7 +159,7 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         spdlog::info("try fix signature [{}]: {}", name, old_offset);
         void *target = GSIZE_TO_POINTER(targetLuaModuleBase + old_offset);
         if (moduleMain.functions.contains((uintptr_t) target)) {
-            if (is_same_signature_fast(target, original)) {
+            if (function_relocation::is_same_signature_fast(target, original)) {
                 spdlog::info("should not fix signature [{}]: {}", name, target);
                 continue;
             }
@@ -173,7 +174,6 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         spdlog::info("update signatures [{}]: {} to {}", name, old_offset, new_offset);
         funcs[name] = new_offset;
     }
-    release_signature_cache();
-    signature_deinit();
+    function_relocation::release_signature_cache();
     return {};
 }

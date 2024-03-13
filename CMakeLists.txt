@@ -89,6 +89,8 @@ set(DONTSTARVEINJECTOR_ROOT ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
 set(DONTSTARVEINJECTOR_UTIL_DIR ${DONTSTARVEINJECTOR_ROOT}/util)
 
 add_subdirectory("src/FunctionRelocation")
+set(FUNCTION_RELOCATION_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/FunctionRelocation)
+
 add_subdirectory("src/DontStarveInjector")
 if (msvc)
     add_subdirectory("tools/Checker")

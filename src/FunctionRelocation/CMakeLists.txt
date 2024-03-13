@@ -4,7 +4,10 @@ find_package(nlohmann_json CONFIG REQUIRED)
 
 set(SOURCE
         Signature.cpp
+        ModuleSections.cpp
+        MemorySignature.cpp
         KartaConfig.cpp
+        ctx.cpp
 )
 
 find_package(spdlog CONFIG REQUIRED)

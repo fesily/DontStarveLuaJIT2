@@ -32,6 +32,7 @@ target_link_libraries(Injector PRIVATE range-v3::meta range-v3::concepts range-v
 target_include_directories(Injector PUBLIC ${STEAM_INCLUDE_DIR})
 target_link_libraries(Injector PRIVATE ${STEAM_LIBRARIES})
 target_link_libraries(Injector PRIVATE function_relocation)
+target_include_directories(Injector PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
 if (NOT ENABLE_ONLY_LUA51)
     target_include_directories(Injector PUBLIC ${LUAJIT_INCLUDE_DIR})
