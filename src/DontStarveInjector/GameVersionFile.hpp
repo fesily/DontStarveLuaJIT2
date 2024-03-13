@@ -1,9 +1,10 @@
 #pragma once
+
 #include <stdio.h>
 #include <charconv>
 #include <stdint.h>
-static uintptr_t readGameVersion(const char* filename)
-{
+
+static uintptr_t readGameVersion(const char *filename) {
     auto version_fp = fopen(filename, "r");
     if (!version_fp)
         return -1;

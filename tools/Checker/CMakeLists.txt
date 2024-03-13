@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.15)
 
-set (SOURCES
-main.cpp
-${DONTSTARVEINJECTOR_UTIL_DIR}/Signature.cpp
-${DONTSTARVEINJECTOR_ROOT}/SignatureJson.cpp
-${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
+set(SOURCES
+        main.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/Signature.cpp
+        ${DONTSTARVEINJECTOR_ROOT}/SignatureJson.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
 )
 find_package(nlohmann_json CONFIG REQUIRED)
 
@@ -27,6 +27,6 @@ target_compile_definitions(signature_checker PUBLIC GAMEDIR="${GAMEDIR}" LUA51_P
 
 if (MSVC)
     target_link_options(signature_checker PUBLIC "/NODEFAULTLIB:LIBCMT")
-endif()
+endif ()
 
 add_dependencies(signature_checker signature_updater)

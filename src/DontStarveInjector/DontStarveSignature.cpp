@@ -102,7 +102,7 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(bool isCli
     if (!signatures) {
         auto res = create_signature(luaModuleBaseAddress, [&json](auto &v) { json.update_signatures(v); });
         if (!res) {
-	        function_relocation::deinit_ctx();
+            function_relocation::deinit_ctx();
             return std::unexpected(res.error());
         }
         updater.exports = std::move(std::get<0>(res.value()));
@@ -145,7 +145,8 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
                   bool updated) {
     const auto &lua51_path = get_lua51_path();
     auto modulelua51 = function_relocation::init_module_signature(lua51_path.c_str(), 0);
-    auto moduleMain = function_relocation::init_module_signature(gum_process_get_main_module()->path, targetLuaModuleBase);
+    auto moduleMain = function_relocation::init_module_signature(gum_process_get_main_module()->path,
+                                                                 targetLuaModuleBase);
     auto &funcs = signatures.funcs;
     // fix all signatures
     for (size_t i = 0; i < exports.size(); i++) {

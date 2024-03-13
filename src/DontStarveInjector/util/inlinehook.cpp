@@ -1,8 +1,11 @@
 #ifdef _WIN32
 #include <Windows.h>
 #else
+
 #include <sys/mman.h>
+
 #endif
+
 #include <cassert>
 #include <format>
 #include <memory>
@@ -20,8 +23,7 @@ static std::unordered_map<void *, std::string> hooked;
 
 #define GUM_INTERCEPTOR_NEAR_REDIRECT_SIZE 5
 
-bool HookWriteCode(void *from, const void *code, size_t len)
-{
+bool HookWriteCode(void *from, const void *code, size_t len) {
 #ifdef _WIN32
     DWORD oldProtect = 0;
     ::VirtualProtect(from, len, PAGE_EXECUTE_READWRITE, &oldProtect);
@@ -31,8 +33,7 @@ bool HookWriteCode(void *from, const void *code, size_t len)
     memcpy(from, code, len);
     return ::VirtualProtect(from, len, PAGE_EXECUTE_READ, &oldProtect);
 #else
-    if (mprotect(from, len, PROT_READ | PROT_WRITE) != 0)
-    {
+    if (mprotect(from, len, PROT_READ | PROT_WRITE) != 0) {
         return false;
     }
     memcpy(from, code, len);
@@ -40,38 +41,32 @@ bool HookWriteCode(void *from, const void *code, size_t len)
 #endif
 }
 
-bool HookByReg(uint8_t *from, uint8_t *to)
-{
+bool HookByReg(uint8_t *from, uint8_t *to) {
     assert(!hooked.contains(from));
     auto code = std::to_array<uint8_t>({0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xE0});
-    *(uint64_t *)(code.data() + 2) = (uint64_t)to;
+    *(uint64_t *) (code.data() + 2) = (uint64_t) to;
 
-    if (HookWriteCode(from, code.data(), code.size()))
-    {
-        hooked[from] = {(char *)from, code.size()};
+    if (HookWriteCode(from, code.data(), code.size())) {
+        hooked[from] = {(char *) from, code.size()};
         return true;
     }
     return false;
 }
 
-inline auto format_address(uint8_t *from)
-{
-    return *from == 0xe9 ? (uint8_t *)((uint64_t)from + *(int32_t *)(from + 1) + 5) : from;
+inline auto format_address(uint8_t *from) {
+    return *from == 0xe9 ? (uint8_t *) ((uint64_t) from + *(int32_t *) (from + 1) + 5) : from;
 }
 
-void ResetHook(uint8_t *from)
-{
+void ResetHook(uint8_t *from) {
     from = format_address(from);
     auto node = hooked.extract(from);
-    if (node)
-    {
+    if (node) {
         auto &original = node.mapped();
         HookWriteCode(from, original.c_str(), original.size());
     }
 }
 
-bool Hook(uint8_t *from, uint8_t *to)
-{
+bool Hook(uint8_t *from, uint8_t *to) {
     from = format_address(from);
     assert(to != 0);
 #if 0

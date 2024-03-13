@@ -22,8 +22,8 @@ extern "C" {
 }
 
 using namespace std::literals;
-void printenv()
-{
+
+void printenv() {
     char **env;
 #if defined(WIN) && (_MSC_VER >= 1900)
     env = *__p__environ();
@@ -31,23 +31,20 @@ void printenv()
     extern char **environ;
     env = environ;
 #endif
-    for (env; *env; ++env)
-    {
+    for (env; *env; ++env) {
         fprintf(stdout, "%s\n", *env);
     }
 }
-void wait_debugger()
-{
+
+void wait_debugger() {
     TCHAR filePath[MAX_PATH];
     ::GetModuleFileName(NULL, filePath, MAX_PATH);
 
-    if (_tcsstr(filePath, _T("dontstarve")) != NULL)
-    {
+    if (_tcsstr(filePath, _T("dontstarve")) != NULL) {
         const auto filename = "Debug.config";
         BOOL enableDebug = ::GetFileAttributesA(filename) != INVALID_FILE_ATTRIBUTES;
 
-        if (enableDebug)
-        {
+        if (enableDebug) {
             ::AllocConsole();
 #ifndef NDEBUG
             if (!IsDebuggerPresent())
@@ -76,8 +73,7 @@ void wait_debugger()
 #endif // NDEBUG
             auto fp = fopen(filename, "r");
             char buffer[1024] = {};
-            if (fread(buffer, sizeof(char), sizeof(buffer) / sizeof(char), fp) > 0)
-            {
+            if (fread(buffer, sizeof(char), sizeof(buffer) / sizeof(char), fp) > 0) {
                 _putenv_s("LUA_INIT", buffer);
             }
             fclose(fp);
@@ -86,10 +82,8 @@ void wait_debugger()
     }
 }
 
-std::filesystem::path getUserDoctmentDir()
-{
-    static auto p = []() -> std::filesystem::path
-    {
+std::filesystem::path getUserDoctmentDir() {
+    static auto p = []() -> std::filesystem::path {
         char path[MAX_PATH];
         SHGetFolderPathA(NULL, CSIDL_MYDOCUMENTS, NULL, 0, path);
         return path;
@@ -97,19 +91,16 @@ std::filesystem::path getUserDoctmentDir()
     return p;
 }
 
-std::filesystem::path getKleiDoctmentDir()
-{
+std::filesystem::path getKleiDoctmentDir() {
     return getUserDoctmentDir() / "klei";
 }
 
-std::filesystem::path getKleiGameDoctmentDir()
-{
+std::filesystem::path getKleiGameDoctmentDir() {
     constexpr auto game_doctment_name = "DoNotStarveTogether";
     return getKleiDoctmentDir() / game_doctment_name;
 }
 
-std::filesystem::path getGameDir()
-{
+std::filesystem::path getGameDir() {
     static std::filesystem::path p = getExePath().parent_path().parent_path();
     return p;
 }
@@ -139,18 +130,19 @@ std::optional<std::filesystem::path> getModindexPath()
 }
 #endif
 
-std::filesystem::path getLuajitMtxPath()
-{
+std::filesystem::path getLuajitMtxPath() {
     return getGameDir() / "data" / "luajit.mutex";
 }
-bool isClientMod = []()
-{
+
+bool isClientMod = []() {
     return !getExePath().filename().string().contains("server");
 }();
 
 
 void updater();
+
 void installer(bool unsetup);
+
 #ifdef ENABLE_AUTOINSTALLER
 
 std::optional<bool> _mod_enabled(std::tuple<std::string, size_t> &out)
@@ -197,11 +189,9 @@ void removeBat()
 }
 #endif
 
-static bool shouldloadmod()
-{
+static bool shouldloadmod() {
     auto mutex_file = getLuajitMtxPath();
-    if (std::filesystem::exists(mutex_file))
-    {
+    if (std::filesystem::exists(mutex_file)) {
         spdlog::info("find luajit.mutex");
         return false;
     }
@@ -231,10 +221,9 @@ static bool shouldloadmod()
 }
 
 
-
-void DontStarveInjectorStart()
-{
-    std::initializer_list<std::shared_ptr<spdlog::sinks::sink>> sinks = {std::make_shared<spdlog::sinks::msvc_sink_st>(), std::make_shared<spdlog::sinks::stdout_color_sink_st>()};
+void DontStarveInjectorStart() {
+    std::initializer_list<std::shared_ptr<spdlog::sinks::sink>> sinks = {
+            std::make_shared<spdlog::sinks::msvc_sink_st>(), std::make_shared<spdlog::sinks::stdout_color_sink_st>()};
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", sinks.begin(), sinks.end()));
     auto dir = getGameDir();
 // no workshop
@@ -243,25 +232,20 @@ void DontStarveInjectorStart()
 #endif
 
     // auto updater
-    if (isClientMod && !std::string_view(GetCommandLineA()).contains("-disable_check_luajit_mod"))
-    {
+    if (isClientMod && !std::string_view(GetCommandLineA()).contains("-disable_check_luajit_mod")) {
         updater();
-        if (!shouldloadmod())
-        {
+        if (!shouldloadmod()) {
             std::filesystem::remove(getLuajitMtxPath());
             return;
         }
-    }
-    else
-    {
+    } else {
         std::atexit(updater);
     }
     auto mod = LoadLibraryA("injector");
-    if (!mod)
-    {
+    if (!mod) {
         spdlog::error("can't load injector.dll");
         return;
     }
-    auto ptr = (void (*)(bool))GetProcAddress(mod, "Inject");
+    auto ptr = (void (*)(bool)) GetProcAddress(mod, "Inject");
     ptr(isClientMod);
 }

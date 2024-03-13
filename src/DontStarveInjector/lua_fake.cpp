@@ -5,6 +5,7 @@
 ** See Copyright Notice at the end of this file
 */
 #include "config.hpp"
+
 #if USE_FAKE_API
 #include <stddef.h>
 #include <array>
