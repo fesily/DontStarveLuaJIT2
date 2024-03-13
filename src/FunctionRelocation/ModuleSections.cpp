@@ -95,7 +95,6 @@ namespace function_relocation {
                         uint64_t imm =
                                 x86_details.disp == 0 ? operand.imm : insn.address + insn.size + x86_details.disp;
 #ifndef _WIN32
-                        // �������ת�������յ�ַ
                         if (m.in_plt(imm)) {
                             auto insn = cs_malloc(hcs);
                             auto addr = address;
@@ -137,7 +136,6 @@ namespace function_relocation {
                     [[fallthrough]];
                 case X86_INS_LEA: {
                     const char *str = nullptr;
-                    // ���Զ�ȡһ��ָ��const�������ַ���
                     if (x86_details.op_count == 2 && x86_details.operands[0].type == x86_op_type::X86_OP_REG) {
                         const auto &op = x86_details.operands[1];
                         if (insn.id == X86_INS_LEA) {
@@ -167,7 +165,6 @@ namespace function_relocation {
                 }
                     break;
                 case X86_INS_NOP: {
-                    // �п����Ǻ���֮��ķָ����
                     nops.insert(insn.address);
                 }
                 default:
@@ -334,7 +331,6 @@ namespace function_relocation {
         std::vector<Match> match_function(Function &func1) {
             const auto target = func1.get_consts_hash();
             std::vector<Match> res;
-            // ȫ���ַ������
             for (auto &func: sections.functions) {
                 if (target == func.second.get_consts_hash())
                     res.emplace_back(Match{&func.second, config.match_score});
