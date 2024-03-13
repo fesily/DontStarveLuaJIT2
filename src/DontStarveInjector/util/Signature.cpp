@@ -293,15 +293,15 @@ fix_func_address_by_signature(ModuleSections &target, Function &original) {
     return nullptr;
 }
 
-bool ModuleSections::in_plt(intptr_t address) const {
+bool ModuleSections::in_plt(uintptr_t address) const {
     return plt.base_address <= address && address <= plt.base_address + plt.size;
 }
 
-bool ModuleSections::in_got_plt(intptr_t address) const {
+bool ModuleSections::in_got_plt(uintptr_t address) const {
     return got_plt.base_address <= address && address <= got_plt.base_address + got_plt.size;
 }
 
-bool ModuleSections::in_rodata(intptr_t address) const {
+bool ModuleSections::in_rodata(uintptr_t address) const {
     return rodata.base_address <= address && address <= rodata.base_address + rodata.size;
 }
 
@@ -337,6 +337,7 @@ static void scan_module(ModuleSections &m, uint64_t scan_address) {
     std::unordered_set<uint64_t> nops;
     std::unordered_multimap<uint64_t, uint64_t> calls;
     std::unordered_map<uint64_t, int64_t> const_numbers;
+    std::unordered_map<uint64_t, int64_t> const_offset_numbers;
     for (int i = 0; i < count; ++i) {
         const auto &insn = insns[i];
         const auto &x86_details = insn.detail->x86;
@@ -374,9 +375,12 @@ static void scan_module(ModuleSections &m, uint64_t scan_address) {
                 }
             }
                 break;
-            case X86_INS_MOV:
-                if (x86_details.op_count == 2 && x86_details.disp != 0) {
-                    //const_numbers.emplace(insn.address, x86_details.disp);
+        case X86_INS_MOV:
+                if (x86_details.op_count == 2  ) {
+                    if (x86_details.disp != 0 && (x86_details.operands[1].type == x86_op_type::X86_OP_MEM || x86_details.operands[0].type == x86_op_type::X86_OP_MEM))
+                        const_offset_numbers.emplace(insn.address, x86_details.disp);
+                    else if (x86_details.operands[1].type == X86_OP_IMM)
+                        const_numbers.emplace(insn.address, x86_details.operands[1].imm);
                 }
                 [[fallthrough]];
             case X86_INS_LEA: {
@@ -436,7 +440,12 @@ static void scan_module(ModuleSections &m, uint64_t scan_address) {
         if (!func) continue;
         func->const_numbers.push_back(num);
     }
-    for (auto &[_, func]: m.functions) {
+    for (const auto& [addr, num] : const_offset_numbers) {
+        auto func = m.get_function(addr);
+        if (!func) continue;
+        func->const_offset_numbers.push_back(num);
+    }
+    for (auto& func : m.functions | std::views::values) {
         std::ranges::sort(func.call_functions);
         std::ranges::sort(func.const_numbers);
         std::ranges::sort(func.consts, [](auto &l, auto &r) { return l->value < r->value; });
@@ -532,7 +541,8 @@ size_t hash_vector(const std::vector<T> &vec) {
 struct MatchConfig {
     const float consts_score = 1;
     const float call_score = 0.8;
-    const float const_numbers_score = 0.2;
+    const float const_numbers_score = 0.8;
+    const float const_offset_score = 0.2;
 
     int string_huge_limit = 48;
     int string_huge_group = 1;

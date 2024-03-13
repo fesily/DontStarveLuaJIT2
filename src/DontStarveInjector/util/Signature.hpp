@@ -50,6 +50,7 @@ struct Function {
     std::vector<Const *> consts;
     std::vector<uint64_t> call_functions;
     std::vector<int64_t> const_numbers;
+    std::vector<int64_t> const_offset_numbers;
     const char *const_key = nullptr;
     size_t consts_hash = 0;
 
@@ -77,11 +78,11 @@ struct ModuleSections {
 
     ~ModuleSections();
 
-    bool in_plt(intptr_t address) const;
+    bool in_plt(uintptr_t address) const;
 
-    bool in_got_plt(intptr_t address) const;
+    bool in_got_plt(uintptr_t address) const;
 
-    bool in_rodata(intptr_t address) const;
+    bool in_rodata(uintptr_t address) const;
 
     std::unordered_map<uint64_t, Function> functions;
     std::unordered_map<const char *, Const> Consts;
