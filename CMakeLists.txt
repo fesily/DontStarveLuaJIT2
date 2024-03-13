@@ -88,7 +88,7 @@ find_package(Frida-gum REQUIRED)
 set(DONTSTARVEINJECTOR_ROOT ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
 set(DONTSTARVEINJECTOR_UTIL_DIR ${DONTSTARVEINJECTOR_ROOT}/util)
 
-
+add_subdirectory("src/FunctionRelocation")
 add_subdirectory("src/DontStarveInjector")
 if (msvc)
     add_subdirectory("tools/Checker")

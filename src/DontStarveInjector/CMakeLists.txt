@@ -10,7 +10,6 @@ set(SOURCES
         SignatureJson.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
-        ${DONTSTARVEINJECTOR_UTIL_DIR}/Signature.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
 )
 
@@ -18,7 +17,6 @@ find_package(libzip CONFIG REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
-find_package(pe-parse CONFIG REQUIRED)
 find_package(range-v3 CONFIG REQUIRED)
 
 add_library(Injector SHARED ${SOURCES})
@@ -30,12 +28,10 @@ target_link_libraries(Injector PRIVATE libzip::zip)
 target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(Injector PRIVATE spdlog::spdlog)
 target_link_libraries(Injector PRIVATE range-v3::meta range-v3::concepts range-v3::range-v3)
-if (MSVC)
-    target_link_libraries(Injector PRIVATE pe-parse::pe-parse)
-endif ()
 
 target_include_directories(Injector PUBLIC ${STEAM_INCLUDE_DIR})
 target_link_libraries(Injector PRIVATE ${STEAM_LIBRARIES})
+target_link_libraries(Injector PRIVATE function_relocation)
 
 if (NOT ENABLE_ONLY_LUA51)
     target_include_directories(Injector PUBLIC ${LUAJIT_INCLUDE_DIR})

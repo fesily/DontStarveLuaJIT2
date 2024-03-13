@@ -6,16 +6,12 @@
 #include <vector>
 #include <unordered_set>
 
-#include <frida-gum.h>
-
-struct _GumMatchPattern;
-typedef struct _GumMatchPattern GumMatchPattern;
+#include "frida-gum.h"
 
 struct MemorySignature {
     const char *pattern;
     int pattern_offset;
     uintptr_t target_address = 0;
-    GumMatchPattern *match_pattern;
 
     MemorySignature(const char *p, int offset) : pattern{p}, pattern_offset{offset} {}
 

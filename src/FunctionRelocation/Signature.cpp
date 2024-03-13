@@ -5,12 +5,25 @@
 #include <optional>
 #include <algorithm>
 #include <ranges>
-#include <frida-gum.h>
+
+#ifdef _WIN32
 #include <pe-parse/parse.h>
+#endif
+
+#include <frida-gum.h>
+#include <spdlog/spdlog.h>
 #include <range/v3/all.hpp>
 
-#include "platform.hpp"
 #include "Signature.hpp"
+
+static gboolean
+gum_memory_is_execute(gconstpointer address,
+                      gsize len) {
+    GumPageProtection prot;
+    if (!gum_memory_query_protection(address, &prot))
+        return FALSE;
+    return (prot & GUM_PAGE_EXECUTE) != 0;
+}
 
 using in_function_t = std::function<bool(void *)>;
 
@@ -52,7 +65,7 @@ static gboolean findBaseAddrCb(const GumRangeDetails *details, gpointer user_dat
 
 uintptr_t MemorySignature::scan(const char *m) {
     target_address = 0;
-    match_pattern = gum_match_pattern_new_from_string(pattern);
+    auto match_pattern = gum_match_pattern_new_from_string(pattern);
     gum_module_enumerate_ranges(m, page, findBaseAddrCb, (gpointer) this);
     gum_match_pattern_unref(match_pattern);
     fprintf(stdout, "Signature %s: %p\n", pattern, (void *) target_address);
@@ -158,9 +171,10 @@ filter_signature(cs_insn *insn, uint64_t &maybe_end, decltype(Signature::asm_cod
         if (insn->id == X86_INS_JMP || insn->id == X86_INS_CALL) {
             if (imm != 0) {
                 auto data = (void *) imm;
-                if (rva && !memory_is_execute(data)) {
+
+                if (rva && !gum_memory_is_execute(data, sizeof(void *))) {
                     data = *(void **) data;
-                    if (!memory_is_execute(data))
+                    if (!gum_memory_is_execute(data, sizeof(void *)))
                         break;
                 }
                 signature.clear();
