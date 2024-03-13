@@ -1,12 +1,12 @@
-#pragma once
 #include "ctx.hpp"
 #include <frida-gum.h>
 
 namespace function_relocation {
-    Ctx& get_ctx() {
+    Ctx &get_ctx() {
         static Ctx ctx;
         return ctx;
     }
+
     bool init_ctx() {
         if (get_ctx().hcs)
             return true;
