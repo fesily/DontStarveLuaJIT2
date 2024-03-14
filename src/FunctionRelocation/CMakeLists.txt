@@ -12,6 +12,8 @@ set(SOURCE
 
 find_package(spdlog CONFIG REQUIRED)
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 add_library(function_relocation STATIC ${SOURCE})
 
 target_include_directories(function_relocation PUBLIC ${FRIDA_GUM_INCLUDE_DIR})

@@ -47,6 +47,8 @@ struct ModuleSections {
 
     ~ModuleSections();
 
+    bool in_text(uintptr_t address) const;
+
     bool in_plt(uintptr_t address) const;
 
     bool in_got_plt(uintptr_t address) const;

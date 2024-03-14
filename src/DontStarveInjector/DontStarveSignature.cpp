@@ -98,7 +98,6 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(bool isCli
     auto signatures = json.read_from_signatures();
     if (!function_relocation::init_ctx())
         return std::unexpected("can't init signature");
-    function_relocation::init_module_signature(gum_process_get_main_module()->path, luaModuleBaseAddress);
     if (!signatures) {
         auto res = create_signature(luaModuleBaseAddress, [&json](auto &v) { json.update_signatures(v); });
         if (!res) {

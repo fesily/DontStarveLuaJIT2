@@ -3,7 +3,7 @@
 #include <unordered_set>
 #include <ranges>
 #include <algorithm>
-
+#include <cassert>
 #ifdef _WIN32
 #include <pe-parse/parse.h>
 #endif
@@ -17,6 +17,10 @@ namespace function_relocation {
 
     void *
     fix_func_address_by_signature(ModuleSections &target, Function &original);
+
+    bool ModuleSections::in_text(uintptr_t address) const {
+        return text.base_address <= address && address <= text.base_address + text.size;
+    }
 
     bool ModuleSections::in_plt(uintptr_t address) const {
         return plt.base_address <= address && address <= plt.base_address + plt.size;
@@ -53,51 +57,20 @@ namespace function_relocation {
     };
 
     static const char *read_data_string(const char *data) {
-        constexpr auto data_limit = 256;
-        if (!gum_memory_is_readable(data - 1, 256 + 1))
+        constexpr auto data_limit = 16;
+        if (!gum_memory_is_readable(data, data_limit))
             return nullptr;
-        if (data[-1] != 0)
-            return nullptr;
-        for (size_t i = 0; i < data_limit; i++) {
-            if (!std::isgraph(data[i]))
-                return nullptr;
-            if (data[i] == 0) {
-                return data;
-            }
+        for (size_t i = 0; i < 256; i++) {
+            if (!std::isprint(data[i]))
+                return data[i] == 0 ? data : nullptr;
         }
-        return {};
+        return nullptr;
     }
 
-    static void scan_module(ModuleSections &m, uint64_t scan_address) {
-        cs_insn *insns;
-        const auto address = m.details->range->base_address;
-        // .text
-        scan_address = std::max(m.text.base_address, scan_address);
-        const GumMemoryRange &text = {scan_address, (m.text.base_address + m.text.size - scan_address) / sizeof(char)};
+    static uintptr_t filter_jmp_or_call(ModuleSections &m, uintptr_t imm){
         const auto hcs = get_ctx().hcs;
-        auto count = cs_disasm(hcs, reinterpret_cast<const uint8_t *>(text.base_address), text.size,
-                               address,
-                               size_t(-1),
-                               &insns);
-        std::unordered_map<uint64_t, Const *> consts;
-        std::unordered_set<uint64_t> nops;
-        std::unordered_multimap<uint64_t, uint64_t> calls;
-        std::unordered_map<uint64_t, int64_t> const_numbers;
-        std::unordered_map<uint64_t, int64_t> const_offset_numbers;
-        for (int i = 0; i < count; ++i) {
-            const auto &insn = insns[i];
-            const auto &x86_details = insn.detail->x86;
-            switch (insn.id) {
-                case X86_INS_JMP:
-                case X86_INS_CALL: {
-                    const auto &operand = x86_details.operands[0];
-                    if (operand.type != x86_op_type::X86_OP_INVALID) {
-                        uint64_t imm =
-                                x86_details.disp == 0 ? operand.imm : insn.address + insn.size + x86_details.disp;
-#ifndef _WIN32
-                        if (m.in_plt(imm)) {
-                            auto insn = cs_malloc(hcs);
-                            auto addr = address;
+        auto insn = cs_malloc(hcs);
+                            auto addr = imm;
                             size_t size = 32;
                             auto code = (const uint8_t *) imm;
                             if (cs_disasm_iter(hcs, &code, &size, &addr, insn)) {
@@ -114,15 +87,49 @@ namespace function_relocation {
                                 }
                             }
                             cs_free(insn, 1);
+        return imm;
+    }
+
+    static void scan_module(ModuleSections &m, uint64_t scan_address) {
+        cs_insn *insns;
+        // .text
+        scan_address = std::max(m.text.base_address, scan_address);
+        const auto address = scan_address;
+        const GumMemoryRange &text = {scan_address, (m.text.base_address + m.text.size - scan_address) / sizeof(char)};
+        const auto hcs = get_ctx().hcs;
+        auto count = cs_disasm(hcs, reinterpret_cast<const uint8_t *>(text.base_address), text.size,
+                               address,
+                               0,
+                               &insns);
+        std::unordered_map<uint64_t, Const *> consts;
+        std::unordered_set<uint64_t> nops;
+        std::unordered_multimap<uint64_t, uint64_t> calls;
+        std::unordered_map<uint64_t, int64_t> const_numbers;
+        std::unordered_map<uint64_t, int64_t> const_offset_numbers;
+        for (int i = 0; i < count; ++i) {
+            const auto &insn = insns[i];
+            assert(m.in_text(insn.address));
+            const auto &x86_details = insn.detail->x86;
+            switch (insn.id) {
+                case X86_INS_JMP:
+                case X86_INS_CALL: {
+                    const auto &operand = x86_details.operands[0];
+                    if (operand.type != x86_op_type::X86_OP_INVALID && operand.type != x86_op_type::X86_OP_REG) {
+                        uint64_t imm =
+                                x86_details.disp == 0 ? operand.imm : insn.address + insn.size + x86_details.disp;
+#ifndef _WIN32
+                        if (m.in_plt(imm)) {
+                            imm = filter_jmp_or_call(m, imm);
                         }
 #endif
                         calls.emplace(insn.address, imm);
-                        m.functions[imm] = {imm};
+                        if (m.in_text(imm))
+                            m.functions[imm] = {imm};
                     }
                 }
                     break;
                 case X86_INS_MOV:
-
+                case X86_INS_LEA: {
                     if (x86_details.op_count == 2) {
                         if (x86_details.disp != 0 &&
                             ((x86_details.operands[1].type == x86_op_type::X86_OP_MEM &&
@@ -133,8 +140,6 @@ namespace function_relocation {
                         else if (x86_details.operands[1].type == X86_OP_IMM)
                             const_numbers.emplace(insn.address, x86_details.operands[1].imm);
                     }
-                    [[fallthrough]];
-                case X86_INS_LEA: {
                     const char *str = nullptr;
                     if (x86_details.op_count == 2 && x86_details.operands[0].type == x86_op_type::X86_OP_REG) {
                         const auto &op = x86_details.operands[1];
@@ -153,7 +158,7 @@ namespace function_relocation {
                                     str = read_data_string((char *) target);
                             }
                         }
-                        if (str != nullptr) {
+                        if (str != nullptr && strlen(str) > 0) {
                             if (m.Consts.contains(str)) {
                                 m.Consts[str].ref++;
                             } else {
@@ -168,6 +173,11 @@ namespace function_relocation {
                     nops.insert(insn.address);
                 }
                 default:
+                    if (insn.id >= X86_INS_JAE || insn.id <= X86_INS_JS){
+                        if (x86_details.op_count == 1 && x86_details.operands[0].type == x86_op_type::X86_OP_IMM){
+                            auto maybe_end = x86_details.operands[0].imm;
+                        }
+                    }
                     break;
             }
 
