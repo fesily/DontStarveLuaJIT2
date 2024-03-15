@@ -8,7 +8,7 @@
 PLAT= none
 
 CC= gcc
-CFLAGS= -Og -Wall $(MYCFLAGS) -DDST # TODO should be -O2, but now is -Og
+CFLAGS= -O2 -Wall $(MYCFLAGS) -DDST
 AR= ar rcu
 RANLIB= ranlib
 RM= rm -f

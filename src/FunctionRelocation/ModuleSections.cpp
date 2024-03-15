@@ -4,6 +4,7 @@
 #include <ranges>
 #include <algorithm>
 #include <cassert>
+
 #ifdef _WIN32
 #include <pe-parse/parse.h>
 #endif
@@ -12,11 +13,27 @@
 
 #include "ctx.hpp"
 
+template<typename T>
+size_t hash_vector(const std::vector<T> &vec) {
+    auto seed = vec.size();
+    for (const auto &v: vec) {
+        seed ^= std::hash<T>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    }
+    return seed;
+}
+
+template<>
+struct std::hash<function_relocation::CodeBlock> {
+    size_t operator()(const function_relocation::CodeBlock &block) noexcept {
+        return hash_vector(block.consts);
+    }
+};
+
 namespace function_relocation {
     using namespace std::literals;
 
     void *
-    fix_func_address_by_signature(ModuleSections &target, Function &original);
+    fix_func_address_by_signature(ModuleSections &target, const Function &original);
 
     bool ModuleSections::in_text(uintptr_t address) const {
         return text.base_address <= address && address <= text.base_address + text.size;
@@ -39,19 +56,6 @@ namespace function_relocation {
             gum_module_details_free(details);
     }
 
-    Function *ModuleSections::get_function(uint64_t address) {
-        auto iter = functions.begin(), end = functions.end();
-        auto finder = end;
-        for (; iter != end; ++iter) {
-            if (address >= iter->first) {
-                finder = iter;
-            } else {
-                break;
-            }
-        }
-        return finder != end ? &finder->second : nullptr;
-    }
-
     static bool reg_is_ip(x86_reg reg) {
         return reg == x86_reg::X86_REG_RIP || reg == x86_reg::X86_REG_EIP || reg == x86_reg::X86_REG_IP;
     };
@@ -67,160 +71,165 @@ namespace function_relocation {
         return nullptr;
     }
 
-    static uintptr_t filter_jmp_or_call(ModuleSections &m, uintptr_t imm){
+    static uintptr_t filter_jmp_or_call(ModuleSections &m, uintptr_t imm) {
         const auto hcs = get_ctx().hcs;
         auto insn = cs_malloc(hcs);
-                            auto addr = imm;
-                            size_t size = 32;
-                            auto code = (const uint8_t *) imm;
-                            if (cs_disasm_iter(hcs, &code, &size, &addr, insn)) {
-                                if (insn->id == X86_INS_JMP) {
-                                    auto &op = insn->detail->x86.operands[0];
-                                    if (op.type == x86_op_type::X86_OP_MEM) {
-                                        auto target = insn->address + insn->size + op.mem.disp;
-                                        if (m.in_got_plt(target)) {
-                                            imm = (intptr_t) *(void **) target;
-                                        }
-                                    } else if (op.type == x86_op_type::X86_OP_IMM) {
-                                        imm = op.imm;
-                                    }
-                                }
-                            }
-                            cs_free(insn, 1);
+        auto addr = imm;
+        size_t size = 32;
+        auto code = (const uint8_t *) imm;
+        if (cs_disasm_iter(hcs, &code, &size, reinterpret_cast<uint64_t *>(&addr), insn)) {
+            if (insn->id == X86_INS_JMP) {
+                auto &op = insn->detail->x86.operands[0];
+                if (op.type == x86_op_type::X86_OP_MEM) {
+                    auto target = insn->address + insn->size + op.mem.disp;
+                    if (m.in_got_plt(target)) {
+                        imm = (intptr_t) *(void **) target;
+                    }
+                } else if (op.type == x86_op_type::X86_OP_IMM) {
+                    imm = op.imm;
+                }
+            }
+        }
+        cs_free(insn, 1);
         return imm;
     }
 
-    static void scan_module(ModuleSections &m, uint64_t scan_address) {
-        cs_insn *insns;
-        // .text
-        scan_address = std::max(m.text.base_address, scan_address);
-        const auto address = scan_address;
-        const GumMemoryRange &text = {scan_address, (m.text.base_address + m.text.size - scan_address) / sizeof(char)};
-        const auto hcs = get_ctx().hcs;
-        auto count = cs_disasm(hcs, reinterpret_cast<const uint8_t *>(text.base_address), text.size,
-                               address,
-                               0,
-                               &insns);
-        std::unordered_map<uint64_t, Const *> consts;
-        std::unordered_set<uint64_t> nops;
-        std::unordered_multimap<uint64_t, uint64_t> calls;
-        std::unordered_map<uint64_t, int64_t> const_numbers;
-        std::unordered_map<uint64_t, int64_t> const_offset_numbers;
-        for (int i = 0; i < count; ++i) {
-            const auto &insn = insns[i];
-            assert(m.in_text(insn.address));
-            const auto &x86_details = insn.detail->x86;
-            switch (insn.id) {
-                case X86_INS_JMP:
-                case X86_INS_CALL: {
-                    const auto &operand = x86_details.operands[0];
-                    if (operand.type != x86_op_type::X86_OP_INVALID && operand.type != x86_op_type::X86_OP_REG) {
-                        uint64_t imm =
-                                x86_details.disp == 0 ? operand.imm : insn.address + insn.size + x86_details.disp;
-#ifndef _WIN32
-                        if (m.in_plt(imm)) {
-                            imm = filter_jmp_or_call(m, imm);
-                        }
-#endif
-                        calls.emplace(insn.address, imm);
-                        if (m.in_text(imm))
-                            m.functions[imm] = {imm};
-                    }
-                }
-                    break;
-                case X86_INS_MOV:
-                case X86_INS_LEA: {
-                    if (x86_details.op_count == 2) {
-                        if (x86_details.disp != 0 &&
-                            ((x86_details.operands[1].type == x86_op_type::X86_OP_MEM &&
-                              !reg_is_ip(x86_details.operands[1].mem.base)) ||
-                             (x86_details.operands[0].type == x86_op_type::X86_OP_MEM &&
-                              !reg_is_ip(x86_details.operands[0].mem.base))))
-                            const_offset_numbers.emplace(insn.address, x86_details.disp);
-                        else if (x86_details.operands[1].type == X86_OP_IMM)
-                            const_numbers.emplace(insn.address, x86_details.operands[1].imm);
-                    }
-                    const char *str = nullptr;
-                    if (x86_details.op_count == 2 && x86_details.operands[0].type == x86_op_type::X86_OP_REG) {
-                        const auto &op = x86_details.operands[1];
-                        if (insn.id == X86_INS_LEA) {
-                            if (op.type == x86_op_type::X86_OP_MEM && op.mem.base == x86_reg::X86_REG_RIP &&
-                                op.mem.index == x86_reg::X86_REG_INVALID &&
-                                op.mem.segment == x86_reg::X86_REG_INVALID) {
-                                auto target = insn.address + insn.size + op.mem.disp;
-                                if (m.in_rodata(target))
-                                    str = read_data_string((char *) target);
-                            }
-                        } else if (insn.id == X86_INS_MOV) {
-                            if (op.type == x86_op_type::X86_OP_IMM) {
-                                auto target = op.imm;
-                                if (m.in_rodata(target))
-                                    str = read_data_string((char *) target);
-                            }
-                        }
-                        if (str != nullptr && strlen(str) > 0) {
-                            if (m.Consts.contains(str)) {
-                                m.Consts[str].ref++;
-                            } else {
-                                m.Consts[str] = {str, 1};
-                            }
-                            consts[insn.address] = &m.Consts[str];
-                        }
-                    }
-                }
-                    break;
-                case X86_INS_NOP: {
-                    nops.insert(insn.address);
-                }
-                default:
-                    if (insn.id >= X86_INS_JAE || insn.id <= X86_INS_JS){
-                        if (x86_details.op_count == 1 && x86_details.operands[0].type == x86_op_type::X86_OP_IMM){
-                            auto maybe_end = x86_details.operands[0].imm;
-                        }
-                    }
-                    break;
-            }
+    struct ScanCtx {
+        ModuleSections &m;
 
+        cs_insn *insns;
+        size_t insns_count;
+        size_t index = 0;
+
+        ScanCtx(ModuleSections &_m, uint64_t scan_address) : m{_m} {
+            scan_address = std::max(m.text.base_address, scan_address);
+            const auto address = scan_address;
+            const GumMemoryRange &text = {scan_address,
+                                          (m.text.base_address + m.text.size - scan_address) / sizeof(char)};
+            const auto hcs = get_ctx().hcs;
+            insns_count = cs_disasm(hcs, reinterpret_cast<const uint8_t *>(text.base_address), text.size,
+                                    address,
+                                    0,
+                                    &insns);
         }
-        cs_free(insns, count);
-        for (const auto &[addr, constStr]: consts) {
-            auto func = m.get_function(addr);
-            if (!func) continue;
-            // unique const str
-            if (std::ranges::find(func->consts, constStr) != func->consts.end())
-                func->consts.push_back(constStr);
+
+        ~ScanCtx() {
+            if (insns)
+                cs_free(insns, insns_count);
         }
-        for (const auto &[addr, callAddr]: calls) {
-            auto func = m.get_function(addr);
-            if (!func) continue;
-            func->call_functions.push_back(callAddr);
+
+        Function *cur = nullptr;
+        CodeBlock *cur_block = nullptr;
+        uint64_t function_limit = 0;
+
+        void function_end() {
+            function_limit = 0;
+            cur = nullptr;
+            cur_block = nullptr;
         }
-        for (const auto &[addr, num]: const_numbers) {
-            auto func = m.get_function(addr);
-            if (!func) continue;
-            func->const_numbers.push_back(num);
+
+        CodeBlock *createBlock(uint64_t addr) {
+            return &cur->blocks.emplace_back(CodeBlock{addr});
         }
-        for (const auto &[addr, num]: const_offset_numbers) {
-            auto func = m.get_function(addr);
-            if (!func) continue;
-            func->const_offset_numbers.push_back(num);
-        }
-        for (auto &func: m.functions | std::views::values) {
-            std::ranges::sort(func.call_functions);
-            std::ranges::sort(func.const_numbers);
-            std::ranges::sort(func.consts, [](auto &l, auto &r) { return l->value < r->value; });
-            for (const auto &c: func.consts) {
-                if (c->ref == 1) {
-                    func.const_key = c->value;
-                } else {
-                    // maybe same const ref by same function
-                    if (std::ranges::count(func.consts, c) == c->ref) {
-                        func.const_key = c->value;
+
+        void scan_function() {
+            std::unordered_map<uint64_t, bool> sureFunctions;
+            for (; index < insns_count; ++index) {
+                const auto &insn = insns[index];
+                if (cur == nullptr) {
+                    cur = &m.functions.emplace_back(Function{insn.address});
+                    cur_block = createBlock(insn.address);
+                }
+                assert(m.in_text(insn.address));
+                const auto &x86_details = insn.detail->x86;
+                switch (insn.id) {
+                    case X86_INS_JMP:
+                    case X86_INS_CALL: {
+                        const auto &operand = x86_details.operands[0];
+                        if (operand.type != x86_op_type::X86_OP_INVALID && operand.type != x86_op_type::X86_OP_REG) {
+                            uint64_t imm =
+                                    x86_details.disp == 0 ? operand.imm : insn.address + insn.size + x86_details.disp;
+#ifndef _WIN32
+                            if (m.in_plt(imm)) {
+                                imm = filter_jmp_or_call(m, imm);
+                            }
+#endif
+                            if (m.in_text(imm)) {
+                                sureFunctions.emplace(imm, false);
+                                cur_block->call_functions.emplace_back(imm);
+                            } else {
+                                // unknown function
+                                cur_block->call_functions.emplace_back(imm);
+                            }
+                        }
                     }
+                        if (insn.id != X86_INS_JMP) {
+                            break;
+                        }
+                        [[fallthrough]];
+                    case X86_INS_RET:
+                    case X86_INS_RETFQ:
+                        if (function_limit < insn.address + insn.size) {
+                            function_end();
+                        } else {
+                            cur_block = createBlock(insn.address + insn.size);
+                        }
+                        break;
+                    case X86_INS_MOV:
+                    case X86_INS_LEA: {
+                        if (x86_details.op_count == 2) {
+                            if (x86_details.disp != 0 &&
+                                ((x86_details.operands[1].type == x86_op_type::X86_OP_MEM &&
+                                  !reg_is_ip(x86_details.operands[1].mem.base)) ||
+                                 (x86_details.operands[0].type == x86_op_type::X86_OP_MEM &&
+                                  !reg_is_ip(x86_details.operands[0].mem.base))))
+                                cur_block->const_offset_numbers.emplace_back(x86_details.disp);
+                            else if (x86_details.operands[1].type == X86_OP_IMM)
+                                cur_block->const_numbers.emplace_back(x86_details.operands[1].imm);
+                        }
+                        const char *str = nullptr;
+                        if (x86_details.op_count == 2 && x86_details.operands[0].type == x86_op_type::X86_OP_REG) {
+                            const auto &op = x86_details.operands[1];
+                            if (insn.id == X86_INS_LEA) {
+                                if (op.type == x86_op_type::X86_OP_MEM && op.mem.base == x86_reg::X86_REG_RIP &&
+                                    op.mem.index == x86_reg::X86_REG_INVALID &&
+                                    op.mem.segment == x86_reg::X86_REG_INVALID) {
+                                    auto target = insn.address + insn.size + op.mem.disp;
+                                    if (m.in_rodata(target))
+                                        str = read_data_string((char *) target);
+                                }
+                            } else if (insn.id == X86_INS_MOV) {
+                                if (op.type == x86_op_type::X86_OP_IMM) {
+                                    auto target = op.imm;
+                                    if (m.in_rodata(target))
+                                        str = read_data_string((char *) target);
+                                }
+                            }
+                            if (str != nullptr && strlen(str) > 0) {
+                                if (m.Consts.contains(str)) {
+                                    m.Consts[str].ref++;
+                                } else {
+                                    m.Consts[str] = {str, 1};
+                                }
+                                cur_block->consts.emplace_back(&m.Consts[str]);
+                            }
+                        }
+                    }
+                        break;
+                    default:
+                        if (insn.id >= X86_INS_JAE || insn.id <= X86_INS_JS) {
+                            assert(x86_details.op_count == 1 &&
+                                   x86_details.operands[0].type == x86_op_type::X86_OP_IMM);
+                            auto addr = (uint64_t) x86_details.operands[0].imm;
+                            function_limit = std::max(addr, function_limit);
+
+                            cur_block = createBlock(insn.address + insn.size);
+                        }
+                        break;
                 }
             }
         }
-    }
+    };
 
     static GumModuleDetails *get_module_details(const char *path) {
         if (path == nullptr) {
@@ -282,21 +291,26 @@ namespace function_relocation {
         return sections;
     }
 
+
     ModuleSections init_module_signature(const char *path, uintptr_t scan_start_address) {
         auto sections = get_module_sections(path);
         sections.details = get_module_details(path);
-        scan_module(sections, scan_start_address);
+        ScanCtx ctx{sections, scan_start_address};
+        ctx.scan_function();
+        for (auto &func: sections.functions) {
+            for (const auto &block: func.blocks) {
+                for (const auto &c: block.consts) {
+                    if (c->ref == 1 && c->value.size() > func.const_key.size()) {
+                        func.const_key = c->value;
+                    }
+                }
+            }
+
+            func.consts_hash = hash_vector(func.blocks);
+        }
         return sections;
     }
 
-    template<typename T>
-    size_t hash_vector(const std::vector<T> &vec) {
-        auto seed = vec.size();
-        for (const auto &v: vec) {
-            seed ^= std::hash<T>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-        }
-        return seed;
-    }
 
     struct MatchConfig {
         const float consts_score = 1;
@@ -329,83 +343,55 @@ namespace function_relocation {
 
         MatchConfig &config;
 
-        std::vector<Match> match_function(const char *key) {
-            return
-                    sections.functions | std::views::filter([key, this](const auto &func1) {
-                        return func1.second.const_key && std::string_view(func1.second.const_key) == key;
-                    }) | std::views::transform([this](const auto &func1) {
-                        return Match{&func1.second, config.match_score};
-                    }) | ranges::to<std::vector>();
+        std::vector<Match> match_function(std::string_view key) {
+            return sections.functions | std::views::filter([key](const auto &function) {
+                if (function.const_key == key)
+                    return true;
+                auto block = std::ranges::find_if(function.blocks, [key](const auto &v) {
+                    return std::ranges::find_if(v.consts, [key](const auto &c) {
+                        return c->value == key;
+                    }) != v.consts.end();
+                });
+                return block != function.blocks.end();
+            }) | std::views::transform([this](const auto &function) {
+                return Match{&function, config.match_score};
+            }) | ranges::to<std::vector>();
         }
 
-        std::vector<Match> match_function(Function &func1) {
-            const auto target = func1.get_consts_hash();
+        std::vector<Match> match_function(const Function &func1) {
+            const auto target = func1.consts_hash;
             std::vector<Match> res;
             for (auto &func: sections.functions) {
-                if (target == func.second.get_consts_hash())
-                    res.emplace_back(Match{&func.second, config.match_score});
-            }
-            if (res.empty()) {
-
-                auto fn = [&func1](const Const *str) {
-                    return std::ranges::find_if(func1.consts, [target = std::string_view(str->value)](const auto v) {
-                        return v->value == target;
-                    }) != func1.consts.cend();
-                };
-
-                auto view = sections.functions | std::views::transform([&fn](auto &p) {
-                    return std::pair{&p.second, std::ranges::count_if(p.second.consts, fn)};
-                }) | ranges::to<std::vector>();
-
-                std::ranges::sort(view, [](auto &l, auto &r) {
-                    return l.second > r.second;
-                });
-
-                const auto score = view.front().second;
-                auto v1 = view | std::views::take_while([score](auto &v) {
-                    return v.second == score;
-                }) | std::views::transform([this](auto &v) { return Match{v.first, v.second * config.consts_score}; });
-
-                for (const auto &m: v1) {
-                    res.emplace_back(m);
-                }
+                if (target == func.consts_hash)
+                    res.emplace_back(Match{&func, config.match_score});
             }
             return res;
         }
-
     };
 
-    static float calc_score(Function &func, MatchConfig &config) {
-        return func.consts.size() * config.consts_score + func.call_functions.size() * config.call_score +
-               func.const_numbers.size() * config.const_numbers_score;
+    static float calc_score(const Function &func, const MatchConfig &config) {
+        float res = 0;
+        for (const auto &block: func.blocks) {
+            res += block.consts.size() * config.consts_score + block.call_functions.size() * config.call_score +
+                   block.const_numbers.size() * config.const_numbers_score;
+        }
+        return res;
     }
 
-    static bool is_simple_function(Function &func) {
-        return func.consts.empty() && func.call_functions.empty();
-    }
-
-    uintptr_t ModuleSections::try_fix_func_address(Function &original, uint64_t maybe_addr) {
+    uintptr_t ModuleSections::try_fix_func_address(const Function &original, uint64_t maybe_addr) {
         MatchConfig config;
         FunctionMatchCtx ctx{*this, config};
-        if (!is_simple_function(original)) {
-            const auto targetScore = calc_score(original, config);
-            auto res = original.const_key ? ctx.match_function(original.const_key) : ctx.match_function(original);
-            if (!res.empty()) {
-                for (const auto func: res) {
-                    if (!func) continue;
-                    if (func.score >= targetScore) {
-                        return func.matched->address;
-                    }
+        const auto targetScore = calc_score(original, config);
+        auto res = !original.const_key.empty() ? ctx.match_function(original.const_key) : ctx.match_function(original);
+        if (!res.empty()) {
+            for (const auto func: res) {
+                if (!func) continue;
+                if (func.score >= targetScore) {
+                    return func.matched->address;
                 }
             }
         }
         return (uintptr_t) fix_func_address_by_signature(*this, original);
     }
 
-    size_t Function::get_consts_hash() {
-        if (consts_hash == 0) {
-            consts_hash = get_consts_hash();
-        }
-        return consts_hash;
-    }
 }

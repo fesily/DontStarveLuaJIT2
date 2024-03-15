@@ -151,20 +151,21 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
     for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
         auto original = (void *) gum_module_find_export_by_name(lua51_path.c_str(), name.c_str());
-        if (original == nullptr || modulelua51.functions.contains((uintptr_t) original)) {
+        if (original == nullptr || !modulelua51.find_function((uintptr_t) original)) {
             return std::format("can't find address: {}", name.c_str());
         }
-        auto &originalFunc = modulelua51.functions.find((uintptr_t) original)->second;
+        auto originalFunc = modulelua51.find_function((uintptr_t) original);
         auto old_offset = GPOINTER_TO_INT(funcs.at(name));
         spdlog::info("try fix signature [{}]: {}", name, old_offset);
         void *target = GSIZE_TO_POINTER(targetLuaModuleBase + old_offset);
-        if (moduleMain.functions.contains((uintptr_t) target)) {
+        if (moduleMain.find_function((uintptr_t) target)) {
             if (function_relocation::is_same_signature_fast(target, original)) {
                 spdlog::info("should not fix signature [{}]: {}", name, target);
                 continue;
             }
         }
-        auto target1 = (void *) moduleMain.try_fix_func_address(originalFunc, old_offset == 0 ? 0 : (uintptr_t) target);
+        auto target1 = (void *) moduleMain.try_fix_func_address(*originalFunc,
+                                                                old_offset == 0 ? 0 : (uintptr_t) target);
         if (!target1) {
             return std::format("func[{}] can't fix address, wait for mod update", name);;
         }

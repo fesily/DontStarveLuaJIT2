@@ -1,69 +1,85 @@
 #pragma once
+
 #include <vector>
 #include <unordered_map>
 #include <cstdint>
+#include <string_view>
+#include <algorithm>
 #include <frida-gum.h>
-namespace function_relocation
-{
-struct Const {
-    const char* value;
-    size_t ref;
-};
 
-struct Function {
-    uint64_t address;
-    size_t size;
 
-    bool in_function(uint64_t addr) const { return address >= addr && address <= addr + size; }
+namespace function_relocation {
+    struct Const {
+        std::string_view value;
+        size_t ref;
+    };
 
-    std::vector<Const*> consts;
-    std::vector<uint64_t> call_functions;
-    std::vector<int64_t> const_numbers;
-    std::vector<int64_t> const_offset_numbers;
-    const char* const_key = nullptr;
-    size_t consts_hash = 0;
+    struct CodeBlock {
+        uint64_t address;
+        size_t size;
 
-    size_t get_consts_hash();
-};
+        std::vector<Const *> consts;
+        std::vector<uint64_t> call_functions;
+        std::vector<int64_t> const_numbers;
+        std::vector<int64_t> const_offset_numbers;
 
-struct ModuleSections {
-    GumModuleDetails* details;
-    GumMemoryRange text;
-    GumMemoryRange rodata;
-    GumMemoryRange plt;
-    GumMemoryRange got_plt;
+        bool in_block(uint64_t addr) const { return address >= addr && address <= addr + size; }
+    };
 
-    ModuleSections() = default;
+    struct Function {
+        uint64_t address;
+        size_t size;
 
-    ModuleSections(const ModuleSections&) = delete;
+        bool in_function(uint64_t addr) const { return address >= addr && address <= addr + size; }
 
-    ModuleSections(ModuleSections&& other) noexcept : details{ other.details } {
-        other.details = nullptr;
-        text = other.text;
-        rodata = other.rodata;
-        plt = other.plt;
-        got_plt = other.got_plt;
-    }
+        std::string_view const_key;
+        size_t consts_hash = 0;
 
-    ~ModuleSections();
+        std::vector<CodeBlock> blocks;
 
-    bool in_text(uintptr_t address) const;
+    };
 
-    bool in_plt(uintptr_t address) const;
+    struct ModuleSections {
+        GumModuleDetails *details;
+        GumMemoryRange text;
+        GumMemoryRange rodata;
+        GumMemoryRange plt;
+        GumMemoryRange got_plt;
 
-    bool in_got_plt(uintptr_t address) const;
+        ModuleSections() = default;
 
-    bool in_rodata(uintptr_t address) const;
+        ModuleSections(const ModuleSections &) = delete;
 
-    std::unordered_map<uint64_t, Function> functions;
-    std::unordered_map<const char*, Const> Consts;
-    std::unordered_map<Function*, uint64_t> known_functions;
+        ModuleSections(ModuleSections &&other) noexcept: details{other.details} {
+            other.details = nullptr;
+            text = other.text;
+            rodata = other.rodata;
+            plt = other.plt;
+            got_plt = other.got_plt;
+        }
 
-    Function* get_function(uint64_t address);
+        ~ModuleSections();
 
-    uintptr_t try_fix_func_address(Function& original, uint64_t maybe_addr);
-};
+        bool in_text(uintptr_t address) const;
 
-ModuleSections init_module_signature(const char* path, uintptr_t scan_start_address);
+        bool in_plt(uintptr_t address) const;
+
+        bool in_got_plt(uintptr_t address) const;
+
+        bool in_rodata(uintptr_t address) const;
+
+        std::vector<Function> functions;
+        std::unordered_map<const char *, Const> Consts;
+        std::unordered_map<Function *, uint64_t> known_functions;
+
+        const Function *find_function(uintptr_t addr) const {
+            auto iter = std::ranges::find_if(functions, [addr](auto &f) { return addr == f.address; });
+            return iter != functions.end() ? &(*iter) : nullptr;
+        }
+
+        uintptr_t try_fix_func_address(const Function &original, uint64_t maybe_addr);
+    };
+
+    ModuleSections init_module_signature(const char *path, uintptr_t scan_start_address);
 }
 
