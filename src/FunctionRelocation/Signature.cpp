@@ -173,17 +173,11 @@ namespace function_relocation {
         signature_first_cache.clear();
     }
 
-    static const Signature *get_signature_cache(void *fix_target, const std::string &first) {
+    static const Signature *get_signature_cache(void *fix_target) {
         Signature *target_s;
         if (signature_cache.find(fix_target) != signature_cache.end()) {
             target_s = &signature_cache[fix_target];
         } else {
-            auto first_s = create_signature(fix_target, nullptr, 1);
-            if (first_s.empty())
-                return nullptr;
-            if (first_s[0] != first) {
-                return nullptr;
-            }
             signature_cache[fix_target] = create_signature(fix_target, nullptr, size_t(-1));
             target_s = &signature_cache[fix_target];
         }
@@ -231,7 +225,10 @@ namespace function_relocation {
 
         for (const auto &func: target.functions) {
             auto fix_target = (void *) func.address;
-            auto target_s = get_signature_cache(fix_target, original_s[0]);
+            if (*(char *) fix_target != *(char *) original.address) {
+                continue;
+            }
+            auto target_s = get_signature_cache(fix_target);
             if (!target_s)
                 continue;
             auto max = longestCommonSubstring(original_s.asm_codes, target_s->asm_codes);
@@ -245,7 +242,7 @@ namespace function_relocation {
         if (maybe_target_addr) {
             OUTPUT_SIGNATURE((void *) original.address, original_s.to_string());
             fprintf(stderr, "maybe target:\n");
-            OUTPUT_SIGNATURE(maybe_target_addr, get_signature_cache(maybe_target_addr, original_s[0])->to_string());
+            OUTPUT_SIGNATURE(maybe_target_addr, get_signature_cache(maybe_target_addr)->to_string());
             return maybe_target_addr;
         }
         OUTPUT_SIGNATURE((void *) original.address, original_s.to_string());

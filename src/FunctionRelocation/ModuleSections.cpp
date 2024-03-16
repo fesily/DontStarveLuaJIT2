@@ -382,15 +382,25 @@ namespace function_relocation {
         MatchConfig config;
         FunctionMatchCtx ctx{*this, config};
         const auto targetScore = calc_score(original, config);
-        auto res = !original.const_key.empty() ? ctx.match_function(original.const_key) : ctx.match_function(original);
-        if (!res.empty()) {
-            for (const auto func: res) {
-                if (!func) continue;
-                if (func.score >= targetScore) {
-                    return func.matched->address;
+        if (!original.const_key.empty()) {
+            auto matched = ctx.match_function(original.const_key);
+            assert(matched.size() <= 1);
+            if (matched.size() == 1) {
+                return matched[0].matched->address;
+            }
+        } else {
+            auto matched = ctx.match_function(original);
+            std::ranges::sort(matched, [](auto &l, auto &r) {
+                return l.score > r.score;
+            });
+            for (const auto &match: matched) {
+                if (!match) continue;
+                if (match.score >= targetScore) {
+                    return match.matched->address;
                 }
             }
         }
+
         return (uintptr_t) fix_func_address_by_signature(*this, original);
     }
 
