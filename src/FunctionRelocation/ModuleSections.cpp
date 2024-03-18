@@ -139,6 +139,7 @@ namespace function_relocation {
                 if (cur == nullptr) {
                     cur = &m.functions.emplace_back(Function{insn.address});
                     cur_block = createBlock(insn.address);
+                    cur_block->function = cur;
                 }
                 assert(m.in_text(insn.address));
                 const auto &x86_details = insn.detail->x86;
@@ -313,8 +314,8 @@ namespace function_relocation {
 
 
     struct MatchConfig {
-        const float consts_score = 1;
-        const float call_score = 0.8;
+        const float consts_score = 2;
+        const float call_score = 1;
         const float const_numbers_score = 0.8;
         const float const_offset_score = 0.2;
 
@@ -367,6 +368,79 @@ namespace function_relocation {
             }
             return res;
         }
+
+        Match match_function_search(const Function &func) {
+            float max = 0;
+            const CodeBlock *maybeBlock = nullptr;
+            for (const auto &fn: sections.functions) {
+                for (const auto &block: fn.blocks) {
+                    for (const auto &target_block: func.blocks) {
+                        auto score = calc_match_score(block, target_block);
+                        if (score > max) {
+                            maybeBlock = &block;
+                        }
+                    }
+                }
+            }
+            return Match{maybeBlock->function, max};
+        };
+
+        auto known_functions(const CodeBlock &block) {
+            std::vector known1 = block.call_functions | std::views::transform([this](const auto &addr) {
+                auto iter = sections.known_functions.find(addr);
+                return iter != sections.known_functions.end() ? iter->second : std::string_view{};
+            }) | std::views::filter([](const auto &v) { return !v.empty(); }) | ranges::to<std::vector>();
+            return known1;
+        }
+
+        float calc_match_score(const CodeBlock &block, const CodeBlock &target_block) {
+            std::vector<Const *> intersectionConst;
+
+            std::ranges::set_intersection(block.consts, target_block.consts,
+                                          std::back_inserter(intersectionConst));
+
+            if (!target_block.consts.empty() && intersectionConst.empty()) {
+                return {};
+            }
+            std::vector<uint64_t> intersectionNumber;
+            std::ranges::set_intersection(block.const_numbers, target_block.const_numbers,
+                                          std::back_inserter(intersectionNumber));
+            if (!target_block.const_numbers.empty() && intersectionNumber.empty()) {
+                return {};
+            }
+            std::vector<uint64_t> intersectionOffNumber;
+            std::ranges::set_intersection(block.const_offset_numbers, target_block.const_numbers,
+                                          std::back_inserter(intersectionOffNumber));
+            if (!target_block.const_offset_numbers.empty() && intersectionOffNumber.empty()) {
+                return {};
+            }
+            std::vector<std::string_view> intersectionCall;
+            auto known = known_functions(target_block);
+            auto known1 = known_functions(block);
+            std::ranges::set_intersection(known, known1,
+                                          std::back_inserter(intersectionCall));
+
+            if (!known.empty() && intersectionCall.empty()) {
+                return {};
+            }
+
+            return intersectionConst.size() * config.consts_score +
+                   intersectionNumber.size() * config.const_numbers_score +
+                   intersectionOffNumber.size() * config.const_offset_score +
+                   intersectionCall.size() * config.call_score;
+        }
+
+
+        const CodeBlock &max_block(const Function &func) {
+            return *std::ranges::max_element(func.blocks, [this](auto &l, auto &r) {
+                return calc_score(l) > calc_score(r);
+            });
+        }
+
+        float calc_score(const CodeBlock &block) {
+            return block.consts.size() * config.consts_score + block.call_functions.size() * config.call_score +
+                   block.const_numbers.size() * config.const_numbers_score;
+        }
     };
 
     static float calc_score(const Function &func, const MatchConfig &config) {
@@ -389,18 +463,11 @@ namespace function_relocation {
                 return matched[0].matched->address;
             }
         } else {
-            auto matched = ctx.match_function(original);
-            std::ranges::sort(matched, [](auto &l, auto &r) {
-                return l.score > r.score;
-            });
-            for (const auto &match: matched) {
-                if (!match) continue;
-                if (match.score >= targetScore) {
-                    return match.matched->address;
-                }
+            auto matched = ctx.match_function_search(original);
+            if (matched && matched.score > targetScore * 0.95) {
+                return matched.matched->address;
             }
         }
-
         return (uintptr_t) fix_func_address_by_signature(*this, original);
     }
 

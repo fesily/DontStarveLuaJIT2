@@ -13,6 +13,7 @@ namespace function_relocation {
         std::string_view value;
         size_t ref;
     };
+    struct Function;
 
     struct CodeBlock {
         uint64_t address;
@@ -22,6 +23,8 @@ namespace function_relocation {
         std::vector<uint64_t> call_functions;
         std::vector<int64_t> const_numbers;
         std::vector<int64_t> const_offset_numbers;
+
+        Function *function;
 
         bool in_block(uint64_t addr) const { return address >= addr && address <= addr + size; }
     };
@@ -70,7 +73,7 @@ namespace function_relocation {
 
         std::vector<Function> functions;
         std::unordered_map<const char *, Const> Consts;
-        std::unordered_map<Function *, uint64_t> known_functions;
+        std::unordered_map<uint64_t, std::string_view> known_functions;
 
         const Function *find_function(uintptr_t addr) const {
             auto iter = std::ranges::find_if(functions, [addr](auto &f) { return addr == f.address; });
