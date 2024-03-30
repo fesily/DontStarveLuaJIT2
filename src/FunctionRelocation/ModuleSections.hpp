@@ -16,26 +16,29 @@ namespace function_relocation {
     struct Function;
 
     struct CodeBlock {
-        uint64_t address;
-        size_t size;
+        uint64_t address = 0;
+        size_t size = 0;
+        size_t insn_count = 0;
 
         std::vector<Const *> consts;
         std::vector<uint64_t> call_functions;
         std::vector<int64_t> const_numbers;
         std::vector<int64_t> const_offset_numbers;
+        size_t remote_rip_memory_count = 0;
 
-        Function *function;
+        Function *function = nullptr;
 
         bool in_block(uint64_t addr) const { return address >= addr && address <= addr + size; }
     };
 
     struct Function {
-        uint64_t address;
-        size_t size;
+        uint64_t address = 0;
+        size_t size = 0;
+        size_t insn_count = 0;
 
         bool in_function(uint64_t addr) const { return address >= addr && address <= addr + size; }
 
-        std::string_view const_key;
+        std::string_view const_key{};
         size_t consts_hash = 0;
 
         std::vector<CodeBlock> blocks;

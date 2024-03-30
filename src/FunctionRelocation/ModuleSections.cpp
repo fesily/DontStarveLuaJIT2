@@ -7,6 +7,8 @@
 
 #ifdef _WIN32
 #include <pe-parse/parse.h>
+#else
+#include <dlfcn.h>
 #endif
 
 #include <range/v3/all.hpp>
@@ -124,14 +126,20 @@ namespace function_relocation {
         CodeBlock *cur_block = nullptr;
         uint64_t function_limit = 0;
 
-        void function_end() {
+        void function_end(uint64_t addr) {
             function_limit = 0;
+            cur->size = addr - cur->address;
+            cur_block->size = addr - cur_block->address;
             cur = nullptr;
             cur_block = nullptr;
         }
-
+        
         CodeBlock *createBlock(uint64_t addr) {
-            return &cur->blocks.emplace_back(CodeBlock{addr});
+            if (auto pre_block = cur_block; pre_block != nullptr)
+                pre_block->size = addr - pre_block->address;
+            const auto block = &cur->blocks.emplace_back(CodeBlock{addr});
+            block->function = cur;
+            return block;
         }
 
         void scan_function() {
@@ -141,17 +149,29 @@ namespace function_relocation {
                 if (cur == nullptr) {
                     cur = &m.functions.emplace_back(Function{insn.address});
                     cur_block = createBlock(insn.address);
-                    cur_block->function = cur;
                 }
+                cur->insn_count++;
+                cur_block->insn_count++;
+                const auto next_insn_address = insn.address + insn.size;
                 assert(m.in_text(insn.address));
                 const auto &x86_details = insn.detail->x86;
                 switch (insn.id) {
+                    case X86_INS_NOP:
+                        if (cur->insn_count == 1) {
+                            cur_block->insn_count--;
+                            cur->insn_count--;
+                            cur_block->address = next_insn_address;
+                            if (cur->blocks.size() == 1){
+                                cur->address = next_insn_address;
+                            }
+                        }
+                        break;
                     case X86_INS_JMP:
                     case X86_INS_CALL: {
                         const auto &operand = x86_details.operands[0];
                         if (operand.type != x86_op_type::X86_OP_INVALID && operand.type != x86_op_type::X86_OP_REG) {
                             uint64_t imm =
-                                    x86_details.disp == 0 ? operand.imm : insn.address + insn.size + x86_details.disp;
+                                    x86_details.disp == 0 ? operand.imm : next_insn_address + x86_details.disp;
 #ifndef _WIN32
                             if (m.in_plt(imm)) {
                                 imm = filter_jmp_or_call(m, imm);
@@ -172,21 +192,37 @@ namespace function_relocation {
                         [[fallthrough]];
                     case X86_INS_RET:
                     case X86_INS_RETFQ:
-                        if (function_limit < insn.address + insn.size) {
-                            function_end();
+                        if (function_limit < next_insn_address) {
+                            function_end(next_insn_address);
                         } else {
-                            cur_block = createBlock(insn.address + insn.size);
+                            cur_block = createBlock(next_insn_address);
+                        }
+                        break;
+                    //case X86_INS_MUL:
+                    //case X86_INS_IMUL:
+                    //case X86_INS_DIV:
+                    //case X86_INS_IDIV:
+                    case X86_INS_ADD:
+                    case X86_INS_SUB:
+                    case X86_INS_CMP:
+                        if (x86_details.operands[1].type == x86_op_type::X86_OP_IMM) {
+                            cur_block->const_numbers.push_back(x86_details.operands[1].imm);
                         }
                         break;
                     case X86_INS_MOV:
                     case X86_INS_LEA: {
                         if (x86_details.op_count == 2) {
-                            if (x86_details.disp != 0 &&
-                                ((x86_details.operands[1].type == x86_op_type::X86_OP_MEM &&
+                            if (x86_details.disp != 0) {
+                                const auto is_offset = ((x86_details.operands[1].type == x86_op_type::X86_OP_MEM &&
                                   !reg_is_ip(x86_details.operands[1].mem.base)) ||
                                  (x86_details.operands[0].type == x86_op_type::X86_OP_MEM &&
-                                  !reg_is_ip(x86_details.operands[0].mem.base))))
-                                cur_block->const_offset_numbers.emplace_back(x86_details.disp);
+                                  !reg_is_ip(x86_details.operands[0].mem.base)));
+                                if (is_offset)
+                                    cur_block->const_offset_numbers.emplace_back(x86_details.disp);
+                                else
+                                    cur_block->remote_rip_memory_count++;
+                            }
+                                
                             else if (x86_details.operands[1].type == X86_OP_IMM)
                                 cur_block->const_numbers.emplace_back(x86_details.operands[1].imm);
                         }
@@ -197,7 +233,7 @@ namespace function_relocation {
                                 if (op.type == x86_op_type::X86_OP_MEM && op.mem.base == x86_reg::X86_REG_RIP &&
                                     op.mem.index == x86_reg::X86_REG_INVALID &&
                                     op.mem.segment == x86_reg::X86_REG_INVALID) {
-                                    auto target = insn.address + insn.size + op.mem.disp;
+                                    auto target = next_insn_address + op.mem.disp;
                                     if (m.in_rodata(target))
                                         str = read_data_string((char *) target);
                                 }
@@ -226,7 +262,7 @@ namespace function_relocation {
                             auto addr = (uint64_t) x86_details.operands[0].imm;
                             function_limit = std::max(addr, function_limit);
 
-                            cur_block = createBlock(insn.address + insn.size);
+                            cur_block = createBlock(next_insn_address);
                         }
                         break;
                 }
@@ -312,6 +348,16 @@ namespace function_relocation {
             }
 
             func.consts_hash = hash_vector(func.blocks);
+            // try get the function name by debug info
+        #ifndef _WIN32
+        gum_module_enumerate_symbols(path, +[](const GumSymbolDetails* details, gpointer)->gboolean{
+            if (details->type == GUM_SYMBOL_FUNCTION || details->type == GUM_SYMBOL_OBJECT) {
+                if (!std::string_view(details->name).contains("@@"))
+                    fprintf(stderr, "%s\n", details->name);
+            }
+            return true;
+        },nullptr);
+        #endif
         }
         return sections;
     }
