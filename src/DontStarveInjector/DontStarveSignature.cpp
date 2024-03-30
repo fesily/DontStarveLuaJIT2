@@ -120,32 +120,41 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(bool isCli
     return updater;
 }
 
-static const std::string &get_lua51_path() {
-    static std::string path = []() {
-        std::string res;
-        gum_process_enumerate_modules(
-                +[](const GumModuleDetails *details,
-                    gpointer user_data) -> gboolean {
-                    if (details->name == std::string_view(lua51_name)) {
-                        auto r = (std::string *) user_data;
-                        *r = details->path;
-                        return false;
-                    }
-                    return true;
-                },
-                &res);
-        return res;
-    }();
-    return path;
+static std::string get_module_path(const char* maybeName) {
+    std::string res;
+    auto arg = std::tuple{&res, maybeName};
+    gum_process_enumerate_modules(
+        +[](const GumModuleDetails *details,
+            gpointer user_data) -> gboolean
+        {
+            auto &[res, maybeName] = *(decltype(arg) *)user_data;
+            if (std::string_view(details->name).contains(maybeName))
+            {
+                res->append(details->path);
+                return false;
+            }
+            return true;
+        },
+        (void *)&arg);
+    return res;
 }
 
 std::string
 update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports, uint32_t range,
                   bool updated) {
-    const auto &lua51_path = get_lua51_path();
+    const auto &lua51_path = get_module_path(lua51_name);
+    const auto &game_path = get_module_path(game_name);
     auto modulelua51 = function_relocation::init_module_signature(lua51_path.c_str(), 0);
-    auto moduleMain = function_relocation::init_module_signature(gum_process_get_main_module()->path,
-                                                                 targetLuaModuleBase);
+    auto moduleMain = function_relocation::init_module_signature(game_path.c_str(), targetLuaModuleBase);
+    
+    //明确定位 index2adr
+    moduleMain.known_functions[targetLuaModuleBase] = "index2adr";
+    auto lua_type_fn = gum_module_find_export_by_name(lua51_path.c_str(), "lua_type");
+    if (auto fn =  modulelua51.find_function(lua_type_fn); fn && !fn->blocks.empty() && !fn->blocks[0].call_functions.empty()){
+        modulelua51.known_functions[modulelua51.find_function(lua_type_fn)->blocks[0].call_functions[0]] = "index2adr";
+    }
+    
+
     auto &funcs = signatures.funcs;
     // fix all signatures
     for (size_t i = 0; i < exports.size(); i++) {
@@ -154,6 +163,7 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         if (original == nullptr || !modulelua51.find_function((uintptr_t) original)) {
             return std::format("can't find address: {}", name.c_str());
         }
+        modulelua51.known_functions[(uintptr_t) original] = name;
         auto originalFunc = modulelua51.find_function((uintptr_t) original);
         auto old_offset = GPOINTER_TO_INT(funcs.at(name));
         spdlog::info("try fix signature [{}]: {}", name, old_offset);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+
 namespace function_relocation {
 	struct Ctx
 	{

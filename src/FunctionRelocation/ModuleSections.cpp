@@ -65,7 +65,7 @@ namespace function_relocation {
         if (!gum_memory_is_readable(data, data_limit))
             return nullptr;
         for (size_t i = 0; i < 256; i++) {
-            if (!std::isprint(data[i]))
+            if (!std::isprint((unsigned char)data[i]))
                 return data[i] == 0 ? data : nullptr;
         }
         return nullptr;
@@ -107,10 +107,12 @@ namespace function_relocation {
             const GumMemoryRange &text = {scan_address,
                                           (m.text.base_address + m.text.size - scan_address) / sizeof(char)};
             const auto hcs = get_ctx().hcs;
+            cs_option(hcs, CS_OPT_SKIPDATA, CS_OPT_ON);
             insns_count = cs_disasm(hcs, reinterpret_cast<const uint8_t *>(text.base_address), text.size,
                                     address,
                                     0,
                                     &insns);
+            cs_option(hcs, CS_OPT_SKIPDATA, CS_OPT_OFF);
         }
 
         ~ScanCtx() {
@@ -218,7 +220,7 @@ namespace function_relocation {
                     }
                         break;
                     default:
-                        if (insn.id >= X86_INS_JAE || insn.id <= X86_INS_JS) {
+                        if (insn.id >= X86_INS_JAE && insn.id <= X86_INS_JS) {
                             assert(x86_details.op_count == 1 &&
                                    x86_details.operands[0].type == x86_op_type::X86_OP_IMM);
                             auto addr = (uint64_t) x86_details.operands[0].imm;
@@ -253,28 +255,30 @@ namespace function_relocation {
     }
 
     static ModuleSections get_module_sections(const char *path) {
-        ModuleSections sections;
-#ifdef _WIN32
         const auto details = get_module_details(path);
-
-        const auto pe = peparse::ParsePEFromPointer((uint8_t*)details->range->base_address, details->range->size);
+        ModuleSections sections{};
+#ifdef _WIN32
+        const auto pe = peparse::ParsePEFromFile(details->path);
         if (pe)
         {
+            auto args = std::tuple{&sections, details->range->base_address};
             peparse::IterSec(pe, +[](void* user_data,
                 const peparse::VA& secBase,
                 const std::string& secName,
                 const peparse::image_section_header& s,
                 const peparse::bounded_buffer* data)
                 {
+                    auto& [sections, base_address] = *(decltype(args)*)user_data;
+                    auto real_address = s.VirtualAddress + base_address;
+                    auto len = data->bufLen;
                     if (secName == ".text")
-                        ((ModuleSections*)user_data)->text = { secBase, data ? 0 : data->bufLen };
+                        sections->text = { real_address, len };
                     else if (secName == ".rdata")
-                        ((ModuleSections*)user_data)->rodata = { secBase, data ? 0 : data->bufLen };
-                    return 1;
-                }, (void*)&sections);
+                        sections->rodata = { real_address, len };
+                    return 0;
+                }, (void*)&args);
+            peparse::DestructParsedPE(pe);
         }
-        peparse::DestructParsedPE(pe);
-        gum_module_details_free(details);
 #else
 
         gum_module_enumerate_sections(path, +[](const GumSectionDetails *details, gpointer user_data) -> gboolean {
@@ -289,13 +293,13 @@ namespace function_relocation {
             return TRUE;
         }, (void *) &sections);
 #endif
+        sections.details = details;
         return sections;
     }
 
 
     ModuleSections init_module_signature(const char *path, uintptr_t scan_start_address) {
         auto sections = get_module_sections(path);
-        sections.details = get_module_details(path);
         ScanCtx ctx{sections, scan_start_address};
         ctx.scan_function();
         for (auto &func: sections.functions) {

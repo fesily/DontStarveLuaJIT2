@@ -34,6 +34,12 @@ const char *worker_dir = WORKER_DIR;
 
 int update(bool isClient, const char *path) {
     fprintf(stderr, "game_path:\t%s\n", path);
+#ifdef _WIN32
+    if (!loadlib(path)){
+        fprintf(stderr, "can't load %s\n", path);
+        return 1;
+    }
+#endif
     if (luaModuleSignature.scan(path) == 0) {
         fprintf(stderr, "%s", "can find lua module base addr\n");
         return 1;
