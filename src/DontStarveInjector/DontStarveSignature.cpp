@@ -151,13 +151,11 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
     moduleMain.known_functions[targetLuaModuleBase] = "index2adr";
     auto lua_type_fn = gum_module_find_export_by_name(lua51_path.c_str(), "lua_type");
     if (auto fn =  modulelua51.find_function(lua_type_fn); fn && !fn->blocks.empty() && !fn->blocks[0].call_functions.empty()){
-        modulelua51.known_functions[modulelua51.find_function(lua_type_fn)->blocks[0].call_functions[0]] = "index2adr";
+        const auto ptr = modulelua51.find_function(lua_type_fn)->blocks[0].call_functions[0];
+        assert(modulelua51.known_functions.contains(ptr) && modulelua51.known_functions[ptr] == "index2adr");
     }
     
-
-    auto &funcs = signatures.funcs;
-    // fix all signatures
-    for (size_t i = 0; i < exports.size(); i++) {
+     for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
         auto original = (void *) gum_module_find_export_by_name(lua51_path.c_str(), name.c_str());
         if (original == nullptr || !modulelua51.find_function((uintptr_t) original)) {
@@ -165,10 +163,24 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         }
         modulelua51.known_functions[(uintptr_t) original] = name;
         auto originalFunc = modulelua51.find_function((uintptr_t) original);
+        if (!originalFunc) {
+            return std::format("can't find {} at module lua51", name);
+        }
+    }
+    auto &funcs = signatures.funcs;
+    // fix all signatures
+    for (size_t i = 0; i < exports.size(); i++) {
+        auto &[name, _] = exports[i];
+        auto original = (void *) gum_module_find_export_by_name(lua51_path.c_str(), name.c_str());
+        auto originalFunc = modulelua51.find_function((uintptr_t) original);
+
         auto old_offset = GPOINTER_TO_INT(funcs.at(name));
-        spdlog::info("try fix signature [{}]: {}", name, old_offset);
+        if (old_offset == 0)
+            spdlog::info("try create signature [{}]", name);
+        else
+            spdlog::info("try fix signature [{}]: {}", name, old_offset);
         void *target = GSIZE_TO_POINTER(targetLuaModuleBase + old_offset);
-        if (moduleMain.find_function((uintptr_t) target)) {
+        if (old_offset != 0 && moduleMain.find_function((uintptr_t) target)) {
             if (function_relocation::is_same_signature_fast(target, original)) {
                 spdlog::info("should not fix signature [{}]: {}", name, target);
                 continue;
