@@ -8,6 +8,8 @@ set(SOURCE
         MemorySignature.cpp
         KartaConfig.cpp
         ctx.cpp
+        disasm.h
+        ScanCtx.hpp
 )
 
 find_package(spdlog CONFIG REQUIRED)

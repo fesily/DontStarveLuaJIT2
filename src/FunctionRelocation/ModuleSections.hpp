@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <algorithm>
+#include <lemon/static_graph.h>
 #include <frida-gum.h>
 
 
@@ -32,7 +33,9 @@ namespace function_relocation {
 
         bool in_block(uint64_t addr) const { return address >= addr && address <= addr + size; }
     };
+
     struct ModuleSections;
+
     struct Function {
         uint64_t address = 0;
         size_t size = 0;
@@ -40,9 +43,9 @@ namespace function_relocation {
 
         bool in_function(uint64_t addr) const { return address >= addr && address <= addr + size; }
 
-        std::string_view* const_key = nullptr;
+        std::string_view *const_key = nullptr;
         size_t consts_hash = 0;
-        ModuleSections* module = nullptr;
+        ModuleSections *module = nullptr;
 
         std::vector<CodeBlock> blocks;
         std::string name;
@@ -78,8 +81,10 @@ namespace function_relocation {
         bool in_rodata(uintptr_t address) const;
 
         std::vector<Function> functions;
+        std::unordered_map<uintptr_t, Function *> address_functions;
         std::unordered_map<const char *, Const> Consts;
         std::unordered_map<uint64_t, std::string> known_functions;
+        lemon::StaticDigraph staticDigraph;
 
         const Function *find_function(uintptr_t addr) const {
             auto iter = std::ranges::find_if(functions, [addr](auto &f) { return addr == f.address; });
