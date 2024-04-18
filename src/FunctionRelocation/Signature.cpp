@@ -30,7 +30,7 @@ namespace function_relocation {
     using in_function_t = std::function<bool(void *)>;
 
     static Signature
-    create_signature(void *func, const in_function_t &in_func, size_t limit = size_t(-1));
+    create_signature(void *func, const in_function_t &in_func, size_t limit = static_cast<size_t>(-1));
 
     std::string Signature::to_string() const {
         size_t length = 0;
@@ -88,18 +88,18 @@ namespace function_relocation {
         bool rva = false;
         if (csX86.disp != 0 && csX86.op_count == 2) {
             const auto &operand = csX86.operands[1];
-            if (operand.type == x86_op_type::X86_OP_MEM) {
-                if (operand.mem.base == x86_reg::X86_REG_RIP) {
+            if (operand.type == X86_OP_MEM) {
+                if (operand.mem.base == X86_REG_RIP) {
                     signature = std::regex_replace(op_str, regx2,
                                                    csX86.disp > 0 ? "[rip + 0x?]" : "[rip - 0x?]");
                     rva = insn->id == X86_INS_JMP || insn->id == X86_INS_CALL;
-                } else if (operand.mem.index != x86_reg::X86_REG_INVALID) {
+                } else if (operand.mem.index != X86_REG_INVALID) {
                     signature = std::regex_replace(op_str, regx1, "[r$1x + rax*$2 $3 0x?]");
                 }
             }
         } else if (csX86.op_count == 1) {
             const auto &operand = csX86.operands[0];
-            if (operand.type == x86_op_type::X86_OP_IMM) {
+            if (operand.type == X86_OP_IMM) {
                 imm = operand.imm;
                 if (insn->id < X86_INS_JAE || insn->id > X86_INS_JS) {
                     signature = "0x?";
@@ -117,7 +117,7 @@ namespace function_relocation {
                     auto data = (void *) imm;
 
                     if (rva && !gum_memory_is_execute(data, sizeof(void *))) {
-                        data = *(void **) data;
+                        data = *static_cast<void**>(data);
                         if (!gum_memory_is_execute(data, sizeof(void *)))
                             break;
                     }
@@ -139,7 +139,7 @@ namespace function_relocation {
     Signature create_signature(void *func, const in_function_t &in_func, size_t limit) {
         Signature ret;
 
-        const uint8_t *binary = (uint8_t *) func;
+        const uint8_t *binary = static_cast<uint8_t*>(func);
         const auto hcs = get_ctx().hcs;
         auto insn = cs_malloc(hcs);
         uint64_t address = (uint64_t) func;
@@ -178,7 +178,7 @@ namespace function_relocation {
         if (signature_cache.find(fix_target) != signature_cache.end()) {
             target_s = &signature_cache[fix_target];
         } else {
-            signature_cache[fix_target] = create_signature(fix_target, nullptr, size_t(-1));
+            signature_cache[fix_target] = create_signature(fix_target, nullptr, static_cast<size_t>(-1));
             target_s = &signature_cache[fix_target];
         }
         return target_s;
@@ -217,7 +217,7 @@ namespace function_relocation {
     void *
     fix_func_address_by_signature(ModuleSections &target, const Function &original) {
         auto original_s = create_signature((void *) original.address, [&original](auto address) {
-            return original.in_function((uintptr_t) address);
+            return original.in_function(static_cast<uintptr_t>(address));
         });
 
         size_t maybe_target_count = 1;
@@ -225,7 +225,7 @@ namespace function_relocation {
 
         for (const auto &func: target.functions) {
             auto fix_target = (void *) func.address;
-            if (*(char *) fix_target != *(char *) original.address) {
+            if (*static_cast<char*>(fix_target) != *(char *) original.address) {
                 continue;
             }
             auto target_s = get_signature_cache(fix_target);

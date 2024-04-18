@@ -90,22 +90,22 @@ namespace function_relocation {
         if (pe)
         {
             auto args = std::tuple{&sections, details->range->base_address};
-            peparse::IterSec(pe, +[](void* user_data,
-                const peparse::VA& secBase,
-                const std::string& secName,
-                const peparse::image_section_header& s,
-                const peparse::bounded_buffer* data)
-                {
-                    auto& [sections, base_address] = *(decltype(args)*)user_data;
-                    auto real_address = s.VirtualAddress + base_address;
-                    auto len = data->bufLen;
-                    if (secName == ".text")
-                        sections->text = { real_address, len };
-                    else if (secName == ".rdata")
-                        sections->rodata = { real_address, len };
-                    return 0;
-                }, (void*)&args);
-            peparse::DestructParsedPE(pe);
+            IterSec(pe, +[](void* user_data,
+                            const peparse::VA& secBase,
+                            const std::string& secName,
+                            const peparse::image_section_header& s,
+                            const peparse::bounded_buffer* data)
+            {
+	            auto& [sections, base_address] = *static_cast<decltype(args)*>(user_data);
+	            auto real_address = s.VirtualAddress + base_address;
+	            auto len = data->bufLen;
+	            if (secName == ".text")
+		            sections->text = { real_address, len };
+	            else if (secName == ".rdata")
+		            sections->rodata = { real_address, len };
+	            return 0;
+            }, (void*)&args);
+            DestructParsedPE(pe);
         }
 #else
 

@@ -10,7 +10,7 @@
 namespace function_relocation {
 
     static bool reg_is_ip(x86_reg reg) {
-        return reg == x86_reg::X86_REG_RIP || reg == x86_reg::X86_REG_EIP || reg == x86_reg::X86_REG_IP;
+        return reg == X86_REG_RIP || reg == X86_REG_EIP || reg == X86_REG_IP;
     };
 
     static const char *read_data_string(const char *data) {
@@ -18,7 +18,7 @@ namespace function_relocation {
         if (!gum_memory_is_readable(data, data_limit))
             return nullptr;
         for (size_t i = 0; i < 256; i++) {
-            if (!std::isprint((unsigned char) data[i]))
+            if (!std::isprint(static_cast<unsigned char>(data[i])))
                 return data[i] == 0 ? data : nullptr;
         }
         return nullptr;
@@ -33,12 +33,12 @@ namespace function_relocation {
         if (cs_disasm_iter(hcs, &code, &size, reinterpret_cast<uint64_t *>(&addr), insn)) {
             if (insn->id == X86_INS_JMP) {
                 auto &op = insn->detail->x86.operands[0];
-                if (op.type == x86_op_type::X86_OP_MEM) {
+                if (op.type == X86_OP_MEM) {
                     auto target = insn->address + insn->size + op.mem.disp;
                     if (m.in_got_plt(target)) {
                         imm = (intptr_t) *(void **) target;
                     }
-                } else if (op.type == x86_op_type::X86_OP_IMM) {
+                } else if (op.type == X86_OP_IMM) {
                     imm = op.imm;
                 }
             }
@@ -48,7 +48,7 @@ namespace function_relocation {
     }
 
     static uintptr_t read_operand_rip_mem(const cs_insn &insn, const cs_x86_op &op) {
-        if (op.type != x86_op_type::X86_OP_MEM
+        if (op.type != X86_OP_MEM
             || !reg_is_ip(op.mem.base)
             || op.mem.segment != X86_REG_INVALID
             || op.mem.index != X86_REG_INVALID
@@ -81,8 +81,8 @@ namespace function_relocation {
             const auto &operand1 = x86_details.operands[1];
             if (operand0.type == X86_OP_REG && operand0.reg == switch_jump_table_reg) {
                 if (operand1.type == X86_OP_MEM && reg_is_ip(operand1.mem.base) &&
-                    operand1.mem.index == x86_reg::X86_REG_INVALID &&
-                    operand1.mem.segment == x86_reg::X86_REG_INVALID) {
+                    operand1.mem.index == X86_REG_INVALID &&
+                    operand1.mem.segment == X86_REG_INVALID) {
                     target = (void *) (insn.address + insn.size + operand1.mem.disp);
                 }
             }
@@ -152,7 +152,6 @@ namespace function_relocation {
             return match ? &known_functions[match] : nullptr;
         }
 
-        std::unordered_map<uintptr_t, size_t> function_sizes;
         std::unordered_map<uint64_t, size_t> sureFunctions;
         std::unordered_map<uint64_t, size_t> rodatas;
 
@@ -171,8 +170,8 @@ namespace function_relocation {
                 const auto &operand1 = x86_details.operands[1];
 
                 if (insn.id == X86_INS_JMP || insn.id == X86_INS_CALL) {
-                    if (operand.type != x86_op_type::X86_OP_INVALID && operand.type != x86_op_type::X86_OP_REG) {
-                        if (operand.type == x86_op_type::X86_OP_MEM && operand.reg != x86_reg::X86_REG_RIP)
+                    if (operand.type != X86_OP_INVALID && operand.type != X86_OP_REG) {
+                        if (operand.type == X86_OP_MEM && operand.reg != X86_REG_RIP)
                             continue;
                         uint64_t imm =
                                 x86_details.disp == 0 ? operand.imm : next_insn_address + x86_details.disp;
@@ -208,40 +207,43 @@ namespace function_relocation {
             for (const auto&[address, func] : known_functions) {
                     const auto guess_size = guess_function_size(address);
                     if (func.size && func.size != guess_size) {
-                        fprintf(stderr, "%s guess func size failed: %lo guess %lo\n", func.name.c_str(), func.size, guess_size);
+                        fprintf(stderr, "%s guess func size failed: %llu guess %llu\n", func.name.c_str(), func.size, guess_size);
                     }
                 }
 #endif
+            std::unordered_map<uintptr_t, size_t> function_sizes;
             for (auto &[addr, ref_count]: maybeFunctions | ranges::views::filter([&](const auto &pair) {
                 const auto &[addr, _] = pair;
                 return !sureFunctions.contains(addr);
             })) {
-                auto sureFuncs = sureFunctions |
-                                 std::ranges::views::filter([addr](auto &ipair) { return ipair.first <= addr; }) |
-                                 std::ranges::views::transform([](auto &ipair) { return ipair.first; }) |
-                                 ranges::to<std::vector>();
-                std::ranges::sort(sureFuncs);
-                // maybe jmp self function
-                auto near_address = *std::ranges::min_element(sureFuncs, [addr](auto l, auto r) {
-                    return addr - l < addr - r;
-                });
-                auto func = find_known_function(near_address);
-                if (func) {
-                    function_sizes[addr] = func->size;
-                    if (addr >= func->size + func->address) {
+                if (ref_count != 1) {
+                    auto sureFuncs = sureFunctions |
+                        std::ranges::views::filter([addr](auto& ipair) { return ipair.first <= addr; }) |
+                        std::ranges::views::transform([](auto& ipair) { return ipair.first; }) |
+                        ranges::to<std::vector>();
+                    std::ranges::sort(sureFuncs);
+                    // maybe jmp self function
+                    auto near_address = *std::ranges::min_element(sureFuncs, [addr](auto l, auto r) {
+                        return addr - l < addr - r;
+                        });
+                    auto func = find_known_function(near_address);
+                    if (func) {
+                        function_sizes[addr] = func->size;
+                        if (addr >= func->size + func->address) {
+                            sureFunctions[addr] += ref_count;
+                            continue;
+                        }
+                    }
+                    if (!function_sizes.contains(near_address)) {
+                        function_sizes[near_address] = guess_function_size(near_address);
+                    }
+                    const auto length = function_sizes[near_address];
+                    if (addr >= near_address + length) {
                         sureFunctions[addr] += ref_count;
                         continue;
                     }
                 }
-                if (!function_sizes.contains(near_address)) {
-                    function_sizes[near_address] = guess_function_size(near_address);
-                }
-                auto length = function_sizes[near_address];
-                if (addr >= near_address + length) {
-                    sureFunctions[addr] += ref_count;
-                    continue;
-                }
-                //fprintf(stderr, "%p discard the function\n", (void*)addr);
+                fprintf(stderr, "%p discard the function\n", (void*)addr);
             }
 
             auto ret = sureFunctions | std::ranges::views::transform([](auto &p) { return p.first; }) |
@@ -254,20 +256,19 @@ namespace function_relocation {
             const auto functions = pre_function();
             for (size_t i = 0; i < functions.size(); i++) {
                 const auto address = functions[i];
-                auto limit1 = function_sizes.contains(address) ? function_sizes[address] + address : 0;
-                auto limit2 = i + 1 == functions.size() ? 0 : functions[i + 1];
-                function_limit = limit1 != 0 ? std::min(limit1, limit2) : limit2;
+                function_limit = known_functions.contains(address) ?
+                    known_functions[address].size + address :
+            		(i + 1 == functions.size() ? 0 : functions[i + 1]);
 
 #ifndef NDEBUG
                 if (function_limit && known_functions.contains(address)){
                         const auto& func = known_functions[address];
                         if (func.size)
-                        assert(func.size + func.address +16 >= function_limit);
+                        assert(func.size + func.address == function_limit);
                     }
 #endif
-
                 if (!scan_function(address)) {
-                    fprintf(stderr, "can't find address at insns:%p", (void *) address);
+                    fprintf(stderr, "can't find address at insns: %p", (void *) address);
                 }
             }
         }
@@ -295,8 +296,8 @@ namespace function_relocation {
                     case X86_INS_JMP:
                     case X86_INS_CALL: {
                         const auto &operand = x86_details.operands[0];
-                        if (operand.type != x86_op_type::X86_OP_INVALID && operand.type != x86_op_type::X86_OP_REG) {
-                            if (operand.type == x86_op_type::X86_OP_MEM && !reg_is_ip(operand.mem.base))
+                        if (operand.type != X86_OP_INVALID && operand.type != X86_OP_REG) {
+                            if (operand.type == X86_OP_MEM && !reg_is_ip(operand.mem.base))
                                 continue;
                             uint64_t imm =
                                     x86_details.disp == 0 ? operand.imm : next_insn_address + x86_details.disp;
@@ -332,7 +333,7 @@ namespace function_relocation {
                     case X86_INS_ADD:
                     case X86_INS_SUB:
                     case X86_INS_CMP:
-                        if (x86_details.operands[1].type == x86_op_type::X86_OP_IMM) {
+                        if (x86_details.operands[1].type == X86_OP_IMM) {
                             cur_block->const_numbers.push_back(x86_details.operands[1].imm);
                         }
                         break;
@@ -340,9 +341,9 @@ namespace function_relocation {
                     case X86_INS_LEA: {
                         if (x86_details.op_count == 2) {
                             if (x86_details.disp != 0) {
-                                const auto is_offset = ((x86_details.operands[1].type == x86_op_type::X86_OP_MEM &&
+                                const auto is_offset = ((x86_details.operands[1].type == X86_OP_MEM &&
                                                          !reg_is_ip(x86_details.operands[1].mem.base)) ||
-                                                        (x86_details.operands[0].type == x86_op_type::X86_OP_MEM &&
+                                                        (x86_details.operands[0].type == X86_OP_MEM &&
                                                          !reg_is_ip(x86_details.operands[0].mem.base)));
                                 if (is_offset)
                                     cur_block->const_offset_numbers.emplace_back(x86_details.disp);
@@ -352,18 +353,18 @@ namespace function_relocation {
                                 cur_block->const_numbers.emplace_back(x86_details.operands[1].imm);
                         }
                         const char *str = nullptr;
-                        if (x86_details.op_count == 2 && x86_details.operands[0].type == x86_op_type::X86_OP_REG) {
+                        if (x86_details.op_count == 2 && x86_details.operands[0].type == X86_OP_REG) {
                             const auto &op = x86_details.operands[1];
                             if (insn.id == X86_INS_LEA) {
-                                if (op.type == x86_op_type::X86_OP_MEM && reg_is_ip(op.mem.base) &&
-                                    op.mem.index == x86_reg::X86_REG_INVALID &&
-                                    op.mem.segment == x86_reg::X86_REG_INVALID) {
+                                if (op.type == X86_OP_MEM && reg_is_ip(op.mem.base) &&
+                                    op.mem.index == X86_REG_INVALID &&
+                                    op.mem.segment == X86_REG_INVALID) {
                                     auto target = next_insn_address + op.mem.disp;
                                     if (m.in_rodata(target))
                                         str = read_data_string((char *) target);
                                 }
                             } else if (insn.id == X86_INS_MOV) {
-                                if (op.type == x86_op_type::X86_OP_IMM) {
+                                if (op.type == X86_OP_IMM) {
                                     auto target = op.imm;
                                     if (m.in_rodata(target))
                                         str = read_data_string((char *) target);
@@ -384,7 +385,7 @@ namespace function_relocation {
                         if (insn.id >= X86_INS_JAE && insn.id <= X86_INS_JS) {
                             assert(x86_details.op_count == 1 &&
                                    x86_details.operands[0].type == x86_op_type::X86_OP_IMM);
-                            auto addr = (uint64_t) x86_details.operands[0].imm;
+                            auto addr = static_cast<uint64_t>(x86_details.operands[0].imm);
                             function_limit = std::max(addr, function_limit);
 
                             cur_block = createBlock(next_insn_address);
@@ -401,16 +402,16 @@ namespace function_relocation {
         size_t guess_function_size(const uintptr_t imm) {
             uintptr_t function_limit = 0;
             x86_reg switch_target_reg = X86_REG_INVALID;
-            auto dis = disasm(std::span{(uint8_t *) imm, size_t(-1)});
+            auto dis = disasm(std::span{(uint8_t *) imm, static_cast<size_t>(-1)});
             for (const auto &insn_ref: dis) {
                 auto insn = &insn_ref;
                 const auto &x86_details = insn->detail->x86;
                 if (insn->id >= X86_INS_JAE && insn->id <= X86_INS_JS) {
                     assert(x86_details.op_count == 1 &&
                            x86_details.operands[0].type == x86_op_type::X86_OP_IMM);
-                    auto target_addr = (uintptr_t) x86_details.operands[0].imm;
+                    auto target_addr = static_cast<uintptr_t>(x86_details.operands[0].imm);
                     function_limit = std::max(target_addr, function_limit);
-                } else if (insn->id == X86_INS_JMP || insn->id == X86_INS_RET || insn->id == X86_INS_RETFQ) {
+                } else if (insn->id == X86_INS_JMP || insn->id == X86_INS_RET || insn->id == X86_INS_RETFQ || insn->id == X86_INS_CALL) {
                     if (insn->id == X86_INS_JMP) {
                         if (x86_details.operands[0].type == X86_OP_IMM && insn->size == 2) {
                             // shot jmp
@@ -420,7 +421,7 @@ namespace function_relocation {
                                 function_limit = std::max(jump_target, function_limit);
                             }
                         }
-                        if (x86_details.operands[0].type == x86_op_type::X86_OP_MEM) {
+                        if (x86_details.operands[0].type == X86_OP_MEM) {
                             const auto &operand = x86_details.operands[0];
                             if (operand.mem.disp != 0) {
                                 // jmp switch table
@@ -444,7 +445,21 @@ namespace function_relocation {
                         } else if (x86_details.operands[0].type == X86_OP_REG) {
                             if (x86_details.operands[0].reg == switch_target_reg) {
                                 // switch jump
-                                function_limit = std::max((uintptr_t) insn->address + insn->size, function_limit);
+                                function_limit = std::max(static_cast<uintptr_t>(insn->address) + insn->size, function_limit);
+                            }
+                        }
+                    } else if (insn->id == X86_INS_CALL) {
+                        if (x86_details.operands[0].type == X86_OP_IMM) {
+                            if (function_limit == insn->address) {
+#ifndef _WIN32
+                                // is __stack_chk_fail?
+                                auto target = x86_details.operands[0].imm;
+                                static const auto __stack_chk_fail_address = gum_module_find_export_by_name("libc.so.6",
+                                    "__stack_chk_fail");
+                                if (__stack_chk_fail_address &&
+                                    address_is_lib_plt((uint8_t*)target, __stack_chk_fail_address))
+                                    return insn->address + insn->size - imm;
+#endif
                             }
                         }
                     }
@@ -453,15 +468,15 @@ namespace function_relocation {
                     }
                 } else if (insn->id == X86_INS_MOVSXD) {
                     // maybe load switch
-                    if (x86_details.operands[0].type == x86_op_type::X86_OP_REG) {
+                    if (x86_details.operands[0].type == X86_OP_REG) {
                         const auto &operand = x86_details.operands[1];
                         constexpr auto fixed_scale = sizeof(void *) / sizeof(char) / 2;
                         using fixed_type = int32_t;
-                        if (operand.type == x86_op_type::X86_OP_MEM
+                        if (operand.type == X86_OP_MEM
                             && operand.mem.scale == fixed_scale) {
                             auto switch_jump_table = operand.mem.base;
-                            auto jump_table = (fixed_type *) guess_switch_jump_table_address(dis, switch_jump_table,
-                                                                                             insn->address);
+                            auto jump_table = static_cast<fixed_type*>(guess_switch_jump_table_address(dis, switch_jump_table,
+	                            insn->address));
                             if (jump_table && m.in_rodata((uintptr_t) jump_table)) {
                                 switch_target_reg = x86_details.operands[0].reg;
                                 auto offset_table = jump_table;
@@ -478,30 +493,6 @@ namespace function_relocation {
                                         break;
                                 }
                                 function_limit = std::max(jump_target, function_limit);
-                            }
-                        }
-                    }
-                } else if (insn->id == X86_INS_CALL) {
-                    if (x86_details.operands[0].type == x86_op_type::X86_OP_IMM) {
-                        if (function_limit == insn->address) {
-                            // is __stack_chk_fail?
-                            auto target = x86_details.operands[0].imm;
-                            static const auto __stack_chk_fail_address = gum_module_find_export_by_name("libc.so.6",
-                                                                                                        "__stack_chk_fail");
-                            if (__stack_chk_fail_address &&
-                                address_is_lib_plt((uint8_t *) target, __stack_chk_fail_address))
-                                return insn->address + insn->size - imm;
-                        }
-
-                        // is end call?
-                        // next is nop or push
-                        for (auto &insn_next: disasm{
-                                std::span{(uint8_t *) insn->address + insn->size, sizeof(void *) * 2 * 2}}) {
-                            if (insn_next.id == X86_INS_NOP) continue;
-                            else if (insn_next.id == X86_INS_PUSH) {
-                                return insn->address + insn->size - imm;
-                            } else {
-                                break;
                             }
                         }
                     }
