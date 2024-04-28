@@ -3,9 +3,11 @@
 #include "disasm.h"
 #include "ModuleSections.hpp"
 
+#include <vector>
 #include <ranges>
 #include <range/v3/all.hpp>
 #include <algorithm>
+#include <format>
 
 namespace function_relocation {
 
@@ -151,12 +153,11 @@ namespace function_relocation {
             }
             return match ? &known_functions[match] : nullptr;
         }
-
         std::unordered_map<uint64_t, size_t> sureFunctions;
         std::unordered_map<uint64_t, size_t> rodatas;
 
         auto pre_function() {
-            std::unordered_map<uint64_t, size_t> maybeFunctions;
+            std::unordered_map<uint64_t, std::unordered_set<uint64_t>> maybeFunctions;
 
             for (const auto &[address, func]: known_functions) {
                 sureFunctions[address] = 1;
@@ -182,7 +183,7 @@ namespace function_relocation {
 #endif
                         if (m.in_text(imm)) {
                             if (insn.id == X86_INS_JMP) {
-                                maybeFunctions[imm]++;
+                                maybeFunctions[imm].emplace(insn.address);
                                 continue;
                             }
                             sureFunctions[imm]++;
@@ -207,41 +208,36 @@ namespace function_relocation {
             for (const auto&[address, func] : known_functions) {
                     const auto guess_size = guess_function_size(address);
                     if (func.size && func.size != guess_size) {
-                        fprintf(stderr, "%s guess func size failed: %llu guess %llu\n", func.name.c_str(), func.size, guess_size);
+                        fprintf(stderr, "%s", std::format("{} guess func size failed: {} guess {}\n", func.name.c_str(), func.size, guess_size).c_str());
                     }
                 }
 #endif
             std::unordered_map<uintptr_t, size_t> function_sizes;
-            for (auto &[addr, ref_count]: maybeFunctions | ranges::views::filter([&](const auto &pair) {
-                const auto &[addr, _] = pair;
-                return !sureFunctions.contains(addr);
-            })) {
-                if (ref_count != 1) {
-                    auto sureFuncs = sureFunctions |
-                        std::ranges::views::filter([addr](auto& ipair) { return ipair.first <= addr; }) |
-                        std::ranges::views::transform([](auto& ipair) { return ipair.first; }) |
-                        ranges::to<std::vector>();
-                    std::ranges::sort(sureFuncs);
-                    // maybe jmp self function
-                    auto near_address = *std::ranges::min_element(sureFuncs, [addr](auto l, auto r) {
-                        return addr - l < addr - r;
-                        });
-                    auto func = find_known_function(near_address);
-                    if (func) {
-                        function_sizes[addr] = func->size;
-                        if (addr >= func->size + func->address) {
-                            sureFunctions[addr] += ref_count;
-                            continue;
-                        }
-                    }
-                    if (!function_sizes.contains(near_address)) {
-                        function_sizes[near_address] = guess_function_size(near_address);
-                    }
-                    const auto length = function_sizes[near_address];
-                    if (addr >= near_address + length) {
-                        sureFunctions[addr] += ref_count;
-                        continue;
-                    }
+            auto maybeFuncs = maybeFunctions
+                | ranges::views::filter([this](auto& p){ return !sureFunctions.contains(p.first);})
+                | ranges::views::transform([](auto& p) {return std::make_pair(p.first, p.second);})
+                | ranges::to<std::vector>();
+
+            std::ranges::sort(maybeFuncs, {}, &decltype(maybeFuncs)::value_type::first);
+            for (auto &[addr, ref_addrs]: maybeFuncs) {
+                const auto ref_count = ref_addrs.size();
+                auto sureFuncs = sureFunctions | std::ranges::views::keys | ranges::to<std::vector>();
+                std::ranges::sort(sureFuncs);
+                auto near_address = ( sureFuncs | std::ranges::views::filter([addr](auto p) { return p <= addr; }) ).back();
+                auto next_address = ( sureFuncs | std::ranges::views::filter([addr](auto p) { return p > addr; }) ).front();
+                // all ref address in range
+                if (std::ranges::all_of(ref_addrs, [=](auto ref_addr){
+                    return ref_addr >= near_address && ref_addr < next_address;
+                })) {
+                    continue;
+                }
+                if (!function_sizes.contains(near_address)) {
+                    function_sizes[near_address] = guess_function_size(near_address);
+                }
+                const auto length = function_sizes[near_address];
+                if (addr >= near_address + length) {
+                    sureFunctions[addr] += ref_count;
+                    continue;
                 }
                 fprintf(stderr, "%p discard the function\n", (void*)addr);
             }
@@ -267,6 +263,8 @@ namespace function_relocation {
                         assert(func.size + func.address == function_limit);
                     }
 #endif
+                // function_limit is next function address
+                function_limit--;
                 if (!scan_function(address)) {
                     fprintf(stderr, "can't find address at insns: %p", (void *) address);
                 }
@@ -313,9 +311,6 @@ namespace function_relocation {
                             }
                         }
                     }
-                        if (insn.id != X86_INS_JMP) {
-                            break;
-                        }
                         [[fallthrough]];
                     case X86_INS_RET:
                     case X86_INS_RETFQ:
@@ -396,9 +391,6 @@ namespace function_relocation {
             return false;
         }
 
-        // can't resolve:
-        // 1. no stack frame function
-        // 2. jmp no short
         size_t guess_function_size(const uintptr_t imm) {
             uintptr_t function_limit = 0;
             x86_reg switch_target_reg = X86_REG_INVALID;

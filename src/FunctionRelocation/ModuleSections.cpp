@@ -82,9 +82,8 @@ namespace function_relocation {
         return out_details;
     }
 
-    static ModuleSections get_module_sections(const char *path) {
+    static bool get_module_sections(const char *path, ModuleSections& sections) {
         const auto details = get_module_details(path);
-        ModuleSections sections{};
 #ifdef _WIN32
         const auto pe = peparse::ParsePEFromFile(details->path);
         if (pe)
@@ -122,12 +121,12 @@ namespace function_relocation {
         }, (void *) &sections);
 #endif
         sections.details = details;
-        return sections;
+        return true;
     }
 
 
-    ModuleSections init_module_signature(const char *path, uintptr_t scan_start_address) {
-        auto sections = get_module_sections(path);
+    bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections& sections) {
+        if (!get_module_sections(path, sections)) return false;
         ScanCtx ctx{sections, scan_start_address};
         // try get the function name by debug info
 #ifndef _WIN32
@@ -148,14 +147,16 @@ namespace function_relocation {
                     [](auto &func) { return std::make_pair(func.address, &func); }) | ranges::to<std::vector>;
             sections.address_functions = {vec.begin(), vec.end()};
         }
-        for (const auto &[address, func]: ctx.known_functions) {
-            sections.known_functions[address] = func.name;
+        for (auto &[address, func]: ctx.known_functions) {
+            sections.known_functions[func.name] = &func;
+            assert(sections.address_functions.contains(address));
+            sections.address_functions[address]->name = func.name;
         }
 
         std::list<std::pair<int, int>> arcs;
         for (auto &func: sections.functions) {
 #if 1
-            if (!sections.known_functions.contains(func.address))
+            if (scan_start_address == 0 && func.name.empty())
                 fprintf(stderr, "unkown ptr: %p\n", (void *) func.address);
 #endif
             for (const auto &block: func.blocks) {
@@ -165,10 +166,8 @@ namespace function_relocation {
                     }
                 }
                 for (const auto call_func_addr: block.call_functions) {
-                    assert(sections.address_functions.contains(call_func_addr));
-                    auto call_func = sections.address_functions[call_func_addr];
-                    assert(call_func);
-                    if (call_func) {
+                    if (sections.address_functions.contains(call_func_addr)) {
+                        auto call_func = sections.address_functions[call_func_addr];
                         arcs.emplace_back(&func - sections.functions.data(), call_func - sections.functions.data());
                     }
                 }
@@ -178,7 +177,7 @@ namespace function_relocation {
         }
 
         sections.staticDigraph.build(sections.functions.size(), arcs.begin(), arcs.end());
-        return sections;
+        return true;
     }
 
 
@@ -238,7 +237,7 @@ namespace function_relocation {
             return res;
         }
 
-        Match match_function_search(const Function &func) {
+        std::optional<Match> match_function_search(const Function &func) {
             float max = 0;
             const CodeBlock *maybeBlock = nullptr;
             for (const auto &fn: sections.functions) {
@@ -252,52 +251,40 @@ namespace function_relocation {
                     }
                 }
             }
+            if (!maybeBlock) return std::nullopt;
             return Match{maybeBlock->function, max};
         };
-
-        auto known_functions(const CodeBlock &block) {
-            std::vector known1 = block.call_functions | std::views::transform([this](const auto &addr) {
-                auto iter = sections.known_functions.find(addr);
-                return iter != sections.known_functions.end() ? iter->second : std::string_view{};
-            }) | std::views::filter([](const auto &v) { return !v.empty(); }) | ranges::to<std::vector>();
-            return known1;
-        }
 
         float calc_match_score(const CodeBlock &block, const CodeBlock &target_block) {
             std::vector<Const *> intersectionConst;
 
-            std::ranges::set_intersection(block.consts, target_block.consts,
-                                          std::back_inserter(intersectionConst));
-
-            if (!target_block.consts.empty() && intersectionConst.empty()) {
-                return {};
+            if (!target_block.consts.empty()) {
+                std::ranges::set_intersection(block.consts, target_block.consts,
+                                            std::back_inserter(intersectionConst));
+                if (intersectionConst.empty())
+                    return {};
             }
+
             std::vector<uint64_t> intersectionNumber;
-            std::ranges::set_intersection(block.const_numbers, target_block.const_numbers,
-                                          std::back_inserter(intersectionNumber));
-            if (!target_block.const_numbers.empty() && intersectionNumber.empty()) {
-                return {};
+
+            if (!target_block.const_numbers.empty()) {
+                std::ranges::set_intersection(block.const_numbers, target_block.const_numbers,
+                                std::back_inserter(intersectionNumber));
+                if (intersectionNumber.empty())
+                    return {};
             }
             std::vector<uint64_t> intersectionOffNumber;
-            std::ranges::set_intersection(block.const_offset_numbers, target_block.const_numbers,
-                                          std::back_inserter(intersectionOffNumber));
-            if (!target_block.const_offset_numbers.empty() && intersectionOffNumber.empty()) {
-                return {};
-            }
-            std::vector<std::string_view> intersectionCall;
-            auto known = known_functions(target_block);
-            auto known1 = known_functions(block);
-            std::ranges::set_intersection(known, known1,
-                                          std::back_inserter(intersectionCall));
 
-            if (!known.empty() && intersectionCall.empty()) {
-                return {};
+            if (!target_block.const_offset_numbers.empty()) {
+                std::ranges::set_intersection(block.const_offset_numbers, target_block.const_numbers,
+                                std::back_inserter(intersectionOffNumber));
+                if (intersectionOffNumber.empty())
+                    return {};
             }
 
             return intersectionConst.size() * config.consts_score +
                    intersectionNumber.size() * config.const_numbers_score +
-                   intersectionOffNumber.size() * config.const_offset_score +
-                   intersectionCall.size() * config.call_score;
+                   intersectionOffNumber.size() * config.const_offset_score;
         }
 
 
@@ -334,11 +321,27 @@ namespace function_relocation {
             }
         } else {
             auto matched = ctx.match_function_search(original);
-            if (matched && matched.score > targetScore * 0.95) {
-                return matched.matched->address;
+            if (matched && matched.value().score > targetScore * 0.95) {
+                return matched.value().matched->address;
             }
         }
         return (uintptr_t) fix_func_address_by_signature(*this, original);
     }
 
+    size_t Function::consts_count() const
+    {
+        return ranges::accumulate(blocks | ranges::views::transform([](const CodeBlock& v){return v.consts.size();}), 0);
+    }
+    size_t Function::calls_count() const
+    {
+        return ranges::accumulate(blocks | ranges::views::transform([](const CodeBlock& v){return v.call_functions.size();}), 0);
+    }
+    size_t Function::const_count() const
+    {
+        return ranges::accumulate(blocks | ranges::views::transform([](const CodeBlock& v){return v.const_numbers.size();}), 0);
+    }
+    size_t Function::const_offset_count() const
+    {
+        return ranges::accumulate(blocks | ranges::views::transform([](const CodeBlock& v){return v.const_offset_numbers.size();}), 0);
+    }
 }
