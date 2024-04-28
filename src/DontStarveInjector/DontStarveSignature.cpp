@@ -4,6 +4,7 @@
 
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
+#include <lemon/concepts/digraph.h>
 
 #include "util/platform.hpp"
 #include "config.hpp"
@@ -144,16 +145,20 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
                   bool updated) {
     const auto &lua51_path = get_module_path(lua51_name);
     const auto &game_path = get_module_path(game_name);
-    auto modulelua51 = function_relocation::init_module_signature(lua51_path.c_str(), 0);
-    auto moduleMain = function_relocation::init_module_signature(game_path.c_str(), targetLuaModuleBase);
+    function_relocation::ModuleSections modulelua51{},moduleMain{};
+    if (!function_relocation::init_module_signature(lua51_path.c_str(), 0, modulelua51)
+        || !function_relocation::init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain))
+        return std::format("init_module_signature failed!");
     
     //明确定位 index2adr
-    moduleMain.known_functions[targetLuaModuleBase] = "index2adr";
+    moduleMain.set_known_function(targetLuaModuleBase, "index2adr");
     auto lua_type_fn = gum_module_find_export_by_name(lua51_path.c_str(), "lua_type");
+#ifndef NDEBUG
     if (auto fn =  modulelua51.find_function(lua_type_fn); fn && !fn->blocks.empty() && !fn->blocks[0].call_functions.empty()){
         const auto ptr = modulelua51.find_function(lua_type_fn)->blocks[0].call_functions[0];
-        assert(modulelua51.known_functions.contains(ptr) && modulelua51.known_functions[ptr] == "index2adr");
+        assert(modulelua51.address_functions.contains(ptr) && modulelua51.address_functions[ptr]->name == "index2adr");
     }
+#endif
     
      for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
@@ -161,12 +166,39 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         if (original == nullptr || !modulelua51.find_function((uintptr_t) original)) {
             return std::format("can't find address: {}", name.c_str());
         }
-        modulelua51.known_functions[(uintptr_t) original] = name;
+        modulelua51.set_known_function((uintptr_t) original, name.c_str());
         auto originalFunc = modulelua51.find_function((uintptr_t) original);
         if (!originalFunc) {
             return std::format("can't find {} at module lua51", name);
         }
     }
+    // sorted by named
+    // first is the index2adr
+    auto nodeId = modulelua51.get_gigraph_node(modulelua51.known_functions["index2adr"]);
+    std::vector<function_relocation::Function*> callIndex2adrFunctions;
+    for(lemon::StaticDigraph::InArcIt iter(modulelua51.staticDigraph, modulelua51.staticDigraph.node(nodeId)); iter != lemon::INVALID; ++iter) {
+        auto func = modulelua51.functions.data() + modulelua51.staticDigraph.id(iter);
+        callIndex2adrFunctions.push_back(func);
+    }
+    /*
+        sort by 
+        1. called number
+        2. block number
+        3. external const
+        4. const
+        5. offset const
+    */
+   std::ranges::sort(callIndex2adrFunctions, [](function_relocation::Function* l, function_relocation::Function* r){
+        if (l->calls_count() < r->calls_count())
+            return true;
+        if (l->blocks.size() < r->blocks.size())
+            return true;
+        if (l->const_count() < r->const_count())
+            return true;
+        return l->const_offset_count() < r->const_offset_count();
+   });
+
+
     auto &funcs = signatures.funcs;
     // fix all signatures
     for (size_t i = 0; i < exports.size(); i++) {

@@ -8,14 +8,14 @@ namespace function_relocation
 constexpr auto page = GUM_PAGE_EXECUTE;
 
 static gboolean sacnBaseAddrCb(GumAddress address, gsize size, gpointer user_data) {
-    auto self = (MemorySignature*)user_data;
+    auto self = static_cast<MemorySignature*>(user_data);
     assert(self->target_address == 0);
     self->target_address = address + self->pattern_offset;
     return true;
 }
 
 static gboolean findBaseAddrCb(const GumRangeDetails* details, gpointer user_data) {
-    auto p = (std::pair<MemorySignature*, GumMatchPattern*>*)user_data;
+    auto p = static_cast<std::pair<MemorySignature*, GumMatchPattern*>*>(user_data);
     gum_memory_scan(details->range, p->second, sacnBaseAddrCb, (void*)p->first);
     return true;
 }

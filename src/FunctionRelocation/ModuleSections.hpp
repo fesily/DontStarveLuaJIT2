@@ -42,6 +42,10 @@ namespace function_relocation {
         size_t insn_count = 0;
 
         bool in_function(uint64_t addr) const { return address >= addr && address <= addr + size; }
+        size_t consts_count() const;
+        size_t calls_count() const;
+        size_t const_count() const;
+        size_t const_offset_count() const;
 
         std::string_view *const_key = nullptr;
         size_t consts_hash = 0;
@@ -60,15 +64,9 @@ namespace function_relocation {
 
         ModuleSections() = default;
 
-        ModuleSections(const ModuleSections &) = delete;
+        ModuleSections(const ModuleSections &) noexcept = delete;
 
-        ModuleSections(ModuleSections &&other) noexcept: details{other.details} {
-            other.details = nullptr;
-            text = other.text;
-            rodata = other.rodata;
-            plt = other.plt;
-            got_plt = other.got_plt;
-        }
+        ModuleSections(ModuleSections &&other) noexcept = delete;
 
         ~ModuleSections();
 
@@ -82,18 +80,30 @@ namespace function_relocation {
 
         std::vector<Function> functions;
         std::unordered_map<uintptr_t, Function *> address_functions;
+        std::unordered_map<std::string, Function *> known_functions;
         std::unordered_map<const char *, Const> Consts;
-        std::unordered_map<uint64_t, std::string> known_functions;
         lemon::StaticDigraph staticDigraph;
 
-        const Function *find_function(uintptr_t addr) const {
+        void set_known_function(uintptr_t addr, const char* name) {
+            if (auto func = find_function(addr); func) {
+                func->name = name;
+                known_functions[name] = func;
+            }
+        }
+
+        Function *find_function(uintptr_t addr) {
             auto iter = std::ranges::find_if(functions, [addr](auto &f) { return addr == f.address; });
             return iter != functions.end() ? &(*iter) : nullptr;
+        }
+
+        long get_gigraph_node(Function* func) {
+            const auto offset = func - functions.data();
+            return offset;
         }
 
         uintptr_t try_fix_func_address(const Function &original, uint64_t maybe_addr);
     };
 
-    ModuleSections init_module_signature(const char *path, uintptr_t scan_start_address);
+    bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections& sections);
 }
 

@@ -87,7 +87,7 @@ namespace function_relocation {
                 return {};
             }
             auto size = buffer.size();
-            auto code = (const uint8_t *) addr;
+            auto code = static_cast<const uint8_t*>(addr);
             auto insn = malloc_insn(hcs);
             if (!cs_disasm_iter(hcs, &code, &size, (uint64_t * ) & addr, insn.get()))
                 return {};
