@@ -190,7 +190,7 @@ int check(const char *path, bool isClient)
             {
                 if (k1[i] != k2[i])
                 {
-                    printf("");
+                    fprintf(stderr,"%llu\n\t\tdll:%s\texe:%s\n", i, k1[i].c_str(), k2[i].c_str());
                 }
             }
 

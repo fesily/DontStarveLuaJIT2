@@ -88,9 +88,7 @@ set(DONTSTARVEINJECTOR_UTIL_DIR ${DONTSTARVEINJECTOR_ROOT}/util)
 
 
 add_subdirectory("src/DontStarveInjector")
-if(msvc)
-    add_subdirectory("tools/Checker")
-endif()
+add_subdirectory("tools/Checker")
 add_subdirectory("tools/Creater")
 
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX}
