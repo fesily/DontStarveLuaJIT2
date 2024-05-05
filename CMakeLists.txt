@@ -112,3 +112,9 @@ add_custom_target(make_karta_luamodule
         DEPENDS ${LUA_LIBRARIES_PATH}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+add_custom_target(unzip_script_data
+        COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/unzip_script_data.py"
+        DEPENDS ${LUA_LIBRARIES_PATH}
+        WORKING_DIRECTORY ${GAME_DIR}
+)
