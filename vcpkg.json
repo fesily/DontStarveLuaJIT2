@@ -18,8 +18,5 @@
   }, {
     "name" : "range-v3",
     "version>=" : "0.12.0#1"
-  }, {
-    "name" : "liblemon",
-    "version>=" : "2019-06-13#5"
-  } ]
+  }]
 }

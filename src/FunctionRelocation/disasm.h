@@ -26,12 +26,12 @@ namespace function_relocation {
                 if (next())
                     --scan_insn_size;
                 else {
-                    left_buffer_length = 0;
+                    scan_insn_size = 0;
                 }
             }
 
             bool operator!=(const iter &end) noexcept {
-                return !(scan_insn_size == 0 || left_buffer_length == 0);
+                return !(scan_insn_size == 0);
             }
 
             cs_insn &operator*() {
@@ -45,6 +45,7 @@ namespace function_relocation {
             bool reset(uint8_t *addr) {
                 const auto &buffer = self->buffer;
                 if (addr < buffer.data() && addr > buffer.data() + buffer.size()) return false;
+                this->buffer = addr;
                 next_buffer = addr;
                 left_buffer_length = buffer.size() - (addr - buffer.data());
                 next_addr = (uint64_t) addr;
@@ -53,15 +54,20 @@ namespace function_relocation {
             }
 
             bool next() {
+                if (buffer != next_buffer) {
+                    pre_insn = *insn;
+                }
                 return cs_disasm_iter(self->hcs, &next_buffer, &left_buffer_length, &next_addr, insn.get());
             }
 
             disasm *self;
-            insn_type insn;
+            insn_type insn{};
+            const uint8_t *buffer;
             const uint8_t *next_buffer;
             size_t left_buffer_length;
             uint64_t next_addr;
             int scan_insn_size = INT_MAX;
+            cs_insn pre_insn{};
         };
 
         disasm() = default;
@@ -69,6 +75,12 @@ namespace function_relocation {
         disasm(std::span<uint8_t> buff)
                 : buffer{buff} {
 
+        }
+        disasm(uint8_t *b, size_t length) : disasm(std::span{b, length}){
+            
+        }
+        disasm(uint8_t* b, const GumMemoryRange& text) : disasm(b, text.base_address+text.size-reinterpret_cast<uintptr_t>(b)) {
+            
         }
 
         iter begin() {

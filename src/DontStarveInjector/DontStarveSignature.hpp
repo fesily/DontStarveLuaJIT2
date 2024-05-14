@@ -5,12 +5,15 @@
 #include <string>
 #include <stdint.h>
 #include <unordered_map>
+
 #include "Signature.hpp"
 
 using ListExports_t = std::vector<std::pair<std::string, uintptr_t>>;
+
 struct Signatures {
     uintptr_t version;
-    std::unordered_map<std::string, uintptr_t> funcs;
+    
+    std::unordered_map<std::string, function_relocation::SignatureInfo> funcs;
 };
 
 struct SignatureUpdater {

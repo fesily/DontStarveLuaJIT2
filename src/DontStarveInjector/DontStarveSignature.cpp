@@ -4,16 +4,20 @@
 
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
-#include <lemon/concepts/digraph.h>
 
 #include "util/platform.hpp"
 #include "config.hpp"
 #include "DontStarveSignature.hpp"
 
+#include "MemorySignature.hpp"
 #include "ctx.hpp"
 #include "ModuleSections.hpp"
+#include "Signature.hpp"
 #include "SignatureJson.hpp"
 #include "../missfunc.h"
+#include "range/v3/range/conversion.hpp"
+
+#include <ranges>
 
 static gboolean ListLuaFuncCb(const GumExportDetails *details,
                               void *user_data) {
@@ -46,7 +50,7 @@ create_signature(uintptr_t targetLuaModuleBase, const std::function<void(const S
     auto exports = get_lua51_exports();
     Signatures signatures;
     for (auto &[name, address]: exports) {
-        signatures.funcs[name] = 0;
+        signatures.funcs[name] = {};
     }
     constexpr auto lua_module_range =
 #ifdef _WIN32
@@ -60,8 +64,8 @@ create_signature(uintptr_t targetLuaModuleBase, const std::function<void(const S
     }
     signatures.version = SignatureJson::current_version();
     updated(signatures);
-    for (auto &[name, offset]: signatures.funcs) {
-        spdlog::info("create signature [{}]: {}", name, offset);
+    for (auto &[name, signature]: signatures.funcs) {
+        spdlog::info("create signature [{}]: {}", name, signature.offset);
     }
     return std::make_tuple(std::move(exports), std::move(signatures));
 }
@@ -121,16 +125,18 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(bool isCli
     return updater;
 }
 
-static std::string get_module_path(const char* maybeName) {
+static std::string get_module_path(const char *maybeName, uintptr_t ptr) {
     std::string res;
-    auto arg = std::tuple{&res, maybeName};
+    auto arg = std::tuple{&res, maybeName, ptr};
     gum_process_enumerate_modules(
         +[](const GumModuleDetails *details,
             gpointer user_data) -> gboolean
         {
-            auto &[res, maybeName] = *(decltype(arg) *)user_data;
-            if (std::string_view(details->name).contains(maybeName))
+            auto &[res, maybeName, ptr] = *(decltype(arg) *)user_data;
+                if (std::string_view(details->name).contains(maybeName))
             {
+                if (ptr != 0 && !(details->range->base_address <= ptr && ptr < details->range->base_address + details->range->size))
+                    return true;
                 res->append(details->path);
                 return false;
             }
@@ -143,19 +149,24 @@ static std::string get_module_path(const char* maybeName) {
 std::string
 update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports, uint32_t range,
                   bool updated) {
-    const auto &lua51_path = get_module_path(lua51_name);
-    const auto &game_path = get_module_path(game_name);
+    const auto &lua51_path = get_module_path(lua51_name, 0);
+    const auto &game_path = get_module_path(game_name, targetLuaModuleBase);
     function_relocation::ModuleSections modulelua51{},moduleMain{};
-    if (!function_relocation::init_module_signature(lua51_path.c_str(), 0, modulelua51)
-        || !function_relocation::init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain))
+    bool noScanMain = false;
+#ifdef _WIN32
+    noScanMain = true;
+#endif
+
+    if (!init_module_signature(lua51_path.c_str(), 0, modulelua51, false) || !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain, noScanMain)
+        )
         return std::format("init_module_signature failed!");
     
     //明确定位 index2adr
     moduleMain.set_known_function(targetLuaModuleBase, "index2adr");
     auto lua_type_fn = gum_module_find_export_by_name(lua51_path.c_str(), "lua_type");
 #ifndef NDEBUG
-    if (auto fn =  modulelua51.find_function(lua_type_fn); fn && !fn->blocks.empty() && !fn->blocks[0].call_functions.empty()){
-        const auto ptr = modulelua51.find_function(lua_type_fn)->blocks[0].call_functions[0];
+    if (auto fn =  modulelua51.find_function(lua_type_fn); fn && !fn->blocks.empty() && !fn->blocks[0]->call_functions.empty()){
+        const auto ptr = modulelua51.find_function(lua_type_fn)->blocks[0]->call_functions[0];
         assert(modulelua51.address_functions.contains(ptr) && modulelua51.address_functions[ptr]->name == "index2adr");
     }
 #endif
@@ -172,32 +183,6 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
             return std::format("can't find {} at module lua51", name);
         }
     }
-    // sorted by named
-    // first is the index2adr
-    auto nodeId = modulelua51.get_gigraph_node(modulelua51.known_functions["index2adr"]);
-    std::vector<function_relocation::Function*> callIndex2adrFunctions;
-    for(lemon::StaticDigraph::InArcIt iter(modulelua51.staticDigraph, modulelua51.staticDigraph.node(nodeId)); iter != lemon::INVALID; ++iter) {
-        auto func = modulelua51.functions.data() + modulelua51.staticDigraph.id(iter);
-        callIndex2adrFunctions.push_back(func);
-    }
-    /*
-        sort by 
-        1. called number
-        2. block number
-        3. external const
-        4. const
-        5. offset const
-    */
-   std::ranges::sort(callIndex2adrFunctions, [](function_relocation::Function* l, function_relocation::Function* r){
-        if (l->calls_count() < r->calls_count())
-            return true;
-        if (l->blocks.size() < r->blocks.size())
-            return true;
-        if (l->const_count() < r->const_count())
-            return true;
-        return l->const_offset_count() < r->const_offset_count();
-   });
-
 
     auto &funcs = signatures.funcs;
     // fix all signatures
@@ -206,28 +191,44 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         auto original = (void *) gum_module_find_export_by_name(lua51_path.c_str(), name.c_str());
         auto originalFunc = modulelua51.find_function((uintptr_t) original);
 
-        auto old_offset = GPOINTER_TO_INT(funcs.at(name));
+        auto& signature = funcs.at(name);
+        auto old_offset = GPOINTER_TO_INT(signature.offset);
         if (old_offset == 0)
             spdlog::info("try create signature [{}]", name);
         else
             spdlog::info("try fix signature [{}]: {}", name, old_offset);
-        void *target = GSIZE_TO_POINTER(targetLuaModuleBase + old_offset);
-        if (old_offset != 0 && moduleMain.find_function((uintptr_t) target)) {
-            if (function_relocation::is_same_signature_fast(target, original)) {
-                spdlog::info("should not fix signature [{}]: {}", name, target);
+        auto maybe_target = targetLuaModuleBase + old_offset;
+        if (old_offset != 0 && moduleMain.find_function(maybe_target)) {
+            if (function_relocation::is_same_signature_fast((void*)maybe_target, original)) { 
+                spdlog::info("should not fix signature [{}]: {}", name, maybe_target);
                 continue;
             }
         }
-        auto target1 = (void *) moduleMain.try_fix_func_address(*originalFunc,
-                                                                old_offset == 0 ? 0 : (uintptr_t) target);
-        if (!target1) {
-            return std::format("func[{}] can't fix address, wait for mod update", name);;
+        uintptr_t target = 0;
+        if (!signature.pattern.empty()) {
+            function_relocation::MemorySignature scan{signature.pattern.c_str(), signature.pattern_offset, false};
+            if (scan.targets.size() == 1) {
+                target = scan.target_address;
+            }else {
+                const auto targets = scan.targets | std::ranges::views::filter([targetLuaModuleBase](auto addr) { return addr > targetLuaModuleBase; }) | ranges::to<std::vector>();
+                if (targets.size() == 1) {
+                    target = scan.scan(moduleMain.details->path);
+                }
+            }
         }
-        if (target1 == target)
+        if (target == 0 || target < targetLuaModuleBase) {
+            target = moduleMain.try_fix_func_address(*originalFunc,
+                                                     &signature, targetLuaModuleBase);    
+        }
+        
+        if (!target || target < targetLuaModuleBase) {
+            return std::format("func[{}] can't fix address, wait for mod update", name);
+        }
+        if (target == maybe_target)
             continue;
-        auto new_offset = (intptr_t) target1 - (intptr_t) targetLuaModuleBase;
+        auto new_offset = target - targetLuaModuleBase;
         spdlog::info("update signatures [{}]: {} to {}", name, old_offset, new_offset);
-        funcs[name] = new_offset;
+        signature.offset = new_offset;
     }
     function_relocation::release_signature_cache();
     return {};

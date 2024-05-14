@@ -6,11 +6,15 @@
 #include <string>
 #include <string_view>
 #include <algorithm>
-#include <lemon/static_graph.h>
 #include <frida-gum.h>
+#include <memory>
 
+
+struct Signature;
 
 namespace function_relocation {
+    struct SignatureInfo;
+
     struct Const {
         std::string_view value;
         size_t ref;
@@ -31,7 +35,9 @@ namespace function_relocation {
 
         Function *function = nullptr;
 
-        bool in_block(uint64_t addr) const { return address >= addr && address <= addr + size; }
+        bool in_block(uint64_t addr) const {
+            return address <= addr && addr < address + size;
+        }
     };
 
     struct ModuleSections;
@@ -41,7 +47,9 @@ namespace function_relocation {
         size_t size = 0;
         size_t insn_count = 0;
 
-        bool in_function(uint64_t addr) const { return address >= addr && address <= addr + size; }
+        bool in_function(uint64_t addr) const {
+            return address <= addr && addr < address + size;
+        }
         size_t consts_count() const;
         size_t calls_count() const;
         size_t const_count() const;
@@ -51,7 +59,7 @@ namespace function_relocation {
         size_t consts_hash = 0;
         ModuleSections *module = nullptr;
 
-        std::vector<CodeBlock> blocks;
+        std::vector<CodeBlock*> blocks;
         std::string name;
     };
 
@@ -70,6 +78,8 @@ namespace function_relocation {
 
         ~ModuleSections();
 
+        bool in_module(uintptr_t address) const;
+
         bool in_text(uintptr_t address) const;
 
         bool in_plt(uintptr_t address) const;
@@ -78,11 +88,11 @@ namespace function_relocation {
 
         bool in_rodata(uintptr_t address) const;
 
-        std::vector<Function> functions;
+        std::vector<std::unique_ptr<Function>> functions;
+        std::vector<std::unique_ptr<CodeBlock>> blocks;
         std::unordered_map<uintptr_t, Function *> address_functions;
         std::unordered_map<std::string, Function *> known_functions;
         std::unordered_map<const char *, Const> Consts;
-        lemon::StaticDigraph staticDigraph;
 
         void set_known_function(uintptr_t addr, const char* name) {
             if (auto func = find_function(addr); func) {
@@ -92,18 +102,13 @@ namespace function_relocation {
         }
 
         Function *find_function(uintptr_t addr) {
-            auto iter = std::ranges::find_if(functions, [addr](auto &f) { return addr == f.address; });
-            return iter != functions.end() ? &(*iter) : nullptr;
+            auto iter = std::ranges::find_if(functions, [addr](auto& f) { return addr == f->address; });
+            return iter != functions.end() ? (iter->get()) : nullptr;
         }
 
-        long get_gigraph_node(Function* func) {
-            const auto offset = func - functions.data();
-            return offset;
-        }
-
-        uintptr_t try_fix_func_address(const Function &original, uint64_t maybe_addr);
+        uintptr_t try_fix_func_address(const Function &original, SignatureInfo* maybe_addr, uintptr_t limit_address);
     };
 
-    bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections& sections);
+    bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections, bool noScan);
 }
 
