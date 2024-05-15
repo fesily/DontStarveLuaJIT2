@@ -8,6 +8,7 @@
 #include <range/v3/all.hpp>
 #include <algorithm>
 #include <format>
+#include <list>
 
 namespace function_relocation {
 

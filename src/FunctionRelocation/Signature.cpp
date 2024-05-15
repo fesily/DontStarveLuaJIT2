@@ -10,6 +10,7 @@
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
 #include <range/v3/all.hpp>
+#include <keystone/keystone.h>
 
 #include "Signature.hpp"
 
@@ -169,6 +170,33 @@ namespace function_relocation {
             return ret;
         }
 
+        std::vector<uint8_t> AsmX86(const char* CODE)
+        {
+            ks_engine *ks;
+            ks_err err;
+            size_t count;
+            unsigned char *encode;
+            size_t size;
+        
+            err = ks_open(KS_ARCH_X86, KS_MODE_64, &ks);
+            if (err != KS_ERR_OK) {
+                printf("ERROR: failed on ks_open(), quit\n");
+                return {};
+            }
+        
+            if (ks_asm(ks, CODE, 0, &encode, &size, &count) != KS_ERR_OK) {
+                printf("ERROR: ks_asm() failed & count = %lu, error = %u\n",
+                        count, ks_errno(ks));
+            } 
+            std::vector<uint8_t> res {encode, encode + size};
+            // NOTE: free encode after usage to avoid leaking memory
+            ks_free(encode);
+        
+            // close Keystone instance when done
+            ks_close(ks);
+
+            return res;
+        }
         Signature create_signature(uint8_t *address, size_t size, size_t max_len) {
             Signature signature{};
             disasm ds{address, size};
@@ -181,6 +209,19 @@ namespace function_relocation {
                     case X86_INS_JMP:
                     case X86_INS_CALL:
                         if (operand1.type == X86_OP_MEM || operand0.type == X86_OP_IMM) {
+#ifndef _WIN32
+#if 0
+                            //convert jmp plt to call imm
+                            if (target->in_plt(operand0.imm)) {
+                                disasm ds{(uint8_t*)operand0.imm, *target->details->range};
+                                auto insn1 = ds.get_insn((uint8_t*)operand0.imm);
+                                assert(insn1->id == X86_INS_JMP);
+                                const auto& operand = insn1->detail->x86.operands[0];
+                                assert(operand.type == X86_OP_MEM && operand.mem.base == X86_REG_RIP && operand.mem.disp != 0);
+                                const auto jump_target = X86_REL_ADDR(*insn1)
+                            }
+#endif
+#endif
                             auto pref = std::format("{:0>2x}", insn.bytes[0]);
                             signature.asm_codes.push_back(pref + make_unknown_string(insn.size - 1));
                             continue;
@@ -188,16 +229,32 @@ namespace function_relocation {
                         break;
                     case X86_INS_LEA:
                     case X86_INS_MOV:
-#ifndef _WIN32
-#error "need transform so `lea rxx [rip + 0x??]` to `mov rxx 0xxxxxx`
-#else
-                        // transform [rip+0x??] to [rip+0x??]
                         if (operand1.type == X86_OP_MEM && details.disp != 0 && operand1.mem.base == X86_REG_RIP) {
-                            assert(insn.size == 7);
-                            signature.asm_codes.push_back(to_hex(insn.bytes, insn.bytes + 3) + make_unknown_string(insn.size - 3));
+                            auto bytes = insn.bytes;
+                            auto size = insn.size;
+#ifndef _WIN32
+                            //"need transform so `lea rxx [rip + 0x??]` to `mov rxx 0xxxxxx`
+                            assert(insn.id == X86_INS_LEA);
+                            std::string reg {std::string_view{insn.op_str}.substr(0, 3)};
+                            if (reg[0] == 'r') {
+                                reg[0] = 'e';
+                            }
+                            // reg 64 to 32
+                            std::string new_one = std::format("mov {}, 0xffffff", reg);
+                            const auto new_bytes = AsmX86(new_one.c_str());
+                            assert(!new_bytes.empty());
+                            bytes = new_bytes.data();
+                            size = new_bytes.size();
+                            if (size == 5) {
+                                signature.asm_codes.push_back(to_hex(bytes, bytes + 1) + make_unknown_string(size - 1));
+                                continue;
+                            }
+#endif
+                            assert(size == 7);
+                        // transform [rip+0x??] to [rip+0x??]
+                            signature.asm_codes.push_back(to_hex(bytes, bytes + 3) + make_unknown_string(size - 3));
                             continue;
                         }
-#endif
                         break;
                 }
                 signature.asm_codes.push_back(to_hex(insn.bytes, insn.bytes + insn.size));
@@ -205,7 +262,7 @@ namespace function_relocation {
             return signature;
         }
 
-        void *scan_by_block(std::vector<void *> &function_address, CodeBlock *block, SignatureInfo *signature_info) {
+        void *scan_by_block(CodeBlock *block, SignatureInfo *signature_info) {
             for (size_t limit = std::min<size_t>(8, block->insn_count); limit <= block->insn_count; ++limit) {
                 const auto s = create_signature((uint8_t *) block->address, block->size, limit);
                 auto signature = s.to_string(false);
@@ -226,7 +283,8 @@ namespace function_relocation {
                     else {
                         auto targets = scan.targets | std::views::filter([this](auto addr) { return addr >= limit_address; }) | ranges::to<std::vector>();
                         if (targets.size() == 1) target = (void *) targets[0];
-                        function_address.insert_range(function_address.end(), scan.targets | std::views::transform([](auto v) { return reinterpret_cast<void *>(v); }));   
+                        auto ptrs = scan.targets | std::views::transform([](auto v) { return reinterpret_cast<void *>(v); });
+                        function_address.insert(function_address.end(), ptrs.begin(), ptrs.end());   
                     }
                     if (target) {
                         signature_info->pattern = signature;
@@ -241,6 +299,7 @@ namespace function_relocation {
         ModuleSections *target;
         const Function *original;
         uintptr_t limit_address;
+        std::vector<void *> function_address;
     };
 
 
@@ -310,14 +369,13 @@ namespace function_relocation {
     void *
     fix_func_address_by_signature(ModuleSections &target, const Function &original, uintptr_t limit_address, SignatureInfo *signature) {
         Creator creator{&target, &original, limit_address};
-        std::vector<void *> function_address;
         // find the block to signature
         auto blocks = original.blocks;
 
         std::ranges::sort(blocks, [](auto l, auto r) { return calcBlockScore(l) < calcBlockScore(r); });
 
         for (auto block: blocks | std::views::reverse) {
-            if (auto ptr = creator.scan_by_block(function_address, block, signature);ptr) return ptr;
+            if (auto ptr = creator.scan_by_block(block, signature);ptr) return ptr;
         }
         for (size_t take = 2; take <= original.blocks.size(); ++take) {
             auto begin = original.blocks.begin();
@@ -326,13 +384,13 @@ namespace function_relocation {
                 CodeBlock block = {(*begin)->address,
                                    (*end)->address + (*end)->size - (*begin)->address,
                                    std::accumulate(begin, end + 1, size_t(0), [](size_t s, auto b) { return s + b->insn_count; })};
-                if (auto ptr = creator.scan_by_block(function_address, &block, signature); ptr) return ptr;
+                if (auto ptr = creator.scan_by_block(&block, signature); ptr) return ptr;
             }
         }
-
+        auto& function_address = creator.function_address;
         if (!target.functions.empty()) {
-            function_address.insert_range(function_address.end(),
-                                          target.functions | std::views::transform([](auto &fn) { return reinterpret_cast<void *>(fn->address); }));
+            const auto ptrs = target.functions | std::views::transform([](auto &fn) { return reinterpret_cast<void *>(fn->address); });
+            function_address.insert(function_address.end(), ptrs.begin(), ptrs.end());
         }
         function_address = function_address | std::views::filter([limit_address](auto addr) { return limit_address <= (uintptr_t)   addr; }) | ranges::to<std::vector>();
         std::ranges::sort(function_address);

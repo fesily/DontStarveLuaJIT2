@@ -134,7 +134,7 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
 
     std::list<uint8_t *> hookeds;
     for (auto &[name, _]: exports) {
-        auto offset = signatures.funcs.at(name);
+        auto offset = signatures.funcs.at(name).offset;
         auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
         auto replacer = (uint8_t *) get_luajit_address(name);
         if (replace_hook.contains(name)) {

@@ -79,6 +79,12 @@ static bool SteamAPI_RestartAppIfNecessary_hook(uint32_t unOwnAppID) {
     std::this_thread::sleep_for(10000s);
     return orgin(unOwnAppID);
 }
+static bool (*orgin1)(uint32_t unIP, uint16_t usSteamPort, uint16_t usGamePort, uint16_t usQueryPort, int eServerMode, const char *pchVersionString );
+bool SteamGameServer_Init_hook(uint32_t unIP, uint16_t usSteamPort, uint16_t usGamePort, uint16_t usQueryPort, int eServerMode, const char *pchVersionString ){
+    using namespace std::chrono_literals;
+    std::this_thread::sleep_for(10000s);
+    return orgin1(unIP, usSteamPort, usGamePort, usQueryPort, eServerMode, pchVersionString);
+}
 
 __attribute__((constructor)) void init() {
     gum_init_embedded();
@@ -88,15 +94,18 @@ __attribute__((constructor)) void init() {
         return;
     }
     auto hsteam = dlopen("libsteam_api.so", RTLD_NOW);
-    auto api = dlsym(hsteam, "SteamAPI_RestartAppIfNecessary");
+    bool isClient = !path.contains("nullrenderer");
+    auto api = dlsym(hsteam, isClient ? "SteamAPI_RestartAppIfNecessary" : "SteamInternal_GameServer_Init");
     if (!api) {
         gum_deinit_embedded();
         return;
     }
     auto interceptor = gum_interceptor_obtain();
-    gum_interceptor_replace_fast(interceptor, api, (void *) &SteamAPI_RestartAppIfNecessary_hook, (void **) &orgin);
-    std::thread([path]() {
-                    bool isClient = !path.contains("nullrenderer");
+    if (isClient) 
+        gum_interceptor_replace_fast(interceptor, api, (void*) &SteamGameServer_Init_hook, (void **) &orgin1);
+    else 
+        gum_interceptor_replace_fast(interceptor, api, (void *) &SteamAPI_RestartAppIfNecessary_hook, (void **) &orgin);
+    std::thread([path,isClient] {
                     if (pre_updater())
                         exit(update(isClient, path.c_str()));
                     exit(-1);

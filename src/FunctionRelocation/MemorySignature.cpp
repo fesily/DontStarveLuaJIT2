@@ -26,7 +26,7 @@ uintptr_t MemorySignature::scan(const char* m) {
     target_address = 0;
     auto match_pattern = gum_match_pattern_new_from_string(pattern);
     assert(match_pattern);
-    fprintf(stdout, "%s Signature %s\n", m, pattern, (void *) target_address);
+    fprintf(stdout, "%s Signature %s\n", m, pattern);
     auto ctx = std::pair{ this, match_pattern };
     gum_module_enumerate_ranges(m, page, findBaseAddrCb, (gpointer)&ctx);
     gum_match_pattern_unref(match_pattern);

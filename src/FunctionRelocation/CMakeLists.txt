@@ -13,6 +13,8 @@ set(SOURCE
 )
 
 find_package(spdlog CONFIG REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(keystone REQUIRED keystone)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
@@ -25,4 +27,6 @@ target_link_libraries(function_relocation PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(function_relocation PRIVATE spdlog::spdlog)
 if (MSVC)
     target_link_libraries(function_relocation PRIVATE pe-parse::pe-parse)
+else()
+    target_link_libraries(function_relocation PRIVATE ${keystone_STATIC_LIBRARY_DIRS}/libkeystone.a)
 endif ()
