@@ -191,11 +191,12 @@ namespace function_relocation {
         CodeBlock *createBlock(uint64_t addr) const {
             if (auto pre_block = cur_block; pre_block != nullptr)
                 pre_block->size = addr - pre_block->address;
-            m.blocks.emplace_back(std::make_unique<CodeBlock>(addr));
+            m.blocks.emplace_back(CodeBlock{addr});
             auto& block = m.blocks.back();
-            block->function = cur;
-            cur->blocks.emplace_back(block.get());
-            return block.get();
+            m.address_blocks[addr] = &block;
+            block.function = cur;
+            cur->blocks.emplace_back(addr);
+            return &block;
         }
 
         Function *find_known_function(uintptr_t address) {
@@ -219,7 +220,7 @@ namespace function_relocation {
         uintptr_t scan_switch_case_rodata(uintptr_t address, x86_reg reg, const std::list<uintptr_t> &case_address, uintptr_t max_address) {
             uint64_t disp = 0;
             uint64_t pre_disp = 0;
-            const auto target = m.details->range->base_address;
+            const auto target = m.details.range.base_address;
             auto iter = std::ranges::lower_bound(case_address, address);
             if (iter != case_address.end()) ++iter;
 
@@ -264,7 +265,7 @@ namespace function_relocation {
             const auto jump_table = (uint32_t *) jump_table_address;
             for (int i = 0; i < 65535; ++i) {
                 const auto ptr = jump_table + i;
-                const auto jmp_target = jump_table[i] + m.details->range->base_address;
+                const auto jmp_target = jump_table[i] + m.details.range.base_address;
 
                 if ((jump_table_address != (uintptr_t) ptr && rodatas.contains((uintptr_t) ptr)) || jmp_target > jump_table_address) {
                     return reinterpret_cast<uintptr_t>(ptr);
@@ -284,8 +285,7 @@ namespace function_relocation {
             }
             uintptr_t next_function_address = 0;
             disasm ds{(uint8_t *)m.text.base_address, m.text.size};
-            auto iter = ds.begin(), end = ds.end();
-            for (; iter != end;++iter) {
+            for (auto iter = ds.begin(), end = ds.end(); iter != end;++iter) {
                 const auto &insn = *iter;
                 const auto next_insn_address = insn.address + insn.size;
                 if (rodatas.contains(next_insn_address)) {
@@ -367,8 +367,8 @@ namespace function_relocation {
                 std::ranges::sort(sureFuncs);
                 auto pre_functions = sureFuncs | std::ranges::views::filter([addr](auto p) { return p <= addr; });
                 auto after_functions = sureFuncs | std::ranges::views::filter([addr](auto p) { return p > addr; });
-                auto near_address = pre_functions.empty()? m.details->range->base_address : pre_functions.back();
-                auto next_address = after_functions.empty()? m.details->range->base_address + m.details->range->size : after_functions.front();
+                auto near_address = pre_functions.empty()? m.details.range.base_address : pre_functions.back();
+                auto next_address = after_functions.empty()? m.details.range.base_address + m.details.range.size : after_functions.front();
                 // all ref address in range
                 if (std::ranges::all_of(ref_addrs, [=](auto ref_addr){
                     return ref_addr >= near_address && ref_addr < next_address;
@@ -440,7 +440,7 @@ namespace function_relocation {
         void scan_function(uintptr_t address) {
             size_t index = 0;
             assert(cur == nullptr);
-            cur = m.functions.emplace_back(std::make_unique<Function>(address)).get();
+            cur = &m.functions.emplace_back(Function{address});
             cur->module = &m;
             cur_block = createBlock(address);
             disasm ds{(uint8_t *) address, text.base_address + text.size - address};
@@ -537,7 +537,7 @@ namespace function_relocation {
                                 } else {
                                     m.Consts[str] = {str, 1};
                                 }
-                                cur_block->consts.emplace_back(&m.Consts[str]);
+                                cur_block->consts.emplace_back(str);
                             }
                         }
                     }

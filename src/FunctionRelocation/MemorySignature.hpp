@@ -10,8 +10,7 @@ namespace function_relocation
         bool only_one = true;
         uintptr_t target_address = 0;
         std::vector<uintptr_t> targets;
-
-
         uintptr_t scan(const char* m);
+        uintptr_t scan(uintptr_t address, size_t size);
     };
 }

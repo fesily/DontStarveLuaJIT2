@@ -10,6 +10,7 @@ set(SOURCE
         ctx.cpp
         disasm.h
         ScanCtx.hpp
+        ExectuableSignature.cpp
 )
 
 find_package(spdlog CONFIG REQUIRED)

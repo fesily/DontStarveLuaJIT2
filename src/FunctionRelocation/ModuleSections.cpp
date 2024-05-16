@@ -43,6 +43,11 @@ struct std::hash<function_relocation::CodeBlock> {
 namespace function_relocation {
     using namespace std::literals;
 
+
+    CodeBlock* Function::get_block(size_t index) const {
+        const auto address = blocks[index];
+        return module->address_blocks[address];
+    }
     void *
     fix_func_address_by_signature(ModuleSections &target, const Function &original, uintptr_t limit_address, SignatureInfo *signature);
 
@@ -62,13 +67,8 @@ namespace function_relocation {
         return rodata.base_address <= address && address <= rodata.base_address + rodata.size;
     }
 
-    ModuleSections::~ModuleSections() {
-        if (details)
-            gum_module_details_free(details);
-    }
-
     bool ModuleSections::in_module(uintptr_t address) const {
-        return details->range->base_address <= address && address <= details->range->base_address + details->range->size;
+        return details.range.base_address <= address && address <= details.range.base_address + details.range.size;
     }
 
     static GumModuleDetails *get_module_details(const char *path) {
@@ -129,7 +129,11 @@ namespace function_relocation {
             return TRUE;
         }, (void *) &sections);
 #endif
-        sections.details = details;
+        sections.details = {
+            .name = details->name,
+            .range = *details->range,
+            .path = details->path
+        };
         return true;
     }
 
@@ -156,7 +160,7 @@ namespace function_relocation {
 
         {
             const auto vec = sections.functions | std::ranges::views::transform(
-                    [](auto &func) { return std::make_pair(func->address, func.get()); }) | ranges::to<std::vector>;
+                    [](auto &func) { return std::make_pair(func.address, &func); }) | ranges::to<std::vector>;
             sections.address_functions = {vec.begin(), vec.end()};
         }
         for (auto &[address, func]: ctx.known_functions) {
@@ -170,188 +174,43 @@ namespace function_relocation {
 
         for (auto &func: sections.functions) {
 #if 1
-            if (scan_start_address == 0 && func->name.empty())
-                fprintf(stderr, "unkown ptr: %p\n", (void *) func->address);
+            if (scan_start_address == 0 && func.name.empty())
+                fprintf(stderr, "unkown ptr: %p\n", (void *) func.address);
 #endif
-            for (const auto &block: func->blocks) {
+            for (const auto &block_address: func.blocks) {
+                auto block = sections.address_blocks[block_address];
                 for (const auto &c: block->consts) {
-                    if (c->ref == 1 && (func->const_key == nullptr || c->value.size() > func->const_key->size())) {
-                        func->const_key = &c->value;
+                    auto& constV = sections.Consts.at(c);
+                    if (constV.ref == 1 && (func.const_key == nullptr || constV.value.size() > func.const_key->size())) {
+                        func.const_key = &constV.value;
                     }
                 }
             }
 
-            func->consts_hash = hash_vector(func->blocks);
+            func.consts_hash = hash_vector(func.blocks);
         }
 
         return true;
     }
 
-
-    struct MatchConfig {
-        const float consts_score = 2;
-        const float call_score = 1;
-        const float const_numbers_score = 0.8;
-        const float const_offset_score = 0.2;
-
-        int string_huge_limit = 48;
-        int string_huge_group = 1;
-        int string_long_limit = 24;
-        int string_long_group = 2;
-        int string_medium_limit = 16;
-        int string_medium_group = 3;
-        int const_complex_limit = 16;
-        int const_complex_group = 1;
-        const float match_score = 999;
-    };
-
-    static float calc_score(const Function &func, const MatchConfig &config) {
-        float res = 0;
-        for (const auto &block: func.blocks) {
-            res += block->consts.size() * config.consts_score + block->call_functions.size() * config.call_score +
-                   block->const_numbers.size() * config.const_numbers_score;
-        }
-        return res;
-    }
-
-    struct FunctionMatchCtx {
-        struct Match {
-            const Function *matched;
-            float score;
-
-            operator bool() const {
-                return matched != nullptr;
-            }
-        };
-
-        ModuleSections &sections;
-
-        MatchConfig &config;
-
-        std::vector<Match> match_function(std::string_view key) {
-            return sections.functions | std::views::filter([key](const auto &function) {
-                if (function->const_key && (*function->const_key == key))
-                    return true;
-                auto block = std::ranges::find_if(function->blocks, [key](const auto &v) {
-                    return std::ranges::find_if(v->consts, [key](const auto &c) {
-                        return c->value == key;
-                    }) != v->consts.end();
-                });
-                return block != function->blocks.end();
-            }) | std::views::transform([this](const auto &function) {
-                       return Match{function.get(), config.match_score};
-            }) | ranges::to<std::vector>();
-        }
-
-        std::vector<Match> match_function(const Function &func1) {
-            const auto target = func1.consts_hash;
-            std::vector<Match> res;
-            for (auto &func: sections.functions) {
-                if (target == func->consts_hash)
-                    res.emplace_back(Match{func.get(), config.match_score});
-            }
-            return res;
-        }
-
-        std::optional<Match> match_function_search(const Function &func) {
-            float max = 0;
-            const CodeBlock *maybeBlock = nullptr;
-            for (const auto &fn: sections.functions) {
-                if (func.insn_count * 0.9 > fn->insn_count || fn->insn_count > func.insn_count * 1.1) continue;
-                if (func.blocks.size() != fn->blocks.size()) continue;
-                if (func.calls_count() != fn->calls_count()) continue;
-                for (const auto &block: fn->blocks) {
-                    for (const auto &target_block: func.blocks) {
-                        auto score = calc_match_score(*block, *target_block);
-                        if (score > max) {
-                            maybeBlock = block;
-                            max = score;
-                        }
-                    }
-                }
-            }
-            if (!maybeBlock) return std::nullopt;
-            return Match{maybeBlock->function,  function_relocation::calc_score(*maybeBlock->function, config)};
-        };
-
-        float calc_match_score(const CodeBlock &block, const CodeBlock &target_block) {
-            std::vector<Const *> intersectionConst;
-
-            if (!target_block.consts.empty()) {
-                std::ranges::set_intersection(block.consts, target_block.consts,
-                                            std::back_inserter(intersectionConst));
-                if (intersectionConst.empty())
-                    return {};
-            }
-
-            std::vector<uint64_t> intersectionNumber;
-
-            if (!target_block.const_numbers.empty()) {
-                std::ranges::set_intersection(block.const_numbers, target_block.const_numbers,
-                                std::back_inserter(intersectionNumber));
-                if (intersectionNumber.empty())
-                    return {};
-            }
-            std::vector<uint64_t> intersectionOffNumber;
-
-            if (!target_block.const_offset_numbers.empty()) {
-                std::ranges::set_intersection(block.const_offset_numbers, target_block.const_numbers,
-                                std::back_inserter(intersectionOffNumber));
-                if (intersectionOffNumber.empty())
-                    return {};
-            }
-
-            return intersectionConst.size() * config.consts_score +
-                   intersectionNumber.size() * config.const_numbers_score +
-                   intersectionOffNumber.size() * config.const_offset_score;
-        }
-
-
-        const CodeBlock &max_block(const Function &func) {
-            return **std::ranges::max_element(func.blocks, [this](auto l, auto r) {
-                return calc_score(*l) > calc_score(*r);
-            });
-        }
-
-        float calc_score(CodeBlock &block) {
-            return block.consts.size() * config.consts_score + block.call_functions.size() * config.call_score +
-                   block.const_numbers.size() * config.const_numbers_score;
-        }
-    };
-
     uintptr_t ModuleSections::try_fix_func_address(const Function &original, SignatureInfo *signature, uintptr_t limit_address) {
-        MatchConfig config;
-        FunctionMatchCtx ctx{*this, config};
-        const auto targetScore = calc_score(original, config);
-        if (original.const_key != nullptr) {
-            auto matched = ctx.match_function(*original.const_key);
-            assert(matched.size() <= 1);
-            if (matched.size() == 1) {
-                return matched[0].matched->address;
-            }
-        } else {
-            auto matched = ctx.match_function_search(original);
-            if (matched && matched.value().score > targetScore * 0.95) {
-                return matched.value().matched->address;
-            }
-        }
         return (uintptr_t) fix_func_address_by_signature(*this, original, limit_address, signature);
     }
 
     size_t Function::consts_count() const
     {
-        return ranges::accumulate(blocks | ranges::views::transform([](CodeBlock* v){return v->consts.size();}), 0);
+        return ranges::accumulate(blocks | ranges::views::transform([this](uintptr_t address){return module->address_blocks[address]->consts.size();}), 0);
     }
     size_t Function::calls_count() const
     {
-        return ranges::accumulate(blocks | ranges::views::transform([](CodeBlock *v) {  return v->call_functions.size(); }), 0);
+        return ranges::accumulate(blocks | ranges::views::transform([this](uintptr_t address){return module->address_blocks[address]->call_functions.size();}), 0);
     }
     size_t Function::const_count() const
     {
-        return ranges::accumulate(blocks | ranges::views::transform([](CodeBlock *v) {  return v->const_numbers.size(); }), 0);
+        return ranges::accumulate(blocks | ranges::views::transform([this](uintptr_t address){return module->address_blocks[address]->const_numbers.size();}), 0);
     }
     size_t Function::const_offset_count() const
     {
-        return ranges::accumulate(blocks | ranges::views::transform([](CodeBlock *v) {  return v->const_offset_numbers.size(); }), 0);
+        return ranges::accumulate(blocks | ranges::views::transform([this](uintptr_t address){return module->address_blocks[address]->const_offset_numbers.size();}), 0);
     }
 }

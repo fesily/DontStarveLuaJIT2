@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 #include <filesystem>
 #include <thread>
+#include <spdlog/sinks/basic_file_sink.h>
 
 #include "platform.hpp"
 #include "SignatureJson.hpp"
@@ -71,6 +72,12 @@ int main()
 
 #include <dlfcn.h>
 #include <chrono>
+#include "ExectuableSignature.hpp"
+#include "ctx.hpp"
+static void create_signature() {
+    function_relocation::init_ctx();
+    exit(!function_relocation::FileSignature::create_file_signature(gum_process_get_main_module()->path));
+}
 
 static bool (*orgin)(uint32_t unOwnAppID);
 
@@ -88,9 +95,13 @@ bool SteamGameServer_Init_hook(uint32_t unIP, uint16_t usSteamPort, uint16_t usG
 
 __attribute__((constructor)) void init() {
     gum_init_embedded();
-    auto path = std::filesystem::path(gum_process_get_main_module()->path).string();
+    auto path = std::filesystem::path(gum_process_get_main_module()->path).filename().string();
     if (!path.contains("dontstarve")) {
-        gum_deinit_embedded();
+        if (path.contains("lua51")) {
+            std::thread(create_signature).detach();
+        }else {
+            gum_deinit_embedded();
+        }
         return;
     }
     auto hsteam = dlopen("libsteam_api.so", RTLD_NOW);
@@ -105,9 +116,11 @@ __attribute__((constructor)) void init() {
         gum_interceptor_replace_fast(interceptor, api, (void*) &SteamGameServer_Init_hook, (void **) &orgin1);
     else 
         gum_interceptor_replace_fast(interceptor, api, (void *) &SteamAPI_RestartAppIfNecessary_hook, (void **) &orgin);
-    std::thread([path,isClient] {
-                    if (pre_updater())
-                        exit(update(isClient, path.c_str()));
+    std::thread([isClient] {
+                    if (pre_updater()) {
+                        spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::basic_file_sink_st>("DontStarveInjector.log")));
+                        exit(update(isClient, gum_process_get_main_module()->path));
+                    }
                     exit(-1);
                 }
     ).detach();

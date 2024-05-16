@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <frida-gum.h>
 #include <memory>
+#include <list>
 
 
 struct Signature;
@@ -26,7 +27,7 @@ namespace function_relocation {
         size_t size = 0;
         size_t insn_count = 0;
 
-        std::vector<Const *> consts;
+        std::vector<std::string> consts;
         std::vector<uint64_t> call_functions;
         std::vector<uint64_t> external_call_functions;
         std::vector<int64_t> const_numbers;
@@ -55,28 +56,29 @@ namespace function_relocation {
         size_t const_count() const;
         size_t const_offset_count() const;
 
+
+        std::vector<uintptr_t> blocks;
+        std::string name;
+
         std::string_view *const_key = nullptr;
         size_t consts_hash = 0;
         ModuleSections *module = nullptr;
 
-        std::vector<CodeBlock*> blocks;
-        std::string name;
+        CodeBlock* get_block(size_t index) const;
     };
 
+    struct ModuleDetials {
+        std::string name;
+        GumMemoryRange range;
+        std::string path;
+    };
+    
     struct ModuleSections {
-        GumModuleDetails *details;
+        ModuleDetials details;
         GumMemoryRange text;
         GumMemoryRange rodata;
         GumMemoryRange plt;
         GumMemoryRange got_plt;
-
-        ModuleSections() = default;
-
-        ModuleSections(const ModuleSections &) noexcept = delete;
-
-        ModuleSections(ModuleSections &&other) noexcept = delete;
-
-        ~ModuleSections();
 
         bool in_module(uintptr_t address) const;
 
@@ -88,11 +90,12 @@ namespace function_relocation {
 
         bool in_rodata(uintptr_t address) const;
 
-        std::vector<std::unique_ptr<Function>> functions;
-        std::vector<std::unique_ptr<CodeBlock>> blocks;
+        std::list<Function> functions;
+        std::list<CodeBlock> blocks;
+        std::unordered_map<std::string, Const> Consts;
         std::unordered_map<uintptr_t, Function *> address_functions;
+        std::unordered_map<uintptr_t, CodeBlock*> address_blocks;
         std::unordered_map<std::string, Function *> known_functions;
-        std::unordered_map<const char *, Const> Consts;
 
         void set_known_function(uintptr_t addr, const char* name) {
             if (auto func = find_function(addr); func) {
@@ -102,8 +105,8 @@ namespace function_relocation {
         }
 
         Function *find_function(uintptr_t addr) {
-            auto iter = std::ranges::find_if(functions, [addr](auto& f) { return addr == f->address; });
-            return iter != functions.end() ? (iter->get()) : nullptr;
+            auto iter = std::ranges::find_if(functions, [addr](auto& f) { return addr == f.address; });
+            return iter != functions.end() ? &(*iter) : nullptr;
         }
 
         uintptr_t try_fix_func_address(const Function &original, SignatureInfo* maybe_addr, uintptr_t limit_address);

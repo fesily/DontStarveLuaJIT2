@@ -32,4 +32,15 @@ uintptr_t MemorySignature::scan(const char* m) {
     gum_match_pattern_unref(match_pattern);
     return target_address;
 }
+uintptr_t MemorySignature::scan(uintptr_t address, size_t size) {
+    target_address = 0;
+    auto match_pattern = gum_match_pattern_new_from_string(pattern);
+    assert(match_pattern);
+    fprintf(stdout, "Scan [%p, %lu] Signature %s\n", (void*)address, size, pattern);
+    auto ctx = std::pair{ this, match_pattern };
+    GumMemoryRange range{address, size};
+    gum_memory_scan(&range, match_pattern, sacnBaseAddrCb, (void*)this);
+    gum_match_pattern_unref(match_pattern);
+    return target_address;
 }
+}// namespace function_relocation
