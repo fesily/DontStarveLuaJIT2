@@ -1038,9 +1038,11 @@ LUA_API void *lua_newuserdata (lua_State *L, size_t size) {
 }
 
 
-
-
-static __forceinline const char *aux_upvalue (StkId fi, int n, TValue **val) {
+static
+#ifdef WIN32
+ __forceinline
+#endif
+ const char *aux_upvalue (StkId fi, int n, TValue **val) {
   Closure *f;
   if (!ttisfunction(fi)) return NULL;
   f = clvalue(fi);

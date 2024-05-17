@@ -7,14 +7,11 @@ using namespace std::string_view_literals;
 #ifndef MAX_PATH
 #define MAX_PATH 256
 #endif
-struct SteamApiInterface
-{
+struct SteamApiInterface {
 };
 
-static SteamApiInterface *get()
-{
-    static SteamApiInterface *api = []() -> SteamApiInterface *
-    {   
+static SteamApiInterface *get() {
+    static SteamApiInterface *api = []() -> SteamApiInterface * {
         auto env = getenv("SteamEnv");
         if (!env || env != "1"sv)
             return nullptr;
@@ -25,10 +22,8 @@ static SteamApiInterface *get()
     return api;
 }
 
-std::optional<int64_t> getUserId()
-{
-    if (!get())
-    {
+std::optional<int64_t> getUserId() {
+    if (!get()) {
         return std::nullopt;
     }
     return SteamUser()->GetSteamID().GetAccountID();

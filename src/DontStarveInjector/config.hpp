@@ -30,4 +30,9 @@
 #define DEBUG_GETSIZE_PATCH 1
 #endif
 
+#ifdef _WIN32
 constexpr auto lua51_name = "lua51";
+#else
+constexpr auto lua51_name = "liblua51.so";
+#endif
+constexpr auto game_name = "dontstarve_";

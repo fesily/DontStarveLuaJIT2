@@ -18,7 +18,47 @@
             "args": [],
             "stopAtEntry": true,
             "cwd": "E:/SteamLibrary/steamapps/common/Don't Starve Together",
-            "environment": []
+            "environment": [],
+        },
+        {
+            "name": "(Linux) debug signature_creater",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/home/parallels/.steam/debian-installation/steamapps/common/Don't Starve Together/bin64/dontstarve_steam_x64",
+            "args": [],
+            "stopAtConnect": true,
+            "cwd": "/home/parallels/.steam/debian-installation/steamapps/common/Don't Starve Together/bin64",
+            "environment": [
+                {"name": "LD_PRELOAD", "value": "/home/parallels/dontstarveluajit2/builds/ninja-multi-vcpkg/tools/Creater/Debug/libsignature_updater.so"}
+            ],
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "(Linux) debug file_signature",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/home/ubuntu/dontstarveluajit2/Mod/bin64/linux/lua51",
+            "args": [],
+            "stopAtConnect": true,
+            "cwd": "/home/ubuntu/dontstarveluajit2/Mod/bin64/linux",
+            "environment": [
+                {"name": "LD_PRELOAD", "value": "/home/ubuntu/dontstarveluajit2/builds/ninja-multi-vcpkg/tools/Creater/Debug/libsignature_updater.so"}
+            ],
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
         },
         {
             "name": "Launch luajit",

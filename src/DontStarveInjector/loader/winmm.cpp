@@ -194,268 +194,286 @@
 static HMODULE g_OldModule = NULL;
 
 #define FUNCTIONS(_)                \
-	_(mciExecute)                   \
-	_(CloseDriver)                  \
-	_(DefDriverProc)                \
-	_(DriverCallback)               \
-	_(DrvGetModuleHandle)           \
-	_(GetDriverModuleHandle)        \
-	_(OpenDriver)                   \
-	_(PlaySound)                    \
-	_(PlaySoundA)                   \
-	_(PlaySoundW)                   \
-	_(SendDriverMessage)            \
-	_(WOWAppExit)                   \
-	_(auxGetDevCapsA)               \
-	_(auxGetDevCapsW)               \
-	_(auxGetNumDevs)                \
-	_(auxGetVolume)                 \
-	_(auxOutMessage)                \
-	_(auxSetVolume)                 \
-	_(joyConfigChanged)             \
-	_(joyGetDevCapsA)               \
-	_(joyGetDevCapsW)               \
-	_(joyGetNumDevs)                \
-	_(joyGetPos)                    \
-	_(joyGetPosEx)                  \
-	_(joyGetThreshold)              \
-	_(joyReleaseCapture)            \
-	_(joySetCapture)                \
-	_(joySetThreshold)              \
-	_(mciDriverNotify)              \
-	_(mciDriverYield)               \
-	_(mciFreeCommandResource)       \
-	_(mciGetCreatorTask)            \
-	_(mciGetDeviceIDA)              \
-	_(mciGetDeviceIDFromElementIDA) \
-	_(mciGetDeviceIDFromElementIDW) \
-	_(mciGetDeviceIDW)              \
-	_(mciGetDriverData)             \
-	_(mciGetErrorStringA)           \
-	_(mciGetErrorStringW)           \
-	_(mciGetYieldProc)              \
-	_(mciLoadCommandResource)       \
-	_(mciSendCommandA)              \
-	_(mciSendCommandW)              \
-	_(mciSendStringA)               \
-	_(mciSendStringW)               \
-	_(mciSetDriverData)             \
-	_(mciSetYieldProc)              \
-	_(midiConnect)                  \
-	_(midiDisconnect)               \
-	_(midiInAddBuffer)              \
-	_(midiInClose)                  \
-	_(midiInGetDevCapsA)            \
-	_(midiInGetDevCapsW)            \
-	_(midiInGetErrorTextA)          \
-	_(midiInGetErrorTextW)          \
-	_(midiInGetID)                  \
-	_(midiInGetNumDevs)             \
-	_(midiInMessage)                \
-	_(midiInOpen)                   \
-	_(midiInPrepareHeader)          \
-	_(midiInReset)                  \
-	_(midiInStart)                  \
-	_(midiInStop)                   \
-	_(midiInUnprepareHeader)        \
-	_(midiOutCacheDrumPatches)      \
-	_(midiOutCachePatches)          \
-	_(midiOutClose)                 \
-	_(midiOutGetDevCapsA)           \
-	_(midiOutGetDevCapsW)           \
-	_(midiOutGetErrorTextA)         \
-	_(midiOutGetErrorTextW)         \
-	_(midiOutGetID)                 \
-	_(midiOutGetNumDevs)            \
-	_(midiOutGetVolume)             \
-	_(midiOutLongMsg)               \
-	_(midiOutMessage)               \
-	_(midiOutOpen)                  \
-	_(midiOutPrepareHeader)         \
-	_(midiOutReset)                 \
-	_(midiOutSetVolume)             \
-	_(midiOutShortMsg)              \
-	_(midiOutUnprepareHeader)       \
-	_(midiStreamClose)              \
-	_(midiStreamOpen)               \
-	_(midiStreamOut)                \
-	_(midiStreamPause)              \
-	_(midiStreamPosition)           \
-	_(midiStreamProperty)           \
-	_(midiStreamRestart)            \
-	_(midiStreamStop)               \
-	_(mixerClose)                   \
-	_(mixerGetControlDetailsA)      \
-	_(mixerGetControlDetailsW)      \
-	_(mixerGetDevCapsA)             \
-	_(mixerGetDevCapsW)             \
-	_(mixerGetID)                   \
-	_(mixerGetLineControlsA)        \
-	_(mixerGetLineControlsW)        \
-	_(mixerGetLineInfoA)            \
-	_(mixerGetLineInfoW)            \
-	_(mixerGetNumDevs)              \
-	_(mixerMessage)                 \
-	_(mixerOpen)                    \
-	_(mixerSetControlDetails)       \
-	_(mmDrvInstall)                 \
-	_(mmGetCurrentTask)             \
-	_(mmTaskBlock)                  \
-	_(mmTaskCreate)                 \
-	_(mmTaskSignal)                 \
-	_(mmTaskYield)                  \
-	_(mmioAdvance)                  \
-	_(mmioAscend)                   \
-	_(mmioClose)                    \
-	_(mmioCreateChunk)              \
-	_(mmioDescend)                  \
-	_(mmioFlush)                    \
-	_(mmioGetInfo)                  \
-	_(mmioInstallIOProcA)           \
-	_(mmioInstallIOProcW)           \
-	_(mmioOpenA)                    \
-	_(mmioOpenW)                    \
-	_(mmioRead)                     \
-	_(mmioRenameA)                  \
-	_(mmioRenameW)                  \
-	_(mmioSeek)                     \
-	_(mmioSendMessage)              \
-	_(mmioSetBuffer)                \
-	_(mmioSetInfo)                  \
-	_(mmioStringToFOURCCA)          \
-	_(mmioStringToFOURCCW)          \
-	_(mmioWrite)                    \
-	_(mmsystemGetVersion)           \
-	_(sndPlaySoundA)                \
-	_(sndPlaySoundW)                \
-	_(timeBeginPeriod)              \
-	_(timeEndPeriod)                \
-	_(timeGetDevCaps)               \
-	_(timeGetSystemTime)            \
-	_(timeGetTime)                  \
-	_(timeKillEvent)                \
-	_(timeSetEvent)                 \
-	_(waveInAddBuffer)              \
-	_(waveInClose)                  \
-	_(waveInGetDevCapsA)            \
-	_(waveInGetDevCapsW)            \
-	_(waveInGetErrorTextA)          \
-	_(waveInGetErrorTextW)          \
-	_(waveInGetID)                  \
-	_(waveInGetNumDevs)             \
-	_(waveInGetPosition)            \
-	_(waveInMessage)                \
-	_(waveInOpen)                   \
-	_(waveInPrepareHeader)          \
-	_(waveInReset)                  \
-	_(waveInStart)                  \
-	_(waveInStop)                   \
-	_(waveInUnprepareHeader)        \
-	_(waveOutBreakLoop)             \
-	_(waveOutClose)                 \
-	_(waveOutGetDevCapsA)           \
-	_(waveOutGetDevCapsW)           \
-	_(waveOutGetErrorTextA)         \
-	_(waveOutGetErrorTextW)         \
-	_(waveOutGetID)                 \
-	_(waveOutGetNumDevs)            \
-	_(waveOutGetPitch)              \
-	_(waveOutGetPlaybackRate)       \
-	_(waveOutGetPosition)           \
-	_(waveOutGetVolume)             \
-	_(waveOutMessage)               \
-	_(waveOutOpen)                  \
-	_(waveOutPause)                 \
-	_(waveOutPrepareHeader)         \
-	_(waveOutReset)                 \
-	_(waveOutRestart)               \
-	_(waveOutSetPitch)              \
-	_(waveOutSetPlaybackRate)       \
-	_(waveOutSetVolume)             \
-	_(waveOutUnprepareHeader)       \
-	_(waveOutWrite)
+    _(mciExecute)                   \
+    _(CloseDriver)                  \
+    _(DefDriverProc)                \
+    _(DriverCallback)               \
+    _(DrvGetModuleHandle)           \
+    _(GetDriverModuleHandle)        \
+    _(OpenDriver)                   \
+    _(PlaySound)                    \
+    _(PlaySoundA)                   \
+    _(PlaySoundW)                   \
+    _(SendDriverMessage)            \
+    _(WOWAppExit)                   \
+    _(auxGetDevCapsA)               \
+    _(auxGetDevCapsW)               \
+    _(auxGetNumDevs)                \
+    _(auxGetVolume)                 \
+    _(auxOutMessage)                \
+    _(auxSetVolume)                 \
+    _(joyConfigChanged)             \
+    _(joyGetDevCapsA)               \
+    _(joyGetDevCapsW)               \
+    _(joyGetNumDevs)                \
+    _(joyGetPos)                    \
+    _(joyGetPosEx)                  \
+    _(joyGetThreshold)              \
+    _(joyReleaseCapture)            \
+    _(joySetCapture)                \
+    _(joySetThreshold)              \
+    _(mciDriverNotify)              \
+    _(mciDriverYield)               \
+    _(mciFreeCommandResource)       \
+    _(mciGetCreatorTask)            \
+    _(mciGetDeviceIDA)              \
+    _(mciGetDeviceIDFromElementIDA) \
+    _(mciGetDeviceIDFromElementIDW) \
+    _(mciGetDeviceIDW)              \
+    _(mciGetDriverData)             \
+    _(mciGetErrorStringA)           \
+    _(mciGetErrorStringW)           \
+    _(mciGetYieldProc)              \
+    _(mciLoadCommandResource)       \
+    _(mciSendCommandA)              \
+    _(mciSendCommandW)              \
+    _(mciSendStringA)               \
+    _(mciSendStringW)               \
+    _(mciSetDriverData)             \
+    _(mciSetYieldProc)              \
+    _(midiConnect)                  \
+    _(midiDisconnect)               \
+    _(midiInAddBuffer)              \
+    _(midiInClose)                  \
+    _(midiInGetDevCapsA)            \
+    _(midiInGetDevCapsW)            \
+    _(midiInGetErrorTextA)          \
+    _(midiInGetErrorTextW)          \
+    _(midiInGetID)                  \
+    _(midiInGetNumDevs)             \
+    _(midiInMessage)                \
+    _(midiInOpen)                   \
+    _(midiInPrepareHeader)          \
+    _(midiInReset)                  \
+    _(midiInStart)                  \
+    _(midiInStop)                   \
+    _(midiInUnprepareHeader)        \
+    _(midiOutCacheDrumPatches)      \
+    _(midiOutCachePatches)          \
+    _(midiOutClose)                 \
+    _(midiOutGetDevCapsA)           \
+    _(midiOutGetDevCapsW)           \
+    _(midiOutGetErrorTextA)         \
+    _(midiOutGetErrorTextW)         \
+    _(midiOutGetID)                 \
+    _(midiOutGetNumDevs)            \
+    _(midiOutGetVolume)             \
+    _(midiOutLongMsg)               \
+    _(midiOutMessage)               \
+    _(midiOutOpen)                  \
+    _(midiOutPrepareHeader)         \
+    _(midiOutReset)                 \
+    _(midiOutSetVolume)             \
+    _(midiOutShortMsg)              \
+    _(midiOutUnprepareHeader)       \
+    _(midiStreamClose)              \
+    _(midiStreamOpen)               \
+    _(midiStreamOut)                \
+    _(midiStreamPause)              \
+    _(midiStreamPosition)           \
+    _(midiStreamProperty)           \
+    _(midiStreamRestart)            \
+    _(midiStreamStop)               \
+    _(mixerClose)                   \
+    _(mixerGetControlDetailsA)      \
+    _(mixerGetControlDetailsW)      \
+    _(mixerGetDevCapsA)             \
+    _(mixerGetDevCapsW)             \
+    _(mixerGetID)                   \
+    _(mixerGetLineControlsA)        \
+    _(mixerGetLineControlsW)        \
+    _(mixerGetLineInfoA)            \
+    _(mixerGetLineInfoW)            \
+    _(mixerGetNumDevs)              \
+    _(mixerMessage)                 \
+    _(mixerOpen)                    \
+    _(mixerSetControlDetails)       \
+    _(mmDrvInstall)                 \
+    _(mmGetCurrentTask)             \
+    _(mmTaskBlock)                  \
+    _(mmTaskCreate)                 \
+    _(mmTaskSignal)                 \
+    _(mmTaskYield)                  \
+    _(mmioAdvance)                  \
+    _(mmioAscend)                   \
+    _(mmioClose)                    \
+    _(mmioCreateChunk)              \
+    _(mmioDescend)                  \
+    _(mmioFlush)                    \
+    _(mmioGetInfo)                  \
+    _(mmioInstallIOProcA)           \
+    _(mmioInstallIOProcW)           \
+    _(mmioOpenA)                    \
+    _(mmioOpenW)                    \
+    _(mmioRead)                     \
+    _(mmioRenameA)                  \
+    _(mmioRenameW)                  \
+    _(mmioSeek)                     \
+    _(mmioSendMessage)              \
+    _(mmioSetBuffer)                \
+    _(mmioSetInfo)                  \
+    _(mmioStringToFOURCCA)          \
+    _(mmioStringToFOURCCW)          \
+    _(mmioWrite)                    \
+    _(mmsystemGetVersion)           \
+    _(sndPlaySoundA)                \
+    _(sndPlaySoundW)                \
+    _(timeBeginPeriod)              \
+    _(timeEndPeriod)                \
+    _(timeGetDevCaps)               \
+    _(timeGetSystemTime)            \
+    _(timeGetTime)                  \
+    _(timeKillEvent)                \
+    _(timeSetEvent)                 \
+    _(waveInAddBuffer)              \
+    _(waveInClose)                  \
+    _(waveInGetDevCapsA)            \
+    _(waveInGetDevCapsW)            \
+    _(waveInGetErrorTextA)          \
+    _(waveInGetErrorTextW)          \
+    _(waveInGetID)                  \
+    _(waveInGetNumDevs)             \
+    _(waveInGetPosition)            \
+    _(waveInMessage)                \
+    _(waveInOpen)                   \
+    _(waveInPrepareHeader)          \
+    _(waveInReset)                  \
+    _(waveInStart)                  \
+    _(waveInStop)                   \
+    _(waveInUnprepareHeader)        \
+    _(waveOutBreakLoop)             \
+    _(waveOutClose)                 \
+    _(waveOutGetDevCapsA)           \
+    _(waveOutGetDevCapsW)           \
+    _(waveOutGetErrorTextA)         \
+    _(waveOutGetErrorTextW)         \
+    _(waveOutGetID)                 \
+    _(waveOutGetNumDevs)            \
+    _(waveOutGetPitch)              \
+    _(waveOutGetPlaybackRate)       \
+    _(waveOutGetPosition)           \
+    _(waveOutGetVolume)             \
+    _(waveOutMessage)               \
+    _(waveOutOpen)                  \
+    _(waveOutPause)                 \
+    _(waveOutPrepareHeader)         \
+    _(waveOutReset)                 \
+    _(waveOutRestart)               \
+    _(waveOutSetPitch)              \
+    _(waveOutSetPlaybackRate)       \
+    _(waveOutSetVolume)             \
+    _(waveOutUnprepareHeader)       \
+    _(waveOutWrite)
 
 #define MAP_FUNCTION(name)      \
-	{                           \
-		#name, &AheadLib_##name \
-	}
-VOID WINAPI Free()
-{
-	if (g_OldModule)
-	{
-		FreeLibrary(g_OldModule);
-	}
+    {                           \
+        #name, &AheadLib_##name \
+    }
+VOID WINAPI
+
+Free() {
+    if (g_OldModule) {
+        FreeLibrary(g_OldModule);
+    }
 }
 
-BOOL WINAPI Load()
-{
-	TCHAR tzPath[MAX_PATH];
-	TCHAR tzTemp[MAX_PATH * 2];
+BOOL WINAPI
 
-	GetSystemDirectory(tzPath, MAX_PATH);
+Load() {
+    TCHAR tzPath[MAX_PATH];
+    TCHAR tzTemp[MAX_PATH * 2];
 
-	lstrcat(tzPath, TEXT("\\winmm.dll"));
+    GetSystemDirectory(tzPath, MAX_PATH);
 
-	g_OldModule = LoadLibrary(tzPath);
-	if (g_OldModule == NULL)
-	{
-		wsprintf(tzTemp, TEXT("can't load %s"), tzPath);
-		MessageBox(NULL, tzTemp, TEXT("AheadLib"), MB_ICONSTOP);
-	}
+    lstrcat(tzPath, TEXT("\\winmm.dll"));
 
-	return (g_OldModule != NULL);
+    g_OldModule = LoadLibrary(tzPath);
+    if (g_OldModule == NULL) {
+        wsprintf(tzTemp, TEXT("can't load %s"), tzPath);
+        MessageBox(NULL, tzTemp, TEXT("AheadLib"), MB_ICONSTOP);
+    }
+
+    return (g_OldModule != NULL);
 }
+
 #include "inlinehook.hpp"
+
 static bool GumFoundCb(const ExportDetails *details,
-					   void *user_data)
-{
-	HMODULE mod = (HMODULE)user_data;
-	void *fake = GetProcAddress(mod, details->name);
-	void *real = GetProcAddress(g_OldModule, details->name);
-	if (real == 0 || fake == 0)
-	{
-		MessageBoxA(NULL, details->name, "can't find module function", 0);
-		std::exit(1);
-	}
-	if (!Hook((uint8_t *)fake, (uint8_t *)real))
-	{
-		MessageBoxA(NULL, details->name, "can't hook winmm.dll", 0);
-		std::exit(1);
-	}
-	return true;
+                       void *user_data) {
+    HMODULE mod = (HMODULE) user_data;
+    void *fake = GetProcAddress(mod, details->name);
+    void *real = GetProcAddress(g_OldModule, details->name);
+    if (real == 0 || fake == 0) {
+        MessageBoxA(NULL, details->name, "can't find module function", 0);
+        std::exit(1);
+    }
+    if (!Hook((uint8_t *) fake, (uint8_t *) real)) {
+        MessageBoxA(NULL, details->name, "can't hook winmm.dll", 0);
+        std::exit(1);
+    }
+    return true;
 }
 
 #define DEF_FUNCTION(name)          \
-	EXTERN_C void AheadLib_##name() \
-	{                               \
-		OutputDebugStringA(#name);  \
-		DebugBreak();               \
-	}
+    EXTERN_C void AheadLib_##name() \
+    {                               \
+        OutputDebugStringA(#name);  \
+        DebugBreak();               \
+    }
+
 DEF_FUNCTION(Unnamed2)
 
 FUNCTIONS(DEF_FUNCTION)
 
 void wait_debugger();
-void DontStarveInjectorStart();
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, PVOID pvReserved)
-{
-	static std::atomic_bool loaded = false;
-	if (dwReason == DLL_PROCESS_ATTACH)
-	{
-		if (!loaded && Load())
-		{
-			loaded = true;
-			wait_debugger();
-			module_enumerate_exports(hModule, GumFoundCb, hModule);
-			void *uname2_ptr = GetProcAddress(g_OldModule, (LPCSTR)2);
-			Hook((uint8_t *)&AheadLib_Unnamed2, (uint8_t *)uname2_ptr);
-			DontStarveInjectorStart();
-		}
-	}
-	else if (dwReason == DLL_PROCESS_DETACH)
-	{
-		Free();
-	}
 
-	return TRUE;
+void DontStarveInjectorStart();
+
+BOOL APIENTRY
+DllMain(HMODULE
+hModule,
+DWORD dwReason, PVOID
+pvReserved)
+{
+static std::atomic_bool loaded = false;
+if (dwReason == DLL_PROCESS_ATTACH)
+{
+if (!
+
+loaded &&Load()
+
+)
+{
+loaded = true;
+
+wait_debugger();
+
+module_enumerate_exports(hModule, GumFoundCb, hModule
+);
+void *uname2_ptr = GetProcAddress(g_OldModule, (LPCSTR) 2);
+Hook((uint8_t
+*)&AheadLib_Unnamed2, (uint8_t *)uname2_ptr);
+
+DontStarveInjectorStart();
+
+}
+}
+else if (dwReason == DLL_PROCESS_DETACH)
+{
+Free();
+
+}
+
+return
+TRUE;
 }

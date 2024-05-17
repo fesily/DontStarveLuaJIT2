@@ -20,13 +20,13 @@ jobs:
       matrix:
         include:
           - { os: windows-latest, target: windows, platform: win32-x64    }
+          - { os: ubuntu-24.04,   target: linux,   platform: linux-x64    }
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
             submodules: true
-    
       - uses: lukka/get-cmake@latest
 
       - name: Restore from cache and setup vcpkg executable and data files.
@@ -43,17 +43,27 @@ jobs:
       - name: CMake install
         run: |
             cmake --build ./builds/ninja-multi-vcpkg --config Release --target install
+
+      - name: Clean Up
+        if: ${{ matrix.target == 'linux' }}
+        run: |
+          rm -rf ${{ github.workspace }}/Mod/bin64/windows
       
+      - name: Clean Up1
+        if: ${{ matrix.target == 'windows' }}
+        run: |
+           rm -r ${{ github.workspace }}/Mod/bin64/linux
+
       - name: Archive Release
         uses: thedoctor0/zip-release@0.7.5
         if: startsWith(github.ref, 'refs/tags/')
         with:
           path: ${{ github.workspace }}/Mod
-          filename: Mod.zip
+          filename: ${{ matrix.target}}_Mod.zip
 
       - name: Publish release asserts
         uses: ncipollo/release-action@v1.14.0
         if: startsWith(github.ref, 'refs/tags/')
         with:
-            artifacts: 'Mod.zip'
+            artifacts: '${{ matrix.target}}_Mod.zip'
             allowUpdates: true
