@@ -1,4 +1,4 @@
-import zipfile
+ï»¿import zipfile
 import os
 import sys
 import pathlib
@@ -10,11 +10,11 @@ scriptsZipPath =  pathlib.Path(databundleDir, "scripts.zip")
 targetPath = pathlib.Path(dataDir, "scripts")
 os.removedirs(targetPath)
 
-# ´´½¨Ò»¸öZipFile¶ÔÏó
+# åˆ›å»ºä¸€ä¸ªZipFileå¯¹è±¡
 with zipfile.ZipFile(scriptsZipPath, 'r') as zip_ref:
-    # ½âÑ¹zipÎÄ¼şµ½Ö¸¶¨Ä¿±êÎÄ¼ş¼Ğ
+    # è§£å‹zipæ–‡ä»¶åˆ°æŒ‡å®šç›®æ ‡æ–‡ä»¶å¤¹
     zip_ref.extractall(targetPath)
 
 os.rename(scriptsZipPath, pathlib.Path(scriptsZipPath, ".bak"))
 
-print("½âÑ¹Íê³É£¡")
+print("è§£å‹å®Œæˆï¼")
