@@ -58,7 +58,7 @@ jobs:
         uses: thedoctor0/zip-release@0.7.5
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          path: ${{ github.workspace }}/Mod
+          path: ./Mod
           filename: ${{ matrix.target}}_Mod.zip
           directory: ${{ github.workspace }}
 
