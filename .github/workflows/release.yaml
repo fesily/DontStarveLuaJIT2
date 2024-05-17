@@ -60,6 +60,7 @@ jobs:
         with:
           path: ${{ github.workspace }}/Mod
           filename: ${{ matrix.target}}_Mod.zip
+          directory: ${{ github.workspace }}
 
       - name: Publish release asserts
         uses: ncipollo/release-action@v1.14.0
