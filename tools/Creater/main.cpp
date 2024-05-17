@@ -1,20 +1,13 @@
 #include <format>
-#include <fstream>
-#include <iostream>
-#include <ranges>
-#include <algorithm>
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
 #include <filesystem>
-#include <thread>
-#include <spdlog/sinks/basic_file_sink.h>
 
 #include "platform.hpp"
 #include "SignatureJson.hpp"
 #include "LuaModule.hpp"
 #include "DontStarveSignature.hpp"
-#include "GameVersionFile.hpp"
-
+#include "ctx.hpp"
 #ifndef GAMEDIR
 #error "not defined GAME_DIR"
 #endif
@@ -46,17 +39,20 @@ int update(bool isClient, const char *path) {
         return 1;
     }
 
-    auto updater = SignatureUpdater::create(isClient, luaModuleSignature.target_address);
+    auto updater = SignatureUpdater::create(luaModuleSignature.target_address);
     if (!updater) {
         fprintf(stderr, "%s", updater.error().c_str());
         return 1;
     }
+    SignatureJson json{isClient};
+    json.update_signatures(updater->signatures);
     return 0;
 }
 
 bool pre_updater() {
     set_worker_directory(worker_dir);
     SignatureJson::version_path = GAMEDIR "/version.txt";
+    function_relocation::init_ctx();
     return loadlib(lua51_path);
 }
 
@@ -118,7 +114,6 @@ __attribute__((constructor)) void init() {
         gum_interceptor_replace_fast(interceptor, api, (void *) &SteamAPI_RestartAppIfNecessary_hook, (void **) &orgin);
     std::thread([isClient] {
                     if (pre_updater()) {
-                        spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::basic_file_sink_st>("DontStarveInjector.log")));
                         exit(update(isClient, gum_process_get_main_module()->path));
                     }
                     exit(-1);

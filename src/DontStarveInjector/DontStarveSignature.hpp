@@ -20,7 +20,8 @@ struct SignatureUpdater {
     Signatures signatures;
     ListExports_t exports;
 
-    static std::expected<SignatureUpdater, std::string> create(bool isClient, uintptr_t luaModuleBaseAddress);
+    static std::expected<SignatureUpdater, std::string> create_or_update(bool isClient, uintptr_t luaModuleBaseAddress);
+    static std::expected<SignatureUpdater, std::string> create(uintptr_t luaModuleBaseAddress);
 };
 
 std::string update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports,

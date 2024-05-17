@@ -11,22 +11,30 @@ namespace function_relocation {
     }
 
     bool init_ctx() {
-        if (get_ctx().hcs)
+        auto &ctx = get_ctx();
+        if (ctx.hcs) {
+            ++ctx.ref;
             return true;
+        }
         cs_arch_register_x86();
         static_assert(sizeof(csh) == sizeof(uintptr_t));
-        auto ec = cs_open(CS_ARCH_X86, CS_MODE_64, &get_ctx().hcs);
+        auto ec = cs_open(CS_ARCH_X86, CS_MODE_64, &ctx.hcs);
         if (ec != CS_ERR_OK)
             return false;
-        cs_option(get_ctx().hcs, CS_OPT_DETAIL, CS_OPT_ON);
+        cs_option(ctx.hcs, CS_OPT_DETAIL, CS_OPT_ON);
         std::filesystem::remove(log_path);
         spdlog::create<spdlog::sinks::basic_file_sink_st>(logger_name, log_path);
+        ++ctx.ref;
         return true;
     }
 
     void deinit_ctx() {
-        cs_close(&get_ctx().hcs);
-        get_ctx().hcs = 0;
+        auto &ctx = get_ctx();
+        --ctx.ref;
+        if (ctx.ref.load() == 0) {
+            cs_close(&ctx.hcs);
+            ctx.hcs = 0;   
+        }
     }
 
 }

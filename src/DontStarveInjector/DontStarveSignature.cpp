@@ -97,17 +97,24 @@ get_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase,
     }
     return exports;
 }
+std::expected<SignatureUpdater, std::string> SignatureUpdater::create(uintptr_t luaModuleBaseAddress) {
+    SignatureUpdater updater;
+    auto res = create_signature(luaModuleBaseAddress, [](auto &v) {});
+    if (!res) {
+        return std::unexpected(res.error());
+    }
+    updater.exports = std::move(std::get<0>(res.value()));
+    updater.signatures = std::move(std::get<1>(res.value()));
+    return updater;
 
-std::expected<SignatureUpdater, std::string> SignatureUpdater::create(bool isClient, uintptr_t luaModuleBaseAddress) {
+}
+std::expected<SignatureUpdater, std::string> SignatureUpdater::create_or_update(bool isClient, uintptr_t luaModuleBaseAddress) {
     SignatureUpdater updater;
     SignatureJson json{isClient};
     auto signatures = json.read_from_signatures();
-    if (!function_relocation::init_ctx())
-        return std::unexpected("can't init signature");
     if (!signatures) {
         auto res = create_signature(luaModuleBaseAddress, [&json](auto &v) { json.update_signatures(v); });
         if (!res) {
-            function_relocation::deinit_ctx();
             return std::unexpected(res.error());
         }
         updater.exports = std::move(std::get<0>(res.value()));
@@ -116,13 +123,11 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(bool isCli
         auto res = get_signatures(signatures.value(), luaModuleBaseAddress,
                                   [&json](auto &v) { json.update_signatures(v); });
         if (!res) {
-            function_relocation::deinit_ctx();
             return std::unexpected(res.error());
         }
         updater.exports = std::move(res.value());
         updater.signatures = std::move(signatures.value());
     }
-    function_relocation::deinit_ctx();
     return updater;
 }
 

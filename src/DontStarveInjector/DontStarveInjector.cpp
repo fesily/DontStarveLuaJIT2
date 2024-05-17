@@ -28,8 +28,9 @@
 #include "util/inlinehook.hpp"
 #include "LuaModule.hpp"
 #include "DontStarveSignature.hpp"
-#include "SignatureJson.hpp"
 #include "util/platform.hpp"
+#include "ctx.hpp"
+#include "spdlog/sinks/basic_file_sink.h"
 
 
 #ifdef _DEBUG
@@ -187,21 +188,47 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
 #else
 #define DONTSTARVEINJECTOR_API
 #endif
+template<typename Fn>
+auto create_defer(Fn&& fn) {
+    auto deleter = [cb = std::forward<Fn>(fn)](void *) {
+        cb();
+    };
+    return std::unique_ptr<void, decltype(deleter)>(nullptr, std::move(deleter));
+}
 extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     gum_init();
 #ifdef _WIN32
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>()));
 #endif
+    const auto log_path = "DontStarveInjector.log";
+    std::filesystem::remove(log_path);
+    spdlog::default_logger()->sinks().push_back(std::make_shared<spdlog::sinks::basic_file_sink_st>(log_path));
 #if USE_LISTENER
     interceptor = gum_interceptor_obtain();
 #endif
+    
+    if (!function_relocation::init_ctx()) {
+        showError("can't init signature");
+        return;
+    }
+    auto defer = create_defer(&function_relocation::deinit_ctx);
 
+    auto lua51 = loadlib(lua51_name);
+    if (!lua51) {
+        showError("can't load lua51");
+        return;
+    }
+    auto defer1 = create_defer([lua51]() {
+        unloadlib(lua51);
+    });
+    
     auto mainPath = getExePath().string();
     if (luaModuleSignature.scan(mainPath.c_str()) == 0) {
         spdlog::error("can't find luamodule base address");
         return;
     }
-    auto res = SignatureUpdater::create(isClient, luaModuleSignature.target_address);
+    
+    auto res = SignatureUpdater::create_or_update(isClient, luaModuleSignature.target_address);
     if (!res) {
         showError(res.error());
         return;
