@@ -18,6 +18,7 @@
 #include "ModuleSections.hpp"
 #include "ctx.hpp"
 #include "disasm.h"
+#include "config.hpp"
 
 #include <numeric>
 #include <set>
@@ -185,13 +186,13 @@ namespace function_relocation {
 
             err = ks_open(KS_ARCH_X86, KS_MODE_64, &ks);
             if (err != KS_ERR_OK) {
-                printf("ERROR: failed on ks_open(), quit\n");
+                spdlog::get(logger_name)->error("ERROR: failed on ks_open(), quit");
                 return {};
             }
 
             if (ks_asm(ks, CODE, 0, &encode, &size, &count) != KS_ERR_OK) {
-                printf("ERROR: ks_asm() failed & count = %lu, error = %u\n",
-                       count, ks_errno(ks));
+                spdlog::get(logger_name)->error("ERROR: ks_asm() failed & count = {}, error = {}",
+                       count, (int)ks_errno(ks));
             }
             std::vector<uint8_t> res{encode, encode + size};
             // NOTE: free encode after usage to avoid leaking memory
@@ -216,42 +217,9 @@ namespace function_relocation {
                 const auto &operand0 = details.operands[0];
                 const auto &operand1 = details.operands[1];
                 switch (insn.id) {
-#if !defined(_WIN32)
-                    case X86_INS_ADD:
-                        // transform add rx, 0x?? mov [r??+0x??] rxx to mov [r??+0x??], 0x??
-                        if (transform_mov && operand0.type == X86_OP_REG && operand1.type == X86_OP_IMM && operand1.imm < 0x7f) {
-                            auto next_insn = ds.get_insn((void *) (insn.address + insn.size));
-                            if (next_insn->id == X86_INS_MOV) {
-                                const auto &next_operand0 = next_insn->detail->x86.operands[0];
-                                const auto &next_operand1 = next_insn->detail->x86.operands[1];
-                                if (next_operand0.type == X86_OP_MEM && next_operand0.mem.disp == operand1.imm && next_operand1.reg == operand0.reg) {
-                                    auto op_str = std::string_view{next_insn->op_str};
-                                    auto pos = op_str.find_first_of("],");
-                                    op_str = op_str.substr(0, pos + 2);
-                                    auto new_one = std::format("add {} {}", op_str, operand1.imm);
-                                    const auto new_bytes = AsmX86(new_one.c_str());
-                                    signature.asm_codes.push_back(to_hex(new_bytes.data(), new_bytes.data() + new_bytes.size()));
-                                    skip_next_one = true;
-                                    continue;
-                                }
-                            }
-                        }
-                        break;
-#endif
                     case X86_INS_JMP:
                     case X86_INS_CALL:
                         if (operand1.type == X86_OP_MEM || operand0.type == X86_OP_IMM) {
-#if !defined(_WIN32) && 0
-                            //convert jmp plt to call imm
-                            if (target->in_plt(operand0.imm)) {
-                                disasm ds{(uint8_t *) operand0.imm, *target->details->range};
-                                auto insn1 = ds.get_insn((uint8_t *) operand0.imm);
-                                assert(insn1->id == X86_INS_JMP);
-                                const auto &operand = insn1->detail->x86.operands[0];
-                                assert(operand.type == X86_OP_MEM && operand.mem.base == X86_REG_RIP && operand.mem.disp != 0);
-                                const auto jump_target = X86_REL_ADDR(*insn1)
-                            }
-#endif
                             auto pref = std::format("{:0>2x}", insn.bytes[0]);
                             signature.asm_codes.push_back(pref + make_unknown_string(insn.size - 1));
                             continue;
@@ -302,8 +270,7 @@ namespace function_relocation {
             }
             return signature;
         }
-        void * sacn_by_signature(const std::string& signature, int signature_offset, SignatureInfo *signature_info) {
-                auto skip_check = transform_mov;
+        void * sacn_by_signature(const std::string& signature, int signature_offset, bool skip_check = false) {
                 MemorySignature scan1{signature.c_str(), signature_offset, false};
                 scan1.scan(original->module->details.range.base_address, original->module->details.range.size);
                 if (!skip_check && scan1.targets.size() != 1) return nullptr;
@@ -327,7 +294,7 @@ namespace function_relocation {
                 }
                 return nullptr;
         }
-        void *scan_by_block(ModuleSections *section, CodeBlock *block, SignatureInfo *signature_info) {
+        void *scan_by_block(ModuleSections *section, CodeBlock *block) {
             for (size_t limit = std::min<size_t>(8, block->insn_count); limit <= block->insn_count; ++limit) {
                 const auto s = create_signature(section, (uint8_t *) block->address, block->size, limit);
                 auto signature = s.to_string(false);
@@ -336,7 +303,7 @@ namespace function_relocation {
                 }
                 assert(block->address >= original->address);
                 int signature_offset = static_cast<int>(-(static_cast<intptr_t>(block->address) - static_cast<intptr_t>(original->address)));
-                if (auto ptr = sacn_by_signature(signature, signature_offset, signature_info); ptr) return ptr;
+                if (auto ptr = sacn_by_signature(signature, signature_offset); ptr) return ptr;
             }
             return nullptr;
         }
@@ -344,9 +311,9 @@ namespace function_relocation {
         ModuleSections *target;
         const Function *original;
         uintptr_t limit_address;
+        SignatureInfo *signature_info;
+
         std::vector<void *> function_address;
-        bool transform_mov = false;
-        ;
     };
 
 
@@ -392,14 +359,6 @@ namespace function_relocation {
 #define OUTPUT_SIGNATURE(addr, s)
 #endif
 
-
-    bool is_same_signature_fast(void *target, void *original) {
-        constexpr auto short_signature_len = 16;
-        Creator creator;
-        return creator.create_signature(target, nullptr, short_signature_len) ==
-               creator.create_signature(original, nullptr, short_signature_len);
-    }
-
     static constexpr size_t func_aligned() {
 #ifdef _M_X86
         return 8;
@@ -420,15 +379,14 @@ namespace function_relocation {
                 {"lua_pushvalue"s, {0, "48 89 0A 8B 40 08 89 42  08 48 83 43 10 10 5B C3"s, -0x10}},
                 {"lua_insert"s, {0, "48 89 D1 48 83 EA 10 4C  29 C9 4C 8B 04 31 4C 89"s, -0x20}},
                 {"lua_xmove"s, {0, "48 8B 4F 10 48 8B 56 10  48 01 C1 48 83 C0 10 4C"s, -0x30}},
-                {"lua_remove"s, {0, "48 83 E9 10  48 89 4B 10 5B C3"s, -0x44}}
+                {"lua_remove"s, {0, "48 83 E9 10  48 89 4B 10 5B C3"s, -0x44}},
+                {"lua_pushnil"s, {0, "48 8B 47 10 C7 40 08 00 00 00 00 48 83 47 10 10 C3"s, 0x0}}
                 };
 
-        Creator creator{&target, &original, limit_address};
+        Creator creator{&target, &original, limit_address, signature};
         if (knowns_signature.contains(original.name)) {
-            creator.transform_mov = true;
             const auto& pattern = knowns_signature[original.name];
-            if (auto ptr = creator.sacn_by_signature(pattern.pattern, pattern.pattern_offset, signature); ptr) return ptr;
-            creator.transform_mov = false;
+            if (auto ptr = creator.sacn_by_signature(pattern.pattern, pattern.pattern_offset, true); ptr) return ptr;
         }
         // find the block to signature
         auto blocks = original.blocks;
@@ -439,7 +397,7 @@ namespace function_relocation {
 
         for (auto block_address: blocks | std::views::reverse) {
             auto block = original.module->address_blocks[block_address];
-            if (auto ptr = creator.scan_by_block(original.module, block, signature); ptr) return ptr;
+            if (auto ptr = creator.scan_by_block(original.module, block); ptr) return ptr;
         }
         for (size_t take = 2; take <= original.blocks.size(); ++take) {
             auto begin = original.blocks.begin();
@@ -452,19 +410,13 @@ namespace function_relocation {
                                    std::accumulate(begin, end + 1, size_t(0), [&](size_t s, auto b) {
                                        return s + original.module->address_blocks[b]->insn_count;
                                    })};
-                if (auto ptr = creator.scan_by_block(original.module, &block, signature); ptr) return ptr;
+                if (auto ptr = creator.scan_by_block(original.module, &block); ptr) return ptr;
             }
         }
-        auto &function_address = creator.function_address;
-#ifndef _WIN32
-        if (function_address.empty() && original.insn_count <= 16 && original.blocks.size() <= 2) {
-            // try some specialy mode
-            creator.transform_mov = true;
-            if (auto ptr = creator.scan_by_block(original.module, original.get_block(0), signature); ptr) return ptr;
-            creator.transform_mov = false;
-        }
-#endif
+    #ifndef _WIN32
         assert(false);
+    #else
+        auto &function_address = creator.function_address;
         if (function_address.empty() && !target.functions.empty()) {
             const auto ptrs = target.functions | std::views::transform([](auto &fn) { return reinterpret_cast<void *>(fn.address); });
             function_address.insert(function_address.end(), ptrs.begin(), ptrs.end());
@@ -497,6 +449,6 @@ namespace function_relocation {
         }
         OUTPUT_SIGNATURE((void *) original.address, original_s.to_string());
         return nullptr;
+#endif
     }
-
 }// namespace function_relocation

@@ -27,7 +27,5 @@ namespace function_relocation
         const std::string& operator[](size_t index) const { return asm_codes[index]; }
     };
 
-    bool is_same_signature_fast(void* target, void* original);
-
     void release_signature_cache();
 }

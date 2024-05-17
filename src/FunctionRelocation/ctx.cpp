@@ -1,6 +1,9 @@
 #include "ctx.hpp"
 #include <frida-gum.h>
-
+#include <filesystem>
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/basic_file_sink.h>
+#include "config.hpp"
 namespace function_relocation {
     Ctx &get_ctx() {
         static Ctx ctx;
@@ -16,6 +19,8 @@ namespace function_relocation {
         if (ec != CS_ERR_OK)
             return false;
         cs_option(get_ctx().hcs, CS_OPT_DETAIL, CS_OPT_ON);
+        std::filesystem::remove(log_path);
+        spdlog::create<spdlog::sinks::basic_file_sink_st>(logger_name, log_path);
         return true;
     }
 

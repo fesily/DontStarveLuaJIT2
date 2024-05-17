@@ -202,13 +202,9 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
             spdlog::info("try create signature [{}]", name);
         else
             spdlog::info("try fix signature [{}]: {}", name, old_offset);
+            
         auto maybe_target = targetLuaModuleBase + old_offset;
-        if (old_offset != 0 && moduleMain.find_function(maybe_target)) {
-            if (function_relocation::is_same_signature_fast((void*)maybe_target, original)) { 
-                spdlog::info("should not fix signature [{}]: {}", name, maybe_target);
-                continue;
-            }
-        }
+
         uintptr_t target = 0;
         if (!signature.pattern.empty()) {
             function_relocation::MemorySignature scan{signature.pattern.c_str(), signature.pattern_offset, false};
