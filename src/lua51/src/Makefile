@@ -62,7 +62,7 @@ $(LUA_SO): $(CORE_O) $(LIB_O)
 # 	$(CC) -o $@ $(LUA_O) $(LUA_A) -lm -shared
 
 $(LUA_T): $(LUA_O) $(LUA_A)
-	$(CC) -o $@ $(MYLDFLAGS) $(LUA_O) $(LUA_A) $(LIBS)
+	$(CC) -o $@ $(MYLDFLAGS) -DBUILD_AS_EXE  $(LUA_O) $(LUA_A) $(LIBS) -Wl,-Ttext-segment=0x40000000
 
 $(LUAC_T): $(LUAC_O) $(LUA_A)
 	$(CC) -o $@ $(MYLDFLAGS) $(LUAC_O) $(LUA_A) $(LIBS)

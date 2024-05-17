@@ -9,14 +9,12 @@ set(SOURCE
         KartaConfig.cpp
         ctx.cpp
         disasm.h
-        ScanCtx.hpp
+        ScanCtx.cpp
         ExectuableSignature.cpp
 )
 
 find_package(spdlog CONFIG REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(keystone REQUIRED keystone)
-
+ 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_library(function_relocation STATIC ${SOURCE})
@@ -29,5 +27,5 @@ target_link_libraries(function_relocation PRIVATE spdlog::spdlog)
 if (MSVC)
     target_link_libraries(function_relocation PRIVATE pe-parse::pe-parse)
 else()
-    target_link_libraries(function_relocation PRIVATE ${keystone_STATIC_LIBRARY_DIRS}/libkeystone.a)
+    target_link_libraries(function_relocation PRIVATE ${KEYSTONE_LIBRARIES})
 endif ()
