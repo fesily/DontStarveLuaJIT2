@@ -52,7 +52,7 @@ jobs:
       - name: Clean Up1
         if: ${{ matrix.target == 'windows' }}
         run: |
-           rm -rf ${{ github.workspace }}/Mod/linux
+           rm -r ${{ github.workspace }}/Mod/linux
 
       - name: Archive Release
         uses: thedoctor0/zip-release@0.7.5
