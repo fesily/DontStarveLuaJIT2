@@ -457,7 +457,6 @@ LUA_API void lua_pushstring (lua_State *L, const char *s) {
 }
 
 
-#ifndef __GNUC__
 LUA_API const char *lua_pushvfstring (lua_State *L, const char *fmt,
                                       va_list argp) {
   const char *ret;
@@ -467,7 +466,6 @@ LUA_API const char *lua_pushvfstring (lua_State *L, const char *fmt,
   lua_unlock(L);
   return ret;
 }
-#endif
 
 
 LUA_API const char *lua_pushfstring (lua_State *L, const char *fmt, ...) {
