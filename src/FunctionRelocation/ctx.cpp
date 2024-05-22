@@ -24,7 +24,7 @@ namespace function_relocation {
         cs_option(ctx.hcs, CS_OPT_DETAIL, CS_OPT_ON);
         const auto real_log_path = std::filesystem::absolute(gum_process_get_main_module()->path).parent_path() / log_path;
         std::filesystem::remove(real_log_path);
-        auto logger = spdlog::create<spdlog::sinks::basic_file_sink_st>(logger_name, real_log_path);
+        auto logger = spdlog::create<spdlog::sinks::basic_file_sink_st>(logger_name, real_log_path.string());
         ++ctx.ref;
         logger->info("init ctx");
         return true;
