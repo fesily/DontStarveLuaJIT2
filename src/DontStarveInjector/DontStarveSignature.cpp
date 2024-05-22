@@ -22,9 +22,11 @@
 
 static gboolean ListLuaFuncCb(const GumExportDetails *details,
                               void *user_data) {
-    if (details->type != _GumExportType::GUM_EXPORT_FUNCTION || missfuncs.find(details->name) != missfuncs.end()) {
+    if (details->type != _GumExportType::GUM_EXPORT_FUNCTION) {
         return true;
     }
+    if (get_missfuncs().contains(details->name))
+        return true;
     if (!std::string_view(details->name).starts_with("lua"))
         return true;
 #if USE_GAME_IO
@@ -242,6 +244,23 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         }
         if (target == maybe_target)
             continue;
+#ifndef _WIN32
+        // fix the offset by module
+        if (moduleMain.find_function(target) == nullptr) {
+            auto all_address = moduleMain.address_functions | std::ranges::views::transform([](auto& p){return p.first;}) | ranges::to<std::vector>();
+            std::ranges::sort(all_address);
+            auto iter = std::ranges::adjacent_find(all_address, [target](auto l, auto r){return l<=target && target<r;});
+            if (iter == all_address.end()) {
+                return std::format("func[{}] can't find the real address", name);
+            }
+            const auto fn = moduleMain.find_function(*iter);
+            auto pattern_address = target - signature.pattern_offset;
+            target = fn->address;
+            auto pattern_offset = (intptr_t)target - (intptr_t)pattern_address;
+            spdlog::info("refix signature pattern offset: [{}]->[{}]", signature.pattern_offset, pattern_offset);
+            signature.pattern_offset = pattern_offset;
+        }
+#endif
         auto new_offset = target - targetLuaModuleBase;
         spdlog::info("update signatures [{}:{}]: {} to {}", name, (void*)target, old_offset, new_offset);
         signature.offset = new_offset;

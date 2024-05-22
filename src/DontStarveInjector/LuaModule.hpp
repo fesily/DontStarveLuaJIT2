@@ -13,16 +13,18 @@ static function_relocation::MemorySignature luaModuleSignature{
 
 static function_relocation::MemorySignature luaRegisterDebugGetsizeSignature
         {
+#ifdef _WIN32
                 "4C 8B 5B 18 48 8B CB 49 8B",
+#else
+                "48 8B 43 18 48 89 DF 48 8B 40 10",
+#endif
 #if DEBUG_GETSIZE_PATCH == 1
                 0x7
 #else
+#ifdef _WIN32
                 -0x27
+#else
+                -0x1f
+#endif
 #endif
         };
-
-#if REPLACE_IO
-static function_relocation::MemorySignature GameIOfopenSignature{"F3 A6 48 8d 4c 24 20 75 16", -0x28};
-
-static function_relocation::MemorySignature GameIOfcloseSignature{"48 83 BB 58 01 00 00 00 74 10", -0x21};
-#endif

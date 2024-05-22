@@ -10,24 +10,9 @@
 #include <optional>
 #include "util/zipfile.hpp"
 
-#include <steam_api.h>
 #include <thread>
 #include <chrono>
 #include <vector>
-
-static bool get_mod_folder(ISteamUGC *ugc, PublishedFileId_t id, std::filesystem::path &res) {
-    auto state = ugc->GetItemState(id);
-    if (state & k_EItemStateInstalled) {
-        uint64 punSizeOnDisk;
-        uint32 punTimeStamp;
-        char path[260];
-        if (ugc->GetItemInstallInfo(id, &punSizeOnDisk, path, 255, &punTimeStamp)) {
-            res = std::filesystem::path(path).parent_path();
-            return true;
-        }
-    }
-    return false;
-}
 
 using namespace std::literals;
 
@@ -58,32 +43,6 @@ static std::filesystem::path to_path(const char *p) {
 
 static std::mutex mtx;
 
-static std::optional<std::filesystem::path> init_steam_workshop_dir() {
-    if (!SteamAPI_Init()) {
-        return std::nullopt;
-    }
-    std::filesystem::path dir;
-    auto ugc = SteamUGC();
-    if (get_mod_folder(ugc, 3010545764, dir)) {
-        return dir;
-    }
-    auto len = ugc->GetNumSubscribedItems();
-    std::vector<PublishedFileId_t> PublishedFileIds;
-    PublishedFileIds.resize(len);
-    PublishedFileIds.resize(ugc->GetSubscribedItems(PublishedFileIds.data(), len));
-    for (auto PublishedFileId: PublishedFileIds) {
-        if (get_mod_folder(ugc, PublishedFileId, dir)) {
-            break;
-        }
-    }
-    return dir;
-}
-
-static std::optional<std::filesystem::path> get_workshop_dir() {
-    static auto dir = init_steam_workshop_dir();
-    return dir;
-}
-
 static FILE *lj_fopen(char const *f, const char *mode) noexcept {
     auto path = to_path(f);
     auto path_s = path.string();
@@ -91,15 +50,6 @@ static FILE *lj_fopen(char const *f, const char *mode) noexcept {
     auto fp = fopen(path_s.c_str(), mode);
     if (fp)
         return fp;
-
-    constexpr auto mods_root = "../mods/workshop-"sv;
-    if (path_s.starts_with(mods_root) && get_workshop_dir()) {
-        auto mod_path = std::filesystem::path(path_s.substr(mods_root.size()));
-        // auto mod_name = *mod_path.begin();
-        auto real_path = get_workshop_dir().value() / mod_path;
-        auto fp = fopen(real_path.string().c_str(), mode);
-        return fp;
-    }
 
     if (mode[0] == 'w' || (mode[0] == 'a' && mode[1] == '+')) {
         // write mode

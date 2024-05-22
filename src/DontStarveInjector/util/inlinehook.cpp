@@ -7,15 +7,18 @@
 #endif
 
 #include <cassert>
+#include <cstring>
 #include <format>
 #include <memory>
 #include <memory_resource>
 #include <unordered_map>
-#include <cstring>
 
 #include "inlinehook.hpp"
 
-static std::unordered_map<void *, std::string> hooked;
+static auto& hooked() {
+    static std::unordered_map<void *, std::string> hooked;
+    return hooked;
+}
 
 #define GUM_X86_JMP_MAX_DISTANCE (MAXINT32 - 16384)
 
@@ -33,21 +36,25 @@ bool HookWriteCode(void *from, const void *code, size_t len) {
     memcpy(from, code, len);
     return ::VirtualProtect(from, len, PAGE_EXECUTE_READ, &oldProtect);
 #else
-    if (mprotect(from, len, PROT_READ | PROT_WRITE) != 0) {
+    static auto page_size = sysconf(_SC_PAGESIZE);
+    auto aligned_address = (void *) (uintptr_t(from) & ~(page_size - 1));
+    auto aligned_size = (1 + (((uintptr_t) from + len - 1 - (uintptr_t) aligned_address) / page_size)) * page_size;
+    if (mprotect(aligned_address, aligned_size, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
         return false;
     }
     memcpy(from, code, len);
-    return mprotect(from, len, PROT_READ | PROT_EXEC) == 0;
+    return mprotect(aligned_address, aligned_size, PROT_READ | PROT_EXEC) == 0;
 #endif
 }
 
 bool HookByReg(uint8_t *from, uint8_t *to) {
-    assert(!hooked.contains(from));
+    assert(!hooked().contains(from));
     auto code = std::to_array<uint8_t>({0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xE0});
     *(uint64_t *) (code.data() + 2) = (uint64_t) to;
+    auto old_content = std::string((char*)from, code.size());
 
     if (HookWriteCode(from, code.data(), code.size())) {
-        hooked[from] = {(char *) from, code.size()};
+        hooked()[from] = old_content;
         return true;
     }
     return false;
@@ -59,7 +66,7 @@ inline auto format_address(uint8_t *from) {
 
 void ResetHook(uint8_t *from) {
     from = format_address(from);
-    auto node = hooked.extract(from);
+    auto node = hooked().extract(from);
     if (node) {
         auto &original = node.mapped();
         HookWriteCode(from, original.c_str(), original.size());

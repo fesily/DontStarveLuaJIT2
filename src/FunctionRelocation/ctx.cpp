@@ -1,9 +1,9 @@
 #include "ctx.hpp"
-#include <frida-gum.h>
-#include <filesystem>
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/basic_file_sink.h>
 #include "config.hpp"
+#include <filesystem>
+#include <frida-gum.h>
+#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/spdlog.h>
 namespace function_relocation {
     Ctx &get_ctx() {
         static Ctx ctx;
@@ -22,9 +22,11 @@ namespace function_relocation {
         if (ec != CS_ERR_OK)
             return false;
         cs_option(ctx.hcs, CS_OPT_DETAIL, CS_OPT_ON);
-        std::filesystem::remove(log_path);
-        spdlog::create<spdlog::sinks::basic_file_sink_st>(logger_name, log_path);
+        const auto real_log_path = std::filesystem::absolute(gum_process_get_main_module()->path).parent_path() / log_path;
+        std::filesystem::remove(real_log_path);
+        auto logger = spdlog::create<spdlog::sinks::basic_file_sink_st>(logger_name, real_log_path);
         ++ctx.ref;
+        logger->info("init ctx");
         return true;
     }
 
@@ -33,8 +35,8 @@ namespace function_relocation {
         --ctx.ref;
         if (ctx.ref.load() == 0) {
             cs_close(&ctx.hcs);
-            ctx.hcs = 0;   
+            ctx.hcs = 0;
         }
     }
 
-}
+}// namespace function_relocation

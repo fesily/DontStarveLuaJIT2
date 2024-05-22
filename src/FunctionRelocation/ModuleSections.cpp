@@ -14,10 +14,12 @@
 #endif
 
 #include <range/v3/all.hpp>
+#include <spdlog/spdlog.h>
 
 #include "ctx.hpp"
 #include "disasm.h"
 #include "ScanCtx.hpp"
+#include "config.hpp"
 #include "../DontStarveInjector/util/platform.hpp"
 
 #include <thread>
@@ -139,7 +141,10 @@ namespace function_relocation {
 
 
     bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections& sections, bool noScan) {
-        if (!get_module_sections(path, sections)) return false;
+        if (!get_module_sections(path, sections)) {
+            spdlog::get(logger_name)->error("cannot get_module_sections: {}", path);
+            return false;
+        }
         if (noScan) return true;
         ScanCtx ctx{sections, scan_start_address};
         // try get the function name by debug info

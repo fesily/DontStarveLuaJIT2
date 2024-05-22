@@ -11,15 +11,12 @@ find_package(nlohmann_json CONFIG REQUIRED)
 
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_library(signature_updater SHARED ${SOURCES})
-    set(GAME_EXECUTABLE_NAME "dontstarve_steam_x64")
-    set(GAME_SERVER_EXECUTABLE_NAME "dontstarve_dedicated_server_nullrenderer_x64")
+    set(GAME_EXECUTABLE_NAME "dontstarve_steam_x64_1")
+    set(GAME_SERVER_EXECUTABLE_NAME "dontstarve_dedicated_server_nullrenderer_x64_1")
     add_custom_target(update_signatures
-        COMMAND ${LUA_EXECUTABLE_PATH}
-        COMMAND ${GAME_INSTALL_PREFIX}/${GAME_EXECUTABLE_NAME}
-        COMMAND ${GAME_INSTALL_PREFIX}/${GAME_SERVER_EXECUTABLE_NAME}
-        ENVIRONMENT LD_PRELOAD="$<TARGET_FILE:signature_updater>"
+        ${CMAKE_COMMAND} -E env LD_PRELOAD="$<TARGET_FILE:signature_updater>" LUA51_SIGNATURE_OUTPUT_DIR="${CMAKE_INSTALL_PREFIX}"
+                 ${CMAKE_CURRENT_SOURCE_DIR}/update_signatures.sh /${LUA_EXECUTABLE_PATH} ./${GAME_EXECUTABLE_NAME} ./${GAME_SERVER_EXECUTABLE_NAME}
         WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
-        COMMENT "update signatures..."
         )
 else ()
     add_executable(signature_updater ${SOURCES})

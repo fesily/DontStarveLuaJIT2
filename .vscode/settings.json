@@ -107,6 +107,24 @@
         "lj_obj.h": "c",
         "lstring.h": "c",
         "lgc.h": "c",
-        "ldo.h": "c"
+        "ldo.h": "c",
+        "*.tcc": "cpp",
+        "cwctype": "cpp",
+        "string_view": "cpp",
+        "numbers": "cpp",
+        "semaphore": "cpp",
+        "shared_mutex": "cpp",
+        "cinttypes": "cpp",
+        "lcode.h": "c",
+        "lua.h": "c",
+        "string.h": "c",
+        "stdarg.h": "c",
+        "ldebug.h": "c",
+        "lzio.h": "c",
+        "lmem.h": "c",
+        "stdlib.h": "c",
+        "stdio.h": "c",
+        "lauxlib.h": "c",
+        "lualib.h": "c"
     }
 }

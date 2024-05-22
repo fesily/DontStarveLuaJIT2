@@ -11,7 +11,8 @@ with open(os.path.join(cwd, "missfunc.txt"), "r") as f:
 #include <string_view>
 using namespace std::string_view_literals;
 
-std::unordered_set<std::string_view> missfuncs = {
+auto& get_missfuncs() {
+static std::unordered_set<std::string_view> missfuncs = {
 """
     ]
     for line in f:
@@ -20,6 +21,8 @@ std::unordered_set<std::string_view> missfuncs = {
     outputs += [
         """
         };
+return missfuncs;
+}
 #endif
     """
     ]

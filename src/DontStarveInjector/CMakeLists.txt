@@ -19,7 +19,14 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(range-v3 CONFIG REQUIRED)
 
+set(CMAKE_SKIP_BUILD_RPATH  FALSE)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
 add_library(Injector SHARED ${SOURCES})
+
+set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")
+set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../lib64")
 
 target_include_directories(Injector PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
 target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})
@@ -29,8 +36,6 @@ target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(Injector PRIVATE spdlog::spdlog)
 target_link_libraries(Injector PRIVATE range-v3::meta range-v3::concepts range-v3::range-v3)
 
-target_include_directories(Injector PUBLIC ${STEAM_INCLUDE_DIR})
-target_link_libraries(Injector PRIVATE ${STEAM_LIBRARIES})
 target_link_libraries(Injector PRIVATE function_relocation)
 target_include_directories(Injector PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 

@@ -8,6 +8,8 @@
 #include <range/v3/all.hpp>
 #include <ranges>
 #include <string>
+#include <spdlog/spdlog.h>
+#include "config.hpp"
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GumMemoryRange, base_address, size);
 
 namespace function_relocation {
@@ -24,6 +26,7 @@ namespace function_relocation {
         bool create_file_signature(const char *path) {
             FileData data;
             if (!init_module_signature(path, 0, data.section, false)) {
+                spdlog::get(logger_name)->error("cannot init module signature:{}", path);
                 return false;
             }
             auto &section = data.section;
@@ -39,10 +42,12 @@ namespace function_relocation {
                 }
             }
 
-            const char *output_path = getenv("LUA51_SIGNATURE_PATH");
-            if (output_path == nullptr)
-                output_path = file_path;
-            std::ofstream sf{std::filesystem::absolute(output_path).c_str()};
+            std::filesystem::path output_path{file_path};
+            if (getenv("LUA51_SIGNATURE_OUTPUT_DIR") != nullptr)
+                output_path = std::filesystem::path(getenv("LUA51_SIGNATURE_OUTPUT_DIR"))/file_path;
+            output_path = std::filesystem::absolute(output_path);
+            std::ofstream sf{output_path.c_str()};
+            spdlog::get(logger_name)->warn("output lua51 signatures file:{}", output_path.string());
             nlohmann::json j;
             nlohmann::to_json(j, data);
             const auto msg = nlohmann::json::to_bjdata(j);

@@ -18,7 +18,6 @@
 #include <cstdint>
 #include <list>
 
-#include <lua.hpp>
 
 #if USE_LISTENER
 #include <frida-gum.h>
@@ -32,6 +31,9 @@
 #include "ctx.hpp"
 #include "spdlog/sinks/basic_file_sink.h"
 
+#if !ONLY_LUA51
+#include <lua.hpp>
+#endif
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -49,11 +51,20 @@ G_NORETURN void showError(const std::string_view &msg) {
 }
 
 static const char *luajitModuleName =
-#if ONLY_LUA51
-        "Lua51";
-#else
-        "Lua51DS";
+#ifndef _WIN32
+        "lib"
 #endif
+#if ONLY_LUA51
+        "lua51"
+#else
+        "lua51DS"
+#endif
+#ifdef _WIN32
+    ".dll"
+#else
+    ".so"
+#endif
+;
 static module_handler_t hluajitModule;
 
 #include "api_listener.hpp"
@@ -128,10 +139,17 @@ static void voidFunc() {
 }
 
 static std::map<std::string, std::string> replace_hook = {
-        {"lua_getinfo", "lua_getinfo_game"}};
+#if !ONLY_LUA51
+        {"lua_getinfo", "lua_getinfo_game"}
+#endif
+        };
 
 static void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures, const ListExports_t &exports) {
     hluajitModule = loadlib(luajitModuleName);
+    if (!hluajitModule) {
+        spdlog::error("cannot load luajit: {}", luajitModuleName);
+        return;
+    }
 
     std::list<uint8_t *> hookeds;
     for (auto &[name, _]: exports) {
@@ -161,9 +179,16 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
     }
 
 #if DEBUG_GETSIZE_PATCH
+    // In the game code direct read the internal lua vm sturct offset, will crash here
     if (luaRegisterDebugGetsizeSignature.scan(mainPath.c_str())) {
 #if DEBUG_GETSIZE_PATCH == 1
-        auto code = std::to_array<uint8_t>({0x48, 0xc7, 0xc2, 0, 0, 0, 0, 0x90});
+    auto code = std::to_array<uint8_t>(
+#ifdef _WIN32
+        {0x48, 0xc7, 0xc2, 0x00, 0x00, 0x00, 0x00, 0x90}
+#else
+        {0x48, 0xC7, 0xC6, 0x00, 0x00, 0x00, 0x00, 0x90}
+#endif
+        );
         HookWriteCode((uint8_t *) luaRegisterDebugGetsizeSignature.target_address, code.data(), code.size());
 #else
         Hook((uint8_t *)luaRegisterDebugGetsizeSignature.target_address, (uint8_t *)&voidFunc);
@@ -195,9 +220,10 @@ auto create_defer(Fn&& fn) {
     };
     return std::unique_ptr<void, decltype(deleter)>(nullptr, std::move(deleter));
 }
+
 extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
-    gum_init();
 #ifdef _WIN32
+    gum_init();
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>()));
 #endif
     const auto log_path = "DontStarveInjector.log";
@@ -239,3 +265,40 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     RedirectOpenGLEntries();
 #endif
 }
+
+
+#ifndef _WIN32
+#include <dlfcn.h>
+
+int (*origin)(const char* path);
+int chdir_hook(const char* path){
+    static bool injector = false;
+    if ("../data"sv == path && !injector) {
+#ifndef NDEBUG
+        while (!gum_process_is_debugger_attached())
+        {
+            std::this_thread::sleep_for(200ms);
+        }
+#endif
+        Inject(!getExePath().string().contains("dontstarve_dedicated_server_nullrenderer"));
+        spdlog::default_logger_raw()->flush();
+        injector = true;
+    }
+    return origin(path);
+}
+__attribute__((constructor)) void init() {
+    gum_init_embedded();
+    auto path = std::filesystem::path(gum_process_get_main_module()->path).filename().string();
+    if (!path.contains("dontstarve")) {
+        gum_deinit_embedded();
+        return;
+    }
+    auto api = dlsym(RTLD_DEFAULT, "chdir");
+    if (!api) {
+        gum_deinit_embedded();
+        return;
+    }
+    auto intercetor = gum_interceptor_obtain();
+    gum_interceptor_replace_fast(intercetor, api, (void*)&chdir_hook, (void**)&origin);
+}
+#endif

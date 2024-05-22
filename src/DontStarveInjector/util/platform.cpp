@@ -27,10 +27,19 @@ std::filesystem::path getExePath() {
 
 module_handler_t loadlib(const char *name) {
     if (!std::filesystem::exists(name)) {
+        std::filesystem::path path;
         if (auto p = getExePath().parent_path() / name; std::filesystem::exists(p))
-            return loadlib(p.string().c_str());
-        if (auto p = std::filesystem::current_path() / name; std::filesystem::exists(p))
-            return loadlib(p.string().c_str());
+            path = p;
+        else if (auto p = std::filesystem::current_path() / name; std::filesystem::exists(p))
+            path = p;
+#ifndef _WIN32
+        else if (auto p = getExePath().parent_path() / "lib"/ name; std::filesystem::exists(p))
+            path = p;
+        else if (auto p = std::filesystem::current_path() / "lib" /name; std::filesystem::exists(p))
+            path = p;
+#endif
+        if (!path.empty())
+            return loadlib(path.string().c_str());
     }
     return
 #ifdef _WIN32

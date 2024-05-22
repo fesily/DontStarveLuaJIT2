@@ -72,7 +72,9 @@ int main()
 #include "ctx.hpp"
 static void create_signature() {
     function_relocation::init_ctx();
-    exit(!function_relocation::FileSignature::create_file_signature(gum_process_get_main_module()->path));
+    auto succcess = function_relocation::FileSignature::create_file_signature(gum_process_get_main_module()->path);
+    spdlog::info("create_signature:{}", succcess);
+    exit(!succcess);
 }
 
 static bool (*orgin)(uint32_t unOwnAppID);
@@ -109,9 +111,9 @@ __attribute__((constructor)) void init() {
     }
     auto interceptor = gum_interceptor_obtain();
     if (isClient) 
-        gum_interceptor_replace_fast(interceptor, api, (void*) &SteamGameServer_Init_hook, (void **) &orgin1);
-    else 
         gum_interceptor_replace_fast(interceptor, api, (void *) &SteamAPI_RestartAppIfNecessary_hook, (void **) &orgin);
+    else 
+        gum_interceptor_replace_fast(interceptor, api, (void*) &SteamGameServer_Init_hook, (void **) &orgin1);
     std::thread([isClient] {
                     if (pre_updater()) {
                         exit(update(isClient, gum_process_get_main_module()->path));
