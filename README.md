@@ -1,3 +1,5 @@
+[中文版本](README_CN.md)
+
 # DontStarveLuaJIT
 	Don't Starve LuaJIT optimization patch
 
