@@ -1,3 +1,5 @@
+[中文版本](README_CN.md)
+
 # DontStarveLuaJIT
 	Don't Starve LuaJIT optimization patch
 
@@ -10,8 +12,9 @@ Be sure to back up your archives, there are no guarantees that there are no bugs
 ## Don't Starve Together
 
 - [x] windows x64
-- [ ] windows x86
-- [ ] linux 
+- [x] ~~windows x86~~
+- [x] linux x64
+- [x] ~~linux x86~~
 - [ ] macos
 - [ ] andorid
 - [ ] switch
@@ -19,7 +22,7 @@ Be sure to back up your archives, there are no guarantees that there are no bugs
 ## Don't Starve 
 
 - [ ] windows x64
-- [ ] windows x86
+- [ ] ~~windows x86~~
 - [ ] linux 
 - [ ] macos
 - [ ] andorid
@@ -31,7 +34,7 @@ Be sure to back up your archives, there are no guarantees that there are no bugs
 ### Windows
 Just order the mod at [workshop/DontStarveLuaJit2](https://steamcommunity.com/sharedfiles/filedetails/?id=3010545764)
 
-Copy all files to the bin64 folder in the game directory
+Copy all `bin64/windows` files to the `bin64` folder in the game directory
 
 like: C:\\steamapps\\Don't Starve Together\\bin64\
 	
@@ -40,6 +43,25 @@ Launch the game, press ` and type:
 print(_Version)
 	
 And you can see message started with "LuaJIT".
+
+### Linux
+I've only tested it on ubuntu, but I can also test it on steamos if someone can help me with the steamos environment, haha!
+
+
+- Copy all `bin64/linux` files to the `bin64` folder in the game directory
+- Rename original game executable `dontstarve_steam_x64` to `dontstarve_steam_x64_1`
+- Create new file `dontstarve_steam_x64` with the content:
+
+```bash
+#!/bin/bash
+export LD_LIBRARY_PATH=./lib64
+export LD_PRELOAD=./lib64/libInjector.so
+./dontstarve_steam_x64_1
+```
+
+- Run the shell `chmod +x ./dontstarve_steam_x64`
+- Is't done
+
 
 ## How to build
 

@@ -377,6 +377,7 @@ namespace function_relocation {
     void *
     fix_func_address_by_signature(ModuleSections &target, const Function &original, uintptr_t limit_address, SignatureInfo *signature) {
         static std::unordered_map<std::string, SignatureInfo> knowns_signature = {
+#ifdef __linux__
                 {"lua_pushvalue"s, {0, "48 89 0A 8B 40 08 89 42  08 48 83 43 10 10 5B C3"s, -0x10}},
                 {"lua_insert"s, {0, "48 89 D1 48 83 EA 10 4C  29 C9 4C 8B 04 31 4C 89"s, -0x20}},
                 {"lua_xmove"s, {0, "48 8B 4F 10 48 8B 56 10  48 01 C1 48 83 C0 10 4C"s, -0x30}},
@@ -384,6 +385,7 @@ namespace function_relocation {
                 {"lua_pushnil"s, {0, "48 8B 47 10 C7 40 08 00 00 00 00 48 83 47 10 10 C3"s, 0x0}},
                 {"lua_replace"s, {0, "48 8B 53 10 81 FD EE D8"s, -0x18}},
                 {"lua_pushvfstring"s, {0, "C7 44 24 0C 30 00 00 00 48 89 44 24 18 E8 ?? ?? ?? ?? 48  81 C4 D8 00 00 00 C3"s, -0x75}}
+#endif
                 };
 
         Creator creator{&target, &original, limit_address, signature};
