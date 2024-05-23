@@ -11,8 +11,6 @@ if not _G.rawget(_G, "jit") then
     return
 end
 
-_G.os.remove("luajit.mutex")
-
 local TEMPLATES = require "widgets/redux/templates"
 local old_getbuildstring = TEMPLATES.GetBuildString
 TEMPLATES.GetBuildString = function()

@@ -116,8 +116,6 @@ static auto need_updater() {
 
 void updater();
 
-std::filesystem::path getLuajitMtxPath();
-
 static auto unsetup_pre(std::filesystem::path game_dir) {
     // unsetup
     SetEnvironmentVariableW(L"GAME_FILE", (game_dir / "Winmm.dll").c_str());
@@ -126,7 +124,6 @@ static auto unsetup_pre(std::filesystem::path game_dir) {
 }
 
 static std::optional<const char *> setup_pre(std::filesystem::path game_dir) {
-    std::filesystem::remove(getLuajitMtxPath());
     auto modDir = getModDir();
     if (!modDir) {
         return std::nullopt;

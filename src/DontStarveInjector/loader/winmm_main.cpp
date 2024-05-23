@@ -130,9 +130,6 @@ std::optional<std::filesystem::path> getModindexPath()
 }
 #endif
 
-std::filesystem::path getLuajitMtxPath() {
-    return getGameDir() / "data" / "luajit.mutex";
-}
 
 bool isClientMod = []() {
     return !getExePath().filename().string().contains("server");
@@ -190,11 +187,6 @@ void removeBat()
 #endif
 
 static bool shouldloadmod() {
-    auto mutex_file = getLuajitMtxPath();
-    if (std::filesystem::exists(mutex_file)) {
-        spdlog::info("find luajit.mutex");
-        return false;
-    }
 #ifdef ENABLE_AUTOINSTALLER
     auto clientSaveDir = GetClientSaveDir();
     if (!clientSaveDir)
@@ -214,9 +206,6 @@ static bool shouldloadmod() {
         return false;
     }
 #endif
-    auto fp = fopen(mutex_file.string().c_str(), "w");
-    if (fp)
-        fclose(fp);
     return true;
 }
 
@@ -235,7 +224,6 @@ void DontStarveInjectorStart() {
     if (isClientMod && !std::string_view(GetCommandLineA()).contains("-disable_check_luajit_mod")) {
         updater();
         if (!shouldloadmod()) {
-            std::filesystem::remove(getLuajitMtxPath());
             return;
         }
     } else {

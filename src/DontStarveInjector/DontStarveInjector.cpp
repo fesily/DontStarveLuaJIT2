@@ -221,13 +221,16 @@ auto create_defer(Fn&& fn) {
     return std::unique_ptr<void, decltype(deleter)>(nullptr, std::move(deleter));
 }
 
+bool server_is_master() {
+    return std::string_view{get_cwd()}.contains("DST_Master");
+}
+
 extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 #ifdef _WIN32
     gum_init();
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>()));
 #endif
-    const auto log_path = "DontStarveInjector.log";
-    std::filesystem::remove(log_path);
+    const auto log_path = std::format("DontStarveInjector_{}.log", isClient ? "client"s : std::format("server_{}", server_is_master()?"master":"caves"));
     spdlog::default_logger()->sinks().push_back(std::make_shared<spdlog::sinks::basic_file_sink_st>(log_path));
 #if USE_LISTENER
     interceptor = gum_interceptor_obtain();
