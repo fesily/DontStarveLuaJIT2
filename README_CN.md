@@ -3,7 +3,7 @@
 
 ## 注意
 
-请务必备份您的存档，因为我们无法保证存档中没有错误！
+请务必备份您的存档，因为我们无法保证插件不会导致存档损坏！
 
 # Roadload
 
@@ -29,8 +29,6 @@
 ### 安装： 
 
 ### Windows
-只需在 [workshop/DontStarveLuaJit2](https://steamcommunity.com/sharedfiles/filedetails/?id=3010545764) 订购该修改器即可。
-
 将所有 `bin64/windows` 文件复制到游戏目录下的 `bin64` 文件夹中
 
 比如 C:\\steamapps\\Don't Starve Together\bin64\

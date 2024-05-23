@@ -32,8 +32,6 @@ Be sure to back up your archives, there are no guarantees that there are no bugs
 ## Installation: 
 
 ### Windows
-Just order the mod at [workshop/DontStarveLuaJit2](https://steamcommunity.com/sharedfiles/filedetails/?id=3010545764)
-
 Copy all `bin64/windows` files to the `bin64` folder in the game directory
 
 like: C:\\steamapps\\Don't Starve Together\\bin64\
