@@ -11,6 +11,7 @@ set(SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
 )
 
 find_package(libzip CONFIG REQUIRED)
@@ -27,6 +28,8 @@ add_library(Injector SHARED ${SOURCES})
 
 set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")
 set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../lib64")
+
+target_include_directories(Injector PUBLIC ${STEAM_INCLUDE_DIR})
 
 target_include_directories(Injector PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
 target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})

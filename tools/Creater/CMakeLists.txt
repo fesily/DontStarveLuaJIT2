@@ -5,6 +5,7 @@ set(SOURCES
         ${DONTSTARVEINJECTOR_ROOT}/DontStarveSignature.cpp
         ${DONTSTARVEINJECTOR_ROOT}/SignatureJson.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
 )
 find_package(spdlog CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)

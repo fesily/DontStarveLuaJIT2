@@ -1,4 +1,6 @@
-﻿#include <cstdio>
+﻿#include "frida-gum.h"
+
+#include <cstdio>
 #include <cstdint>
 #include <filesystem>
 #include <unordered_set>
@@ -9,10 +11,26 @@
 #include <mutex>
 #include <optional>
 #include "util/zipfile.hpp"
+#include "util/gum_platform.hpp"
 
+#include <steam_api.h>
 #include <thread>
 #include <chrono>
 #include <vector>
+
+static bool get_mod_folder(ISteamUGC *ugc, PublishedFileId_t id, std::filesystem::path &res) {
+    auto state = ugc->GetItemState(id);
+    if (state & k_EItemStateInstalled) {
+        uint64 punSizeOnDisk;
+        uint32 punTimeStamp;
+        char path[260];
+        if (ugc->GetItemInstallInfo(id, &punSizeOnDisk, path, 255, &punTimeStamp)) {
+            res = std::filesystem::path(path).parent_path();
+            return true;
+        }
+    }
+    return false;
+}
 
 using namespace std::literals;
 
@@ -43,6 +61,44 @@ static std::filesystem::path to_path(const char *p) {
 
 static std::mutex mtx;
 
+
+inline void __cdecl SteamInternal_Init_SteamUGC1(ISteamUGC **p) {
+    const auto module_path = get_module_path("steam_api");
+    static auto SteamInternal_FindOrCreateUserInterface_ptr = (decltype(&SteamInternal_FindOrCreateUserInterface))(gum_module_find_export_by_name(module_path.c_str(), "SteamInternal_FindOrCreateUserInterface"));
+    static auto SteamAPI_GetHSteamUser_ptr = (decltype(&SteamAPI_GetHSteamUser))(gum_module_find_export_by_name(module_path.c_str(), "SteamAPI_GetHSteamUser"));
+
+    *p = (ISteamUGC *) (SteamInternal_FindOrCreateUserInterface_ptr(SteamAPI_GetHSteamUser_ptr(), "STEAMUGC_INTERFACE_VERSION017"));
+}
+inline ISteamUGC *SteamUGC1() {
+    const auto module_path = get_module_path("steam_api");
+    if (module_path.empty())
+        return nullptr;
+    static auto SteamInternal_ContextInit_ptr = (decltype(&SteamInternal_ContextInit))(gum_module_find_export_by_name(module_path.c_str(), "SteamInternal_ContextInit"));
+
+    static void *s_CallbackCounterAndContext[3] = {(void *) &SteamInternal_Init_SteamUGC1, 0, 0};
+    return *(ISteamUGC **) SteamInternal_ContextInit_ptr(s_CallbackCounterAndContext);
+};
+static std::optional<std::filesystem::path> init_steam_workshop_dir() {
+    std::filesystem::path dir;
+
+    auto ugc = SteamUGC1();
+    auto len = ugc->GetNumSubscribedItems();
+    std::vector<PublishedFileId_t> PublishedFileIds;
+    PublishedFileIds.resize(len);
+    PublishedFileIds.resize(ugc->GetSubscribedItems(PublishedFileIds.data(), len));
+    for (auto PublishedFileId: PublishedFileIds) {
+        if (get_mod_folder(ugc, PublishedFileId, dir)) {
+            break;
+        }
+    }
+    return dir;
+}
+
+static std::optional<std::filesystem::path> get_workshop_dir() {
+    static auto dir = init_steam_workshop_dir();
+    return dir;
+}
+
 static FILE *lj_fopen(char const *f, const char *mode) noexcept {
     auto path = to_path(f);
     auto path_s = path.string();
@@ -50,6 +106,16 @@ static FILE *lj_fopen(char const *f, const char *mode) noexcept {
     auto fp = fopen(path_s.c_str(), mode);
     if (fp)
         return fp;
+
+    const auto &workshop_dir = get_workshop_dir();
+    constexpr auto mods_root = "../mods/workshop-"sv;
+    if (path_s.starts_with(mods_root) && workshop_dir) {
+        auto mod_path = std::filesystem::path(path_s.substr(mods_root.size()));
+        // auto mod_name = *mod_path.begin();
+        auto real_path = workshop_dir.value() / mod_path;
+        auto fp = fopen(real_path.string().c_str(), mode);
+        return fp;
+    }
 
     if (mode[0] == 'w' || (mode[0] == 'a' && mode[1] == '+')) {
         // write mode
