@@ -39,7 +39,7 @@ server_only_mod = true
 configuration_options = {
     {
         name = "EnabledJIT",
-        labe1 = translate({ en = "EnabledJIT", zh = "开启JIT模式" }),
+        label = translate({ en = "EnabledJIT", zh = "开启JIT模式" }),
         hover = translate({
             en = "It is recommended to turn off if the lag is severe in the game",
             zh = "在游戏中卡顿现象很严重的建议关闭"
@@ -52,7 +52,7 @@ configuration_options = {
     },
     {
         name = "JitOpt",
-        labe1 = translate({ en = "JitOpt", zh = "JIT优化选项" }),
+        label = translate({ en = "JitOpt", zh = "JIT优化选项" }),
         hover = translate({
             en = "maybe faster, maybe slower.",
             zh = "可能更快, 可能更慢."
@@ -65,7 +65,7 @@ configuration_options = {
     },
     {
         name = "ModBlackList",
-        labe1 = translate({ en = "ModJitBlackList", zh = "MODJit黑名单" }),
+        label = translate({ en = "ModJitBlackList", zh = "MODJit黑名单" }),
         hover = translate({ en = "some mod is't not appropriate", zh = "有些mod可能写的特别,不合适jit模式" }),
         options = {
             { description = "On",  data = true },
