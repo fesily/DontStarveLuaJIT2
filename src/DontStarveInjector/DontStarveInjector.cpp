@@ -220,12 +220,13 @@ auto create_defer(Fn&& fn) {
     };
     return std::unique_ptr<void, decltype(deleter)>(nullptr, std::move(deleter));
 }
-
+bool DontStarveInjectorIsClient = false;
 bool server_is_master() {
     return std::string_view{get_cwd()}.contains("DST_Master");
 }
 
 extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
+    DontStarveInjectorIsClient = isClient;
 #ifdef _WIN32
     gum_init();
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>()));

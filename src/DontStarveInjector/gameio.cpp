@@ -60,7 +60,7 @@ static std::filesystem::path to_path(const char *p) {
 }
 
 static std::mutex mtx;
-
+extern bool DontStarveInjectorIsClient;
 
 inline void __cdecl SteamInternal_Init_SteamUGC1(ISteamUGC **p) {
     const auto module_path = get_module_path("steam_api");
@@ -78,10 +78,29 @@ inline ISteamUGC *SteamUGC1() {
     static void *s_CallbackCounterAndContext[3] = {(void *) &SteamInternal_Init_SteamUGC1, 0, 0};
     return *(ISteamUGC **) SteamInternal_ContextInit_ptr(s_CallbackCounterAndContext);
 };
+inline void __cdecl SteamInternal_Init_SteamGameServerUGC1(ISteamUGC **p) {
+    const auto module_path = get_module_path("steam_api");
+    static auto SteamInternal_FindOrCreateGameServerInterface_ptr = (decltype(&SteamInternal_FindOrCreateGameServerInterface)) (gum_module_find_export_by_name(module_path.c_str(), "SteamInternal_FindOrCreateGameServerInterface"));
+    static auto SteamGameServer_GetHSteamUser_ptr = (decltype(&SteamGameServer_GetHSteamUser)) (gum_module_find_export_by_name(module_path.c_str(), "SteamGameServer_GetHSteamUser"));
+
+
+    *p = (ISteamUGC *) (SteamInternal_FindOrCreateGameServerInterface_ptr(SteamGameServer_GetHSteamUser_ptr(), "STEAMUGC_INTERFACE_VERSION017"));
+}
+
+inline ISteamUGC *SteamGameServerUGC1() {
+    const auto module_path = get_module_path("steam_api");
+    if (module_path.empty())
+        return nullptr;
+    static auto SteamInternal_ContextInit_ptr = (decltype(&SteamInternal_ContextInit)) (gum_module_find_export_by_name(module_path.c_str(), "SteamInternal_ContextInit"));
+
+    static void *s_CallbackCounterAndContext[3] = {(void *) &SteamInternal_Init_SteamGameServerUGC1, 0, 0};
+    return *(ISteamUGC **) SteamInternal_ContextInit_ptr(s_CallbackCounterAndContext);
+};
+
 static std::optional<std::filesystem::path> init_steam_workshop_dir() {
     std::filesystem::path dir;
 
-    auto ugc = SteamUGC1();
+    auto ugc = DontStarveInjectorIsClient ? SteamUGC1() : SteamGameServerUGC1();
     auto len = ugc->GetNumSubscribedItems();
     std::vector<PublishedFileId_t> PublishedFileIds;
     PublishedFileIds.resize(len);
