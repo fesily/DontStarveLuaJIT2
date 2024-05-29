@@ -1,6 +1,6 @@
 _G = GLOBAL
 
-if not _G.rawget(_G, "jit") then
+do
     local fp = _G.io.open("luajit_config.json", "w");
     if fp then
         local config = {
@@ -8,7 +8,6 @@ if not _G.rawget(_G, "jit") then
         }
         fp:write(_G.json.encode(config))
     end
-    return
 end
 
 local TEMPLATES = require "widgets/redux/templates"
