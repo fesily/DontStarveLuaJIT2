@@ -40,14 +40,14 @@ namespace function_relocation {
     static std::string to_hex(const uint8_t *first, const uint8_t *last) {
         const auto length = last - first;
         std::string res;
-        for (int i = 0; i < length; ++i) { res.append(std::format("{:0>2x}", first[i])); }
+        for (int i = 0; i < length; ++i) { res.append(std::format("{:0>2x} ", first[i])); }
         return res;
     }
 
     static std::string make_unknown_string(size_t length) {
         std::string res;
         res.reserve(length * 2);
-        for (int i = 0; i < length; ++i) { res.append("??"); }
+        for (int i = 0; i < length; ++i) { res.append("?? "); }
         return res;
     }
 
@@ -55,7 +55,7 @@ namespace function_relocation {
         size_t length = 0;
         for (auto &code: this->asm_codes) { length += code.size(); }
         std::string ret;
-        ret.reserve(length + lineMode ? asm_codes.size() : 1);
+        ret.reserve(length + (lineMode ? asm_codes.size() : 1));
         for (auto &code: this->asm_codes) {
             ret.append(code);
             if (lineMode) ret.append("\n");
@@ -86,7 +86,7 @@ namespace function_relocation {
         filter_signature(cs_insn *insn, uint64_t &maybe_end, decltype(Signature::asm_codes) &asm_codes) {
             const auto &csX86 = insn->detail->x86;
             std::string op_str = insn->op_str;
-#ifndef _WIN32
+#ifdef __linux__
             // linux上fpic生成的so跟直接生成应用程序的二进制上，对于加载确定的位置内存方式有一些差别
             // 把类似与 mov reg, 0x????? 转成 lea reg, [rip + 0x????]
             if (insn->id == X86_INS_MOV && csX86.op_count == 2) {
@@ -168,7 +168,8 @@ namespace function_relocation {
                 count++;
 
                 filter_signature(insn, maybe_end, ret.asm_codes);
-                if (insn->id == X86_INS_JMP || insn->id == X86_INS_INT3 || insn->id == X86_INS_RET || insn->id == X86_INS_CALL) {
+                if (insn->id == X86_INS_JMP || insn->id == X86_INS_INT3 || insn->id == X86_INS_RET ||
+                    insn->id == X86_INS_CALL) {
                     if (maybe_end >= (insn->address + insn->size)) continue;
                     if (!in_func || !in_func((void *) (insn->address + insn->size))) { break; }
                 }
@@ -192,7 +193,7 @@ namespace function_relocation {
 
             if (ks_asm(ks, CODE, 0, &encode, &size, &count) != KS_ERR_OK) {
                 spdlog::get(logger_name)->error("ERROR: ks_asm() failed & count = {}, error = {}",
-                       count, (int)ks_errno(ks));
+                                                count, (int) ks_errno(ks));
             }
             std::vector<uint8_t> res{encode, encode + size};
             // NOTE: free encode after usage to avoid leaking memory
@@ -203,11 +204,18 @@ namespace function_relocation {
 
             return res;
         }
-        Signature create_signature(ModuleSections *section, uint8_t *address, size_t size, size_t max_len) {
+
+        std::pair<Signature, uintptr_t>
+        create_signature(ModuleSections *section, uint8_t *address, size_t size, size_t max_len, int offset) {
             Signature signature{};
             disasm ds{address, size};
             bool skip_next_one = false;
+            uintptr_t real_address = (uintptr_t) address;
             for (const auto &insn: ds) {
+                if (offset-- > 0) {
+                    real_address = insn.address + insn.size;
+                    continue;
+                }
                 if (max_len-- == 0) break;
                 if (skip_next_one) {
                     skip_next_one = false;
@@ -220,19 +228,20 @@ namespace function_relocation {
                     case X86_INS_JMP:
                     case X86_INS_CALL:
                         if (operand1.type == X86_OP_MEM || operand0.type == X86_OP_IMM) {
-                            auto pref = std::format("{:0>2x}", insn.bytes[0]);
+                            auto pref = std::format("{:0>2x} ", insn.bytes[0]);
                             signature.asm_codes.push_back(pref + make_unknown_string(insn.size - 1));
                             continue;
                         }
                         break;
                     case X86_INS_LEA:
                     case X86_INS_MOV:
-#ifndef _WIN32
+#if defined(__linux__)
                         // `mov exx 0x?????`
                         if (insn.id == X86_INS_MOV && operand1.type == X86_OP_IMM && operand0.type == X86_OP_REG) {
                             if (section->in_module(operand1.imm)) {
                                 assert(insn.size == 5);
-                                signature.asm_codes.push_back(to_hex(insn.bytes, insn.bytes + 1) + make_unknown_string(insn.size - 1));
+                                signature.asm_codes.push_back(
+                                        to_hex(insn.bytes, insn.bytes + 1) + make_unknown_string(insn.size - 1));
                                 continue;
                             }
                         }
@@ -240,7 +249,7 @@ namespace function_relocation {
                         if (operand1.type == X86_OP_MEM && details.disp != 0 && operand1.mem.base == X86_REG_RIP) {
                             auto bytes = insn.bytes;
                             auto size = insn.size;
-#ifndef _WIN32
+#if defined(__linux__)
 
                             //"need transform so `lea rxx [rip + 0x??]` to `mov rxx 0xxxxxx`
                             assert(insn.id == X86_INS_LEA);
@@ -268,44 +277,82 @@ namespace function_relocation {
                 }
                 signature.asm_codes.push_back(to_hex(insn.bytes, insn.bytes + insn.size));
             }
-            return signature;
+            return {signature, real_address};
         }
-        void * sacn_by_signature(const std::string& signature, int signature_offset, bool skip_check = false) {
-                MemorySignature scan1{signature.c_str(), signature_offset, false};
-                scan1.scan(original->module->details.range.base_address, original->module->details.range.size);
-                if (!skip_check && scan1.targets.size() != 1) return nullptr;
 
-                if (skip_check || scan1.target_address == original->address) {
-                    MemorySignature scan{signature.c_str(), signature_offset, false};
-                    scan.scan(target->details.path.c_str());
-                    void *target = 0;
-                    if (scan.targets.size() == 1) target = (void *) scan.target_address;
-                    else {
-                        auto targets = scan.targets | std::views::filter([this](auto addr) { return addr >= limit_address; }) | ranges::to<std::vector>();
-                        if (targets.size() == 1) target = (void *) targets[0];
-                        auto ptrs = scan.targets | std::views::transform([](auto v) { return reinterpret_cast<void *>(v); });
-                        function_address.insert(function_address.end(), ptrs.begin(), ptrs.end());
-                    }
-                    if (target) {
-                        signature_info->pattern = signature;
-                        signature_info->pattern_offset = signature_offset;
-                        return target;
-                    }
+        void *scan_by_signature(const std::string &signature, int signature_offset, bool skip_check = false) {
+            MemorySignature scan1{signature.c_str(), signature_offset, false};
+            scan1.scan(original->module->details.range.base_address, original->module->details.range.size);
+            if (!skip_check && scan1.targets.size() != 1) return nullptr;
+
+            if (skip_check || scan1.target_address == original->address) {
+                MemorySignature scan{signature.c_str(), signature_offset, false};
+                assert(limit_address > target->text.base_address);
+                scan.scan(limit_address, target->text.size - (limit_address - target->text.base_address));
+                void *target = 0;
+                if (scan.targets.size() == 1) target = (void *) scan.target_address;
+                else {
+                    auto targets =
+                            scan.targets | std::views::filter([this](auto addr) { return addr >= limit_address; }) |
+                            ranges::to<std::vector>();
+                    if (targets.size() == 1) target = (void *) targets[0];
+                    auto ptrs =
+                            scan.targets | std::views::transform([](auto v) { return reinterpret_cast<void *>(v); });
+                    function_address.insert(function_address.end(), ptrs.begin(), ptrs.end());
                 }
-                return nullptr;
-        }
-        void *scan_by_block(ModuleSections *section, CodeBlock *block) {
-            for (size_t limit = std::min<size_t>(8, block->insn_count); limit <= block->insn_count; ++limit) {
-                const auto s = create_signature(section, (uint8_t *) block->address, block->size, limit);
-                auto signature = s.to_string(false);
-                while (signature.back() == '?') {
-                    signature.pop_back();
+                if (target && signature_info) {
+                    signature_info->pattern = signature;
+                    signature_info->pattern_offset = signature_offset;
+                    return target;
                 }
-                assert(block->address >= original->address);
-                int signature_offset = static_cast<int>(-(static_cast<intptr_t>(block->address) - static_cast<intptr_t>(original->address)));
-                if (auto ptr = sacn_by_signature(signature, signature_offset); ptr) return ptr;
             }
             return nullptr;
+        }
+
+        static auto trim(std::string s) {
+            while (s.front() == '?' || s.front() == ' ') {
+                s.erase(s.begin());
+            }
+            while (s.back() == '?' || s.back() == ' ') {
+                s.pop_back();
+            }
+            return s;
+        }
+
+        void *scan_by_block(ModuleSections *section, CodeBlock *block) {
+            std::string signature;
+            int signature_offset;
+            for (int limit = block->insn_count; limit > 1; --limit) {
+                for (int offset = block->insn_count - limit; offset >= 0; --offset) {
+                    const auto [s, real_address] = create_signature(section, (uint8_t *) block->address, block->size,
+                                                                    limit, offset);
+                    signature = trim(s.to_string(false));
+                    assert(real_address >= original->address);
+                    signature_offset = static_cast<int>(-(static_cast<intptr_t>(real_address) -
+                                                          static_cast<intptr_t>(original->address)));
+                    if (auto ptr = scan_by_signature(signature, signature_offset); ptr) return ptr;
+                }
+            }
+            return nullptr;
+        }
+
+        bool limit_signature() {
+            std::string &signature = signature_info->pattern;
+            int &signature_offset = signature_info->pattern_offset;
+            if (signature.size() <= 8 * 2 + 7)
+                return true;
+            for (size_t length = 8 * 2 + 7; length < signature.size(); length += 3) {
+                auto begin = 0;
+                for (; begin < length; begin += 3) {
+                    auto new_s = trim(signature.substr(begin, length));
+                    assert(signature_offset <= 0);
+                    const auto offset = signature_offset - begin;
+                    if (scan_by_signature(new_s, offset)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         ModuleSections *target;
@@ -314,10 +361,11 @@ namespace function_relocation {
         SignatureInfo *signature_info;
 
         std::vector<void *> function_address;
+
     };
 
 
-    static auto& signature_cache(){
+    static auto &signature_cache() {
         static std::unordered_map<void *, Signature> signature_cache;
         return signature_cache;
     }
@@ -371,11 +419,13 @@ namespace function_relocation {
     }
 
     static float calcBlockScore(CodeBlock *l) {
-        return l->external_call_functions.size() * 1.1f + l->call_functions.size() + l->consts.size() + l->const_numbers.size() * 0.8f + l->const_offset_numbers.size() * 0.5f + l->insn_count * 0.3;
+        return l->external_call_functions.size() * 1.1f + l->call_functions.size() + l->consts.size() +
+               l->const_numbers.size() * 0.8f + l->const_offset_numbers.size() * 0.5f + l->insn_count * 0.3;
     }
 
     void *
-    fix_func_address_by_signature(ModuleSections &target, const Function &original, uintptr_t limit_address, SignatureInfo *signature) {
+    fix_func_address_by_signature(ModuleSections &target, const Function &original, uintptr_t limit_address,
+                                  SignatureInfo *signature) {
         static std::unordered_map<std::string, SignatureInfo> knowns_signature = {
 #ifdef __linux__
                 {"lua_pushvalue"s, {0, "48 89 0A 8B 40 08 89 42  08 48 83 43 10 10 5B C3"s, -0x10}},
@@ -385,24 +435,38 @@ namespace function_relocation {
                 {"lua_pushnil"s, {0, "48 8B 47 10 C7 40 08 00 00 00 00 48 83 47 10 10 C3"s, 0x0}},
                 {"lua_replace"s, {0, "48 8B 53 10 81 FD EE D8"s, -0x18}},
                 {"lua_pushvfstring"s, {0, "C7 44 24 0C 30 00 00 00 48 89 44 24 18 E8 ?? ?? ?? ?? 48  81 C4 D8 00 00 00 C3"s, -0x75}}
+#elifdef __APPLE__
+                //season： use different register
+                {"lua_rawset"s, {0, "49 89 C6 49 8B 5F 10 48 8B 30 48 8D 53 E0 4C 89 FF E8"s, -0xD}},
+                {"luaL_loadbuffer"s, {0, "48 83 EC 18 48 8D 44 24 08 48 89 30 48 89 50 08 48 8D 35 0D 00 00 00"s, 0x0}},
+                {"lua_concat"s, {0, "7C 44  41 80 BE C0 00 00 00 00"s, -0xc}},
+                {"lua_rawgeti"s, {0, "89 41 08 48 83 43 10 10 48 83 C4 08"s, -0x24}},
+                {"lua_getfield"s, {0, "C7 42 08 04 00 00 00 48 8B 4B 10 48 89 DF"s, -0x33}},
+                {"lua_pushvfstring"s, {0, "48 3B 48 70 72 08 48 89 DF E8 ?? ?? ?? ?? 48 89 DF 4C 89 FE"s, -0x1f}},
+                {"lua_pushstring"s,
+                 {0, "49 8B 46 10 C7 40 08 00 00 00 00 48 83 C0 10 49 89 46 10 48 83 C4 08"s, -0x2c}},
 #endif
-                };
+        };
 
         Creator creator{&target, &original, limit_address, signature};
         if (knowns_signature.contains(original.name)) {
-            const auto& pattern = knowns_signature[original.name];
-            if (auto ptr = creator.sacn_by_signature(pattern.pattern, pattern.pattern_offset, true); ptr) return ptr;
+            const auto &pattern = knowns_signature[original.name];
+            if (auto ptr = creator.scan_by_signature(pattern.pattern, pattern.pattern_offset, true); ptr) return ptr;
         }
         // find the block to signature
         auto blocks = original.blocks;
 
         std::ranges::sort(blocks, [&](auto l, auto r) {
-            return calcBlockScore(original.module->address_blocks[l]) < calcBlockScore(original.module->address_blocks[r]);
+            return calcBlockScore(original.module->address_blocks[l]) <
+                   calcBlockScore(original.module->address_blocks[r]);
         });
 
         for (auto block_address: blocks | std::views::reverse) {
             auto block = original.module->address_blocks[block_address];
-            if (auto ptr = creator.scan_by_block(original.module, block); ptr) return ptr;
+            if (auto ptr = creator.scan_by_block(original.module, block); ptr) {
+                creator.limit_signature();
+                return ptr;
+            }
         }
         for (size_t take = 2; take <= original.blocks.size(); ++take) {
             auto begin = original.blocks.begin();
@@ -415,23 +479,31 @@ namespace function_relocation {
                                    std::accumulate(begin, end + 1, size_t(0), [&](size_t s, auto b) {
                                        return s + original.module->address_blocks[b]->insn_count;
                                    })};
-                if (auto ptr = creator.scan_by_block(original.module, &block); ptr) return ptr;
+                if (auto ptr = creator.scan_by_block(original.module, &block); ptr) {
+                    creator.limit_signature();
+                    return ptr;
+                }
             }
         }
-    #ifndef _WIN32
+#ifdef __linux__
         assert(false);
-    #else
+#else
         auto &function_address = creator.function_address;
         if (function_address.empty() && !target.functions.empty()) {
-            const auto ptrs = target.functions | std::views::transform([](auto &fn) { return reinterpret_cast<void *>(fn.address); });
+            const auto ptrs = target.functions |
+                              std::views::transform([](auto &fn) { return reinterpret_cast<void *>(fn.address); });
             function_address.insert(function_address.end(), ptrs.begin(), ptrs.end());
         }
-        function_address = function_address | std::views::filter([limit_address](auto addr) { return limit_address <= (uintptr_t) addr; }) | ranges::to<std::vector>();
+        function_address = function_address | std::views::filter(
+                [limit_address](auto addr) { return limit_address <= (uintptr_t) addr; }) | ranges::to<std::vector>();
         std::ranges::sort(function_address);
         auto [begin, end] = std::ranges::unique(function_address);
         function_address.erase(begin, end);
         const auto original_s = creator.create_signature((void *) original.address,
-                                                         [&original](auto address) { return original.in_function(reinterpret_cast<uintptr_t>(address)); });
+                                                         [&original](auto address) {
+                                                             return original.in_function(
+                                                                     reinterpret_cast<uintptr_t>(address));
+                                                         });
 
         int maybe_target_count = 1;
         void *maybe_target_addr = nullptr;

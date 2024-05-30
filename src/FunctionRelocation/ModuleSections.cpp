@@ -46,12 +46,14 @@ namespace function_relocation {
     using namespace std::literals;
 
 
-    CodeBlock* Function::get_block(size_t index) const {
+    CodeBlock *Function::get_block(size_t index) const {
         const auto address = blocks[index];
         return module->address_blocks[address];
     }
+
     void *
-    fix_func_address_by_signature(ModuleSections &target, const Function &original, uintptr_t limit_address, SignatureInfo *signature);
+    fix_func_address_by_signature(ModuleSections &target, const Function &original, uintptr_t limit_address,
+                                  SignatureInfo *signature);
 
     bool ModuleSections::in_text(uintptr_t address) const {
         return text.base_address <= address && address <= text.base_address + text.size;
@@ -93,7 +95,7 @@ namespace function_relocation {
         return out_details;
     }
 
-    static bool get_module_sections(const char *path, ModuleSections& sections) {
+    static bool get_module_sections(const char *path, ModuleSections &sections) {
         const auto details = get_module_details(path);
 #ifdef _WIN32
         const auto pe = peparse::ParsePEFromFile(details->path);
@@ -106,41 +108,40 @@ namespace function_relocation {
                             const peparse::image_section_header& s,
                             const peparse::bounded_buffer* data)
             {
-	            auto& [sections, base_address] = *static_cast<decltype(args)*>(user_data);
-	            auto real_address = s.VirtualAddress + base_address;
-	            auto len = data->bufLen;
-	            if (secName == ".text")
-		            sections->text = { real_address, len };
-	            else if (secName == ".rdata")
-		            sections->rodata = { real_address, len };
-	            return 0;
+                auto& [sections, base_address] = *static_cast<decltype(args)*>(user_data);
+                auto real_address = s.VirtualAddress + base_address;
+                auto len = data->bufLen;
+                if (secName == ".text")
+                    sections->text = { real_address, len };
+                else if (secName == ".rdata")
+                    sections->rodata = { real_address, len };
+                return 0;
             }, (void*)&args);
             DestructParsedPE(pe);
         }
 #else
 
         gum_module_enumerate_sections(path, +[](const GumSectionDetails *details, gpointer user_data) -> gboolean {
-            if (details->name == ".text"sv)
+            if (details->name == ".text"sv || details->name == "__text"sv)
                 (*(ModuleSections *) user_data).text = {details->address, details->size};
-            else if (details->name == ".rodata"sv)
+            else if (details->name == ".rodata"sv || details->name == "__cstring"sv)
                 (*(ModuleSections *) user_data).rodata = {details->address, details->size};
-            else if (details->name == ".plt"sv)
+            else if (details->name == ".plt"sv || details->name == "__stubs"sv)
                 (*(ModuleSections *) user_data).plt = {details->address, details->size};
-            else if (details->name == ".got.plt"sv)
+            else if (details->name == ".got.plt"sv || details->name == "__got"sv)
                 (*(ModuleSections *) user_data).got_plt = {details->address, details->size};
             return TRUE;
         }, (void *) &sections);
 #endif
         sections.details = {
-            .name = details->name,
-            .range = *details->range,
-            .path = details->path
+                .name = details->name,
+                .range = *details->range,
+                .path = details->path
         };
         return true;
     }
 
-
-    bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections& sections, bool noScan) {
+    bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections, bool noScan) {
         if (!get_module_sections(path, sections)) {
             spdlog::get(logger_name)->error("cannot get_module_sections: {}", path);
             return false;
@@ -153,11 +154,17 @@ namespace function_relocation {
         std::call_once(loadflag, loadlib, "dbghelp.dll");
 #endif
         gum_module_enumerate_symbols(path, +[](const GumSymbolDetails *details, gpointer data) -> gboolean {
-            if (details->type == GUM_SYMBOL_FUNCTION || details->type == GUM_SYMBOL_OBJECT) {
+            if (details->type == GUM_SYMBOL_FUNCTION || details->type == GUM_SYMBOL_OBJECT
+                #if defined(__MACH__) && defined(__APPLE__)
+                || details->type == GUM_SYMBOL_SECTION
+#endif
+                    ) {
                 const auto ptr = (decltype(ctx) *) data;
                 if (ptr->m.in_text(details->address) && details->address >= ptr->text.base_address)
                     ptr->known_functions.try_emplace(details->address,
-                                                     Function{.address=details->address, .size=(size_t) details->size, .name=details->name});
+                                                     Function{.address=details->address, .size=(size_t) (
+                                                             details->size == -1 ? 0
+                                                                                 : details->size), .name=details->name});
             }
             return true;
         }, &ctx);
@@ -185,8 +192,9 @@ namespace function_relocation {
             for (const auto &block_address: func.blocks) {
                 auto block = sections.address_blocks[block_address];
                 for (const auto &c: block->consts) {
-                    auto& constV = sections.Consts.at(c);
-                    if (constV.ref == 1 && (func.const_key == nullptr || constV.value.size() > func.const_key->size())) {
+                    auto &constV = sections.Consts.at(c);
+                    if (constV.ref == 1 &&
+                        (func.const_key == nullptr || constV.value.size() > func.const_key->size())) {
                         func.const_key = &constV.value;
                     }
                 }
@@ -198,24 +206,28 @@ namespace function_relocation {
         return true;
     }
 
-    uintptr_t ModuleSections::try_fix_func_address(const Function &original, SignatureInfo *signature, uintptr_t limit_address) {
+    uintptr_t
+    ModuleSections::try_fix_func_address(const Function &original, SignatureInfo *signature, uintptr_t limit_address) {
         return (uintptr_t) fix_func_address_by_signature(*this, original, limit_address, signature);
     }
 
-    size_t Function::consts_count() const
-    {
-        return ranges::accumulate(blocks | ranges::views::transform([this](uintptr_t address){return module->address_blocks[address]->consts.size();}), 0);
+    size_t Function::consts_count() const {
+        return ranges::accumulate(blocks | ranges::views::transform(
+                [this](uintptr_t address) { return module->address_blocks[address]->consts.size(); }), 0);
     }
-    size_t Function::calls_count() const
-    {
-        return ranges::accumulate(blocks | ranges::views::transform([this](uintptr_t address){return module->address_blocks[address]->call_functions.size();}), 0);
+
+    size_t Function::calls_count() const {
+        return ranges::accumulate(blocks | ranges::views::transform(
+                [this](uintptr_t address) { return module->address_blocks[address]->call_functions.size(); }), 0);
     }
-    size_t Function::const_count() const
-    {
-        return ranges::accumulate(blocks | ranges::views::transform([this](uintptr_t address){return module->address_blocks[address]->const_numbers.size();}), 0);
+
+    size_t Function::const_count() const {
+        return ranges::accumulate(blocks | ranges::views::transform(
+                [this](uintptr_t address) { return module->address_blocks[address]->const_numbers.size(); }), 0);
     }
-    size_t Function::const_offset_count() const
-    {
-        return ranges::accumulate(blocks | ranges::views::transform([this](uintptr_t address){return module->address_blocks[address]->const_offset_numbers.size();}), 0);
+
+    size_t Function::const_offset_count() const {
+        return ranges::accumulate(blocks | ranges::views::transform(
+                [this](uintptr_t address) { return module->address_blocks[address]->const_offset_numbers.size(); }), 0);
     }
 }

@@ -94,16 +94,24 @@ namespace function_relocation {
             return {};
         }
 
-        insn_type get_insn(void *addr) {
-            if (addr < buffer.data() && addr > buffer.data() + buffer.size()) {
-                return {};
-            }
-            auto size = buffer.size();
+        static insn_type get_insn(void *addr, size_t size) {
             auto code = static_cast<const uint8_t*>(addr);
+            const auto hcs  = get_ctx().hcs;
             auto insn = malloc_insn(hcs);
             if (!cs_disasm_iter(hcs, &code, &size, (uint64_t * ) & addr, insn.get()))
                 return {};
             return insn;
+        }
+
+        static insn_type get_pre_insn(void* addr) {
+            const auto begin = (char*)addr - 16;
+            for (int i = 0; i < 16; ++i) {
+                auto insn = get_insn(begin, 32);
+                if (insn && insn->address + insn->size == (uintptr_t )addr) {
+                    return insn;
+                }
+            }
+            return nullptr;
         }
 
         static insn_type malloc_insn(uintptr_t hcs) {

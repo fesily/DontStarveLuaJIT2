@@ -63,7 +63,9 @@ LUALIB_API int luaL_typerror (lua_State *L, int narg, const char *tname) {
   return luaL_argerror(L, narg, msg);
 }
 
-
+#ifdef __APPLE__
+__attribute__ ((__noinline__))
+#endif
 static void tag_error (lua_State *L, int narg, int tag) {
   luaL_typerror(L, narg, lua_typename(L, tag));
 }
@@ -404,7 +406,9 @@ LUALIB_API const char *luaL_findtable (lua_State *L, int idx,
 
 #define LIMIT	(LUA_MINSTACK/2)
 
-
+#ifdef __APPLE__
+__attribute__ ((__noinline__))
+#endif
 static int emptybuffer (luaL_Buffer *B) {
   size_t l = bufflen(B);
   if (l == 0) return 0;  /* put nothing on stack */
@@ -416,7 +420,9 @@ static int emptybuffer (luaL_Buffer *B) {
   }
 }
 
-
+#ifdef __APPLE__
+__attribute__ ((__noinline__))
+#endif
 static void adjuststack (luaL_Buffer *B) {
   if (B->lvl > 1) {
     lua_State *L = B->L;

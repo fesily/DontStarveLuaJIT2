@@ -61,8 +61,10 @@ static const char *luajitModuleName =
 #endif
 #ifdef _WIN32
     ".dll"
-#else
+#elif defined(__linux__)
     ".so"
+#elif defined(__APPLE__)
+    ".dylib"
 #endif
 ;
 static module_handler_t hluajitModule;
@@ -231,8 +233,10 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     gum_init();
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>()));
 #endif
+#ifdef __linux__
     const auto log_path = std::format("DontStarveInjector_{}.log", isClient ? "client"s : std::format("server_{}", server_is_master()?"master":"caves"));
     spdlog::default_logger()->sinks().push_back(std::make_shared<spdlog::sinks::basic_file_sink_st>(log_path));
+#endif
 #if USE_LISTENER
     interceptor = gum_interceptor_obtain();
 #endif

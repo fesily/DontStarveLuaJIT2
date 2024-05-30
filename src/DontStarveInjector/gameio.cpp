@@ -240,14 +240,14 @@ static __int64 lj_ftelli64(FILE *fp) noexcept
 
 #else
 
-static int lj_fseeko(FILE *fp, __off_t _Offset, int _Origin) {
+static int lj_fseeko(FILE *fp, off_t _Offset, int _Origin) {
     if (NoFileHandlers.contains((file_interface *) fp)) {
         return ((file_interface *) fp)->fseeko(_Offset, _Origin);
     }
     return fseeko(fp, _Offset, _Origin);
 }
 
-static __off64_t lj_ftello(FILE *fp) {
+static off_t lj_ftello(FILE *fp) {
     if (NoFileHandlers.contains((file_interface *) fp)) {
         return ((file_interface *) fp)->ftello();
     }

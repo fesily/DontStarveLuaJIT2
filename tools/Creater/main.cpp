@@ -8,6 +8,7 @@
 #include "LuaModule.hpp"
 #include "DontStarveSignature.hpp"
 #include "ctx.hpp"
+
 #ifndef GAMEDIR
 #error "not defined GAME_DIR"
 #endif
@@ -70,6 +71,7 @@ int main()
 #include <chrono>
 #include "ExectuableSignature.hpp"
 #include "ctx.hpp"
+
 static void create_signature() {
     function_relocation::init_ctx();
     auto succcess = function_relocation::FileSignature::create_file_signature(gum_process_get_main_module()->path);
@@ -81,14 +83,41 @@ static bool (*orgin)(uint32_t unOwnAppID);
 
 static bool SteamAPI_RestartAppIfNecessary_hook(uint32_t unOwnAppID) {
     using namespace std::chrono_literals;
+    spdlog::warn("SteamAPI_RestartAppIfNecessary_hook");
     std::this_thread::sleep_for(10000s);
     return orgin(unOwnAppID);
 }
-static bool (*orgin1)(uint32_t unIP, uint16_t usSteamPort, uint16_t usGamePort, uint16_t usQueryPort, int eServerMode, const char *pchVersionString );
-bool SteamGameServer_Init_hook(uint32_t unIP, uint16_t usSteamPort, uint16_t usGamePort, uint16_t usQueryPort, int eServerMode, const char *pchVersionString ){
+
+static bool (*orgin1)(uint32_t unIP, uint16_t usSteamPort, uint16_t usGamePort, uint16_t usQueryPort, int eServerMode,
+                      const char *pchVersionString);
+
+bool SteamGameServer_Init_hook(uint32_t unIP, uint16_t usSteamPort, uint16_t usGamePort, uint16_t usQueryPort,
+                               int eServerMode, const char *pchVersionString) {
     using namespace std::chrono_literals;
+    spdlog::warn("SteamGameServer_Init_hook");
     std::this_thread::sleep_for(10000s);
     return orgin1(unIP, usSteamPort, usGamePort, usQueryPort, eServerMode, pchVersionString);
+}
+
+static void HookGame(const char *api_name, bool isClient) {
+    auto hsteam = dlopen(
+#ifdef __linux__
+            "libsteam_api.so"
+#else
+            "@executable_path/../Library/libsteam_api.dylib"
+#endif
+            , RTLD_NOW);
+    auto api = dlsym(hsteam, api_name);
+    if (!api) {
+        gum_deinit_embedded();
+        return;
+    }
+    auto interceptor = gum_interceptor_obtain();
+    auto ret = gum_interceptor_replace(interceptor, api, isClient ? (void *) &SteamAPI_RestartAppIfNecessary_hook
+                                                                  : (void *) &SteamGameServer_Init_hook, nullptr,
+                                       isClient ? (void **) &orgin : (void **) &orgin1);
+    if (ret != GumReplaceReturn::GUM_REPLACE_OK)
+        exit(ret);
 }
 
 __attribute__((constructor)) void init() {
@@ -97,23 +126,22 @@ __attribute__((constructor)) void init() {
     if (!path.contains("dontstarve")) {
         if (path.contains("lua51")) {
             std::thread(create_signature).detach();
-        }else {
+        } else {
             gum_deinit_embedded();
         }
         return;
     }
-    auto hsteam = dlopen("libsteam_api.so", RTLD_NOW);
+
     bool isClient = !path.contains("nullrenderer");
-    auto api = dlsym(hsteam, isClient ? "SteamAPI_RestartAppIfNecessary" : "SteamInternal_GameServer_Init");
-    if (!api) {
-        gum_deinit_embedded();
-        return;
-    }
-    auto interceptor = gum_interceptor_obtain();
-    if (isClient) 
-        gum_interceptor_replace_fast(interceptor, api, (void *) &SteamAPI_RestartAppIfNecessary_hook, (void **) &orgin);
-    else 
-        gum_interceptor_replace_fast(interceptor, api, (void*) &SteamGameServer_Init_hook, (void **) &orgin1);
+    const auto api_name = isClient ?
+                          "SteamAPI_RestartAppIfNecessary"
+                                   : "SteamInternal_GameServer_Init";
+    HookGame(api_name, isClient);
+#ifdef __APPLE__
+    // apple will check debugger, when debugger attach no call SteamAPI_RestartAppIfNecessary
+    if (isClient)
+        HookGame("SteamAPI_Init", isClient);
+#endif
     std::thread([isClient] {
                     if (pre_updater()) {
                         exit(update(isClient, gum_process_get_main_module()->path));

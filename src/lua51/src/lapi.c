@@ -45,7 +45,11 @@ const char lua_ident[] =
 #define api_incr_top(L)   {api_check(L, L->top < L->ci->top); L->top++;}
 
 
-
+#ifdef _WIN32
+declspec(noinline)
+#else
+__attribute__((noinline))
+#endif
 static TValue *index2adr (lua_State *L, int idx) {
   if (idx > 0) {
     TValue *o = L->base + (idx - 1);
@@ -1039,6 +1043,10 @@ LUA_API void *lua_newuserdata (lua_State *L, size_t size) {
 static
 #ifdef WIN32
  __forceinline
+#else
+#ifdef __APPLE__
+__attribute__((noinline))
+#endif
 #endif
  const char *aux_upvalue (StkId fi, int n, TValue **val) {
   Closure *f;
