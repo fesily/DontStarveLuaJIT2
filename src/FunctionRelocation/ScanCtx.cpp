@@ -230,9 +230,9 @@ namespace function_relocation {
             for (auto &[addr, tab]: switch_jump_tables) {
                 if (addr == jump_table_address || !tab.contains(jump_table_address)) continue;
                 assert(addr < jump_table_address);
-                auto cc =
-                        tab | std::views::filter([jump_table_address](auto p) { return p < jump_table_address; });
-                tab = std::set{std::from_range, cc};
+                tab =
+                        tab | std::views::filter([jump_table_address](auto p) { return p < jump_table_address; }) |
+                        ranges::to<std::set>();
             }
             auto &case_address = switch_jump_tables[jump_table_address];
 
