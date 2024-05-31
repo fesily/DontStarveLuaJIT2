@@ -101,7 +101,7 @@ struct memory_file final : public file_interface {
 struct zip_manager : public zip_manager_interface {
     std::string prefix;
     zip_t *archive = nullptr;
-    std::unordered_map<std::filesystem::path, zip_int64_t> paths;
+    std::unordered_map<std::string, zip_int64_t> paths;
 
     zip_manager(std::filesystem::path p) {
         prefix = p.stem().string() + "/";
