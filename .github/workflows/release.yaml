@@ -39,6 +39,7 @@ jobs:
         uses: lukka/run-cmake@v10
         with:
           configurePreset: 'ninja-multi-vcpkg'
+          configurePresetAdditionalArgs: "['-DCMAKE_OSX_ARCHITECTURES=x86_64']"
           buildPreset: 'ninja-vcpkg-release'
 
       - name: CMake install
@@ -54,7 +55,7 @@ jobs:
       - name: Clean Up windows
         if: ${{ matrix.target == 'windows' }}
         run: |
-          rm -rf ${{ github.workspace }}/Mod/bin64/osx
+          rm -r ${{ github.workspace }}/Mod/bin64/osx
           rm -r ${{ github.workspace }}/Mod/bin64/linux
 
       - name: Clean Up macos

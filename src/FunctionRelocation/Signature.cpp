@@ -487,6 +487,7 @@ namespace function_relocation {
         }
 #ifdef __linux__
         assert(false);
+        return nullptr;
 #else
         auto &function_address = creator.function_address;
         if (function_address.empty() && !target.functions.empty()) {
