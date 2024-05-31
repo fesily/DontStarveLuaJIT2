@@ -35,8 +35,8 @@ static bool get_mod_folder(ISteamUGC *ugc, PublishedFileId_t id, std::filesystem
 using namespace std::literals;
 
 static std::unordered_set<file_interface *> NoFileHandlers;
-static std::unordered_map<std::filesystem::path, std::unique_ptr<zip_manager_interface>> zipPaths = []() {
-    std::unordered_map<std::filesystem::path, std::unique_ptr<zip_manager_interface>> zipPaths;
+static std::unordered_map<std::string, std::unique_ptr<zip_manager_interface>> zipPaths = []() {
+    std::unordered_map<std::string, std::unique_ptr<zip_manager_interface>> zipPaths;
 #define ZIP_PATH_VALUE_KEAY(name) \
     zipPaths[#name] = nullptr
     ZIP_PATH_VALUE_KEAY(anim_dynamic);
@@ -64,34 +64,44 @@ extern bool DontStarveInjectorIsClient;
 
 inline void __cdecl SteamInternal_Init_SteamUGC1(ISteamUGC **p) {
     const auto module_path = get_module_path("steam_api");
-    static auto SteamInternal_FindOrCreateUserInterface_ptr = (decltype(&SteamInternal_FindOrCreateUserInterface))(gum_module_find_export_by_name(module_path.c_str(), "SteamInternal_FindOrCreateUserInterface"));
-    static auto SteamAPI_GetHSteamUser_ptr = (decltype(&SteamAPI_GetHSteamUser))(gum_module_find_export_by_name(module_path.c_str(), "SteamAPI_GetHSteamUser"));
+    static auto SteamInternal_FindOrCreateUserInterface_ptr = (decltype(&SteamInternal_FindOrCreateUserInterface)) (gum_module_find_export_by_name(
+            module_path.c_str(), "SteamInternal_FindOrCreateUserInterface"));
+    static auto SteamAPI_GetHSteamUser_ptr = (decltype(&SteamAPI_GetHSteamUser)) (gum_module_find_export_by_name(
+            module_path.c_str(), "SteamAPI_GetHSteamUser"));
 
-    *p = (ISteamUGC *) (SteamInternal_FindOrCreateUserInterface_ptr(SteamAPI_GetHSteamUser_ptr(), "STEAMUGC_INTERFACE_VERSION017"));
+    *p = (ISteamUGC *) (SteamInternal_FindOrCreateUserInterface_ptr(SteamAPI_GetHSteamUser_ptr(),
+                                                                    "STEAMUGC_INTERFACE_VERSION017"));
 }
+
 inline ISteamUGC *SteamUGC1() {
     const auto module_path = get_module_path("steam_api");
     if (module_path.empty())
         return nullptr;
-    static auto SteamInternal_ContextInit_ptr = (decltype(&SteamInternal_ContextInit))(gum_module_find_export_by_name(module_path.c_str(), "SteamInternal_ContextInit"));
+    static auto SteamInternal_ContextInit_ptr = (decltype(&SteamInternal_ContextInit)) (gum_module_find_export_by_name(
+            module_path.c_str(), "SteamInternal_ContextInit"));
 
     static void *s_CallbackCounterAndContext[3] = {(void *) &SteamInternal_Init_SteamUGC1, 0, 0};
     return *(ISteamUGC **) SteamInternal_ContextInit_ptr(s_CallbackCounterAndContext);
 };
+
 inline void __cdecl SteamInternal_Init_SteamGameServerUGC1(ISteamUGC **p) {
     const auto module_path = get_module_path("steam_api");
-    static auto SteamInternal_FindOrCreateGameServerInterface_ptr = (decltype(&SteamInternal_FindOrCreateGameServerInterface)) (gum_module_find_export_by_name(module_path.c_str(), "SteamInternal_FindOrCreateGameServerInterface"));
-    static auto SteamGameServer_GetHSteamUser_ptr = (decltype(&SteamGameServer_GetHSteamUser)) (gum_module_find_export_by_name(module_path.c_str(), "SteamGameServer_GetHSteamUser"));
+    static auto SteamInternal_FindOrCreateGameServerInterface_ptr = (decltype(&SteamInternal_FindOrCreateGameServerInterface)) (gum_module_find_export_by_name(
+            module_path.c_str(), "SteamInternal_FindOrCreateGameServerInterface"));
+    static auto SteamGameServer_GetHSteamUser_ptr = (decltype(&SteamGameServer_GetHSteamUser)) (gum_module_find_export_by_name(
+            module_path.c_str(), "SteamGameServer_GetHSteamUser"));
 
 
-    *p = (ISteamUGC *) (SteamInternal_FindOrCreateGameServerInterface_ptr(SteamGameServer_GetHSteamUser_ptr(), "STEAMUGC_INTERFACE_VERSION017"));
+    *p = (ISteamUGC *) (SteamInternal_FindOrCreateGameServerInterface_ptr(SteamGameServer_GetHSteamUser_ptr(),
+                                                                          "STEAMUGC_INTERFACE_VERSION017"));
 }
 
 inline ISteamUGC *SteamGameServerUGC1() {
     const auto module_path = get_module_path("steam_api");
     if (module_path.empty())
         return nullptr;
-    static auto SteamInternal_ContextInit_ptr = (decltype(&SteamInternal_ContextInit)) (gum_module_find_export_by_name(module_path.c_str(), "SteamInternal_ContextInit"));
+    static auto SteamInternal_ContextInit_ptr = (decltype(&SteamInternal_ContextInit)) (gum_module_find_export_by_name(
+            module_path.c_str(), "SteamInternal_ContextInit"));
 
     static void *s_CallbackCounterAndContext[3] = {(void *) &SteamInternal_Init_SteamGameServerUGC1, 0, 0};
     return *(ISteamUGC **) SteamInternal_ContextInit_ptr(s_CallbackCounterAndContext);
