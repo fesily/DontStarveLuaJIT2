@@ -114,11 +114,12 @@ struct zip_manager : public zip_manager_interface {
     }
 
     std::expected<std::string, std::string_view> readfile(const std::filesystem::path &path) override {
-        if (!paths.contains(path)) {
+        const auto key = path.string();
+        if (!paths.contains(key)) {
             return std::unexpected("can't find file"sv);
         }
 
-        std::unique_ptr<zip_file_t, void (*)(zip_file_t *)> fp(zip_fopen_index(archive, paths[path], 0),
+        std::unique_ptr<zip_file_t, void (*)(zip_file_t *)> fp(zip_fopen_index(archive, paths[key], 0),
                                                                [](zip_file_t *p) { if (p) zip_fclose(p); });
         if (fp == nullptr) {
             return std::unexpected("can't find file"sv);
