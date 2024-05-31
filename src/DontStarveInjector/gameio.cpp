@@ -151,7 +151,7 @@ static FILE *lj_fopen(char const *f, const char *mode) noexcept {
     } else {
         // read mode
         // try zip
-        auto key = *path.begin();
+        auto key = (*path.begin()).string();
         if (zipPaths.contains(key)) {
             auto zip_manager = zipPaths[key].get();
             if (!zip_manager) {
