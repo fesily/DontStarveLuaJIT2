@@ -21,14 +21,27 @@
 
 #include <ranges>
 
+using namespace std::literals;
+
 static gboolean ListLuaFuncCb(const GumExportDetails *details,
                               void *user_data) {
     if (details->type != _GumExportType::GUM_EXPORT_FUNCTION) {
         return true;
     }
-    if (get_missfuncs().contains(details->name))
+    const auto name = std::string_view{details->name};
+    if (get_missfuncs().contains(name))
         return true;
-    if (!std::string_view(details->name).starts_with("lua"))
+
+    if (!(name.starts_with("lua_") || name.starts_with("luaL_")))
+        return true;
+    constexpr auto only_base_api =
+#ifdef __APPLE__
+            //TODO: fix luaL_
+            true;
+#else
+    false;
+#endif
+    if (only_base_api && name.starts_with(("luaL_")))
         return true;
 #if USE_GAME_IO
     if (details->name == "luaL_openlibs"sv || details->name == "luaopen_io"sv)
@@ -36,6 +49,7 @@ static gboolean ListLuaFuncCb(const GumExportDetails *details,
         return true;
     }
 #endif
+
     auto &exports = *(ListExports_t *) user_data;
     exports.emplace_back(details->name, (GumAddress) details->address);
     return true;
@@ -60,7 +74,11 @@ create_signature(uintptr_t targetLuaModuleBase, const std::function<void(const S
 #ifdef _WIN32
             30720;
 #else
-            66820;
+#if defined(__APPLE__)
+            0x21F79;
+#else
+    66820;
+#endif
 #endif
     auto errormsg = update_signatures(signatures, targetLuaModuleBase, exports, lua_module_range, false);
     if (!errormsg.empty()) {
@@ -100,6 +118,7 @@ get_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase,
     }
     return exports;
 }
+
 std::expected<SignatureUpdater, std::string> SignatureUpdater::create(uintptr_t luaModuleBaseAddress) {
     SignatureUpdater updater;
     auto res = create_signature(luaModuleBaseAddress, [](auto &v) {});
@@ -111,7 +130,9 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(uintptr_t 
     return updater;
 
 }
-std::expected<SignatureUpdater, std::string> SignatureUpdater::create_or_update(bool isClient, uintptr_t luaModuleBaseAddress) {
+
+std::expected<SignatureUpdater, std::string>
+SignatureUpdater::create_or_update(bool isClient, uintptr_t luaModuleBaseAddress) {
     SignatureUpdater updater;
     SignatureJson json{isClient};
     auto signatures = json.read_from_signatures();
@@ -140,40 +161,48 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
                   bool updated) {
     const auto &lua51_path = get_module_path(lua51_name, 0);
     const auto &game_path = get_module_path(game_name, targetLuaModuleBase);
-    function_relocation::ModuleSections modulelua51{},moduleMain{};
-    bool noScanMain = false;
+    function_relocation::ModuleSections modulelua51{}, moduleMain{};
+    constexpr bool scanMainModule =
 #ifdef _WIN32
-    noScanMain = true;
+            false;
+#else
+            true;
 #endif
+
 #ifndef _WIN32
-        auto fileSignature = function_relocation::FileSignature::read_file_signature(function_relocation::FileSignature::file_path);
-        if (fileSignature)
-            fileSignature->fix_ptr();
+    auto fileSignature = function_relocation::FileSignature::read_file_signature(
+            function_relocation::FileSignature::file_path);
+    if (fileSignature)
+        fileSignature->fix_ptr();
 #endif
-    if (!init_module_signature(lua51_path.c_str(), 0, modulelua51, false) || !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain, noScanMain)
-        )
-        return std::format("init_module_signature failed!");
-    
+    if (!init_module_signature(lua51_path.c_str(), 0, modulelua51, false) ||
+        !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain, !scanMainModule)
+            )
+        return "init_module_signature failed!"s;
+
+#ifndef __APPLE__
     //明确定位 index2adr
     moduleMain.set_known_function(targetLuaModuleBase, "index2adr");
     auto lua_type_fn = gum_module_find_export_by_name(lua51_path.c_str(), "lua_type");
 #ifndef NDEBUG
-    if (auto fn =  modulelua51.find_function(lua_type_fn); fn && !fn->blocks.empty() && !fn->get_block(0)->call_functions.empty()){
+    if (auto fn = modulelua51.find_function(lua_type_fn); fn && !fn->blocks.empty() &&
+                                                          !fn->get_block(0)->call_functions.empty()) {
         const auto ptr = modulelua51.find_function(lua_type_fn)->get_block(0)->call_functions[0];
         assert(modulelua51.address_functions.contains(ptr) && modulelua51.address_functions[ptr]->name == "index2adr");
     }
 #endif
-    
-     for (size_t i = 0; i < exports.size(); i++) {
+#endif
+
+    for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
         auto original = (void *) gum_module_find_export_by_name(lua51_path.c_str(), name.c_str());
         if (original == nullptr || !modulelua51.find_function((uintptr_t) original)) {
-            return std::format("can't find address: {}", name.c_str());
+            return fmt::format("can't find address: {}", name.c_str());
         }
         modulelua51.set_known_function((uintptr_t) original, name.c_str());
         auto originalFunc = modulelua51.find_function((uintptr_t) original);
         if (!originalFunc) {
-            return std::format("can't find {} at module lua51", name);
+            return fmt::format("can't find {} at module lua51", name);
         }
     }
 
@@ -184,22 +213,24 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         auto original = (void *) gum_module_find_export_by_name(lua51_path.c_str(), name.c_str());
         auto originalFunc = modulelua51.find_function((uintptr_t) original);
 
-        auto& signature = funcs.at(name);
+        auto &signature = funcs.at(name);
         auto old_offset = GPOINTER_TO_INT(signature.offset);
         if (old_offset == 0)
             spdlog::info("try create signature [{}]", name);
         else
             spdlog::info("try fix signature [{}]: {}", name, old_offset);
-            
+
         auto maybe_target = targetLuaModuleBase + old_offset;
 
         uintptr_t target = 0;
-        if (!signature.pattern.empty()) {
+        if (!updated && !signature.pattern.empty()) {
             function_relocation::MemorySignature scan{signature.pattern.c_str(), signature.pattern_offset, false};
             if (scan.targets.size() == 1) {
                 target = scan.target_address;
-            }else {
-                const auto targets = scan.targets | std::ranges::views::filter([targetLuaModuleBase](auto addr) { return addr > targetLuaModuleBase; }) | ranges::to<std::vector>();
+            } else {
+                const auto targets = scan.targets | std::ranges::views::filter(
+                        [targetLuaModuleBase](auto addr) { return addr > targetLuaModuleBase; }) |
+                                     ranges::to<std::vector>();
                 if (targets.size() == 1) {
                     target = scan.scan(moduleMain.details.path.c_str());
                 }
@@ -211,39 +242,42 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
                 auto iter = fileSignature->section.known_functions.find(name);
                 if (iter != fileSignature->section.known_functions.end()) {
                     auto fn = iter->second;
-                    target = moduleMain.try_fix_func_address(*fn,  &signature, targetLuaModuleBase);
+                    target = moduleMain.try_fix_func_address(*fn, &signature, targetLuaModuleBase);
                 }
             }
         }
 #endif
         if (target == 0 || target < targetLuaModuleBase)
             target = moduleMain.try_fix_func_address(*originalFunc,
-                                            &signature, targetLuaModuleBase);    
-        
+                                                     &signature, targetLuaModuleBase);
+
         if (!target || target < targetLuaModuleBase) {
-            return std::format("func[{}] can't fix address, wait for mod update", name);
+            return fmt::format("func[{}] can't fix address, wait for mod update", name);
         }
         if (target == maybe_target)
             continue;
-#ifndef _WIN32
         // fix the offset by module
-        if (moduleMain.find_function(target) == nullptr) {
-            auto all_address = moduleMain.address_functions | std::ranges::views::transform([](auto& p){return p.first;}) | ranges::to<std::vector>();
+        if (scanMainModule && moduleMain.find_function(target) == nullptr) {
+            auto all_address =
+                    moduleMain.address_functions | std::ranges::views::transform([](auto &p) { return p.first; }) |
+                    ranges::to<std::vector>();
             std::ranges::sort(all_address);
-            auto iter = std::ranges::adjacent_find(all_address, [target](auto l, auto r){return l<=target && target<r;});
+            auto pattern_address = target - signature.pattern_offset;
+            auto iter = std::ranges::adjacent_find(all_address,
+                                                   [pattern_address](auto l, auto r) {
+                                                       return l <= pattern_address && pattern_address < r;
+                                                   });
             if (iter == all_address.end()) {
-                return std::format("func[{}] can't find the real address", name);
+                return fmt::format("func[{}] can't find the real address", name);
             }
             const auto fn = moduleMain.find_function(*iter);
-            auto pattern_address = target - signature.pattern_offset;
             target = fn->address;
-            auto pattern_offset = (intptr_t)target - (intptr_t)pattern_address;
+            auto pattern_offset = (intptr_t) target - (intptr_t) pattern_address;
             spdlog::info("refix signature pattern offset: [{}]->[{}]", signature.pattern_offset, pattern_offset);
             signature.pattern_offset = pattern_offset;
         }
-#endif
         auto new_offset = target - targetLuaModuleBase;
-        spdlog::info("update signatures [{}:{}]: {} to {}", name, (void*)target, old_offset, new_offset);
+        spdlog::info("update signatures [{}:{}]: {} to {}", name, (void *) target, old_offset, new_offset);
         signature.offset = new_offset;
     }
     function_relocation::release_signature_cache();

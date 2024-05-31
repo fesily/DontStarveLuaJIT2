@@ -12,13 +12,27 @@ find_package(nlohmann_json CONFIG REQUIRED)
 
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_library(signature_updater SHARED ${SOURCES})
-    set(GAME_EXECUTABLE_NAME "dontstarve_steam_x64_1")
-    set(GAME_SERVER_EXECUTABLE_NAME "dontstarve_dedicated_server_nullrenderer_x64_1")
-    add_custom_target(update_signatures
-        ${CMAKE_COMMAND} -E env LD_PRELOAD="$<TARGET_FILE:signature_updater>" LUA51_SIGNATURE_OUTPUT_DIR="${CMAKE_INSTALL_PREFIX}"
-                 ${CMAKE_CURRENT_SOURCE_DIR}/update_signatures.sh /${LUA_EXECUTABLE_PATH} ./${GAME_EXECUTABLE_NAME} ./${GAME_SERVER_EXECUTABLE_NAME}
-        WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
+
+    if (APPLE)
+        set(GAME_EXECUTABLE_NAME "dontstarve_steam_1")
+        set(GAME_SERVER_EXECUTABLE_NAME "dontstarve_dedicated_server_nullrenderer_1")
+        set(PRELOAD_ENV_KEY DYLD_INSERT_LIBRARIES)
+        add_custom_target(update_signatures
+                COMMAND ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" ./${GAME_EXECUTABLE_NAME}
+                COMMAND ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" ./${GAME_SERVER_EXECUTABLE_NAME}
+                WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
         )
+    else ()
+        set(GAME_EXECUTABLE_NAME "dontstarve_steam_x64_1")
+        set(GAME_SERVER_EXECUTABLE_NAME "dontstarve_dedicated_server_nullrenderer_x64_1")
+        set(PRELOAD_ENV_KEY LD_PRELOAD)
+
+        add_custom_target(update_signatures
+                ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" LUA51_SIGNATURE_OUTPUT_DIR="${CMAKE_INSTALL_PREFIX}"
+                ${CMAKE_CURRENT_SOURCE_DIR}/update_signatures.sh ${LUA_EXECUTABLE_PATH} ./${GAME_EXECUTABLE_NAME} ./${GAME_SERVER_EXECUTABLE_NAME}
+                WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
+        )
+    endif ()
 else ()
     add_executable(signature_updater ${SOURCES})
     add_custom_target(update_signatures

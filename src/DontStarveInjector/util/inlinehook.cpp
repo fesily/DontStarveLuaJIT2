@@ -3,6 +3,7 @@
 #else
 
 #include <sys/mman.h>
+#include <unistd.h>
 
 #endif
 
@@ -36,7 +37,12 @@ bool HookWriteCode(void *from, const void *code, size_t len) {
     memcpy(from, code, len);
     return ::VirtualProtect(from, len, PAGE_EXECUTE_READ, &oldProtect);
 #else
-    static auto page_size = sysconf(_SC_PAGESIZE);
+#ifndef _SC_PAGE_SIZE
+#define  PAGE_SIZE_MACRO _SC_PAGESIZE
+#else
+#define PAGE_SIZE_MACRO _SC_PAGE_SIZE
+#endif
+    static auto page_size = sysconf(PAGE_SIZE_MACRO);
     auto aligned_address = (void *) (uintptr_t(from) & ~(page_size - 1));
     auto aligned_size = (1 + (((uintptr_t) from + len - 1 - (uintptr_t) aligned_address) / page_size)) * page_size;
     if (mprotect(aligned_address, aligned_size, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {

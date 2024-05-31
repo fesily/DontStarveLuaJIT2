@@ -19,40 +19,50 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: windows-latest, target: windows, platform: win32-x64    }
-          - { os: ubuntu-24.04,   target: linux,   platform: linux-x64    }
+          - { os: windows-latest, target: windows, platform: win32-x64 }
+          - { os: ubuntu-24.04,   target: linux,   platform: linux-x64 }
+          - { os: macos-latest,   target: macos,   platform: macos-x64 }
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-            submodules: true
+          submodules: true
       - uses: lukka/get-cmake@latest
 
       - name: Restore from cache and setup vcpkg executable and data files.
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgJsonGlob: 'vcpkg.json'
-        
+
       - name: Run CMake+vcpkg+Ninja+CTest to build packages and generate/build/test the code.
         uses: lukka/run-cmake@v10
         with:
           configurePreset: 'ninja-multi-vcpkg'
+          configurePresetAdditionalArgs: "['-DCMAKE_OSX_ARCHITECTURES=x86_64']"
           buildPreset: 'ninja-vcpkg-release'
-      
+
       - name: CMake install
         run: |
-            cmake --build ./builds/ninja-multi-vcpkg --config Release --target install
+          cmake --build ./builds/ninja-multi-vcpkg --config Release --target install
 
-      - name: Clean Up
+      - name: Clean Up linux
         if: ${{ matrix.target == 'linux' }}
         run: |
           rm -rf ${{ github.workspace }}/Mod/bin64/windows
-      
-      - name: Clean Up1
+          rm -rf ${{ github.workspace }}/Mod/bin64/osx
+
+      - name: Clean Up windows
         if: ${{ matrix.target == 'windows' }}
         run: |
-           rm -r ${{ github.workspace }}/Mod/bin64/linux
+          rm -r ${{ github.workspace }}/Mod/bin64/osx
+          rm -r ${{ github.workspace }}/Mod/bin64/linux
+
+      - name: Clean Up macos
+        if: ${{ matrix.target == 'macos' }}
+        run: |
+          rm -rf ${{ github.workspace }}/Mod/bin64/windows
+          rm -r ${{ github.workspace }}/Mod/bin64/linux
 
       - name: Archive Release
         uses: thedoctor0/zip-release@0.7.5
@@ -66,5 +76,5 @@ jobs:
         uses: ncipollo/release-action@v1.14.0
         if: startsWith(github.ref, 'refs/tags/')
         with:
-            artifacts: '${{ matrix.target}}_Mod.zip'
-            allowUpdates: true
+          artifacts: '${{ matrix.target}}_Mod.zip'
+          allowUpdates: true

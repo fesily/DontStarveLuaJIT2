@@ -33,6 +33,12 @@
 #ifdef _WIN32
 constexpr auto lua51_name = "lua51";
 #else
-constexpr auto lua51_name = "liblua51.so";
+constexpr auto lua51_name = "liblua51."
+                            #if defined(__APPLE__)
+                            "dylib"
+#else
+"so"
+#endif
+;
 #endif
 constexpr auto game_name = "dontstarve_";

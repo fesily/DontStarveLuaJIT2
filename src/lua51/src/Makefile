@@ -62,7 +62,7 @@ $(LUA_SO): $(CORE_O) $(LIB_O)
 # 	$(CC) -o $@ $(LUA_O) $(LUA_A) -lm -shared
 
 $(LUA_T): $(LUA_O) $(LUA_A)
-	$(CC) -o $@ $(MYLDFLAGS) -DBUILD_AS_EXE  $(LUA_O) $(LUA_A) $(LIBS) -Wl,-Ttext-segment=0x40000000
+	$(CC) -o $@ $(MYLDFLAGS) $(LUA_O) $(LUA_A) $(LIBS)
 
 $(LUAC_T): $(LUAC_O) $(LUA_A)
 	$(CC) -o $@ $(MYLDFLAGS) $(LUAC_O) $(LUA_A) $(LIBS)
@@ -106,13 +106,17 @@ generic:
 	$(MAKE) all MYCFLAGS=
 
 linux:
-	$(MAKE) all MYCFLAGS="-DLUA_USE_LINUX -DBUILD_AS_EXE" MYLIBS="-Wl,-E -ldl -lreadline -lhistory -lncurses"
+	$(MAKE) all MYCFLAGS="-DLUA_USE_LINUX -DBUILD_AS_EXE" MYLIBS="-Wl,-E -ldl -lreadline -lhistory -lncurses -Wl,-Ttext-segment=0x40000000"
 
 linux_so:
 	$(MAKE) so MYCFLAGS="-DLUA_USE_LINUX -fPIC" MYLIBS="-Wl,-E -ldl -lreadline -lhistory -lncurses"
 
 macosx:
-	$(MAKE) all MYCFLAGS=-DLUA_USE_LINUX MYLIBS="-lreadline"
+	$(MAKE) all MYCFLAGS="-DLUA_USE_LINUX -DBUILD_AS_EXE -fomit-frame-pointer -fno-PIE" MYLIBS="-lreadline -fno-PIE -Wl,-image_base,0x40000000"
+
+macosx_so:
+	$(MAKE) so MYCFLAGS="-DLUA_USE_LINUX -fomit-frame-pointer -fno-unroll-loops -O1" MYLIBS="-lreadline"
+
 # use this on Mac OS X 10.3-
 #	$(MAKE) all MYCFLAGS=-DLUA_USE_MACOSX
 

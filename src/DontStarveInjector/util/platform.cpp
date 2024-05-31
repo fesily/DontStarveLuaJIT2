@@ -32,7 +32,7 @@ module_handler_t loadlib(const char *name) {
             path = p;
         else if (auto p = std::filesystem::current_path() / name; std::filesystem::exists(p))
             path = p;
-#ifndef _WIN32
+#if defined(__linux__)
         else if (auto p = getExePath().parent_path() / "lib"/ name; std::filesystem::exists(p))
             path = p;
         else if (auto p = std::filesystem::current_path() / "lib" /name; std::filesystem::exists(p))
