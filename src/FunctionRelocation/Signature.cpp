@@ -40,7 +40,7 @@ namespace function_relocation {
     static std::string to_hex(const uint8_t *first, const uint8_t *last) {
         const auto length = last - first;
         std::string res;
-        for (int i = 0; i < length; ++i) { res.append(std::format("{:0>2x} ", first[i])); }
+        for (int i = 0; i < length; ++i) { res.append(fmt::format("{:0>2x} ", first[i])); }
         return res;
     }
 
@@ -228,7 +228,7 @@ namespace function_relocation {
                     case X86_INS_JMP:
                     case X86_INS_CALL:
                         if (operand1.type == X86_OP_MEM || operand0.type == X86_OP_IMM) {
-                            auto pref = std::format("{:0>2x} ", insn.bytes[0]);
+                            auto pref = fmt::format("{:0>2x} ", insn.bytes[0]);
                             signature.asm_codes.push_back(pref + make_unknown_string(insn.size - 1));
                             continue;
                         }

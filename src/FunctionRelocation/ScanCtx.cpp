@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <vector>
 #include <map>
+#include <fmt/format.h>
 
 namespace function_relocation {
 
@@ -416,7 +417,7 @@ namespace function_relocation {
             const auto guess_size = guess_function_size(address);
             if (func.size && func.size != guess_size) {
                 fprintf(stderr, "%s",
-                        std::format("{} guess func size failed: {} guess {}\n", func.name.c_str(), func.size,
+                        fmt::format("{} guess func size failed: {} guess {}\n", func.name.c_str(), func.size,
                                     guess_size).c_str());
             }
         }
@@ -627,7 +628,7 @@ namespace function_relocation {
             }
         }
         fprintf(stderr, "%s\n",
-                std::format("address[{}] find new function limit:{}", address, next_insn_address).c_str());
+                fmt::format("address[{}] find new function limit:{}", address, next_insn_address).c_str());
         function_end(next_insn_address);
     }
 

@@ -21,6 +21,8 @@
 
 #include <ranges>
 
+using namespace std::literals;
+
 static gboolean ListLuaFuncCb(const GumExportDetails *details,
                               void *user_data) {
     if (details->type != _GumExportType::GUM_EXPORT_FUNCTION) {
@@ -176,7 +178,7 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
     if (!init_module_signature(lua51_path.c_str(), 0, modulelua51, false) ||
         !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain, !scanMainModule)
             )
-        return std::format("init_module_signature failed!");
+        return "init_module_signature failed!"s;
 
 #ifndef __APPLE__
     //明确定位 index2adr
@@ -195,12 +197,12 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         auto &[name, _] = exports[i];
         auto original = (void *) gum_module_find_export_by_name(lua51_path.c_str(), name.c_str());
         if (original == nullptr || !modulelua51.find_function((uintptr_t) original)) {
-            return std::format("can't find address: {}", name.c_str());
+            return fmt::format("can't find address: {}", name.c_str());
         }
         modulelua51.set_known_function((uintptr_t) original, name.c_str());
         auto originalFunc = modulelua51.find_function((uintptr_t) original);
         if (!originalFunc) {
-            return std::format("can't find {} at module lua51", name);
+            return fmt::format("can't find {} at module lua51", name);
         }
     }
 
@@ -250,7 +252,7 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
                                                      &signature, targetLuaModuleBase);
 
         if (!target || target < targetLuaModuleBase) {
-            return std::format("func[{}] can't fix address, wait for mod update", name);
+            return fmt::format("func[{}] can't fix address, wait for mod update", name);
         }
         if (target == maybe_target)
             continue;
@@ -266,7 +268,7 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
                                                        return l <= pattern_address && pattern_address < r;
                                                    });
             if (iter == all_address.end()) {
-                return std::format("func[{}] can't find the real address", name);
+                return fmt::format("func[{}] can't find the real address", name);
             }
             const auto fn = moduleMain.find_function(*iter);
             target = fn->address;
