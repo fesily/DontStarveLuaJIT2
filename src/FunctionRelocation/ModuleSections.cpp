@@ -152,6 +152,8 @@ namespace function_relocation {
 #ifdef _WIN32
         static auto loadflag = std::once_flag{};
         std::call_once(loadflag, loadlib, "dbghelp.dll");
+        //TODO: symbols is error, should special the pdb search path
+         gum_load_symbols(std::filesystem::path{path}.filename().string().c_str());
 #endif
         gum_module_enumerate_symbols(path, +[](const GumSymbolDetails *details, gpointer data) -> gboolean {
             if (details->type == GUM_SYMBOL_FUNCTION || details->type == GUM_SYMBOL_OBJECT

@@ -302,27 +302,25 @@ namespace function_relocation {
 
     static auto scan_pre_text_range(ScanCtx &ctx) {
         std::unordered_map<uint64_t, std::unordered_set<uint64_t>> maybeFunctions;
-        if (ctx.m.text.base_address < ctx.text.base_address) {
-            const auto range = GumMemoryRange{ctx.m.text.base_address, ctx.text.base_address - ctx.m.text.base_address};
-            for (auto ptr = (uint8_t *) range.base_address, end = (uint8_t *) range.base_address + range.size;
-                 ptr < end;) {
-                auto code = *ptr;
-                // call
-                if (code == 0xE8 || code == 0xE9) {
-                    const auto p = ptr;
-                    const auto offset = (int32_t *) (ptr + 1);
-                    const uintptr_t addr = ((uintptr_t) (ptr + 5)) + *offset;
-                    if (ctx.m.in_text(addr) && addr > ctx.text.base_address) {
-                        ptr += 5;
-                        if (code == 0xE8)
-                            ++ctx.sureFunctions[addr];
-                        else if (code == 0xE9)
-                            maybeFunctions[addr].emplace((uintptr_t) p);
-                        continue;
-                    }
+        const auto& range = ctx.m.text;
+        for (auto ptr = (uint8_t *) range.base_address, end = (uint8_t *) range.base_address + range.size;
+                ptr < end;) {
+            auto code = *ptr;
+            // call
+            if (code == 0xE8 || code == 0xE9) {
+                const auto p = ptr;
+                const auto offset = (int32_t *) (ptr + 1);
+                const uintptr_t addr = ((uintptr_t) (ptr + 5)) + *offset;
+                if (ctx.m.in_text(addr) && addr >= ctx.text.base_address) {
+                    ptr += 5;
+                    if (code == 0xE8)
+                        ++ctx.sureFunctions[addr];
+                    else if (code == 0xE9)
+                        maybeFunctions[addr].emplace((uintptr_t) p);
+                    continue;
                 }
-                ++ptr;
             }
+            ++ptr;
         }
         return maybeFunctions;
     }

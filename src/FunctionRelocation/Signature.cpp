@@ -282,11 +282,13 @@ namespace function_relocation {
 
         void *scan_by_signature(const std::string &signature, int signature_offset, bool skip_check = false) {
             MemorySignature scan1{signature.c_str(), signature_offset, false};
+            scan1.log = !nolog;
             scan1.scan(original->module->details.range.base_address, original->module->details.range.size);
             if (!skip_check && scan1.targets.size() != 1) return nullptr;
 
             if (skip_check || scan1.target_address == original->address) {
                 MemorySignature scan{signature.c_str(), signature_offset, false};
+                scan.log = !nolog;
                 assert(limit_address > target->text.base_address);
                 scan.scan(limit_address, target->text.size - (limit_address - target->text.base_address));
                 void *target = 0;
@@ -337,6 +339,13 @@ namespace function_relocation {
         }
 
         bool limit_signature() {
+            nolog = true;
+            struct S{
+                ~S() {
+                    self->nolog = false;
+                }
+                Creator* self;
+            } scope{this};
             std::string &signature = signature_info->pattern;
             int &signature_offset = signature_info->pattern_offset;
             if (signature.size() <= 8 * 2 + 7)
@@ -361,6 +370,8 @@ namespace function_relocation {
         SignatureInfo *signature_info;
 
         std::vector<void *> function_address;
+
+        bool nolog;
 
     };
 

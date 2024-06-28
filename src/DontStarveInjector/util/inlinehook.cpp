@@ -66,10 +66,6 @@ bool HookByReg(uint8_t *from, uint8_t *to) {
     return false;
 }
 
-inline auto format_address(uint8_t *from) {
-    return *from == 0xe9 ? (uint8_t *) ((uint64_t) from + *(int32_t *) (from + 1) + 5) : from;
-}
-
 void ResetHook(uint8_t *from) {
     from = format_address(from);
     auto node = hooked().extract(from);

@@ -14,7 +14,8 @@ static gboolean sacnBaseAddrCb(GumAddress address, gsize size, gpointer user_dat
     if (self->only_one) assert(self->target_address == 0);
     self->target_address = address + self->pattern_offset;
     self->targets.push_back(address + self->pattern_offset);
-    spdlog::get(logger_name)->info("\t {}", (void *) self->target_address);
+    if (self->log)
+        spdlog::get(logger_name)->info("\t {}", (void *) self->target_address);
     return true;
 }
 
@@ -28,7 +29,8 @@ uintptr_t MemorySignature::scan(const char* m) {
     target_address = 0;
     auto match_pattern = gum_match_pattern_new_from_string(pattern);
     assert(match_pattern);
-    spdlog::get(logger_name)->info("{} Signature {}", m, pattern);
+    if (log)
+        spdlog::get(logger_name)->info("{} Signature {}", m, pattern);
     auto ctx = std::pair{ this, match_pattern };
     gum_module_enumerate_ranges(m, page, findBaseAddrCb, (gpointer)&ctx);
     gum_match_pattern_unref(match_pattern);
@@ -38,7 +40,8 @@ uintptr_t MemorySignature::scan(uintptr_t address, size_t size) {
     target_address = 0;
     auto match_pattern = gum_match_pattern_new_from_string(pattern);
     assert(match_pattern);
-    spdlog::get(logger_name)->info("Scan [{}, {}] Signature {}", (void*)address, size, pattern);
+    if (log)
+        spdlog::get(logger_name)->info("Scan [{}, {}] Signature {}", (void *) address, size, pattern);
     auto ctx = std::pair{ this, match_pattern };
     GumMemoryRange range{address, size};
     gum_memory_scan(&range, match_pattern, sacnBaseAddrCb, (void*)this);

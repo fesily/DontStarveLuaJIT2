@@ -2,7 +2,7 @@
 #include "config.hpp"
 #include <filesystem>
 #include <frida-gum.h>
-#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -26,8 +26,7 @@ namespace function_relocation {
         cs_option(ctx.hcs, CS_OPT_DETAIL, CS_OPT_ON);
 #ifndef __APPLE__
         const auto real_log_path = std::filesystem::absolute(gum_process_get_main_module()->path).parent_path() / log_path;
-        std::filesystem::remove(real_log_path);
-        auto logger = spdlog::create<spdlog::sinks::basic_file_sink_st>(logger_name, real_log_path.string());
+        auto logger = spdlog::create<spdlog::sinks::rotating_file_sink_st>(logger_name, real_log_path.string(), 1048576*100, 1);
 #else
         auto logger = spdlog::create<spdlog::sinks::ansicolor_stderr_sink_st>(logger_name);
 #endif

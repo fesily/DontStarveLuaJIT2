@@ -20,6 +20,7 @@
 #include "util/gum_platform.hpp"
 
 #include <ranges>
+#include "util/inlinehook.hpp"
 
 using namespace std::literals;
 
@@ -162,12 +163,6 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
     const auto &lua51_path = get_module_path(lua51_name, 0);
     const auto &game_path = get_module_path(game_name, targetLuaModuleBase);
     function_relocation::ModuleSections modulelua51{}, moduleMain{};
-    constexpr bool scanMainModule =
-#ifdef _WIN32
-            false;
-#else
-            true;
-#endif
 
 #ifndef _WIN32
     auto fileSignature = function_relocation::FileSignature::read_file_signature(
@@ -176,7 +171,7 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         fileSignature->fix_ptr();
 #endif
     if (!init_module_signature(lua51_path.c_str(), 0, modulelua51, false) ||
-        !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain, !scanMainModule)
+        !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain, false)
             )
         return "init_module_signature failed!"s;
 
@@ -184,7 +179,7 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
     //明确定位 index2adr
     moduleMain.set_known_function(targetLuaModuleBase, "index2adr");
     auto lua_type_fn = gum_module_find_export_by_name(lua51_path.c_str(), "lua_type");
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !defined(_WIN32)
     if (auto fn = modulelua51.find_function(lua_type_fn); fn && !fn->blocks.empty() &&
                                                           !fn->get_block(0)->call_functions.empty()) {
         const auto ptr = modulelua51.find_function(lua_type_fn)->get_block(0)->call_functions[0];
@@ -196,6 +191,10 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
     for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
         auto original = (void *) gum_module_find_export_by_name(lua51_path.c_str(), name.c_str());
+
+#ifdef _WIN32
+        original = format_address((uint8_t *) original);
+#endif
         if (original == nullptr || !modulelua51.find_function((uintptr_t) original)) {
             return fmt::format("can't find address: {}", name.c_str());
         }
@@ -210,8 +209,7 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
     // fix all signatures
     for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
-        auto original = (void *) gum_module_find_export_by_name(lua51_path.c_str(), name.c_str());
-        auto originalFunc = modulelua51.find_function((uintptr_t) original);
+        auto originalFunc = modulelua51.known_functions.at(name.c_str());
 
         auto &signature = funcs.at(name);
         auto old_offset = GPOINTER_TO_INT(signature.offset);
@@ -257,7 +255,7 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         if (target == maybe_target)
             continue;
         // fix the offset by module
-        if (scanMainModule && moduleMain.find_function(target) == nullptr) {
+        if (moduleMain.find_function(target) == nullptr) {
             auto all_address =
                     moduleMain.address_functions | std::ranges::views::transform([](auto &p) { return p.first; }) |
                     ranges::to<std::vector>();
