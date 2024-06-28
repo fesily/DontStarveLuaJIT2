@@ -33,7 +33,7 @@ static intptr_t ReadGameVersionFromMemory() {
     function_relocation::MemorySignature signature{patten.data(), 0x0, false};
     function_relocation::ModuleSections section;
     const auto mainModule = gum_process_get_main_module();
-    function_relocation::init_module_signature(mainModule->path, 0, section, true);
+    function_relocation::init_module_signature(mainModule->path, 0, section);
     signature.scan(mainModule->range->base_address, mainModule->range->size);
     uintptr_t version = -1;
     for (const auto address: signature.targets) {

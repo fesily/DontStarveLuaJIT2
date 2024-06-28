@@ -112,6 +112,6 @@ namespace function_relocation {
         uintptr_t try_fix_func_address(const Function &original, SignatureInfo* maybe_addr, uintptr_t limit_address);
     };
 
-    bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections, bool noScan);
+    bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections);
 }
 

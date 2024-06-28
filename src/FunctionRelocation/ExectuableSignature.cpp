@@ -25,7 +25,7 @@ namespace function_relocation {
 
         bool create_file_signature(const char *path) {
             FileData data;
-            if (!init_module_signature(path, 0, data.section, false)) {
+            if (!init_module_signature(path, 0, data.section)) {
                 spdlog::get(logger_name)->error("cannot init module signature:{}", path);
                 return false;
             }

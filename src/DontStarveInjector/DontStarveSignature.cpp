@@ -170,8 +170,8 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
     if (fileSignature)
         fileSignature->fix_ptr();
 #endif
-    if (!init_module_signature(lua51_path.c_str(), 0, modulelua51, false) ||
-        !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain, false)
+    if (!init_module_signature(lua51_path.c_str(), 0, modulelua51) ||
+        !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain)
             )
         return "init_module_signature failed!"s;
 

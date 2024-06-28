@@ -141,12 +141,11 @@ namespace function_relocation {
         return true;
     }
 
-    bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections, bool noScan) {
+    bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections) {
         if (!get_module_sections(path, sections)) {
             spdlog::get(logger_name)->error("cannot get_module_sections: {}", path);
             return false;
         }
-        if (noScan) return true;
         ScanCtx ctx{sections, scan_start_address};
         // try get the function name by debug info
 #ifdef _WIN32
