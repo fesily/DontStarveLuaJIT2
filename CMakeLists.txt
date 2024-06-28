@@ -33,7 +33,7 @@ else ()
     message(FATAL_ERROR "Not supported platform")
 endif ()
 
-project(DontStarveLuaJIT VERSION 0.3.10)
+project(DontStarveLuaJIT VERSION 0.5.3)
 
 set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod)
 if (UNIX AND APPLE)
