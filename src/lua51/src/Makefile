@@ -8,7 +8,7 @@
 PLAT= none
 
 CC= gcc
-CFLAGS= -O2 -Wall $(MYCFLAGS) -DDST
+CFLAGS= -O2 -fno-strict-aliasing -Wall $(MYCFLAGS) -DDST
 AR= ar rcu
 RANLIB= ranlib
 RM= rm -f
