@@ -36,6 +36,10 @@ dst_compatible = true
 client_only_mod = true
 server_only_mod = true
 
+-- Preview image
+icon_atlas = "images/modicon.xml"
+icon = "modicon.tex"
+
 configuration_options = {
     {
         name = "EnabledJIT",
