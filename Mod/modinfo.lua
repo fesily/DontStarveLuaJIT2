@@ -22,7 +22,7 @@ description = translate(
 
 author = "fesil"
 
-version = "0.3.10"
+version = "0.5.3"
 
 forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -35,6 +35,10 @@ dst_compatible = true
 --TODO: need test compatible without the mod
 client_only_mod = true
 server_only_mod = true
+
+-- Preview image
+icon_atlas = "images/modicon.xml"
+icon = "modicon.tex"
 
 configuration_options = {
     {
