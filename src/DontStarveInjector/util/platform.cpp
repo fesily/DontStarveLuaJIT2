@@ -74,14 +74,13 @@ void unloadlib(module_handler_t h) {
 #include <cstdio>
 #include <charconv>
 
+#ifdef _WIN32
 static std::string exec(const char *cmd) {
     std::array<char, 128> buffer;
     std::string result;
-#ifdef _WIN32
 #define popen _popen
 #define pclose _pclose
-#endif
-    std::shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
+    std::shared_ptr<FILE> pipe(_popen(cmd, "r"), _pclose);
     if (!pipe) throw std::runtime_error("popen() failed!");
     while (!feof(pipe.get())) {
         if (fgets(buffer.data(), 128, pipe.get()) != nullptr)
@@ -105,6 +104,11 @@ static std::string getCommandLineForProcess(uintptr_t pid) {
     std::string output = exec(command.c_str());
     return output;
 }
+#else
+uintptr_t getParentId() {
+    return getppid();
+}
+#endif
 
 const char *get_cwd(uintptr_t pid) {
 #ifdef _WIN32
