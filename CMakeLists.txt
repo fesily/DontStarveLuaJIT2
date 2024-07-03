@@ -112,7 +112,7 @@ add_subdirectory("src/FunctionRelocation")
 set(FUNCTION_RELOCATION_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/FunctionRelocation)
 
 add_subdirectory("src/DontStarveInjector")
-if (msvc)
+if (MSVC)
     add_subdirectory("tools/Checker")
 endif ()
 add_subdirectory("tools/Creater")

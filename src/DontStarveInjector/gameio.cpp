@@ -13,24 +13,10 @@
 #include "util/zipfile.hpp"
 #include "util/gum_platform.hpp"
 
-#include <steam_api.h>
 #include <thread>
 #include <chrono>
 #include <vector>
-
-static bool get_mod_folder(ISteamUGC *ugc, PublishedFileId_t id, std::filesystem::path &res) {
-    auto state = ugc->GetItemState(id);
-    if (state & k_EItemStateInstalled) {
-        uint64 punSizeOnDisk;
-        uint32 punTimeStamp;
-        char path[260];
-        if (ugc->GetItemInstallInfo(id, &punSizeOnDisk, path, 255, &punTimeStamp)) {
-            res = std::filesystem::path(path).parent_path();
-            return true;
-        }
-    }
-    return false;
-}
+#include <cassert>
 
 using namespace std::literals;
 
@@ -59,72 +45,8 @@ static std::filesystem::path to_path(const char *p) {
     }
 }
 
-static std::mutex mtx;
-extern bool DontStarveInjectorIsClient;
-
-inline void __cdecl SteamInternal_Init_SteamUGC1(ISteamUGC **p) {
-    const auto module_path = get_module_path("steam_api");
-    static auto SteamInternal_FindOrCreateUserInterface_ptr = (decltype(&SteamInternal_FindOrCreateUserInterface)) (gum_module_find_export_by_name(
-            module_path.c_str(), "SteamInternal_FindOrCreateUserInterface"));
-    static auto SteamAPI_GetHSteamUser_ptr = (decltype(&SteamAPI_GetHSteamUser)) (gum_module_find_export_by_name(
-            module_path.c_str(), "SteamAPI_GetHSteamUser"));
-
-    *p = (ISteamUGC *) (SteamInternal_FindOrCreateUserInterface_ptr(SteamAPI_GetHSteamUser_ptr(),
-                                                                    "STEAMUGC_INTERFACE_VERSION017"));
-}
-
-inline ISteamUGC *SteamUGC1() {
-    const auto module_path = get_module_path("steam_api");
-    if (module_path.empty())
-        return nullptr;
-    static auto SteamInternal_ContextInit_ptr = (decltype(&SteamInternal_ContextInit)) (gum_module_find_export_by_name(
-            module_path.c_str(), "SteamInternal_ContextInit"));
-
-    static void *s_CallbackCounterAndContext[3] = {(void *) &SteamInternal_Init_SteamUGC1, 0, 0};
-    return *(ISteamUGC **) SteamInternal_ContextInit_ptr(s_CallbackCounterAndContext);
-};
-
-inline void __cdecl SteamInternal_Init_SteamGameServerUGC1(ISteamUGC **p) {
-    const auto module_path = get_module_path("steam_api");
-    static auto SteamInternal_FindOrCreateGameServerInterface_ptr = (decltype(&SteamInternal_FindOrCreateGameServerInterface)) (gum_module_find_export_by_name(
-            module_path.c_str(), "SteamInternal_FindOrCreateGameServerInterface"));
-    static auto SteamGameServer_GetHSteamUser_ptr = (decltype(&SteamGameServer_GetHSteamUser)) (gum_module_find_export_by_name(
-            module_path.c_str(), "SteamGameServer_GetHSteamUser"));
-
-
-    *p = (ISteamUGC *) (SteamInternal_FindOrCreateGameServerInterface_ptr(SteamGameServer_GetHSteamUser_ptr(),
-                                                                          "STEAMUGC_INTERFACE_VERSION017"));
-}
-
-inline ISteamUGC *SteamGameServerUGC1() {
-    const auto module_path = get_module_path("steam_api");
-    if (module_path.empty())
-        return nullptr;
-    static auto SteamInternal_ContextInit_ptr = (decltype(&SteamInternal_ContextInit)) (gum_module_find_export_by_name(
-            module_path.c_str(), "SteamInternal_ContextInit"));
-
-    static void *s_CallbackCounterAndContext[3] = {(void *) &SteamInternal_Init_SteamGameServerUGC1, 0, 0};
-    return *(ISteamUGC **) SteamInternal_ContextInit_ptr(s_CallbackCounterAndContext);
-};
-
-static std::optional<std::filesystem::path> init_steam_workshop_dir() {
-    std::filesystem::path dir;
-
-    auto ugc = DontStarveInjectorIsClient ? SteamUGC1() : SteamGameServerUGC1();
-    auto len = ugc->GetNumSubscribedItems();
-    std::vector<PublishedFileId_t> PublishedFileIds;
-    PublishedFileIds.resize(len);
-    PublishedFileIds.resize(ugc->GetSubscribedItems(PublishedFileIds.data(), len));
-    for (auto PublishedFileId: PublishedFileIds) {
-        if (get_mod_folder(ugc, PublishedFileId, dir)) {
-            break;
-        }
-    }
-    return dir;
-}
-
 static std::optional<std::filesystem::path> get_workshop_dir() {
-    static auto dir = init_steam_workshop_dir();
+    static auto dir = std::filesystem::relative(std::filesystem::path("..") / ".." / ".." / "workshop" / "content" / "322330");
     return dir;
 }
 
@@ -278,6 +200,9 @@ static void lj_clearerr(FILE *fp) noexcept {
 static int lj_need_transform_path() noexcept {
     static bool has_lua_debug_flag = [] {
         std::string_view cmd = get_cwd();
+        if (cmd.contains("DST_Secondary") || cmd.contains("DST_Master")) {
+            cmd = get_cwd(getParentId());
+        }
         return cmd.contains("-enable_lua_debugger");
     }();
     return has_lua_debug_flag;

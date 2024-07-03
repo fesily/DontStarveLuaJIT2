@@ -2,11 +2,11 @@ cmake_minimum_required(VERSION 3.15)
 
 set(SOURCES
         main.cpp
-        ${DONTSTARVEINJECTOR_UTIL_DIR}/Signature.cpp
         ${DONTSTARVEINJECTOR_ROOT}/SignatureJson.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
 )
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 
 add_executable(signature_checker ${SOURCES})
 
@@ -18,6 +18,9 @@ target_include_directories(signature_checker PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
 target_link_libraries(signature_checker PRIVATE ${FRIDA_GUM_LIBRARIES})
 
 target_link_libraries(signature_checker PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(signature_checker PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
+target_link_libraries(signature_checker PRIVATE function_relocation)
+target_link_libraries(signature_checker PRIVATE spdlog::spdlog)
 
 file(TO_NATIVE_PATH "${GAME_DIR}" GAMEDIR)
 string(REPLACE "\\" "\\\\" GAMEDIR ${GAMEDIR})

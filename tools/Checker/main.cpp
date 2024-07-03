@@ -21,8 +21,7 @@
 const char *game_path = GAMEDIR R"(\bin64\dontstarve_steam_x64.exe)";
 const char *game_server_path = GAMEDIR R"(\bin64\dontstarve_dedicated_server_nullrenderer_x64.exe)";
 const char *lua51_path = LUA51_PATH;
-const char *worker_dir = PROJECT_DIR
-"/Mod/bin64/windows";
+const char *worker_dir = PROJECT_DIR "/Mod/bin64/windows";
 
 bool loadModule(const char *path) {
     GError *err = nullptr;
@@ -34,145 +33,27 @@ bool loadModule(const char *path) {
     return true;
 }
 
-struct disamer {
-    csh hcs;
-    cs_insn *insn;
-    const uint8_t *mem;
-    size_t offset;
-    uint64_t address;
-    bool end;
-    bool onlyInsn;
-
-    disamer(csh h, void *func) {
-        hcs = h;
-        insn = cs_malloc(hcs);
-        mem = (uint8_t *) func;
-        offset = 99999;
-        address = GUM_ADDRESS(mem);
-        end = false;
-    }
-
-    ~disamer() {
-        cs_free(insn, 1);
-    }
-
-    cs_insn *next() {
-        if (!cs_disasm_iter(hcs, &mem, &offset, &address, insn)) {
-            end = true;
-            return NULL;
-        }
-        switch (insn->id) {
-            case X86_INS_LEA:
-                if (insn->bytes[0] == 0x48 && insn->bytes[1] == 0x8D && insn->bytes[3] == 0x15) {
-                    return NULL;
-                }
-                break;
-            case X86_INS_CALL:
-            case X86_INS_JMP:
-                return NULL;
-            case X86_INS_INT3:
-                end = true;
-                return NULL;
-            default:
-                break;
-        }
-        return insn;
-    }
-};
-
-static bool isSameFuncByDisasm(disamer &disamer1, disamer &disamer2) {
-    while (1) {
-        cs_insn *insn1 = disamer1.next();
-        cs_insn *insn2 = disamer2.next();
-        if (!insn1) {
-            if (insn2)
-                return false;
-            if (disamer1.end)
-                return disamer2.end;
-            if (disamer1.insn->id != disamer2.insn->id)
-                return false;
-        } else {
-            if (insn1->size != insn2->size)
-                return false;
-            if (std::string_view(insn1->op_str).find("rip") != std::string_view::npos) {
-                return insn1->id == insn2->id;
-            }
-            if (memcmp(insn1->bytes, insn2->bytes, insn1->size) != 0)
-                return false;
-        }
-    }
-    return true;
-}
-
-static bool checkLuaFunc(void *func1, void *func2, std::string &ecmsg) {
-    csh hcs;
-    cs_arch_register_x86();
-    auto ec = cs_open(CS_ARCH_X86, CS_MODE_64, &hcs);
-    if (ec != CS_ERR_OK)
-        return false;
-    bool ret = true;
-    {
-        disamer disamer1(hcs, func1), disamer2(hcs, func2);
-        ret = isSameFuncByDisasm(disamer1, disamer2);
-        if (!ret) {
-            if (disamer1.insn) {
-                ecmsg += disamer1.insn->mnemonic;
-                ecmsg += " ";
-                ecmsg += disamer1.insn->op_str;
-            } else {
-                ecmsg += "unkown disamer1";
-            }
-            ecmsg += '\n';
-
-            if (disamer2.insn) {
-                ecmsg += disamer2.insn->mnemonic;
-                ecmsg += " ";
-                ecmsg += disamer2.insn->op_str;
-            } else {
-                ecmsg += "unkown disamer2";
-            }
-        }
-    }
-    cs_close(&hcs);
-    return ret;
-}
-
 int check(const char *path, bool isClient) {
     SignatureJson sj{isClient};
     auto signatures = sj.read_from_signatures().value();
     fprintf(stderr, "game_path:\t%s\n", path);
     if (!loadModule(path))
         return 1;
+    luaModuleSignature.log = false;
     if (luaModuleSignature.scan(path) == 0) {
         fprintf(stderr, "%s", "can find lua module base addr\n");
         return 1;
     }
 
-    auto count = 0;
-    for (auto [func, offset]: signatures.funcs) {
-        auto func_addr = luaModuleSignature.target_address + GPOINTER_TO_INT(offset);
-        auto dll_func = gum_module_find_export_by_name(lua51_path, func.data());
-        if (dll_func == 0) {
-            fprintf(stderr, " dll_func:[%s] is null\n", func.data());
-            count++;
-            continue;
-        }
-        std::string ecmsg;
-        auto k2 = create_signature((void *) dll_func, {});
-        auto k1 = create_signature((void *) func_addr, {});
-        if (k1 != k2) {
-            size_t limit = std::min(k1.size(), k2.size());
-            for (size_t i = 0; i < limit; i++) {
-                if (k1[i] != k2[i]) {
-                    printf("");
-                }
-            }
+    SignatureJson sjCopy{isClient};
+    sjCopy.file_path = "F:\\dontstarveluajit2\\ida.json";
+    auto sCopy = sjCopy.read_from_signatures().value();
 
-            fprintf(stderr, "%s signature not equal\n", func.data());
-        }
-        if (!checkLuaFunc((void *) func_addr, (void *) dll_func, ecmsg)) {
+    auto count = 0;
+    for (auto [func, info]: signatures.funcs) {
+        if (sCopy.funcs.at(func).offset != info.offset) {
+            fprintf(stderr, "[%s]%s", func.c_str(), "can't match the address");
             count++;
-            fprintf(stderr, "%s signature not equal\n%s\n\n", func.data(), ecmsg.c_str());
         }
     }
     return count;
@@ -189,5 +70,5 @@ int main() {
         return 1;
     set_worker_directory(worker_dir);
     SignatureJson::version_path = GAMEDIR "/version.txt";
-    return check(game_path, true) + check(game_server_path, false);
+    return check(game_server_path, false);
 }

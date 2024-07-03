@@ -29,7 +29,6 @@ add_library(Injector SHARED ${SOURCES})
 set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")
 set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../lib64")
 
-target_include_directories(Injector PUBLIC ${STEAM_INCLUDE_DIR})
 
 target_include_directories(Injector PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
 target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})

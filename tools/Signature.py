@@ -1,18 +1,21 @@
 import json
 import util.GameVersion as util
+import argparse
 
 current_game_version = util.read_version()
-
+argparser = argparse.ArgumentParser()
+argparser.add_argument("input")
+argparser.add_argument("output")
 missfuncs = set()
 with open("src/missfunc.txt", "r") as f:
     for line in f:
         line = line.strip()
         missfuncs.add(line)
 
-def generator(name):
+def generator(input, output):
     base_addr = 0
     max_addr = 0
-    signatures_path = f"src/signatures_{name}.txt"
+    signatures_path = input
     funcs = []
     with open(signatures_path) as f:
         first = False
@@ -48,10 +51,10 @@ def generator(name):
         func = funcs[i]
         if func[0] in missfuncs:
             continue
-        outputs[func[0]] = func[1] - base_addr
+        outputs[func[0]] = {'offset':func[1] - base_addr}
     
-    with open(f'Mod/bin64/windows/signatures_{name}.json', mode='w+') as f:
+    with open(output, mode='w+') as f:
         f.write(json.dumps({'version': int(current_game_version), 'funcs':outputs}))
 
-generator("client")
-generator("server")
+myargs = argparser.parse_args()
+generator(myargs.input, myargs.output)

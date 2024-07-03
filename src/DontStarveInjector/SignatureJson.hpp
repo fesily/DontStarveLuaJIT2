@@ -8,6 +8,7 @@ struct SignatureJson {
 
     static const char *version_path;
     bool isClient;
+    std::string file_path;
 
     std::optional<Signatures> read_from_signatures();
 

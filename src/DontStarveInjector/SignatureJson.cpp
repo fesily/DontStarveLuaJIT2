@@ -66,7 +66,7 @@ intptr_t SignatureJson::current_version() {
 }
 
 std::optional<Signatures> SignatureJson::read_from_signatures() {
-    const auto output = get_signatures_filename(isClient);
+    const auto output = file_path.empty() ? get_signatures_filename(isClient) : file_path;
     spdlog::info("read signatures from file:[{}]", output);
     std::ifstream sf(output);
     if (!sf.is_open())
@@ -78,7 +78,7 @@ std::optional<Signatures> SignatureJson::read_from_signatures() {
 
 void SignatureJson::update_signatures(const Signatures &signatures) {
     assert(current_version() == signatures.version);
-    const auto output = get_signatures_filename(isClient);
+    const auto output = file_path.empty() ? get_signatures_filename(isClient) : file_path;
     spdlog::info("update signatures to file:[{}], version: {}", output, signatures.version);
     std::ofstream sf(output);
     nlohmann::json j;

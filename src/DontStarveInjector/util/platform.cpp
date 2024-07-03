@@ -70,13 +70,51 @@ void unloadlib(module_handler_t h) {
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <array>
+#include <cstdio>
+#include <charconv>
 
-const char *get_cwd() {
+static std::string exec(const char *cmd) {
+    std::array<char, 128> buffer;
+    std::string result;
+    std::shared_ptr<FILE> pipe(_popen(cmd, "r"), _pclose);
+    if (!pipe) throw std::runtime_error("popen() failed!");
+    while (!feof(pipe.get())) {
+        if (fgets(buffer.data(), 128, pipe.get()) != nullptr)
+            result += buffer.data();
+    }
+    return result;
+}
+
+uintptr_t getParentId() {
+    const auto pid = GetCurrentProcessId();
+    std::string command = "wmic process where processid=\"" + std::to_string(pid) + "\" get parentprocessid";
+    std::string output = exec(command.c_str());
+    output = output.substr(output.find('\n') + 1);
+    uintptr_t parentPid = 0;
+    std::from_chars(output.c_str(), output.data() + output.size(), parentPid);
+    return parentPid;
+}
+
+static std::string getCommandLineForProcess(uintptr_t pid) {
+    std::string command = "wmic process where processid=\"" + std::to_string(pid) + "\" get CommandLine";
+    std::string output = exec(command.c_str());
+    return output;
+}
+
+const char *get_cwd(uintptr_t pid) {
 #ifdef _WIN32
-    return GetCommandLineA();
+    if (pid == 0)
+        return GetCommandLineA();
+    else {
+        const auto pid = getParentId();
+        static auto parentCmd = getCommandLineForProcess(pid);
+        return parentCmd.c_str();
+    }
 #else
-    static auto cmd = []() {
-        std::ifstream file("/proc/self/cmdline");
+    const char *param = pid == 0 ? "/proc/self/cmdline" : "/proc/" + std::to_string(pid) + "/cmdline";
+    static auto cmd = [](const char* p) {
+        std::ifstream file(p);
         std::string cmd;
         std::string cmdline;
         while (std::getline(file, cmdline, '\0')) {
@@ -84,7 +122,7 @@ const char *get_cwd() {
         }
         cmd.pop_back();
         return cmd;
-    }();
+    }(param);
     return cmd.c_str();
 #endif
 }
