@@ -78,9 +78,10 @@ static std::string exec(const char *cmd) {
     std::array<char, 128> buffer;
     std::string result;
 #ifdef _WIN32
-    #define popen _popen
+#define popen _popen
+#define pclose _pclose
 #endif
-    std::shared_ptr<FILE> pipe(popen(cmd, "r"), _pclose);
+    std::shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
     if (!pipe) throw std::runtime_error("popen() failed!");
     while (!feof(pipe.get())) {
         if (fgets(buffer.data(), 128, pipe.get()) != nullptr)
@@ -115,7 +116,7 @@ const char *get_cwd(uintptr_t pid) {
         return parentCmd.c_str();
     }
 #else
-    const char *param = pid == 0 ? "/proc/self/cmdline" : "/proc/" + std::to_string(pid) + "/cmdline";
+    auto param = pid == 0 ? std::string("/proc/self/cmdline") : "/proc/" + std::to_string(pid) + "/cmdline";
     static auto cmd = [](const char* p) {
         std::ifstream file(p);
         std::string cmd;
@@ -125,7 +126,7 @@ const char *get_cwd(uintptr_t pid) {
         }
         cmd.pop_back();
         return cmd;
-    }(param);
+    }(param.c_str());
     return cmd.c_str();
 #endif
 }
