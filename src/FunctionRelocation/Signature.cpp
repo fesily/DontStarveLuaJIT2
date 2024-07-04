@@ -458,7 +458,7 @@ namespace function_relocation {
                  {0, "49 8B 46 10 C7 40 08 00 00 00 00 48 83 C0 10 49 89 46 10 48 83 C4 08"s, -0x2c}},
 #endif
         };
-
+        spdlog::get(logger_name)->warn("fix_func_address_by_signature: {}", original.name);
         Creator creator{&target, &original, limit_address, signature};
         if (knowns_signature.contains(original.name)) {
             const auto &pattern = knowns_signature[original.name];
