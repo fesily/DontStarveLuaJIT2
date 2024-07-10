@@ -160,20 +160,61 @@ If you start with stream, please set game config, process start config: "-enable
 ### vscode launch.json
 
 ```json
-  {
-  "address": "127.0.0.1:12306",
-  "name": "attach",
-  "request": "attach",
-  "stopOnEntry": true,
-  "type": "lua",
-  "luaVersion": "luajit",
-  "sourceMaps": [
-    //如果你想调试创意工坊的mod就开这个配置,不然不要开.因为开了之后在原来游戏目录下的mods文件夹的mod将无法调试
-    [
-      "../mods/workshop-*",
-      "E:/SteamLibrary/steamapps/workshop/content/322330/*"
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "address": "127.0.0.1:12306",
+            "name": "attach client",
+            "request": "attach",
+            "stopOnEntry": true,
+            "type": "lua",
+            "luaVersion": "luajit",
+            "sourceMaps": [
+                [
+                    "../mods/workshop-*",
+                    "E:/SteamLibrary/steamapps/workshop/content/322330/*"
+                ]
+            ]
+        },
+        {
+            "address": "127.0.0.1:12307",
+            "name": "attach server",
+            "request": "attach",
+            "stopOnEntry": true,
+            "type": "lua",
+            "luaVersion": "luajit",
+            "sourceMaps": [
+                [
+                    "../mods/workshop-*",
+                    "E:/SteamLibrary/steamapps/workshop/content/322330/*"
+                ]
+            ]
+        },
+        {
+            "address": "127.0.0.1:12308",
+            "name": "attach server cave",
+            "request": "attach",
+            "stopOnEntry": true,
+            "type": "lua",
+            "luaVersion": "luajit",
+            "sourceMaps": [
+                [
+                    "../mods/workshop-*",
+                    "E:/SteamLibrary/steamapps/workshop/content/322330/*"
+                ]
+            ]
+        }
+    ], "compounds": [
+        {
+            "name": "Compound servers",
+            "configurations": [
+                "attach server",
+                "attach server cave"
+            ],
+            "stopAll": true
+        }
     ]
-  ]
 }
 ```
 
@@ -204,9 +245,22 @@ if jit then
 		local debugger = dofile(path .. "/script/debugger.lua")
 		local Debuggee = {}
 		Debuggee.start = function ()
-			local host = {address = "127.0.0.1:12306"}
+			local port = 12306
+			if not TheNet:IsDedicated() then
+				port = 12306
+			else
+				port = 12307
+				if TheShard:IsMaster() then
+					port = 12307
+				elseif TheShard:IsSecondary() then
+					port = 12308
+				end
+			end
+			local host = {address = "127.0.0.1:".. port}
+			print("debuggee host:", host.address)
 			debugger:start(host):event ("autoUpdate", false)
-			return "ok", host
+			debugger:setup_patch()
+			return "ok", host, debugger
 		end
 		Debuggee.poll = function ()
 			debugger:event "update"
@@ -218,6 +272,19 @@ end
 DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and not TheNet:IsDedicated()
 if DEBUGGER_ENABLED then
 	Debuggee = require 'debuggee'
+-- if you want debug all scripts, use the code
+	local _, _, debugger = Debuggee.start()
+-- [[
+	if not TheNet:IsDedicated() then
+		debugger:event "wait"
+
+	else
+		if TheShard:IsMaster() then
+			debugger:event "wait"
+		elseif TheShard:IsSecondary() then
+			debugger:event "wait"
+	end
+]]
 end
 ```
 
