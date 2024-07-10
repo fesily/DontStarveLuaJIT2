@@ -1,1 +1,510 @@
-{"funcs":{"luaL_addlstring":{"offset":58336,"pattern":"41554c8daf1820000041544989fc554889f5534889d3","pattern_offset":0},"luaL_addvalue":{"offset":58752,"pattern":"55beffffffff534889fb4883ec18488b6f10488d5424084889ef","pattern_offset":0},"luaL_argerror":{"offset":55776,"pattern":"41544989d45589f531f6534889fb4883c480","pattern_offset":0},"luaL_buffinit":{"offset":58944,"pattern":"488d461848897e10c7460800000000488906c3","pattern_offset":0},"luaL_callmeta":{"offset":57440,"pattern":"558d860f2700004889fd5389f34883ec183d0f2700007638","pattern_offset":0},"luaL_checkany":{"offset":56512,"pattern":"4883c4084889df89ee5b5dba????????e9","pattern_offset":-32},"luaL_checkboolean":{"offset":57136,"pattern":"4883c4084889df89ee5b5de9","pattern_offset":-36},"luaL_checkinteger":{"offset":57056,"pattern":"4489e64889efba03000000e8","pattern_offset":-47},"luaL_checklstring":{"offset":56576,"pattern":"89ee4889dfba040000004889442408e8","pattern_offset":-32},"luaL_checknumber":{"offset":56896,"pattern":"89ee4889dfba03000000e8","pattern_offset":-68},"luaL_checkoption":{"offset":56752,"pattern":"4c89e24c89efbe????????31c0e8","pattern_offset":-88},"luaL_checkstack":{"offset":56384,"pattern":"554889d5534889fb4883ec08e8","pattern_offset":0},"luaL_checktype":{"offset":56448,"pattern":"4439e0741a","pattern_offset":-17},"luaL_checkudata":{"offset":56240,"pattern":"41554989d541545589f5534889fb4883ec08","pattern_offset":0},"luaL_error":{"offset":55568,"pattern":"0f294424500f294c24600f295424700f299c24800000000f29a424900000000f29ac24a00000000f29b424b00000000f29bc24c0000000488d8424f0000000","pattern_offset":-36},"luaL_findtable":{"offset":57552,"pattern":"41574189cf415641be01000000415541544989d455","pattern_offset":0},"luaL_getmetafield":{"offset":57296,"pattern":"554889d5534889fb4883ec18e8","pattern_offset":0},"luaL_gsub":{"offset":58528,"pattern":"41574989ff4889d741564989ce415541544989d4","pattern_offset":0},"luaL_loadbuffer":{"offset":59936,"pattern":"4883ec18488934244889542408be????????4889e2e8","pattern_offset":0},"luaL_loadstring":{"offset":59968,"pattern":"554889fd4889f7534889f34883ec18e8","pattern_offset":0},"luaL_newmetatable":{"offset":56128,"pattern":"554889f24889f5bef0d8ffff534889fb4883ec08e8","pattern_offset":0},"luaL_openlib":{"offset":57872,"pattern":"b901000000ba????????bef0d8ffff4889dfe8","pattern_offset":-70},"luaL_openlibs":{"offset":60032,"pattern":"4883c4084889ef31d25b5dbe01000000e9","pattern_offset":-145},"luaL_optboolean":{"offset":57200,"pattern":"41544189d45589f5534889fbe8????????85c0","pattern_offset":0},"luaL_optinteger":{"offset":57248,"pattern":"5b5d4c89e0415cc3","pattern_offset":-40},"luaL_optlstring":{"offset":56640,"pattern":"41554989d541544989cc5589f5534889fb","pattern_offset":0},"luaL_optnumber":{"offset":56992,"pattern":"5589f5534889fb4883ec18f20f11442408e8","pattern_offset":0},"luaL_prepbuffer":{"offset":58288,"pattern":"488d43185bc3","pattern_offset":-32},"luaL_pushresult":{"offset":58496,"pattern":"8b7308488b7b10e8","pattern_offset":-9},"luaL_ref":{"offset":58976,"pattern":"41558d860f27000041545589f5534889fb4883ec08","pattern_offset":0},"luaL_unref":{"offset":59200,"pattern":"89de4889ef31d25b5d415ce9","pattern_offset":-65},"luaL_where":{"offset":55424,"pattern":"488d542438be????????4889df31c0e8","pattern_offset":-104},"lua_atpanic":{"offset":624,"pattern":"488b5720488b82980000004889b298000000c3","pattern_offset":0},"lua_call":{"offset":4624,"pattern":"554863c648c7c6f0ffffff48c1e00489d5534829c64889fb","pattern_offset":0},"lua_checkstack":{"offset":384,"pattern":"554863ee534889fb4883ec08488b4f104889ca482b5718","pattern_offset":-10},"lua_close":{"offset":38304,"pattern":"488b435031d2be????????4889df48894328488b006689536031d2","pattern_offset":-64},"lua_concat":{"offset":5392,"pattern":"488b5310482b531889ee4889df48c1fa0483ea01e8","pattern_offset":-39},"lua_createtable":{"offset":3552,"pattern":"c74508050000004889450048834310104883c4185b5dc3","pattern_offset":-44},"lua_dump":{"offset":4944,"pattern":"488b40204889d14531c04889f24889c6e9","pattern_offset":-26},"lua_equal":{"offset":1536,"pattern":"5b85c00f95c05d0fb6c0415cc3","pattern_offset":-83},"lua_error":{"offset":5312,"pattern":"4883ec08e8????????31c04883c408c3","pattern_offset":0},"lua_gc":{"offset":5008,"pattern":"55b8ffffffff4889fd534883ec0883fe08488b5f207713","pattern_offset":0},"lua_getfenv":{"offset":3744,"pattern":"8b500883fa07741f","pattern_offset":-9},"lua_getfield":{"offset":3344,"pattern":"488b4b104889e24c89e64889df48890424c744240804000000e8","pattern_offset":-44},"lua_getinfo":{"offset":8832,"pattern":"488b4020488b542408488b742410488b7c2418488b481848894c2428e8","pattern_offset":-212},"lua_getmetatable":{"offset":3648,"pattern":"488b5310488902c7420805000000b80100000048834310105bc3","pattern_offset":-35},"lua_getstack":{"offset":8512,"pattern":"488b410883ee01488b0080780a007503","pattern_offset":-16},"lua_gettable":{"offset":3312,"pattern":"488b4b104889df4889c65b488d51f04889d1e9","pattern_offset":-9},"lua_gettop":{"offset":736,"pattern":"488b4710482b471848c1f804c3","pattern_offset":0},"lua_getupvalue":{"offset":5696,"pattern":"5589d5534889fb4883ec10e8","pattern_offset":0},"lua_insert":{"offset":928,"pattern":"48 89 D1 48 83 EA 10 4C  29 C9 4C 8B 04 31 4C 89","pattern_offset":-32},"lua_iscfunction":{"offset":1328,"pattern":"488b0031d280780a000f95c289d0c3","pattern_offset":-16},"lua_isnumber":{"offset":1360,"pattern":"4889c7b801000000837f08037411","pattern_offset":-9},"lua_isstring":{"offset":1408,"pattern":"8b400883e80383f8010f96c00fb6c0c3","pattern_offset":-13},"lua_lessthan":{"offset":1648,"pattern":"4889df4889ee4889c25b5d415ce9","pattern_offset":-46},"lua_load":{"offset":4880,"pattern":"55b8????????4889fd534889cb4883ec384885c94889d1","pattern_offset":0},"lua_newstate":{"offset":37744,"pattern":"488d90c800000048c70000000000c6400808c680e800000021c640096131c94889502048c7404000000000","pattern_offset":-37},"lua_newthread":{"offset":656,"pattern":"488b5310488902c742080800000048834310105bc3","pattern_offset":-35},"lua_newuserdata":{"offset":5552,"pattern":"488b5310488902c74208070000004883c02848834310104883c4105bc3","pattern_offset":-60},"lua_next":{"offset":5328,"pattern":"488b4b10488b304889df488d51f0e8","pattern_offset":-9},"lua_objlen":{"offset":2048,"pattern":"488b03488b40104883c4085b5dc3","pattern_offset":-104},"lua_pcall":{"offset":4720,"pattern":"488b47404531c04963f448c7c1f0ffffff4889e248c1e6044889df896c2408","pattern_offset":-20},"lua_pushboolean":{"offset":3200,"pattern":"488b471031d285f60f95c28910c74008010000004883471010c3","pattern_offset":0},"lua_pushcclosure":{"offset":2976,"pattern":"41544989f45589d55380bfc0000000004889fb7412","pattern_offset":0},"lua_pushfstring":{"offset":2768,"pattern":"488d8424f0000000488d5424184889dfc744241810000000c744241c300000004889442420488d4424304889442428","pattern_offset":-116},"lua_pushinteger":{"offset":2448,"pattern":"f2480f2ac6488b4710c7400803000000f20f11004883471010c3","pattern_offset":0},"lua_pushlightuserdata":{"offset":3232,"pattern":"488b4710488930c74008020000004883471010c3","pattern_offset":0},"lua_pushlstring":{"offset":2480,"pattern":"c74508040000004889450048834310104883c4185b5dc3","pattern_offset":-44},"lua_pushnil":{"offset":2384,"pattern":"48 8B 47 10 C7 40 08 00 00 00 00 48 83 47 10 10 C3","pattern_offset":0},"lua_pushnumber":{"offset":2416,"pattern":"488b4710f20f1100c74008030000004883471010c3","pattern_offset":0},"lua_pushstring":{"offset":2592,"pattern":"554889fd534889f34883ec084885f6741f","pattern_offset":0},"lua_pushthread":{"offset":3264,"pattern":"488b4710488938c7400808000000488b472048834710104839b8b00000000f94c00fb6c0","pattern_offset":0},"lua_pushvalue":{"offset":1232,"pattern":"48 89 0A 8B 40 08 89 42  08 48 83 43 10 10 5B C3","pattern_offset":-16},"lua_pushvfstring":{"offset":25952,"pattern":"C7 44 24 0C 30 00 00 00 48 89 44 24 18 E8 ?? ?? ?? ?? 48  81 C4 D8 00 00 00 C3","pattern_offset":-117},"lua_rawequal":{"offset":1456,"pattern":"5b4889ef4889c65d415ce9","pattern_offset":-46},"lua_rawget":{"offset":3440,"pattern":"488b4b10488b38488d71f0e8","pattern_offset":-9},"lua_rawgeti":{"offset":3488,"pattern":"488b3889eee8","pattern_offset":-16},"lua_rawset":{"offset":4000,"pattern":"488b6b10488b304889df4989c4488d55e0e8","pattern_offset":-12},"lua_rawseti":{"offset":4128,"pattern":"41554189d5415455534889fb4883ec08e8","pattern_offset":0},"lua_remove":{"offset":848,"pattern":"48 83 E9 10  48 89 4B 10 5B C3","pattern_offset":-68},"lua_replace":{"offset":1024,"pattern":"48 8B 53 10 81 FD EE D8","pattern_offset":-24},"lua_resume":{"offset":14464,"pattern":"488b53104863f683c00148c1e60466894360668943624889df4829f2","pattern_offset":-58},"lua_setfenv":{"offset":4416,"pattern":"488b4b108b44240c4883e91048894b104883c4105bc3","pattern_offset":-119},"lua_setfield":{"offset":3904,"pattern":"48890424488b43104889e24c89e64889dfc744240804000000488d48f0e8","pattern_offset":-44},"lua_setmetatable":{"offset":4256,"pattern":"488b4320488994c8e000000048836b1010b8010000005bc3","pattern_offset":-80},"lua_settable":{"offset":3856,"pattern":"488b53104889df4889c6488d4af04883ea20e8","pattern_offset":-9},"lua_settop":{"offset":752,"pattern":"4883c60148c1e60448017710c3","pattern_offset":-75},"lua_setupvalue":{"offset":5776,"pattern":"41544189d455534889fb4883ec20e8","pattern_offset":0},"lua_status":{"offset":4992,"pattern":"0fb6470ac3","pattern_offset":0},"lua_toboolean":{"offset":1840,"pattern":"83f901b201740b","pattern_offset":-14},"lua_tocfunction":{"offset":2192,"pattern":"4889c231c0837a0806750d","pattern_offset":-5},"lua_tointeger":{"offset":1776,"pattern":"f20f1000f2480f2cc04883c418c3","pattern_offset":-31},"lua_tolstring":{"offset":1888,"pattern":"41544189f4554889d5534889fbe8","pattern_offset":0},"lua_tonumber":{"offset":1728,"pattern":"f20f10004883c418c3","pattern_offset":-35},"lua_topointer":{"offset":2304,"pattern":"83780808772e","pattern_offset":-12},"lua_tothread":{"offset":2272,"pattern":"31d2837808087503","pattern_offset":-5},"lua_touserdata":{"offset":2224,"pattern":"8b500883fa02741b","pattern_offset":-5},"lua_type":{"offset":1264,"pattern":"b8ffffffffc3","pattern_offset":-17},"lua_typename":{"offset":1296,"pattern":"83feff7413","pattern_offset":0},"lua_xmove":{"offset":512,"pattern":"48 8B 4F 10 48 8B 56 10  48 01 C1 48 83 C0 10 4C","pattern_offset":-48},"lua_yield":{"offset":14656,"pattern":"488b43104863f5c6430a0148c1e6044829f0488943184883c408b8ffffffff","pattern_offset":-33}},"version":605310}
+{
+    "funcs": {
+        "luaL_addlstring": {
+            "offset": 58336,
+            "pattern": "41554c8daf1820000041544989fc554889f5534889d3",
+            "pattern_offset": 0
+        },
+        "luaL_addvalue": {
+            "offset": 58752,
+            "pattern": "55beffffffff534889fb4883ec18488b6f10488d5424084889ef",
+            "pattern_offset": 0
+        },
+        "luaL_argerror": {
+            "offset": 55776,
+            "pattern": "41544989d45589f531f6534889fb4883c480",
+            "pattern_offset": 0
+        },
+        "luaL_buffinit": {
+            "offset": 58944,
+            "pattern": "488d461848897e10c7460800000000488906c3",
+            "pattern_offset": 0
+        },
+        "luaL_callmeta": {
+            "offset": 57440,
+            "pattern": "558d860f2700004889fd5389f34883ec183d0f2700007638",
+            "pattern_offset": 0
+        },
+        "luaL_checkany": {
+            "offset": 56512,
+            "pattern": "4883c4084889df89ee5b5dba????????e9",
+            "pattern_offset": -32
+        },
+        "luaL_checkboolean": {
+            "offset": 57136,
+            "pattern": "4883c4084889df89ee5b5de9",
+            "pattern_offset": -36
+        },
+        "luaL_checkinteger": {
+            "offset": 57056,
+            "pattern": "4489e64889efba03000000e8",
+            "pattern_offset": -47
+        },
+        "luaL_checklstring": {
+            "offset": 56576,
+            "pattern": "89ee4889dfba040000004889442408e8",
+            "pattern_offset": -32
+        },
+        "luaL_checknumber": {
+            "offset": 56896,
+            "pattern": "89ee4889dfba03000000e8",
+            "pattern_offset": -68
+        },
+        "luaL_checkoption": {
+            "offset": 56752,
+            "pattern": "4c89e24c89efbe????????31c0e8",
+            "pattern_offset": -88
+        },
+        "luaL_checkstack": {
+            "offset": 56384,
+            "pattern": "554889d5534889fb4883ec08e8",
+            "pattern_offset": 0
+        },
+        "luaL_checktype": {
+            "offset": 56448,
+            "pattern": "4439e0741a",
+            "pattern_offset": -17
+        },
+        "luaL_checkudata": {
+            "offset": 56240,
+            "pattern": "41554989d541545589f5534889fb4883ec08",
+            "pattern_offset": 0
+        },
+        "luaL_error": {
+            "offset": 55568,
+            "pattern": "0f294424500f294c24600f295424700f299c24800000000f29a424900000000f29ac24a00000000f29b424b00000000f29bc24c0000000488d8424f0000000",
+            "pattern_offset": -36
+        },
+        "luaL_findtable": {
+            "offset": 57552,
+            "pattern": "41574189cf415641be01000000415541544989d455",
+            "pattern_offset": 0
+        },
+        "luaL_getmetafield": {
+            "offset": 57296,
+            "pattern": "554889d5534889fb4883ec18e8",
+            "pattern_offset": 0
+        },
+        "luaL_gsub": {
+            "offset": 58528,
+            "pattern": "41574989ff4889d741564989ce415541544989d4",
+            "pattern_offset": 0
+        },
+        "luaL_loadbuffer": {
+            "offset": 59936,
+            "pattern": "4883ec18488934244889542408be????????4889e2e8",
+            "pattern_offset": 0
+        },
+        "luaL_loadstring": {
+            "offset": 59968,
+            "pattern": "554889fd4889f7534889f34883ec18e8",
+            "pattern_offset": 0
+        },
+        "luaL_newmetatable": {
+            "offset": 56128,
+            "pattern": "554889f24889f5bef0d8ffff534889fb4883ec08e8",
+            "pattern_offset": 0
+        },
+        "luaL_openlib": {
+            "offset": 57872,
+            "pattern": "b901000000ba????????bef0d8ffff4889dfe8",
+            "pattern_offset": -70
+        },
+        "luaL_openlibs": {
+            "offset": 60032,
+            "pattern": "4883c4084889ef31d25b5dbe01000000e9",
+            "pattern_offset": -145
+        },
+        "luaL_optboolean": {
+            "offset": 57200,
+            "pattern": "41544189d45589f5534889fbe8????????85c0",
+            "pattern_offset": 0
+        },
+        "luaL_optinteger": {
+            "offset": 57248,
+            "pattern": "5b5d4c89e0415cc3",
+            "pattern_offset": -40
+        },
+        "luaL_optlstring": {
+            "offset": 56640,
+            "pattern": "41554989d541544989cc5589f5534889fb",
+            "pattern_offset": 0
+        },
+        "luaL_optnumber": {
+            "offset": 56992,
+            "pattern": "5589f5534889fb4883ec18f20f11442408e8",
+            "pattern_offset": 0
+        },
+        "luaL_prepbuffer": {
+            "offset": 58288,
+            "pattern": "488d43185bc3",
+            "pattern_offset": -32
+        },
+        "luaL_pushresult": {
+            "offset": 58496,
+            "pattern": "8b7308488b7b10e8",
+            "pattern_offset": -9
+        },
+        "luaL_ref": {
+            "offset": 58976,
+            "pattern": "41558d860f27000041545589f5534889fb4883ec08",
+            "pattern_offset": 0
+        },
+        "luaL_unref": {
+            "offset": 59200,
+            "pattern": "89de4889ef31d25b5d415ce9",
+            "pattern_offset": -65
+        },
+        "luaL_where": {
+            "offset": 55424,
+            "pattern": "488d542438be????????4889df31c0e8",
+            "pattern_offset": -104
+        },
+        "lua_atpanic": {
+            "offset": 624,
+            "pattern": "488b5720488b82980000004889b298000000c3",
+            "pattern_offset": 0
+        },
+        "lua_call": {
+            "offset": 4624,
+            "pattern": "554863c648c7c6f0ffffff48c1e00489d5534829c64889fb",
+            "pattern_offset": 0
+        },
+        "lua_checkstack": {
+            "offset": 384,
+            "pattern": "554863ee534889fb4883ec08488b4f104889ca482b5718",
+            "pattern_offset": -10
+        },
+        "lua_close": {
+            "offset": 38304,
+            "pattern": "488b435031d2be????????4889df48894328488b006689536031d2",
+            "pattern_offset": -64
+        },
+        "lua_concat": {
+            "offset": 5392,
+            "pattern": "488b5310482b531889ee4889df48c1fa0483ea01e8",
+            "pattern_offset": -39
+        },
+        "lua_createtable": {
+            "offset": 3552,
+            "pattern": "c74508050000004889450048834310104883c4185b5dc3",
+            "pattern_offset": -44
+        },
+        "lua_dump": {
+            "offset": 4944,
+            "pattern": "488b40204889d14531c04889f24889c6e9",
+            "pattern_offset": -26
+        },
+        "lua_equal": {
+            "offset": 1536,
+            "pattern": "5b85c00f95c05d0fb6c0415cc3",
+            "pattern_offset": -83
+        },
+        "lua_error": {
+            "offset": 5312,
+            "pattern": "4883ec08e8????????31c04883c408c3",
+            "pattern_offset": 0
+        },
+        "lua_gc": {
+            "offset": 5008,
+            "pattern": "55b8ffffffff4889fd534883ec0883fe08488b5f207713",
+            "pattern_offset": 0
+        },
+        "lua_getfenv": {
+            "offset": 3744,
+            "pattern": "8b500883fa07741f",
+            "pattern_offset": -9
+        },
+        "lua_getfield": {
+            "offset": 3344,
+            "pattern": "488b4b104889e24c89e64889df48890424c744240804000000e8",
+            "pattern_offset": -44
+        },
+        "lua_getinfo": {
+            "offset": 8832,
+            "pattern": "488b4020488b542408488b742410488b7c2418488b481848894c2428e8",
+            "pattern_offset": -212
+        },
+        "lua_getmetatable": {
+            "offset": 3648,
+            "pattern": "488b5310488902c7420805000000b80100000048834310105bc3",
+            "pattern_offset": -35
+        },
+        "lua_getstack": {
+            "offset": 8512,
+            "pattern": "488b410883ee01488b0080780a007503",
+            "pattern_offset": -16
+        },
+        "lua_gettable": {
+            "offset": 3312,
+            "pattern": "488b4b104889df4889c65b488d51f04889d1e9",
+            "pattern_offset": -9
+        },
+        "lua_gettop": {
+            "offset": 736,
+            "pattern": "488b4710482b471848c1f804c3",
+            "pattern_offset": 0
+        },
+        "lua_getupvalue": {
+            "offset": 5696,
+            "pattern": "5589d5534889fb4883ec10e8",
+            "pattern_offset": 0
+        },
+        "lua_insert": {
+            "offset": 928,
+            "pattern": "48 89 D1 48 83 EA 10 4C  29 C9 4C 8B 04 31 4C 89",
+            "pattern_offset": -32
+        },
+        "lua_iscfunction": {
+            "offset": 1328,
+            "pattern": "488b0031d280780a000f95c289d0c3",
+            "pattern_offset": -16
+        },
+        "lua_isnumber": {
+            "offset": 1360,
+            "pattern": "4889c7b801000000837f08037411",
+            "pattern_offset": -9
+        },
+        "lua_isstring": {
+            "offset": 1408,
+            "pattern": "8b400883e80383f8010f96c00fb6c0c3",
+            "pattern_offset": -13
+        },
+        "lua_lessthan": {
+            "offset": 1648,
+            "pattern": "4889df4889ee4889c25b5d415ce9",
+            "pattern_offset": -46
+        },
+        "lua_load": {
+            "offset": 4880,
+            "pattern": "55b8????????4889fd534889cb4883ec384885c94889d1",
+            "pattern_offset": 0
+        },
+        "lua_newstate": {
+            "offset": 37744,
+            "pattern": "488d90c800000048c70000000000c6400808c680e800000021c640096131c94889502048c7404000000000",
+            "pattern_offset": -37
+        },
+        "lua_newthread": {
+            "offset": 656,
+            "pattern": "488b5310488902c742080800000048834310105bc3",
+            "pattern_offset": -35
+        },
+        "lua_newuserdata": {
+            "offset": 5552,
+            "pattern": "488b5310488902c74208070000004883c02848834310104883c4105bc3",
+            "pattern_offset": -60
+        },
+        "lua_next": {
+            "offset": 5328,
+            "pattern": "488b4b10488b304889df488d51f0e8",
+            "pattern_offset": -9
+        },
+        "lua_objlen": {
+            "offset": 2048,
+            "pattern": "488b03488b40104883c4085b5dc3",
+            "pattern_offset": -104
+        },
+        "lua_pcall": {
+            "offset": 4720,
+            "pattern": "488b47404531c04963f448c7c1f0ffffff4889e248c1e6044889df896c2408",
+            "pattern_offset": -20
+        },
+        "lua_pushboolean": {
+            "offset": 3200,
+            "pattern": "488b471031d285f60f95c28910c74008010000004883471010c3",
+            "pattern_offset": 0
+        },
+        "lua_pushcclosure": {
+            "offset": 2976,
+            "pattern": "41544989f45589d55380bfc0000000004889fb7412",
+            "pattern_offset": 0
+        },
+        "lua_pushfstring": {
+            "offset": 2768,
+            "pattern": "488d8424f0000000488d5424184889dfc744241810000000c744241c300000004889442420488d4424304889442428",
+            "pattern_offset": -116
+        },
+        "lua_pushinteger": {
+            "offset": 2448,
+            "pattern": "f2480f2ac6488b4710c7400803000000f20f11004883471010c3",
+            "pattern_offset": 0
+        },
+        "lua_pushlightuserdata": {
+            "offset": 3232,
+            "pattern": "488b4710488930c74008020000004883471010c3",
+            "pattern_offset": 0
+        },
+        "lua_pushlstring": {
+            "offset": 2480,
+            "pattern": "c74508040000004889450048834310104883c4185b5dc3",
+            "pattern_offset": -44
+        },
+        "lua_pushnil": {
+            "offset": 2384,
+            "pattern": "48 8B 47 10 C7 40 08 00 00 00 00 48 83 47 10 10 C3",
+            "pattern_offset": 0
+        },
+        "lua_pushnumber": {
+            "offset": 2416,
+            "pattern": "488b4710f20f1100c74008030000004883471010c3",
+            "pattern_offset": 0
+        },
+        "lua_pushstring": {
+            "offset": 2592,
+            "pattern": "554889fd534889f34883ec084885f6741f",
+            "pattern_offset": 0
+        },
+        "lua_pushthread": {
+            "offset": 3264,
+            "pattern": "488b4710488938c7400808000000488b472048834710104839b8b00000000f94c00fb6c0",
+            "pattern_offset": 0
+        },
+        "lua_pushvalue": {
+            "offset": 1232,
+            "pattern": "48 89 0A 8B 40 08 89 42  08 48 83 43 10 10 5B C3",
+            "pattern_offset": -16
+        },
+        "lua_pushvfstring": {
+            "offset": 25952,
+            "pattern": "C7 44 24 0C 30 00 00 00 48 89 44 24 18 E8 ?? ?? ?? ?? 48  81 C4 D8 00 00 00 C3",
+            "pattern_offset": -117
+        },
+        "lua_rawequal": {
+            "offset": 1456,
+            "pattern": "5b4889ef4889c65d415ce9",
+            "pattern_offset": -46
+        },
+        "lua_rawget": {
+            "offset": 3440,
+            "pattern": "488b4b10488b38488d71f0e8",
+            "pattern_offset": -9
+        },
+        "lua_rawgeti": {
+            "offset": 3488,
+            "pattern": "488b3889eee8",
+            "pattern_offset": -16
+        },
+        "lua_rawset": {
+            "offset": 4000,
+            "pattern": "488b6b10488b304889df4989c4488d55e0e8",
+            "pattern_offset": -12
+        },
+        "lua_rawseti": {
+            "offset": 4128,
+            "pattern": "41554189d5415455534889fb4883ec08e8",
+            "pattern_offset": 0
+        },
+        "lua_remove": {
+            "offset": 848,
+            "pattern": "48 83 E9 10  48 89 4B 10 5B C3",
+            "pattern_offset": -68
+        },
+        "lua_replace": {
+            "offset": 1024,
+            "pattern": "48 8B 53 10 81 FD EE D8",
+            "pattern_offset": -24
+        },
+        "lua_resume": {
+            "offset": 14464,
+            "pattern": "488b53104863f683c00148c1e60466894360668943624889df4829f2",
+            "pattern_offset": -58
+        },
+        "lua_setfenv": {
+            "offset": 4416,
+            "pattern": "488b4b108b44240c4883e91048894b104883c4105bc3",
+            "pattern_offset": -119
+        },
+        "lua_setfield": {
+            "offset": 3904,
+            "pattern": "48890424488b43104889e24c89e64889dfc744240804000000488d48f0e8",
+            "pattern_offset": -44
+        },
+        "lua_setmetatable": {
+            "offset": 4256,
+            "pattern": "488b4320488994c8e000000048836b1010b8010000005bc3",
+            "pattern_offset": -80
+        },
+        "lua_settable": {
+            "offset": 3856,
+            "pattern": "488b53104889df4889c6488d4af04883ea20e8",
+            "pattern_offset": -9
+        },
+        "lua_settop": {
+            "offset": 752,
+            "pattern": "4883c60148c1e60448017710c3",
+            "pattern_offset": -75
+        },
+        "lua_setupvalue": {
+            "offset": 5776,
+            "pattern": "41544189d455534889fb4883ec20e8",
+            "pattern_offset": 0
+        },
+        "lua_status": {
+            "offset": 4992,
+            "pattern": "0fb6470ac3",
+            "pattern_offset": 0
+        },
+        "lua_toboolean": {
+            "offset": 1840,
+            "pattern": "83f901b201740b",
+            "pattern_offset": -14
+        },
+        "lua_tocfunction": {
+            "offset": 2192,
+            "pattern": "4889c231c0837a0806750d",
+            "pattern_offset": -5
+        },
+        "lua_tointeger": {
+            "offset": 1776,
+            "pattern": "f20f1000f2480f2cc04883c418c3",
+            "pattern_offset": -31
+        },
+        "lua_tolstring": {
+            "offset": 1888,
+            "pattern": "41544189f4554889d5534889fbe8",
+            "pattern_offset": 0
+        },
+        "lua_tonumber": {
+            "offset": 1728,
+            "pattern": "f20f10004883c418c3",
+            "pattern_offset": -35
+        },
+        "lua_topointer": {
+            "offset": 2304,
+            "pattern": "83780808772e",
+            "pattern_offset": -12
+        },
+        "lua_tothread": {
+            "offset": 2272,
+            "pattern": "31d2837808087503",
+            "pattern_offset": -5
+        },
+        "lua_touserdata": {
+            "offset": 2224,
+            "pattern": "8b500883fa02741b",
+            "pattern_offset": -5
+        },
+        "lua_type": {
+            "offset": 1264,
+            "pattern": "b8ffffffffc3",
+            "pattern_offset": -17
+        },
+        "lua_typename": {
+            "offset": 1296,
+            "pattern": "83feff7413",
+            "pattern_offset": 0
+        },
+        "lua_xmove": {
+            "offset": 512,
+            "pattern": "48 8B 4F 10 48 8B 56 10  48 01 C1 48 83 C0 10 4C",
+            "pattern_offset": -48
+        },
+        "lua_yield": {
+            "offset": 14656,
+            "pattern": "488b43104863f5c6430a0148c1e6044829f0488943184883c408b8ffffffff",
+            "pattern_offset": -33
+        }
+    },
+    "version": 605310
+}
