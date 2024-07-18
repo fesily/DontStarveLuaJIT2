@@ -1,0 +1,701 @@
+Line	File Name	Source Function Name	Binary Address	Binary Function Name	Matching Rule \ Information
+0001	lauxlib	luaL_where	0x7FF7BC2B0930	lua_luaL_where	Score-based Matching
+0002	lauxlib	luaL_error	0x7FF7BC2B09C0	lua_luaL_error	Single called (xref) option
+0003	lauxlib	luaL_newmetatable	0x7FF7BC2B0A20	lua_luaL_newmetatable	Single called (xref) option
+0004	lauxlib	luaL_checkstack	0x7FF7BC2B0AA0	lua_luaL_checkstack	Single called (xref) option
+0005	lauxlib	luaL_getmetafield	0x7FF7BC2B0AE0	lua_luaL_getmetafield	Single called (xref) option
+0006	lauxlib	luaL_callmeta	0x7FF7BC2B0B60	lua_luaL_callmeta	Single called (xref) option
+0007	lauxlib	libsize	N/A	N/A	ifdeffed out / inlined
+0008	lauxlib	luaL_findtable	0x7FF7BC2B0BE0	lua_luaL_findtable	Single called (xref) option
+0009	lauxlib	emptybuffer	N/A	N/A	ifdeffed out / inlined
+0010	lauxlib	adjuststack	0x7FF7BC2B0D10	lua_adjuststack	Neighbour matching
+0011	lauxlib	luaL_prepbuffer	0x7FF7BC2B0DC0	lua_luaL_prepbuffer	Single called (xref) option
+0012	lauxlib	luaL_addlstring	0x7FF7BC2B0E20	lua_luaL_addlstring	Single called (xref) option
+0013	lauxlib	luaL_addstring	N/A	N/A	ifdeffed out / inlined
+0014	lauxlib	luaL_pushresult	0x7FF7BC2B0EC0	lua_luaL_pushresult	Single called (xref) option
+0015	lauxlib	luaL_addvalue	0x7FF7BC2B0F10	lua_luaL_addvalue	Single called (xref) option
+0016	lauxlib	luaL_buffinit	0x7FF7BC2B0FD0	lua_luaL_buffinit	Score-based Matching
+0017	lauxlib	luaL_ref	0x7FF7BC2B0FF0	lua_luaL_ref	Neighbour matching
+0018	lauxlib	luaL_unref	0x7FF7BC2B10C0	lua_luaL_unref	Neighbour matching
+0019	lauxlib	getF	0x7FF7BC2B1140	lua_getF	Single called (xref) option
+0020	lauxlib	errfile	0x7FF7BC2B11D0	lua_errfile	Neighbour matching
+0021	lauxlib	luaL_loadfile	0x7FF7BC2B1270	lua_luaL_loadfile	Anchor - Complex unique string / const
+0022	lauxlib	getS	0x7FF7BC2B1450	lua_getS	Neighbour matching
+0023	lauxlib	luaL_loadbuffer	0x7FF7BC2B1470	lua_luaL_loadbuffer	Single called (xref) option
+0024	lauxlib	luaL_loadstring	0x7FF7BC2B14A0	lua_luaL_loadstring	Neighbour matching
+0025	lauxlib	luaL_argerror	0x7FF7BC2B14F0	lua_luaL_argerror	Anchor - Complex unique string / const
+0026	lauxlib	luaL_typerror	0x7FF7BC2B1600	lua_luaL_typerror	Neighbour matching
+0027	lauxlib	tag_error	N/A	N/A	ifdeffed out / inlined
+0028	lauxlib	luaL_checkudata	0x7FF7BC2B1670	lua_luaL_checkudata	Single called (xref) option
+0029	lauxlib	luaL_checktype	0x7FF7BC2B1730	lua_luaL_checktype	Single called (xref) option
+0030	lauxlib	luaL_checkany	0x7FF7BC2B1770	lua_luaL_checkany	Single called (xref) option
+0031	lauxlib	luaL_checklstring	0x7FF7BC2B17B0	lua_luaL_checklstring	Single called (xref) option
+0032	lauxlib	luaL_optlstring	0x7FF7BC2B1840	lua_luaL_optlstring	Single called (xref) option
+0033	lauxlib	luaL_checknumber	0x7FF7BC2B18C0	lua_luaL_checknumber	Single called (xref) option
+0034	lauxlib	luaL_optnumber	0x7FF7BC2B1920	lua_luaL_optnumber	Neighbour matching
+0035	lauxlib	luaL_checkinteger	0x7FF7BC2B1990	lua_luaL_checkinteger	Single called (xref) option
+0036	lauxlib	luaL_checkboolean	0x7FF7BC2B19E0	lua_luaL_checkboolean	Score-based Matching
+0037	lauxlib	luaL_optboolean	0x7FF7BC2B1A60	lua_luaL_optboolean	Neighbour matching
+0038	lauxlib	luaL_optinteger	0x7FF7BC2B1AB0	lua_luaL_optinteger	Neighbour matching
+0039	lauxlib	luaL_openlib	0x7FF7BC2B1B20	lua_luaL_openlib	Agent - File-unique string / const
+0040	lauxlib	luaL_gsub	0x7FF7BC2B1CA0	lua_luaL_gsub	Neighbour matching
+0041	lauxlib	luaL_checkoption	0x7FF7BC2B2100	lua_luaL_checkoption	Score-based Matching
+0042	lauxlib	luaL_register	0x7FF7BC2B21C0	lua_luaL_register	Single called (xref) option
+0043	lbaselib	luaB_print	0x7FF7BC2C16A0	lua_luaB_print	Agent - File-unique string / const
+0044	lbaselib	luaB_tonumber	0x7FF7BC2C17A0	lua_luaB_tonumber	Neighbour matching
+0045	lbaselib	luaB_error	0x7FF7BC2C18D0	lua_luaB_error	Neighbour matching
+0046	lbaselib	luaB_getmetatable	0x7FF7BC2C1950	lua_luaB_getmetatable	Neighbour matching
+0047	lbaselib	luaB_setmetatable	0x7FF7BC2C19B0	lua_luaB_setmetatable	Agent - File-unique string / const
+0048	lbaselib	getfunc	0x7FF7BC2C1A50	lua_getfunc	Agent - File-unique string / const
+0049	lbaselib	luaB_getfenv	0x7FF7BC2C1B40	lua_luaB_getfenv	Neighbour matching
+0050	lbaselib	luaB_setfenv	0x7FF7BC2C1B90	lua_luaB_setfenv	Agent - File-unique string / const
+0051	lbaselib	luaB_rawequal	0x7FF7BC2C1C50	lua_luaB_rawequal	Neighbour matching
+0052	lbaselib	luaB_rawget	0x7FF7BC2C1CA0	lua_luaB_rawget	Neighbour matching
+0053	lbaselib	luaB_rawset	0x7FF7BC2C1CF0	lua_luaB_rawset	Single caller (xref) option
+0054	lbaselib	luaB_gcinfo	0x7FF7BC2C1D50	lua_luaB_gcinfo	Last (referenced) function in file
+0055	lbaselib	luaB_collectgarbage	0x7FF7BC2C1D80	lua_luaB_collectgarbage	Single caller (xref) option
+0056	lbaselib	luaB_type	0x7FF7BC2C1E50	lua_luaB_type	Neighbour matching
+0057	lbaselib	luaB_next	0x7FF7BC2C1E90	lua_luaB_next	Single called (xref) option
+0058	lbaselib	luaB_pairs	0x7FF7BC2C1EF0	lua_luaB_pairs	Score-based Matching
+0059	lbaselib	ipairsaux	0x7FF7BC2C1F40	lua_ipairsaux	Score-based Matching
+0060	lbaselib	luaB_ipairs	0x7FF7BC2C1FB0	lua_luaB_ipairs	Score-based Matching
+0061	lbaselib	load_aux	N/A	N/A	ifdeffed out / inlined
+0062	lbaselib	luaB_loadstring	0x7FF7BC2C2000	lua_luaB_loadstring	Neighbour matching
+0063	lbaselib	luaB_loadfile	0x7FF7BC2C2080	lua_luaB_loadfile	Neighbour matching
+0064	lbaselib	generic_reader	0x7FF7BC2C20E0	lua_generic_reader	Agent - File-unique string / const
+0065	lbaselib	luaB_load	0x7FF7BC2C2190	lua_luaB_load	Neighbour matching
+0066	lbaselib	luaB_dofile	0x7FF7BC2C2220	lua_luaB_dofile	Score-based Matching
+0067	lbaselib	luaB_assert	0x7FF7BC2C2290	lua_luaB_assert	Neighbour matching
+0068	lbaselib	luaB_unpack	0x7FF7BC2C22F0	lua_luaB_unpack	Agent - File-unique string / const
+0069	lbaselib	luaB_select	0x7FF7BC2C23E0	lua_luaB_select	Neighbour matching
+0070	lbaselib	luaB_pcall	0x7FF7BC2C2490	lua_luaB_pcall	Neighbour matching
+0071	lbaselib	luaB_xpcall	0x7FF7BC2C24F0	lua_luaB_xpcall	Neighbour matching
+0072	lbaselib	luaB_tostring	0x7FF7BC2C2560	lua_luaB_tostring	Agent - File-unique string / const
+0073	lbaselib	luaB_newproxy	0x7FF7BC2C26A0	lua_luaB_newproxy	Agent - File-unique string / const
+0074	lbaselib	costatus	0x7FF7BC2C27A0	lua_costatus	Neighbour matching
+0075	lbaselib	luaB_costatus	0x7FF7BC2C2840	lua_luaB_costatus	Neighbour matching
+0076	lbaselib	auxresume	0x7FF7BC2C28B0	lua_auxresume	Anchor - Complex unique string / const
+0077	lbaselib	luaB_coresume	0x7FF7BC2C29B0	lua_luaB_coresume	Neighbour matching
+0078	lbaselib	luaB_auxwrap	0x7FF7BC2C2A50	lua_luaB_auxwrap	Neighbour matching
+0079	lbaselib	luaB_cocreate	0x7FF7BC2C2AE0	lua_luaB_cocreate	Agent - File-unique string / const
+0080	lbaselib	luaB_cowrap	0x7FF7BC2C2B60	lua_luaB_cowrap	Neighbour matching
+0081	lbaselib	luaB_yield	0x7FF7BC2C2B90	lua_luaB_yield	Score-based Matching
+0082	lbaselib	luaB_corunning	0x7FF7BC2C2BB0	lua_luaB_corunning	Neighbour matching
+0083	lbaselib	auxopen	N/A	N/A	ifdeffed out / inlined
+0084	lbaselib	base_open	0x7FF7BC2C2BE0	lua_base_open	Agent - File-unique string / const
+0085	lbaselib	luaopen_base	0x7FF7BC2C2D40	lua_luaopen_base	Neighbour matching
+0086	ldblib	db_getregistry	0x7FF7BC2BBFD0	lua_db_getregistry	Neighbour matching
+0087	ldblib	db_getmetatable	0x7FF7BC2BBFF0	lua_db_getmetatable	Neighbour matching
+0088	ldblib	db_setmetatable	0x7FF7BC2BC030	lua_db_setmetatable	Agent - File-unique string / const
+0089	ldblib	db_getfenv	0x7FF7BC2BC090	lua_db_getfenv	Neighbour matching
+0090	ldblib	db_setfenv	0x7FF7BC2BC0B0	lua_db_setfenv	Agent - File-unique string / const
+0091	ldblib	settabss	N/A	N/A	ifdeffed out / inlined
+0092	ldblib	settabsi	N/A	N/A	ifdeffed out / inlined
+0093	ldblib	getthread	N/A	N/A	ifdeffed out / inlined
+0094	ldblib	treatstackoption	N/A	N/A	ifdeffed out / inlined
+0095	ldblib	db_getinfo	0x7FF7BC2BC100	lua_db_getinfo	Anchor - Complex unique string / const
+0096	ldblib	db_getlocal	0x7FF7BC2BC4A0	lua_db_getlocal	Neighbour matching
+0097	ldblib	db_setlocal	0x7FF7BC2BC5B0	lua_db_setlocal	Score-based Matching
+0098	ldblib	auxupvalue	0x7FF7BC2BC6B0	lua_auxupvalue	Neighbour matching
+0099	ldblib	db_getupvalue	N/A	N/A	ifdeffed out / inlined
+0100	ldblib	db_setupvalue	0x7FF7BC2BC740	lua_db_setupvalue	Score-based Matching
+0101	ldblib	hookf	0x7FF7BC2BC7E0	lua_hookf	Score-based Matching
+0102	ldblib	makemask	N/A	N/A	ifdeffed out / inlined
+0103	ldblib	unmakemask	N/A	N/A	ifdeffed out / inlined
+0104	ldblib	gethooktable	0x7FF7BC2BC880	lua_gethooktable	Single called (xref) option
+0105	ldblib	db_sethook	0x7FF7BC2BC900	lua_db_sethook	Neighbour matching
+0106	ldblib	db_gethook	0x7FF7BC2BCA60	lua_db_gethook	Neighbour matching
+0107	ldblib	db_debug	0x7FF7BC2BCB90	lua_db_debug	Agent - File-unique string / const
+0108	ldblib	db_errorfb	0x7FF7BC2BCD10	lua_db_errorfb	Anchor - Complex unique string / const
+0109	ldblib	luaopen_debug	0x7FF7BC2BCFE0	lua_luaopen_debug	Neighbour matching
+0110	ldump	DumpBlock	N/A	N/A	ifdeffed out / inlined
+0111	ldump	DumpChar	N/A	N/A	ifdeffed out / inlined
+0112	ldump	DumpInt	N/A	N/A	ifdeffed out / inlined
+0113	ldump	DumpNumber	N/A	N/A	ifdeffed out / inlined
+0114	ldump	DumpVector	N/A	N/A	ifdeffed out / inlined
+0115	ldump	DumpString	N/A	N/A	ifdeffed out / inlined
+0116	ldump	DumpConstants	0x7FF7BC2BB1A0	lua_DumpConstants	Locked and ordered neighbouring functions
+0117	ldump	DumpDebug	0x7FF7BC2BB230	lua_DumpDebug	Locked and ordered neighbouring functions
+0118	ldump	DumpFunction	0x7FF7BC2BB3A0	lua_DumpFunction	Locked and ordered neighbouring functions
+0119	ldump	DumpHeader	0x7FF7BC2BB610	lua_DumpHeader	Locked and ordered neighbouring functions
+0120	ldump	luaU_dump	0x7FF7BC2BB7A0	lua_luaU_dump	Single called (xref) option
+0121	lfunc	luaF_newCclosure	0x7FF7BC2BAA70	lua_luaF_newCclosure	Neighbour matching
+0122	lfunc	luaF_newLclosure	0x7FF7BC2BAAE0	lua_luaF_newLclosure	Score-based Matching
+0123	lfunc	luaF_newupval	0x7FF7BC2BAB70	lua_luaF_newupval	Neighbour matching
+0124	lfunc	luaF_findupval	0x7FF7BC2BABC0	lua_luaF_findupval	Single called (xref) option
+0125	lfunc	unlinkupval	N/A	N/A	ifdeffed out / inlined
+0126	lfunc	luaF_freeupval	0x7FF7BC2BAC90	lua_luaF_freeupval	Neighbour matching
+0127	lfunc	luaF_close	0x7FF7BC2BACC0	lua_luaF_close	Single called (xref) option
+0128	lfunc	luaF_newproto	0x7FF7BC2BADB0	lua_luaF_newproto	Single called (xref) option
+0129	lfunc	luaF_freeproto	0x7FF7BC2BAE40	lua_luaF_freeproto	Neighbour matching
+0130	lfunc	luaF_freeclosure	0x7FF7BC2BAF00	lua_luaF_freeclosure	Neighbour matching
+0131	lfunc	luaF_getlocalname	0x7FF7BC2BAF30	lua_luaF_getlocalname	Single called (xref) option
+0132	linit	luaL_openlibs	0x7FF7BC2B5040	lua_luaL_openlibs	Single caller (xref) option
+0133	liolib	pushresult	N/A	N/A	ifdeffed out / inlined
+0134	liolib	fileerror	0x7FF7BC2C2D70	lua_fileerror	Score-based Matching
+0135	liolib	io_type	0x7FF7BC2C2DE0	lua_io_type	Neighbour matching
+0136	liolib	tofile	0x7FF7BC2C2EB0	lua_tofile	Score-based Matching
+0137	liolib	newfile	0x7FF7BC2C2F10	lua_newfile	Single called (xref) option
+0138	liolib	io_noclose	N/A	N/A	ifdeffed out / inlined
+0139	liolib	io_pclose	0x7FF7BC2C2F60	lua_io_pclose	Neighbour matching
+0140	liolib	io_fclose	0x7FF7BC2C3020	lua_io_fclose	Neighbour matching
+0141	liolib	aux_close	0x7FF7BC2C30D0	lua_aux_close	Score-based Matching
+0142	liolib	io_close	0x7FF7BC2C3110	lua_io_close	Score-based Matching
+0143	liolib	io_gc	0x7FF7BC2C31A0	lua_io_gc	Neighbour matching
+0144	liolib	io_tostring	0x7FF7BC2C3210	lua_io_tostring	Agent - File-unique string / const
+0145	liolib	io_open	N/A	N/A	ifdeffed out / inlined
+0146	liolib	io_popen	0x7FF7BC2C3270	lua_io_popen	Last (referenced) function in file
+0147	liolib	io_tmpfile	0x7FF7BC2C34B0	lua_io_tmpfile	Score-based Matching
+0148	liolib	getiofile	0x7FF7BC2C3D70	lua_io_write	Score-based Matching
+0149	liolib	g_iofile	0x7FF7BC2C3560	lua_g_iofile	Score-based Matching
+0150	liolib	io_input	0x7FF7BC2C3630	lua_io_input	Neighbour matching
+0151	liolib	io_output	0x7FF7BC2C3650	lua_io_output	Single caller (xref) option
+0152	liolib	read_number	N/A	N/A	ifdeffed out / inlined
+0153	liolib	test_eof	N/A	N/A	ifdeffed out / inlined
+0154	liolib	read_line	0x7FF7BC2C3670	lua_read_line	Single called (xref) option
+0155	liolib	read_chars	0x7FF7BC2C3780	lua_read_chars	Neighbour matching
+0156	liolib	g_read	0x7FF7BC2C3840	lua_g_read	Agent - File-unique string / const
+0157	liolib	io_read	0x7FF7BC2C3A40	lua_io_read	Neighbour matching
+0158	liolib	f_read	0x7FF7BC2C3AB0	lua_f_read	Neighbour matching
+0159	liolib	io_readline	0x7FF7BC2C3B10	lua_io_readline	Agent - File-unique string / const
+0160	liolib	g_write	0x7FF7BC2C3C10	lua_g_write	Neighbour matching
+0161	liolib	io_write	N/A	N/A	ifdeffed out / inlined
+0162	liolib	f_write	0x7FF7BC2C3DE0	lua_f_write	Score-based Matching
+0163	liolib	f_seek	0x7FF7BC2C3E40	lua_f_seek	Score-based Matching
+0164	liolib	f_setvbuf	0x7FF7BC2C3F40	lua_f_setvbuf	Score-based Matching
+0165	liolib	io_flush	0x7FF7BC2C4030	lua_io_flush	Score-based Matching
+0166	liolib	f_flush	0x7FF7BC2C4100	lua_f_flush	Score-based Matching
+0167	liolib	createmeta	N/A	N/A	ifdeffed out / inlined
+0168	liolib	createstdfile	N/A	N/A	ifdeffed out / inlined
+0169	liolib	newfenv	N/A	N/A	ifdeffed out / inlined
+0170	liolib	luaopen_io	0x7FF7BC2C41C0	lua_luaopen_io	Agent - File-unique string / const
+0171	liolib	aux_lines	N/A	N/A	ifdeffed out / inlined
+0172	liolib	f_lines	0x7FF7BC2C4430	lua_f_lines	Single called (xref) option
+0173	liolib	io_lines	0x7FF7BC2C44A0	lua_io_lines	Score-based Matching
+0174	llex	save	0x7FF7BC2C45A0	lua_save	Agent - File-unique string / const
+0175	llex	luaX_init	0x7FF7BC2C4650	lua_luaX_init	Neighbour matching
+0176	llex	luaX_token2str	0x7FF7BC2C46C0	lua_luaX_token2str	Single called (xref) option
+0177	llex	txtToken	0x7FF7BC2C4730	lua_txtToken	Single called (xref) option
+0178	llex	luaX_lexerror	0x7FF7BC2C47D0	lua_luaX_lexerror	Single called (xref) option
+0179	llex	luaX_syntaxerror	0x7FF7BC2C4880	lua_luaX_syntaxerror	Single called (xref) option
+0180	llex	luaX_newstring	0x7FF7BC2C4890	lua_luaX_newstring	Neighbour matching
+0181	llex	inclinenumber	0x7FF7BC2C48F0	lua_inclinenumber	Anchor - Complex unique string / const
+0182	llex	luaX_setinput	0x7FF7BC2C49A0	lua_luaX_setinput	Neighbour matching
+0183	llex	check_next	N/A	N/A	ifdeffed out / inlined
+0184	llex	buffreplace	N/A	N/A	ifdeffed out / inlined
+0185	llex	trydecpoint	0x7FF7BC2C4A40	lua_trydecpoint	Last (referenced) function in file
+0186	llex	read_numeral	0x7FF7BC2C4B00	lua_read_numeral	Single called (xref) option
+0187	llex	skip_sep	0x7FF7BC2C4C70	lua_skip_sep	Neighbour matching
+0188	llex	read_long_string	0x7FF7BC2C4D30	lua_read_long_string	Anchor - Complex unique string / const
+0189	llex	read_string	0x7FF7BC2C4FD0	lua_read_string	Agent - File-unique string / const
+0190	llex	llex	0x7FF7BC2C54E0	lua_llex	Agent - File-unique string / const
+0191	llex	luaX_next	0x7FF7BC2C5CF0	lua_luaX_next	Neighbour matching
+0192	llex	luaX_lookahead	0x7FF7BC2C5D40	lua_luaX_lookahead	Neighbour matching
+0193	lmathlib	math_abs	0x7FF7BC2BD010	lua_math_abs	Neighbour matching
+0194	lmathlib	math_sin	0x7FF7BC2BD050	lua_math_sin	Neighbour matching
+0195	lmathlib	math_sinh	0x7FF7BC2BD080	lua_math_sinh	Neighbour matching
+0196	lmathlib	math_cos	0x7FF7BC2BD0B0	lua_math_cos	Neighbour matching
+0197	lmathlib	math_cosh	0x7FF7BC2BD0E0	lua_math_cosh	Neighbour matching
+0198	lmathlib	math_tan	0x7FF7BC2BD110	lua_math_tan	Neighbour matching
+0199	lmathlib	math_tanh	0x7FF7BC2BD140	lua_math_tanh	Neighbour matching
+0200	lmathlib	math_asin	0x7FF7BC2BD170	lua_math_asin	Neighbour matching
+0201	lmathlib	math_acos	0x7FF7BC2BD1A0	lua_math_acos	Neighbour matching
+0202	lmathlib	math_atan	0x7FF7BC2BD1D0	lua_math_atan	Neighbour matching
+0203	lmathlib	math_atan2	0x7FF7BC2BD200	lua_math_atan2	Neighbour matching
+0204	lmathlib	math_ceil	0x7FF7BC2BD260	lua_math_ceil	Neighbour matching
+0205	lmathlib	math_floor	0x7FF7BC2BD290	lua_math_floor	Neighbour matching
+0206	lmathlib	math_fmod	0x7FF7BC2BD2C0	lua_math_fmod	Neighbour matching
+0207	lmathlib	math_modf	0x7FF7BC2BD320	lua_math_modf	Score-based Matching
+0208	lmathlib	math_sqrt	0x7FF7BC2BD380	lua_math_sqrt	Neighbour matching
+0209	lmathlib	math_pow	0x7FF7BC2BD3B0	lua_math_pow	Neighbour matching
+0210	lmathlib	math_log	0x7FF7BC2BD410	lua_math_log	Neighbour matching
+0211	lmathlib	math_log10	0x7FF7BC2BD440	lua_math_log10	Neighbour matching
+0212	lmathlib	math_exp	0x7FF7BC2BD470	lua_math_exp	Neighbour matching
+0213	lmathlib	math_deg	0x7FF7BC2BD4A0	lua_math_deg	Neighbour matching
+0214	lmathlib	math_rad	0x7FF7BC2BD4E0	lua_math_rad	Neighbour matching
+0215	lmathlib	math_frexp	0x7FF7BC2BD520	lua_math_frexp	Score-based Matching
+0216	lmathlib	math_ldexp	0x7FF7BC2BD570	lua_math_ldexp	Score-based Matching
+0217	lmathlib	math_min	0x7FF7BC2BD5C0	lua_math_min	Neighbour matching
+0218	lmathlib	math_max	0x7FF7BC2BD640	lua_math_max	Neighbour matching
+0219	lmathlib	math_random	0x7FF7BC2BD6C0	lua_math_random	Agent - File-unique string / const
+0220	lmathlib	math_randomseed	0x7FF7BC2BD810	lua_math_randomseed	Neighbour matching
+0221	lmathlib	luaopen_math	0x7FF7BC2BD830	lua_luaopen_math	Neighbour matching
+0222	lmem	luaM_toobig	0x7FF7BC2BB830	lua_luaM_toobig	Score-based Matching
+0223	lmem	luaM_realloc_	0x7FF7BC2BB850	lua_luaM_realloc_	Single called (xref) option
+0224	lmem	luaM_growaux_	0x7FF7BC2BB8C0	lua_luaM_growaux_	Single called (xref) option
+0225	loadlib	setprogdir	0x7FF7BC2C06F0	lua_setprogdir	Agent - File-unique string / const
+0226	loadlib	pusherror	0x7FF7BC2C07A0	lua_pusherror	Anchor - Complex unique string / const
+0227	loadlib	ll_unloadlib	N/A	N/A	ifdeffed out / inlined
+0228	loadlib	ll_load	N/A	N/A	ifdeffed out / inlined
+0229	loadlib	ll_sym	N/A	N/A	ifdeffed out / inlined
+0230	loadlib	ll_register	0x7FF7BC2C0840	lua_ll_register	Score-based Matching
+0231	loadlib	gctm	0x7FF7BC2C0930	lua_gctm	Single called (xref) option
+0232	loadlib	ll_loadfunc	0x7FF7BC2C0980	lua_ll_loadfunc	Single called (xref) option
+0233	loadlib	ll_loadlib	0x7FF7BC2C0A10	lua_ll_loadlib	Neighbour matching
+0234	loadlib	readable	N/A	N/A	ifdeffed out / inlined
+0235	loadlib	pushnexttemplate	N/A	N/A	ifdeffed out / inlined
+0236	loadlib	findfile	0x7FF7BC2C0AA0	lua_findfile	Agent - File-unique string / const
+0237	loadlib	loaderror	0x7FF7BC2C0C20	lua_loaderror	Anchor - Complex unique string / const
+0238	loadlib	loader_Lua	0x7FF7BC2C0C80	lua_loader_Lua	Neighbour matching
+0239	loadlib	mkfuncname	0x7FF7BC2C0CE0	lua_mkfuncname	Single caller (xref) option
+0240	loadlib	loader_C	0x7FF7BC2C0D50	lua_loader_C	Neighbour matching
+0241	loadlib	loader_Croot	0x7FF7BC2C0DD0	lua_loader_Croot	Agent - File-unique string / const
+0242	loadlib	loader_preload	0x7FF7BC2C0EA0	lua_loader_preload	Anchor - Complex unique string / const
+0243	loadlib	ll_require	0x7FF7BC2C0F30	lua_ll_require	Anchor - Complex unique string / const
+0244	loadlib	setfenv	0x7FF7BC2C1170	lua_setfenv	Agent - File-unique string / const
+0245	loadlib	dooptions	N/A	N/A	ifdeffed out / inlined
+0246	loadlib	modinit	0x7FF7BC2C1220	lua_modinit	Neighbour matching
+0247	loadlib	ll_module	0x7FF7BC2C12C0	lua_ll_module	Agent - File-unique string / const
+0248	loadlib	ll_seeall	0x7FF7BC2C1420	lua_ll_seeall	Neighbour matching
+0249	loadlib	setpath	N/A	N/A	ifdeffed out / inlined
+0250	loadlib	luaopen_package	0x7FF7BC2C14A0	lua_luaopen_package	Agent - File-unique string / const
+0251	lobject	luaO_int2fb	0x7FF7BC2B68A0	lua_luaO_int2fb	Neighbour matching
+0252	lobject	luaO_fb2int	0x7FF7BC2B68D0	lua_luaO_fb2int	Score-based Matching
+0253	lobject	luaO_log2	0x7FF7BC2B68F0	lua_luaO_log2	Single called (xref) option
+0254	lobject	luaO_rawequalObj	0x7FF7BC2B6920	lua_luaO_rawequalObj	Single called (xref) option
+0255	lobject	luaO_str2d	0x7FF7BC2B6990	lua_luaO_str2d	Single called (xref) option
+0256	lobject	pushstr	0x7FF7BC2B6A60	lua_pushstr	Neighbour matching
+0257	lobject	luaO_pushvfstring	0x7FF7BC2B6AD0	lua_luaO_pushvfstring	Score-based Matching
+0258	lobject	luaO_pushfstring	0x7FF7BC2B6F40	lua_luaO_pushfstring	Single called (xref) option
+0259	lobject	luaO_chunkid	0x7FF7BC2B6F70	lua_luaO_chunkid	Single called (xref) option
+0260	loslib	difftime	N/A	N/A	ifdeffed out / inlined
+0261	loslib	gmtime	N/A	N/A	ifdeffed out / inlined
+0262	loslib	localtime	N/A	N/A	ifdeffed out / inlined
+0263	loslib	mktime	N/A	N/A	ifdeffed out / inlined
+0264	loslib	time	N/A	N/A	ifdeffed out / inlined
+0265	loslib	os_pushresult	N/A	N/A	ifdeffed out / inlined
+0266	loslib	os_execute	N/A	N/A	ifdeffed out / inlined
+0267	loslib	os_remove	N/A	N/A	ifdeffed out / inlined
+0268	loslib	os_rename	N/A	N/A	ifdeffed out / inlined
+0269	loslib	os_tmpname	N/A	N/A	ifdeffed out / inlined
+0270	loslib	os_getenv	N/A	N/A	ifdeffed out / inlined
+0271	loslib	os_clock	0x7FF7BC2BB9B0	lua_os_clock	Score-based Matching
+0272	loslib	setfield	N/A	N/A	ifdeffed out / inlined
+0273	loslib	setboolfield	N/A	N/A	ifdeffed out / inlined
+0274	loslib	getboolfield	N/A	N/A	ifdeffed out / inlined
+0275	loslib	getfield	N/A	N/A	ifdeffed out / inlined
+0276	loslib	os_date	0x7FF7BC2BB9F0	lua_os_date	Last (referenced) function in file
+0277	loslib	os_time	0x7FF7BC2BBC90	lua_os_time	Score-based Matching
+0278	loslib	os_difftime	0x7FF7BC2BBF40	lua_os_difftime	Score-based Matching
+0279	loslib	os_setlocale	N/A	N/A	ifdeffed out / inlined
+0280	loslib	os_exit	N/A	N/A	ifdeffed out / inlined
+0281	loslib	luaopen_os	0x7FF7BC2BBFA0	lua_luaopen_os	Single caller (xref) option
+0282	lparser	anchor_token	N/A	N/A	ifdeffed out / inlined
+0283	lparser	error_expected	N/A	N/A	ifdeffed out / inlined
+0284	lparser	errorlimit	N/A	N/A	ifdeffed out / inlined
+0285	lparser	testnext	N/A	N/A	ifdeffed out / inlined
+0286	lparser	check	N/A	N/A	ifdeffed out / inlined
+0287	lparser	checknext	N/A	N/A	ifdeffed out / inlined
+0288	lparser	check_match	0x7FF7BC2C5D60	lua_check_match	Agent - File-unique string / const
+0289	lparser	str_checkname	N/A	N/A	ifdeffed out / inlined
+0290	lparser	init_exp	N/A	N/A	ifdeffed out / inlined
+0291	lparser	codestring	N/A	N/A	ifdeffed out / inlined
+0292	lparser	checkname	N/A	N/A	ifdeffed out / inlined
+0293	lparser	registerlocalvar	0x7FF7BC2C5E20	lua_registerlocalvar	Agent - File-unique string / const
+0294	lparser	new_localvar	0x7FF7BC2C5F00	lua_new_localvar	Neighbour matching
+0295	lparser	adjustlocalvars	N/A	N/A	ifdeffed out / inlined
+0296	lparser	removevars	N/A	N/A	ifdeffed out / inlined
+0297	lparser	indexupvalue	0x7FF7BC2C5FC0	lua_indexupvalue	Score-based Matching
+0298	lparser	searchvar	N/A	N/A	ifdeffed out / inlined
+0299	lparser	markupval	N/A	N/A	ifdeffed out / inlined
+0300	lparser	singlevaraux	0x7FF7BC2C6160	lua_singlevaraux	Last (referenced) function in file
+0301	lparser	singlevar	0x7FF7BC2C62A0	lua_singlevar	Single called (xref) option
+0302	lparser	adjust_assign	N/A	N/A	ifdeffed out / inlined
+0303	lparser	enterlevel	N/A	N/A	ifdeffed out / inlined
+0304	lparser	enterblock	N/A	N/A	ifdeffed out / inlined
+0305	lparser	leaveblock	0x7FF7BC2C6330	lua_leaveblock	Single called (xref) option
+0306	lparser	pushclosure	0x7FF7BC2C63D0	lua_pushclosure	Neighbour matching
+0307	lparser	open_func	0x7FF7BC2C6530	lua_open_func	Single caller (xref) option
+0308	lparser	close_func	0x7FF7BC2C6630	lua_close_func	Single called (xref) option
+0309	lparser	field	0x7FF7BC2C6860	lua_field	Single called (xref) option
+0310	lparser	yindex	N/A	N/A	ifdeffed out / inlined
+0311	lparser	recfield	N/A	N/A	ifdeffed out / inlined
+0312	lparser	closelistfield	N/A	N/A	ifdeffed out / inlined
+0313	lparser	lastlistfield	N/A	N/A	ifdeffed out / inlined
+0314	lparser	listfield	0x7FF7BC2C6920	lua_listfield	Neighbour matching
+0315	lparser	constructor	0x7FF7BC2C6B20	lua_constructor	Neighbour matching
+0316	lparser	parlist	0x7FF7BC2C6E20	lua_parlist	Agent - File-unique string / const
+0317	lparser	body	0x7FF7BC2C6F50	lua_body	Neighbour matching
+0318	lparser	explist1	N/A	N/A	ifdeffed out / inlined
+0319	lparser	funcargs	0x7FF7BC2C70C0	lua_funcargs	Anchor - Complex unique string / const
+0320	lparser	prefixexp	0x7FF7BC2C7250	lua_prefixexp	Neighbour matching
+0321	lparser	primaryexp	0x7FF7BC2C72E0	lua_primaryexp	Neighbour matching
+0322	lparser	simpleexp	0x7FF7BC2C75B0	lua_simpleexp	Agent - File-unique string / const
+0323	lparser	getunopr	N/A	N/A	ifdeffed out / inlined
+0324	lparser	getbinopr	0x7FF7BC2C7870	lua_getbinopr	Neighbour matching
+0325	lparser	subexpr	0x7FF7BC2C7A30	lua_subexpr	Single called (xref) option
+0326	lparser	expr	N/A	N/A	ifdeffed out / inlined
+0327	lparser	block_follow	N/A	N/A	ifdeffed out / inlined
+0328	lparser	block	0x7FF7BC2C7B80	lua_block	Single caller (xref) option
+0329	lparser	check_conflict	N/A	N/A	ifdeffed out / inlined
+0330	lparser	assignment	0x7FF7BC2C7BD0	lua_assignment	Anchor - Complex unique string / const
+0331	lparser	cond	N/A	N/A	ifdeffed out / inlined
+0332	lparser	breakstat	0x7FF7BC2C7EB0	lua_breakstat	Neighbour matching
+0333	lparser	whilestat	0x7FF7BC2C7F40	lua_whilestat	Score-based Matching
+0334	lparser	repeatstat	0x7FF7BC2C80B0	lua_repeatstat	Score-based Matching
+0335	lparser	exp1	N/A	N/A	ifdeffed out / inlined
+0336	lparser	forbody	0x7FF7BC2C8200	lua_forbody	Neighbour matching
+0337	lparser	fornum	0x7FF7BC2C8420	lua_fornum	Agent - File-unique string / const
+0338	lparser	forlist	0x7FF7BC2C8610	lua_forlist	Agent - File-unique string / const
+0339	lparser	forstat	0x7FF7BC2C8860	lua_forstat	Agent - File-unique string / const
+0340	lparser	test_then_block	0x7FF7BC2C8970	lua_test_then_block	Neighbour matching
+0341	lparser	ifstat	0x7FF7BC2C8A50	lua_ifstat	Score-based Matching
+0342	lparser	localfunc	0x7FF7BC2C8B80	lua_localfunc	Neighbour matching
+0343	lparser	localstat	0x7FF7BC2C8C90	lua_localstat	Score-based Matching
+0344	lparser	funcname	N/A	N/A	ifdeffed out / inlined
+0345	lparser	funcstat	0x7FF7BC2C8E40	lua_funcstat	Single called (xref) option
+0346	lparser	exprstat	N/A	N/A	ifdeffed out / inlined
+0347	lparser	retstat	0x7FF7BC2C8FF0	lua_retstat	Neighbour matching
+0348	lparser	statement	0x7FF7BC2C9110	lua_statement	Score-based Matching
+0349	lparser	chunk	0x7FF7BC2C9320	lua_chunk	Neighbour matching
+0350	lparser	luaY_parser	0x7FF7BC2C93C0	lua_luaY_parser	Single called (xref) option
+0351	lstate	stack_init	0x7FF7BC2B5100	lua_stack_init	Single called (xref) option
+0352	lstate	freestack	N/A	N/A	ifdeffed out / inlined
+0353	lstate	f_luaopen	0x7FF7BC2B51B0	lua_f_luaopen	Single caller (xref) option
+0354	lstate	preinit_state	N/A	N/A	ifdeffed out / inlined
+0355	lstate	close_state	0x7FF7BC2B5260	lua_close_state	Single called (xref) option
+0356	lstate	luaE_newthread	0x7FF7BC2B5310	lua_luaE_newthread	Single called (xref) option
+0357	lstate	luaE_freethread	0x7FF7BC2B53F0	lua_luaE_freethread	Score-based Matching
+0358	lstate	lua_newstate	0x7FF7BC2B5460	lua_lua_newstate	Score-based Matching
+0359	lstate	callallgcTM	0x7FF7BC2B5630	lua_callallgcTM	Last (referenced) function in file
+0360	lstate	lua_close	0x7FF7BC2B5640	lua_lua_close	Score-based Matching
+0361	lstring	luaS_resize	0x7FF7BC2BA720	lua_luaS_resize	Single called (xref) option
+0362	lstring	newlstr	0x7FF7BC2BA810	lua_newlstr	Neighbour matching
+0363	lstring	luaS_newlstr	0x7FF7BC2BA8F0	lua_luaS_newlstr	Single called (xref) option
+0364	lstring	luaS_newudata	0x7FF7BC2BA9E0	lua_luaS_newudata	Neighbour matching
+0365	lstrlib	str_len	0x7FF7BC2BD8D0	lua_str_len	Score-based Matching
+0366	lstrlib	posrelat	N/A	N/A	ifdeffed out / inlined
+0367	lstrlib	str_sub	0x7FF7BC2BD900	lua_str_sub	Score-based Matching
+0368	lstrlib	str_reverse	0x7FF7BC2BD9E0	lua_str_reverse	Neighbour matching
+0369	lstrlib	str_lower	0x7FF7BC2BDAB0	lua_str_lower	Last (referenced) function in file
+0370	lstrlib	str_upper	0x7FF7BC2BDB70	lua_str_upper	Neighbour matching
+0371	lstrlib	str_rep	0x7FF7BC2BDC30	lua_str_rep	Neighbour matching
+0372	lstrlib	str_byte	0x7FF7BC2BDCE0	lua_str_byte	Agent - File-unique string / const
+0373	lstrlib	str_char	0x7FF7BC2BDDF0	lua_str_char	Neighbour matching
+0374	lstrlib	writer	0x7FF7BC2BDED0	lua_writer	Neighbour matching
+0375	lstrlib	str_dump	0x7FF7BC2BDEF0	lua_str_dump	Agent - File-unique string / const
+0376	lstrlib	check_capture	N/A	N/A	ifdeffed out / inlined
+0377	lstrlib	capture_to_close	N/A	N/A	ifdeffed out / inlined
+0378	lstrlib	classend	0x7FF7BC2BDF90	lua_classend	Anchor - Complex unique string / const
+0379	lstrlib	match_class	0x7FF7BC2BE030	lua_match_class	Neighbour matching
+0380	lstrlib	matchbracketclass	0x7FF7BC2BE190	lua_matchbracketclass	Score-based Matching
+0381	lstrlib	singlematch	N/A	N/A	ifdeffed out / inlined
+0382	lstrlib	matchbalance	0x7FF7BC2BE250	lua_matchbalance	Score-based Matching
+0383	lstrlib	max_expand	0x7FF7BC2BE2F0	lua_max_expand	Score-based Matching
+0384	lstrlib	min_expand	0x7FF7BC2BE3C0	lua_min_expand	Score-based Matching
+0385	lstrlib	start_capture	0x7FF7BC2BE480	lua_start_capture	Score-based Matching
+0386	lstrlib	end_capture	0x7FF7BC2BE510	lua_end_capture	Single called (xref) option
+0387	lstrlib	match_capture	0x7FF7BC2BE5C0	lua_match_capture	Neighbour matching
+0388	lstrlib	match	0x7FF7BC2BE660	lua_match	Agent - File-unique string / const
+0389	lstrlib	lmemfind	0x7FF7BC2BE920	lua_lmemfind	Neighbour matching
+0390	lstrlib	push_onecapture	0x7FF7BC2BE9C0	lua_push_onecapture	Single called (xref) option
+0391	lstrlib	push_captures	0x7FF7BC2BEA90	lua_push_captures	Single called (xref) option
+0392	lstrlib	str_find_aux	0x7FF7BC2BEB20	lua_str_find_aux	Single called (xref) option
+0393	lstrlib	str_find	0x7FF7BC2BEDC0	lua_str_find	Neighbour matching
+0394	lstrlib	str_match	0x7FF7BC2BEDD0	lua_str_match	Neighbour matching
+0395	lstrlib	gmatch_aux	0x7FF7BC2BEDE0	lua_gmatch_aux	Agent - File-unique string / const
+0396	lstrlib	gmatch	0x7FF7BC2BEFB0	lua_gmatch	Neighbour matching
+0397	lstrlib	gfind_nodef	0x7FF7BC2BF010	lua_gfind_nodef	Anchor - Complex unique string / const
+0398	lstrlib	add_s	0x7FF7BC2BF020	lua_add_s	Neighbour matching
+0399	lstrlib	add_value	0x7FF7BC2BF130	lua_add_value	Agent - File-unique string / const
+0400	lstrlib	str_gsub	0x7FF7BC2BF260	lua_str_gsub	Agent - File-unique string / const
+0401	lstrlib	addquoted	0x7FF7BC2BF450	lua_addquoted	Neighbour matching
+0402	lstrlib	scanformat	0x7FF7BC2BF570	lua_scanformat	Anchor - Complex unique string / const
+0403	lstrlib	addintlen	N/A	N/A	ifdeffed out / inlined
+0404	lstrlib	str_format	0x7FF7BC2BF680	lua_str_format	Agent - File-unique string / const
+0405	lstrlib	createmetatable	0x7FF7BC2BF9D0	lua_createmetatable	Neighbour matching
+0406	lstrlib	luaopen_string	0x7FF7BC2BFA50	lua_luaopen_string	Anchor - Complex unique string / const
+0407	ltable	hashnum	N/A	N/A	ifdeffed out / inlined
+0408	ltable	mainposition	0x7FF7BC2B96A0	lua_mainposition	Single called (xref) option
+0409	ltable	arrayindex	N/A	N/A	ifdeffed out / inlined
+0410	ltable	findindex	0x7FF7BC2B9790	lua_findindex	Agent - File-unique string / const
+0411	ltable	luaH_next	0x7FF7BC2B98A0	lua_luaH_next	Neighbour matching
+0412	ltable	computesizes	N/A	N/A	ifdeffed out / inlined
+0413	ltable	countint	N/A	N/A	ifdeffed out / inlined
+0414	ltable	numusearray	N/A	N/A	ifdeffed out / inlined
+0415	ltable	numusehash	N/A	N/A	ifdeffed out / inlined
+0416	ltable	setarrayvector	0x7FF7BC2B99A0	lua_setarrayvector	Neighbour matching
+0417	ltable	setnodevector	0x7FF7BC2B9A30	lua_setnodevector	Agent - File-unique string / const
+0418	ltable	luaH_new	0x7FF7BC2B9B30	lua_luaH_new	Neighbour matching
+0419	ltable	luaH_free	0x7FF7BC2B9BD0	lua_luaH_free	Neighbour matching
+0420	ltable	getfreepos	N/A	N/A	ifdeffed out / inlined
+0421	ltable	luaH_getnum	0x7FF7BC2B9C50	lua_luaH_getnum	Single called (xref) option
+0422	ltable	luaH_getstr	0x7FF7BC2B9CF0	lua_luaH_getstr	Single called (xref) option
+0423	ltable	luaH_get	0x7FF7BC2B9D40	lua_luaH_get	Neighbour matching
+0424	ltable	luaH_set	0x7FF7BC2B9E10	lua_luaH_set	Single called (xref) option
+0425	ltable	luaH_setnum	0x7FF7BC2B9EA0	lua_luaH_setnum	Single called (xref) option
+0426	ltable	unbound_search	0x7FF7BC2B9F00	lua_unbound_search	Neighbour matching
+0427	ltable	luaH_getn	0x7FF7BC2BA050	lua_luaH_getn	Single called (xref) option
+0428	ltable	resize	0x7FF7BC2BA0D0	lua_resize	Single called (xref) option
+0429	ltable	luaH_resizearray	0x7FF7BC2BA320	lua_luaH_resizearray	Score-based Matching
+0430	ltable	rehash	0x7FF7BC2BA350	lua_rehash	Neighbour matching
+0431	ltable	newkey	0x7FF7BC2BA550	lua_newkey	Neighbour matching
+0432	ltable	luaH_setstr	0x7FF7BC2BA6A0	lua_luaH_setstr	Single called (xref) option
+0433	ltablib	foreachi	0x7FF7BC2BFAB0	lua_foreachi	Score-based Matching
+0434	ltablib	foreach	0x7FF7BC2BFB80	lua_foreach	Score-based Matching
+0435	ltablib	maxn	0x7FF7BC2BFC40	lua_maxn	Neighbour matching
+0436	ltablib	getn	0x7FF7BC2BFCE0	lua_getn	Neighbour matching
+0437	ltablib	setn	0x7FF7BC2BFD20	lua_setn	Anchor - Complex unique string / const
+0438	ltablib	tinsert	0x7FF7BC2BFD60	lua_tinsert	Agent - File-unique string / const
+0439	ltablib	tremove	0x7FF7BC2BFE40	lua_tremove	Neighbour matching
+0440	ltablib	addfield	0x7FF7BC2BFF20	lua_addfield	Neighbour matching
+0441	ltablib	tconcat	N/A	N/A	ifdeffed out / inlined
+0442	ltablib	set2	N/A	N/A	ifdeffed out / inlined
+0443	ltablib	sort_comp	N/A	N/A	ifdeffed out / inlined
+0444	ltablib	auxsort	0x7FF7BC2C00D0	lua_auxsort	Anchor - Complex unique string / const
+0445	ltablib	sort	0x7FF7BC2C0630	lua_sort	Neighbour matching
+0446	ltablib	luaopen_table	0x7FF7BC2C06C0	lua_luaopen_table	Neighbour matching
+0447	ltm	luaT_init	0x7FF7BC2B70D0	lua_luaT_init	Neighbour matching
+0448	ltm	luaT_gettm	0x7FF7BC2B7160	lua_luaT_gettm	Neighbour matching
+0449	ltm	luaT_gettmbyobj	0x7FF7BC2B71A0	lua_luaT_gettmbyobj	Single called (xref) option
+0450	lundump	error	N/A	N/A	ifdeffed out / inlined
+0451	lundump	LoadBlock	N/A	N/A	ifdeffed out / inlined
+0452	lundump	LoadChar	N/A	N/A	ifdeffed out / inlined
+0453	lundump	LoadInt	0x7FF7BC2C9540	lua_LoadInt	Score-based Matching
+0454	lundump	LoadNumber	N/A	N/A	ifdeffed out / inlined
+0455	lundump	LoadString	0x7FF7BC2C95D0	lua_LoadString	Single called (xref) option
+0456	lundump	LoadCode	0x7FF7BC2C96A0	lua_LoadCode	Score-based Matching
+0457	lundump	LoadConstants	0x7FF7BC2C9750	lua_LoadConstants	Single called (xref) option
+0458	lundump	LoadDebug	0x7FF7BC2C9A60	lua_LoadDebug	Neighbour matching
+0459	lundump	LoadFunction	0x7FF7BC2C9D90	lua_LoadFunction	Agent - File-unique string / const
+0460	lundump	luaU_header	0x7FF7BC2C9FF0	lua_luaU_header	Neighbour matching
+0461	lundump	LoadHeader	0x7FF7BC2CA020	lua_LoadHeader	Neighbour matching
+0462	lundump	luaU_undump	0x7FF7BC2CA130	lua_luaU_undump	Score-based Matching
+0463	lvm	luaV_tonumber	0x7FF7BC2B71F0	lua_luaV_tonumber	Single called (xref) option
+0464	lvm	luaV_tostring	0x7FF7BC2B7250	lua_luaV_tostring	Single called (xref) option
+0465	lvm	traceexec	0x7FF7BC2B72F0	lua_traceexec	Single called (xref) option
+0466	lvm	callTMres	0x7FF7BC2B73C0	lua_callTMres	Single called (xref) option
+0467	lvm	callTM	0x7FF7BC2B7470	lua_callTM	Neighbour matching
+0468	lvm	luaV_gettable	0x7FF7BC2B7500	lua_luaV_gettable	Single called (xref) option
+0469	lvm	luaV_settable	0x7FF7BC2B7610	lua_luaV_settable	Single called (xref) option
+0470	lvm	call_binTM	0x7FF7BC2B7750	lua_call_binTM	Single called (xref) option
+0471	lvm	get_compTM	0x7FF7BC2B77D0	lua_get_compTM	Neighbour matching
+0472	lvm	call_orderTM	0x7FF7BC2B78A0	lua_call_orderTM	Single called (xref) option
+0473	lvm	l_strcmp	0x7FF7BC2B7950	lua_l_strcmp	Neighbour matching
+0474	lvm	luaV_lessthan	0x7FF7BC2B7A00	lua_luaV_lessthan	Single called (xref) option
+0475	lvm	lessequal	0x7FF7BC2B7AC0	lua_lessequal	Single caller (xref) option
+0476	lvm	luaV_equalval	0x7FF7BC2B7BB0	lua_luaV_equalval	Neighbour matching
+0477	lvm	luaV_concat	0x7FF7BC2B7D00	lua_luaV_concat	Agent - File-unique string / const
+0478	lvm	Arith	0x7FF7BC2B7F50	lua_Arith	Neighbour matching
+0479	lvm	luaV_execute	0x7FF7BC2B8150	lua_luaV_execute	Anchor - Complex unique string / const
+0480	lzio	luaZ_fill	0x7FF7BC2BAF80	lua_luaZ_fill	Single called (xref) option
+0481	lzio	luaZ_lookahead	0x7FF7BC2BAFD0	lua_luaZ_lookahead	Neighbour matching
+0482	lzio	luaZ_init	0x7FF7BC2BB040	lua_luaZ_init	Neighbour matching
+0483	lzio	luaZ_read	0x7FF7BC2BB060	lua_luaZ_read	Single called (xref) option
+0484	lzio	luaZ_openspace	0x7FF7BC2BB120	lua_luaZ_openspace	Single called (xref) option
+0485	ldebug	currentpc	N/A	N/A	Unused - Static function without internal xrefs
+0486	ldebug	currentline	0x7FF7BC2B21D0	lua_currentline	Single called (xref) option
+0487	ldebug	lua_sethook	0x7FF7BC2B2220	lua_lua_sethook	Single called (xref) option
+0488	ldebug	lua_gethook	N/A	N/A	N/A
+0489	ldebug	lua_gethookmask	N/A	N/A	N/A
+0490	ldebug	lua_gethookcount	0x7FF7BC2B2250	lua_lua_gethookcount	Neighbour matching
+0491	ldebug	lua_getstack	0x7FF7BC2B2260	lua_lua_getstack	Agent - File-unique string / const
+0492	ldebug	getluaproto	N/A	N/A	Unused - Static function without internal xrefs
+0493	ldebug	findlocal	0x7FF7BC2B22E0	lua_findlocal	Single called (xref) option
+0494	ldebug	lua_getlocal	0x7FF7BC2B2390	lua_lua_getlocal	Single called (xref) option
+0495	ldebug	lua_setlocal	0x7FF7BC2B2400	lua_lua_setlocal	Single called (xref) option
+0496	ldebug	funcinfo	0x7FF7BC2B2470	lua_funcinfo	Score-based Matching
+0497	ldebug	info_tailcall	N/A	N/A	N/A
+0498	ldebug	collectvalidlines	0x7FF7BC2B2500	lua_collectvalidlines	Single called (xref) option
+0499	ldebug	precheck	N/A	N/A	Unused - Static function without internal xrefs
+0500	ldebug	luaG_checkopenop	0x7FF7BC2B25D0	lua_luaG_checkopenop	Single called (xref) option
+0501	ldebug	checkArgMode	0x7FF7BC2B2600	lua_checkArgMode	Neighbour matching
+0502	ldebug	symbexec	0x7FF7BC2B2650	lua_symbexec	Single called (xref) option
+0503	ldebug	luaG_checkcode	0x7FF7BC2B2C40	lua_luaG_checkcode	Single called (xref) option
+0504	ldebug	kname	N/A	N/A	Unused - Static function without internal xrefs
+0505	ldebug	getobjname	0x7FF7BC2B2C60	lua_getobjname	Anchor - Complex unique string / const
+0506	ldebug	getfuncname	0x7FF7BC2B2E70	lua_getfuncname	Neighbour matching
+0507	ldebug	isinstack	N/A	N/A	Unused - Static function without internal xrefs
+0508	ldebug	addinfo	0x7FF7BC2B2F30	lua_addinfo	Single called (xref) option
+0509	ldebug	luaG_errormsg	0x7FF7BC2B3030	lua_luaG_errormsg	Neighbour matching
+0510	ldebug	luaG_runerror	0x7FF7BC2B30E0	lua_luaG_runerror	Single called (xref) option
+0511	ldebug	auxgetinfo	0x7FF7BC2B3120	lua_auxgetinfo	Neighbour matching
+0512	ldebug	lua_getinfo	0x7FF7BC2B32C0	lua_lua_getinfo	Neighbour matching
+0513	ldebug	luaG_typeerror	0x7FF7BC2B33B0	lua_luaG_typeerror	Agent - File-unique string / const
+0514	ldebug	luaG_concaterror	0x7FF7BC2B3480	lua_luaG_concaterror	Neighbour matching
+0515	ldebug	luaG_aritherror	0x7FF7BC2B34A0	lua_luaG_aritherror	Agent - File-unique string / const
+0516	ldebug	luaG_ordererror	0x7FF7BC2B34F0	lua_luaG_ordererror	Agent - File-unique string / const
+0517	ldo	luaD_seterrorobj	0x7FF7BC2B56D0	lua_luaD_seterrorobj	Anchor - Complex unique string / const
+0518	ldo	luaD_rawrunprotected	0x7FF7BC2B5780	lua_luaD_rawrunprotected	Neighbour matching
+0519	ldo	correctstack	0x7FF7BC2B5830	lua_correctstack	Neighbour matching
+0520	ldo	luaD_reallocstack	0x7FF7BC2B58E0	lua_luaD_reallocstack	Neighbour matching
+0521	ldo	luaD_reallocCI	0x7FF7BC2B5970	lua_luaD_reallocCI	Agent - File-unique string / const
+0522	ldo	luaD_growstack	0x7FF7BC2B5A20	lua_luaD_growstack	Neighbour matching
+0523	ldo	luaD_callhook	0x7FF7BC2B5A40	lua_luaD_callhook	Neighbour matching
+0524	ldo	adjust_varargs	0x7FF7BC2B5B70	lua_adjust_varargs	Neighbour matching
+0525	ldo	tryfuncTM	0x7FF7BC2B5D30	lua_tryfuncTM	Score-based Matching
+0526	ldo	callrethooks	0x7FF7BC2B5DF0	lua_callrethooks	Neighbour matching
+0527	ldo	luaD_poscall	0x7FF7BC2B5E70	lua_luaD_poscall	Score-based Matching
+0528	ldo	resume_error	0x7FF7BC2B5F10	lua_resume_error	Neighbour matching
+0529	ldo	lua_yield	0x7FF7BC2B5F90	lua_lua_yield	Anchor - Complex unique string / const
+0530	ldo	f_parser	0x7FF7BC2B6040	lua_f_parser	Single caller (xref) option
+0531	ldo	restore_stack_limit	N/A	N/A	N/A
+0532	ldo	resetstack	0x7FF7BC2B6150	lua_resetstack	Score-based Matching
+0533	ldo	luaD_throw	0x7FF7BC2B61F0	lua_luaD_throw	Single called (xref) option
+0534	ldo	growCI	N/A	N/A	N/A
+0535	ldo	luaD_precall	0x7FF7BC2B6260	lua_luaD_precall	Single called (xref) option
+0536	ldo	luaD_call	0x7FF7BC2B6520	lua_luaD_call	Single called (xref) option
+0537	ldo	resume	0x7FF7BC2B65D0	lua_resume	Neighbour matching
+0538	ldo	lua_resume	0x7FF7BC2B6660	lua_lua_resume	Anchor - Complex unique string / const
+0539	ldo	luaD_pcall	0x7FF7BC2B6720	lua_luaD_pcall	Neighbour matching
+0540	ldo	luaD_protectedparser	N/A	N/A	N/A
+0541	lgc	removeentry	N/A	N/A	Unused - Static function without internal xrefs
+0542	lgc	reallymarkobject	0x7FF7BC2B3550	lua_reallymarkobject	Single called (xref) option
+0543	lgc	marktmu	N/A	N/A	N/A
+0544	lgc	luaC_separateudata	0x7FF7BC2B3670	lua_luaC_separateudata	Score-based Matching
+0545	lgc	traversetable	0x7FF7BC2B42F0	lua_traversetable	Single caller (xref) option
+0546	lgc	traverseproto	0x7FF7BC2B3930	lua_traverseproto	Neighbour matching
+0547	lgc	traverseclosure	0x7FF7BC2B3A30	lua_traverseclosure	Neighbour matching
+0548	lgc	checkstacksizes	0x7FF7BC2B3AE0	lua_checkstacksizes	Score-based Matching
+0549	lgc	traversestack	0x7FF7BC2B3750	lua_traversestack	Single called (xref) option
+0550	lgc	propagatemark	0x7FF7BC2B3C10	lua_propagatemark	Single caller (xref) option
+0551	lgc	propagateall	0x7FF7BC2B48A0	lua_propagateall	Single caller (xref) option
+0552	lgc	iscleared	N/A	N/A	Unused - Static function without internal xrefs
+0553	lgc	cleartable	0x7FF7BC2B3D50	lua_cleartable	Neighbour matching
+0554	lgc	freeobj	0x7FF7BC2B3E90	lua_freeobj	Single called (xref) option
+0555	lgc	sweeplist	0x7FF7BC2B4080	lua_sweeplist	Neighbour matching
+0556	lgc	checkSizes	0x7FF7BC2B4140	lua_checkSizes	Score-based Matching
+0557	lgc	GCTM	0x7FF7BC2B41D0	lua_GCTM	Neighbour matching
+0558	lgc	luaC_callGCTM	0x7FF7BC2B4440	sub_7FF7BC2B4440	Single called (xref) option
+0559	lgc	luaC_freeall	0x7FF7BC2B4470	lua_luaC_freeall	Single called (xref) option
+0560	lgc	markmt	N/A	N/A	N/A
+0561	lgc	markroot	0x7FF7BC2B4660	lua_markroot	Score-based Matching
+0562	lgc	remarkupvals	N/A	N/A	N/A
+0563	lgc	atomic	0x7FF7BC2B4710	lua_atomic	Single called (xref) option
+0564	lgc	singlestep	0x7FF7BC2B4A90	lua_singlestep	Neighbour matching
+0565	lgc	luaC_step	0x7FF7BC2B4D90	lua_luaC_step	Single called (xref) option
+0566	lgc	luaC_fullgc	0x7FF7BC2B4E90	lua_luaC_fullgc	Neighbour matching
+0567	lgc	luaC_barrierf	0x7FF7BC2B4F40	lua_luaC_barrierf	Single called (xref) option
+0568	lgc	luaC_barrierback	0x7FF7BC2B4F70	lua_luaC_barrierback	Single called (xref) option
+0569	lgc	luaC_link	0x7FF7BC2B4F90	lua_luaC_link	Neighbour matching
+0570	lgc	luaC_linkupval	0x7FF7BC2B4FB0	lua_luaC_linkupval	Single called (xref) option
+0571	lapi	index2adr	0x7FF7BC2AF120	lua_index2adr	Agent - File-unique string / const
+0572	lapi	getcurrenv	N/A	N/A	Unused - Static function without internal xrefs
+0573	lapi	luaA_pushobject	0x7FF7BC2AF1D0	lua_luaA_pushobject	Neighbour matching
+0574	lapi	lua_checkstack	0x7FF7BC2AF1F0	lua_lua_checkstack	Single called (xref) option
+0575	lapi	lua_xmove	0x7FF7BC2AF290	lua_lua_xmove	Single called (xref) option
+0576	lapi	lua_setlevel	0x7FF7BC2AF2F0	lua_lua_setlevel	Single called (xref) option
+0577	lapi	lua_atpanic	0x7FF7BC2AF300	lua_lua_atpanic	Neighbour matching
+0578	lapi	lua_newthread	0x7FF7BC2AF320	lua_lua_newthread	Single called (xref) option
+0579	lapi	lua_gettop	0x7FF7BC2AF370	lua_lua_gettop	Single called (xref) option
+0580	lapi	lua_settop	0x7FF7BC2AF380	lua_lua_settop	Single called (xref) option
+0581	lapi	lua_remove	0x7FF7BC2AF3E0	lua_lua_remove	Single called (xref) option
+0582	lapi	lua_insert	0x7FF7BC2AF430	lua_lua_insert	Neighbour matching
+0583	lapi	lua_replace	0x7FF7BC2AF490	lua_lua_replace	Agent - File-unique string / const
+0584	lapi	lua_pushvalue	0x7FF7BC2AF560	lua_lua_pushvalue	Single called (xref) option
+0585	lapi	lua_type	0x7FF7BC2AF590	lua_lua_type	Single called (xref) option
+0586	lapi	lua_typename	0x7FF7BC2AF5C0	lua_lua_typename	Single called (xref) option
+0587	lapi	lua_iscfunction	0x7FF7BC2AF5E0	lua_lua_iscfunction	Single called (xref) option
+0588	lapi	lua_isnumber	0x7FF7BC2AF610	lua_lua_isnumber	Single called (xref) option
+0589	lapi	lua_isstring	0x7FF7BC2AF640	lua_lua_isstring	Single called (xref) option
+0590	lapi	lua_isuserdata	N/A	N/A	N/A
+0591	lapi	lua_rawequal	0x7FF7BC2AF680	lua_lua_rawequal	Single called (xref) option
+0592	lapi	lua_equal	0x7FF7BC2AF6D0	lua_lua_equal	Score-based Matching
+0593	lapi	lua_lessthan	0x7FF7BC2AF730	lua_lua_lessthan	Single called (xref) option
+0594	lapi	lua_tonumber	0x7FF7BC2AF780	lua_lua_tonumber	Single called (xref) option
+0595	lapi	lua_tointeger	0x7FF7BC2AF7C0	lua_lua_tointeger	Single called (xref) option
+0596	lapi	lua_toboolean	0x7FF7BC2AF7F0	lua_lua_toboolean	Single called (xref) option
+0597	lapi	lua_tolstring	0x7FF7BC2AF820	lua_lua_tolstring	Neighbour matching
+0598	lapi	lua_objlen	0x7FF7BC2AF8D0	lua_lua_objlen	Single called (xref) option
+0599	lapi	lua_tocfunction	0x7FF7BC2AF950	lua_lua_tocfunction	Single called (xref) option
+0600	lapi	lua_touserdata	0x7FF7BC2AF980	lua_lua_touserdata	Single called (xref) option
+0601	lapi	lua_tothread	0x7FF7BC2AF9C0	lua_lua_tothread	Single called (xref) option
+0602	lapi	lua_topointer	0x7FF7BC2AF9E0	lua_lua_topointer	Score-based Matching
+0603	lapi	lua_pushnil	0x7FF7BC2AFA50	lua_lua_pushnil	Single called (xref) option
+0604	lapi	lua_pushnumber	0x7FF7BC2AFA70	lua_lua_pushnumber	Single called (xref) option
+0605	lapi	lua_pushinteger	0x7FF7BC2AFA90	lua_lua_pushinteger	Single called (xref) option
+0606	lapi	lua_pushlstring	0x7FF7BC2AFAB0	lua_lua_pushlstring	Single called (xref) option
+0607	lapi	lua_pushstring	0x7FF7BC2AFB20	lua_lua_pushstring	Single caller (xref) option
+0608	lapi	lua_pushvfstring	0x7FF7BC2AFB70	lua_lua_pushvfstring	Neighbour matching
+0609	lapi	lua_pushfstring	0x7FF7BC2AFBD0	lua_lua_pushfstring	Single called (xref) option
+0610	lapi	lua_pushcclosure	0x7FF7BC2AFC20	lua_lua_pushcclosure	Single called (xref) option
+0611	lapi	lua_pushboolean	0x7FF7BC2AFD00	lua_lua_pushboolean	Single called (xref) option
+0612	lapi	lua_pushlightuserdata	0x7FF7BC2AFD20	lua_lua_pushlightuserdata	Single called (xref) option
+0613	lapi	lua_pushthread	0x7FF7BC2AFD40	lua_lua_pushthread	Single called (xref) option
+0614	lapi	lua_gettable	0x7FF7BC2AFD70	lua_lua_gettable	Single called (xref) option
+0615	lapi	lua_getfield	0x7FF7BC2AFDA0	lua_lua_getfield	Single called (xref) option
+0616	lapi	lua_rawget	0x7FF7BC2AFE10	lua_lua_rawget	Single called (xref) option
+0617	lapi	lua_rawgeti	0x7FF7BC2AFE50	lua_lua_rawgeti	Single called (xref) option
+0618	lapi	lua_createtable	0x7FF7BC2AFE90	lua_lua_createtable	Single called (xref) option
+0619	lapi	lua_getmetatable	0x7FF7BC2AFF00	lua_lua_getmetatable	Single called (xref) option
+0620	lapi	lua_getfenv	0x7FF7BC2AFF60	lua_lua_getfenv	Single called (xref) option
+0621	lapi	lua_settable	0x7FF7BC2AFFE0	lua_lua_settable	Single called (xref) option
+0622	lapi	lua_setfield	0x7FF7BC2B0010	lua_lua_setfield	Single called (xref) option
+0623	lapi	lua_rawset	0x7FF7BC2B0090	lua_lua_rawset	Single called (xref) option
+0624	lapi	lua_rawseti	0x7FF7BC2B0110	lua_lua_rawseti	Single called (xref) option
+0625	lapi	lua_setmetatable	0x7FF7BC2B0190	lua_lua_setmetatable	Single called (xref) option
+0626	lapi	lua_setfenv	0x7FF7BC2B0250	lua_lua_setfenv	Single called (xref) option
+0627	lapi	lua_call	0x7FF7BC2B02F0	lua_lua_call	Single called (xref) option
+0628	lapi	f_call	0x7FF7BC2B0340	lua_f_call	Neighbour matching
+0629	lapi	lua_pcall	0x7FF7BC2B0350	lua_lua_pcall	Single called (xref) option
+0630	lapi	f_Ccall	N/A	N/A	N/A
+0631	lapi	lua_cpcall	N/A	N/A	N/A
+0632	lapi	lua_load	0x7FF7BC2B03E0	lua_lua_load	Single called (xref) option
+0633	lapi	lua_dump	0x7FF7BC2B0430	lua_lua_dump	Single called (xref) option
+0634	lapi	lua_status	0x7FF7BC2B0480	lua_lua_status	Neighbour matching
+0635	lapi	lua_gc	0x7FF7BC2B0490	lua_lua_gc	Single called (xref) option
+0636	lapi	lua_error	0x7FF7BC2B0650	lua_lua_error	Neighbour matching
+0637	lapi	lua_next	0x7FF7BC2B0660	lua_lua_next	Single called (xref) option
+0638	lapi	lua_concat	0x7FF7BC2B06A0	lua_lua_concat	Single called (xref) option
+0639	lapi	lua_getallocf	N/A	N/A	Unused - No xrefs inside the open source
+0640	lapi	lua_setallocf	N/A	N/A	Unused - No xrefs inside the open source
+0641	lapi	lua_newuserdata	0x7FF7BC2B0740	lua_lua_newuserdata	Single called (xref) option
+0642	lapi	aux_upvalue	N/A	N/A	Unused - Static function without internal xrefs
+0643	lapi	lua_getupvalue	0x7FF7BC2B07C0	lua_lua_getupvalue	Score-based Matching
+0644	lapi	lua_setupvalue	0x7FF7BC2B0850	lua_lua_setupvalue	Score-based Matching
+0645	lcode	isnumeral	N/A	N/A	Unused - Static function without internal xrefs
+0646	lcode	fixjump	0x7FF7BC2CA1B0	lua_fixjump	Single called (xref) option
+0647	lcode	luaK_getlabel	0x7FF7BC2CA220	lua_luaK_getlabel	Single called (xref) option
+0648	lcode	getjump	N/A	N/A	Unused - Static function without internal xrefs
+0649	lcode	getjumpcontrol	N/A	N/A	Unused - Static function without internal xrefs
+0650	lcode	need_value	0x7FF7BC2CA230	lua_need_value	Single called (xref) option
+0651	lcode	patchtestreg	N/A	N/A	Unused - Static function without internal xrefs
+0652	lcode	removevalues	0x7FF7BC2CA290	lua_removevalues	Neighbour matching
+0653	lcode	patchlistaux	0x7FF7BC2CA320	lua_patchlistaux	Single called (xref) option
+0654	lcode	dischargejpc	N/A	N/A	N/A
+0655	lcode	luaK_concat	0x7FF7BC2CA4D0	lua_luaK_concat	Neighbour matching
+0656	lcode	luaK_checkstack	0x7FF7BC2CA530	lua_luaK_checkstack	Single called (xref) option
+0657	lcode	luaK_reserveregs	0x7FF7BC2CA580	lua_luaK_reserveregs	Single called (xref) option
+0658	lcode	freereg	N/A	N/A	Unused - Static function without internal xrefs
+0659	lcode	freeexp	N/A	N/A	Unused - Static function without internal xrefs
+0660	lcode	addk	0x7FF7BC2CA5F0	lua_addk	Agent - File-unique string / const
+0661	lcode	luaK_stringK	0x7FF7BC2CA710	lua_luaK_stringK	Neighbour matching
+0662	lcode	luaK_numberK	0x7FF7BC2CA740	lua_luaK_numberK	Single called (xref) option
+0663	lcode	boolK	N/A	N/A	N/A
+0664	lcode	nilK	N/A	N/A	N/A
+0665	lcode	luaK_setreturns	0x7FF7BC2CA770	lua_luaK_setreturns	Single called (xref) option
+0666	lcode	luaK_setoneret	0x7FF7BC2CA800	lua_luaK_setoneret	Score-based Matching
+0667	lcode	invertjump	0x7FF7BC2CA860	lua_invertjump	Neighbour matching
+0668	lcode	constfolding	0x7FF7BC2CA8B0	lua_constfolding	Neighbour matching
+0669	lcode	luaK_fixline	0x7FF7BC2CAA10	lua_luaK_fixline	Single called (xref) option
+0670	lcode	luaK_code	0x7FF7BC2CAA30	lua_luaK_code	Single called (xref) option
+0671	lcode	luaK_codeABC	0x7FF7BC2CAB20	lua_luaK_codeABC	Single called (xref) option
+0672	lcode	luaK_codeABx	0x7FF7BC2CAB50	lua_luaK_codeABx	Neighbour matching
+0673	lcode	luaK_setlist	0x7FF7BC2CAB70	lua_luaK_setlist	Agent - File-unique string / const
+0674	lcode	luaK_nil	0x7FF7BC2CAC10	lua_luaK_nil	Neighbour matching
+0675	lcode	luaK_jump	0x7FF7BC2CACB0	lua_luaK_jump	Neighbour matching
+0676	lcode	luaK_ret	0x7FF7BC2CAD50	lua_luaK_ret	Single called (xref) option
+0677	lcode	condjump	N/A	N/A	N/A
+0678	lcode	luaK_patchtohere	0x7FF7BC2CAD70	lua_luaK_patchtohere	Single called (xref) option
+0679	lcode	luaK_dischargevars	0x7FF7BC2CADD0	lua_luaK_dischargevars	Single called (xref) option
+0680	lcode	code_label	N/A	N/A	N/A
+0681	lcode	discharge2reg	0x7FF7BC2CAEB0	lua_discharge2reg	Score-based Matching
+0682	lcode	discharge2anyreg	0x7FF7BC2CB000	lua_discharge2anyreg	Neighbour matching
+0683	lcode	exp2reg	0x7FF7BC2CB040	lua_exp2reg	Neighbour matching
+0684	lcode	luaK_exp2nextreg	0x7FF7BC2CB220	lua_luaK_exp2nextreg	Single called (xref) option
+0685	lcode	luaK_exp2anyreg	0x7FF7BC2CB2B0	lua_luaK_exp2anyreg	Neighbour matching
+0686	lcode	luaK_exp2val	0x7FF7BC2CB320	lua_luaK_exp2val	Neighbour matching
+0687	lcode	luaK_exp2RK	0x7FF7BC2CB3A0	lua_luaK_exp2RK	Score-based Matching
+0688	lcode	luaK_storevar	0x7FF7BC2CB4E0	lua_luaK_storevar	Single called (xref) option
+0689	lcode	luaK_self	0x7FF7BC2CB5E0	lua_luaK_self	Neighbour matching
+0690	lcode	jumponcond	0x7FF7BC2CB700	lua_jumponcond	Single called (xref) option
+0691	lcode	luaK_goiftrue	0x7FF7BC2CB7E0	lua_luaK_goiftrue	Single called (xref) option
+0692	lcode	luaK_goiffalse	0x7FF7BC2CB910	lua_luaK_goiffalse	Neighbour matching
+0693	lcode	codenot	0x7FF7BC2CBA30	lua_codenot	Single called (xref) option
+0694	lcode	luaK_indexed	0x7FF7BC2CBB30	lua_luaK_indexed	Single called (xref) option
+0695	lcode	codearith	0x7FF7BC2CBB50	lua_codearith	Single called (xref) option
+0696	lcode	codecomp	0x7FF7BC2CBC60	lua_codecomp	Single called (xref) option
+0697	lcode	luaK_prefix	0x7FF7BC2CBD40	lua_luaK_prefix	Score-based Matching
+0698	lcode	luaK_infix	0x7FF7BC2CBE60	lua_luaK_infix	Score-based Matching
+0699	lcode	luaK_posfix	0x7FF7BC2CBED0	lua_luaK_posfix	Single called (xref) option
+0700	lcode	luaK_patchlist	0x7FF7BC2CC160	lua_luaK_patchlist	Single called (xref) option

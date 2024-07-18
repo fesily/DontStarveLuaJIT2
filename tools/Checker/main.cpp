@@ -1,7 +1,7 @@
 #define NOMINMAX
 
-#include "frida-gum.h"
 #include "SignatureJson.hpp"
+#include "frida-gum.h"
 
 #include "LuaModule.hpp"
 #include "platform.hpp"
@@ -44,15 +44,17 @@ int check(const char *path, bool isClient) {
         fprintf(stderr, "%s", "can find lua module base addr\n");
         return 1;
     }
-
+    using namespace std::literals;
     SignatureJson sjCopy{isClient};
-    sjCopy.file_path = "F:\\dontstarveluajit2\\ida.json";
+    auto p = std::filesystem::path{PROJECT_DIR} / "tests" / "windows_x64" / (("Signatures_"s + (isClient ? "client" : "server")) + ".txt.json");
+    sjCopy.file_path = p.string();
     auto sCopy = sjCopy.read_from_signatures().value();
 
     auto count = 0;
     for (auto [func, info]: signatures.funcs) {
-        if (sCopy.funcs.at(func).offset != info.offset) {
-            fprintf(stderr, "[%s]%s", func.c_str(), "can't match the address");
+        const auto ida_offset = sCopy.funcs.at(func).offset;
+        if (ida_offset != info.offset) {
+            fprintf(stderr, "[%s]%s [%d]-[%d]\n", func.c_str(), "can't match the address", (int) ida_offset, (int) info.offset);
             count++;
         }
     }
@@ -70,5 +72,5 @@ int main() {
         return 1;
     set_worker_directory(worker_dir);
     SignatureJson::version_path = GAMEDIR "/version.txt";
-    return check(game_server_path, false);
+    return check(game_path, true) + check(game_server_path, false);
 }

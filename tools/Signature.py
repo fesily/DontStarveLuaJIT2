@@ -5,7 +5,7 @@ import argparse
 current_game_version = util.read_version()
 argparser = argparse.ArgumentParser()
 argparser.add_argument("input")
-argparser.add_argument("output")
+argparser.add_argument("--output", required=False)
 missfuncs = set()
 with open("src/missfunc.txt", "r") as f:
     for line in f:
@@ -55,6 +55,8 @@ def generator(input, output):
     
     with open(output, mode='w+') as f:
         f.write(json.dumps({'version': int(current_game_version), 'funcs':outputs}))
-
+        
 myargs = argparser.parse_args()
+if myargs.output is None:
+    myargs.output = myargs.input + ".json"
 generator(myargs.input, myargs.output)
