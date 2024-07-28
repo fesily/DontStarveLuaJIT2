@@ -14,6 +14,6 @@ void unloadlib(module_handler_t h);
 
 uintptr_t getParentId();
 
-const char *get_cwd(uintptr_t pid = 0);
+std::string get_cwd(uintptr_t pid = 0);
 
 void set_worker_directory(const char *path);

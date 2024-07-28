@@ -1,5 +1,9 @@
 #ifdef _WIN32
 #include <Windows.h>
+#include <tlhelp32.h>
+#include <psapi.h>
+#include <winternl.h>
+#pragma comment(lib, "ntdll.lib")
 #else
 
 #include <unistd.h>
@@ -88,36 +92,75 @@ static std::string exec(const char *cmd) {
     }
     return result;
 }
+static std::string WStringToString(const std::wstring_view &wstr) {
+    if (wstr.empty()) return std::string();
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int) wstr.size(), NULL, 0, NULL, NULL);
+    std::string strTo(size_needed, 0);
+    WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int) wstr.size(), &strTo[0], size_needed, NULL, NULL);
+    return strTo;
+}
+static std::string GetCommandLineByPid(DWORD processId) {
+
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
+    if (hProcess) {
+        HMODULE hMod;
+        DWORD cbNeeded;
+
+        // ªÒ»°√¸¡Ó––
+        PROCESS_BASIC_INFORMATION pbi;
+        ULONG returnLength;
+        if (NtQueryInformationProcess(hProcess, ProcessBasicInformation, &pbi, sizeof(pbi), &returnLength) == 0) {
+            PEB peb;
+            SIZE_T bytesRead;
+            if (ReadProcessMemory(hProcess, pbi.PebBaseAddress, &peb, sizeof(peb), &bytesRead) && bytesRead == sizeof(peb)) {
+                RTL_USER_PROCESS_PARAMETERS upp;
+                if (ReadProcessMemory(hProcess, peb.ProcessParameters, &upp, sizeof(upp), &bytesRead) && bytesRead == sizeof(upp)) {
+                    std::vector<WCHAR> cmdLineBuffer(upp.CommandLine.Length / sizeof(WCHAR));
+                    if (ReadProcessMemory(hProcess, upp.CommandLine.Buffer, cmdLineBuffer.data(), upp.CommandLine.Length, &bytesRead) && bytesRead == upp.CommandLine.Length) {
+                        return WStringToString({cmdLineBuffer.begin(), cmdLineBuffer.end()});
+                    }
+                }
+            }
+        }
+
+        CloseHandle(hProcess);
+    }
+    
+    return {};
+}
 
 uintptr_t getParentId() {
-    const auto pid = GetCurrentProcessId();
-    std::string command = "wmic process where processid=\"" + std::to_string(pid) + "\" get parentprocessid";
-    std::string output = exec(command.c_str());
-    output = output.substr(output.find('\n') + 1);
-    uintptr_t parentPid = 0;
-    std::from_chars(output.c_str(), output.data() + output.size(), parentPid);
-    return parentPid;
+    HANDLE hProcess = GetCurrentProcess();
+    struct MY_PROCESS_BASIC_INFORMATION {
+        NTSTATUS ExitStatus;
+        PPEB PebBaseAddress;
+        ULONG_PTR AffinityMask;
+        KPRIORITY BasePriority;
+        ULONG_PTR UniqueProcessId;
+        ULONG_PTR InheritedFromUniqueProcessId;
+    };
+    static_assert(sizeof(MY_PROCESS_BASIC_INFORMATION) == sizeof(PROCESS_BASIC_INFORMATION));
+
+    MY_PROCESS_BASIC_INFORMATION pbi;
+    ULONG returnLength;
+    if (NtQueryInformationProcess(hProcess, ProcessBasicInformation, &pbi, sizeof(pbi), &returnLength) == 0) {
+        return pbi.InheritedFromUniqueProcessId;
+    }
+    return 0;
 }
 
-static std::string getCommandLineForProcess(uintptr_t pid) {
-    std::string command = "wmic process where processid=\"" + std::to_string(pid) + "\" get CommandLine";
-    std::string output = exec(command.c_str());
-    return output;
-}
 #else
 uintptr_t getParentId() {
     return getppid();
 }
 #endif
 
-const char *get_cwd(uintptr_t pid) {
+std::string get_cwd(uintptr_t pid) {
 #ifdef _WIN32
     if (pid == 0)
         return GetCommandLineA();
     else {
-        const auto pid = getParentId();
-        static auto parentCmd = getCommandLineForProcess(pid);
-        return parentCmd.c_str();
+        return GetCommandLineByPid(pid);
     }
 #else
     auto param = pid == 0 ? std::string("/proc/self/cmdline") : "/proc/" + std::to_string(pid) + "/cmdline";
