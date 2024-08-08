@@ -2,8 +2,14 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 
+#ifdef _WIN32
 std::filesystem::path getGameDir();
-
+#else
+std::filesystem::path getGameDir() {
+    static std::filesystem::path p = getExePath().parent_path().parent_path();
+    return p;
+}
+#endif
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(luajit_config, modmain_path, server_disable_luajit);
 std::optional<luajit_config> luajit_config::read_from_file(std::filesystem::path path) {
     if (path.empty())
