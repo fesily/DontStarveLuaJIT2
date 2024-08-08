@@ -4,20 +4,25 @@ do
     local fp = _G.io.open("luajit_config.json", "w");
     if fp then
         local config = {
-            modmain_path = _G.debug.getinfo(1).source
+            modmain_path = _G.debug.getinfo(1).source,
+            server_disable_luajit = GetModConfigData("DisableJITWhenServer");
         }
         fp:write(_G.json.encode(config))
     end
 end
 
-local TEMPLATES = require "widgets/redux/templates"
-local old_getbuildstring = TEMPLATES.GetBuildString
-TEMPLATES.GetBuildString = function()
-    return (old_getbuildstring() or "") .. "(LuaJIT)"
-end
+
 
 if GetModConfigData("EnabledJIT") then
-    local jit = require 'jit'
+    local hasluajit, jit = _G.pcall(require, 'jit')
+    if not hasluajit then
+        return
+    end
+    local TEMPLATES = require "widgets/redux/templates"
+    local old_getbuildstring = TEMPLATES.GetBuildString
+    TEMPLATES.GetBuildString = function()
+        return (old_getbuildstring() or "") .. "(LuaJIT)"
+    end
 
     if GetModConfigData("JitOpt") then
         require("jit.opt").start("minstitch=2", "maxtrace=4000",

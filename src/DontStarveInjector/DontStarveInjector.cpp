@@ -277,6 +277,7 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 
 #ifndef _WIN32
 #include <dlfcn.h>
+#include "luajit_config.hpp"
 
 int (*origin)(const char* path);
 int chdir_hook(const char* path){
@@ -288,7 +289,14 @@ int chdir_hook(const char* path){
             std::this_thread::sleep_for(200ms);
         }
 #endif
-        Inject(!getExePath().string().contains("dontstarve_dedicated_server_nullrenderer"));
+        auto isClientMode = !getExePath().string().contains("dontstarve_dedicated_server_nullrenderer");
+        if (!isClientMode) {
+            auto config = luajit_config::read_from_file();
+            if (config && config->server_disable_luajit) {
+                return origin(path);
+            }
+        }
+        Inject(isClientMode);
         spdlog::default_logger_raw()->flush();
         injector = true;
     }

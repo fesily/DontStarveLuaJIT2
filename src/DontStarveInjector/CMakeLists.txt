@@ -14,6 +14,12 @@ set(SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
 )
 
+if (NOT MSVC)
+    list(APPEND SOURCES
+        luajit_config.cpp
+        )
+endif()
+
 find_package(libzip CONFIG REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)

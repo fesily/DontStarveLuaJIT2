@@ -22,7 +22,7 @@ description = translate(
 
 author = "fesil"
 
-version = "0.5.3"
+version = "0.5.8"
 
 forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -76,6 +76,16 @@ configuration_options = {
             { description = "Off", data = false },
         },
         default = true
+    },
+    {
+        name = "DisableJITWhenServer",
+        label = translate({ en = "DisableJITWhenServer", zh = "服务器禁用luajit" }),
+        hover = translate({ en = "server process disable luajit mod", zh = "服务器进程禁用luajit" }),
+        options = {
+            { description = "On",  data = true },
+            { description = "Off", data = false },
+        },
+        default = false
     }
 }
 --restart_required = true

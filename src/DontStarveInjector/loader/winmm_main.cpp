@@ -16,6 +16,7 @@
 #include "platform.hpp"
 #include "PersistentString.hpp"
 #include "steam.hpp"
+#include "../luajit_config.hpp"
 
 extern "C" {
 #include <lua.hpp>
@@ -130,10 +131,10 @@ std::optional<std::filesystem::path> getModindexPath()
 }
 #endif
 
-
-bool isClientMod = []() {
-    return !getExePath().filename().string().contains("server");
-}();
+const std::optional<luajit_config>& getLuajitConfig() {
+    static auto config = luajit_config::read_from_file();
+    return config;
+}
 
 
 void updater();
@@ -146,6 +147,14 @@ void DontStarveInjectorStart() {
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", sinks.begin(), sinks.end()));
     auto dir = getGameDir();
 
+    bool isClientMod = !getExePath().filename().string().contains("server");
+    if (!isClientMod) {
+        auto& config = getLuajitConfig();
+        if (config && config->server_disable_luajit) {
+            spdlog::error("config found disablejit when server: ON");
+            return;
+        }
+    }
     // auto updater
     if (isClientMod && !std::string_view(GetCommandLineA()).contains("-disable_check_luajit_mod")) {
         updater();

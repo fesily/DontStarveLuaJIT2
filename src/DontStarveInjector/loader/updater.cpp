@@ -1,40 +1,24 @@
 #include <filesystem>
-#include <fstream>
 #include <string>
 #include <string_view>
 #include <format>
 #include <charconv>
 #include <Windows.h>
 #include <spdlog/spdlog.h>
-#include <nlohmann/json.hpp>
 #include <fstream>
 #include <string>
 #include "platform.hpp"
 #include "steam.hpp"
 #include "PersistentString.hpp"
+#include "../luajit_config.hpp"
 
 using namespace std::literals;
 
 std::filesystem::path getGameDir();
-
-struct luajit_config {
-    std::string modmain_path;
-};
-
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(luajit_config, modmain_path);
-
-static std::optional<luajit_config> read_from_file() {
-    auto path = getGameDir() / "data" / "luajit_config.json";
-    std::ifstream sf(path.string().c_str());
-    if (!sf.is_open())
-        return std::nullopt;
-    nlohmann::json j;
-    sf >> j;
-    return j.get<luajit_config>();
-}
+const std::optional<luajit_config>& getLuajitConfig();
 
 static std::optional<std::filesystem::path> getModDir() {
-    static std::optional<luajit_config> config = read_from_file();
+    auto& config = getLuajitConfig();
     if (config)
         return std::filesystem::path(config->modmain_path).parent_path();
     return std::nullopt;
