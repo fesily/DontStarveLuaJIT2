@@ -5,6 +5,7 @@
 #ifdef _WIN32
 std::filesystem::path getGameDir();
 #else
+#include "util/platform.hpp"
 std::filesystem::path getGameDir() {
     static std::filesystem::path p = getExePath().parent_path().parent_path();
     return p;
