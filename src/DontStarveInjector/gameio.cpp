@@ -12,6 +12,9 @@
 #include <optional>
 #include "util/zipfile.hpp"
 #include "util/gum_platform.hpp"
+#include "util/platform.hpp"
+
+#include <spdlog/spdlog.h>
 
 #include <thread>
 #include <chrono>
@@ -46,8 +49,18 @@ static std::filesystem::path to_path(const char *p) {
 }
 
 static std::optional<std::filesystem::path> get_workshop_dir() {
-    static auto dir = std::filesystem::relative(std::filesystem::path("..") / ".." / ".." / "workshop" / "content" / "322330");
-    return dir;
+    auto dir = std::filesystem::relative(std::filesystem::path("..") / ".." / ".." / "workshop");
+    const auto cmd = get_cwd();
+    auto flag = "-ugc_directory";
+    if (cmd.contains(flag)) {
+        const auto cmds = get_cwds();
+        auto iter = std::find(cmds.begin(), cmds.end(), flag);
+        iter++;
+        const auto& value = *iter;
+        dir = value;
+        spdlog::info("workshop_dir ugc_directory: {}", value);
+    }
+    return dir / "content" / "322330";
 }
 
 static FILE *lj_fopen(char const *f, const char *mode) noexcept {
@@ -58,7 +71,7 @@ static FILE *lj_fopen(char const *f, const char *mode) noexcept {
     if (fp)
         return fp;
 
-    const auto &workshop_dir = get_workshop_dir();
+    static const auto workshop_dir = get_workshop_dir();
     constexpr auto mods_root = "../mods/workshop-"sv;
     if (path_s.starts_with(mods_root) && workshop_dir) {
         auto mod_path = std::filesystem::path(path_s.substr(mods_root.size()));
@@ -195,8 +208,6 @@ static void lj_clearerr(FILE *fp) noexcept {
     return clearerr(fp);
 }
 
-#include "util/platform.hpp"
-
 static int lj_need_transform_path() noexcept {
     static bool has_lua_debug_flag = [] {
         std::string_view cmd = get_cwd();
@@ -205,6 +216,7 @@ static int lj_need_transform_path() noexcept {
         }
         return cmd.contains("-enable_lua_debugger");
     }();
+    spdlog::info("lj_need_transform_path: {}", has_lua_debug_flag);
     return has_lua_debug_flag;
 }
 

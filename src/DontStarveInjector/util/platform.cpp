@@ -106,7 +106,7 @@ static std::string GetCommandLineByPid(DWORD processId) {
         HMODULE hMod;
         DWORD cbNeeded;
 
-        // »ñÈ¡ÃüÁîÐÐ
+        // ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         PROCESS_BASIC_INFORMATION pbi;
         ULONG returnLength;
         if (NtQueryInformationProcess(hProcess, ProcessBasicInformation, &pbi, sizeof(pbi), &returnLength) == 0) {
@@ -176,6 +176,25 @@ std::string get_cwd(uintptr_t pid) {
     }(param.c_str());
     return cmd.c_str();
 #endif
+}
+
+std::vector<std::string> get_cwds(uintptr_t pid) {
+    std::vector<std::string> cmds;
+#ifdef _WIN32
+    cmds.resize(__argc);
+    for (int i = 0; i < __argc; i++) {
+        cmds[i] = __argv[i];
+    }
+#else
+    auto param = pid == 0 ? std::string("/proc/self/cmdline") : "/proc/" + std::to_string(pid) + "/cmdline";
+    std::ifstream file(param.c_str());
+    std::string cmd;
+    std::string cmdline;
+    while (std::getline(file, cmdline, '\0')) {
+        cmds.push_back(cmdline);
+    }
+#endif
+    return cmds;
 }
 
 void set_worker_directory(const char *path) {
