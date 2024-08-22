@@ -55,10 +55,14 @@ static std::optional<std::filesystem::path> get_workshop_dir() {
     if (cmd.contains(flag)) {
         const auto cmds = get_cwds();
         auto iter = std::find(cmds.begin(), cmds.end(), flag);
-        iter++;
-        const auto& value = *iter;
-        dir = value;
-        spdlog::info("workshop_dir ugc_directory: {}", value);
+        if (iter != cmds.end()) {
+            iter++;
+            if (iter != cmds.end()) {
+                const auto &value = *iter;
+                dir = value;
+                spdlog::info("workshop_dir ugc_directory: {}", value);
+            }
+        }
     }
     return dir / "content" / "322330";
 }

@@ -19,7 +19,7 @@ const std::optional<luajit_config>& getLuajitConfig();
 
 static std::optional<std::filesystem::path> getModDir() {
     auto& config = getLuajitConfig();
-    if (config)
+    if (config && !config->modmain_path.empty())
         return std::filesystem::path(config->modmain_path).parent_path();
     return std::nullopt;
 }
@@ -101,10 +101,7 @@ static auto need_updater() {
 void updater();
 
 static auto unsetup_pre(std::filesystem::path game_dir) {
-    // unsetup
-    SetEnvironmentVariableW(L"GAME_FILE", (game_dir / "Winmm.dll").c_str());
-
-    return "rm $Env:GAME_FILE";
+    return "rm Winmm.dll";
 }
 
 static std::optional<const char *> setup_pre(std::filesystem::path game_dir) {
@@ -143,27 +140,34 @@ static void installer(bool setup, bool restart) {
     } else {
         update_cmd = unsetup_pre(game_dir);
     }
-
+    //powershell -NoExit -Command Wait-Process 13860; rm winmm.dll;start dontstarve_steam_x64.exe
 #define DEBUG_SHELL !NDEBUG
     auto cmd = std::format("powershell"
                            #if !NDEBUG
                            " -NoExit"
                            #endif
-                           " -Command $Host.UI.RawUI.WindowTitle='LUAJIT_UPDATER';Wait-Process {}; {};"
+                           " -Command Wait-Process {};sleep 3; {};"
 #ifdef ENABLE_STEAM_SUPPORT
             "start steam://rungameid/322330;"
 #endif
             ,
                            GetCurrentProcessId(), update_cmd);
 #ifndef ENABLE_STEAM_SUPPORT
-    cmd += "start " + getExePath().string();
+    cmd += std::format("start {}", getExePath().filename().string());
 #endif
     spdlog::info("run shell:{}", cmd);
     if (CreateProcessA(NULL, cmd.data(), NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
-        if (!restart)
+        if (restart) {
+            if (!setup) {
+                auto p = getModinfoLuaPath();
+                if (p && std::filesystem::exists(p.value())) {
+                    std::filesystem::remove(p.value());
+                }
+            }
             std::exit(0);
+        }
     }
 }
 

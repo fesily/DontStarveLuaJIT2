@@ -180,10 +180,15 @@ std::string get_cwd(uintptr_t pid) {
 std::vector<std::string> get_cwds(uintptr_t pid) {
     std::vector<std::string> cmds;
 #ifdef _WIN32
-    cmds.resize(__argc);
-    for (int i = 0; i < __argc; i++) {
-        cmds[i] = __argv[i];
+    auto cmd = get_cwd(pid);
+    int n = 0;
+    if (auto argv = CommandLineToArgvW(std::filesystem::path(cmd).wstring().c_str(), &n); argv) {
+        cmds.resize(n);
+        for (int i = 0; i < n; i++) {
+           cmds[i] = std::filesystem::path(argv[i]).string();
+        }
     }
+    return cmds;
 #else
     auto param = pid == 0 ? std::string("/proc/self/cmdline") : "/proc/" + std::to_string(pid) + "/cmdline";
     std::ifstream file(param.c_str());
