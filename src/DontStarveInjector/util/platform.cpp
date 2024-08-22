@@ -106,7 +106,6 @@ static std::string GetCommandLineByPid(DWORD processId) {
         HMODULE hMod;
         DWORD cbNeeded;
 
-        // ��ȡ������
         PROCESS_BASIC_INFORMATION pbi;
         ULONG returnLength;
         if (NtQueryInformationProcess(hProcess, ProcessBasicInformation, &pbi, sizeof(pbi), &returnLength) == 0) {

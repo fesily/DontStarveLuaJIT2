@@ -210,7 +210,7 @@ static void lj_clearerr(FILE *fp) noexcept {
 
 static int lj_need_transform_path() noexcept {
     static bool has_lua_debug_flag = [] {
-        std::string_view cmd = get_cwd();
+        auto cmd = get_cwd();
         if (cmd.contains("DST_Secondary") || cmd.contains("DST_Master")) {
             cmd = get_cwd(getParentId());
         }
