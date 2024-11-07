@@ -98,7 +98,7 @@ export LD_PRELOAD=./lib64/libInjector.so
 </plist>
 ```
 
-- `sudo codesign -d --entitlements . /my.xml . /dontstarve_steam.app`
+- `sudo codesign -d --entitlements ./my.xml ./dontstarve_steam.app`
 - Copy all `bin64/osx` files to the `MacOS` folder in the game directory.
 - Rename the original game executable, `dontstarve_steam`, to `dontstarve_steam_1`.
 - Create a new file with the contents of `dontstarve_steam`:
