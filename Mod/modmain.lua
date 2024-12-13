@@ -1,6 +1,6 @@
 _G = GLOBAL
 
-do
+if not _G.TheNet:IsDedicated() then
     local fp = _G.io.open("luajit_config.json", "w");
     if fp then
         local config = {
