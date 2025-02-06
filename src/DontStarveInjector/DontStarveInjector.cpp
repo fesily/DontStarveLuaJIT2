@@ -240,6 +240,11 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 #if USE_LISTENER
     interceptor = gum_interceptor_obtain();
 #endif
+
+    spdlog::set_level(spdlog::level::err);
+#ifdef DEBUG
+    spdlog::set_level(spdlog::level::trace);
+#endif
     
     if (!function_relocation::init_ctx()) {
         showError("can't init signature");

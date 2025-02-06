@@ -145,6 +145,11 @@ void DontStarveInjectorStart() {
     std::initializer_list<std::shared_ptr<spdlog::sinks::sink>> sinks = {
             std::make_shared<spdlog::sinks::msvc_sink_st>(), std::make_shared<spdlog::sinks::stdout_color_sink_st>()};
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", sinks.begin(), sinks.end()));
+    
+    spdlog::set_level(spdlog::level::err);
+#ifdef DEBUG
+    spdlog::set_level(spdlog::level::trace);
+#endif
     auto dir = getGameDir();
 
     bool isClientMod = !getExePath().filename().string().contains("server");

@@ -13,8 +13,13 @@ std::filesystem::path getGameDir() {
 #endif
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(luajit_config, modmain_path, server_disable_luajit);
 std::optional<luajit_config> luajit_config::read_from_file(std::filesystem::path path) {
-    if (path.empty())
-        path = getGameDir() / "data" / "luajit_config.json";
+    if (path.empty()) {
+        path = getGameDir() / "data" / "unsafedata";
+        if (!std::filesystem::exists(path)) {
+            std::filesystem::create_directories(path);
+        }
+        path = path / "luajit_config.json";
+    }
     std::ifstream sf(path.string().c_str());
     if (!sf.is_open())
         return std::nullopt;
