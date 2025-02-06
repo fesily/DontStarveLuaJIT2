@@ -20,6 +20,8 @@ std::optional<luajit_config> luajit_config::read_from_file(std::filesystem::path
         }
         path = path / "luajit_config.json";
     }
+    if (!std::filesystem::exists(path))
+        return std::nullopt;
     std::ifstream sf(path.string().c_str());
     if (!sf.is_open())
         return std::nullopt;
