@@ -1,9 +1,9 @@
+_G = GLOBAL
+
 local hasluajit, jit = _G.pcall(require, 'jit')
 if not hasluajit then
     return
 end
-
-_G = GLOBAL
 
 if not _G.TheNet:IsDedicated() then
     local fp = _G.io.open("unsafedata/luajit_config.json", "w");
