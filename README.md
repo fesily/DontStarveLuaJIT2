@@ -7,6 +7,7 @@
 ## NOTICE
 
 Be sure to back up your archives, there are no guarantees that there are no bugs!
+With standalone server tools you need to be aware that the `disable luajit for servers` option in the settings is invalid, you should just remove the luajit to start the server.
 
 # Roadload
 
@@ -35,6 +36,9 @@ Be sure to back up your archives, there are no guarantees that there are no bugs
 
 1. Create a new folder in the mods folder in the root directory of the game with a name like luajit_mod.
 2. Then copy all the files to that folder.
+### Simaple Path
+run `install.bat`(windows) or `install_linux.sh`
+`install_linux.sh` maybe need exec `chmod +x ./install_linux.sh`
 
 ## 2.Injector:
 

@@ -224,6 +224,11 @@ static int lj_need_transform_path() noexcept {
     return has_lua_debug_flag;
 }
 
+static uint32_t lj_jit_default_flags() noexcept {
+    auto path = getExePath();
+    return path.string().contains("nullrenderer") ? 1 : 0;
+}
+
 void init_luajit_io(module_handler_t hluajitModule) {
 #define INIT_LUAJIT_IO(name)                                      \
     {                                                             \
@@ -248,5 +253,9 @@ void init_luajit_io(module_handler_t hluajitModule) {
     INIT_LUAJIT_IO(lj_fwrite);
     INIT_LUAJIT_IO(lj_clearerr);
     INIT_LUAJIT_IO(lj_need_transform_path);
+}
+
+void init_luajit_jit_opt(module_handler_t hluajitModule) {
+    INIT_LUAJIT_IO(lj_jit_default_flags);
 #undef INIT_LUAJIT_IO
 }

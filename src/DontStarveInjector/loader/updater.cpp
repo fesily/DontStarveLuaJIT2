@@ -51,7 +51,6 @@ auto hashfile(std::filesystem::path path) {
     return std::hash<std::string>{}(hash);
 }
 
-// md5 整个文件夹内的所有文件
 static std::string md5_dir(std::filesystem::path dir) {
     std::string result;
     for (auto &p: std::filesystem::recursive_directory_iterator(dir)) {

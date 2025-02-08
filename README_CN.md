@@ -5,6 +5,7 @@
 ## 注意
 
 请务必备份您的存档，因为我们无法保证插件不会导致存档损坏！
+使用独立开服工具需要注意,设置中`服务器禁用luajit`选项是无效的,你应该直接去除luajit启动服务器
 
 # Roadload
 
@@ -33,6 +34,9 @@
 
 1. 先在游戏根目录下的mods文件夹中创建一个新的文件夹，名字随意取，比如luajit_mod
 2. 然后把所有的文件复制到该目录
+### 此时的简单方法
+直接运行`install.bat`(windows) `install_linux.sh`
+`install_linux.sh`可能需要执行`chmod +x ./install_linux.sh`赋予权限
 
 ## 2.注入部分：
 

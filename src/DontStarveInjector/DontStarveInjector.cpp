@@ -203,6 +203,9 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
     init_luajit_io(hluajitModule);
 #endif
 
+    extern void init_luajit_jit_opt(module_handler_t hluajitModule);
+    init_luajit_jit_opt(hluajitModule);
+
 #if USE_LISTENER
     listener = (GumInvocationListener *)g_object_new(EXAMPLE_TYPE_LISTENER, NULL);
     gum_module_enumerate_exports(target_module_name, PrintCallCb, NULL);
