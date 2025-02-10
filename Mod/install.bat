@@ -27,7 +27,7 @@ if not exist "%destination%" (
 )
 
 echo [INFO] moving files...
-robocopy "%source%" "%destination%" /E /MOVE /NP /NFL /NDL >NUL
+robocopy "%source%" "%destination%" /E /NFL /NDL /IS /IT /IM >NUL
 
 if errorlevel 8 (
     echo [ERROR] moving files failed

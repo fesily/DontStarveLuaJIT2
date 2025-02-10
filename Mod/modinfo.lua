@@ -22,7 +22,7 @@ description = translate(
 
 author = "fesil"
 
-version = "0.6.1"
+version = "0.7.0"
 
 forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -33,7 +33,10 @@ reign_of_giants_compatible = true
 dst_compatible = true
 
 --TODO: need test compatible without the mod
+--all_clients_require_mod = true
 client_only_mod = true
+
+priority = 2e53
 
 -- Preview image
 icon_atlas = "images/modicon.xml"
@@ -85,6 +88,17 @@ configuration_options = {
             { description = "Off", data = false },
         },
         default = false
+    },
+    {
+        name = "EnableProfiler",
+        label = translate({ en = "EnableProfilerCosoleCommand", zh = "启用性能分析控制台命令" }),
+        hover = translate({ en = "ProfilerJit.start | ProfilerJit.stop", zh = "ProfilerJit.start | ProfilerJit.stop" }),
+        options = {
+            { description = translate({en = "off", zh = "关闭"}),  data = "off" },
+            { description = translate({en = "Detailed Sampling Mode", zh = "详细采样模式"}),  data = "fzvp" },
+            { description = translate({en = "Origin Sampling Mode", zh = "原始采样模式"}), data = "Gz" },
+        },
+        default = 'off'
     }
 }
 --restart_required = true

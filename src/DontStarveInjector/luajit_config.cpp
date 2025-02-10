@@ -25,7 +25,14 @@ std::optional<luajit_config> luajit_config::read_from_file(std::filesystem::path
     std::ifstream sf(path.string().c_str());
     if (!sf.is_open())
         return std::nullopt;
-    nlohmann::json j;
-    sf >> j;
-    return j.get<luajit_config>();
+    try
+    {
+        nlohmann::json j;
+        sf >> j;
+        return j.get<luajit_config>();
+    }
+    catch(...)
+    {
+        return std::nullopt;
+    }
 }
