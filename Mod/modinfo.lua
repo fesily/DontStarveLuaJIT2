@@ -35,6 +35,7 @@ dst_compatible = true
 --TODO: need test compatible without the mod
 --all_clients_require_mod = true
 client_only_mod = true
+server_only_mod = true
 
 priority = 2e53
 

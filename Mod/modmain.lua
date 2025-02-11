@@ -1,140 +1,188 @@
 _G = GLOBAL
-
 local hasluajit, jit = _G.pcall(require, "jit")
 if not hasluajit then
 	return
 end
 
-if not _G.TheNet:IsDedicated() then
-	local fp = _G.io.open("unsafedata/luajit_config.json", "w")
-	if fp then
-		local config = {
-			modmain_path = _G.debug.getinfo(1).source,
-			server_disable_luajit = GetModConfigData("DisableJITWhenServer"),
-		}
-		fp:write(_G.json.encode(config))
-        fp:close()
-	end
-end
-
-local old_GetServerModNames = _G.KnownModIndex.GetServerModNames
-local old_GetServerModNamesTable = _G.KnownModIndex.GetServerModNamesTable
-local old_GetEnabledServerModNames = _G.ModManager.GetEnabledServerModNames
-
-_G.KnownModIndex.GetServerModNames = function (...)
-    local names = old_GetServerModNames(...)
-    table.insert(names, modname)
-    return names
-end
-
-_G.KnownModIndex.GetServerModNamesTable = function (...)
-    local names = old_GetServerModNamesTable(...)
-    table.insert(names,  {modname = modname})
-    return names
-end
-_G.ModManager.GetEnabledServerModNames = function (...)
-	local names = old_GetEnabledServerModNames(...)
-    table.insert(names, modname)
-    return names
-end
-
-if GetModConfigData("EnabledJIT") then
-	local TEMPLATES = require("widgets/redux/templates")
-	local old_getbuildstring = TEMPLATES.GetBuildString
-	TEMPLATES.GetBuildString = function()
-		return (old_getbuildstring() or "") .. "(LuaJIT)"
+local function main()
+	if not TheNet:IsDedicated() then
+		local fp = io.open("unsafedata/luajit_config.json", "w")
+		if fp then
+			local config = {
+				modmain_path = debug.getinfo(1).source,
+				server_disable_luajit = GetModConfigData("DisableJITWhenServer"),
+			}
+			fp:write(json.encode(config))
+			fp:close()
+		end
 	end
 
-	if GetModConfigData("JitOpt") then
-		require("jit.opt").start(
-			"minstitch=2",
-			"maxtrace=4000",
-			"maxrecord=8000",
-			"sizemcode=64",
-			"maxmcode=4000",
-			"maxirconst=1000"
-		)
-	end
+	function inject_server_only_mod()
+		local old_GetServerModNames = KnownModIndex.GetServerModNames
+		local old_GetServerModNamesTable = KnownModIndex.GetServerModNamesTable
+		local old_GetEnabledServerModNames = ModManager.GetEnabledServerModNames
 
-	local enbaleBlackList = GetModConfigData("ModBlackList")
-
-	AddSimPostInit(function()
-		jit.on()
-
-		local prefix = "../mods/workshop-"
-		local blacklists = {}
-		if enbaleBlackList and #blacklists > 0 then
-			for i in ipairs(blacklists) do
-				blacklists[i] = prefix .. blacklists[i]
+		KnownModIndex.GetServerModNames = function(self, ...)
+			local names = old_GetServerModNames(self, ...)
+			for modname, _ in pairs(self.savedata.known_mods) do
+				if self:GetModInfo(modname).server_only_mod then
+					table.insert(names, modname)
+				end
 			end
-			local function startWith(str, prefix)
-				return str:find(prefix, 1, true) == 1
+			return names
+		end
+
+		KnownModIndex.GetServerModNamesTable = function(self, ...)
+			local names = old_GetServerModNamesTable(self, ...)
+			for known_modname, _ in pairs(self.savedata.known_mods) do
+				if self:GetModInfo(known_modname).server_only_mod then
+					table.insert(names, { modname = known_modname })
+				end
 			end
-			local _kleiloadlua = _G.kleiloadlua
-			_G.kleiloadlua = function(script, ...)
-				local m = _kleiloadlua(script, ...)
-				if type(script) == "string" then
-					for _, blacklist in ipairs(blacklists) do
-						if startWith(script, blacklist) then
-							jit.off(m, true)
-							break
+			return names
+		end
+		ModManager.GetEnabledServerModNames = function(self, ...)
+			local server_mods = old_GetEnabledServerModNames(self, ...)
+			if IsNotConsole() then
+				local mod_names = KnownModIndex:GetServerModNames()
+				for _, modname in pairs(mod_names) do
+					if KnownModIndex:IsModEnabled(modname) or KnownModIndex:IsModForceEnabled(modname) then
+						local modinfo = KnownModIndex:GetModInfo(modname)
+						if modinfo ~= nil then
+							if modinfo.server_only_mod then
+								table.insert(server_mods, modname)
+							end
+						else
+							table.insert(server_mods, modname)
 						end
 					end
 				end
-				return m
 			end
+			return server_mods
 		end
-	end)
-
-	if GetModConfigData("EnableProfiler") ~= "off" then
-		local env = _G.getfenv()
-		env.modimport = function(modulename)
-			_G.print("modimport: " .. MODROOT .. modulename, _G.package.path)
-			if string.sub(modulename, #modulename - 3, #modulename) ~= ".lua" then
-				modulename = modulename .. ".lua"
-			end
-			local result = _G.kleiloadlua(MODROOT .. modulename)
-			if result == nil then
-				_G.error("Error in modimport: " .. modulename .. " not found!")
-			elseif type(result) == "string" then
-				_G.error(
-					"Error in modimport: " .. ModInfoname(modname) .. " importing " .. modulename .. "!\n" .. result
-				)
-			else
-				_G.setfenv(result, setmetatable(env, { __index = _G }))
-				result()
-			end
-		end
-		local old_require = env.require
-		env.require = function(modulename)
-			local ok, ret = _G.pcall(old_require, modulename)
-			if ok then
-				return ret
-			end
-			return env.modimport(modulename)
-		end
-
-		local profiler = require("jit.p")
-		local zone = require("jit.zone")
-		local mode = GetModConfigData("EnableProfiler")
-
-		_G.rawset(_G, "ProfilerJit", {
-			start = function(m)
-				m = m or mode
-				local sim = _G.getmetatable(TheSim).__index
-				local old_profiler_push = sim.ProfilerPush
-				sim.ProfilerPush = function(name, ...)
-					zone(name)
-					old_profiler_push(name, ...)
-				end
-				local old_profiler_pop = sim.ProfilerPop
-				sim.ProfilerPop = function(...)
-					zone()
-					old_profiler_pop(...)
-				end
-				profiler.start(m, "unsafedata/profiler")
-			end,
-			stop = profiler.stop,
-		})
 	end
+
+	if GetModConfigData("EnabledJIT") then
+		local TEMPLATES = require("widgets/redux/templates")
+		local old_getbuildstring = TEMPLATES.GetBuildString
+		TEMPLATES.GetBuildString = function()
+			return (old_getbuildstring() or "") .. "(LuaJIT)"
+		end
+
+		if GetModConfigData("JitOpt") then
+			require("jit.opt").start(
+				"minstitch=2",
+				"maxtrace=4000",
+				"maxrecord=8000",
+				"sizemcode=64",
+				"maxmcode=4000",
+				"maxirconst=1000"
+			)
+		end
+
+		local enbaleBlackList = GetModConfigData("ModBlackList")
+
+		AddSimPostInit(function()
+			jit.on()
+
+			local prefix = "../mods/workshop-"
+			local blacklists = {}
+			if enbaleBlackList and #blacklists > 0 then
+				for i in ipairs(blacklists) do
+					blacklists[i] = prefix .. blacklists[i]
+				end
+				local function startWith(str, prefix)
+					return str:find(prefix, 1, true) == 1
+				end
+				local _kleiloadlua = kleiloadlua
+				rawset(_G, "kleiloadlua", function(script, ...)
+					local m = _kleiloadlua(script, ...)
+					if type(script) == "string" then
+						for _, blacklist in ipairs(blacklists) do
+							if startWith(script, blacklist) then
+								jit.off(m, true)
+								break
+							end
+						end
+					end
+					return m
+				end)
+			end
+		end)
+
+		local zone = require("jit.zone")
+		local sim = getmetatable(TheSim).__index
+		local old_profiler_push = sim.ProfilerPush
+		local old_profiler_pop = sim.ProfilerPop
+		if GetModConfigData("EnableProfiler") ~= "off" then
+			local profiler = require("jit.p")
+			local mode = GetModConfigData("EnableProfiler")
+			local enabled_profiler = false
+			sim.ProfilerPush = function(name, ...)
+				if enabled_profiler then
+					zone(name)
+				end
+				old_profiler_push(name, ...)
+			end
+			sim.ProfilerPop = function(...)
+				if enabled_profiler then
+					zone()
+				end
+				old_profiler_pop(...)
+			end
+			rawset(_G, "ProfilerJit", {
+				start = function(m)
+					enabled_profiler = true
+					profiler.start( m or mode, "unsafedata/profiler")
+				end,
+				stop = function ()
+					enabled_profiler = false
+					profiler.stop()
+				end,
+			})
+		end
+
+		if GetModConfigData("EnableTrace") ~= "off" then
+			local os_clock = os.clock
+			local stack
+			local enabled_trace = false
+			local mode = GetModConfigData("EnableTrace")
+			sim.ProfilerPush = function(name, ...)
+				if enabled_trace then
+					zone(name)
+				end
+				old_profiler_push(name, ...)
+			end
+			sim.ProfilerPop = function(...)
+				if enabled_trace then
+					zone()
+				end
+				old_profiler_pop(...)
+			end
+			rawset(_G, "ProfilerTrace", {
+				start = function(m)
+					m = m or mode
+					enabled_trace = true
+					profiler.start(m, "unsafedata/trace")
+				end,
+				stop = function ()
+					enabled_trace = false
+					profiler.stop()
+				end,
+			})
+		end
+
+		if GetModConfigData("EnableTcc") ~= "off" then
+			
+		end
+	end
+
+	inject_server_only_mod()
 end
+
+local env = _G.getfenv(main)
+_G.setfenv(main, _G.setmetatable({}, { __index =function (t, k)
+	return env[k] or _G[k]
+end
+}))
+main()
