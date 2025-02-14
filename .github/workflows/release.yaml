@@ -40,11 +40,11 @@ jobs:
         with:
           configurePreset: 'ninja-multi-vcpkg'
           configurePresetAdditionalArgs: "['-DCMAKE_OSX_ARCHITECTURES=x86_64']"
-          buildPreset: 'ninja-vcpkg-release'
+          buildPreset: 'ninja-vcpkg-release-dbg'
 
       - name: CMake install
         run: |
-          cmake --build ./builds/ninja-multi-vcpkg --config Release --target install
+          cmake --build ./builds/ninja-multi-vcpkg --config RelWithDebInfo --target install
 
       - name: Clean Up linux
         if: ${{ matrix.target == 'linux' }}

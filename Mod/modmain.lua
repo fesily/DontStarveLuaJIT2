@@ -24,39 +24,19 @@ local function main()
 
 		KnownModIndex.GetServerModNames = function(self, ...)
 			local names = old_GetServerModNames(self, ...)
-			for modname, _ in pairs(self.savedata.known_mods) do
-				if self:GetModInfo(modname).server_only_mod then
 					table.insert(names, modname)
-				end
-			end
 			return names
 		end
 
 		KnownModIndex.GetServerModNamesTable = function(self, ...)
 			local names = old_GetServerModNamesTable(self, ...)
-			for known_modname, _ in pairs(self.savedata.known_mods) do
-				if self:GetModInfo(known_modname).server_only_mod then
-					table.insert(names, { modname = known_modname })
-				end
-			end
+			table.insert(names,  {modname = modname})
 			return names
 		end
 		ModManager.GetEnabledServerModNames = function(self, ...)
 			local server_mods = old_GetEnabledServerModNames(self, ...)
 			if IsNotConsole() then
-				local mod_names = KnownModIndex:GetServerModNames()
-				for _, modname in pairs(mod_names) do
-					if KnownModIndex:IsModEnabled(modname) or KnownModIndex:IsModForceEnabled(modname) then
-						local modinfo = KnownModIndex:GetModInfo(modname)
-						if modinfo ~= nil then
-							if modinfo.server_only_mod then
-								table.insert(server_mods, modname)
-							end
-						else
 							table.insert(server_mods, modname)
-						end
-					end
-				end
 			end
 			return server_mods
 		end
