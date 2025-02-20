@@ -46,7 +46,7 @@ const char lua_ident[] =
 
 
 #ifdef _WIN32
-declspec(noinline)
+__declspec(noinline)
 #else
 __attribute__((noinline))
 #endif
