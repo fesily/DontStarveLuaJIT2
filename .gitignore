@@ -47,3 +47,4 @@ vcpkg_installed/
 src/missfunc.h
 src/signatures.hpp
 /CMakeFiles
+Mod/scripts/jit

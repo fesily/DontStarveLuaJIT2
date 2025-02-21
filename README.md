@@ -1,13 +1,13 @@
-[中文版本](README_CN.md)
+[English](README_EN.md)
 
 # DontStarveLuaJIT
 
-	Don't Starve LuaJIT optimization patch
+	Don't Starve LuaJIT 优化补丁
 
-## NOTICE
+## 注意
 
-Be sure to back up your archives, there are no guarantees that there are no bugs!
-With standalone server tools you need to be aware that the `disable luajit for servers` option in the settings is invalid, you should just remove the luajit to start the server.
+请务必备份您的存档，因为我们无法保证插件不会导致存档损坏！
+使用独立开服工具需要注意,设置中`服务器禁用luajit`选项是无效的,你应该直接去除luajit启动服务器
 
 # Roadload
 
@@ -30,38 +30,68 @@ With standalone server tools you need to be aware that the `disable luajit for s
 - [ ] andorid
 - [ ] switch
 
-# Installation:
+## 完全兼容加密mod
 
-## 1.Mods:
+功能描述:
 
-1. Create a new folder in the mods folder in the root directory of the game with a name like luajit_mod.
-2. Then copy all the files to that folder.
-### Simaple Path
-run `install.bat`(windows) or `install_linux.sh`
-`install_linux.sh` maybe need exec `chmod +x ./install_linux.sh`
+完全解决加密mod不兼容luajit的问题,除非代码依赖了lua语言的未定义行为
 
-## 2.Injector:
+赞助:
+<progress value="80" max="500"></progress> (80/500)
+
+## 加密插件
+
+功能描述:
+
+不损失任何性能地加密mod,加密后仅能在luajit上运行
+
+## 多线程并发GC插件
+
+功能描述:
+
+预计减少卡顿情况.(ps: 预计你懂的😄)
+
+极大减少stopworld时间,减少逻辑帧过长导致的卡顿
+
+赞助:
+<progress value="0" max="0"></progress> (0/500)
+
+## Nintendo switch插件
+
+功能描述:
+
+支持pc玩家跨平台游戏.(ps: 🫓)
+
+
+# 安装：
+
+## 1.MOD本体：
+
+1. 先在游戏根目录下的mods文件夹中创建一个新的文件夹，名字随意取，比如luajit_mod
+2. 然后把所有的文件复制到该目录
+### 此时的简单方法
+直接运行`install.bat`(windows) `install_linux.sh`
+`install_linux.sh`可能需要执行`chmod +x ./install_linux.sh`赋予权限
+
+## 2.注入部分：
 
 ### Windows
 
-Copy all `bin64/windows` files to the `bin64` folder in the game directory
+将所有 `bin64/windows` 文件复制到游戏目录下的 `bin64` 文件夹中
 
-like: C:\\steamapps\\Don't Starve Together\\bin64\
+比如 C:\\steamapps\\Don't Starve Together\bin64\
 
-Launch the game, press ` and type:
+启动游戏，按 ` 键并键入
 
-print(_Version)
-
-And you can see message started with "LuaJIT".
+print(jit)
 
 ### Linux
 
-I've only tested it on ubuntu, but I can also test it on steamos if someone can help me with the steamos environment,
-haha!
+我只在 ubuntu 上测试过，但如果有人能提供 steamos 环境，我也可以在 steamos 上测试，哈哈！
 
-- Copy all `bin64/linux` files to the `bin64` folder in the game directory
-- Rename original game executable `dontstarve_steam_x64` to `dontstarve_steam_x64_1`
-- Create new file `dontstarve_steam_x64` with the content:
+- 将所有 `bin64/linux`文件复制到游戏目录下的 `bin64`文件夹中
+- 将原始游戏可执行文件 `dontstarve_steam_x64` 重命名为 `dontstarve_steam_x64_1`
+- 创建内容为 `dontstarve_steam_x64` 的新文件：
 
 ```bash
 #!/bin/bash
@@ -70,22 +100,22 @@ export LD_PRELOAD=./lib64/libInjector.so
 ./dontstarve_steam_x64_1
 ```
 
-- Run the shell `chmod +x ./dontstarve_steam_x64`
-- Is't done
+- 运行 shell `chmod +x ./dontstarve_steam_x64`
+- 搞定
 
 ### macos
 
-- Create a certificate of your own, e.g. with the name Dontstarve
+- 创建一个属于自己的证书，比如名字为Dontstarve
 
-  [Official tutorial](https://support.apple.com/zh-cn/guide/keychain-access/kyca8916/mac)
+  [官方教程](https://support.apple.com/zh-cn/guide/keychain-access/kyca8916/mac)
 
-- Open the shell
-- Switch to your game path
+- 打开shell
+- 切换到自己的游戏路径
 
   `cd /Users/*/Library/Application Support/Steam/steamapps/common/Don't Starve Together/dontstarve_steam.app`
 
-- `sudo codesign -fs Dontstarve . /dontstarve_steam.app`
-- Create a new permissions management file, say called `my.xml`, with the contents:
+- `sudo codesign -fs Dontstarve ./dontstarve_steam.app`
+- 创建一个新的权限管理文件，比如叫`my.xml`，内容：
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -103,9 +133,9 @@ export LD_PRELOAD=./lib64/libInjector.so
 ```
 
 - `sudo codesign -d --entitlements ./my.xml ./dontstarve_steam.app`
-- Copy all `bin64/osx` files to the `MacOS` folder in the game directory.
-- Rename the original game executable, `dontstarve_steam`, to `dontstarve_steam_1`.
-- Create a new file with the contents of `dontstarve_steam`:
+- 将所有 `bin64/osx`文件复制到游戏目录下的 `MacOS`文件夹中
+- 将原始游戏可执行文件 `dontstarve_steam` 重命名为 `dontstarve_steam_1`
+- 创建内容为 `dontstarve_steam` 的新文件：
 
 ```bash
 #!/bin/bash
@@ -113,189 +143,19 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 ./dontstarve_steam_1
 ```
 
-- Run shell `chmod +x . /dontstarve_steam`.
+- 运行 shell `chmod +x ./dontstarve_steam`
 
-## 3.Enable Mod
+## 3.启用mod
 
-In Game，please enable the mod `Dontstarveluajit2`
+在游戏中启用名为dontstarveluajit2的mod
 
-If there aren't any other problems, you can now see luajit in the version number in the bottom right corner
+如果没有任何其他问题，现在可以在右下角的版本号看到luajit
 
-## How to build
+# 捐赠人列表
 
-### Dept
+| 姓名 | 金额 | 原因         |模组id|
+|------|------|--------------|-----------|
+| 冰*羊    | 30RMB | 兼容MOD    | [自动崩溃恢复](https://steamcommunity.com/sharedfiles/filedetails/?id=3377689002)|
+| Dv**ce   | 50RMB| 兼容MOD | [Accomplishments](https://steamcommunity.com/sharedfiles/filedetails/?id=2843097516)|
 
-install `CMake`, `Ninja`
 
-- copy `lua51.dll` to `src/x64/release/lua51.dll`
-- download `frida-gum.lib` from [github/frida](https://github.com/frida), name
-  like `frida-gum-devkit-16.2.1-windows-x86_64.exe`
-- copy `frida-gum.lib` to `src/frida-gum/frida-gum.lib`
-- in `CMakeLists.txt` set var `GAME_DIR` = your game dir
-- build by cmake
-
-## lua51.dll/so/dylib
-
-### windows
-
-Need vs2008 compiler the lua51.dll, also you can use which one in the mod
-
-### linux
-
-docker Ubuntu 14.04
-
-### macos
-
-macos 10.15
-
-## How to debug game:
-
-We need `vscode` + `lua-debug` plugin
-
-### How to debug game without steam
-
-1. create new file `steam_appid.txt` at gamedir/bin64
-2. the file context is 322330
-
-### Pass process args "-enable_lua_debugger"
-
-If you start with stream, please set game config, process start config: "-enable_lua_debugger"
-
-### vscode launch.json
-
-```json
-{
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "address": "127.0.0.1:12306",
-            "name": "attach client",
-            "request": "attach",
-            "stopOnEntry": true,
-            "type": "lua",
-            "luaVersion": "luajit",
-            "sourceMaps": [
-                [
-                    "../mods/workshop-*",
-                    "E:/SteamLibrary/steamapps/workshop/content/322330/*"
-                ]
-            ]
-        },
-        {
-            "address": "127.0.0.1:12307",
-            "name": "attach server",
-            "request": "attach",
-            "stopOnEntry": true,
-            "type": "lua",
-            "luaVersion": "luajit",
-            "sourceMaps": [
-                [
-                    "../mods/workshop-*",
-                    "E:/SteamLibrary/steamapps/workshop/content/322330/*"
-                ]
-            ]
-        },
-        {
-            "address": "127.0.0.1:12308",
-            "name": "attach server cave",
-            "request": "attach",
-            "stopOnEntry": true,
-            "type": "lua",
-            "luaVersion": "luajit",
-            "sourceMaps": [
-                [
-                    "../mods/workshop-*",
-                    "E:/SteamLibrary/steamapps/workshop/content/322330/*"
-                ]
-            ]
-        }
-    ], "compounds": [
-        {
-            "name": "Compound servers",
-            "configurations": [
-                "attach server",
-                "attach server cave"
-            ],
-            "stopAll": true
-        }
-    ]
-}
-```
-
-### data/scripts/main.lua:73
-
-1. find the code
-
-```lua
-DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated(
-if DEBUGGER_ENABLED then
-	Debuggee = require 'debuggee'
-end
-```
-
-2. replace the code to
-
-```lua
-if jit then
-	package.preload.debuggee = function()
-		local function dofile(filename)
-			local load = _VERSION == "Lua 5.1" and loadstring or load
-			local f = assert(io.open(filename))
-			local str = f:read "*a"
-			f:close()
-			return assert(load(str, "=(debugger.lua)"))(filename)
-		end
-		local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"
-		local debugger = dofile(path .. "/script/debugger.lua")
-		local Debuggee = {}
-		Debuggee.start = function ()
-			local port = 12306
-			if not TheNet:IsDedicated() then
-				port = 12306
-			else
-				port = 12307
-				if TheShard:IsMaster() then
-					port = 12307
-				elseif TheShard:IsSecondary() then
-					port = 12308
-				end
-			end
-			local host = {address = "127.0.0.1:".. port}
-			print("debuggee host:", host.address)
-			debugger:start(host):event ("autoUpdate", false)
-			debugger:setup_patch()
-			return "ok", host, debugger
-		end
-		Debuggee.poll = function ()
-			debugger:event "update"
-		end
-		return Debuggee
-	end
-end
-
-DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and not TheNet:IsDedicated()
-if DEBUGGER_ENABLED then
-	Debuggee = require 'debuggee'
--- if you want debug all scripts, use the code
-	local _, _, debugger = Debuggee.start()
--- [[
-	if not TheNet:IsDedicated() then
-		debugger:event "wait"
-
-	else
-		if TheShard:IsMaster() then
-			debugger:event "wait"
-		elseif TheShard:IsSecondary() then
-			debugger:event "wait"
-	end
-]]
-end
-```
-
-3. changed `local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"` to your path
-4. `DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated()`
-   remove `CONFIGURATION ~= "PRODUCTION"`
-
-### force enable the mod
-
-1. add process arg `-disable_check_luajit_mod`
