@@ -37,7 +37,7 @@
 完全解决加密mod不兼容luajit的问题,除非代码依赖了lua语言的未定义行为
 
 赞助:
-<progress value="80" max="500"></progress> (80/500)
+ ██░░░░░░░░░░░░ (80/500)
 
 ## 加密插件
 
@@ -54,7 +54,7 @@
 极大减少stopworld时间,减少逻辑帧过长导致的卡顿
 
 赞助:
-<progress value="0" max="0"></progress> (0/500)
+░░░░░░░░░░░░░ (0/500)
 
 ## Nintendo switch插件
 
