@@ -113,5 +113,6 @@ namespace function_relocation {
     };
 
     bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections);
+    bool get_module_sections(const char *path, ModuleSections &sections);
 }
 

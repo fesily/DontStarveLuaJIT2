@@ -30,13 +30,11 @@
 #include "util/platform.hpp"
 #include "ctx.hpp"
 #include "spdlog/sinks/basic_file_sink.h"
+#include "ModuleSections.hpp"
+
 
 #if !ONLY_LUA51
 #include <lua.hpp>
-#endif
-
-#ifdef _DEBUG
-#define new DEBUG_NEW
 #endif
 
 using namespace std;
@@ -91,9 +89,10 @@ static GumInterceptor *interceptor;
 #endif
 
 #if !ONLY_LUA51
-
+void* lua_state_instance;
 static void *lua_newstate_hooker(void *, void *ud) {
     auto L = luaL_newstate();
+    lua_state_instance = L;
     spdlog::info("luaL_newstate:{}", (void *) L);
     return L;
 }
@@ -210,14 +209,298 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
     listener = (GumInvocationListener *)g_object_new(EXAMPLE_TYPE_LISTENER, NULL);
     gum_module_enumerate_exports(target_module_name, PrintCallCb, NULL);
 #endif
+
+#define REPALCE_CONST_STRING_BRANCH_DEV 1
+#ifndef NDEBUG
+#ifdef REPALCE_CONST_STRING_BRANCH_DEV
+#ifdef _WIN32
+    function_relocation::ModuleSections moduleMain{};
+    using namespace std::literals;
+
+    if (function_relocation::get_module_sections(gum_process_get_main_module()->path, moduleMain)) {
+        function_relocation::MemorySignature scaner {"00 72 65 6C 65 61 73 65 00", 1};
+        auto str = (char*) scaner.scan(moduleMain.rodata.base_address, moduleMain.rodata.size);
+        if (str && "release"sv == (str + 1)) {
+            GumPageProtection prot;
+            if (gum_memory_query_protection(str, &prot) && gum_try_mprotect(str, 4, GUM_PAGE_RW)) {
+                gum_memory_write(str, (const guint8*)"dev", 4);
+                gum_try_mprotect(str, 4, prot);
+            }
+        }
+    }
+#endif
+#endif
+#endif
+
 }
 
 #pragma endregion Attach
-#ifdef _WIN32
-#define DONTSTARVEINJECTOR_API __declspec(dllexport)
-#else
-#define DONTSTARVEINJECTOR_API
+
+#include <tracy/TracyC.h>
+#include <tracy/Tracy.hpp>
+#if defined(_WIN32)
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach/mach_time.h>
+#include <sys/sysctl.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#include <fstream>
 #endif
+
+uint64_t get_time_ms() {
+#ifdef _WIN32
+    uint64_t ticks = __rdtsc();
+    LARGE_INTEGER freq;
+    QueryPerformanceFrequency(&freq);
+    return (ticks / freq.QuadPart) * 1000; // 时钟周期转换为毫秒
+#elif defined(__APPLE__)
+    // macOS (ARM): 使用 mach_absolute_time 获取高精度时间
+    mach_timebase_info_data_t timebase;
+    mach_timebase_info(&timebase);
+    uint64_t ticks = mach_absolute_time();
+    return (ticks * timebase.numer / timebase.denom) / 1e6; // 纳秒转换为毫秒
+#elif defined(__linux__)
+    // Linux (ARM): 使用 clock_gettime 获取高精度时间
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000 + ts.tv_nsec / 1e6; // 秒和纳秒转换为毫秒
+#else
+    #error "not support"
+    return 0;
+#endif
+}
+struct Profiler {
+    std::list<TracyCZoneCtx> ctx;
+    uint64_t start_time;
+    int stack;
+};
+static thread_local Profiler profiler;
+extern void (* lua_gc_func)(void *L, int,int);
+static int frame_gc_time = 0;
+static bool tracy_active = 0;
+extern "C" DONTSTARVEINJECTOR_API int set_frame_gc_time(int ms) {
+    if (ms == 0) {
+        return frame_gc_time;
+    }
+    return frame_gc_time = std::min(ms,30);
+}
+static thread_local std::string thread_name;
+static void set_thread_name(uint32_t thread_id, const char* name) {
+    thread_name = name;
+    SetThreadDescription(GetCurrentThread(), std::filesystem::path{thread_name}.c_str());
+}
+
+static void repalce_set_thread_name() {
+#ifdef _WIN32
+    function_relocation::MemorySignature set_thread_name_func{"B9 88 13 6D 40", -0x24};
+    auto range = gum_process_get_main_module()->range;
+    if (set_thread_name_func.scan(range->base_address, range->size)) {
+        Hook((uint8_t*)set_thread_name_func.target_address, (uint8_t*)&set_thread_name);
+    }
+#endif
+}
+
+static int64_t hook_profiler_push(void* self, const char* zone, const char* source, int line) {
+    using namespace std::literals;
+    bool is_connected = tracy_active;
+    auto& p = profiler;
+    if ("Update"sv == zone) {
+        if (frame_gc_time) {
+            if (thread_name == "SimUpdateThread"sv)
+                p.start_time = get_time_ms();
+        }
+        if (is_connected)
+            ___tracy_emit_frame_mark(0);
+    }
+    p.stack++;
+    if (!is_connected) 
+        return 0;
+    auto v = ___tracy_alloc_srcloc_name(line, source, strlen(source), 0, 0, zone, strlen(zone), 0);
+    if (v) {
+        auto k = ___tracy_emit_zone_begin_alloc(v, tracy_active);
+        p.ctx.emplace_back(k);
+    }
+    return 0;
+}
+
+
+static int64_t hook_profiler_pop(void* self) {
+    auto& p = profiler;
+    --p.stack;
+    if (p.stack < 0) {
+        p.stack = 0;
+    } else if (p.stack == 0 && p.start_time) {
+        ZoneScopedN("frame gc");
+        p.start_time = 0;
+        auto now = get_time_ms();
+        auto left_time = std::min<int>(30 - (now - p.start_time), frame_gc_time);
+        now += left_time;
+        do
+        {
+            lua_gc_func(lua_state_instance, 5, 0);
+        } while (get_time_ms() < now);
+    }
+    if (!tracy_active)
+        return 0;
+    if (!profiler.ctx.empty()) {
+        auto k = p.ctx.back();
+        p.ctx.pop_back();
+        ___tracy_emit_zone_end(k);
+    }
+    return 0;
+}
+#if 0
+namespace Gum {
+    struct InvocationListener
+    {
+      virtual ~InvocationListener () {}
+  
+      virtual void on_enter (GumInvocationContext * context) = 0;
+      virtual void on_leave (GumInvocationContext * context) = 0;
+    };
+    
+    typedef struct _GumInvocationListenerProxy GumInvocationListenerProxy;
+
+    class InvocationListenerProxy
+    {
+    public:
+      InvocationListenerProxy (InvocationListener * listener);
+      virtual ~InvocationListenerProxy ();
+  
+      virtual void on_enter (GumInvocationContext * context);
+      virtual void on_leave (GumInvocationContext * context);
+  
+      GumInvocationListenerProxy * cproxy;
+      InvocationListener * listener;
+    };
+
+    struct InvocationListenerProfiler: InvocationListener {
+        virtual ~InvocationListenerProfiler () {}
+
+        virtual void on_enter (GumInvocationContext * context) {
+            hook_profiler_push(0, (const char*)gum_invocation_context_get_listener_function_data(context), "", 0);
+        };
+        virtual void on_leave (GumInvocationContext * context) {
+            hook_profiler_pop(0);
+        };
+    };
+
+    class InvocationListenerProxy;
+
+    typedef struct _GumInvocationListenerProxyClass GumInvocationListenerProxyClass;
+
+    struct _GumInvocationListenerProxy {
+        GObject parent;
+        InvocationListenerProxy *proxy;
+    };
+
+    struct _GumInvocationListenerProxyClass {
+        GObjectClass parent_class;
+    };
+
+    static GType gum_invocation_listener_proxy_get_type();
+    static void gum_invocation_listener_proxy_iface_init(gpointer g_iface, gpointer iface_data);
+
+    InvocationListenerProxy::InvocationListenerProxy(InvocationListener *listener)
+        : cproxy(static_cast<GumInvocationListenerProxy *>(g_object_new(gum_invocation_listener_proxy_get_type(), NULL))),
+            listener(listener) {
+        cproxy->proxy = this;
+    }
+
+    InvocationListenerProxy::~InvocationListenerProxy() {
+        g_object_unref(cproxy);
+        delete listener;
+    }
+
+    void InvocationListenerProxy::on_enter(GumInvocationContext *context) {
+        listener->on_enter(context);
+    }
+
+    void InvocationListenerProxy::on_leave(GumInvocationContext *context) {
+        listener->on_leave(context);
+    }
+
+    G_DEFINE_TYPE_EXTENDED(GumInvocationListenerProxy,
+                            gum_invocation_listener_proxy,
+                            G_TYPE_OBJECT,
+                            0,
+                            G_IMPLEMENT_INTERFACE(GUM_TYPE_INVOCATION_LISTENER,
+                                                    gum_invocation_listener_proxy_iface_init))
+
+    static void
+    gum_invocation_listener_proxy_init(GumInvocationListenerProxy *self) {
+    }
+
+    static void
+    gum_invocation_listener_proxy_finalize(GObject *obj) {
+        delete reinterpret_cast<GumInvocationListenerProxy *>(obj)->proxy;
+
+        G_OBJECT_CLASS(gum_invocation_listener_proxy_parent_class)->finalize(obj);
+    }
+
+    static void
+    gum_invocation_listener_proxy_class_init(GumInvocationListenerProxyClass *klass) {
+        G_OBJECT_CLASS(klass)->finalize = gum_invocation_listener_proxy_finalize;
+    }
+
+    static void
+    gum_invocation_listener_proxy_on_enter(GumInvocationListener *listener,
+                                            GumInvocationContext *context) {
+        reinterpret_cast<GumInvocationListenerProxy *>(listener)->proxy->on_enter(context);
+    }
+
+    static void
+    gum_invocation_listener_proxy_on_leave(GumInvocationListener *listener,
+                                            GumInvocationContext *context) {
+        reinterpret_cast<GumInvocationListenerProxy *>(listener)->proxy->on_leave(context);
+    }
+
+    static void
+    gum_invocation_listener_proxy_iface_init(gpointer g_iface,
+                                                gpointer iface_data) {
+        GumInvocationListenerInterface *iface =
+                static_cast<GumInvocationListenerInterface *>(g_iface);
+
+        iface->on_enter = gum_invocation_listener_proxy_on_enter;
+        iface->on_leave = gum_invocation_listener_proxy_on_leave;
+    }
+}// namespace Gum
+#endif
+
+extern "C" DONTSTARVEINJECTOR_API int replace_profiler_api() {
+    static std::atomic_int replaced = 0;
+    if (replaced) return replaced;
+#ifdef __linux__
+    function_relocation::MemorySignature profiler_push { "41 83 84 24 80 01 00 00 01", -0xF6 };
+    function_relocation::MemorySignature profiler_pop {"64 48 8B 1C 25 F8 FF FF FF",-0x15};
+#elif defined(__APPLE__)
+    function_relocation::MemorySignature profiler_push { "41 83 84 24 80 01 00 00 01", -0xF6 };
+    function_relocation::MemorySignature profiler_pop {"64 48 8B 1C 25 F8 FF FF FF",-0x15};
+    return 0; //TODO
+#elif defined(_WIN32) 
+    function_relocation::MemorySignature profiler_push {"44 8B 9B 88 02 00 00", -0x175};
+    function_relocation::MemorySignature profiler_pop {"81 7F 1C 00 3C 00 00", -0x7D};
+#endif
+
+    auto range = gum_process_get_main_module()->range;
+    if (profiler_pop.scan(range->base_address, range->size) && profiler_push.scan(range->base_address, range->size)) {
+        Hook((uint8_t*)profiler_push.target_address, (uint8_t*)hook_profiler_push);
+        Hook((uint8_t*)profiler_pop.target_address, (uint8_t*)hook_profiler_pop);
+#if 0
+        static auto interceptor = gum_interceptor_obtain();
+        static Gum::InvocationListenerProxy linstener{new Gum::InvocationListenerProfiler()};
+        gum_interceptor_attach(interceptor, (void *) get_luajit_address("lua_gc"), GUM_INVOCATION_LISTENER (linstener.cproxy), (void*)"lua_gc");
+#endif
+        replaced = 1;
+    }
+    return replaced;
+}
+
+extern "C" DONTSTARVEINJECTOR_API void enable_tracy(int en) {
+    tracy_active = en;
+}
+
 template<typename Fn>
 auto create_defer(Fn&& fn) {
     auto deleter = [cb = std::forward<Fn>(fn)](void *) {
@@ -279,6 +562,9 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     ReplaceLuaModule(mainPath, val.signatures, val.exports);
 #if 0
     RedirectOpenGLEntries();
+#endif
+#ifdef _WIN32
+    repalce_set_thread_name();
 #endif
 }
 

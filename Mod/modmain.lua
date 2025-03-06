@@ -24,19 +24,19 @@ local function main()
 
 		KnownModIndex.GetServerModNames = function(self, ...)
 			local names = old_GetServerModNames(self, ...)
-					table.insert(names, modname)
+			table.insert(names, modname)
 			return names
 		end
 
 		KnownModIndex.GetServerModNamesTable = function(self, ...)
 			local names = old_GetServerModNamesTable(self, ...)
-			table.insert(names,  {modname = modname})
+			table.insert(names, { modname = modname })
 			return names
 		end
 		ModManager.GetEnabledServerModNames = function(self, ...)
 			local server_mods = old_GetEnabledServerModNames(self, ...)
 			if IsNotConsole() then
-							table.insert(server_mods, modname)
+				table.insert(server_mods, modname)
 			end
 			return server_mods
 		end
@@ -94,15 +94,15 @@ local function main()
 		local sim = getmetatable(TheSim).__index
 		local old_profiler_push = sim.ProfilerPush
 		local old_profiler_pop = sim.ProfilerPop
-		if GetModConfigData("EnableProfiler") ~= "off" then
+		if GetModConfigData("EnableProfiler") == "on" then
 			local profiler = require("jit.p")
 			local mode = GetModConfigData("EnableProfiler")
 			local enabled_profiler = false
-			sim.ProfilerPush = function(name, ...)
+			sim.ProfilerPush = function(self, name, ...)
 				if enabled_profiler then
 					zone(name)
 				end
-				old_profiler_push(name, ...)
+				old_profiler_push(self, name, ...)
 			end
 			sim.ProfilerPop = function(...)
 				if enabled_profiler then
@@ -113,56 +113,51 @@ local function main()
 			rawset(_G, "ProfilerJit", {
 				start = function(m)
 					enabled_profiler = true
-					profiler.start( m or mode, "unsafedata/profiler")
+					profiler.start(m or mode, "unsafedata/profiler")
 				end,
-				stop = function ()
+				stop = function()
 					enabled_profiler = false
 					profiler.stop()
 				end,
 			})
 		end
 
-		if GetModConfigData("EnableTrace") ~= "off" then
-			local os_clock = os.clock
-			local stack
-			local enabled_trace = false
-			local mode = GetModConfigData("EnableTrace")
-			sim.ProfilerPush = function(name, ...)
-				if enabled_trace then
-					zone(name)
-				end
-				old_profiler_push(name, ...)
+		local injector
+		local function get_injector()
+			if not injector then
+				local ffi = require 'ffi'
+				ffi.cdef [[
+					int replace_profiler_api();
+					void enable_tracy(int en);
+					void disable_fullgc(int mb);
+					int set_frame_gc_time(int ms);
+				]]
+				local injector = require 'luavm.ffi_load'("Injector")
+				return injector
 			end
-			sim.ProfilerPop = function(...)
-				if enabled_trace then
-					zone()
-				end
-				old_profiler_pop(...)
-			end
-			rawset(_G, "ProfilerTrace", {
-				start = function(m)
-					m = m or mode
-					enabled_trace = true
-					profiler.start(m, "unsafedata/trace")
-				end,
-				stop = function ()
-					enabled_trace = false
-					profiler.stop()
-				end,
-			})
+		end
+		if GetModConfigData("EnableTracy") == "on" then
+			get_injector().replace_profiler_api()
+			get_injector().enable_tracy(1)
 		end
 
-		if GetModConfigData("EnableTcc") ~= "off" then
-			
+		if GetModConfigData("DisableForceFullGC") ~= 0 then
+			get_injector().replace_profiler_api()
+			get_injector().disable_fullgc(tonumber(GetModConfigData("DisableForceFullGC")))
 		end
+
+		if GetModConfigData("EnbaleFrameGC") ~= 0 then
+			get_injector().set_frame_gc_time(tonumber(GetModConfigData("EnbaleFrameGC")))
+		end
+
 	end
-
 	inject_server_only_mod()
 end
 
 local env = _G.getfenv(main)
-_G.setfenv(main, _G.setmetatable({}, { __index =function (t, k)
-	return env[k] or _G[k]
-end
+_G.setfenv(main, _G.setmetatable({}, {
+	__index = function(t, k)
+		return env[k] or _G[k]
+	end
 }))
 main()

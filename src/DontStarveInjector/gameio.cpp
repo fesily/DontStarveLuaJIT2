@@ -1,4 +1,5 @@
 ﻿#include "frida-gum.h"
+#include "config.hpp"
 
 #include <cstdio>
 #include <cstdint>
@@ -15,6 +16,7 @@
 #include "util/platform.hpp"
 
 #include <spdlog/spdlog.h>
+#include <tracy/Tracy.hpp>
 
 #include <thread>
 #include <chrono>
@@ -229,33 +231,51 @@ static uint32_t lj_jit_default_flags() noexcept {
     return path.string().contains("nullrenderer") ? 1 : 0;
 }
 
-void init_luajit_io(module_handler_t hluajitModule) {
-#define INIT_LUAJIT_IO(name)                                      \
+static int fullgc_mb = 0;
+void (* lua_gc_func)(void *L, int,int);
+void lj_gc_fullgc_external(void* L, void (* oldfn)(void *L)){
+    
+    if (fullgc_mb == 0) {
+        ZoneScopedN("lua_full_gc");
+        oldfn(L);
+    }
+    else {
+        ZoneScopedN("lua_small_gc");
+        lua_gc_func(L, 5, fullgc_mb << 10);
+    }
+}
+extern "C" DONTSTARVEINJECTOR_API void disable_fullgc(int mb) {
+    fullgc_mb = mb;
+}
+
+#define SET_LUAJIT_API_FUNC(name)                                 \
     {                                                             \
-        auto ptr = (void **)loadlibproc(hluajitModule, #name); \
+        auto ptr = (void **)loadlibproc(hluajitModule, #name);    \
         if (ptr)                                                  \
             *ptr = (void *)&name;                                 \
     }
 
-    INIT_LUAJIT_IO(lj_fclose);
-    INIT_LUAJIT_IO(lj_ferror);
-    INIT_LUAJIT_IO(lj_fgets);
-    INIT_LUAJIT_IO(lj_fopen);
-    INIT_LUAJIT_IO(lj_fread);
-    INIT_LUAJIT_IO(lj_fscanf);
+void init_luajit_io(module_handler_t hluajitModule) {
+    SET_LUAJIT_API_FUNC(lj_fclose);
+    SET_LUAJIT_API_FUNC(lj_ferror);
+    SET_LUAJIT_API_FUNC(lj_fgets);
+    SET_LUAJIT_API_FUNC(lj_fopen);
+    SET_LUAJIT_API_FUNC(lj_fread);
+    SET_LUAJIT_API_FUNC(lj_fscanf);
 #ifdef _WIN32
-    INIT_LUAJIT_IO(lj_fseeki64);
-    INIT_LUAJIT_IO(lj_ftelli64);
+    SET_LUAJIT_API_FUNC(lj_fseeki64);
+    SET_LUAJIT_API_FUNC(lj_ftelli64);
 #else
-    INIT_LUAJIT_IO(lj_fseeko)
-    INIT_LUAJIT_IO(lj_ftello)
+    SET_LUAJIT_API_FUNC(lj_fseeko)
+    SET_LUAJIT_API_FUNC(lj_ftello)
 #endif
-    INIT_LUAJIT_IO(lj_fwrite);
-    INIT_LUAJIT_IO(lj_clearerr);
-    INIT_LUAJIT_IO(lj_need_transform_path);
+    SET_LUAJIT_API_FUNC(lj_fwrite);
+    SET_LUAJIT_API_FUNC(lj_clearerr);
+    SET_LUAJIT_API_FUNC(lj_need_transform_path);
+    SET_LUAJIT_API_FUNC(lj_gc_fullgc_external);
+    lua_gc_func = (decltype(lua_gc_func))loadlibproc(hluajitModule, "lua_gc");
 }
 
 void init_luajit_jit_opt(module_handler_t hluajitModule) {
-    INIT_LUAJIT_IO(lj_jit_default_flags);
-#undef INIT_LUAJIT_IO
+    SET_LUAJIT_API_FUNC(lj_jit_default_flags);
 }

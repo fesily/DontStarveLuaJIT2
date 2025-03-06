@@ -95,7 +95,7 @@ namespace function_relocation {
         return out_details;
     }
 
-    static bool get_module_sections(const char *path, ModuleSections &sections) {
+    bool get_module_sections(const char *path, ModuleSections &sections) {
         const auto details = get_module_details(path);
 #ifdef _WIN32
         const auto pe = peparse::ParsePEFromFile(details->path);

@@ -22,7 +22,7 @@ description = translate(
 
 author = "fesil"
 
-version = "0.7.2"
+version = "0.8.0"
 
 forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -56,6 +56,45 @@ configuration_options = {
             { description = "Off", data = false },
         },
         default = true
+    },
+    {
+        name = "DisableForceFullGC",
+        label = translate({ en = "Disable Force FullGC, only gc small", zh = "禁用强制完全gc,仅gc小部分"}),
+        hover = translate({
+            en = "Enabling this feature will result in a larger memory footprint, which will alleviate occasional lagging issues",
+            zh = "启用该选项会导致更大的内存占用,将缓解偶发卡顿问题"
+        }),
+        options = {
+            { description = translate({ en = "off", zh = "禁用"}), data = 0 },
+            { description = "gc 1MB", data = 1 },
+            { description = "gc 2MB", data = 2 },
+            { description = "gc 4MB", data = 4 },
+            { description = "gc 8MB", data = 8 },
+            { description = "gc 16MB", data = 16 },
+            { description = "gc 32MB", data = 32 },
+            { description = "gc 64MB", data = 64 },
+            { description = "gc 128MB", data = 128 },
+            { description = "gc 256MB", data = 256 },
+            { description = "gc 512MB", data = 512 },
+        },
+        default = 0
+    },
+    {
+        name = "EnbaleFrameGC",
+        label = translate({ en = "enable frame gc", zh = "启动帧间gc" }),
+        hover = translate({
+            en = "use free time gc",
+            zh = "见缝插针地gc"
+        }),
+        options = {
+            { description = translate({ en = "off", zh = "禁用"}), data = 0 },
+            { description = "1ms", data = 1 },
+            { description = "2ms", data = 2 },
+            { description = "3ms", data = 3 },
+            { description = "4ms", data = 4 },
+            { description = "5ms", data = 5 },
+        },
+        default = 0
     },
     {
         name = "JitOpt",
@@ -98,6 +137,15 @@ configuration_options = {
             { description = translate({en = "off", zh = "关闭"}),  data = "off" },
             { description = translate({en = "Detailed Sampling Mode", zh = "详细采样模式"}),  data = "fzvp" },
             { description = translate({en = "Origin Sampling Mode", zh = "原始采样模式"}), data = "Gz" },
+        },
+        default = 'off'
+    },
+    {
+        name = "EnableTracy",
+        label = translate({ en = "EnableTracy", zh = "启用性能追踪" }),
+        options = {
+            { description = translate({en = "off", zh = "关闭"}),  data = "off" },
+            { description = translate({en = "on", zh = "开启"}),  data = "on" },
         },
         default = 'off'
     }

@@ -6,7 +6,8 @@
     "python.formatting.provider": "none",
     "Lua.runtime.version": "LuaJIT",
     "Lua.runtime.special": {
-        "modimport":"require"
+        "modimport": "require",
+        "GLOBAL": "_G"
     },
     "cmake.configureSettings": {
         "CMAKE_TOOLCHAIN_FILE":"$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -125,6 +126,18 @@
         "stdlib.h": "c",
         "stdio.h": "c",
         "lauxlib.h": "c",
-        "lualib.h": "c"
-    }
+        "lualib.h": "c",
+        "luajit.h": "c",
+        "lj_lib.h": "c",
+        "llex.h": "c",
+        "lj_strfmt.h": "c",
+        "lj_vm.h": "c",
+        "lj_bcdump.h": "c",
+        "lj_lex.h": "c",
+        "lobject.h": "c",
+        "llimits.h": "c",
+        "luaconf.h": "c",
+        "coroutine": "cpp"
+    },
+    "lua.debug.variables.showIntegerAsHex": true
 }
