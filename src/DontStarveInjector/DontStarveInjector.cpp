@@ -288,7 +288,9 @@ extern "C" DONTSTARVEINJECTOR_API int set_frame_gc_time(int ms) {
 static thread_local std::string thread_name;
 static void set_thread_name(uint32_t thread_id, const char* name) {
     thread_name = name;
+#ifdef _WIN32
     SetThreadDescription(GetCurrentThread(), std::filesystem::path{thread_name}.c_str());
+#endif
 }
 
 static void repalce_set_thread_name() {
