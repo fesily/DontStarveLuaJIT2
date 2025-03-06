@@ -157,5 +157,6 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 |------|------|--------------|-----------|
 | 冰*羊    | 30RMB | 兼容MOD    | [自动崩溃恢复](https://steamcommunity.com/sharedfiles/filedetails/?id=3377689002)|
 | Dv**ce   | 50RMB| 兼容MOD | [Accomplishments](https://steamcommunity.com/sharedfiles/filedetails/?id=2843097516)|
+| Dv**ce   | 30RMB| 开发TRACY功能 | |
 
 
