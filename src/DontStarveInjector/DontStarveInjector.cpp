@@ -318,8 +318,7 @@ static void set_thread_name(uint32_t thread_id, const char* name) {
 static void repalce_set_thread_name() {
 #ifdef _WIN32
     function_relocation::MemorySignature set_thread_name_func{"B9 88 13 6D 40", -0x24};
-    auto range = gum_process_get_main_module()->range;
-    if (set_thread_name_func.scan(range->base_address, range->size)) {
+    if (set_thread_name_func.scan(gum_process_get_main_module()->path)) {
         Hook((uint8_t*)set_thread_name_func.target_address, (uint8_t*)&set_thread_name);
     }
 #endif
@@ -515,18 +514,18 @@ extern "C" DONTSTARVEINJECTOR_API int replace_profiler_api() {
     if (replaced) return replaced;
 #ifdef __linux__
     function_relocation::MemorySignature profiler_push { "41 83 84 24 80 01 00 00 01", -0xF6 };
-    function_relocation::MemorySignature profiler_pop {"64 48 8B 1C 25 F8 FF FF FF",-0x15};
+    function_relocation::MemorySignature profiler_pop { "64 48 8B 1C 25 F8 FF FF FF", -0x15 };
 #elif defined(__APPLE__)
     function_relocation::MemorySignature profiler_push { "41 83 84 24 80 01 00 00 01", -0xF6 };
-    function_relocation::MemorySignature profiler_pop {"64 48 8B 1C 25 F8 FF FF FF",-0x15};
+    function_relocation::MemorySignature profiler_pop { "64 48 8B 1C 25 F8 FF FF FF", -0x15 };
     return 0; //TODO
 #elif defined(_WIN32) 
     function_relocation::MemorySignature profiler_push {"44 8B 9B 88 02 00 00", -0x175};
     function_relocation::MemorySignature profiler_pop {"81 7F 1C 00 3C 00 00", -0x7D};
 #endif
 
-    auto range = gum_process_get_main_module()->range;
-    if (profiler_pop.scan(range->base_address, range->size) && profiler_push.scan(range->base_address, range->size)) {
+    auto path = gum_process_get_main_module()->path;
+    if (profiler_pop.scan(path) && profiler_push.scan(path)) {
         Hook((uint8_t*)profiler_push.target_address, (uint8_t*)hook_profiler_push);
         Hook((uint8_t*)profiler_pop.target_address, (uint8_t*)hook_profiler_pop);
 #if 0
