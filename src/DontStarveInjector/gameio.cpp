@@ -16,7 +16,11 @@
 #include "util/platform.hpp"
 
 #include <spdlog/spdlog.h>
+#ifndef DISABLE_TRACY_FUTURE
 #include <tracy/Tracy.hpp>
+#else
+#define ZoneScopedN(...)
+#endif
 
 #include <thread>
 #include <chrono>

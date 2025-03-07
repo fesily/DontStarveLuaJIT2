@@ -257,8 +257,17 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
 
 #pragma endregion Attach
 
+#ifndef DISABLE_TRACY_FUTURE
 #include <tracy/TracyC.h>
 #include <tracy/Tracy.hpp>
+#else
+#define ___tracy_emit_frame_mark(...) 0
+#define ___tracy_alloc_srcloc_name(...) 0
+#define ___tracy_emit_zone_begin_alloc(...) 0
+#define ___tracy_emit_zone_end(...) 0
+typedef uint32_t TracyCZoneCtx;
+#define ZoneScopedN(...) 0
+#endif
 #if defined(_WIN32)
 #include <windows.h>
 #elif defined(__APPLE__)

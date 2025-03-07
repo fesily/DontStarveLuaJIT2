@@ -35,6 +35,8 @@ endif ()
 
 project(DontStarveLuaJIT VERSION 0.8.2)
 
+option(DISABLE_TRACY_FUTURE "disable tray future" ON)
+
 set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod)
 set(TARGET_MOD_DIR ${CMAKE_INSTALL_PREFIX})
 if (UNIX AND APPLE)

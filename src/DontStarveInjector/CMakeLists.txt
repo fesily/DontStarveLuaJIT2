@@ -44,8 +44,11 @@ target_link_libraries(Injector PRIVATE libzip::zip)
 target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(Injector PRIVATE spdlog::spdlog)
 target_link_libraries(Injector PRIVATE range-v3::meta range-v3::concepts range-v3::range-v3)
-target_link_libraries(Injector PRIVATE Tracy::TracyClient)
-
+if (NOT DISABLE_TRACY_FUTURE)
+    target_link_libraries(Injector PRIVATE Tracy::TracyClient)
+else()
+    target_compile_definitions(Injector PRIVATE DISABLE_TRACY_FUTURE)
+endif()
 target_link_libraries(Injector PRIVATE function_relocation)
 target_include_directories(Injector PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
