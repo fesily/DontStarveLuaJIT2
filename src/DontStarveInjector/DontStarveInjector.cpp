@@ -89,12 +89,29 @@ static GumInterceptor *interceptor;
 #endif
 
 #if !ONLY_LUA51
-void* lua_state_instance;
+enum class LUA_EVENT {
+  new_state,
+  close_state,
+  call_lua_gc,
+};
+
+void lua_event_notifyer(LUA_EVENT, lua_State *);
 static void *lua_newstate_hooker(void *, void *ud) {
     auto L = luaL_newstate();
-    lua_state_instance = L;
+    lua_event_notifyer(LUA_EVENT::new_state, L);
     spdlog::info("luaL_newstate:{}", (void *) L);
     return L;
+}
+
+static void lua_close_hooker(lua_State* L) {
+    lua_event_notifyer(LUA_EVENT::close_state, L);
+    spdlog::info("lua_close:{}", (void *) L);
+    lua_close(L);
+}
+
+static int lua_gc_hooker(lua_State* L, int w, int d) {
+    lua_event_notifyer(LUA_EVENT::call_lua_gc, L);
+    return lua_gc(L, w, d);
 }
 
 #if USE_FAKE_API
@@ -131,6 +148,10 @@ static void *get_luajit_address(const std::string_view &name) {
         replacer = (void *) &lua_newstate_hooker;
     } else if (name == "lua_setfield"sv) {
         replacer = (void *) &lua_setfield_fake;
+    } else if (name == "lua_close"sv) {
+        replacer = (void*) &lua_close_hooker;
+    } else if (name == "lua_gc"sv) {
+        replacer = (void*) &lua_gc_hooker;
     }
 #endif
     return replacer;
@@ -274,6 +295,7 @@ struct Profiler {
     std::list<TracyCZoneCtx> ctx;
     uint64_t start_time;
     int stack;
+    lua_State* L;
 };
 static thread_local Profiler profiler;
 extern void (* lua_gc_func)(void *L, int,int);
@@ -333,15 +355,19 @@ static int64_t hook_profiler_pop(void* self) {
     if (p.stack < 0) {
         p.stack = 0;
     } else if (p.stack == 0 && p.start_time) {
-        ZoneScopedN("frame gc");
         p.start_time = 0;
         auto now = get_time_ms();
         auto left_time = std::min<int>(30 - (now - p.start_time), frame_gc_time);
         now += left_time;
-        do
-        {
-            lua_gc_func(lua_state_instance, 5, 0);
-        } while (get_time_ms() < now);
+        if (p.L) {
+            ZoneScopedN("frame gc");
+            auto L = p.L;
+            p.L = 0;
+            do
+            {
+                lua_gc_func(L, 5, 0);
+            } while (get_time_ms() < now);
+        }
     }
     if (!tracy_active)
         return 0;
@@ -352,6 +378,20 @@ static int64_t hook_profiler_pop(void* self) {
     }
     return 0;
 }
+
+void lua_event_notifyer(LUA_EVENT ev, lua_State * L) {
+    switch (ev) {
+        case LUA_EVENT::new_state:
+            profiler.L = 0;
+        case LUA_EVENT::close_state:
+            profiler.L = 0;
+            break;
+        case LUA_EVENT::call_lua_gc:
+            profiler.L = profiler.start_time ? L : 0;
+            break;
+    }
+}
+
 #if 0
 namespace Gum {
     struct InvocationListener
