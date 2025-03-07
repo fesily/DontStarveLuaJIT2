@@ -40,7 +40,7 @@ server_only_mod = true
 priority = 2e53
 
 -- Preview image
-icon_atlas = "images/modicon.xml"
+icon_atlas = "modicon.xml"
 icon = "modicon.tex"
 
 configuration_options = {
