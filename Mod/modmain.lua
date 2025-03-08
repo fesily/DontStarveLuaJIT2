@@ -49,10 +49,12 @@ local function main()
 			return (old_getbuildstring() or "") .. "(LuaJIT)"
 		end
 
+
+		local jit_opt = require 'jit.opt'
+		jit_opt.start("maxtrace=4000")
 		if GetModConfigData("JitOpt") then
-			require("jit.opt").start(
+			jit_opt.start(
 				"minstitch=2",
-				"maxtrace=4000",
 				"maxrecord=8000",
 				"sizemcode=64",
 				"maxmcode=4000",

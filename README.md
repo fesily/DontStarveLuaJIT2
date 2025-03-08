@@ -159,5 +159,6 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 | Dv**ce   | 50RMB| 兼容MOD | [Accomplishments](https://steamcommunity.com/sharedfiles/filedetails/?id=2843097516)|
 | Dv**ce   | 30RMB| 开发TRACY功能 | |
 | 18**30   | 20RMB|  | |
+| 18**30   | 20RMB| 兼容虚拟机环境 | |
 
 

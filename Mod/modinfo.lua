@@ -22,7 +22,7 @@ description = translate(
 
 author = "fesil"
 
-version = "0.8.2"
+version = "0.8.4"
 
 forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -77,7 +77,7 @@ configuration_options = {
             { description = "gc 256MB", data = 256 },
             { description = "gc 512MB", data = 512 },
         },
-        default = 0
+        default = 1
     },
     {
         name = "EnbaleFrameGC",
@@ -94,7 +94,7 @@ configuration_options = {
             { description = "4ms", data = 4 },
             { description = "5ms", data = 5 },
         },
-        default = 0
+        default = 1
     },
     {
         name = "JitOpt",
