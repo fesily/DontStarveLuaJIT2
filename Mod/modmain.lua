@@ -214,19 +214,21 @@ local function main()
 						t.zht = t.zht or t.zh
 						return t[lc] or t.en
 					end
+					local btns = {}
+					if jit.os == "Windows" then
+						btns[#btns+1] = {
+							text = STRINGS.UI.MAINSCREEN.RESTART,
+							cb = function()
+								update_mod()
+							end
+						}
+					end
+					btns[#btns+1] = { text = STRINGS.UI.MAINSCREEN.CANCEL, cb = function() TheFrontEnd:PopScreen() end }
 					TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, translate({
 							zh = [[当前luajit模组有更新,是否要执行更新?]],
 							en = "The current luajit mod has been updated, do you want to execute the update?"
 						}),
-						{
-							{
-								text = STRINGS.UI.MAINSCREEN.RESTART,
-								cb = function()
-									update_mod()
-								end
-							},
-							{ text = STRINGS.UI.MAINSCREEN.CANCEL, cb = function() TheFrontEnd:PopScreen() end }
-						}))
+						btns))
 				end)
 			end
 		end

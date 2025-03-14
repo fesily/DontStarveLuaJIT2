@@ -559,9 +559,7 @@ extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_get_mod_version() {
 }
 extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_update(const char* mod_directory) {
     if (!mod_directory) return 0;
-#ifndef _WIN32
-    return 0;
-#endif
+#ifdef _WIN32
     auto mod_dir = std::filesystem::path{mod_directory};
     if (!std::filesystem::exists(mod_dir)) return 0;
     mod_dir = std::filesystem::absolute(mod_dir);
@@ -579,7 +577,8 @@ extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_update(const char* mod_directory
         CloseHandle(pi.hThread);
         return 1;
     }
-    return 0;
+    #endif
+return 0;
 }  
 template<typename Fn>
 auto create_defer(Fn&& fn) {
