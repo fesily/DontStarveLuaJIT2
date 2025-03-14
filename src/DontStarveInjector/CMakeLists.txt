@@ -17,7 +17,11 @@ set(SOURCES
 if (NOT MSVC)
     list(APPEND SOURCES
         luajit_config.cpp
-        )
+    )
+else()
+    list(APPEND SOURCES
+        Progress.cpp
+    )
 endif()
 
 find_package(libzip CONFIG REQUIRED)
@@ -32,6 +36,10 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 add_library(Injector SHARED ${SOURCES})
+if (MSVC)
+    target_compile_definitions(Injector PRIVATE SUPPORT_PROGRESS)
+endif()
+target_compile_definitions(Injector PRIVATE MOD_VERSION="${CMAKE_PROJECT_VERSION}")
 
 set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")
 set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../lib64")

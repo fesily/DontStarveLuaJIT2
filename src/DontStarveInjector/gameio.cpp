@@ -73,6 +73,15 @@ static std::optional<std::filesystem::path> get_workshop_dir() {
     return dir / "content" / "322330";
 }
 
+extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_get_workshop_dir() {
+    auto cache = get_workshop_dir();
+    if (cache) {
+        static auto path = std::filesystem::absolute(cache.value()).generic_string();
+        return path.c_str();
+    }
+    return nullptr;
+}
+
 static FILE *lj_fopen(char const *f, const char *mode) noexcept {
     auto path = to_path(f);
     auto path_s = path.string();
@@ -248,7 +257,7 @@ void lj_gc_fullgc_external(void* L, void (* oldfn)(void *L)){
         lua_gc_func(L, 5, fullgc_mb << 10);
     }
 }
-extern "C" DONTSTARVEINJECTOR_API void disable_fullgc(int mb) {
+extern "C" DONTSTARVEINJECTOR_API void DS_LUAJIT_disable_fullgc(int mb) {
     fullgc_mb = mb;
 }
 

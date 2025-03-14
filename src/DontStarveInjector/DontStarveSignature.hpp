@@ -24,5 +24,5 @@ struct SignatureUpdater {
     static std::expected<SignatureUpdater, std::string> create(uintptr_t luaModuleBaseAddress);
 };
 
-std::string update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports,
+std::string update_signatures_from_disasm(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports,
                               uint32_t range = 512, bool updated = true);

@@ -1,19 +1,29 @@
-﻿@echo off
+﻿
+@echo off
 setlocal enabledelayedexpansion
 
 set "processes=dontstarve_steam_x64.exe dontstarve_dedicated_server_nullrenderer_x64.exe"
 
 for %%p in (%processes%) do (
+:waitloop
     tasklist /FI "IMAGENAME eq %%p" 2>NUL | find /I "%%p" >NUL
     if !errorlevel! == 0 (
         echo [INFO] kill processes: %%p
         taskkill /F /IM "%%p" >NUL
         timeout /t 1 /nobreak >NUL
+        goto :waitloop
     )
 )
 
 set "source=.\bin64\windows"
-set "destination=..\..\bin64"
+set "current_dir=%cd%"
+
+echo !current_dir! | find /I "workshop\content\322330" >NUL
+if !errorlevel! == 0 (
+    set "destination=..\..\..\..\common\Don't Starve Together\bin64"
+) else (
+    set "destination=..\..\bin64"
+)
 
 if not exist "%source%" (
     echo [ERROR] source directory not find: %source%
@@ -22,8 +32,9 @@ if not exist "%source%" (
 )
 
 if not exist "%destination%" (
-    echo [INFO] create directory: %destination%
-    mkdir "%destination%"
+    echo [ERROR] destination directory not find: %destination%
+    timeout /t 5
+    exit /b 1
 )
 
 echo [INFO] moving files...

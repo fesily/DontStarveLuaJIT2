@@ -278,7 +278,7 @@ typedef uint32_t TracyCZoneCtx;
 #include <fstream>
 #endif
 
-uint64_t get_time_ms() {
+static uint64_t get_time_ms() {
 #ifdef _WIN32
     uint64_t ticks = __rdtsc();
     LARGE_INTEGER freq;
@@ -310,7 +310,7 @@ static thread_local Profiler profiler;
 extern void (* lua_gc_func)(void *L, int,int);
 static int frame_gc_time = 0;
 static bool tracy_active = 0;
-extern "C" DONTSTARVEINJECTOR_API int set_frame_gc_time(int ms) {
+extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_set_frame_gc_time(int ms) {
     if (ms == 0) {
         return frame_gc_time;
     }
@@ -356,6 +356,10 @@ static int64_t hook_profiler_push(void* self, const char* zone, const char* sour
     return 0;
 }
 
+static int frame_time = 30;
+extern "C" DONTSTARVEINJECTOR_API void DS_LUAJIT_set_frame_time(float ms) {
+    frame_time = (int)std::min(ms, 30.0f);
+}
 
 static int64_t hook_profiler_pop(void* self) {
     auto& p = profiler;
@@ -518,7 +522,7 @@ namespace Gum {
 }// namespace Gum
 #endif
 
-extern "C" DONTSTARVEINJECTOR_API int replace_profiler_api() {
+extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_profiler_api() {
     static std::atomic_int replaced = 0;
     if (replaced) return replaced;
 #ifdef __linux__
@@ -547,10 +551,36 @@ extern "C" DONTSTARVEINJECTOR_API int replace_profiler_api() {
     return replaced;
 }
 
-extern "C" DONTSTARVEINJECTOR_API void enable_tracy(int en) {
+extern "C" DONTSTARVEINJECTOR_API void DS_LUAJIT_enable_tracy(int en) {
     tracy_active = en;
 }
+extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_get_mod_version() {
+    return MOD_VERSION;
+}
+extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_update(const char* mod_directory) {
+    if (!mod_directory) return 0;
+#ifndef _WIN32
+    return 0;
+#endif
+    auto mod_dir = std::filesystem::path{mod_directory};
+    if (!std::filesystem::exists(mod_dir)) return 0;
+    mod_dir = std::filesystem::absolute(mod_dir);
+    auto installer = mod_dir / "install.bat";
+    if (!std::filesystem::exists(installer)) return 0;
+    std::string cmd = std::format("cmd /C \"{}\"", installer.string());
+    STARTUPINFO si;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
 
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&pi, sizeof(pi));
+    if (CreateProcess(NULL, (char*)cmd.c_str(), 0, 0, FALSE, CREATE_NEW_CONSOLE, 0, mod_directory, &si, &pi)) {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        return 1;
+    }
+    return 0;
+}  
 template<typename Fn>
 auto create_defer(Fn&& fn) {
     auto deleter = [cb = std::forward<Fn>(fn)](void *) {

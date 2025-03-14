@@ -161,11 +161,13 @@ void DontStarveInjectorStart() {
         }
     }
     // auto updater
+#if 0
     if (isClientMod && !std::string_view(GetCommandLineA()).contains("-disable_check_luajit_mod")) {
         updater();
     } else {
         std::atexit(updater);
     }
+#endif
     auto mod = LoadLibraryA("injector");
     if (!mod) {
         spdlog::error("can't load injector.dll");

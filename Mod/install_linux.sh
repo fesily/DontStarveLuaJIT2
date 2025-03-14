@@ -15,7 +15,13 @@ done
 
 # Set path variables
 source="bin64/linux"
-destination="../../bin64"
+current_dir=$(pwd)
+
+if echo "$current_dir" | grep -q "workshop/content/322330"; then
+    destination="../../../../common/Don't Starve Together/bin64"
+else
+    destination="../../bin64"
+fi
 
 # Verify if the source directory exists
 if [ ! -d "$source" ]; then
@@ -25,8 +31,8 @@ fi
 
 # Create the destination directory if it doesn't exist
 if [ ! -d "$destination" ]; then
-    echo "[INFO] Creating destination directory: $destination"
-    mkdir -p "$destination"
+    echo "[ERROR] destination directory does not exist: $destination"
+    exit 1
 fi
 
 # Move files

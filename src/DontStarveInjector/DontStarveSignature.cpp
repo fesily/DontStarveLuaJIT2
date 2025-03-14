@@ -1,6 +1,8 @@
 #include <string>
 #include <expected>
 #include <algorithm>
+#include <future>
+#include <coroutine>
 
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
@@ -21,6 +23,7 @@
 
 #include <ranges>
 #include "util/inlinehook.hpp"
+#include "Progress.hpp"
 
 using namespace std::literals;
 
@@ -81,7 +84,7 @@ create_signature(uintptr_t targetLuaModuleBase, const std::function<void(const S
     66820;
 #endif
 #endif
-    auto errormsg = update_signatures(signatures, targetLuaModuleBase, exports, lua_module_range, false);
+    auto errormsg = update_signatures_from_disasm(signatures, targetLuaModuleBase, exports, lua_module_range, false);
     if (!errormsg.empty()) {
         return std::unexpected(errormsg);
     }
@@ -110,7 +113,7 @@ get_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase,
     }
     if (SignatureJson::current_version() != signatures.version) {
         spdlog::warn("try fix all signatures");
-        errormsg = update_signatures(signatures, targetLuaModuleBase, exports);
+        errormsg = update_signatures_from_disasm(signatures, targetLuaModuleBase, exports);
         if (!errormsg.empty()) {
             return std::unexpected(errormsg);
         }
@@ -156,9 +159,14 @@ SignatureUpdater::create_or_update(bool isClient, uintptr_t luaModuleBaseAddress
     return updater;
 }
 
+struct update_signatures_exception {
+    explicit update_signatures_exception(const char* m) noexcept: msg{m} {};
+    explicit update_signatures_exception(const std::string& m) noexcept: msg{m} {};
+    std::string msg;
+};
 
-std::string
-update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports, uint32_t range,
+
+Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports, uint32_t range,
                   bool updated) {
     const auto &lua51_path = get_module_path(lua51_name, 0);
     const auto &game_path = get_module_path(game_name, targetLuaModuleBase);
@@ -172,8 +180,9 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
 #endif
     if (!init_module_signature(lua51_path.c_str(), 0, modulelua51) ||
         !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain)
-            )
-        return "init_module_signature failed!"s;
+            ) {
+                throw  update_signatures_exception{"init_module_signature failed!"};
+            }
 
 #ifndef __APPLE__
     //明确定位 index2adr
@@ -188,6 +197,8 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
 #endif
 #endif
 
+    set_progress(0, "Find all export functions...");
+    co_yield 0;
     for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
         auto original = (void *) gum_module_find_export_by_name(lua51_path.c_str(), name.c_str());
@@ -196,20 +207,24 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         original = format_address((uint8_t *) original);
 #endif
         if (original == nullptr || !modulelua51.find_function((uintptr_t) original)) {
-            return fmt::format("can't find address: {}", name.c_str());
+            throw update_signatures_exception{fmt::format("can't find address: {}", name)};
         }
         modulelua51.set_known_function((uintptr_t) original, name.c_str());
         auto originalFunc = modulelua51.find_function((uintptr_t) original);
         if (!originalFunc) {
-            return fmt::format("can't find {} at module lua51", name);
+            throw update_signatures_exception{fmt::format("can't find {} at module lua51", name)};
         }
     }
+    set_progress(1, "");
+    co_yield 1;
 
     auto &funcs = signatures.funcs;
     // fix all signatures
     for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
         auto originalFunc = modulelua51.known_functions.at(name.c_str());
+        set_progress(1, "patch:" + name);
+        co_yield 1;
 
         auto &signature = funcs.at(name);
         auto old_offset = GPOINTER_TO_INT(signature.offset);
@@ -250,7 +265,7 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
                                                      &signature, targetLuaModuleBase);
 
         if (!target || target < targetLuaModuleBase) {
-            return fmt::format("func[{}] can't fix address, wait for mod update", name);
+            throw update_signatures_exception{fmt::format("func[{}] can't fix address, wait for mod update", name)};
         }
         if (target == maybe_target)
             continue;
@@ -266,7 +281,7 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
                                                        return l <= pattern_address && pattern_address < r;
                                                    });
             if (iter == all_address.end()) {
-                return fmt::format("func[{}] can't find the real address", name);
+                throw update_signatures_exception{fmt::format("func[{}] can't find the real address", name)};
             }
             const auto fn = moduleMain.find_function(*iter);
             target = fn->address;
@@ -279,5 +294,20 @@ update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const L
         signature.offset = new_offset;
     }
     function_relocation::release_signature_cache();
-    return {};
+    co_return;
+}
+
+std::string
+update_signatures_from_disasm(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports, uint32_t range,
+                  bool updated) {
+    try
+    {
+        auto gen = update_signatures(signatures, targetLuaModuleBase, exports, range, updated);
+        ShowProgressWindow(exports.size() + 1, gen);
+    }
+    catch(const update_signatures_exception& e)
+    {
+        return e.msg;
+    }
+   return "";
 }

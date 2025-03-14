@@ -1,20 +1,27 @@
 _G = GLOBAL
-local hasluajit, jit = _G.pcall(require, "jit")
-if not hasluajit then
-	return
-end
-
 local function main()
-	if not TheNet:IsDedicated() then
-		local fp = io.open("unsafedata/luajit_config.json", "w")
-		if fp then
-			local config = {
-				modmain_path = debug.getinfo(1).source,
-				server_disable_luajit = GetModConfigData("DisableJITWhenServer"),
-			}
-			fp:write(json.encode(config))
-			fp:close()
-		end
+	local hasluajit, jit = _G.pcall(require, "jit")
+	if not hasluajit then
+		AddGamePostInit(function()
+			local PopupDialogScreen = require "screens/popupdialog"
+			local locale = LOC.GetLocaleCode()
+			local lc = locale
+
+			local function translate(t)
+				t.zhr = t.zh
+				t.zht = t.zht or t.zh
+				return t[lc] or t.en
+			end
+			TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MAINSCREEN.MODFAILTITLE, translate({
+					zh = [[当前luajit模组未成功安装,前往该模组所在的文件夹,运行install.bat]],
+					en =
+					"The current luajit mod has not been successfully installed, please go to the folder where the luajit mod is located, and run install.bat/.sh to execute the installation"
+				}),
+				{
+					{ text = STRINGS.UI.MAINSCREEN.OK, cb = function() TheFrontEnd:PopScreen() end }
+				}))
+		end)
+		return
 	end
 
 	function inject_server_only_mod()
@@ -124,34 +131,105 @@ local function main()
 			})
 		end
 
-		local injector
-		local function get_injector()
-			if not injector then
-				local ffi = require 'ffi'
-				ffi.cdef [[
-					int replace_profiler_api();
-					void enable_tracy(int en);
-					void disable_fullgc(int mb);
-					int set_frame_gc_time(int ms);
-				]]
-				local injector = require 'luavm.ffi_load'("Injector")
-				return injector
+		local ffi = require 'ffi'
+		ffi.cdef [[
+			int DS_LUAJIT_replace_profiler_api();
+			void DS_LUAJIT_enable_tracy(int en);
+			void DS_LUAJIT_disable_fullgc(int mb);
+			int DS_LUAJIT_set_frame_gc_time(int ms);
+			const char* DS_LUAJIT_get_mod_version();
+			const char* DS_LUAJIT_get_workshop_dir();
+			int DS_LUAJIT_update(const char* mod_dictory);
+			void DS_LUAJIT_set_frame_time(float ms);
+		]]
+		local injector = require 'luavm.ffi_load' ("Injector")
+		local modmain_path = debug.getinfo(1).source
+		do
+			local prefix = "../mods/workshop-"
+			local pos = modmain_path:find(prefix, 1, true)
+			if pos ~= nil and pos == 1 then
+				local workshop_id = modmain_path:sub(pos + #prefix)
+				pos = workshop_id:find("/", 1, true)
+				if pos ~= nil then
+					workshop_id = workshop_id:sub(1, pos - 1)
+				end
+				-- maybe inworkshop
+				local workshop_dir = injector.DS_LUAJIT_get_workshop_dir();
+				if workshop_dir ~= nil then
+					workshop_dir = ffi.string(workshop_dir)
+					workshop_dir = workshop_dir .. "/" .. workshop_id .. "/"
+					local fp = io.open(workshop_dir .. "install.bat", "r")
+					if fp then
+						fp:close()
+						modmain_path = workshop_dir .. "modmain.lua"
+					end
+				end
+			end
+			if not TheNet:IsDedicated() then
+				local fp = io.open("unsafedata/luajit_config.json", "w")
+				if fp then
+					local config = {
+						modmain_path = modmain_path,
+						server_disable_luajit = GetModConfigData("DisableJITWhenServer"),
+					}
+					fp:write(json.encode(config))
+					fp:close()
+				end
 			end
 		end
 		if GetModConfigData("EnableTracy") == "on" then
-			get_injector().replace_profiler_api()
-			get_injector().enable_tracy(1)
+			injector.DS_LUAJIT_replace_profiler_api()
+			injector.DS_LUAJIT_enable_tracy(1)
 		end
 
 		if GetModConfigData("DisableForceFullGC") ~= 0 then
-			get_injector().replace_profiler_api()
-			get_injector().disable_fullgc(tonumber(GetModConfigData("DisableForceFullGC")))
+			injector.DS_LUAJIT_replace_profiler_api()
+			injector.DS_LUAJIT_disable_fullgc(tonumber(GetModConfigData("DisableForceFullGC")))
 		end
 
 		if GetModConfigData("EnbaleFrameGC") ~= 0 then
-			get_injector().set_frame_gc_time(tonumber(GetModConfigData("EnbaleFrameGC")))
+			injector.DS_LUAJIT_set_frame_gc_time(tonumber(GetModConfigData("EnbaleFrameGC")))
 		end
 
+		if GetModConfigData("TargetFPS") ~= 0 then
+			local targetfps = GetModConfigData("TargetFPS")
+			local farme_time = 1000 / targetfps
+			injector.DS_LUAJIT_set_frame_time(farme_time)
+		end
+
+		if injector.DS_LUAJIT_get_mod_version() ~= nil then
+			local version = ffi.string(injector.DS_LUAJIT_get_mod_version())
+			if modinfo.version ~= version then
+				local function update_mod()
+					local root_dictory = modmain_path:gsub("modmain.lua", "")
+					return injector.DS_LUAJIT_update(root_dictory) == 1
+				end
+				AddGamePostInit(function()
+					local PopupDialogScreen = require "screens/popupdialog"
+					local locale = LOC.GetLocaleCode()
+					local lc = locale
+
+					local function translate(t)
+						t.zhr = t.zh
+						t.zht = t.zht or t.zh
+						return t[lc] or t.en
+					end
+					TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, translate({
+							zh = [[当前luajit模组有更新,是否要执行更新?]],
+							en = "The current luajit mod has been updated, do you want to execute the update?"
+						}),
+						{
+							{
+								text = STRINGS.UI.MAINSCREEN.RESTART,
+								cb = function()
+									update_mod()
+								end
+							},
+							{ text = STRINGS.UI.MAINSCREEN.CANCEL, cb = function() TheFrontEnd:PopScreen() end }
+						}))
+				end)
+			end
+		end
 	end
 	inject_server_only_mod()
 end

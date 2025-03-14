@@ -22,7 +22,7 @@ description = translate(
 
 author = "fesil"
 
-version = "0.8.4"
+version = "0.9.0"
 
 forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -95,6 +95,21 @@ configuration_options = {
             { description = "5ms", data = 5 },
         },
         default = 1
+    },
+    {
+        name = "TargetFPS",
+        label = translate({ en = "target logic fps", zh = "目标逻辑帧率" }),
+        hover = translate({
+            en = "lua scripts update fps",
+            zh = "lua脚本执行帧率"
+        }),
+        options = {
+            { description = translate({ en = "off", zh = "禁用"}), data = false },
+            { description = "30fps", data = 30 },
+            { description = "60fps", data = 60 },
+            { description = "120fps", data = 120 },
+        },
+        default = 30
     },
     {
         name = "JitOpt",

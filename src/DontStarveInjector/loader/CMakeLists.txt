@@ -12,7 +12,6 @@ set(Winmm_SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         PersistentString.cpp
-        updater.cpp
         ../luajit_config.cpp
 )
 if (ENABLE_STEAM_SUPPORT)
