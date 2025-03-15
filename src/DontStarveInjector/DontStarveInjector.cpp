@@ -9,7 +9,7 @@
 #include <windows.h>
 #include <spdlog/sinks/msvc_sink.h>
 #else
-
+#include <pthread.h>
 #endif
 
 #include <string>
