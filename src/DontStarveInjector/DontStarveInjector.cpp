@@ -322,8 +322,10 @@ static void set_thread_name(uint32_t thread_id, const char* name) {
     thread_name = name;
 #ifdef _WIN32
     SetThreadDescription(GetCurrentThread(), std::filesystem::path{thread_name}.c_str());
-#else
+#elif defined(__linux__)
     pthread_setname_np(pthread_self(), thread_name.c_str());
+#else
+    pthread_setname_np(thread_name.c_str());
 #endif
 }
 
