@@ -32,6 +32,8 @@
 #include "ctx.hpp"
 #include "spdlog/sinks/basic_file_sink.h"
 #include "ModuleSections.hpp"
+#include "disasm.h"
+#include "ScanCtx.hpp"
 
 
 #if !ONLY_LUA51
@@ -380,8 +382,76 @@ static int64_t hook_profiler_push(void* self, const char* zone, const char* sour
 }
 
 static int frame_time = 30;
-extern "C" DONTSTARVEINJECTOR_API void DS_LUAJIT_set_frame_time(float ms) {
-    frame_time = (int)std::min(ms, 30.0f);
+static float *fps_ptr;
+static function_relocation::MemorySignature set_notebook_mode{"F3 0F 11 89 D8 01 00 00", -0x3E};
+static bool find_set_notebook_mode_imm() {
+    if (set_notebook_mode.scan(gum_process_get_main_module()->path)) {
+        function_relocation::disasm ds{(uint8_t *) set_notebook_mode.target_address, 256};
+        int offset = 0;
+        int movss[] = {
+                1023969417,// 1/30
+                1015580809,// 1/60
+                1106247680,// 30.0
+                1114636288,// 60.0
+        };
+        void *addrs[4];
+        for (auto &&insn: ds) {
+            if (insn.id != X86_INS_MOVSS) continue;
+            if (insn.detail->x86.operands[0].type != x86_op_type::X86_OP_REG) continue;
+            if (insn.detail->x86.operands[1].type != x86_op_type::X86_OP_MEM) continue;
+            if (insn.detail->x86.operands[0].reg != x86_reg::X86_REG_XMM0 && insn.detail->x86.operands[0].reg != x86_reg::X86_REG_XMM1)
+                return false;
+
+            auto ptr = (int32_t *) function_relocation::read_operand_rip_mem(insn, insn.detail->x86.operands[1]);
+            if (movss[offset] != *ptr) return false;
+            addrs[offset] = (float *) insn.address;
+            offset++;
+            if (offset == 4)
+                break;
+        }
+        GumAddressSpec spec{(void *) set_notebook_mode.target_address, INT_MAX/2};
+        float *ptr = (float *) gum_memory_allocate_near(&spec, 256, sizeof(void *), GUM_PAGE_RW);
+        if (!ptr) return false;
+        auto movss_writer = +[](void* addr, float* target){
+            // target = addr + 8 + offset
+            auto offset = (int64_t)target - (int64_t)addr - 8;
+            gum_mprotect(addr, 16, GUM_PAGE_RWX);
+            *(((int32_t *) addr) + 1) = (int32_t)offset;
+            gum_mprotect(addr, 16, GUM_PAGE_RX);
+        };
+        for (size_t i = 0; i < 4; i++) {
+            movss_writer(addrs[i], ptr + i);
+        }
+        fps_ptr = ptr;
+        return true;
+    }
+    return false;
+}
+
+extern "C" DONTSTARVEINJECTOR_API bool DS_LUAJIT_set_target_fps(int fps, int tt) {
+#ifndef _WIN32
+    return false;
+#endif
+    
+    static auto target_address = [](){
+        return find_set_notebook_mode_imm();
+    }();
+    if (target_address) {
+        float val = 1.0f / (float)fps;
+        float val2 = (float)fps;
+      
+        if (tt & 0b01) {
+            fps_ptr[0] = val;
+            fps_ptr[1] = val;
+            frame_time = (int)std::min(val, 30.0f);
+        }
+        if (tt & 0b10) {
+            fps_ptr[2] = val2;
+            fps_ptr[3] = val2;
+        }
+        return true;
+    }
+    return false;
 }
 
 static int64_t hook_profiler_pop(void* self) {
@@ -426,8 +496,8 @@ void lua_event_notifyer(LUA_EVENT ev, lua_State * L) {
             break;
     }
 }
-
-#if 0
+#define profiler_lua_gc 0
+#ifdef profiler_lua_gc
 namespace Gum {
     struct InvocationListener
     {
@@ -564,7 +634,7 @@ extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_profiler_api() {
     if (profiler_pop.scan(path) && profiler_push.scan(path)) {
         Hook((uint8_t*)profiler_push.target_address, (uint8_t*)hook_profiler_push);
         Hook((uint8_t*)profiler_pop.target_address, (uint8_t*)hook_profiler_pop);
-#if 0
+#ifdef profiler_lua_gc
         static auto interceptor = gum_interceptor_obtain();
         static Gum::InvocationListenerProxy linstener{new Gum::InvocationListenerProfiler()};
         gum_interceptor_attach(interceptor, (void *) get_luajit_address("lua_gc"), GUM_INVOCATION_LISTENER (linstener.cproxy), (void*)"lua_gc");
@@ -616,6 +686,10 @@ bool server_is_master() {
 }
 
 static bool check_crash() {
+#ifndef NDEBUG
+    return true;
+#endif// !NDEBUG
+
     auto rootpath = getExePath().parent_path().parent_path();
     auto unsafedatapath = rootpath / "data" / "unsafedata" / "luajit_crash.json";
     if (std::filesystem::exists(unsafedatapath)) {

@@ -64,7 +64,7 @@ namespace function_relocation {
         return imm;
     }
 
-    static uintptr_t read_operand_rip_mem(const cs_insn &insn, const cs_x86_op &op) {
+    uintptr_t read_operand_rip_mem(const cs_insn &insn, const cs_x86_op &op) {
         if (op.type != X86_OP_MEM || !reg_is_ip(op.mem.base) || op.mem.segment != X86_REG_INVALID ||
             op.mem.index != X86_REG_INVALID || op.mem.scale != 1)
             return 0;

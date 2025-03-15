@@ -22,7 +22,7 @@ description = translate(
 
 author = "fesil"
 
-version = "0.9.2"
+version = "1.0.0"
 
 forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -108,8 +108,12 @@ configuration_options = {
             { description = "30fps", data = 30 },
             { description = "60fps", data = 60 },
             { description = "120fps", data = 120 },
+            { description = "144fps", data = 144 },
+            { description = "165fps", data = 165 },
+            { description = "200fps", data = 200 },
+            { description = "240fps", data = 240 },
         },
-        default = 30
+        default = 60
     },
     {
         name = "JitOpt",

@@ -188,7 +188,7 @@ local function main()
 			const char* DS_LUAJIT_get_mod_version();
 			const char* DS_LUAJIT_get_workshop_dir();
 			int DS_LUAJIT_update(const char* mod_dictory);
-			void DS_LUAJIT_set_frame_time(float ms);
+			bool DS_LUAJIT_set_target_fps(int fps, int tt);
 		]]
 		local injector = require 'luavm.ffi_load' ("Injector")
 		local modmain_path = debug.getinfo(1).source
@@ -241,8 +241,8 @@ local function main()
 
 		if GetModConfigData("TargetFPS") then
 			local targetfps = GetModConfigData("TargetFPS")
-			local farme_time = 1000 / targetfps
-			injector.DS_LUAJIT_set_frame_time(farme_time)
+			injector.DS_LUAJIT_set_target_fps(targetfps, 3)
+			TheSim:SetNetbookMode(true);
 		end
 
 		if injector.DS_LUAJIT_get_mod_version() ~= nil then
