@@ -17,6 +17,7 @@
 #include <map>
 #include <cstdint>
 #include <list>
+#include <atomic>
 
 
 #if USE_LISTENER
@@ -321,6 +322,8 @@ static void set_thread_name(uint32_t thread_id, const char* name) {
     thread_name = name;
 #ifdef _WIN32
     SetThreadDescription(GetCurrentThread(), std::filesystem::path{thread_name}.c_str());
+#else
+    pthread_setname_np(pthread_self(), thread_name.c_str());
 #endif
 }
 
@@ -339,6 +342,24 @@ static int64_t hook_profiler_push(void* self, const char* zone, const char* sour
     auto& p = profiler;
     if ("Update"sv == zone) {
         if (frame_gc_time) {
+            static struct {
+                std::atomic_bool vaild;
+                std::mutex mtx;
+                std::unordered_map<std::thread::id, int> count_map;
+            } thread_id_count;
+            if (!thread_id_count.vaild.load(memory_order_relaxed)) {
+                auto tid = std::this_thread::get_id();
+                std::unique_lock<std::mutex> lock(thread_id_count.mtx);
+                auto& count = thread_id_count.count_map[tid];
+                lock.unlock();
+                count++;
+                bool except = false;
+                if (count >= 600 && thread_id_count.vaild.compare_exchange_strong(except, true, memory_order_relaxed)){
+                    set_thread_name(0, "SimUpdateThread");
+                    thread_id_count.vaild.store(true, memory_order_relaxed);
+                }
+            }
+
             if (thread_name == "SimUpdateThread"sv)
                 p.start_time = get_time_ms();
         }
@@ -592,6 +613,24 @@ bool server_is_master() {
     return std::string_view{get_cwd()}.contains("DST_Master");
 }
 
+static bool check_crash() {
+    auto rootpath = getExePath().parent_path().parent_path();
+    auto unsafedatapath = rootpath / "data" / "unsafedata" / "luajit_crash.json";
+    if (std::filesystem::exists(unsafedatapath)) {
+        auto fp = fopen(unsafedatapath.string().c_str(),  "r+");
+        char buf[32] = {};
+        auto len = fread(buf, sizeof(char), 16, fp);
+        fclose(fp);
+        if (len > 0) {
+            return false;
+        }
+    } 
+    auto fp = fopen(unsafedatapath.string().c_str(),  "w");
+    fwrite("{1}", 1, 3, fp);
+    fclose(fp);
+    return true;
+}
+
 extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     DontStarveInjectorIsClient = isClient;
 #ifdef _WIN32
@@ -610,6 +649,12 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 #ifdef DEBUG
     spdlog::set_level(spdlog::level::trace);
 #endif
+
+    if (!check_crash()) {
+        spdlog::error("skip inject, find crash content");
+        return;
+    }
+
     
     if (!function_relocation::init_ctx()) {
         showError("can't init signature");

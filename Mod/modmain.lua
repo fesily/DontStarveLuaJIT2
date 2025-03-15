@@ -1,6 +1,35 @@
 _G = GLOBAL
 local function main()
 	local hasluajit, jit = _G.pcall(require, "jit")
+
+	local luajit_config_path = "unsafedata/luajit_config.json"
+	local luajit_crash_path = "unsafedata/luajit_crash.json"
+	local function read_config_file()
+		local fp = io.open(luajit_config_path, "r")
+		if fp then
+			local str = fp:read("*a")
+			fp:close()
+			return json.decode(str)
+		end
+	end
+
+	local function clean_crash_file()
+		local fp = io.open(luajit_crash_path, "w")
+		if fp then
+			fp:close()
+		end
+	end
+
+	local function is_crash()
+		local fp = io.open(luajit_crash_path, "r")
+		if fp then
+			local content = fp:read("*a")
+			fp:close()
+			return content and #content ~= 0
+		end
+		return false
+	end
+	
 	if not hasluajit then
 		AddGamePostInit(function()
 			local PopupDialogScreen = require "screens/popupdialog"
@@ -12,7 +41,24 @@ local function main()
 				t.zht = t.zht or t.zh
 				return t[lc] or t.en
 			end
-			TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MAINSCREEN.MODFAILTITLE, translate({
+			-- check crash 
+			if  is_crash() then
+				TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, translate({
+					zh = "检测luajit未成功加载,是否再次尝试?\n\n(还失败可能需要更新,请联系作者)",
+					en = "Detected that luajit failed to load, do you want to try again?\n\n(If it fails again, it may need to be updated, please contact the author)"
+				}),
+				{
+					{
+						text = STRINGS.UI.MAINSCREEN.RESTART,
+						cb = function()
+							clean_crash_file()
+							TheSim:Quit()
+						end
+					},
+					{ text = STRINGS.UI.MAINSCREEN.OK, cb = function() TheFrontEnd:PopScreen() end }
+				}))
+			else
+				TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MAINSCREEN.MODFAILTITLE, translate({
 					zh = [[当前luajit模组未成功安装,前往该模组所在的文件夹,运行install.bat]],
 					en =
 					"The current luajit mod has not been successfully installed, please go to the folder where the luajit mod is located, and run install.bat/.sh to execute the installation"
@@ -20,6 +66,8 @@ local function main()
 				{
 					{ text = STRINGS.UI.MAINSCREEN.OK, cb = function() TheFrontEnd:PopScreen() end }
 				}))
+			end
+
 		end)
 		return
 	end
@@ -166,7 +214,7 @@ local function main()
 				end
 			end
 			if not TheNet:IsDedicated() then
-				local fp = io.open("unsafedata/luajit_config.json", "w")
+				local fp = io.open(luajit_config_path, "w")
 				if fp then
 					local config = {
 						modmain_path = modmain_path,
@@ -232,6 +280,11 @@ local function main()
 				end)
 			end
 		end
+
+		AddGamePostInit(function()
+			scheduler:ExecuteInTime(3, function() clean_crash_file() end)
+		end)
+
 	end
 	inject_server_only_mod()
 end
