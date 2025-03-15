@@ -239,7 +239,7 @@ local function main()
 			injector.DS_LUAJIT_set_frame_gc_time(tonumber(GetModConfigData("EnbaleFrameGC")))
 		end
 
-		if GetModConfigData("TargetFPS") ~= 0 then
+		if GetModConfigData("TargetFPS") then
 			local targetfps = GetModConfigData("TargetFPS")
 			local farme_time = 1000 / targetfps
 			injector.DS_LUAJIT_set_frame_time(farme_time)
