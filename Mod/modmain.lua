@@ -242,7 +242,7 @@ local function main()
 		if GetModConfigData("TargetFPS") then
 			local targetfps = GetModConfigData("TargetFPS")
 			injector.DS_LUAJIT_set_target_fps(targetfps, 3)
-			TheSim:SetNetbookMode(true);
+			TheSim:SetNetbookMode(false);
 		end
 
 		if injector.DS_LUAJIT_get_mod_version() ~= nil then

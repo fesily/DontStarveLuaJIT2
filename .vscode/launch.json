@@ -22,9 +22,20 @@
             "request": "launch",
             "program": "E:/SteamLibrary/steamapps/common/Don't Starve Together/bin64/dontstarve_steam_x64.exe",
             "args": [],
-            "stopAtEntry": true,
-            "cwd": "E:/SteamLibrary/steamapps/common/Don't Starve Together",
+            "cwd": "E:/SteamLibrary/steamapps/common/Don't Starve Together/bin64",
             "environment": [],
+        },
+        {
+            "name": "(Windows) 启动服务器",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "E:/SteamLibrary/steamapps/common/Don't Starve Together/bin64/dontstarve_dedicated_server_nullrenderer_x64.exe",
+            "args": [
+                "-persistent_storage_root","APP:Klei/","-conf_dir","DoNotStarveTogether","-cluster","Cluster_3","-ownernetid","76561198151751414","-ownerdir","191485686","-clouddir","191485686","-backup_log_count","25","-backup_log_period","0","-ugc_directory","E:\\SteamLibrary\\steamapps\\workshop","-shard","Master" ,"-secondary_log_prefix", "master" ,"-sigprefix", "DST_Master" ,"-token" ,""
+               ],
+            "cwd": "E:/SteamLibrary/steamapps/common/Don't Starve Together/bin64",
+            "environment": [],
+            "externalConsole": true
         },
         {
             "name": "(Linux) debug game",

@@ -260,6 +260,10 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
 
 #pragma endregion Attach
 
+static bool DontStarveInjectorIsClient = false;
+static bool server_is_master() {
+    return std::string_view{get_cwd()}.contains("DST_Master");
+}
 #ifndef DISABLE_TRACY_FUTURE
 #include <tracy/TracyC.h>
 #include <tracy/Tracy.hpp>
@@ -384,7 +388,15 @@ static int64_t hook_profiler_push(void* self, const char* zone, const char* sour
 static int frame_time = 30;
 static float *fps_ptr;
 static function_relocation::MemorySignature set_notebook_mode{"F3 0F 11 89 D8 01 00 00", -0x3E};
+static void set_notebook_mode_config_hook(void*) {}
+
+static function_relocation::MemorySignature set_notebook_mode_config{"80 B9 D4 01 00 00 00", -0x6};
 static bool find_set_notebook_mode_imm() {
+    if (!DontStarveInjectorIsClient) {
+        if (!set_notebook_mode_config.scan(gum_process_get_main_module()->path)) return false;
+            //delete this mode
+        Hook((uint8_t*)set_notebook_mode_config.target_address, (uint8_t*)&set_notebook_mode_config_hook);
+    }
     if (set_notebook_mode.scan(gum_process_get_main_module()->path)) {
         function_relocation::disasm ds{(uint8_t *) set_notebook_mode.target_address, 256};
         int offset = 0;
@@ -496,7 +508,7 @@ void lua_event_notifyer(LUA_EVENT ev, lua_State * L) {
             break;
     }
 }
-#define profiler_lua_gc 0
+//#define profiler_lua_gc 0
 #ifdef profiler_lua_gc
 namespace Gum {
     struct InvocationListener
@@ -680,10 +692,7 @@ auto create_defer(Fn&& fn) {
     };
     return std::unique_ptr<void, decltype(deleter)>(nullptr, std::move(deleter));
 }
-bool DontStarveInjectorIsClient = false;
-bool server_is_master() {
-    return std::string_view{get_cwd()}.contains("DST_Master");
-}
+
 
 static bool check_crash() {
     if (!getenv("SteamClientLaunch")) {
