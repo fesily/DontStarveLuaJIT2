@@ -231,11 +231,11 @@ local function main()
 		end
 
 		if GetModConfigData("DisableForceFullGC") ~= 0 then
-			injector.DS_LUAJIT_replace_profiler_api()
 			injector.DS_LUAJIT_disable_fullgc(tonumber(GetModConfigData("DisableForceFullGC")))
 		end
 
 		if GetModConfigData("EnbaleFrameGC") ~= 0 then
+			injector.DS_LUAJIT_replace_profiler_api()
 			injector.DS_LUAJIT_set_frame_gc_time(tonumber(GetModConfigData("EnbaleFrameGC")))
 		end
 
