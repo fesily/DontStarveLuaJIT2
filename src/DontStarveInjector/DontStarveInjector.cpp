@@ -686,6 +686,9 @@ bool server_is_master() {
 }
 
 static bool check_crash() {
+    if (!getenv("SteamClientLaunch")) {
+        return true;
+    }
 #ifndef NDEBUG
     return true;
 #endif// !NDEBUG
