@@ -439,19 +439,52 @@ static bool find_set_notebook_mode_imm() {
     return false;
 }
 
-static function_relocation::MemorySignature luaupdate{"FF 83 C8 00 00 00 F3 0F 10 35", 6};
-static float* luaupdatefps = nullptr;
-static bool find_luaupdate_imm() {
-    if (luaupdate.scan(gum_process_get_main_module()->path)) {
-        auto insn = function_relocation::disasm::get_insn((uint8_t *) luaupdate.target_address, 8 + 1);
-        if (insn->detail->x86.operands[1].type!= x86_op_type::X86_OP_MEM) return false;
+
+static float* find_luaupdate_imm(function_relocation::MemorySignature& sign) {
+    if (sign.scan(gum_process_get_main_module()->path)) {
+        if (!sign.only_one) {
+            sign.target_address = sign.targets.front();
+            for (auto addr : sign.targets)
+            {
+                if (sign.target_address != addr)
+                    return nullptr;
+            }
+            
+        }
+        auto insn = function_relocation::disasm::get_insn((uint8_t *) sign.target_address, 8 + 1);
+        if (insn->detail->x86.operands[1].type!= x86_op_type::X86_OP_MEM) return nullptr;
         auto  imm = (int32_t*)function_relocation::read_operand_rip_mem(*insn, insn->detail->x86.operands[1]);
         if (0x3D088889 == *imm) {
-            luaupdatefps = (float*) imm;
-            return true;
+            return (float*) imm;
         }
     }
-    return false;
+    return nullptr;
+}
+static std::array<float*, 3> luaupdatefps;
+
+void DS_LUAJIT_set_logic_fps(int fps) {
+    function_relocation::MemorySignature luaupdate{"FF 83 C8 00 00 00 F3 0F 10 35", 6};
+    function_relocation::MemorySignature luaupdate1{"48 8D 43 70", 17};
+    function_relocation::MemorySignature luaupdate2{"B8 89 88 88 88", 4, false};
+    luaupdatefps[0] = find_luaupdate_imm(luaupdate);
+    luaupdatefps[1] = find_luaupdate_imm(luaupdate1);
+    luaupdatefps[2] = find_luaupdate_imm(luaupdate2);
+    for (auto ptr : luaupdatefps)
+    {
+        if (!ptr)
+            return;
+    }
+    
+    auto writer = +[](float* addr, float val){
+        gum_mprotect(addr, 4, GUM_PAGE_RW);
+        *addr = val;
+        gum_mprotect(addr, 4, GUM_PAGE_READ);
+    };
+    float val = 1.0f / (float)fps;
+    for (auto ptr : luaupdatefps)
+    {
+        writer(ptr, val);
+    }
 }
 
 extern "C" DONTSTARVEINJECTOR_API bool DS_LUAJIT_set_target_fps(int fps, int tt) {
@@ -460,16 +493,11 @@ extern "C" DONTSTARVEINJECTOR_API bool DS_LUAJIT_set_target_fps(int fps, int tt)
 #endif
     
     static auto target_address = [](){
-        return find_set_notebook_mode_imm() && find_luaupdate_imm();
+        return find_set_notebook_mode_imm();
     }();
     if (target_address) {
         float val = 1.0f / (float)fps;
         float val2 = (float)fps;
-        auto writer = +[](float* addr, float val){
-            gum_mprotect(addr, 4, GUM_PAGE_RW);
-            *addr = val;
-            gum_mprotect(addr, 4, GUM_PAGE_READ);
-        };
       
         if (tt & 0b01) {
             fps_ptr[0] = val;
@@ -480,13 +508,12 @@ extern "C" DONTSTARVEINJECTOR_API bool DS_LUAJIT_set_target_fps(int fps, int tt)
             fps_ptr[2] = val2;
             fps_ptr[3] = val2;
         }
-        if (tt & 0b100) {
-            writer(luaupdatefps, val);
-        }
+   
         return true;
     }
     return false;
 }
+
 
 static int64_t hook_profiler_pop(void* self) {
     auto& p = profiler;
@@ -802,6 +829,7 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 #ifdef _WIN32
     repalce_set_thread_name();
 #endif
+DS_LUAJIT_set_logic_fps(60);
 }
 
 

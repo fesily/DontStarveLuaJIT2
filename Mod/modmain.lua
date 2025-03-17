@@ -249,10 +249,28 @@ local function main()
 
 		if GetModConfigData("TargetLogincFPS") then
 			local targetfps = GetModConfigData("TargetLogincFPS")
-			injector.DS_LUAJIT_set_target_fps(targetfps, 4)
-			TheSim:SetNetbookMode(false);
-		end
+			local ticktime = 1.0 / targetfps
+			sim.GetTickTime = function(self,...)
+				return 1.0 / targetfps
+			end
+			function GetTime()
+				return TheSim:GetTick()*ticktime
+			end
 
+			function GetStaticTime()
+				return TheSim:GetStaticTick()*ticktime
+			end
+			injector.DS_LUAJIT_set_target_fps(targetfps, 4)
+		end
+		
+local CalcTimeOfDay = _ismastersim and function()
+	local time_of_day = _totaltimeinphase:value() - _remainingtimeinphase:value()
+	for i = 1, _phase:value()-1 do
+		time_of_day = time_of_day + _segs[i]:value()*TUNING.SEG_TIME
+	end
+	return time_of_day
+end 
+		jit.CalcTimeOfDay = CalcTimeOfDay
 		local root_dictory = modmain_path:gsub("modmain.lua", "")
 		AddGamePostInit(function()
 			local PopupDialogScreen = require "screens/popupdialog"
