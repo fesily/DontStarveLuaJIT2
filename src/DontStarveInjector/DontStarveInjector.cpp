@@ -435,7 +435,24 @@ static bool find_set_notebook_mode_imm() {
             movss_writer(addrs[i], ptr + i);
         }
         fps_ptr = ptr;
+        auto new_val = (int*)fps_ptr;
+        memcpy(new_val, movss, 4 * sizeof(int));
         return true;
+    }
+    return false;
+}
+
+static function_relocation::MemorySignature luaupdate{"FF 83 C8 00 00 00 F3 0F 10 35", 6};
+static float* luaupdatefps = nullptr;
+static bool find_luaupdate_imm() {
+    if (luaupdate.scan(gum_process_get_main_module()->path)) {
+        auto insn = function_relocation::disasm::get_insn((uint8_t *) luaupdate.target_address, 8 + 1);
+        if (insn->detail->x86.operands[1].type!= x86_op_type::X86_OP_MEM) return false;
+        auto  imm = (int32_t*)function_relocation::read_operand_rip_mem(*insn, insn->detail->x86.operands[1]);
+        if (0x3D088889 == *imm) {
+            luaupdatefps = (float*) imm;
+            return true;
+        }
     }
     return false;
 }
@@ -446,11 +463,16 @@ extern "C" DONTSTARVEINJECTOR_API bool DS_LUAJIT_set_target_fps(int fps, int tt)
 #endif
     
     static auto target_address = [](){
-        return find_set_notebook_mode_imm();
+        return find_set_notebook_mode_imm() && find_luaupdate_imm();
     }();
     if (target_address) {
         float val = 1.0f / (float)fps;
         float val2 = (float)fps;
+        auto writer = +[](float* addr, float val){
+            gum_mprotect(addr, 4, GUM_PAGE_RW);
+            *addr = val;
+            gum_mprotect(addr, 4, GUM_PAGE_READ);
+        };
       
         if (tt & 0b01) {
             fps_ptr[0] = val;
@@ -460,6 +482,9 @@ extern "C" DONTSTARVEINJECTOR_API bool DS_LUAJIT_set_target_fps(int fps, int tt)
         if (tt & 0b10) {
             fps_ptr[2] = val2;
             fps_ptr[3] = val2;
+        }
+        if (tt & 0b100) {
+            writer(luaupdatefps, val);
         }
         return true;
     }
@@ -662,7 +687,7 @@ extern "C" DONTSTARVEINJECTOR_API void DS_LUAJIT_enable_tracy(int en) {
 extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_get_mod_version() {
     return MOD_VERSION;
 }
-extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_update(const char* mod_directory) {
+extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_update(const char* mod_directory, int tt) {
     if (!mod_directory) return 0;
 #ifdef _WIN32
     auto mod_dir = std::filesystem::path{mod_directory};
@@ -670,7 +695,7 @@ extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_update(const char* mod_directory
     mod_dir = std::filesystem::absolute(mod_dir);
     auto installer = mod_dir / "install.bat";
     if (!std::filesystem::exists(installer)) return 0;
-    std::string cmd = std::format("cmd /C \"{}\"", installer.string());
+    std::string cmd = std::format("cmd /C \"{}\" {}", installer.string(), tt == 1? "uninstall" : "");
     STARTUPINFO si;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
@@ -678,6 +703,8 @@ extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_update(const char* mod_directory
     PROCESS_INFORMATION pi;
     ZeroMemory(&pi, sizeof(pi));
     if (CreateProcess(NULL, (char*)cmd.c_str(), 0, 0, FALSE, CREATE_NEW_CONSOLE, 0, mod_directory, &si, &pi)) {
+        WaitForSingleObject( pi.hProcess, INFINITE);
+        
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
         return 1;

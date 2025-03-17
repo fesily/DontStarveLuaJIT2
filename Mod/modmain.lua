@@ -4,6 +4,8 @@ local function main()
 
 	local luajit_config_path = "unsafedata/luajit_config.json"
 	local luajit_crash_path = "unsafedata/luajit_crash.json"
+
+
 	local function read_config_file()
 		local fp = io.open(luajit_config_path, "r")
 		if fp then
@@ -72,7 +74,7 @@ local function main()
 		return
 	end
 
-	function inject_server_only_mod()
+	local function inject_server_only_mod()
 		local old_GetServerModNames = KnownModIndex.GetServerModNames
 		local old_GetServerModNamesTable = KnownModIndex.GetServerModNamesTable
 		local old_GetEnabledServerModNames = ModManager.GetEnabledServerModNames
@@ -187,7 +189,7 @@ local function main()
 			int DS_LUAJIT_set_frame_gc_time(int ms);
 			const char* DS_LUAJIT_get_mod_version();
 			const char* DS_LUAJIT_get_workshop_dir();
-			int DS_LUAJIT_update(const char* mod_dictory);
+			int DS_LUAJIT_update(const char* mod_dictory, int tt);
 			bool DS_LUAJIT_set_target_fps(int fps, int tt);
 		]]
 		local injector = require 'luavm.ffi_load' ("Injector")
@@ -239,30 +241,41 @@ local function main()
 			injector.DS_LUAJIT_set_frame_gc_time(tonumber(GetModConfigData("EnbaleFrameGC")))
 		end
 
-		if GetModConfigData("TargetFPS") then
-			local targetfps = GetModConfigData("TargetFPS")
+		if GetModConfigData("TargetRenderFPS") then
+			local targetfps = GetModConfigData("TargetRenderFPS")
 			injector.DS_LUAJIT_set_target_fps(targetfps, 3)
 			TheSim:SetNetbookMode(false);
 		end
 
-		if injector.DS_LUAJIT_get_mod_version() ~= nil then
-			local version = ffi.string(injector.DS_LUAJIT_get_mod_version())
-			if modinfo.version ~= version then
-				local function update_mod()
-					local root_dictory = modmain_path:gsub("modmain.lua", "")
-					return injector.DS_LUAJIT_update(root_dictory) == 1
-				end
-				AddGamePostInit(function()
-					local PopupDialogScreen = require "screens/popupdialog"
-					local locale = LOC.GetLocaleCode()
-					local lc = locale
+		if GetModConfigData("TargetLogincFPS") then
+			local targetfps = GetModConfigData("TargetLogincFPS")
+			injector.DS_LUAJIT_set_target_fps(targetfps, 4)
+			TheSim:SetNetbookMode(false);
+		end
 
-					local function translate(t)
-						t.zhr = t.zh
-						t.zht = t.zht or t.zh
-						return t[lc] or t.en
+		local root_dictory = modmain_path:gsub("modmain.lua", "")
+		AddGamePostInit(function()
+			local PopupDialogScreen = require "screens/popupdialog"
+			local locale = LOC.GetLocaleCode()
+			local lc = locale
+
+			local function translate(t)
+				t.zhr = t.zh
+				t.zht = t.zht or t.zh
+				return t[lc] or t.en
+			end
+			if injector.DS_LUAJIT_get_mod_version() ~= nil then
+				local version = ffi.string(injector.DS_LUAJIT_get_mod_version())
+				if modinfo.version ~= version then
+					local function update_mod()
+						return injector.DS_LUAJIT_update(root_dictory, 0) == 1
 					end
+
 					local btns = {}
+					local content = translate({
+						zh = [[当前luajit模组有更新,是否要执行更新?]],
+						en = "The current luajit mod has been updated, do you want to execute the update?"
+					})
 					if jit.os == "Windows" then
 						btns[#btns + 1] = {
 							text = STRINGS.UI.MAINSCREEN.RESTART,
@@ -270,19 +283,65 @@ local function main()
 								update_mod()
 							end
 						}
+					else
+						content = translate({
+							zh = [[当前luajit模组有更新,需要重新执行install.sh]],
+							en = "The current luajit mod has been updated, should execute install.sh again"
+						})
 					end
-					btns[#btns + 1] = { text = STRINGS.UI.MAINSCREEN.CANCEL, cb = function() TheFrontEnd:PopScreen() end }
-					TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, translate({
-							zh = [[当前luajit模组有更新,是否要执行更新?]],
-							en = "The current luajit mod has been updated, do you want to execute the update?"
-						}),
-						btns))
-				end)
-			end
-		end
 
-		AddGamePostInit(function()
+					btns[#btns + 1] = { text = STRINGS.UI.MAINSCREEN.CANCEL, cb = function() TheFrontEnd:PopScreen() end }
+					TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, content,
+						btns))
+				end
+			end
+
 			scheduler:ExecuteInTime(3, clean_crash_file)
+			-- motify ModConfigurationScreen
+			local ModConfigurationScreen = require "screens/redux/modconfigurationscreen"
+			local old_ctor = ModConfigurationScreen._ctor
+			ModConfigurationScreen._ctor = function(self, _modname, client_config, ...)
+				old_ctor(self, _modname, client_config, ...)
+				if _modname == modname and jit.os == "Windows" then
+					local function uninstall_mod()
+						if jit.os == "Windows" then
+							injector.DS_LUAJIT_update(root_dictory, 1)
+						else
+							TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.MODFAILTITLE, translate({
+								zh = "当前操作系统不支持卸载luajit模组\n麻烦手动删除",
+								en = "The current operating system does not support uninstalling the luajit mod\nPlease manually delete"
+							}),
+							{
+								{ text = STRINGS.UI.MAINSCREEN.OK,  cb = function() TheFrontEnd:PopScreen() end }
+							})) 
+						end
+					end
+					local actions = self.dialog.actions
+					if actions then
+						self.uninstall = actions:AddItem(translate({ en = "uninstall mod", zh = "卸载模组" }) , function() TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, translate({
+							zh = "是否要卸载luajit模组?",
+							en = "Are you sure you want to uninstall the luajit mod?"
+						}),
+						{
+							{ text = STRINGS.UI.MAINSCREEN.RESTART, cb = function() uninstall_mod() end },
+							{ text = STRINGS.UI.MAINSCREEN.CANCEL,  cb = function() TheFrontEnd:PopScreen() end }
+						})) end)
+						local sizeX, sizeY = actions:GetSize()
+						local buttons_len = actions:GetNumberOfItems()
+						local button_spacing
+						-- 1,2,3,4 buttons can be big at 210,420,630,840 widths.
+						local space_per_button = sizeX / buttons_len
+						local has_space_for_big_buttons = space_per_button > 209
+						if has_space_for_big_buttons then
+							button_spacing = 320
+						else
+							button_spacing = 230
+						end
+						local button_height = -30 -- cover bottom crown
+						actions:SetPosition(-(button_spacing*(buttons_len-1))/2, button_height)
+					end
+				end
+			end
 		end)
 	end
 	inject_server_only_mod()

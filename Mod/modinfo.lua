@@ -22,9 +22,9 @@ description = translate(
 
 author = "fesil"
 
-version = "1.1.1"
+version = "1.2.0"
 
-forumthread = "https://github.com/fesily/DontStarveLuaJit2"
+--forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
 api_version = 10
 
@@ -81,7 +81,7 @@ configuration_options = {
     },
     {
         name = "EnbaleFrameGC",
-        label = translate({ en = "enable frame gc", zh = "启动帧间gc" }),
+        label = translate({ en = "frame gc", zh = "帧间gc" }),
         hover = translate({
             en = "use free time gc",
             zh = "见缝插针地gc"
@@ -97,16 +97,35 @@ configuration_options = {
         default = 1
     },
     {
-        name = "TargetFPS",
-        label = translate({ en = "target logic fps", zh = "目标逻辑帧率" }),
+        name = "TargetLogincFPS",
+        label = translate({ en = "logic fps", zh = "逻辑帧率" }),
         hover = translate({
-            en = "lua scripts update fps",
-            zh = "lua脚本执行帧率"
+            en = "lua scripts update fps, changed this, maybe boom!!",
+            zh = "lua脚本执行帧率,不要乱改,可能会爆炸!!"
+        }),
+        options = {
+            { description = translate({ en = "off", zh = "禁用"}), data = false },
+            { description = "45fps", data = 45 },
+            { description = "60fps", data = 60 },
+            { description = "75fps", data = 75 },
+            { description = "90fps", data = 90 },
+            { description = "105fps", data = 105 },
+            { description = "120fps", data = 120 },
+        },
+        default = 30
+    },
+    {
+        name = "TargetRenderFPS",
+        label = translate({ en = "render fps", zh = "渲染帧率" }),
+        hover = translate({
+            en = "Render fps",
+            zh = "渲染帧率"
         }),
         options = {
             { description = translate({ en = "off", zh = "禁用"}), data = false },
             { description = "30fps", data = 30 },
             { description = "60fps", data = 60 },
+            { description = "90fps", data = 90 },
             { description = "120fps", data = 120 },
             { description = "144fps", data = 144 },
             { description = "165fps", data = 165 },
@@ -136,7 +155,7 @@ configuration_options = {
             { description = "On",  data = true },
             { description = "Off", data = false },
         },
-        default = true
+        default = false
     },
     {
         name = "DisableJITWhenServer",

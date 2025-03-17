@@ -37,6 +37,13 @@ if not exist "%destination%" (
     exit /b 1
 )
 
+if /i "%1" == "uninstall" (
+    goto uninstall
+) else (
+    goto install
+)
+
+:install
 echo [INFO] moving files...
 robocopy "%source%" "%destination%" /E /NFL /NDL /IS /IT /IM >NUL
 
@@ -45,8 +52,14 @@ if errorlevel 8 (
     timeout /t 5
     exit /b 1
 ) 
-
-
 echo [INFO] install success
+goto end
+
+:uninstall
+echo [INFO] removing files...
+del /Q /F "%destination%\winmm.dll" >NUL
+echo [INFO] removing success
+
+:end
 timeout /t 5
 exit /b 0
