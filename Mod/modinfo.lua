@@ -104,7 +104,7 @@ configuration_options = {
             zh = "lua脚本执行帧率,不要乱改,可能会爆炸!!"
         }),
         options = {
-            { description = translate({ en = "off", zh = "禁用"}), data = false },
+            { description = translate({ en = "off", zh = "禁用"}), data = 30 },
             { description = "45fps", data = 45 },
             { description = "60fps", data = 60 },
             { description = "75fps", data = 75 },
