@@ -318,9 +318,6 @@ extern void (* lua_gc_func)(void *L, int,int);
 static int frame_gc_time = 0;
 static bool tracy_active = 0;
 extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_set_frame_gc_time(int ms) {
-    if (ms == 0) {
-        return frame_gc_time;
-    }
     return frame_gc_time = std::min(ms,30);
 }
 static thread_local std::string thread_name;
