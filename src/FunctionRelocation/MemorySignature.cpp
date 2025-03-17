@@ -7,8 +7,6 @@
 namespace function_relocation
 {
 
-constexpr auto page = GUM_PAGE_EXECUTE;
-
 static gboolean sacnBaseAddrCb(GumAddress address, gsize size, gpointer user_data) {
     auto self = static_cast<MemorySignature*>(user_data);
     if (self->only_one) assert(self->target_address == 0);
@@ -32,7 +30,7 @@ uintptr_t MemorySignature::scan(const char* m) {
     if (log)
         spdlog::get(logger_name)->info("{} Signature {}", m, pattern);
     auto ctx = std::pair{ this, match_pattern };
-    gum_module_enumerate_ranges(m, page, findBaseAddrCb, (gpointer)&ctx);
+    gum_module_enumerate_ranges(m, this-> prot_flag, findBaseAddrCb, (gpointer)&ctx);
     gum_match_pattern_unref(match_pattern);
     return target_address;
 }
