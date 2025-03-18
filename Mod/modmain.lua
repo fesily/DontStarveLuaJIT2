@@ -296,8 +296,6 @@ local function main()
 			end
 
 			scheduler:ExecuteInTime(3, clean_crash_file)
-			local restart_options = {"TargetLogincFPS"}
-			local TargetLogincFPSVal = GetModConfigData("TargetLogincFPS")
 			-- motify ModConfigurationScreen
 			local ModConfigurationScreen = require "screens/redux/modconfigurationscreen"
 			local old_ctor = ModConfigurationScreen._ctor
@@ -340,53 +338,6 @@ local function main()
 						end
 						local button_height = -30 -- cover bottom crown
 						actions:SetPosition(-(button_spacing*(buttons_len-1))/2, button_height)
-					end
-					local restart_required_info = {}
-					local options_scroll_list = self.options_scroll_list
-					for i = 1, #options_scroll_list.widgets_to_update, 1 do
-						local widget = options_scroll_list.widgets_to_update[i]
-						local item = self.optionwidgets[widget.real_index]
-						if item and item.option.name == "TargetLogincFPS" then
-							local old_changed = widget.opt.spinner.OnChanged
-							widget.opt.spinner.OnChanged = function (_, data)
-								old_changed( _, data)
-								restart_required_info[item.option.name] = TargetLogincFPSVal ~= data
-								local has_restart_required = false
-								for _, v in pairs(restart_required_info) do
-									if v then
-										has_restart_required = true
-										break
-									end
-								end
-								self.restart_required = has_restart_required
-							end
-						end
-					end
-					local old_apply = self.Apply
-					self.Apply = function ()
-						if self.restart_required then
-							local showName = {}
-							for i, restart_option in ipairs(restart_options) do
-								for i, item in ipairs(self.optionwidgets) do
-									local option = item.option
-									if restart_option == option.name then
-										showName[#showName+1] = option.label
-										break
-									end
-								end
-							end
-							TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE,
-							translate({
-								zh = "修改这些选项需要重启游戏:\n",
-								en = "motify those config need restart game\n"
-							})..table.concat(showName, '\n'),
-							{
-								{ text = STRINGS.UI.MAINSCREEN.RESTART, cb = function() old_apply(self); TheSim:Quit() end },
-								{ text = STRINGS.UI.MAINSCREEN.CANCEL,  cb = function() TheFrontEnd:PopScreen() end }
-							}))
-						else
-							old_apply(self)
-						end
 					end
 				end
 			end
