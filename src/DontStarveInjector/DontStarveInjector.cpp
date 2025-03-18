@@ -315,10 +315,11 @@ struct Profiler {
 };
 static thread_local Profiler profiler;
 extern void (* lua_gc_func)(void *L, int,int);
-static int frame_gc_time = 0;
+static float frame_gc_time = 0;
 static bool tracy_active = 0;
 extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_set_frame_gc_time(int ms) {
-    return frame_gc_time = std::min(ms,30);
+    frame_gc_time = (float)std::min(ms, 30);
+    return (int)frame_gc_time;
 }
 static thread_local std::string thread_name;
 static void set_thread_name(uint32_t thread_id, const char* name) {
@@ -382,7 +383,7 @@ static int64_t hook_profiler_push(void* self, const char* zone, const char* sour
     return 0;
 }
 
-static int frame_time = 30;
+static float frame_time = 1.0/30;
 static float *fps_ptr;
 static function_relocation::MemorySignature set_notebook_mode{"F3 0F 11 89 D8 01 00 00", -0x3E};
 static void set_notebook_mode_config_hook(void*) {}
@@ -498,7 +499,7 @@ extern "C" DONTSTARVEINJECTOR_API bool DS_LUAJIT_set_target_fps(int fps, int tt)
         if (tt & 0b01) {
             fps_ptr[1] = val;
             fps_ptr[3] = val2;
-            frame_time = (int)std::min(val, 30.0f);
+            frame_time = std::min(val, 1/30.0f);
         }
 
         if (tt & 0b10) {
@@ -521,16 +522,18 @@ static int64_t hook_profiler_pop(void* self) {
     } else if (p.stack == 0 && p.start_time) {
         p.start_time = 0;
         auto now = get_time_ms();
-        auto left_time = std::min<int>(30 - (now - p.start_time), frame_gc_time);
-        now += left_time;
-        if (p.L) {
-            ZoneScopedN("frame gc");
-            auto L = p.L;
-            p.L = 0;
-            do
-            {
-                lua_gc_func(L, 5, 0);
-            } while (get_time_ms() < now);
+        auto left_time = std::min<float>(frame_time - float(now - p.start_time), frame_gc_time);
+        if (left_time > 0) {
+            now += left_time;
+            if (p.L) {
+                ZoneScopedN("frame gc");
+                auto L = p.L;
+                p.L = 0;
+                do
+                {
+                    lua_gc_func(L, 5, 0);
+                } while (get_time_ms() < now);
+            }
         }
     }
     if (!tracy_active)
