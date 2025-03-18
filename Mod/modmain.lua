@@ -243,13 +243,13 @@ local function main()
 
 		if GetModConfigData("TargetRenderFPS") then
 			local targetfps = GetModConfigData("TargetRenderFPS")
-			injector.DS_LUAJIT_set_target_fps(targetfps, 3)
+			injector.DS_LUAJIT_set_target_fps(targetfps, 1)
 			TheSim:SetNetbookMode(false);
 		end
 
 		if GetModConfigData("TargetLogincFPS") then
 			local targetfps = GetModConfigData("TargetLogincFPS")
-			injector.DS_LUAJIT_set_target_fps(targetfps, 4)
+			injector.DS_LUAJIT_set_target_fps(targetfps, 2)
 		end
 		
 		local root_dictory = modmain_path:gsub("modmain.lua", "")
@@ -297,48 +297,56 @@ local function main()
 
 			scheduler:ExecuteInTime(3, clean_crash_file)
 			-- motify ModConfigurationScreen
+
+			local luajit_config_screen_ctor = function(self, client_config)
+				local function uninstall_mod()
+					if jit.os == "Windows" then
+						injector.DS_LUAJIT_update(root_dictory, 1)
+					else
+						TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.MODFAILTITLE, translate({
+								zh = "当前操作系统不支持卸载luajit模组\n麻烦手动删除",
+								en =
+								"The current operating system does not support uninstalling the luajit mod\nPlease manually delete"
+							}),
+							{
+								{ text = STRINGS.UI.MAINSCREEN.OK, cb = function() TheFrontEnd:PopScreen() end }
+							}))
+					end
+				end
+				local actions = self.dialog.actions
+				if actions then
+					self.uninstall = actions:AddItem(translate({ en = "uninstall mod", zh = "卸载模组" }),
+						function()
+							TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, translate({
+									zh = "是否要卸载luajit模组?",
+									en = "Are you sure you want to uninstall the luajit mod?"
+								}),
+								{
+									{ text = STRINGS.UI.MAINSCREEN.RESTART, cb = function() uninstall_mod() end },
+									{ text = STRINGS.UI.MAINSCREEN.CANCEL,  cb = function() TheFrontEnd:PopScreen() end }
+								}))
+						end)
+					local sizeX, sizeY = actions:GetSize()
+					local buttons_len = actions:GetNumberOfItems()
+					local button_spacing
+					-- 1,2,3,4 buttons can be big at 210,420,630,840 widths.
+					local space_per_button = sizeX / buttons_len
+					local has_space_for_big_buttons = space_per_button > 209
+					if has_space_for_big_buttons then
+						button_spacing = 320
+					else
+						button_spacing = 230
+					end
+					local button_height = -30 -- cover bottom crown
+					actions:SetPosition(-(button_spacing * (buttons_len - 1)) / 2, button_height)
+				end
+			end
 			local ModConfigurationScreen = require "screens/redux/modconfigurationscreen"
 			local old_ctor = ModConfigurationScreen._ctor
 			ModConfigurationScreen._ctor = function(self, _modname, client_config, ...)
 				old_ctor(self, _modname, client_config, ...)
 				if _modname == modname and jit.os == "Windows" then
-					local function uninstall_mod()
-						if jit.os == "Windows" then
-							injector.DS_LUAJIT_update(root_dictory, 1)
-						else
-							TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.MODFAILTITLE, translate({
-								zh = "当前操作系统不支持卸载luajit模组\n麻烦手动删除",
-								en = "The current operating system does not support uninstalling the luajit mod\nPlease manually delete"
-							}),
-							{
-								{ text = STRINGS.UI.MAINSCREEN.OK,  cb = function() TheFrontEnd:PopScreen() end }
-							})) 
-						end
-					end
-					local actions = self.dialog.actions
-					if actions then
-						self.uninstall = actions:AddItem(translate({ en = "uninstall mod", zh = "卸载模组" }) , function() TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, translate({
-							zh = "是否要卸载luajit模组?",
-							en = "Are you sure you want to uninstall the luajit mod?"
-						}),
-						{
-							{ text = STRINGS.UI.MAINSCREEN.RESTART, cb = function() uninstall_mod() end },
-							{ text = STRINGS.UI.MAINSCREEN.CANCEL,  cb = function() TheFrontEnd:PopScreen() end }
-						})) end)
-						local sizeX, sizeY = actions:GetSize()
-						local buttons_len = actions:GetNumberOfItems()
-						local button_spacing
-						-- 1,2,3,4 buttons can be big at 210,420,630,840 widths.
-						local space_per_button = sizeX / buttons_len
-						local has_space_for_big_buttons = space_per_button > 209
-						if has_space_for_big_buttons then
-							button_spacing = 320
-						else
-							button_spacing = 230
-						end
-						local button_height = -30 -- cover bottom crown
-						actions:SetPosition(-(button_spacing*(buttons_len-1))/2, button_height)
-					end
+					luajit_config_screen_ctor(self, client_config)
 				end
 			end
 		end)

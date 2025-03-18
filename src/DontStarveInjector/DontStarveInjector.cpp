@@ -496,15 +496,12 @@ extern "C" DONTSTARVEINJECTOR_API bool DS_LUAJIT_set_target_fps(int fps, int tt)
         float val2 = (float)fps;
       
         if (tt & 0b01) {
-            fps_ptr[0] = val;
             fps_ptr[1] = val;
+            fps_ptr[3] = val2;
             frame_time = (int)std::min(val, 30.0f);
         }
+
         if (tt & 0b10) {
-            fps_ptr[2] = val2;
-            fps_ptr[3] = val2;
-        }
-        if (tt & 0b100) {
             static bool init_flag = DS_LUAJIT_get_logic_fps();
             if (init_flag) {
                 rdata_writer(getticktimefps, val);
