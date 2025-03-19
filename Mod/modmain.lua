@@ -32,7 +32,7 @@ local function main()
 		return false
 	end
 
-	if not hasluajit then
+	if not hasluajit and not InGamePlay() then
 		AddGamePostInit(function()
 			local PopupDialogScreen = require "screens/popupdialog"
 			local locale = LOC.GetLocaleCode()
@@ -251,7 +251,10 @@ local function main()
 			local targetfps = GetModConfigData("TargetLogincFPS")
 			injector.DS_LUAJIT_set_target_fps(targetfps, 2)
 		end
-		
+
+		if InGamePlay() then
+			return
+		end
 		local root_dictory = modmain_path:gsub("modmain.lua", "")
 		AddGamePostInit(function()
 			local PopupDialogScreen = require "screens/popupdialog"

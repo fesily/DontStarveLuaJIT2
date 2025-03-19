@@ -245,10 +245,11 @@ if jit then
 			f:close()
 			return assert(load(str, "=(debugger.lua)"))(filename)
 		end
-		local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"
+		local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.12-win32-x64"
 		local debugger = dofile(path .. "/script/debugger.lua")
-		local Debuggee = {}
+		local Debuggee = {ready = false}
 		Debuggee.start = function ()
+			if Debuggee.ready then return "ok", Debuggee.host end
 			local port = 12306
 			if not TheNet:IsDedicated() then
 				port = 12306
@@ -264,7 +265,9 @@ if jit then
 			print("debuggee host:", host.address)
 			debugger:start(host):event ("autoUpdate", false)
 			debugger:setup_patch()
-			return "ok", host, debugger
+			debugger.host = host
+			Debuggee.ready = true
+			return "ok", host
 		end
 		Debuggee.poll = function ()
 			debugger:event "update"
