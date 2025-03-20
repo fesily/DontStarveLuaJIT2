@@ -520,9 +520,9 @@ static int64_t hook_profiler_pop(void* self) {
     if (p.stack < 0) {
         p.stack = 0;
     } else if (p.stack == 0 && p.start_time) {
-        p.start_time = 0;
         auto now = get_time_ms();
         auto left_time = std::min<float>(frame_time - float(now - p.start_time), frame_gc_time);
+        p.start_time = 0;
         if (left_time > 0) {
             now += left_time;
             if (p.L) {
