@@ -157,10 +157,19 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 
 | 姓名 | 金额 | 原因         |模组id|
 |------|------|--------------|-----------|
-| 冰*羊    | 30RMB | 兼容MOD    | [自动崩溃恢复](https://steamcommunity.com/sharedfiles/filedetails/?id=3377689002)|
 | Dv**ce   | 50RMB| 兼容MOD | [Accomplishments](https://steamcommunity.com/sharedfiles/filedetails/?id=2843097516)|
+| a*t   | 20RMB|  | |
+| 冰*羊    | 30RMB | 兼容MOD    | [自动崩溃恢复](https://steamcommunity.com/sharedfiles/filedetails/?id=3377689002)|
 | Dv**ce   | 30RMB| 开发TRACY功能 | |
 | 18**30   | 20RMB|  | |
 | 18**30   | 20RMB| 兼容虚拟机环境 | |
+| Dv**ce   | 100RMB| | |
+
+# 捐赠方式
+
+
+![微信图片_20250320092642](https://github.com/user-attachments/assets/92490c66-fde9-4bc8-84af-1049ec6a2860)
+
+![微信图片_20250320092648](https://github.com/user-attachments/assets/6c754bc6-6b43-45af-bc41-fa4c502b4b3e)
 
 
