@@ -73,10 +73,12 @@ private:
         }
     }
 };
+#define NoShowProgressWindow(_, gen) for(;gen;) { gen(); }
+
 #ifdef SUPPORT_PROGRESS
 void ShowProgressWindow(int maxstep, Generator<int>& gen);
 void set_progress(int step, const std::string_view& msg);
 #else
-#define ShowProgressWindow(_, gen) for(;gen;) { gen(); }
+#define ShowProgressWindow(_, gen) NoShowProgressWindow(_, gen)
 #define set_progress(...)
 #endif

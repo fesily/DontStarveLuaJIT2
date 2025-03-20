@@ -303,7 +303,11 @@ update_signatures_from_disasm(Signatures &signatures, uintptr_t targetLuaModuleB
     try
     {
         auto gen = update_signatures(signatures, targetLuaModuleBase, exports, range, updated);
-        ShowProgressWindow(exports.size() + 1, gen);
+        if (get_cwd().contains("-disable_progress")) {
+            NoShowProgressWindow(0, gen);
+        } else {
+            ShowProgressWindow(exports.size() + 1, gen);
+        }
     }
     catch(const update_signatures_exception& e)
     {
