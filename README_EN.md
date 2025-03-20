@@ -264,7 +264,7 @@ if jit then
 			local host = {address = "127.0.0.1:".. port}
 			print("debuggee host:", host.address)
 			debugger:start(host):event ("autoUpdate", false)
-			debugger:setup_patch()
+			--debugger:setup_patch()
 			debugger.host = host
 			Debuggee.ready = true
 			return "ok", host
