@@ -61,7 +61,7 @@ print(jit)
 
 I've only tested it on Ubuntu, but I can also test it on SteamOS if someone can help me with the SteamOS environment.
 
-- Copy all `bin64/linux` files to the `bin64` folder in the game directory
+- Copy all `bin64/linux` files to the `bin64` folder in the game directory, including the files outside `lib64`, such as `signatures_*.json`.
 - Rename original game executable `dontstarve_steam_x64` to `dontstarve_steam_x64_1`
 - Create new file `dontstarve_steam_x64` with the content:
 
@@ -74,6 +74,9 @@ export LD_PRELOAD=./lib64/libInjector.so
 
 - Run the command `chmod +x ./dontstarve_steam_x64`
 - Done
+
+Note: The injector expects the working directory (where `dontstarve_steam_x64`
+is located) to be writable in order to create log files.
 
 ### MacOS
 
