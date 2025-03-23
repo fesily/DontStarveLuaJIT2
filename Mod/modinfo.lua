@@ -22,7 +22,7 @@ description = translate(
 
 author = "fesil"
 
-version = "1.2.6"
+version = "1.3.0"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -133,6 +133,35 @@ configuration_options = {
             { description = "240fps", data = 240 },
         },
         default = 60
+    },
+    {
+        name = "ClientNetWorkTick",
+        label = translate({ en = "Client network sync tick", zh = "客户端网络同步频率" }),
+        hover = translate({
+            en = "The frequency of communication between the client and the server, \nthe faster the server can handle it, the better.(deault:10fps)",
+            zh = "客户端与服务器的通讯频率，\n服务器顶得住，越快越好, 默认(10fps)"
+        }),
+        options = {
+            { description = translate({ en = "off", zh = "禁用"}), data = 10 },
+            { description = "15fps", data = 15 },
+            { description = "20fps", data = 20 },
+            { description = "25fps", data = 25 },
+            { description = "30fps", data = 30 },
+            { description = "32fps", data = 32 },
+            { description = "35fps", data = 35 },
+            { description = "40fps", data = 40 },
+            { description = "45fps", data = 45 },
+            { description = "50fps", data = 50 },
+            { description = "55fps", data = 55 },
+            { description = "60fps", data = 60 },
+            { description = "64fps", data = 64 },
+            { description = "75fps", data = 75 },
+            { description = "90fps", data = 90 },
+            { description = "115fps", data = 115 },
+            { description = "120fps", data = 120 },
+            { description = "128fps", data = 128 },
+        },
+        default = 10
     },
     {
         name = "JitOpt",

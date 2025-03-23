@@ -1,5 +1,8 @@
 _G = GLOBAL
 local function main()
+	local function should_show_dig()
+		return not InGamePlay()
+	end
 	local hasluajit, jit = _G.pcall(require, "jit")
 
 	local luajit_config_path = "unsafedata/luajit_config.json"
@@ -32,7 +35,7 @@ local function main()
 		return false
 	end
 
-	if not hasluajit and not InGamePlay() then
+	if not hasluajit and should_show_dig() then
 		AddGamePostInit(function()
 			local PopupDialogScreen = require "screens/popupdialog"
 			local locale = LOC.GetLocaleCode()
@@ -191,6 +194,7 @@ local function main()
 			const char* DS_LUAJIT_get_workshop_dir();
 			int DS_LUAJIT_update(const char* mod_dictory, int tt);
 			bool DS_LUAJIT_set_target_fps(int fps, int tt);
+			int DS_LUAJIT_replace_client_network_tick(char tick);
 		]]
 		local injector = require 'luavm.ffi_load' ("Injector")
 		local modmain_path = debug.getinfo(1).source
@@ -252,8 +256,9 @@ local function main()
 			injector.DS_LUAJIT_set_target_fps(targetfps, 2)
 		end
 
-		if InGamePlay() then
-			return
+		if GetModConfigData("ClientNetWorkTick") then
+			local targetfps = GetModConfigData("ClientNetWorkTick")
+			injector.DS_LUAJIT_replace_client_network_tick(targetfps)
 		end
 		local root_dictory = modmain_path:gsub("modmain.lua", "")
 		AddGamePostInit(function()
@@ -266,7 +271,7 @@ local function main()
 				t.zht = t.zht or t.zh
 				return t[lc] or t.en
 			end
-			if injector.DS_LUAJIT_get_mod_version() ~= nil then
+			if injector.DS_LUAJIT_get_mod_version() ~= nil and should_show_dig() then
 				local version = ffi.string(injector.DS_LUAJIT_get_mod_version())
 				if modinfo.version ~= version then
 					local function update_mod()

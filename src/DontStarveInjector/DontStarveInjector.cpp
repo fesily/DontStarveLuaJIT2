@@ -465,11 +465,11 @@ static std::array<float*, 1> luaupdatefps;
 static double* getticktimefps;
 static function_relocation::MemorySignature luaupdate{"FF 83 C8 00 00 00 F3 0F 10 35", 6};
 static function_relocation::MemorySignature getticktime{"00 00 00 20 11 11 A1 3F", 0};
-template<typename T>
-static void rdata_writer(T* addr, float val){
-    gum_mprotect(addr, 4, GUM_PAGE_RW);
+template<typename T, typename T1>
+static void rdata_writer(T* addr, T1 val){
+    gum_mprotect(addr, sizeof(T), GUM_PAGE_RW);
     *addr = val;
-    gum_mprotect(addr, 4, GUM_PAGE_READ);
+    gum_mprotect(addr, sizeof(T), GUM_PAGE_READ);
 };
 static bool DS_LUAJIT_get_logic_fps() {
     getticktime.prot_flag = GUM_PAGE_READ;
@@ -629,7 +629,7 @@ namespace Gum {
     void InvocationListenerProxy::on_leave(GumInvocationContext *context) {
         listener->on_leave(context);
     }
-
+""
     G_DEFINE_TYPE_EXTENDED(GumInvocationListenerProxy,
                             gum_invocation_listener_proxy,
                             G_TYPE_OBJECT,
@@ -676,6 +676,21 @@ namespace Gum {
     }
 }// namespace Gum
 #endif
+
+extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_client_network_tick(char tick) {
+    static char* client_network_tick_addr = []()->char*{
+        function_relocation::MemorySignature client_network_tick = {"44 8D 76 64", 0x0};
+        if (client_network_tick.scan(gum_process_get_main_module()->path)) {
+            auto b = (char*)client_network_tick.target_address;
+            return b;
+        }
+        return nullptr;
+    }();
+    tick = std::min<char>(128, tick);
+    if (client_network_tick_addr) {
+        rdata_writer(client_network_tick_addr, tick);
+    }
+}
 
 extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_profiler_api() {
     static std::atomic_int replaced = 0;
