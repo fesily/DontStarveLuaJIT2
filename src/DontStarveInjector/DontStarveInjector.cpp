@@ -679,7 +679,7 @@ namespace Gum {
 
 extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_client_network_tick(char tick) {
     static char* client_network_tick_addr = []()->char*{
-        function_relocation::MemorySignature client_network_tick = {"44 8D 76 64", 0x0};
+        function_relocation::MemorySignature client_network_tick = {"44 8D 76 64", 0x3};
         if (client_network_tick.scan(gum_process_get_main_module()->path)) {
             auto b = (char*)client_network_tick.target_address;
             return b;
@@ -690,6 +690,7 @@ extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_client_network_tick(char
     if (client_network_tick_addr) {
         rdata_writer(client_network_tick_addr, tick);
     }
+    return 0;
 }
 
 extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_profiler_api() {

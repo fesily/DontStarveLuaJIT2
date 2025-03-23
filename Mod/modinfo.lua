@@ -142,7 +142,7 @@ configuration_options = {
             zh = "客户端与服务器的通讯频率，\n服务器顶得住，越快越好, 默认(10fps)"
         }),
         options = {
-            { description = translate({ en = "off", zh = "禁用"}), data = 10 },
+            { description = translate({ en = "off", zh = "禁用"}), data = false },
             { description = "15fps", data = 15 },
             { description = "20fps", data = 20 },
             { description = "25fps", data = 25 },
@@ -161,7 +161,7 @@ configuration_options = {
             { description = "120fps", data = 120 },
             { description = "128fps", data = 128 },
         },
-        default = 10
+        default = false
     },
     {
         name = "JitOpt",
