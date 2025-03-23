@@ -14,8 +14,8 @@ description = translate(
         务必备份你的存档,不保证没错误
     ]],
         en = [[
-        Replacing the underlying VM with luajit speeds up the entire game.
-        Be sure to back up your archive, there is no guarantee that there are no bugs!
+        Replaces the underlying VM with luajit to speed up the entire game.
+        Make sure to back up your saves! There is no guarantee that there are no bugs!
     ]]
     }
 )
@@ -46,9 +46,9 @@ icon = "modicon.tex"
 configuration_options = {
     {
         name = "EnabledJIT",
-        label = translate({ en = "EnabledJIT", zh = "开启JIT模式" }),
+        label = translate({ en = "Enable JIT", zh = "开启JIT模式" }),
         hover = translate({
-            en = "It is recommended to turn off if the lag is severe in the game",
+            en = "Recommend to turn this off if there is severe lag in the game",
             zh = "在游戏中卡顿现象很严重的建议关闭"
         }),
         options = {
@@ -59,9 +59,9 @@ configuration_options = {
     },
     {
         name = "DisableForceFullGC",
-        label = translate({ en = "Disable Force FullGC, only gc small", zh = "禁用强制完全gc,仅gc小部分"}),
+        label = translate({ en = "GC Incremental Only", zh = "禁用强制完全gc,仅gc小部分"}),
         hover = translate({
-            en = "Enabling this feature will result in a larger memory footprint, which will alleviate occasional lagging issues",
+            en = "Enabling this feature will result in a larger memory footprint, and will alleviate occasional lagging issues",
             zh = "启用该选项会导致更大的内存占用,将缓解偶发卡顿问题"
         }),
         options = {
@@ -81,9 +81,9 @@ configuration_options = {
     },
     {
         name = "EnbaleFrameGC",
-        label = translate({ en = "frame gc", zh = "帧间gc" }),
+        label = translate({ en = "Frame GC", zh = "帧间gc" }),
         hover = translate({
-            en = "use free time gc",
+            en = "GC during idle time between frames",
             zh = "见缝插针地gc"
         }),
         options = {
@@ -98,9 +98,9 @@ configuration_options = {
     },
     {
         name = "TargetLogincFPS",
-        label = translate({ en = "logic fps", zh = "逻辑帧率" }),
+        label = translate({ en = "Logic FPS", zh = "逻辑帧率" }),
         hover = translate({
-            en = "lua scripts update fps, changed this, maybe boom!!",
+            en = "Update FPS of lua scripts. Do not change unless you know what you are doing!!",
             zh = "lua脚本执行帧率,不要乱改,可能会爆炸!!"
         }),
         options = {
@@ -116,9 +116,9 @@ configuration_options = {
     },
     {
         name = "TargetRenderFPS",
-        label = translate({ en = "render fps", zh = "渲染帧率" }),
+        label = translate({ en = "Render FPS", zh = "渲染帧率" }),
         hover = translate({
-            en = "Render fps",
+            en = "Render FPS",
             zh = "渲染帧率"
         }),
         options = {
@@ -136,9 +136,9 @@ configuration_options = {
     },
     {
         name = "JitOpt",
-        label = translate({ en = "JitOpt", zh = "JIT优化选项" }),
+        label = translate({ en = "JIT Optimizations", zh = "JIT优化选项" }),
         hover = translate({
-            en = "maybe faster, maybe slower.",
+            en = "May become faster or slower.",
             zh = "可能更快, 可能更慢."
         }),
         options = {
@@ -149,8 +149,8 @@ configuration_options = {
     },
     {
         name = "ModBlackList",
-        label = translate({ en = "ModJitBlackList", zh = "MODJit黑名单" }),
-        hover = translate({ en = "some mod is't not appropriate", zh = "有些mod可能写的特别,不合适jit模式" }),
+        label = translate({ en = "Mod JIT Blacklist", zh = "MODJit黑名单" }),
+        hover = translate({ en = "Some mods may not be appropriate for JIT", zh = "有些mod可能写的特别,不合适jit模式" }),
         options = {
             { description = "On",  data = true },
             { description = "Off", data = false },
@@ -159,8 +159,8 @@ configuration_options = {
     },
     {
         name = "DisableJITWhenServer",
-        label = translate({ en = "DisableJITWhenServer", zh = "服务器禁用luajit" }),
-        hover = translate({ en = "server process disable luajit mod", zh = "服务器进程禁用luajit" }),
+        label = translate({ en = "Disable JIT on Server", zh = "服务器禁用luajit" }),
+        hover = translate({ en = "Disable luajit on the server process", zh = "服务器进程禁用luajit" }),
         options = {
             { description = "On",  data = true },
             { description = "Off", data = false },
@@ -169,7 +169,7 @@ configuration_options = {
     },
     {
         name = "EnableProfiler",
-        label = translate({ en = "EnableProfilerCosoleCommand", zh = "启用性能分析控制台命令" }),
+        label = translate({ en = "Enable Profiler Command", zh = "启用性能分析控制台命令" }),
         hover = translate({ en = "ProfilerJit.start | ProfilerJit.stop", zh = "ProfilerJit.start | ProfilerJit.stop" }),
         options = {
             { description = translate({en = "off", zh = "关闭"}),  data = "off" },
@@ -180,7 +180,7 @@ configuration_options = {
     },
     {
         name = "EnableTracy",
-        label = translate({ en = "EnableTracy", zh = "启用性能追踪" }),
+        label = translate({ en = "Enable Tracy", zh = "启用性能追踪" }),
         options = {
             { description = translate({en = "off", zh = "关闭"}),  data = "off" },
             { description = translate({en = "on", zh = "开启"}),  data = "on" },

@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # List of processes to check
-processes=("dontstarve_steam_x64.exe" "dontstarve_dedicated_server_nullrenderer_x64.exe")
+processes=("dontstarve_steam_x64" "dontstarve_dedicated_server_nullrenderer_x64")
 
 # Terminate running processes
 for process in "${processes[@]}"; do
     pid=$(pgrep -f "$process")
     if [ -n "$pid" ]; then
         echo "[INFO] Terminating process: $process (PID: $pid)"
-        kill -9 "$pid"
+        kill -INT "$pid"
         sleep 1 # Wait for the process to fully terminate
     fi
 done
@@ -31,7 +31,7 @@ fi
 
 # Create the destination directory if it doesn't exist
 if [ ! -d "$destination" ]; then
-    echo "[ERROR] destination directory does not exist: $destination"
+    echo "[ERROR] Destination directory does not exist: $destination"
     exit 1
 fi
 
@@ -46,6 +46,8 @@ else
     echo "[ERROR] An error occurred while moving files"
     exit 1
 fi
+
+cd "$destination"
 
 if [ -f dontstarve_steam_x64 ] && [ $(stat -c%s dontstarve_steam_x64) -gt 1048576 ]; then
     mv dontstarve_steam_x64 dontstarve_steam_x64_1
@@ -70,7 +72,7 @@ if [ -f dontstarve_dedicated_server_nullrenderer_x64 ] && [ $(stat -c%s dontstar
 #!/bin/bash
 export LD_LIBRARY_PATH=./lib64
 export LD_PRELOAD=./lib64/libInjector.so
-./dontstarve_dedicated_server_nullrenderer_x64_1
+./dontstarve_dedicated_server_nullrenderer_x64_1 "$@"
 EOF
 
     chmod +x dontstarve_dedicated_server_nullrenderer_x64
