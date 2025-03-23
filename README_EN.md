@@ -6,10 +6,10 @@
 
 ## NOTICE
 
-Be sure to back up your archives, there are no guarantees that there are no bugs!
-With standalone server tools you need to be aware that the `disable luajit for servers` option in the settings is invalid, you should just remove the luajit to start the server.
+Make sure to back up your saves! There is no guarantee that there are no bugs!  
+Note that on dedicated servers, the `Disable JIT on Server` option in the settings is invalid; you should just remove the luajit mod to start the server.
 
-# Roadload
+# Roadmap
 
 ## Don't Starve Together
 
@@ -32,32 +32,34 @@ With standalone server tools you need to be aware that the `disable luajit for s
 
 # Installation:
 
-## 1.Mods:
+## 1. Mod:
 
-1. Create a new folder in the mods folder in the root directory of the game with a name like luajit_mod.
-2. Then copy all the files to that folder.
-### Simaple Path
-run `install.bat`(windows) or `install_linux.sh`
-`install_linux.sh` maybe need exec `chmod +x ./install_linux.sh`
+1. Create a new folder in the mods folder in the root directory of the game with a name like `luajit_mod`.
+2. Then copy all files into that folder.
 
-## 2.Injector:
+### Automated install:
+
+Run `install.bat` (windows) or `./install_linux.sh` inside the mod's folder.
+
+`./install_linux.sh` may need `chmod +x install_linux.sh`
+
+## 2. Injector:
 
 ### Windows
 
 Copy all `bin64/windows` files to the `bin64` folder in the game directory
 
-like: C:\\steamapps\\Don't Starve Together\\bin64\
+Eg.: C:\\steamapps\\Don't Starve Together\\bin64\
 
 Launch the game, press ` and type:
 
-print(_Version)
-
-And you can see message started with "LuaJIT".
+```
+print(jit)
+```
 
 ### Linux
 
-I've only tested it on ubuntu, but I can also test it on steamos if someone can help me with the steamos environment,
-haha!
+I've only tested it on Ubuntu, but I can also test it on SteamOS if someone can help me with the SteamOS environment.
 
 - Copy all `bin64/linux` files to the `bin64` folder in the game directory
 - Rename original game executable `dontstarve_steam_x64` to `dontstarve_steam_x64_1`
@@ -70,10 +72,10 @@ export LD_PRELOAD=./lib64/libInjector.so
 ./dontstarve_steam_x64_1
 ```
 
-- Run the shell `chmod +x ./dontstarve_steam_x64`
-- Is't done
+- Run the command `chmod +x ./dontstarve_steam_x64`
+- Done
 
-### macos
+### MacOS
 
 - Create a certificate of your own, e.g. with the name Dontstarve
 
@@ -115,53 +117,51 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 
 - Run shell `chmod +x . /dontstarve_steam`.
 
-## 3.Enable Mod
+## 3. Enable Mod
 
 In Game，please enable the mod `Dontstarveluajit2`
 
 If there aren't any other problems, you can now see luajit in the version number in the bottom right corner
 
-## How to build
+# Compilation
 
-### Dept
+## Dependencies
 
-install `CMake`, `Ninja`
-
-- copy `lua51.dll` to `src/x64/release/lua51.dll`
-- download `frida-gum.lib` from [github/frida](https://github.com/frida), name
-  like `frida-gum-devkit-16.2.1-windows-x86_64.exe`
-- copy `frida-gum.lib` to `src/frida-gum/frida-gum.lib`
-- in `CMakeLists.txt` set var `GAME_DIR` = your game dir
-- build by cmake
+- Install `CMake` and `Ninja`
+- Copy `lua51.dll` to `src/x64/release/lua51.dll`
+- Download `frida-gum.lib` from [github/frida](https://github.com/frida). The name
+  should be like `frida-gum-devkit-16.2.1-windows-x86_64.exe`
+- Copy `frida-gum.lib` to `src/frida-gum/frida-gum.lib`
+- In `CMakeLists.txt`, set variable `GAME_DIR` = your game dir
+- Build with cmake
 
 ## lua51.dll/so/dylib
 
-### windows
+### Windows
 
-Need vs2008 compiler the lua51.dll, also you can use which one in the mod
+Need vs2008 compiler the lua51.dll. You can also use the one in the Mod.
 
-### linux
+### Linux
 
-docker Ubuntu 14.04
+Docker Ubuntu 14.04
 
-### macos
+### MacOS
 
-macos 10.15
+MacOS 10.15
 
-## How to debug game:
+# How to debug game:
 
 We need `vscode` + `lua-debug` plugin
 
-### How to debug game without steam
+## How to debug game without steam
 
-1. create new file `steam_appid.txt` at gamedir/bin64
-2. the file context is 322330
+Create file `steam_appid.txt` in gamedir/bin64, with contents `322330`.
 
-### Pass process args "-enable_lua_debugger"
+## Pass process args "-enable_lua_debugger"
 
-If you start with stream, please set game config, process start config: "-enable_lua_debugger"
+If you start with Steam, please set game properties > launch option: "-enable_lua_debugger"
 
-### vscode launch.json
+## vscode launch.json
 
 ```json
 {
@@ -222,9 +222,9 @@ If you start with stream, please set game config, process start config: "-enable
 }
 ```
 
-### data/scripts/main.lua:73
+## data/scripts/main.lua:73
 
-1. find the code
+1. Find the code
 
 ```lua
 DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated(
@@ -233,7 +233,7 @@ if DEBUGGER_ENABLED then
 end
 ```
 
-2. replace the code to
+2. Replace the above code to
 
 ```lua
 if jit then
@@ -295,10 +295,10 @@ if DEBUGGER_ENABLED then
 end
 ```
 
-3. changed `local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"` to your path
-4. `DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated()`
-   remove `CONFIGURATION ~= "PRODUCTION"`
+3. Change `local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"` to your path
+4. In `DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated()`,  
+   Remove `CONFIGURATION ~= "PRODUCTION"`
 
-### force enable the mod
+## Force enable the mod
 
-1. add process arg `-disable_check_luajit_mod`
+Add command line argument `-disable_check_luajit_mod`
