@@ -138,8 +138,8 @@ configuration_options = {
         name = "ClientNetWorkTick",
         label = translate({ en = "Client network sync tick", zh = "客户端网络同步频率" }),
         hover = translate({
-            en = "The frequency of communication between the client and the server, \nthe faster the server can handle it, the better.(deault:10fps)",
-            zh = "客户端与服务器的通讯频率，\n服务器顶得住，越快越好, 默认(10fps)"
+            en = "The frequency of communication between the client and the server.(deault:10fps)",
+            zh = "客户端与服务器的通讯频率. 默认(10fps)"
         }),
         options = {
             { description = translate({ en = "off", zh = "禁用"}), data = false },
@@ -159,7 +159,6 @@ configuration_options = {
             { description = "90fps", data = 90 },
             { description = "115fps", data = 115 },
             { description = "120fps", data = 120 },
-            { description = "128fps", data = 128 },
         },
         default = false
     },
