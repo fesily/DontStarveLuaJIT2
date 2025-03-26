@@ -39,7 +39,7 @@
 完全解决加密mod不兼容luajit的问题,除非代码依赖了lua语言的未定义行为
 
 赞助:
- ██░░░░░░░░░░░░ (80/500)
+ ██████████░░░░░░░░░░░░ (240/500)
 
 ## 加密插件
 
@@ -158,12 +158,12 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 | 姓名 | 金额 | 原因         |模组id|
 |------|------|--------------|-----------|
 | Dv**ce   | 50RMB| 兼容MOD | [Accomplishments](https://steamcommunity.com/sharedfiles/filedetails/?id=2843097516)|
-| a*t   | 20RMB|  | |
+| a*t   | 20RMB| 无 | (兼容mod) |
 | 冰*羊    | 30RMB | 兼容MOD    | [自动崩溃恢复](https://steamcommunity.com/sharedfiles/filedetails/?id=3377689002)|
 | Dv**ce   | 30RMB| 开发TRACY功能 | |
-| 18**30   | 20RMB|  | |
+| 18**30   | 20RMB| 无 | (兼容mod) |
 | 18**30   | 20RMB| 兼容虚拟机环境 | |
-| Dv**ce   | 100RMB| | |
+| Dv**ce   | 100RMB| 无 | (兼容mod) |
 
 # 捐赠方式
 
