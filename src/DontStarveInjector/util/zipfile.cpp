@@ -96,6 +96,10 @@ struct memory_file final : public file_interface {
     void clearerr() override {
         ss.clear();
     }
+
+    int feof() override {
+        return ss.eof();
+    }
 };
 
 struct zip_manager : public zip_manager_interface {

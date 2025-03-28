@@ -24,4 +24,6 @@ struct file_interface {
     virtual off_t ftello() = 0;
 
     virtual void clearerr() = 0;
+
+    virtual int feof() = 0;
 };

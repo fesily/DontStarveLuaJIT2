@@ -220,6 +220,13 @@ static off_t lj_ftello(FILE *fp) {
 
 #endif
 
+static int lj_feof(FILE* _Stream) {
+    if (NoFileHandlers.contains((file_interface *) _Stream)) {
+        return ((file_interface *) _Stream)->feof();
+    }
+    return feof(_Stream);
+}
+
 static void lj_clearerr(FILE *fp) noexcept {
     if (NoFileHandlers.contains((file_interface *) fp)) {
         return ((file_interface *) fp)->clearerr();
@@ -275,6 +282,7 @@ void init_luajit_io(module_handler_t hluajitModule) {
     SET_LUAJIT_API_FUNC(lj_fopen);
     SET_LUAJIT_API_FUNC(lj_fread);
     SET_LUAJIT_API_FUNC(lj_fscanf);
+    SET_LUAJIT_API_FUNC(lj_feof);
 #ifdef _WIN32
     SET_LUAJIT_API_FUNC(lj_fseeki64);
     SET_LUAJIT_API_FUNC(lj_ftelli64);
