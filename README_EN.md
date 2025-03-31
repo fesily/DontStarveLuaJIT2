@@ -252,7 +252,7 @@ if jit then
 		local debugger = dofile(path .. "/script/debugger.lua")
 		local Debuggee = {ready = false}
 		Debuggee.start = function ()
-			if Debuggee.ready then return "ok", Debuggee.host end
+			if Debuggee.ready then return "ok", Debuggee.host, debugger end
 			local port = 12306
 			if not TheNet:IsDedicated() then
 				port = 12306
@@ -270,7 +270,7 @@ if jit then
 			--debugger:setup_patch()
 			debugger.host = host
 			Debuggee.ready = true
-			return "ok", host
+			return "ok", host, debugger
 		end
 		Debuggee.poll = function ()
 			debugger:event "update"

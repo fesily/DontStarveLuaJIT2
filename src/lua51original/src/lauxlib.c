@@ -194,6 +194,17 @@ LUALIB_API lua_Integer luaL_checkinteger (lua_State *L, int narg) {
 }
 
 
+LUALIB_API int luaL_checkboolean (lua_State *L, int narg) {
+  if (lua_type(L, narg) != LUA_TBOOLEAN)  /* avoid extra test when d is not 0 */
+    tag_error(L, narg, LUA_TBOOLEAN);
+  return lua_toboolean(L, narg);
+}
+
+
+LUALIB_API int luaL_optboolean (lua_State *L, int narg, int def) {
+  return luaL_opt(L, luaL_checkboolean, narg, def);
+}
+
 LUALIB_API lua_Integer luaL_optinteger (lua_State *L, int narg,
                                                       lua_Integer def) {
   return luaL_opt(L, luaL_checkinteger, narg, def);
