@@ -76,6 +76,7 @@ namespace function_relocation {
     struct ModuleSections {
         ModuleDetials details;
         GumMemoryRange text;
+        GumMemoryRange pdata;
         GumMemoryRange rodata;
         GumMemoryRange plt;
         GumMemoryRange got_plt;

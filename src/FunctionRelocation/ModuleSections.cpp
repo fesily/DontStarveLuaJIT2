@@ -115,6 +115,8 @@ namespace function_relocation {
                     sections->text = { real_address, len };
                 else if (secName == ".rdata")
                     sections->rodata = { real_address, len };
+                else if (secName == ".pdata")
+                    sections->pdata = { real_address, len };
                 return 0;
             }, (void*)&args);
             DestructParsedPE(pe);

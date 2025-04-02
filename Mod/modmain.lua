@@ -1,6 +1,12 @@
 _G = GLOBAL
 local function main()
 	local function should_show_dig()
+		if TheNet:GetIsServer() and TheNet:GetServerIsDedicated() then
+			return false
+		end
+		if TheFrontEnd and TheFrontEnd:GetActiveScreen() and TheFrontEnd:GetActiveScreen().name == "ConnectingToGamePopup" then
+			return false
+		end
 		return not InGamePlay()
 	end
 	local hasluajit, jit = _G.pcall(require, "jit")

@@ -38,6 +38,14 @@
 
 #if !ONLY_LUA51
 #include <lua.hpp>
+#else
+
+extern "C" {
+    #include <lua.h>
+    #include <lualib.h>
+    #include <lauxlib.h>
+    }
+    
 #endif
 
 using namespace std;
@@ -56,7 +64,7 @@ static const char *luajitModuleName =
         "lib"
 #endif
 #if ONLY_LUA51
-        "lua51"
+        "lua51Original"
 #else
         "lua51DS"
 #endif
@@ -91,7 +99,6 @@ void *GetLuaJitAddress(const char *name)
 static GumInterceptor *interceptor;
 #endif
 
-#if !ONLY_LUA51
 enum class LUA_EVENT {
   new_state,
   close_state,
@@ -116,6 +123,7 @@ static int lua_gc_hooker(lua_State* L, int w, int d) {
     lua_event_notifyer(LUA_EVENT::call_lua_gc, L);
     return lua_gc(L, w, d);
 }
+#if !ONLY_LUA51
 
 #if USE_FAKE_API
 extern lua_State *map_handler(lua_State *L);
@@ -142,6 +150,16 @@ static gboolean PrintCallCb(const GumExportDetails *details,
 }
 #endif
 
+int (*luaopen_game_io)(lua_State *L);
+static void luaL_openlibs_hooker(lua_State *L) {
+    luaL_openlibs(L);
+    if (luaopen_game_io) {
+        lua_pushcfunction(L, luaopen_game_io);
+        lua_pushstring(L, LUA_IOLIBNAME);
+        lua_call(L, 1, 0);
+    }
+}
+
 static void *get_luajit_address(const std::string_view &name) {
     void *replacer = GetLuaJitAddress(name.data());
     assert(replacer != nullptr);
@@ -156,6 +174,11 @@ static void *get_luajit_address(const std::string_view &name) {
     } else if (name == "lua_gc"sv) {
         replacer = (void*) &lua_gc_hooker;
     }
+#if USE_GAME_IO
+    else if (name == "luaL_openlibs"sv) {
+        replacer = (void *) &luaL_openlibs_hooker;
+    }
+#endif
 #endif
     return replacer;
 }
@@ -175,9 +198,20 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
         spdlog::error("cannot load luajit: {}", luajitModuleName);
         return;
     }
-
-    std::list<uint8_t *> hookeds;
+    std::vector<const std::string*> hookTargets;
+    hookTargets.reserve(exports.size());
     for (auto &[name, _]: exports) {
+#if USE_GAME_IO
+        if (name == "luaopen_io"sv) {
+            continue;
+        }
+#endif
+        hookTargets.emplace_back(&name);
+    }
+    
+    std::list<uint8_t *> hookeds;
+    for (auto *_name : hookTargets) {
+        auto& name = *_name;
         auto offset = signatures.funcs.at(name).offset;
         auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
         auto replacer = (uint8_t *) get_luajit_address(name);
@@ -195,13 +229,20 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
         spdlog::info("replace {}: {} to {}", name, (void *) target, (void *) replacer);
     }
 
-    if (hookeds.size() != exports.size()) {
+    if (hookeds.size() != hookTargets.size()) {
         for (auto target: hookeds) {
             ResetHook(target);
         }
         spdlog::info("reset all hook");
         return;
     }
+#if USE_GAME_IO
+{
+    auto offset = signatures.funcs.at("luaopen_io").offset;
+    auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
+    luaopen_game_io = decltype(luaopen_game_io)(target);
+}
+#endif
 
 #if DEBUG_GETSIZE_PATCH
     // In the game code direct read the internal lua vm sturct offset, will crash here
@@ -846,7 +887,7 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     auto defer1 = create_defer([lua51]() {
         unloadlib(lua51);
     });
-    
+    spdlog::info("main module base address:{}", gum_process_get_main_module()->range->base_address);
     auto mainPath = getExePath().string();
     if (luaModuleSignature.scan(mainPath.c_str()) == 0) {
         spdlog::error("can't find luamodule base address");

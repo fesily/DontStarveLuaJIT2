@@ -19,7 +19,11 @@
 #endif
 
 #ifndef USE_GAME_IO
-#define USE_GAME_IO ONLY_LUA51
+#ifdef _WIN32
+#define USE_GAME_IO 1
+#else
+#define USE_GAME_IO ONLY_LUA
+#endif
 #endif
 
 #ifndef REPLACE_IO

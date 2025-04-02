@@ -4,6 +4,10 @@
 #include <vector>
 #include <map>
 #include <fmt/format.h>
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 namespace function_relocation {
 
@@ -302,7 +306,7 @@ namespace function_relocation {
 
     static auto scan_pre_text_range(ScanCtx &ctx) {
         std::unordered_map<uint64_t, std::unordered_set<uint64_t>> maybeFunctions;
-        const auto& range = ctx.m.text;
+        auto range = ctx.m.text;
         for (auto ptr = (uint8_t *) range.base_address, end = (uint8_t *) range.base_address + range.size;
                 ptr < end;) {
             auto code = *ptr;
@@ -322,6 +326,26 @@ namespace function_relocation {
             }
             ++ptr;
         }
+#ifdef _WIN32
+        auto module_base_address = ctx.m.details.range.base_address;
+        range = ctx.m.pdata;
+        std::vector<std::pair<RUNTIME_FUNCTION, std::vector<RUNTIME_FUNCTION>>> runtime_functions;
+        for (auto ptr = (uint8_t *) range.base_address, end = (uint8_t *) range.base_address + range.size;
+        ptr < end; ptr+=12) {
+            PRUNTIME_FUNCTION function = (PRUNTIME_FUNCTION) ptr;
+            if (function->BeginAddress == 0) break;
+            if (!runtime_functions.empty() && runtime_functions.back().first.EndAddress == function->BeginAddress) {
+                runtime_functions.back().second.emplace_back(*function);
+            } else {
+                auto blockBeing = module_base_address + function->BeginAddress;
+                auto blockEnding = module_base_address + function->EndAddress;
+                assert(ctx.m.in_text(blockBeing) && ctx.m.in_text(blockEnding));
+                runtime_functions.emplace_back(*function, std::vector<RUNTIME_FUNCTION>{*function});
+                if (!ctx.sureFunctions.contains(blockBeing))
+                    ctx.sureFunctions[blockBeing] = 0;
+            }
+        }
+#endif
         return maybeFunctions;
     }
 

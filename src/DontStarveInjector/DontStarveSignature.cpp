@@ -29,6 +29,13 @@ using namespace std::literals;
 
 static gboolean ListLuaFuncCb(const GumExportDetails *details,
                               void *user_data) {
+constexpr auto only_base_api =
+#ifdef __APPLE__
+            //TODO: fix luaL_
+            true;
+#else
+    false;
+#endif
     if (details->type != _GumExportType::GUM_EXPORT_FUNCTION) {
         return true;
     }
@@ -36,23 +43,11 @@ static gboolean ListLuaFuncCb(const GumExportDetails *details,
     if (get_missfuncs().contains(name))
         return true;
 
-    if (!(name.starts_with("lua_") || name.starts_with("luaL_")))
+    if (!(name.starts_with("lua_") || name.starts_with("luaL_") || name.starts_with("luaopen_")))
         return true;
-    constexpr auto only_base_api =
-#ifdef __APPLE__
-            //TODO: fix luaL_
-            true;
-#else
-    false;
-#endif
+
     if (only_base_api && name.starts_with(("luaL_")))
         return true;
-#if USE_GAME_IO
-    if (details->name == "luaL_openlibs"sv || details->name == "luaopen_io"sv)
-    {
-        return true;
-    }
-#endif
 
     auto &exports = *(ListExports_t *) user_data;
     exports.emplace_back(details->name, (GumAddress) details->address);
@@ -185,6 +180,8 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
             }
 
 #ifndef __APPLE__
+    spdlog::info("lua51 module base address:{}", (void*)modulelua51.details.range.base_address);
+    spdlog::info("game module base address:{}", (void*)moduleMain.details.range.base_address);
     //明确定位 index2adr
     moduleMain.set_known_function(targetLuaModuleBase, "index2adr");
     auto lua_type_fn = gum_module_find_export_by_name(lua51_path.c_str(), "lua_type");
