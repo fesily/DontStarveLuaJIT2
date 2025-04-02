@@ -30,7 +30,7 @@ jobs:
           submodules: true
       - uses: lukka/get-cmake@latest
         with:
-          cmakeVersion: 3.25.2     # <--= optional, stick to exactly 3.25.2 version
+          cmakeVersion: 3.31.6     # <--= optional, stick to exactly 3.25.2 version
           ninjaVersion: 1.11.1     # <--= optional, stick to exactly 1.11.1 version
 
       - name: Restore from cache and setup vcpkg executable and data files.
