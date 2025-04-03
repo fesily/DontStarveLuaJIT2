@@ -339,8 +339,8 @@ extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_Fengxun_Decrypt(const ch
         std::unique_lock lock{mtx};
         std::string context;
         context.reserve(filesize + 1);
-        context.append_range(part2);
-        context.append_range(part1);
+        context.append(part2.begin(), part2.end());
+        context.append(part1.begin(), part1.end());
         auto& cache = caches[infile] = {std::move(context), hash_value, filesize};
         return (const char*) cache.content.c_str();
     }
