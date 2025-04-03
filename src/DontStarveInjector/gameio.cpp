@@ -26,6 +26,9 @@
 #include <chrono>
 #include <vector>
 #include <cassert>
+#include <fstream>
+#include <span>
+#include <shared_mutex>
 
 using namespace std::literals;
 
@@ -82,13 +85,15 @@ extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_get_workshop_dir() {
     return nullptr;
 }
 
-static FILE *lj_fopen(char const *f, const char *mode) noexcept {
+static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path* out_real_path) noexcept {
     auto path = to_path(f);
     auto path_s = path.string();
     // TODO：在w的情况下是不是行为不一致
     auto fp = fopen(path_s.c_str(), mode);
-    if (fp)
+    if (fp) {
+        if (out_real_path) *out_real_path = path;
         return fp;
+    }
 
     static const auto workshop_dir = get_workshop_dir();
     constexpr auto mods_root = "../mods/workshop-"sv;
@@ -97,6 +102,7 @@ static FILE *lj_fopen(char const *f, const char *mode) noexcept {
         // auto mod_name = *mod_path.begin();
         auto real_path = workshop_dir.value() / mod_path;
         auto fp = fopen(real_path.string().c_str(), mode);
+        if (out_real_path) *out_real_path = real_path;
         return fp;
     }
 
@@ -121,7 +127,9 @@ static FILE *lj_fopen(char const *f, const char *mode) noexcept {
     }
     return nullptr;
 }
-
+static FILE *lj_fopen(char const *f, const char *mode) noexcept {
+    return lj_fopen_ex(f, mode, nullptr);
+}
 static int lj_fclose(FILE *fp) noexcept {
     if (NoFileHandlers.contains((file_interface *) fp)) {
         NoFileHandlers.erase((file_interface *) fp);
@@ -240,9 +248,10 @@ static int lj_need_transform_path() noexcept {
         if (cmd.contains("DST_Secondary") || cmd.contains("DST_Master")) {
             cmd = get_cwd(getParentId());
         }
-        return cmd.contains("-enable_lua_debugger");
+        auto ret = cmd.contains("-enable_lua_debugger");
+        spdlog::info("lj_need_transform_path: {}", ret);
+        return ret;
     }();
-    spdlog::info("lj_need_transform_path: {}", has_lua_debug_flag);
     return has_lua_debug_flag;
 }
 
@@ -266,6 +275,79 @@ void lj_gc_fullgc_external(void* L, void (* oldfn)(void *L)){
 }
 extern "C" DONTSTARVEINJECTOR_API void DS_LUAJIT_disable_fullgc(int mb) {
     fullgc_mb = mb;
+}
+
+extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_Fengxun_Decrypt(const char* filename) noexcept{
+    try
+    {
+        spdlog::info("DS_LUAJIT_Fengxun_Decrypt: {}", filename);
+        auto infile = std::filesystem::path(filename);
+        struct filecache {
+            std::string content;
+            size_t hash;
+            size_t filesize;
+        };
+        static std::unordered_map<std::filesystem::path, filecache> caches;
+        static std::shared_mutex mtx;
+        std::filesystem::path real_path;
+        auto fp = lj_fopen_ex(filename, "rb", &real_path);
+        if (!fp) {
+            return nullptr;
+        }
+
+        auto filesize = std::filesystem::file_size(real_path);
+
+        std::vector<unsigned char> content(filesize);
+        lj_fread(content.data(), 1, filesize, fp);
+        lj_fclose(fp);
+        size_t hash_value;
+        {
+            std::string_view str{(const char*)content.data(), content.size()};
+            std::hash<std::string_view> hash;
+            hash_value = hash(str);
+        }
+        {
+            std::shared_lock guard{mtx};
+            auto it = caches.find(infile);
+            if (it != caches.end()) {
+                if (it->second.filesize == filesize && hash_value == it->second.hash) {
+                    return (const char*)it->second.content.data();
+                }
+            }
+        }
+        
+        std::span<unsigned char> part1;
+        std::span<unsigned char> part2;
+        size_t split_pos = 7997;
+        if (filesize < split_pos) {
+            part1 = content;
+        } else {
+            part1 = {content.begin(), content.begin() + split_pos};
+            part2 = {content.begin() + split_pos, content.end()};
+        }
+        
+        std::ranges::reverse(part1);
+        std::ranges::reverse(part2);
+        for (auto& byte : part2) {
+            byte += 7;
+        }
+
+        for (auto& byte : part1) {
+            byte += 7;
+        }
+
+        std::unique_lock lock{mtx};
+        std::string context;
+        context.reserve(filesize + 1);
+        context.append_range(part2);
+        context.append_range(part1);
+        auto& cache = caches[infile] = {std::move(context), hash_value, filesize};
+        return (const char*) cache.content.c_str();
+    }
+    catch(const std::exception& e)
+    {
+        return nullptr;
+    }
 }
 
 #define SET_LUAJIT_API_FUNC(name)                                 \

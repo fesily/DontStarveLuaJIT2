@@ -128,35 +128,6 @@ local function main()
 			)
 		end
 
-		local enbaleBlackList = GetModConfigData("ModBlackList")
-
-		AddSimPostInit(function()
-			jit.on()
-
-			local prefix = "../mods/workshop-"
-			local blacklists = {}
-			if enbaleBlackList and #blacklists > 0 then
-				for i in ipairs(blacklists) do
-					blacklists[i] = prefix .. blacklists[i]
-				end
-				local function startWith(str, prefix)
-					return str:find(prefix, 1, true) == 1
-				end
-				local _kleiloadlua = kleiloadlua
-				rawset(_G, "kleiloadlua", function(script, ...)
-					local m = _kleiloadlua(script, ...)
-					if type(script) == "string" then
-						for _, blacklist in ipairs(blacklists) do
-							if startWith(script, blacklist) then
-								jit.off(m, true)
-								break
-							end
-						end
-					end
-					return m
-				end)
-			end
-		end)
 
 		local zone = require("jit.zone")
 		local sim = getmetatable(TheSim).__index
@@ -201,11 +172,82 @@ local function main()
 			int DS_LUAJIT_update(const char* mod_dictory, int tt);
 			bool DS_LUAJIT_set_target_fps(int fps, int tt);
 			int DS_LUAJIT_replace_client_network_tick(char tick);
+			const char* DS_LUAJIT_Fengxun_Decrypt(const char* filename);
 		]]
 		local injector = require 'luavm.ffi_load' ("Injector")
+
+
+		local enbaleBlackList = GetModConfigData("ModBlackList")
+		local prefix = "../mods/workshop-"
+		local blacklists = {}
+		if true then
+			for i in ipairs(blacklists) do
+				blacklists[i] = prefix .. blacklists[i]
+			end
+			local function startWith(str, prefix)
+				return str:find(prefix, 1, true) == 1
+			end
+			local frostxxMods = {}
+			local _kleiloadlua = kleiloadlua
+			local function decrypt_file(filename)
+				local str = injector.DS_LUAJIT_Fengxun_Decrypt(filename)
+				if str ~= nil then
+					return loadstring(ffi.string(str), filename)
+				end
+			end
+			local function isfrostxx(filename)
+				for l in io.lines(filename) do
+					if l:find("frostxx@qq.com", 1, true) then
+						---@type string
+						local left = filename:sub(#prefix + 1)
+						local pos, id = left:find('(%d+)')
+						if pos then
+							frostxxMods[#frostxxMods + 1] = prefix .. left:sub(pos, id)
+						end
+						return true
+					end
+				end
+				return false
+			end
+			rawset(_G, "kleiloadlua", function(filename, ...)
+				for _, frostxxMod in ipairs(frostxxMods) do
+					if startWith(filename, frostxxMod) then
+						local fn = decrypt_file(filename)
+						if fn then
+							return fn
+						end
+					end
+				end
+				if filename:find("modmain.lua", 1, true) or filename:find("modworldgenmain.lua", 1, true) then
+					local ok, needdecrypt = pcall(isfrostxx, filename)
+					if ok and needdecrypt then
+						filename = filename:gsub("modmain.lua", "modmain0.lua")
+						filename = filename:gsub("modworldgenmain.lua", "modworldgenmain0.lua")
+						local fn = decrypt_file(filename)
+						if fn then
+							return fn
+						end
+					end
+				end
+
+				local m = _kleiloadlua(filename, ...)
+				if enbaleBlackList and type(m) == "function" and type(filename) == "string" and startWith(filename, prefix) then
+					for _, blacklist in ipairs(blacklists) do
+						if startWith(filename, blacklist) then
+							jit.off(m, true)
+							break
+						end
+					end
+				end
+				return m
+			end)
+		end
+		AddSimPostInit(function()
+			jit.on()
+		end)
+
 		local modmain_path = debug.getinfo(1).source
 		do
-			local prefix = "../mods/workshop-"
 			local pos = modmain_path:find(prefix, 1, true)
 			if pos ~= nil and pos == 1 then
 				local workshop_id = modmain_path:sub(pos + #prefix)

@@ -861,11 +861,14 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 #if USE_LISTENER
     interceptor = gum_interceptor_obtain();
 #endif
-
+    
     spdlog::set_level(spdlog::level::err);
 #ifdef DEBUG
     spdlog::set_level(spdlog::level::trace);
 #endif
+    if (gum_process_is_debugger_attached()) {
+        spdlog::set_level(spdlog::level::debug);
+    }
 
     if (!check_crash()) {
         spdlog::error("skip inject, find crash content");
@@ -887,7 +890,7 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     auto defer1 = create_defer([lua51]() {
         unloadlib(lua51);
     });
-    spdlog::info("main module base address:{}", gum_process_get_main_module()->range->base_address);
+    spdlog::info("main module base address:{}", (void*)gum_process_get_main_module()->range->base_address);
     auto mainPath = getExePath().string();
     if (luaModuleSignature.scan(mainPath.c_str()) == 0) {
         spdlog::error("can't find luamodule base address");

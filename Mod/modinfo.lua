@@ -22,7 +22,7 @@ description = translate(
 
 author = "fesil"
 
-version = "1.3.0"
+version = "1.4.0"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -139,7 +139,7 @@ configuration_options = {
         label = translate({ en = "Client network sync tick", zh = "客户端网络同步频率" }),
         hover = translate({
             en = "The frequency of communication between the client and the server.(deault:10fps)",
-            zh = "客户端与服务器的通讯频率. 默认(10fps)"
+            zh = "客户端与服务器的通讯频率. 默认(10fps)."
         }),
         options = {
             { description = translate({ en = "off", zh = "禁用"}), data = false },
