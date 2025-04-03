@@ -108,61 +108,60 @@ local function main()
 		end
 	end
 
-	if GetModConfigData("EnabledJIT") then
-		local TEMPLATES = require("widgets/redux/templates")
-		local old_getbuildstring = TEMPLATES.GetBuildString
-		TEMPLATES.GetBuildString = function()
-			return (old_getbuildstring() or "") .. "(LuaJIT)"
-		end
+	local enabled_jit = GetModConfigData("EnabledJIT")
+	local TEMPLATES = require("widgets/redux/templates")
+	local old_getbuildstring = TEMPLATES.GetBuildString
+	TEMPLATES.GetBuildString = function()
+		return (old_getbuildstring() or "") .. "(LuaJIT)"
+	end
+
+	local jit_opt = require 'jit.opt'
+	jit_opt.start("maxtrace=4000")
+	if GetModConfigData("JitOpt") then
+		jit_opt.start(
+			"minstitch=2",
+			"maxrecord=8000",
+			"sizemcode=64",
+			"maxmcode=4000",
+			"maxirconst=1000"
+		)
+	end
 
 
-		local jit_opt = require 'jit.opt'
-		jit_opt.start("maxtrace=4000")
-		if GetModConfigData("JitOpt") then
-			jit_opt.start(
-				"minstitch=2",
-				"maxrecord=8000",
-				"sizemcode=64",
-				"maxmcode=4000",
-				"maxirconst=1000"
-			)
-		end
-
-
-		local zone = require("jit.zone")
-		local sim = getmetatable(TheSim).__index
-		local old_profiler_push = sim.ProfilerPush
-		local old_profiler_pop = sim.ProfilerPop
-		if GetModConfigData("EnableProfiler") == "on" then
-			local profiler = require("jit.p")
-			local mode = GetModConfigData("EnableProfiler")
-			local enabled_profiler = false
-			sim.ProfilerPush = function(self, name, ...)
-				if enabled_profiler then
-					zone(name)
-				end
-				old_profiler_push(self, name, ...)
+	local zone = require("jit.zone")
+	local sim = getmetatable(TheSim).__index
+	local old_profiler_push = sim.ProfilerPush
+	local old_profiler_pop = sim.ProfilerPop
+	if GetModConfigData("EnableProfiler") == "on" then
+		local profiler = require("jit.p")
+		local mode = GetModConfigData("EnableProfiler")
+		local enabled_profiler = false
+		sim.ProfilerPush = function(self, name, ...)
+			if enabled_profiler then
+				zone(name)
 			end
-			sim.ProfilerPop = function(...)
-				if enabled_profiler then
-					zone()
-				end
-				old_profiler_pop(...)
-			end
-			rawset(_G, "ProfilerJit", {
-				start = function(m)
-					enabled_profiler = true
-					profiler.start(m or mode, "unsafedata/profiler")
-				end,
-				stop = function()
-					enabled_profiler = false
-					profiler.stop()
-				end,
-			})
+			old_profiler_push(self, name, ...)
 		end
+		sim.ProfilerPop = function(...)
+			if enabled_profiler then
+				zone()
+			end
+			old_profiler_pop(...)
+		end
+		rawset(_G, "ProfilerJit", {
+			start = function(m)
+				enabled_profiler = true
+				profiler.start(m or mode, "unsafedata/profiler")
+			end,
+			stop = function()
+				enabled_profiler = false
+				profiler.stop()
+			end,
+		})
+	end
 
-		local ffi = require 'ffi'
-		ffi.cdef [[
+	local ffi = require 'ffi'
+	ffi.cdef [[
 			int DS_LUAJIT_replace_profiler_api();
 			void DS_LUAJIT_enable_tracy(int en);
 			void DS_LUAJIT_disable_fullgc(int mb);
@@ -174,239 +173,239 @@ local function main()
 			int DS_LUAJIT_replace_client_network_tick(char tick);
 			const char* DS_LUAJIT_Fengxun_Decrypt(const char* filename);
 		]]
-		local injector = require 'luavm.ffi_load' ("Injector")
+	local injector = require 'luavm.ffi_load' ("Injector")
 
-
-		local enbaleBlackList = GetModConfigData("ModBlackList")
-		local prefix = "../mods/workshop-"
-		local blacklists = {}
-		if true then
-			for i in ipairs(blacklists) do
-				blacklists[i] = prefix .. blacklists[i]
-			end
-			local function startWith(str, prefix)
-				return str:find(prefix, 1, true) == 1
-			end
-			local frostxxMods = {}
-			local _kleiloadlua = kleiloadlua
-			local function decrypt_file(filename)
-				local str = injector.DS_LUAJIT_Fengxun_Decrypt(filename)
-				if str ~= nil then
-					return loadstring(ffi.string(str), filename)
-				end
-			end
-			local function isfrostxx(filename)
-				for l in io.lines(filename) do
-					if l:find("frostxx@qq.com", 1, true) then
-						---@type string
-						local left = filename:sub(#prefix + 1)
-						local pos, id = left:find('(%d+)')
-						if pos then
-							frostxxMods[#frostxxMods + 1] = prefix .. left:sub(pos, id)
-						end
-						return true
-					end
-				end
-				return false
-			end
-			rawset(_G, "kleiloadlua", function(filename, ...)
-				for _, frostxxMod in ipairs(frostxxMods) do
-					if startWith(filename, frostxxMod) then
-						local fn = decrypt_file(filename)
-						if fn then
-							return fn
-						end
-					end
-				end
-				if filename:find("modmain.lua", 1, true) or filename:find("modworldgenmain.lua", 1, true) then
-					local ok, needdecrypt = pcall(isfrostxx, filename)
-					if ok and needdecrypt then
-						filename = filename:gsub("modmain.lua", "modmain0.lua")
-						filename = filename:gsub("modworldgenmain.lua", "modworldgenmain0.lua")
-						local fn = decrypt_file(filename)
-						if fn then
-							return fn
-						end
-					end
-				end
-
-				local m = _kleiloadlua(filename, ...)
-				if enbaleBlackList and type(m) == "function" and type(filename) == "string" and startWith(filename, prefix) then
-					for _, blacklist in ipairs(blacklists) do
-						if startWith(filename, blacklist) then
-							jit.off(m, true)
-							break
-						end
-					end
-				end
-				return m
-			end)
+	local enbaleBlackList = GetModConfigData("ModBlackList")
+	local prefix = "../mods/workshop-"
+	local blacklists = {}
+	if true then
+		for i in ipairs(blacklists) do
+			blacklists[i] = prefix .. blacklists[i]
 		end
-		AddSimPostInit(function()
-			jit.on()
-		end)
-
-		local modmain_path = debug.getinfo(1).source
-		do
-			local pos = modmain_path:find(prefix, 1, true)
-			if pos ~= nil and pos == 1 then
-				local workshop_id = modmain_path:sub(pos + #prefix)
-				pos = workshop_id:find("/", 1, true)
-				if pos ~= nil then
-					workshop_id = workshop_id:sub(1, pos - 1)
-				end
-				-- maybe inworkshop
-				local workshop_dir = injector.DS_LUAJIT_get_workshop_dir();
-				if workshop_dir ~= nil then
-					workshop_dir = ffi.string(workshop_dir)
-					workshop_dir = workshop_dir .. "/" .. workshop_id .. "/"
-					local fp = io.open(workshop_dir .. "install.bat", "r")
-					if fp then
-						fp:close()
-						modmain_path = workshop_dir .. "modmain.lua"
-					end
-				end
-			end
-			if not TheNet:IsDedicated() then
-				local fp = io.open(luajit_config_path, "w")
-				if fp then
-					local config = {
-						modmain_path = modmain_path,
-						server_disable_luajit = GetModConfigData("DisableJITWhenServer"),
-					}
-					fp:write(json.encode(config))
-					fp:close()
-				end
+		local function startWith(str, prefix)
+			return str:find(prefix, 1, true) == 1
+		end
+		local frostxxMods = {}
+		local _kleiloadlua = kleiloadlua
+		local function decrypt_file(filename)
+			local str = injector.DS_LUAJIT_Fengxun_Decrypt(filename)
+			if str ~= nil then
+				return loadstring(ffi.string(str), filename)
 			end
 		end
-		if GetModConfigData("EnableTracy") == "on" then
-			injector.DS_LUAJIT_replace_profiler_api()
-			injector.DS_LUAJIT_enable_tracy(1)
-		end
-
-		if GetModConfigData("DisableForceFullGC") ~= 0 then
-			injector.DS_LUAJIT_disable_fullgc(tonumber(GetModConfigData("DisableForceFullGC")))
-		end
-
-		if GetModConfigData("EnbaleFrameGC") ~= 0 then
-			injector.DS_LUAJIT_replace_profiler_api()
-			injector.DS_LUAJIT_set_frame_gc_time(tonumber(GetModConfigData("EnbaleFrameGC")))
-		end
-
-		if GetModConfigData("TargetRenderFPS") then
-			local targetfps = GetModConfigData("TargetRenderFPS")
-			injector.DS_LUAJIT_set_target_fps(targetfps, 1)
-			TheSim:SetNetbookMode(false);
-		end
-
-		if GetModConfigData("TargetLogincFPS") then
-			local targetfps = GetModConfigData("TargetLogincFPS")
-			injector.DS_LUAJIT_set_target_fps(targetfps, 2)
-		end
-
-		if GetModConfigData("ClientNetWorkTick") then
-			local targetfps = GetModConfigData("ClientNetWorkTick")
-			injector.DS_LUAJIT_replace_client_network_tick(targetfps)
-		end
-		local root_dictory = modmain_path:gsub("modmain.lua", "")
-		AddGamePostInit(function()
-			local PopupDialogScreen = require "screens/popupdialog"
-			local locale = LOC.GetLocaleCode()
-			local lc = locale
-
-			local function translate(t)
-				t.zhr = t.zh
-				t.zht = t.zht or t.zh
-				return t[lc] or t.en
+		local function isfrostxx(filename)
+			for l in io.lines(filename) do
+				if l:find("frostxx@qq.com", 1, true) then
+					---@type string
+					local left = filename:sub(#prefix + 1)
+					local pos, id = left:find('(%d+)')
+					if pos then
+						frostxxMods[#frostxxMods + 1] = prefix .. left:sub(pos, id)
+					end
+					return true
+				end
 			end
-			if injector.DS_LUAJIT_get_mod_version() ~= nil and should_show_dig() then
-				local version = ffi.string(injector.DS_LUAJIT_get_mod_version())
-				if modinfo.version ~= version then
-					local function update_mod()
-						return injector.DS_LUAJIT_update(root_dictory, 0) == 1
+			return false
+		end
+		rawset(_G, "kleiloadlua", function(filename, ...)
+			for _, frostxxMod in ipairs(frostxxMods) do
+				if startWith(filename, frostxxMod) then
+					local fn = decrypt_file(filename)
+					if fn then
+						return fn
 					end
-
-					local btns = {}
-					local content = translate({
-						zh = [[当前luajit模组有更新,是否要执行更新?]],
-						en = "The current luajit mod has been updated, do you want to execute the update?"
-					})
-					if jit.os == "Windows" then
-						btns[#btns + 1] = {
-							text = STRINGS.UI.MAINSCREEN.RESTART,
-							cb = function()
-								update_mod()
-							end
-						}
-					else
-						content = translate({
-							zh = [[当前luajit模组有更新,需要重新执行install.sh]],
-							en = "The current luajit mod has been updated, should execute install.sh again"
-						})
+				end
+			end
+			if filename:find("modmain.lua", 1, true) or filename:find("modworldgenmain.lua", 1, true) then
+				local ok, needdecrypt = pcall(isfrostxx, filename)
+				if ok and needdecrypt then
+					filename = filename:gsub("modmain.lua", "modmain0.lua")
+					filename = filename:gsub("modworldgenmain.lua", "modworldgenmain0.lua")
+					local fn = decrypt_file(filename)
+					if fn then
+						return fn
 					end
-
-					btns[#btns + 1] = { text = STRINGS.UI.MAINSCREEN.CANCEL, cb = function() TheFrontEnd:PopScreen() end }
-					TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, content,
-						btns))
 				end
 			end
 
-			scheduler:ExecuteInTime(3, clean_crash_file)
-			-- motify ModConfigurationScreen
-
-			local luajit_config_screen_ctor = function(self, client_config)
-				local function uninstall_mod()
-					if jit.os == "Windows" then
-						injector.DS_LUAJIT_update(root_dictory, 1)
-					else
-						TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.MODFAILTITLE, translate({
-								zh = "当前操作系统不支持卸载luajit模组\n麻烦手动删除",
-								en =
-								"The current operating system does not support uninstalling the luajit mod\nPlease manually delete"
-							}),
-							{
-								{ text = STRINGS.UI.MAINSCREEN.OK, cb = function() TheFrontEnd:PopScreen() end }
-							}))
+			local m = _kleiloadlua(filename, ...)
+			if enbaleBlackList and type(m) == "function" and type(filename) == "string" and startWith(filename, prefix) then
+				for _, blacklist in ipairs(blacklists) do
+					if startWith(filename, blacklist) then
+						jit.off(m, true)
+						break
 					end
 				end
-				local actions = self.dialog.actions
-				if actions then
-					self.uninstall = actions:AddItem(translate({ en = "uninstall mod", zh = "卸载模组" }),
-						function()
-							TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, translate({
-									zh = "是否要卸载luajit模组?",
-									en = "Are you sure you want to uninstall the luajit mod?"
-								}),
-								{
-									{ text = STRINGS.UI.MAINSCREEN.RESTART, cb = function() uninstall_mod() end },
-									{ text = STRINGS.UI.MAINSCREEN.CANCEL,  cb = function() TheFrontEnd:PopScreen() end }
-								}))
-						end)
-					local sizeX, sizeY = actions:GetSize()
-					local buttons_len = actions:GetNumberOfItems()
-					local button_spacing
-					-- 1,2,3,4 buttons can be big at 210,420,630,840 widths.
-					local space_per_button = sizeX / buttons_len
-					local has_space_for_big_buttons = space_per_button > 209
-					if has_space_for_big_buttons then
-						button_spacing = 320
-					else
-						button_spacing = 230
-					end
-					local button_height = -30 -- cover bottom crown
-					actions:SetPosition(-(button_spacing * (buttons_len - 1)) / 2, button_height)
-				end
 			end
-			local ModConfigurationScreen = require "screens/redux/modconfigurationscreen"
-			local old_ctor = ModConfigurationScreen._ctor
-			ModConfigurationScreen._ctor = function(self, _modname, client_config, ...)
-				old_ctor(self, _modname, client_config, ...)
-				if _modname == modname and jit.os == "Windows" then
-					luajit_config_screen_ctor(self, client_config)
-				end
-			end
+			return m
 		end)
 	end
+	AddSimPostInit(function()
+		if enabled_jit then
+			jit.on()
+		end
+	end)
+
+	local modmain_path = debug.getinfo(1).source
+	do
+		local pos = modmain_path:find(prefix, 1, true)
+		if pos ~= nil and pos == 1 then
+			local workshop_id = modmain_path:sub(pos + #prefix)
+			pos = workshop_id:find("/", 1, true)
+			if pos ~= nil then
+				workshop_id = workshop_id:sub(1, pos - 1)
+			end
+			-- maybe inworkshop
+			local workshop_dir = injector.DS_LUAJIT_get_workshop_dir();
+			if workshop_dir ~= nil then
+				workshop_dir = ffi.string(workshop_dir)
+				workshop_dir = workshop_dir .. "/" .. workshop_id .. "/"
+				local fp = io.open(workshop_dir .. "install.bat", "r")
+				if fp then
+					fp:close()
+					modmain_path = workshop_dir .. "modmain.lua"
+				end
+			end
+		end
+		if not TheNet:IsDedicated() then
+			local fp = io.open(luajit_config_path, "w")
+			if fp then
+				local config = {
+					modmain_path = modmain_path,
+					server_disable_luajit = GetModConfigData("DisableJITWhenServer"),
+				}
+				fp:write(json.encode(config))
+				fp:close()
+			end
+		end
+	end
+	if GetModConfigData("EnableTracy") == "on" then
+		injector.DS_LUAJIT_replace_profiler_api()
+		injector.DS_LUAJIT_enable_tracy(1)
+	end
+
+	if GetModConfigData("DisableForceFullGC") ~= 0 then
+		injector.DS_LUAJIT_disable_fullgc(tonumber(GetModConfigData("DisableForceFullGC")))
+	end
+
+	if GetModConfigData("EnbaleFrameGC") ~= 0 then
+		injector.DS_LUAJIT_replace_profiler_api()
+		injector.DS_LUAJIT_set_frame_gc_time(tonumber(GetModConfigData("EnbaleFrameGC")))
+	end
+
+	if GetModConfigData("TargetRenderFPS") then
+		local targetfps = GetModConfigData("TargetRenderFPS")
+		injector.DS_LUAJIT_set_target_fps(targetfps, 1)
+		TheSim:SetNetbookMode(false);
+	end
+
+	if GetModConfigData("TargetLogincFPS") then
+		local targetfps = GetModConfigData("TargetLogincFPS")
+		injector.DS_LUAJIT_set_target_fps(targetfps, 2)
+	end
+
+	if GetModConfigData("ClientNetWorkTick") then
+		local targetfps = GetModConfigData("ClientNetWorkTick")
+		injector.DS_LUAJIT_replace_client_network_tick(targetfps)
+	end
+	local root_dictory = modmain_path:gsub("modmain.lua", "")
+	AddGamePostInit(function()
+		local PopupDialogScreen = require "screens/popupdialog"
+		local locale = LOC.GetLocaleCode()
+		local lc = locale
+
+		local function translate(t)
+			t.zhr = t.zh
+			t.zht = t.zht or t.zh
+			return t[lc] or t.en
+		end
+		if injector.DS_LUAJIT_get_mod_version() ~= nil and should_show_dig() then
+			local version = ffi.string(injector.DS_LUAJIT_get_mod_version())
+			if modinfo.version ~= version then
+				local function update_mod()
+					return injector.DS_LUAJIT_update(root_dictory, 0) == 1
+				end
+
+				local btns = {}
+				local content = translate({
+					zh = [[当前luajit模组有更新,是否要执行更新?]],
+					en = "The current luajit mod has been updated, do you want to execute the update?"
+				})
+				if jit.os == "Windows" then
+					btns[#btns + 1] = {
+						text = STRINGS.UI.MAINSCREEN.RESTART,
+						cb = function()
+							update_mod()
+						end
+					}
+				else
+					content = translate({
+						zh = [[当前luajit模组有更新,需要重新执行install.sh]],
+						en = "The current luajit mod has been updated, should execute install.sh again"
+					})
+				end
+
+				btns[#btns + 1] = { text = STRINGS.UI.MAINSCREEN.CANCEL, cb = function() TheFrontEnd:PopScreen() end }
+				TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, content,
+					btns))
+			end
+		end
+
+		scheduler:ExecuteInTime(3, clean_crash_file)
+		-- motify ModConfigurationScreen
+
+		local luajit_config_screen_ctor = function(self, client_config)
+			local function uninstall_mod()
+				if jit.os == "Windows" then
+					injector.DS_LUAJIT_update(root_dictory, 1)
+				else
+					TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.MODFAILTITLE, translate({
+							zh = "当前操作系统不支持卸载luajit模组\n麻烦手动删除",
+							en =
+							"The current operating system does not support uninstalling the luajit mod\nPlease manually delete"
+						}),
+						{
+							{ text = STRINGS.UI.MAINSCREEN.OK, cb = function() TheFrontEnd:PopScreen() end }
+						}))
+				end
+			end
+			local actions = self.dialog.actions
+			if actions then
+				self.uninstall = actions:AddItem(translate({ en = "uninstall mod", zh = "卸载模组" }),
+					function()
+						TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, translate({
+								zh = "是否要卸载luajit模组?",
+								en = "Are you sure you want to uninstall the luajit mod?"
+							}),
+							{
+								{ text = STRINGS.UI.MAINSCREEN.RESTART, cb = function() uninstall_mod() end },
+								{ text = STRINGS.UI.MAINSCREEN.CANCEL,  cb = function() TheFrontEnd:PopScreen() end }
+							}))
+					end)
+				local sizeX, sizeY = actions:GetSize()
+				local buttons_len = actions:GetNumberOfItems()
+				local button_spacing
+				-- 1,2,3,4 buttons can be big at 210,420,630,840 widths.
+				local space_per_button = sizeX / buttons_len
+				local has_space_for_big_buttons = space_per_button > 209
+				if has_space_for_big_buttons then
+					button_spacing = 320
+				else
+					button_spacing = 230
+				end
+				local button_height = -30 -- cover bottom crown
+				actions:SetPosition(-(button_spacing * (buttons_len - 1)) / 2, button_height)
+			end
+		end
+		local ModConfigurationScreen = require "screens/redux/modconfigurationscreen"
+		local old_ctor = ModConfigurationScreen._ctor
+		ModConfigurationScreen._ctor = function(self, _modname, client_config, ...)
+			old_ctor(self, _modname, client_config, ...)
+			if _modname == modname and jit.os == "Windows" then
+				luajit_config_screen_ctor(self, client_config)
+			end
+		end
+	end)
 	inject_server_only_mod()
 end
 
