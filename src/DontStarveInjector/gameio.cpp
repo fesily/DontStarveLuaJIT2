@@ -325,13 +325,13 @@ extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_Fengxun_Decrypt(const ch
             part1 = {content.begin(), content.begin() + split_pos};
             part2 = {content.begin() + split_pos, content.end()};
         }
-        
-        std::ranges::reverse(part1);
-        std::ranges::reverse(part2);
+
+        std::reverse(part2.begin(), part2.end());
         for (auto& byte : part2) {
             byte += 7;
         }
 
+        std::reverse(part1.begin(), part1.end());
         for (auto& byte : part1) {
             byte += 7;
         }
