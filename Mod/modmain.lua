@@ -4,7 +4,7 @@ local function main()
 		if TheNet:GetIsServer() and TheNet:GetServerIsDedicated() then
 			return false
 		end
-		if TheFrontEnd and TheFrontEnd:GetActiveScreen() and TheFrontEnd:GetActiveScreen().name == "ConnectingToGamePopup" then
+		if IsMigrating() then
 			return false
 		end
 		return not InGamePlay()
