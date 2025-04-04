@@ -827,6 +827,9 @@ static bool check_crash() {
     if (!getenv("SteamClientLaunch")) {
         return true;
     }
+    if (!DontStarveInjectorIsClient) {
+        return true;
+    }
 #ifndef NDEBUG
     return true;
 #endif// !NDEBUG
