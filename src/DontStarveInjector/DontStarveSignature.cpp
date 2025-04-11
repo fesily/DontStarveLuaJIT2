@@ -180,12 +180,12 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                 throw  update_signatures_exception{"init_module_signature failed!"};
             }
 
+    auto lua51_module = gum_process_find_module_by_name(lua51_name);
 #ifndef __APPLE__
     spdlog::info("lua51 module base address:{}", (void*)modulelua51.details.range.base_address);
     spdlog::info("game module base address:{}", (void*)moduleMain.details.range.base_address);
     //明确定位 index2adr
     moduleMain.set_known_function(targetLuaModuleBase, "index2adr");
-    auto lua51_module = gum_process_find_module_by_name(lua51_name);
     auto lua_type_fn = gum_module_find_export_by_name(lua51_module, "lua_type");
 #if !defined(NDEBUG) && !defined(_WIN32)
     if (auto fn = modulelua51.find_function(lua_type_fn); fn && !fn->blocks.empty() &&
