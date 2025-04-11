@@ -124,7 +124,7 @@ namespace function_relocation {
         }
 #else
 
-        gum_module_enumerate_sections(path, +[](const GumSectionDetails *details, gpointer user_data) -> gboolean {
+        gum_module_enumerate_sections(module, +[](const GumSectionDetails *details, gpointer user_data) -> gboolean {
             if (details->name == ".text"sv || details->name == "__text"sv)
                 (*(ModuleSections *) user_data).text = {details->address, details->size};
             else if (details->name == ".rodata"sv || details->name == "__cstring"sv)
