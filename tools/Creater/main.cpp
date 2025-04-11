@@ -74,7 +74,7 @@ int main()
 
 static void create_signature() {
     function_relocation::init_ctx();
-    auto succcess = function_relocation::FileSignature::create_file_signature(gum_process_get_main_module()->path);
+    auto succcess = function_relocation::FileSignature::create_file_signature(gum_module_get_path(gum_process_get_main_module()));
     spdlog::info("create_signature:{}", succcess);
     exit(!succcess);
 }
@@ -122,7 +122,7 @@ static void HookGame(const char *api_name, bool isClient) {
 
 __attribute__((constructor)) void init() {
     gum_init_embedded();
-    auto path = std::filesystem::path(gum_process_get_main_module()->path).filename().string();
+    auto path = std::filesystem::path(gum_module_get_path(gum_process_get_main_module())).filename().string();
     if (!path.contains("dontstarve")) {
         if (path.contains("lua51")) {
             std::thread(create_signature).detach();
@@ -144,7 +144,7 @@ __attribute__((constructor)) void init() {
 #endif
     std::thread([isClient] {
                     if (pre_updater()) {
-                        exit(update(isClient, gum_process_get_main_module()->path));
+                        exit(update(isClient, gum_module_get_path(gum_process_get_main_module()));
                     }
                     exit(-1);
                 }

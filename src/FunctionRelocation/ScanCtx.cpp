@@ -711,7 +711,7 @@ namespace function_relocation {
 #ifdef __linux__
                             // is __stack_chk_fail?
                             auto target = x86_details.operands[0].imm;
-                            static const auto __stack_chk_fail_address = gum_module_find_export_by_name("libc.so.6",
+                            static const auto __stack_chk_fail_address = gum_module_find_export_by_name(gum_process_get_libc_module(),
                                                                                                         "__stack_chk_fail");
                             if (__stack_chk_fail_address &&
                                 address_is_lib_plt((uint8_t *) target, __stack_chk_fail_address))

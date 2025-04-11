@@ -784,7 +784,7 @@ int chdir_hook(const char* path){
 }
 __attribute__((constructor)) void init() {
     gum_init_embedded();
-    auto path = std::filesystem::path(gum_process_get_main_module()->path).filename().string();
+    auto path = std::filesystem::path(gum_module_get_path(gum_process_get_main_module())).filename().string();
     if (!path.contains("dontstarve")) {
         gum_deinit_embedded();
         return;
