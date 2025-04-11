@@ -463,13 +463,13 @@ void lua_event_notifyer(LUA_EVENT ev, lua_State * L) {
             break;
         case LUA_EVENT::close_state:
             profiler.L = 0;
-            gum_luajit_profiler_update_thread_id(nullptr, gum_process_get_current_thread_id());
+            //gum_luajit_profiler_update_thread_id(nullptr, gum_process_get_current_thread_id());
             return;
         case LUA_EVENT::call_lua_gc:
             profiler.L = profiler.start_time ? L : 0;
             break;
     }
-    gum_luajit_profiler_update_thread_id(L, gum_process_get_current_thread_id());
+    //gum_luajit_profiler_update_thread_id(L, gum_process_get_current_thread_id());
 }
 //#define profiler_lua_gc 0
 #ifdef profiler_lua_gc
