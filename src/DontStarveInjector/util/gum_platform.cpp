@@ -7,13 +7,16 @@ std::string get_module_path(const char *maybeName, uintptr_t ptr) {
     std::list<std::string> res;
     auto arg = std::tuple{&res, maybeName, ptr};
     gum_process_enumerate_modules(
-            +[](const GumModuleDetails *details,
+            +[](GumModule * module,
                 gpointer user_data) -> gboolean {
                 auto &[res, maybeName, ptr] = *(decltype(arg) *) user_data;
-                if (std::string_view(details->name).contains(maybeName)) {
-                    if (ptr != 0 && !(details->range->base_address <= ptr && ptr < details->range->base_address + details->range->size))
+                auto module_name = gum_module_get_name(module);
+                if (std::string_view(module_name).contains(maybeName)) {
+                    auto range = gum_module_get_range(module);
+                    if (ptr != 0 && !(range->base_address <= ptr && ptr < range->base_address + range->size))
                         return true;
-                    res->push_back(details->path);
+                    auto path = gum_module_get_path(module);
+                    res->push_back(path);
                     return true;
                 }
                 return true;

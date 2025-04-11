@@ -75,33 +75,34 @@ namespace function_relocation {
         return details.range.base_address <= address && address <= details.range.base_address + details.range.size;
     }
 
-    static GumModuleDetails *get_module_details(const char *path) {
+    static GumModule *get_module(const char *path) {
         if (path == nullptr) {
-            return gum_module_details_copy(gum_process_get_main_module());
+            return gum_process_get_main_module();
         }
-        GumModuleDetails *out_details;
-        auto fn = [&](const GumModuleDetails *details) -> gboolean {
-            if (strcmp(details->path, path) == 0
-                || std::string_view(details->path).ends_with(path)) {
-                out_details = gum_module_details_copy(details);
+        GumModule *out_details;
+        auto fn = [&](GumModule *module) -> gboolean {
+            auto module_path = gum_module_get_path(module);
+            if (strcmp(module_path, path) == 0 || std::string_view(module_path).ends_with(path)) {
+                out_details = module;
                 return FALSE;
             }
             return TRUE;
         };
-        gum_process_enumerate_modules(+[](const GumModuleDetails *details,
-                                          gpointer user_data) -> gboolean {
-            return (*static_cast<decltype(fn) *>(user_data))(details);
+        gum_process_enumerate_modules(+[](GumModule *module,
+                                          gpointer user_data) -> gboolean { return (*static_cast<decltype(fn) *>(user_data))(module);
         }, (void *) &fn);
         return out_details;
     }
 
     bool get_module_sections(const char *path, ModuleSections &sections) {
-        const auto details = get_module_details(path);
+        const auto module = get_module(path);
+        auto module_path = gum_module_get_path(module);
 #ifdef _WIN32
-        const auto pe = peparse::ParsePEFromFile(details->path);
+        const auto pe = peparse::ParsePEFromFile(module_path);
         if (pe)
         {
-            auto args = std::tuple{&sections, details->range->base_address};
+            auto module_range = gum_module_get_range(module);
+            auto args = std::tuple{&sections, module_range->base_address};
             IterSec(pe, +[](void* user_data,
                             const peparse::VA& secBase,
                             const std::string& secName,
@@ -136,9 +137,9 @@ namespace function_relocation {
         }, (void *) &sections);
 #endif
         sections.details = {
-                .name = details->name,
-                .range = *details->range,
-                .path = details->path
+                .name = gum_module_get_name(module),
+                .range = *gum_module_get_range(module),
+                .path = module_path
         };
         return true;
     }
@@ -156,7 +157,8 @@ namespace function_relocation {
         //TODO: symbols is error, should special the pdb search path
          gum_load_symbols(std::filesystem::path{path}.filename().string().c_str());
 #endif
-        gum_module_enumerate_symbols(path, +[](const GumSymbolDetails *details, gpointer data) -> gboolean {
+         const auto module = get_module(path);
+         gum_module_enumerate_symbols(module, +[](const GumSymbolDetails *details, gpointer data) -> gboolean {
             if (details->type == GUM_SYMBOL_FUNCTION || details->type == GUM_SYMBOL_OBJECT
                 #if defined(__MACH__) && defined(__APPLE__)
                 || details->type == GUM_SYMBOL_SECTION

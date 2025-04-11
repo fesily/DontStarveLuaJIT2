@@ -12,15 +12,17 @@ set(SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
+        gameModConfig.cpp
+        luajit_config.cpp
 )
 
 if (NOT MSVC)
     list(APPEND SOURCES
-        luajit_config.cpp
     )
 else()
     list(APPEND SOURCES
         Progress.cpp
+        #profiler.cpp
     )
 endif()
 
@@ -30,7 +32,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(range-v3 CONFIG REQUIRED)
 find_package(Tracy CONFIG REQUIRED)
-
+find_package(mimalloc CONFIG REQUIRED)
 set(CMAKE_SKIP_BUILD_RPATH  FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
@@ -52,6 +54,7 @@ target_link_libraries(Injector PRIVATE libzip::zip)
 target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(Injector PRIVATE spdlog::spdlog)
 target_link_libraries(Injector PRIVATE range-v3::meta range-v3::concepts range-v3::range-v3)
+#target_link_libraries(Injector PRIVATE $<IF:$<TARGET_EXISTS:mimalloc-static>,mimalloc-static,mimalloc>)
 if (NOT DISABLE_TRACY_FUTURE)
     target_link_libraries(Injector PRIVATE Tracy::TracyClient)
 else()

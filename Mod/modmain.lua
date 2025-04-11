@@ -130,10 +130,34 @@ local function main()
 	end
 
 
+	local ffi = require 'ffi'
+	ffi.cdef [[
+			int DS_LUAJIT_replace_profiler_api();
+			void DS_LUAJIT_enable_tracy(int en);
+			void DS_LUAJIT_enable_profiler(int en);
+			void DS_LUAJIT_disable_fullgc(int mb);
+			int DS_LUAJIT_set_frame_gc_time(int ms);
+			const char* DS_LUAJIT_get_mod_version();
+			const char* DS_LUAJIT_get_workshop_dir();
+			int DS_LUAJIT_update(const char* mod_dictory, int tt);
+			int DS_LUAJIT_set_target_fps(int fps, int tt);
+			int DS_LUAJIT_replace_client_network_tick(char tick);
+			const char* DS_LUAJIT_Fengxun_Decrypt(const char* filename);
+		]]
+	local injector = require 'luavm.ffi_load' ("Injector")
+
 	local zone = require("jit.zone")
 	local sim = getmetatable(TheSim).__index
 	local old_profiler_push = sim.ProfilerPush
 	local old_profiler_pop = sim.ProfilerPop
+	rawset(_G, "ProfilerJitEx", {
+		start = function(m)
+			injector.DS_LUAJIT_enable_profiler(1)
+		end,
+		stop = function()
+			injector.DS_LUAJIT_enable_profiler(0)
+		end,
+	})
 	if GetModConfigData("EnableProfiler") == "on" then
 		local profiler = require("jit.p")
 		local mode = GetModConfigData("EnableProfiler")
@@ -161,21 +185,6 @@ local function main()
 			end,
 		})
 	end
-
-	local ffi = require 'ffi'
-	ffi.cdef [[
-			int DS_LUAJIT_replace_profiler_api();
-			void DS_LUAJIT_enable_tracy(int en);
-			void DS_LUAJIT_disable_fullgc(int mb);
-			int DS_LUAJIT_set_frame_gc_time(int ms);
-			const char* DS_LUAJIT_get_mod_version();
-			const char* DS_LUAJIT_get_workshop_dir();
-			int DS_LUAJIT_update(const char* mod_dictory, int tt);
-			bool DS_LUAJIT_set_target_fps(int fps, int tt);
-			int DS_LUAJIT_replace_client_network_tick(char tick);
-			const char* DS_LUAJIT_Fengxun_Decrypt(const char* filename);
-		]]
-	local injector = require 'luavm.ffi_load' ("Injector")
 
 	local enbaleBlackList = GetModConfigData("ModBlackList")
 	local prefix = "../mods/workshop-"
@@ -275,6 +284,7 @@ local function main()
 				local config = {
 					modmain_path = modmain_path,
 					server_disable_luajit = GetModConfigData("DisableJITWhenServer"),
+					logic_fps = GetModConfigData("TargetLogincFPS"),
 				}
 				fp:write(json.encode(config))
 				fp:close()
@@ -303,7 +313,12 @@ local function main()
 
 	if GetModConfigData("TargetLogincFPS") then
 		local targetfps = GetModConfigData("TargetLogincFPS")
-		injector.DS_LUAJIT_set_target_fps(targetfps, 2)
+		if injector.DS_LUAJIT_set_target_fps(targetfps, 2) ~= targetfps then
+			print("[luajit] diff logic fps, need restart")
+			scheduler:ExecuteInTime(0, function ()
+				c_reset()
+			end)
+		end
 	end
 
 	if GetModConfigData("ClientNetWorkTick") then

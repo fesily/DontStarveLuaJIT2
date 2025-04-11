@@ -25,7 +25,7 @@ namespace function_relocation {
             return false;
         cs_option(ctx.hcs, CS_OPT_DETAIL, CS_OPT_ON);
 #ifndef __APPLE__
-        const auto real_log_path = std::filesystem::absolute(gum_process_get_main_module()->path).parent_path() / log_path;
+        const auto real_log_path = std::filesystem::absolute(gum_module_get_path(gum_process_get_main_module())).parent_path() / log_path;
         auto logger = spdlog::create<spdlog::sinks::rotating_file_sink_st>(logger_name, real_log_path.string(), 1048576*100, 1);
 #else
         auto logger = spdlog::create<spdlog::sinks::ansicolor_stderr_sink_st>(logger_name);

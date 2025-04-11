@@ -31,6 +31,9 @@
       "features": [
         "on-demand"
       ]
+    },
+    {
+      "name": "mimalloc"
     }
   ]
 }

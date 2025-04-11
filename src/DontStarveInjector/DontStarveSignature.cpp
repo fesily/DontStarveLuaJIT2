@@ -36,7 +36,7 @@ constexpr auto only_base_api =
 #else
     false;
 #endif
-    if (details->type != _GumExportType::GUM_EXPORT_FUNCTION) {
+    if (details->type != GumExportType::GUM_EXPORT_FUNCTION) {
         return true;
     }
     const auto name = std::string_view{details->name};
@@ -56,7 +56,8 @@ constexpr auto only_base_api =
 
 static auto get_lua51_exports() {
     ListExports_t exports;
-    gum_module_enumerate_exports(lua51_name, ListLuaFuncCb, &exports);
+    auto m = gum_process_find_module_by_name(lua51_name);
+    gum_module_enumerate_exports(m, ListLuaFuncCb, &exports);
     std::sort(exports.begin(), exports.end(), [](auto &l, auto &r) { return l.second > r.second; });
     return exports;
 }
@@ -184,7 +185,8 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
     spdlog::info("game module base address:{}", (void*)moduleMain.details.range.base_address);
     //明确定位 index2adr
     moduleMain.set_known_function(targetLuaModuleBase, "index2adr");
-    auto lua_type_fn = gum_module_find_export_by_name(lua51_path.c_str(), "lua_type");
+    auto lua51_module = gum_process_find_module_by_name(lua51_name);
+    auto lua_type_fn = gum_module_find_export_by_name(lua51_module, "lua_type");
 #if !defined(NDEBUG) && !defined(_WIN32)
     if (auto fn = modulelua51.find_function(lua_type_fn); fn && !fn->blocks.empty() &&
                                                           !fn->get_block(0)->call_functions.empty()) {
@@ -198,7 +200,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
     co_yield 0;
     for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
-        auto original = (void *) gum_module_find_export_by_name(lua51_path.c_str(), name.c_str());
+        auto original = (void *) gum_module_find_export_by_name(lua51_module, name.c_str());
 
 #ifdef _WIN32
         original = format_address((uint8_t *) original);
