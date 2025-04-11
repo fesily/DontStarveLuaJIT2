@@ -144,7 +144,7 @@ __attribute__((constructor)) void init() {
 #endif
     std::thread([isClient] {
                     if (pre_updater()) {
-                        exit(update(isClient, gum_module_get_path(gum_process_get_main_module()));
+                        exit(update(isClient, gum_module_get_path(gum_process_get_main_module())));
                     }
                     exit(-1);
                 }
