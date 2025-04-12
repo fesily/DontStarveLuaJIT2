@@ -4,6 +4,9 @@ local function main()
 		if TheNet:GetIsServer() and TheNet:GetServerIsDedicated() then
 			return false
 		end
+		if not TheFrontEnd then
+			return false
+		end
 		if IsMigrating() then
 			return false
 		end

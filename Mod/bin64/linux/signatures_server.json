@@ -1,254 +1,254 @@
 {
     "funcs": {
         "luaL_addlstring": {
-            "offset": 58336,
-            "pattern": "41554c8daf1820000041544989fc554889f5534889d3",
+            "offset": 58384,
+            "pattern": "41 55 4c 8d af 18 20 00",
             "pattern_offset": 0
         },
         "luaL_addvalue": {
-            "offset": 58752,
-            "pattern": "55beffffffff534889fb4883ec18488b6f10488d5424084889ef",
+            "offset": 58800,
+            "pattern": "55 be ff ff ff ff 53 48",
             "pattern_offset": 0
         },
         "luaL_argerror": {
-            "offset": 55776,
-            "pattern": "41544989d45589f531f6534889fb4883c480",
+            "offset": 55824,
+            "pattern": "41 54 49 89 d4 55 89 f5 31",
             "pattern_offset": 0
         },
         "luaL_buffinit": {
-            "offset": 58944,
-            "pattern": "488d461848897e10c7460800000000488906c3",
+            "offset": 58992,
+            "pattern": "48 8d 46 18 48 89 7e 10",
             "pattern_offset": 0
         },
         "luaL_callmeta": {
-            "offset": 57440,
-            "pattern": "558d860f2700004889fd5389f34883ec183d0f2700007638",
+            "offset": 57488,
+            "pattern": "55 8d 86 0f 27 00 00 48",
             "pattern_offset": 0
         },
         "luaL_checkany": {
-            "offset": 56512,
-            "pattern": "4883c4084889df89ee5b5dba????????e9",
+            "offset": 56560,
+            "pattern": "48 83 c4 08 48 89 df 89 ee 5b 5d ba",
             "pattern_offset": -32
         },
         "luaL_checkboolean": {
-            "offset": 57136,
-            "pattern": "4883c4084889df89ee5b5de9",
+            "offset": 57184,
+            "pattern": "48 83 c4 08 48 89 df 89 ee 5b 5d e9",
             "pattern_offset": -36
         },
         "luaL_checkinteger": {
-            "offset": 57056,
-            "pattern": "4489e64889efba03000000e8",
+            "offset": 57104,
+            "pattern": "44 89 e6 48 89 ef ba 03",
             "pattern_offset": -47
         },
         "luaL_checklstring": {
-            "offset": 56576,
-            "pattern": "89ee4889dfba040000004889442408e8",
+            "offset": 56624,
+            "pattern": "89 ee 48 89 df ba 04 00",
             "pattern_offset": -32
         },
         "luaL_checknumber": {
-            "offset": 56896,
-            "pattern": "89ee4889dfba03000000e8",
+            "offset": 56944,
+            "pattern": "89 ee 48 89 df ba 03 00",
             "pattern_offset": -68
         },
         "luaL_checkoption": {
-            "offset": 56752,
-            "pattern": "4c89e24c89efbe????????31c0e8",
+            "offset": 56800,
+            "pattern": "4c 89 e2 4c 89 ef be",
             "pattern_offset": -88
         },
         "luaL_checkstack": {
-            "offset": 56384,
-            "pattern": "554889d5534889fb4883ec08e8",
+            "offset": 56432,
+            "pattern": "55 48 89 d5 53 48 89 fb 48 83 ec 08",
             "pattern_offset": 0
         },
         "luaL_checktype": {
-            "offset": 56448,
-            "pattern": "4439e0741a",
+            "offset": 56496,
+            "pattern": "44 39 e0 74 1a",
             "pattern_offset": -17
         },
         "luaL_checkudata": {
-            "offset": 56240,
-            "pattern": "41554989d541545589f5534889fb4883ec08",
+            "offset": 56288,
+            "pattern": "41 55 49 89 d5 41 54 55 89 f5 53",
             "pattern_offset": 0
         },
         "luaL_error": {
-            "offset": 55568,
-            "pattern": "0f294424500f294c24600f295424700f299c24800000000f29a424900000000f29ac24a00000000f29b424b00000000f29bc24c0000000488d8424f0000000",
+            "offset": 55616,
+            "pattern": "0f 29 44 24 50 0f 29 4c 24 60 0f 29 54 24 70 0f 29 9c 24 80 00 00 00 0f 29 a4 24 90 00 00 00 0f 29 ac 24 a0 00 00 00 0f 29 b4 24 b0 00 00 00 0f 29 bc 24 c0 00 00 00 48 8d 84 24 f0",
             "pattern_offset": -36
         },
         "luaL_findtable": {
-            "offset": 57552,
-            "pattern": "41574189cf415641be01000000415541544989d455",
+            "offset": 57600,
+            "pattern": "41 57 41 89 cf 41 56 41",
             "pattern_offset": 0
         },
         "luaL_getmetafield": {
-            "offset": 57296,
-            "pattern": "554889d5534889fb4883ec18e8",
+            "offset": 57344,
+            "pattern": "55 48 89 d5 53 48 89 fb 48 83 ec 18",
             "pattern_offset": 0
         },
         "luaL_gsub": {
-            "offset": 58528,
-            "pattern": "41574989ff4889d741564989ce415541544989d4",
+            "offset": 58576,
+            "pattern": "41 57 49 89 ff 48 89 d7",
             "pattern_offset": 0
         },
         "luaL_loadbuffer": {
-            "offset": 59936,
-            "pattern": "4883ec18488934244889542408be????????4889e2e8",
+            "offset": 59984,
+            "pattern": "48 83 ec 18 48 89 34 24 48 89 54",
             "pattern_offset": 0
         },
         "luaL_loadstring": {
-            "offset": 59968,
-            "pattern": "554889fd4889f7534889f34883ec18e8",
+            "offset": 60016,
+            "pattern": "55 48 89 fd 48 89 f7 53 48 89 f3 48 83 ec 18",
             "pattern_offset": 0
         },
         "luaL_newmetatable": {
-            "offset": 56128,
-            "pattern": "554889f24889f5bef0d8ffff534889fb4883ec08e8",
+            "offset": 56176,
+            "pattern": "55 48 89 f2 48 89 f5 be",
             "pattern_offset": 0
         },
         "luaL_openlib": {
-            "offset": 57872,
-            "pattern": "b901000000ba????????bef0d8ffff4889dfe8",
+            "offset": 57920,
+            "pattern": "b9 01 00 00 00 ba ?? ?? ?? ?? be",
             "pattern_offset": -70
         },
         "luaL_openlibs": {
-            "offset": 60032,
-            "pattern": "4883c4084889ef31d25b5dbe01000000e9",
+            "offset": 60080,
+            "pattern": "48 83 c4 08 48 89 ef 31",
             "pattern_offset": -145
         },
         "luaL_optboolean": {
-            "offset": 57200,
-            "pattern": "41544189d45589f5534889fbe8????????85c0",
+            "offset": 57248,
+            "pattern": "41 54 41 89 d4 55 89 f5 53 48 89 fb e8 ?? ?? ?? ?? 85",
             "pattern_offset": 0
         },
         "luaL_optinteger": {
-            "offset": 57248,
-            "pattern": "5b5d4c89e0415cc3",
+            "offset": 57296,
+            "pattern": "5b 5d 4c 89 e0 41 5c c3",
             "pattern_offset": -40
         },
         "luaL_optlstring": {
-            "offset": 56640,
-            "pattern": "41554989d541544989cc5589f5534889fb",
+            "offset": 56688,
+            "pattern": "41 55 49 89 d5 41 54 49",
             "pattern_offset": 0
         },
         "luaL_optnumber": {
-            "offset": 56992,
-            "pattern": "5589f5534889fb4883ec18f20f11442408e8",
+            "offset": 57040,
+            "pattern": "55 89 f5 53 48 89 fb 48 83 ec 18 f2",
             "pattern_offset": 0
         },
         "luaL_prepbuffer": {
-            "offset": 58288,
-            "pattern": "488d43185bc3",
+            "offset": 58336,
+            "pattern": "48 8d 43 18 5b c3",
             "pattern_offset": -32
         },
         "luaL_pushresult": {
-            "offset": 58496,
-            "pattern": "8b7308488b7b10e8",
+            "offset": 58544,
+            "pattern": "8b 73 08 48 8b 7b 10 e8",
             "pattern_offset": -9
         },
         "luaL_ref": {
-            "offset": 58976,
-            "pattern": "41558d860f27000041545589f5534889fb4883ec08",
+            "offset": 59024,
+            "pattern": "41 55 8d 86 0f 27 00 00",
             "pattern_offset": 0
         },
         "luaL_unref": {
-            "offset": 59200,
-            "pattern": "89de4889ef31d25b5d415ce9",
+            "offset": 59248,
+            "pattern": "89 de 48 89 ef 31 d2 5b",
             "pattern_offset": -65
         },
         "luaL_where": {
-            "offset": 55424,
-            "pattern": "488d542438be????????4889df31c0e8",
+            "offset": 55472,
+            "pattern": "48 8d 54 24 38 be ?? ?? ?? ?? 48",
             "pattern_offset": -104
         },
         "lua_atpanic": {
             "offset": 624,
-            "pattern": "488b5720488b82980000004889b298000000c3",
+            "pattern": "48 8b 57 20 48 8b 82 98",
             "pattern_offset": 0
         },
         "lua_call": {
             "offset": 4624,
-            "pattern": "554863c648c7c6f0ffffff48c1e00489d5534829c64889fb",
+            "pattern": "55 48 63 c6 48 c7 c6 f0",
             "pattern_offset": 0
         },
         "lua_checkstack": {
             "offset": 384,
-            "pattern": "554863ee534889fb4883ec08488b4f104889ca482b5718",
+            "pattern": "55 48 63 ee 53 48 89 fb",
             "pattern_offset": -10
         },
         "lua_close": {
-            "offset": 38304,
-            "pattern": "488b435031d2be????????4889df48894328488b006689536031d2",
+            "offset": 38336,
+            "pattern": "48 8b 43 50 31 d2 be",
             "pattern_offset": -64
         },
         "lua_concat": {
             "offset": 5392,
-            "pattern": "488b5310482b531889ee4889df48c1fa0483ea01e8",
+            "pattern": "48 8b 53 10 48 2b 53 18 89",
             "pattern_offset": -39
         },
         "lua_createtable": {
             "offset": 3552,
-            "pattern": "c74508050000004889450048834310104883c4185b5dc3",
+            "pattern": "c7 45 08 05 00 00 00 48",
             "pattern_offset": -44
         },
         "lua_dump": {
             "offset": 4944,
-            "pattern": "488b40204889d14531c04889f24889c6e9",
+            "pattern": "48 8b 40 20 48 89 d1 45",
             "pattern_offset": -26
         },
         "lua_equal": {
             "offset": 1536,
-            "pattern": "5b85c00f95c05d0fb6c0415cc3",
+            "pattern": "5b 85 c0 0f 95 c0 5d 0f",
             "pattern_offset": -83
         },
         "lua_error": {
             "offset": 5312,
-            "pattern": "4883ec08e8????????31c04883c408c3",
+            "pattern": "48 83 ec 08 e8 ?? ?? ?? ?? 31 c0",
             "pattern_offset": 0
         },
         "lua_gc": {
             "offset": 5008,
-            "pattern": "55b8ffffffff4889fd534883ec0883fe08488b5f207713",
+            "pattern": "55 b8 ff ff ff ff 48 89",
             "pattern_offset": 0
         },
         "lua_getfenv": {
             "offset": 3744,
-            "pattern": "8b500883fa07741f",
-            "pattern_offset": -9
+            "pattern": "48 8b 10 48 8b 43 10 48",
+            "pattern_offset": -80
         },
         "lua_getfield": {
             "offset": 3344,
-            "pattern": "488b4b104889e24c89e64889df48890424c744240804000000e8",
+            "pattern": "48 8b 4b 10 48 89 e2 4c",
             "pattern_offset": -44
         },
         "lua_getinfo": {
             "offset": 8832,
-            "pattern": "488b4020488b542408488b742410488b7c2418488b481848894c2428e8",
-            "pattern_offset": -212
+            "pattern": "49 8b 47 20 48 8b 70 40",
+            "pattern_offset": -455
         },
         "lua_getmetatable": {
             "offset": 3648,
-            "pattern": "488b5310488902c7420805000000b80100000048834310105bc3",
+            "pattern": "48 8b 53 10 48 89 02 c7 42 08 05",
             "pattern_offset": -35
         },
         "lua_getstack": {
             "offset": 8512,
-            "pattern": "488b410883ee01488b0080780a007503",
+            "pattern": "48 8b 41 08 83 ee 01 48",
             "pattern_offset": -16
         },
         "lua_gettable": {
             "offset": 3312,
-            "pattern": "488b4b104889df4889c65b488d51f04889d1e9",
+            "pattern": "48 8b 4b 10 48 89 df 48",
             "pattern_offset": -9
         },
         "lua_gettop": {
             "offset": 736,
-            "pattern": "488b4710482b471848c1f804c3",
+            "pattern": "48 8b 47 10 48 2b 47 18",
             "pattern_offset": 0
         },
         "lua_getupvalue": {
             "offset": 5696,
-            "pattern": "5589d5534889fb4883ec10e8",
-            "pattern_offset": 0
+            "pattern": "48 8b 4c 24 08 48 8b 53",
+            "pattern_offset": -39
         },
         "lua_insert": {
             "offset": 928,
@@ -257,87 +257,87 @@
         },
         "lua_iscfunction": {
             "offset": 1328,
-            "pattern": "488b0031d280780a000f95c289d0c3",
+            "pattern": "48 8b 00 31 d2 80 78 0a",
             "pattern_offset": -16
         },
         "lua_isnumber": {
             "offset": 1360,
-            "pattern": "4889c7b801000000837f08037411",
+            "pattern": "48 89 c7 b8 01 00 00 00",
             "pattern_offset": -9
         },
         "lua_isstring": {
             "offset": 1408,
-            "pattern": "8b400883e80383f8010f96c00fb6c0c3",
+            "pattern": "8b 40 08 83 e8 03 83 f8",
             "pattern_offset": -13
         },
         "lua_lessthan": {
             "offset": 1648,
-            "pattern": "4889df4889ee4889c25b5d415ce9",
+            "pattern": "48 89 df 48 89 ee 48 89",
             "pattern_offset": -46
         },
         "lua_load": {
             "offset": 4880,
-            "pattern": "55b8????????4889fd534889cb4883ec384885c94889d1",
-            "pattern_offset": 0
+            "pattern": "48 89 fd 53 48 89 cb",
+            "pattern_offset": -6
         },
         "lua_newstate": {
-            "offset": 37744,
-            "pattern": "488d90c800000048c70000000000c6400808c680e800000021c640096131c94889502048c7404000000000",
+            "offset": 37760,
+            "pattern": "48 8d 90 c8 00 00 00 48",
             "pattern_offset": -37
         },
         "lua_newthread": {
             "offset": 656,
-            "pattern": "488b5310488902c742080800000048834310105bc3",
+            "pattern": "48 8b 53 10 48 89 02 c7 42 08 08",
             "pattern_offset": -35
         },
         "lua_newuserdata": {
             "offset": 5552,
-            "pattern": "488b5310488902c74208070000004883c02848834310104883c4105bc3",
+            "pattern": "48 8b 53 10 48 89 02 c7 42 08 07",
             "pattern_offset": -60
         },
         "lua_next": {
             "offset": 5328,
-            "pattern": "488b4b10488b304889df488d51f0e8",
+            "pattern": "48 8b 4b 10 48 8b 30 48",
             "pattern_offset": -9
         },
         "lua_objlen": {
             "offset": 2048,
-            "pattern": "488b03488b40104883c4085b5dc3",
+            "pattern": "48 8b 03 48 8b 40 10 48",
             "pattern_offset": -104
         },
         "lua_pcall": {
             "offset": 4720,
-            "pattern": "488b47404531c04963f448c7c1f0ffffff4889e248c1e6044889df896c2408",
+            "pattern": "48 8b 47 40 45 31 c0 49",
             "pattern_offset": -20
         },
         "lua_pushboolean": {
             "offset": 3200,
-            "pattern": "488b471031d285f60f95c28910c74008010000004883471010c3",
+            "pattern": "48 8b 47 10 31 d2 85 f6",
             "pattern_offset": 0
         },
         "lua_pushcclosure": {
             "offset": 2976,
-            "pattern": "41544989f45589d55380bfc0000000004889fb7412",
-            "pattern_offset": 0
+            "pattern": "48 83 ea 10 48 01 d1 48",
+            "pattern_offset": -128
         },
         "lua_pushfstring": {
             "offset": 2768,
-            "pattern": "488d8424f0000000488d5424184889dfc744241810000000c744241c300000004889442420488d4424304889442428",
+            "pattern": "48 8d 84 24 f0 00 00 00 48 8d",
             "pattern_offset": -116
         },
         "lua_pushinteger": {
             "offset": 2448,
-            "pattern": "f2480f2ac6488b4710c7400803000000f20f11004883471010c3",
+            "pattern": "f2 48 0f 2a c6 48 8b 47",
             "pattern_offset": 0
         },
         "lua_pushlightuserdata": {
             "offset": 3232,
-            "pattern": "488b4710488930c74008020000004883471010c3",
+            "pattern": "48 8b 47 10 48 89 30 c7",
             "pattern_offset": 0
         },
         "lua_pushlstring": {
             "offset": 2480,
-            "pattern": "c74508040000004889450048834310104883c4185b5dc3",
+            "pattern": "c7 45 08 04 00 00 00 48 89 45 00 48 83 43 10 10 48 83 c4 18",
             "pattern_offset": -44
         },
         "lua_pushnil": {
@@ -347,17 +347,17 @@
         },
         "lua_pushnumber": {
             "offset": 2416,
-            "pattern": "488b4710f20f1100c74008030000004883471010c3",
+            "pattern": "48 8b 47 10 f2 0f 11 00",
             "pattern_offset": 0
         },
         "lua_pushstring": {
             "offset": 2592,
-            "pattern": "554889fd534889f34883ec084885f6741f",
-            "pattern_offset": 0
+            "pattern": "48 8b 47 10 c7 40 08 00 00 00 00 48 83 47 10 10 48",
+            "pattern_offset": -48
         },
         "lua_pushthread": {
             "offset": 3264,
-            "pattern": "488b4710488938c7400808000000488b472048834710104839b8b00000000f94c00fb6c0",
+            "pattern": "48 8b 47 10 48 89 38 c7",
             "pattern_offset": 0
         },
         "lua_pushvalue": {
@@ -372,28 +372,28 @@
         },
         "lua_rawequal": {
             "offset": 1456,
-            "pattern": "5b4889ef4889c65d415ce9",
+            "pattern": "5b 48 89 ef 48 89 c6 5d",
             "pattern_offset": -46
         },
         "lua_rawget": {
             "offset": 3440,
-            "pattern": "488b4b10488b38488d71f0e8",
-            "pattern_offset": -9
+            "pattern": "48 8b 53 10 48 8b 08 48 89 4a",
+            "pattern_offset": -25
         },
         "lua_rawgeti": {
             "offset": 3488,
-            "pattern": "488b3889eee8",
-            "pattern_offset": -16
+            "pattern": "48 8b 53 10 48 8b 08 48 89 0a 8b 40 08 89 42 08 48 83 43 10 10 48",
+            "pattern_offset": -26
         },
         "lua_rawset": {
             "offset": 4000,
-            "pattern": "488b6b10488b304889df4989c4488d55e0e8",
-            "pattern_offset": -12
+            "pattern": "48 8b 53 10 48 83 ea 20",
+            "pattern_offset": -104
         },
         "lua_rawseti": {
             "offset": 4128,
-            "pattern": "41554189d5415455534889fb4883ec08e8",
-            "pattern_offset": 0
+            "pattern": "48 83 ea 10 48 89 53 10",
+            "pattern_offset": -85
         },
         "lua_remove": {
             "offset": 848,
@@ -407,92 +407,92 @@
         },
         "lua_resume": {
             "offset": 14464,
-            "pattern": "488b53104863f683c00148c1e60466894360668943624889df4829f2",
+            "pattern": "48 8b 53 10 48 63 f6 83",
             "pattern_offset": -58
         },
         "lua_setfenv": {
             "offset": 4416,
-            "pattern": "488b4b108b44240c4883e91048894b104883c4105bc3",
+            "pattern": "48 8b 4b 10 8b 44 24 0c 48 83",
             "pattern_offset": -119
         },
         "lua_setfield": {
             "offset": 3904,
-            "pattern": "48890424488b43104889e24c89e64889dfc744240804000000488d48f0e8",
+            "pattern": "48 89 04 24 48 8b 43 10",
             "pattern_offset": -44
         },
         "lua_setmetatable": {
             "offset": 4256,
-            "pattern": "488b4320488994c8e000000048836b1010b8010000005bc3",
+            "pattern": "48 8b 43 20 48 89 94 c8",
             "pattern_offset": -80
         },
         "lua_settable": {
             "offset": 3856,
-            "pattern": "488b53104889df4889c6488d4af04883ea20e8",
+            "pattern": "48 8b 53 10 48 89 df 48",
             "pattern_offset": -9
         },
         "lua_settop": {
             "offset": 752,
-            "pattern": "4883c60148c1e60448017710c3",
-            "pattern_offset": -75
+            "pattern": "48 8d 50 10 48 89 57 10",
+            "pattern_offset": -32
         },
         "lua_setupvalue": {
             "offset": 5776,
-            "pattern": "41544189d455534889fb4883ec20e8",
-            "pattern_offset": 0
+            "pattern": "48 8b 53 10 48 8d 4a f0",
+            "pattern_offset": -46
         },
         "lua_status": {
             "offset": 4992,
-            "pattern": "0fb6470ac3",
+            "pattern": "0f b6 47 0a c3",
             "pattern_offset": 0
         },
         "lua_toboolean": {
             "offset": 1840,
-            "pattern": "83f901b201740b",
+            "pattern": "83 f9 01 b2 01 74 0b",
             "pattern_offset": -14
         },
         "lua_tocfunction": {
             "offset": 2192,
-            "pattern": "4889c231c0837a0806750d",
+            "pattern": "48 89 c2 31 c0 83 7a 08",
             "pattern_offset": -5
         },
         "lua_tointeger": {
             "offset": 1776,
-            "pattern": "f20f1000f2480f2cc04883c418c3",
+            "pattern": "f2 0f 10 00 f2 48 0f 2c",
             "pattern_offset": -31
         },
         "lua_tolstring": {
             "offset": 1888,
-            "pattern": "41544189f4554889d5534889fbe8",
-            "pattern_offset": 0
+            "pattern": "48 8b 10 48 8b 52 10 48",
+            "pattern_offset": -112
         },
         "lua_tonumber": {
             "offset": 1728,
-            "pattern": "f20f10004883c418c3",
+            "pattern": "f2 0f 10 00 48 83 c4 18",
             "pattern_offset": -35
         },
         "lua_topointer": {
             "offset": 2304,
-            "pattern": "83780808772e",
+            "pattern": "83 78 08 08 77 2e",
             "pattern_offset": -12
         },
         "lua_tothread": {
             "offset": 2272,
-            "pattern": "31d2837808087503",
+            "pattern": "31 d2 83 78 08 08 75 03",
             "pattern_offset": -5
         },
         "lua_touserdata": {
             "offset": 2224,
-            "pattern": "8b500883fa02741b",
+            "pattern": "8b 50 08 83 fa 02 74 1b",
             "pattern_offset": -5
         },
         "lua_type": {
             "offset": 1264,
-            "pattern": "b8ffffffffc3",
+            "pattern": "b8 ff ff ff ff c3",
             "pattern_offset": -17
         },
         "lua_typename": {
             "offset": 1296,
-            "pattern": "83feff7413",
+            "pattern": "83 fe ff 74 13",
             "pattern_offset": 0
         },
         "lua_xmove": {
@@ -502,9 +502,14 @@
         },
         "lua_yield": {
             "offset": 14656,
-            "pattern": "488b43104863f5c6430a0148c1e6044829f0488943184883c408b8ffffffff",
+            "pattern": "48 8b 43 10 48 63 f5 c6",
             "pattern_offset": -33
+        },
+        "luaopen_io": {
+            "offset": 64400,
+            "pattern": "48 89 FB E8 ?? ?? ?? ?? 48 89 DF BE FF FF FF FF",
+            "pattern_offset": -502
         }
     },
-    "version": 605310
+    "version": 664111
 }

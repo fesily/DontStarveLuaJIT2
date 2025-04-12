@@ -445,7 +445,8 @@ namespace function_relocation {
                 {"lua_remove"s, {0, "48 83 E9 10  48 89 4B 10 5B C3"s, -0x44}},
                 {"lua_pushnil"s, {0, "48 8B 47 10 C7 40 08 00 00 00 00 48 83 47 10 10 C3"s, 0x0}},
                 {"lua_replace"s, {0, "48 8B 53 10 81 FD EE D8"s, -0x18}},
-                {"lua_pushvfstring"s, {0, "C7 44 24 0C 30 00 00 00 48 89 44 24 18 E8 ?? ?? ?? ?? 48  81 C4 D8 00 00 00 C3"s, -0x75}}
+                {"lua_pushvfstring"s, {0, "C7 44 24 0C 30 00 00 00 48 89 44 24 18 E8 ?? ?? ?? ?? 48  81 C4 D8 00 00 00 C3"s, -0x75}},
+                {"luaopen_io"s, {0, "48 89 FB E8 ?? ?? ?? ?? 48 89 DF BE FF FF FF FF"s, -0x6}},
 #elifdef __APPLE__
                 //season： use different register
                 {"lua_rawset"s, {0, "49 89 C6 49 8B 5F 10 48 8B 30 48 8D 53 E0 4C 89 FF E8"s, -0xD}},
@@ -454,8 +455,8 @@ namespace function_relocation {
                 {"lua_rawgeti"s, {0, "89 41 08 48 83 43 10 10 48 83 C4 08"s, -0x24}},
                 {"lua_getfield"s, {0, "C7 42 08 04 00 00 00 48 8B 4B 10 48 89 DF"s, -0x33}},
                 {"lua_pushvfstring"s, {0, "48 3B 48 70 72 08 48 89 DF E8 ?? ?? ?? ?? 48 89 DF 4C 89 FE"s, -0x1f}},
-                {"lua_pushstring"s,
-                 {0, "49 8B 46 10 C7 40 08 00 00 00 00 48 83 C0 10 49 89 46 10 48 83 C4 08"s, -0x2c}},
+                {"lua_pushstring"s, {0, "49 8B 46 10 C7 40 08 00 00 00 00 48 83 C0 10 49 89 46 10 48 83 C4 08"s, -0x2c}},
+                {"luaopen_io"s, {0, "31 F6 E8 ?? ?? ?? ?? 48 89 DF BE 02 00 00 00 BA 01 00 00 00 E8"s, -0x3e}}
 #endif
         };
         spdlog::get(logger_name)->warn("fix_func_address_by_signature: {}", original.name);
