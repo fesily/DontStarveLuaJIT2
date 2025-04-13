@@ -59,6 +59,27 @@
             ]
         },
         {
+            "name": "(Linux) debug docker server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/root/server_dst/bin64/dontstarve_dedicated_server_nullrenderer_x64",
+            "args": ["-cluster", "DSTWhalesCluster"],
+            "stopAtConnect": true,
+            "cwd": "/root/server_dst/bin64",
+            "environment": [
+                {"name": "LD_PRELOAD", "value": "./lib64/libInjector.so"}
+                //,{"name": "LD_DEBUG", "value": "libs"}
+            ],
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
             "name": "(Linux) debug signature_creater",
             "type": "cppdbg",
             "request": "launch",
