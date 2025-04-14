@@ -164,6 +164,7 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 | 18**30   | 20RMB| 无 | (兼容mod) |
 | 18**30   | 20RMB| 兼容虚拟机环境 | |
 | Dv**ce   | 100RMB| 无 | (兼容mod) |
+| 18**30   | 30RMB| 修复BUG | |
 
 # 捐赠方式
 
