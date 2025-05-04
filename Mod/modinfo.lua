@@ -1,3 +1,4 @@
+---@diagnostic disable: lowercase-global
 local lc = locale
 
 local function translate(t)
@@ -43,6 +44,11 @@ priority = 2e53
 icon_atlas = "modicon.xml"
 icon = "modicon.tex"
 
+local toggle = {
+    {description = translate({ en = "On",  zh = "启用" }), data = true},
+    {description = translate({ en = "Off", zh = "禁用" }), data = false},
+}
+
 configuration_options = {
     {
         name = "EnabledJIT",
@@ -51,10 +57,7 @@ configuration_options = {
             en = "Recommend to turn this off if there is severe lag in the game",
             zh = "在游戏中卡顿现象很严重的建议关闭"
         }),
-        options = {
-            { description = "On",  data = true },
-            { description = "Off", data = false },
-        },
+        options = toggle,
         default = true
     },
     {
@@ -169,30 +172,21 @@ configuration_options = {
             en = "May become faster or slower.",
             zh = "可能更快, 可能更慢."
         }),
-        options = {
-            { description = "On",  data = true },
-            { description = "Off", data = false },
-        },
+        options = toggle,
         default = false,
     },
     {
         name = "ModBlackList",
         label = translate({ en = "Mod JIT Blacklist", zh = "MODJit黑名单" }),
         hover = translate({ en = "Some mods may not be appropriate for JIT", zh = "有些mod可能写的特别,不合适jit模式" }),
-        options = {
-            { description = "On",  data = true },
-            { description = "Off", data = false },
-        },
+        options = toggle,
         default = false
     },
     {
         name = "DisableJITWhenServer",
         label = translate({ en = "Disable JIT on Server", zh = "服务器禁用luajit" }),
         hover = translate({ en = "Disable luajit on the server process", zh = "服务器进程禁用luajit" }),
-        options = {
-            { description = "On",  data = true },
-            { description = "Off", data = false },
-        },
+        options = toggle,
         default = false
     },
     {

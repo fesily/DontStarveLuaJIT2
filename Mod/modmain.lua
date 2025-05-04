@@ -389,6 +389,32 @@ local function main()
 						}))
 				end
 			end
+
+			for _,v in pairs(self.dialog.actions.items) do
+				if v.name == "应用" then
+					local old_onclick = v.onclick
+					v.onclick = function(...)
+						old_onclick(...)
+						local config
+						local fp = io.open(luajit_config_path, "r")
+						if not fp then return end
+						local data = fp:read("*a")
+						fp:close()
+						if data and string.len(data) > 0 then
+							config = json.decode(data)
+							local fp = io.open(luajit_config_path, "w")
+							if fp then
+								config.logic_fps = GetModConfigData("TargetLogincFPS",InGamePlay())
+								fp:write(json.encode(config))
+								fp:close()
+								injector.DS_LUAJIT_set_target_fps(config.logic_fps, 2)
+							end
+						end
+					end
+					break
+				end
+			end
+
 			local actions = self.dialog.actions
 			if actions then
 				self.uninstall = actions:AddItem(translate({ en = "uninstall mod", zh = "卸载模组" }),
@@ -417,7 +443,7 @@ local function main()
 				actions:SetPosition(-(button_spacing * (buttons_len - 1)) / 2, button_height)
 			end
 		end
-		local ModConfigurationScreen = require "screens/redux/modconfigurationscreen"
+		local ModConfigurationScreen = KnownModIndex:IsModEnabledAny("workshop-3317960157") and require "widgets/remi_newmodconfigurationscreen" or require "screens/redux/modconfigurationscreen"
 		local old_ctor = ModConfigurationScreen._ctor
 		ModConfigurationScreen._ctor = function(self, _modname, client_config, ...)
 			old_ctor(self, _modname, client_config, ...)
