@@ -275,6 +275,28 @@ local function main()
 		end
 	end)
 
+	local function create_luajit_config(modmain_path, server_disable_luajit, logic_fps, config)
+		if config == nil then
+			return {
+				modmain_path = modmain_path,
+				server_disable_luajit = server_disable_luajit,
+				logic_fps = logic_fps,
+			}
+		else
+			config.modmain_path = modmain_path or config.modmain_path
+			config.server_disable_luajit = server_disable_luajit or config.server_disable_luajit
+			config.logic_fps = logic_fps or config.logic_fps
+		end
+	end
+
+	local function write_luajit_config(config)
+		local fp = io.open(luajit_config_path, "w")
+		if fp then
+			fp:write(json.encode(config))
+			fp:close()
+		end
+	end
+
 	local modmain_path = debug.getinfo(1).source
 	do
 		local pos = modmain_path:find(prefix, 1, true)
@@ -297,16 +319,8 @@ local function main()
 			end
 		end
 		if not TheNet:IsDedicated() then
-			local fp = io.open(luajit_config_path, "w")
-			if fp then
-				local config = {
-					modmain_path = modmain_path,
-					server_disable_luajit = GetModConfigData("DisableJITWhenServer"),
-					logic_fps = GetModConfigData("TargetLogincFPS"),
-				}
-				fp:write(json.encode(config))
-				fp:close()
-			end
+			write_luajit_config(create_luajit_config(modmain_path, GetModConfigData("DisableJITWhenServer"),
+				GetModConfigData("TargetLogincFPS")))
 		end
 	end
 	if GetModConfigData("EnableTracy") == "on" then
@@ -323,26 +337,30 @@ local function main()
 		injector.DS_LUAJIT_set_frame_gc_time(tonumber(GetModConfigData("EnbaleFrameGC")))
 	end
 
-	if GetModConfigData("TargetRenderFPS") then
-		local targetfps = GetModConfigData("TargetRenderFPS")
-		injector.DS_LUAJIT_set_target_fps(targetfps, 1)
-		TheSim:SetNetbookMode(false);
-	end
+	local function load_prefix_config(get_local_config)
+		if GetModConfigData("TargetRenderFPS", get_local_config) then
+			local targetfps = GetModConfigData("TargetRenderFPS")
+			injector.DS_LUAJIT_set_target_fps(targetfps, 1)
+			TheSim:SetNetbookMode(false);
+		end
 
-	if GetModConfigData("TargetLogincFPS") then
-		local targetfps = GetModConfigData("TargetLogincFPS")
-		if injector.DS_LUAJIT_set_target_fps(targetfps, 2) ~= targetfps then
-			print("[luajit] diff logic fps, need restart")
-			scheduler:ExecuteInTime(0, function ()
-				c_reset()
-			end)
+		if GetModConfigData("TargetLogincFPS") then
+			local targetfps = GetModConfigData("TargetLogincFPS", get_local_config)
+			if injector.DS_LUAJIT_set_target_fps(targetfps, 2) ~= targetfps then
+				print("[luajit] diff logic fps, need restart")
+				scheduler:ExecuteInTime(0, function()
+					c_reset()
+				end)
+			end
+		end
+
+		if GetModConfigData("ClientNetWorkTick", get_local_config) then
+			local targetfps = GetModConfigData("ClientNetWorkTick")
+			injector.DS_LUAJIT_replace_client_network_tick(targetfps)
 		end
 	end
+	load_prefix_config()
 
-	if GetModConfigData("ClientNetWorkTick") then
-		local targetfps = GetModConfigData("ClientNetWorkTick")
-		injector.DS_LUAJIT_replace_client_network_tick(targetfps)
-	end
 	local root_dictory = modmain_path:gsub("modmain.lua", "")
 	AddGamePostInit(function()
 		local PopupDialogScreen = require "screens/popupdialog"
@@ -405,26 +423,13 @@ local function main()
 				end
 			end
 
-			for _,v in pairs(self.dialog.actions.items) do
+			for _, v in pairs(self.dialog.actions.items) do
 				if v.name == "应用" then
 					local old_onclick = v.onclick
 					v.onclick = function(...)
 						old_onclick(...)
-						local config
-						local fp = io.open(luajit_config_path, "r")
-						if not fp then return end
-						local data = fp:read("*a")
-						fp:close()
-						if data and string.len(data) > 0 then
-							config = json.decode(data)
-							local fp = io.open(luajit_config_path, "w")
-							if fp then
-								config.logic_fps = GetModConfigData("TargetLogincFPS",InGamePlay())
-								fp:write(json.encode(config))
-								fp:close()
-								injector.DS_LUAJIT_set_target_fps(config.logic_fps, 2)
-							end
-						end
+						write_luajit_config(create_luajit_config(nil, nil, GetModConfigData("TargetLogincFPS", InGamePlay()), read_config_file()))
+						load_prefix_config(InGamePlay())
 					end
 					break
 				end
@@ -458,7 +463,8 @@ local function main()
 				actions:SetPosition(-(button_spacing * (buttons_len - 1)) / 2, button_height)
 			end
 		end
-		local ModConfigurationScreen = KnownModIndex:IsModEnabledAny("workshop-3317960157") and require "widgets/remi_newmodconfigurationscreen" or require "screens/redux/modconfigurationscreen"
+		local ModConfigurationScreen = KnownModIndex:IsModEnabledAny("workshop-3317960157") and
+			require "widgets/remi_newmodconfigurationscreen" or require "screens/redux/modconfigurationscreen"
 		local old_ctor = ModConfigurationScreen._ctor
 		ModConfigurationScreen._ctor = function(self, _modname, client_config, ...)
 			old_ctor(self, _modname, client_config, ...)
