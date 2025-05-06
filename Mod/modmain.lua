@@ -95,12 +95,12 @@ local function main()
 			ClientNetWorkTick = true,
 		}
 		local old_GetModConfigData = GetModConfigData
-		function GetModConfigData(key)
+		function GetModConfigData(key, get_local_config)
 			if InvalidOptions[key] then
 				print("[luajit] InvalidOptions: " .. key)
 				return nil
 			end
-			return old_GetModConfigData(key)
+			return old_GetModConfigData(key, get_local_config)
 		end
 	end
 	local function inject_server_only_mod()
