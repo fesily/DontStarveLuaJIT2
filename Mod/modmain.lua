@@ -338,28 +338,33 @@ local function main()
 	end
 
 	local function load_prefix_config(get_local_config)
+		local needrestart = false
 		if GetModConfigData("TargetRenderFPS", get_local_config) then
-			local targetfps = GetModConfigData("TargetRenderFPS")
+			local targetfps = GetModConfigData("TargetRenderFPS", get_local_config)
 			injector.DS_LUAJIT_set_target_fps(targetfps, 1)
 			TheSim:SetNetbookMode(false);
 		end
 
-		if GetModConfigData("TargetLogincFPS") then
+		if GetModConfigData("TargetLogincFPS", get_local_config) then
 			local targetfps = GetModConfigData("TargetLogincFPS", get_local_config)
 			if injector.DS_LUAJIT_set_target_fps(targetfps, 2) ~= targetfps then
-				print("[luajit] diff logic fps, need restart")
-				scheduler:ExecuteInTime(0, function()
-					c_reset()
-				end)
+				needrestart = true
 			end
 		end
 
 		if GetModConfigData("ClientNetWorkTick", get_local_config) then
-			local targetfps = GetModConfigData("ClientNetWorkTick")
+			local targetfps = GetModConfigData("ClientNetWorkTick", get_local_config)
 			injector.DS_LUAJIT_replace_client_network_tick(targetfps)
 		end
+		return needrestart
 	end
-	load_prefix_config()
+
+	if load_prefix_config() then
+		print("[luajit] diff logic fps, need restart")
+		scheduler:ExecuteInTime(0, function()
+			c_reset()
+		end)
+	end
 
 	local root_dictory = modmain_path:gsub("modmain.lua", "")
 	AddGamePostInit(function()
