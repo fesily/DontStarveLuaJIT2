@@ -88,6 +88,21 @@ local function main()
 		return
 	end
 
+	if jit.os ~= "Windows" then
+		local InvalidOptions = {
+			TargetRenderFPS = true,
+			TargetLogincFPS = true,
+			ClientNetWorkTick = true,
+		}
+		local old_GetModConfigData = GetModConfigData
+		function GetModConfigData(key)
+			if InvalidOptions[key] then
+				print("[luajit] InvalidOptions: " .. key)
+				return nil
+			end
+			return old_GetModConfigData(key)
+		end
+	end
 	local function inject_server_only_mod()
 		local old_GetServerModNames = KnownModIndex.GetServerModNames
 		local old_GetServerModNamesTable = KnownModIndex.GetServerModNamesTable
