@@ -45,12 +45,12 @@ local function main()
 	end
 
 	if not hasluajit then
-		if should_show_dig() then
-			AddGamePostInit(function()
+		AddGamePostInit(function()
+			if should_show_dig() then
 				local PopupDialogScreen = require "screens/popupdialog"
 				local locale = LOC.GetLocaleCode()
 				local lc = locale
-	
+
 				local function translate(t)
 					t.zhr = t.zh
 					t.zht = t.zht or t.zh
@@ -83,8 +83,8 @@ local function main()
 							{ text = STRINGS.UI.MAINSCREEN.OK, cb = function() TheFrontEnd:PopScreen() end }
 						}))
 				end
-			end)
-		end
+			end
+		end)
 		return
 	end
 
@@ -433,7 +433,8 @@ local function main()
 					local old_onclick = v.onclick
 					v.onclick = function(...)
 						old_onclick(...)
-						write_luajit_config(create_luajit_config(nil, nil, GetModConfigData("TargetLogincFPS", InGamePlay()), read_config_file()))
+						write_luajit_config(create_luajit_config(nil, nil,
+							GetModConfigData("TargetLogincFPS", InGamePlay()), read_config_file()))
 						load_prefix_config(InGamePlay())
 					end
 					break
