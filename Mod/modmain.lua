@@ -385,9 +385,13 @@ local function main()
 				end
 
 				local btns = {}
+				local version_info = translate({
+					zh = "\n 模组版本:" .. modinfo.version .. " 模块版本:" .. version,
+					en = "\n Mod version:" .. modinfo.version .. " Module version:" .. version
+				})
 				local content = translate({
-					zh = [[当前luajit模组有更新,是否要执行更新?]],
-					en = "The current luajit mod has been updated, do you want to execute the update?"
+					zh = [[当前luajit模组有更新,是否要执行更新?]] .. version_info,
+					en = "The current luajit mod has been updated, do you want to execute the update?" .. version_info
 				})
 				if jit.os == "Windows" then
 					btns[#btns + 1] = {
@@ -398,8 +402,8 @@ local function main()
 					}
 				else
 					content = translate({
-						zh = [[当前luajit模组有更新,需要重新执行install.sh]],
-						en = "The current luajit mod has been updated, should execute install.sh again"
+						zh = [[当前luajit模组有更新,需要重新执行install.sh]] .. version_info,
+						en = "The current luajit mod has been updated, should execute install.sh again" .. version_info
 					})
 				end
 

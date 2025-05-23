@@ -34,6 +34,7 @@
 #include "ModuleSections.hpp"
 #include "disasm.h"
 #include "ScanCtx.hpp"
+#include "ProcessMutex.hpp"
 
 
 #if !ONLY_LUA51
@@ -735,7 +736,8 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         spdlog::error("can't find luamodule base address");
         return;
     }
-    
+    ProcessMutex mtx("DontStarveInjectorSignature");
+    std::lock_guard guard{mtx};
     auto res = SignatureUpdater::create_or_update(isClient, luaModuleSignature.target_address);
     if (!res) {
         showError(res.error());
