@@ -155,6 +155,8 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 
 # 捐赠人列表
 
+如果遗漏了你的捐赠,请联系我
+
 | 姓名 | 金额 | 原因         |模组id|
 |------|------|--------------|-----------|
 | Dv**ce   | 50RMB| 兼容MOD | [Accomplishments](https://steamcommunity.com/sharedfiles/filedetails/?id=2843097516)|
@@ -166,6 +168,7 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 | 18**30   | 20RMB| 兼容虚拟机环境 | |
 | Dv**ce   | 100RMB| 无 | (兼容mod) |
 | 18**30   | 30RMB| 修复BUG | |
+| 预*微笑   | 100RMB | MACOS | |
 
 # 捐赠方式
 
