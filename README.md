@@ -169,6 +169,7 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 | Dv**ce   | 100RMB| 无 | (兼容mod) |
 | 18**30   | 30RMB| 修复BUG | |
 | 预*微笑   | 100RMB | MACOS | |
+| 储*佛丝   | 50RMB | | |
 
 # 捐赠方式
 
