@@ -1,0 +1,33 @@
+FROM ubuntu:22.04 AS gcc_builder
+
+RUN apt update
+RUN apt install build-essential libmpfr-dev libgmp3-dev libmpc-dev wget -y
+RUN wget http://ftp.gnu.org/gnu/gcc/gcc-14.3.0/gcc-14.3.0.tar.gz
+RUN tar -xf gcc-14.3.0.tar.gz
+RUN cd gcc-14.3.0
+RUN ./configure -v --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --prefix=/usr/local/gcc-14.3.0 --enable-checking=release --enable-languages=c,c++ --disable-multilib --program-suffix=-14.3.0
+RUN make
+RUN make install
+
+RUN rm ./gcc-14.3.0.tar.gz && \
+    rm -rf ./gcc-14.3.0
+
+FROM ubuntu:22.04 AS dontstarveluajit2_builder
+
+RUN apt update && \
+    apt install -y cmake ninja-build python3 git
+    
+COPY --from=gcc_builder /usr/local/gcc-14.3.0 /usr/local/gcc-14.3.0
+RUN update-alternatives --install /usr/bin/g++ g++ /usr/local/gcc-14.3.0/bin/g++-14.3.0 14
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/local/gcc-14.3.0/bin/gcc-14.3.0 14
+
+RUN git clone https://github.com/fesily/dontstarveluajit2.git /dontstarveluajit2
+WORKDIR /dontstarveluajit2
+RUN git submodule update --init --recursive
+RUN chmod +x ./vcpkg/bootstrap-vcpkg.sh
+RUN bash -c ./vcpkg/bootstrap-vcpkg.sh
+ENV RUNVCPKG_VCPKG_ROOT=/dontstarveluajit2/vcpkg
+ENV VCPKG_ROOT=/dontstarveluajit2/vcpkg
+ENV RUNVCPKG_VCPKG_ROOT_OUT=/dontstarveluajit2/vcpkg
+RUN cmake --preset,ninja-multi-vcpkg,-DCMAKE_OSX_ARCHITECTURES=x86_64
+RUN cmake --build ./builds/ninja-multi-vcpkg --config RelWithDebInfo --target install

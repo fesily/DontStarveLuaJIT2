@@ -1,0 +1,34 @@
+
+FROM ubuntu:22.04 
+
+RUN apt update &&  apt install software-properties-common -y
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y
+RUN apt update
+RUN apt install -y ninja-build python3 git gcc-13 g++-13 curl zip unzip tar
+    
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 13
+RUN update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 13
+
+WORKDIR /opt/
+
+# make cmake
+RUN apt install -y libssl-dev wget make
+RUN wget https://cmake.org/files/v3.31/cmake-3.31.7.tar.gz
+RUN tar -zxvf cmake-3.31.7.tar.gz
+WORKDIR /opt/cmake-3.31.7
+RUN ./configure
+RUN make -j$(nproc)
+RUN make install
+RUN cmake --version
+
+RUN git clone https://github.com/fesily/dontstarveluajit2.git /dontstarveluajit2
+WORKDIR /dontstarveluajit2
+RUN git submodule update --init --recursive
+RUN chmod +x ./vcpkg/bootstrap-vcpkg.sh
+RUN bash -c ./vcpkg/bootstrap-vcpkg.sh
+ENV RUNVCPKG_VCPKG_ROOT=/dontstarveluajit2/vcpkg
+ENV VCPKG_ROOT=/dontstarveluajit2/vcpkg
+ENV RUNVCPKG_VCPKG_ROOT_OUT=/dontstarveluajit2/vcpkg
+RUN apt install -y pkg-config
+RUN cmake --preset ninja-multi-vcpkg
+RUN cmake --build ./builds/ninja-multi-vcpkg --config RelWithDebInfo --target install
