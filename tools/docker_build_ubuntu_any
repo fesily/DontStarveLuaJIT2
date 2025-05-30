@@ -15,11 +15,23 @@ RUN rm ./gcc-14.3.0.tar.gz && \
 FROM ubuntu:22.04 AS dontstarveluajit2_builder
 
 RUN apt update && \
-    apt install -y cmake ninja-build python3 git
+    apt install -y ninja-build python3 git gcc-13 g++-13 curl zip unzip tar pkg-config
     
 COPY --from=gcc_builder /usr/local/gcc-14.3.0 /usr/local/gcc-14.3.0
 RUN update-alternatives --install /usr/bin/g++ g++ /usr/local/gcc-14.3.0/bin/g++-14.3.0 14
 RUN update-alternatives --install /usr/bin/gcc gcc /usr/local/gcc-14.3.0/bin/gcc-14.3.0 14
+
+WORKDIR /opt/
+
+# make cmake
+RUN apt install -y libssl-dev wget make
+RUN wget https://cmake.org/files/v3.31/cmake-3.31.7.tar.gz
+RUN tar -zxvf cmake-3.31.7.tar.gz
+WORKDIR /opt/cmake-3.31.7
+RUN ./configure
+RUN make -j$(nproc)
+RUN make install
+RUN cmake --version
 
 RUN git clone https://github.com/fesily/dontstarveluajit2.git /dontstarveluajit2
 WORKDIR /dontstarveluajit2
