@@ -17,6 +17,12 @@
             "program": "/home/ubuntu/.steam/steam/steamapps/common/Don't Starve Together/bin64/dontstarve_steam_x64_1"
         },
         {
+            "name": "(linux) Attach docker server",
+            "type": "cppdbg",
+            "request": "attach",
+            "program": "/root/server_dst/bin64/dontstarve_dedicated_server_nullrenderer_x64",
+        },
+        {
             "name": "(Windows) 启动",
             "type": "cppvsdbg",
             "request": "launch",
@@ -67,8 +73,8 @@
             "stopAtConnect": true,
             "cwd": "/root/server_dst/bin64",
             "environment": [
-                {"name": "LD_PRELOAD", "value": "./lib64/libInjector.so"}
-                //,{"name": "LD_DEBUG", "value": "libs"}
+                {"name": "LD_PRELOAD", "value": "./lib64/libInjector.so"},
+                {"name": "LD_LIBRARY_PATH", "value": "./lib64"}
             ],
             "MIMode": "gdb",
             "setupCommands": [

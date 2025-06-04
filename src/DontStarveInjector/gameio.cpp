@@ -30,6 +30,11 @@
 #include <span>
 #include <shared_mutex>
 
+#ifdef ENABLE_STEAM_SUPPORT
+#include "util/steam.hpp"
+#endif
+
+
 using namespace std::literals;
 
 static std::unordered_set<file_interface *> NoFileHandlers;
@@ -58,7 +63,7 @@ static std::filesystem::path to_path(const char *p) {
 }
 
 static std::optional<std::filesystem::path> get_workshop_dir() {
-    auto dir = std::filesystem::relative(std::filesystem::path("..") / ".." / ".." / "workshop");
+    std::optional<std::filesystem::path> dir;
     const auto cmd = get_cwd();
     auto flag = "-ugc_directory";
     if (cmd.contains(flag)) {
@@ -73,7 +78,19 @@ static std::optional<std::filesystem::path> get_workshop_dir() {
             }
         }
     }
-    return dir / "content" / "322330";
+
+    if (!dir) 
+    {
+#ifdef ENABLE_STEAM_SUPPORT
+    dir = getUgcDir();
+#else
+    dir = std::filesystem::relative(std::filesystem::path("..") / ".." / ".." / "workshop");
+#endif
+    }
+
+    if (dir)
+        return dir.value() / "content" / "322330";
+    return std::nullopt;
 }
 
 extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_get_workshop_dir() {
@@ -95,7 +112,15 @@ static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path*
         return fp;
     }
 
-    static const auto workshop_dir = get_workshop_dir();
+    static auto workshop_dir = get_workshop_dir();
+#ifdef ENABLE_STEAM_SUPPORT
+    if (!workshop_dir) {
+        registerUgcDirCallback([](const std::filesystem::path &dir) {
+            workshop_dir = dir;
+            registerUgcDirCallback(nullptr);
+        });
+    }
+#endif
     constexpr auto mods_root = "../mods/workshop-"sv;
     if (path_s.starts_with(mods_root) && workshop_dir) {
         auto mod_path = std::filesystem::path(path_s.substr(mods_root.size()));

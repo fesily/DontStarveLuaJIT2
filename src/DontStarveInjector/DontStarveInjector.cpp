@@ -766,10 +766,13 @@ int chdir_hook(const char* path){
     static bool injector = false;
     if ("../data"sv == path && !injector) {
 #ifndef NDEBUG
-        while (!gum_process_is_debugger_attached())
-        {
-            std::this_thread::sleep_for(200ms);
+        if (getenv("LUAJIT_WAIT_DEBUGGER_ENABLE")) {
+            while (!gum_process_is_debugger_attached())
+            {
+                std::this_thread::sleep_for(200ms);
+            }
         }
+
 #endif
         auto isClientMode = !getExePath().string().contains("dontstarve_dedicated_server_nullrenderer");
         if (!isClientMode) {

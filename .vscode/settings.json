@@ -138,7 +138,9 @@
         "llimits.h": "c",
         "luaconf.h": "c",
         "coroutine": "cpp",
-        "latch": "cpp"
+        "latch": "cpp",
+        "cfenv": "cpp",
+        "future": "cpp"
     },
     "lua.debug.variables.showIntegerAsHex": true
 }
