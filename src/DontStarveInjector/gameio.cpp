@@ -4,6 +4,13 @@
 #include "util/gum_platform.hpp"
 #include "util/platform.hpp"
 #include "util/zipfile.hpp"
+#ifdef _WIN32
+#include "util/win_wfile.hpp"
+#define GAMEIO_FILE_INTERFACE wFile_interface
+#else
+#include "util/nfile.hpp"
+#define GAMEIO_FILE_INTERFACE normal_file_interface
+#endif
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
@@ -118,10 +125,10 @@ static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path 
     auto path = to_path(f);
     auto path_s = path.string();
     // TODO：在w的情况下是不是行为不一致
-    auto fp = fopen(path_s.c_str(), mode);
+    auto fp = GAMEIO_FILE_INTERFACE::fopen(path_s.c_str(), mode);
     if (fp) {
         if (out_real_path) *out_real_path = path;
-        return fp;
+        return (FILE *) fp;
     }
     if (!workshop_dir) {
         workshop_dir = get_workshop_dir();
@@ -131,9 +138,9 @@ static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path 
         auto mod_path = std::filesystem::path(path_s.substr(mods_root.size()));
         // auto mod_name = *mod_path.begin();
         auto real_path = workshop_dir.value() / mod_path;
-        auto fp = fopen(real_path.string().c_str(), mode);
+        auto fp = GAMEIO_FILE_INTERFACE::fopen(real_path.string().c_str(), mode);
         if (out_real_path) *out_real_path = real_path;
-        return fp;
+        return (FILE *) fp;
     }
 
     if (mode[0] == 'w' || (mode[0] == 'a' && mode[1] == '+')) {
@@ -151,7 +158,6 @@ static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path 
                 zip_manager = zipPaths[key].get();
             }
             auto handler = zip_manager->fopen(path);
-            NoFileHandlers.emplace(handler);
             return (FILE *) handler;
         }
     }
@@ -161,31 +167,21 @@ static FILE *lj_fopen(char const *f, const char *mode) noexcept {
     return lj_fopen_ex(f, mode, nullptr);
 }
 static int lj_fclose(FILE *fp) noexcept {
-    if (NoFileHandlers.contains((file_interface *) fp)) {
-        NoFileHandlers.erase((file_interface *) fp);
-        int res = ((file_interface *) fp)->fclose();
-        delete fp;
-        return res;
-    }
-    return fclose(fp);
+    int res = ((file_interface *) fp)->fclose();
+    delete fp;
+    return res;
 }
 
 static int lj_fscanf(FILE *const fp, char const *const format, ...) noexcept {
-    if (NoFileHandlers.contains((file_interface *) fp)) {
-        va_list args;
-        va_start(args, format);
-        auto res = ((file_interface *) fp)->fscanf(format, args);
-        va_end(args);
-        return res;
-    }
-    return fclose(fp);
+    va_list args;
+    va_start(args, format);
+    auto res = ((file_interface *) fp)->fscanf(format, args);
+    va_end(args);
+    return res;
 }
 
 static char *lj_fgets(char *_Buffer, int _MaxCount, FILE *fp) noexcept {
-    if (NoFileHandlers.contains((file_interface *) fp)) {
-        return ((file_interface *) fp)->fgets(_Buffer, _MaxCount);
-    }
-    return fgets(_Buffer, _MaxCount, fp);
+    return ((file_interface *) fp)->fgets(_Buffer, _MaxCount);
 }
 
 static size_t lj_fread(
@@ -193,10 +189,7 @@ static size_t lj_fread(
         size_t _ElementSize,
         size_t _ElementCount,
         FILE *fp) noexcept {
-    if (NoFileHandlers.contains((file_interface *) fp)) {
-        return ((file_interface *) fp)->fread(_Buffer, _ElementSize, _ElementCount);
-    }
-    return fread(_Buffer, _ElementSize, _ElementCount, fp);
+    return ((file_interface *) fp)->fread(_Buffer, _ElementSize, _ElementCount);
 }
 
 static size_t lj_fwrite(
@@ -204,17 +197,11 @@ static size_t lj_fwrite(
         size_t _ElementSize,
         size_t _ElementCount,
         FILE *fp) noexcept {
-    if (NoFileHandlers.contains((file_interface *) fp)) {
-        return ((file_interface *) fp)->fwrite(_Buffer, _ElementSize, _ElementCount);
-    }
-    return fwrite(_Buffer, _ElementSize, _ElementCount, fp);
+    return ((file_interface *) fp)->fwrite(_Buffer, _ElementSize, _ElementCount);
 }
 
 static int lj_ferror(FILE *fp) noexcept {
-    if (NoFileHandlers.contains((file_interface *) fp)) {
-        return ((file_interface *) fp)->ferror();
-    }
-    return ferror(fp);
+    return ((file_interface *) fp)->ferror();
 }
 
 #ifdef _WIN32
@@ -223,49 +210,31 @@ static int lj_fseeki64(
         FILE *fp,
         __int64 _Offset,
         int _Origin) noexcept {
-    if (NoFileHandlers.contains((file_interface *) fp)) {
-        return ((file_interface *) fp)->fseeko(_Offset, _Origin);
-    }
-    return _fseeki64(fp, _Offset, _Origin);
+    return ((file_interface *) fp)->fseeko(_Offset, _Origin);
 }
 
 static __int64 lj_ftelli64(FILE *fp) noexcept {
-    if (NoFileHandlers.contains((file_interface *) fp)) {
-        return ((file_interface *) fp)->ftello();
-    }
-    return _ftelli64(fp);
+    return ((file_interface *) fp)->ftello();
 }
 
 #else
 
 static int lj_fseeko(FILE *fp, off_t _Offset, int _Origin) {
-    if (NoFileHandlers.contains((file_interface *) fp)) {
-        return ((file_interface *) fp)->fseeko(_Offset, _Origin);
-    }
-    return fseeko(fp, _Offset, _Origin);
+    return ((file_interface *) fp)->fseeko(_Offset, _Origin);
 }
 
 static off_t lj_ftello(FILE *fp) {
-    if (NoFileHandlers.contains((file_interface *) fp)) {
-        return ((file_interface *) fp)->ftello();
-    }
-    return ftello(fp);
+    return ((file_interface *) fp)->ftello();
 }
 
 #endif
 
 static int lj_feof(FILE *_Stream) {
-    if (NoFileHandlers.contains((file_interface *) _Stream)) {
-        return ((file_interface *) _Stream)->feof();
-    }
-    return feof(_Stream);
+    return ((file_interface *) _Stream)->feof();
 }
 
 static void lj_clearerr(FILE *fp) noexcept {
-    if (NoFileHandlers.contains((file_interface *) fp)) {
-        return ((file_interface *) fp)->clearerr();
-    }
-    return clearerr(fp);
+    return ((file_interface *) fp)->clearerr();
 }
 
 static int lj_need_transform_path() noexcept {
