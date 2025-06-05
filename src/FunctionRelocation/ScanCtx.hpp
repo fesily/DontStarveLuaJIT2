@@ -45,6 +45,4 @@ namespace function_relocation {
         size_t guess_function_size(const uintptr_t imm) const;
 
     };
-    uintptr_t read_operand_rip_mem(const cs_insn &insn, const cs_x86_op &op);
-
 }

@@ -1,19 +1,19 @@
-﻿#include "frida-gum.h"
-#include "config.hpp"
+﻿#include "config.hpp"
+#include "frida-gum.h"
 
-#include <cstdio>
-#include <cstdint>
-#include <filesystem>
-#include <unordered_set>
-#include <unordered_map>
-#include <cstdarg>
-#include <string>
-#include <string_view>
-#include <mutex>
-#include <optional>
-#include "util/zipfile.hpp"
 #include "util/gum_platform.hpp"
 #include "util/platform.hpp"
+#include "util/zipfile.hpp"
+#include <cstdarg>
+#include <cstdint>
+#include <cstdio>
+#include <filesystem>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <spdlog/spdlog.h>
 #ifndef DISABLE_TRACY_FUTURE
@@ -22,13 +22,13 @@
 #define ZoneScopedN(...)
 #endif
 
-#include <thread>
-#include <chrono>
-#include <vector>
 #include <cassert>
+#include <chrono>
 #include <fstream>
-#include <span>
 #include <shared_mutex>
+#include <span>
+#include <thread>
+#include <vector>
 
 #ifdef ENABLE_STEAM_SUPPORT
 #include "util/steam.hpp"
@@ -56,14 +56,12 @@ static std::unordered_map<std::string, std::unique_ptr<zip_manager_interface>> z
 static std::filesystem::path to_path(const char *p) {
     try {
         return std::filesystem::path(p);
-    }
-    catch (const std::exception &) {
+    } catch (const std::exception &) {
         return std::filesystem::path((char8_t *) p);
     }
 }
 
-static std::optional<std::filesystem::path> get_workshop_dir() {
-    std::optional<std::filesystem::path> dir;
+static std::optional<std::filesystem::path> get_ugc_cmd() {
     const auto cmd = get_cwd();
     auto flag = "-ugc_directory";
     if (cmd.contains(flag)) {
@@ -73,27 +71,40 @@ static std::optional<std::filesystem::path> get_workshop_dir() {
             iter++;
             if (iter != cmds.end()) {
                 const auto &value = *iter;
-                dir = value;
                 spdlog::info("workshop_dir ugc_directory: {}", value);
+                return value;
             }
         }
     }
-
-    if (!dir) 
-    {
-#ifdef ENABLE_STEAM_SUPPORT
-    dir = getUgcDir();
-#else
-    dir = std::filesystem::relative(std::filesystem::path("..") / ".." / ".." / "workshop");
-#endif
-    }
-
+    return std::nullopt;
+}
+static std::optional<std::filesystem::path> &get_steam_ugc() {
+    static std::optional<std::filesystem::path> workshop_dir;
+    return workshop_dir;
+}
+static std::optional<std::filesystem::path> get_workshop_dir() {
+    static auto wrk_ugc = []() -> std::optional<std::filesystem::path> {
+        auto p = std::filesystem::relative(std::filesystem::path("..") / ".." / ".." / "workshop");
+        if (std::filesystem::exists(p)) {
+            return p;
+        }
+        return std::nullopt;
+    }();
+    std::optional<std::filesystem::path> dir;
+    static auto ugc_cmd = get_ugc_cmd();
+    if (ugc_cmd)
+        dir = ugc_cmd;
+    else if (get_steam_ugc())
+        dir = get_steam_ugc();
+    else if (wrk_ugc)
+        dir = wrk_ugc;
     if (dir)
         return dir.value() / "content" / "322330";
     return std::nullopt;
 }
 
-extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_get_workshop_dir() {
+
+extern "C" DONTSTARVEINJECTOR_API const char *DS_LUAJIT_get_workshop_dir() {
     auto cache = get_workshop_dir();
     if (cache) {
         static auto path = std::filesystem::absolute(cache.value()).generic_string();
@@ -101,8 +112,9 @@ extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_get_workshop_dir() {
     }
     return nullptr;
 }
+static std::optional<std::filesystem::path> workshop_dir;
 
-static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path* out_real_path) noexcept {
+static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path *out_real_path) noexcept {
     auto path = to_path(f);
     auto path_s = path.string();
     // TODO：在w的情况下是不是行为不一致
@@ -111,16 +123,9 @@ static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path*
         if (out_real_path) *out_real_path = path;
         return fp;
     }
-
-    static auto workshop_dir = get_workshop_dir();
-#ifdef ENABLE_STEAM_SUPPORT
     if (!workshop_dir) {
-        registerUgcDirCallback([](const std::filesystem::path &dir) {
-            workshop_dir = dir;
-            registerUgcDirCallback(nullptr);
-        });
+        workshop_dir = get_workshop_dir();
     }
-#endif
     constexpr auto mods_root = "../mods/workshop-"sv;
     if (path_s.starts_with(mods_root) && workshop_dir) {
         auto mod_path = std::filesystem::path(path_s.substr(mods_root.size()));
@@ -215,22 +220,18 @@ static int lj_ferror(FILE *fp) noexcept {
 #ifdef _WIN32
 
 static int lj_fseeki64(
-    FILE *fp,
-    __int64 _Offset,
-    int _Origin) noexcept
-{
-    if (NoFileHandlers.contains((file_interface *)fp))
-    {
-        return ((file_interface *)fp)->fseeko(_Offset, _Origin);
+        FILE *fp,
+        __int64 _Offset,
+        int _Origin) noexcept {
+    if (NoFileHandlers.contains((file_interface *) fp)) {
+        return ((file_interface *) fp)->fseeko(_Offset, _Origin);
     }
     return _fseeki64(fp, _Offset, _Origin);
 }
 
-static __int64 lj_ftelli64(FILE *fp) noexcept
-{
-    if (NoFileHandlers.contains((file_interface *)fp))
-    {
-        return ((file_interface *)fp)->ftello();
+static __int64 lj_ftelli64(FILE *fp) noexcept {
+    if (NoFileHandlers.contains((file_interface *) fp)) {
+        return ((file_interface *) fp)->ftello();
     }
     return _ftelli64(fp);
 }
@@ -253,7 +254,7 @@ static off_t lj_ftello(FILE *fp) {
 
 #endif
 
-static int lj_feof(FILE* _Stream) {
+static int lj_feof(FILE *_Stream) {
     if (NoFileHandlers.contains((file_interface *) _Stream)) {
         return ((file_interface *) _Stream)->feof();
     }
@@ -286,14 +287,13 @@ static uint32_t lj_jit_default_flags() noexcept {
 }
 
 static int fullgc_mb = 0;
-void (* lua_gc_func)(void *L, int,int);
-void lj_gc_fullgc_external(void* L, void (* oldfn)(void *L)){
-    
+void (*lua_gc_func)(void *L, int, int);
+void lj_gc_fullgc_external(void *L, void (*oldfn)(void *L)) {
+
     if (fullgc_mb == 0) {
         ZoneScopedN("lua_full_gc");
         oldfn(L);
-    }
-    else {
+    } else {
         ZoneScopedN("lua_small_gc");
         lua_gc_func(L, 5, fullgc_mb << 10);
     }
@@ -302,9 +302,8 @@ extern "C" DONTSTARVEINJECTOR_API void DS_LUAJIT_disable_fullgc(int mb) {
     fullgc_mb = mb;
 }
 
-extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_Fengxun_Decrypt(const char* filename) noexcept{
-    try
-    {
+extern "C" DONTSTARVEINJECTOR_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept {
+    try {
         spdlog::info("DS_LUAJIT_Fengxun_Decrypt: {}", filename);
         auto infile = std::filesystem::path(filename);
         struct filecache {
@@ -327,7 +326,7 @@ extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_Fengxun_Decrypt(const ch
         lj_fclose(fp);
         size_t hash_value;
         {
-            std::string_view str{(const char*)content.data(), content.size()};
+            std::string_view str{(const char *) content.data(), content.size()};
             std::hash<std::string_view> hash;
             hash_value = hash(str);
         }
@@ -336,11 +335,11 @@ extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_Fengxun_Decrypt(const ch
             auto it = caches.find(infile);
             if (it != caches.end()) {
                 if (it->second.filesize == filesize && hash_value == it->second.hash) {
-                    return (const char*)it->second.content.data();
+                    return (const char *) it->second.content.data();
                 }
             }
         }
-        
+
         std::span<unsigned char> part1;
         std::span<unsigned char> part2;
         size_t split_pos = 7997;
@@ -352,12 +351,12 @@ extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_Fengxun_Decrypt(const ch
         }
 
         std::reverse(part2.begin(), part2.end());
-        for (auto& byte : part2) {
+        for (auto &byte: part2) {
             byte += 7;
         }
 
         std::reverse(part1.begin(), part1.end());
-        for (auto& byte : part1) {
+        for (auto &byte: part1) {
             byte += 7;
         }
 
@@ -366,20 +365,18 @@ extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_Fengxun_Decrypt(const ch
         context.reserve(filesize + 1);
         context.append(part2.begin(), part2.end());
         context.append(part1.begin(), part1.end());
-        auto& cache = caches[infile] = {std::move(context), hash_value, filesize};
-        return (const char*) cache.content.c_str();
-    }
-    catch(const std::exception& e)
-    {
+        auto &cache = caches[infile] = {std::move(context), hash_value, filesize};
+        return (const char *) cache.content.c_str();
+    } catch (const std::exception &e) {
         return nullptr;
     }
 }
 
-#define SET_LUAJIT_API_FUNC(name)                                 \
-    {                                                             \
-        auto ptr = (void **)loadlibproc(hluajitModule, #name);    \
-        if (ptr)                                                  \
-            *ptr = (void *)&name;                                 \
+#define SET_LUAJIT_API_FUNC(name)                               \
+    {                                                           \
+        auto ptr = (void **) loadlibproc(hluajitModule, #name); \
+        if (ptr)                                                \
+            *ptr = (void *) &name;                              \
     }
 
 void init_luajit_io(module_handler_t hluajitModule) {
@@ -401,9 +398,105 @@ void init_luajit_io(module_handler_t hluajitModule) {
     SET_LUAJIT_API_FUNC(lj_clearerr);
     SET_LUAJIT_API_FUNC(lj_need_transform_path);
     SET_LUAJIT_API_FUNC(lj_gc_fullgc_external);
-    lua_gc_func = (decltype(lua_gc_func))loadlibproc(hluajitModule, "lua_gc");
+    lua_gc_func = (decltype(lua_gc_func)) loadlibproc(hluajitModule, "lua_gc");
 }
 
+static void hook_steam_gameserver_interface();
 void init_luajit_jit_opt(module_handler_t hluajitModule) {
     SET_LUAJIT_API_FUNC(lj_jit_default_flags);
+    hook_steam_gameserver_interface();
+}
+
+#include "util/steam_sdk.hpp"
+
+static void *get_plt_ita_address(const std::string_view &target) {
+    std::pair args = {target, (void *) 0};
+    gum_module_enumerate_imports_ext(gum_process_get_main_module(), +[](const GumImportDetails *details, gpointer user_data) -> gboolean {
+        auto pargs = (decltype(args) *) user_data;
+        if (details->type == GUM_IMPORT_FUNCTION && details->name == pargs->first) {
+            pargs->second = (void *) details->slot;
+            return false;// stop enumeration
+        }
+        return true;// continue enumeration
+    },
+                                     (gpointer) &args);
+    return args.second;
+}
+
+template<typename T>
+bool memory_protect_write(T *addr, T value) {
+    GumPageProtection prot;
+    if (gum_memory_query_protection(addr, &prot)) {
+        if (gum_try_mprotect(addr, sizeof(T), prot | GUM_PAGE_WRITE)) {
+            *addr = value;
+            gum_mprotect(addr, sizeof(T), prot);
+            return true;
+        }
+    }
+    return false;
+}
+
+static void hook_plt_ita(const std::string_view &target, void *new_func) {
+    auto address = (void **) get_plt_ita_address(target);
+    if (address == nullptr) {
+        spdlog::error("Failed to find PLT ITA address for {}", target);
+        return;
+    }
+    memory_protect_write(address, new_func);
+}
+
+void *(*SteamInternal_FindOrCreateGameServerInterface_fn)(uint32_t hSteamUser, const char *pszVersion);
+template<typename T>
+union magic_offset {
+    T offset;
+    int64_t value;
+};
+
+bool (*BInitWorkshopForGameServer)(void *self, DepotId_t unWorkshopDepotID, const char *pszFolder);
+static bool BInitWorkshopForGameServer_hook(void *self, DepotId_t unWorkshopDepotID, const char *pszFolder) {
+    if (pszFolder != nullptr) {
+        get_steam_ugc() = pszFolder;
+        workshop_dir = std::nullopt;
+    }
+    return BInitWorkshopForGameServer(self, unWorkshopDepotID, pszFolder);
+}
+
+static void *SteamInternal_FindOrCreateGameServerInterface_hook(uint32_t hSteamUser, const char *pszVersion) {
+    void *obj = SteamInternal_FindOrCreateGameServerInterface_fn(hSteamUser, pszVersion);
+    constexpr auto ugc_interface_version_prefix = "STEAMUGC_INTERFACE_VERSION"sv;
+    if (std::string_view{pszVersion}.starts_with(ugc_interface_version_prefix)) {
+        auto version = std::string_view{pszVersion}.substr(ugc_interface_version_prefix.size());
+        if (version == "016") {
+            ISteamUGC016 *ugc = (ISteamUGC016 *) obj;
+            auto offset = &ISteamUGC016::BInitWorkshopForGameServer;
+            magic_offset<decltype(offset)> magic;
+            magic.offset = offset;
+            auto vt_offset = magic.value / sizeof(int64_t);
+            auto vt = *(int64_t **) ugc;
+            if (vt[vt_offset] == (int64_t) &BInitWorkshopForGameServer_hook) {
+                return obj;// already hooked
+            }
+
+            BInitWorkshopForGameServer = (decltype(BInitWorkshopForGameServer)) vt[vt_offset];
+            auto addr = &vt[vt_offset];
+            memory_protect_write(addr, (int64_t) BInitWorkshopForGameServer_hook);
+        }
+    }
+    return obj;
+}
+
+static void hook_steam_gameserver_interface() {
+    auto path = get_module_path("steam_api");
+    if (path.empty()) {
+        spdlog::error("Failed to find steam_api module");
+        return;
+    }
+    constexpr auto api_name = "SteamInternal_FindOrCreateGameServerInterface";
+    auto m = gum_process_find_module_by_name(path.c_str());
+    SteamInternal_FindOrCreateGameServerInterface_fn = (decltype(SteamInternal_FindOrCreateGameServerInterface_fn)) gum_module_find_export_by_name(m, api_name);
+    if (SteamInternal_FindOrCreateGameServerInterface_fn == nullptr) {
+        spdlog::error("Failed to find {} in steam_api module", api_name);
+        return;
+    }
+    hook_plt_ita(api_name, (void *) SteamInternal_FindOrCreateGameServerInterface_hook);
 }

@@ -1,5 +1,5 @@
 #pragma once
-
+#ifdef _WIN32
 #include <Windows.h>
 #include "module.hpp"
 
@@ -77,7 +77,7 @@ module_enumerate_imports(HMODULE module,
         details.name = NULL;
         details.module = (const char *) (mod_base + desc->Name);
         details.address = 0;
-        details.slot = 0; /* TODO */
+        details.slot = GUM_ADDRESS(mod_base + desc->FirstThunk); /* TODO */
 
         thunk_data = (const IMAGE_THUNK_DATA *)
                 (mod_base + desc->OriginalFirstThunk);
@@ -93,3 +93,4 @@ module_enumerate_imports(HMODULE module,
         }
     }
 }
+#endif

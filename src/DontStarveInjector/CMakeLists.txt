@@ -15,6 +15,7 @@ set(SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
         gameModConfig.cpp
         luajit_config.cpp
+        game_info.cpp
 )
 
 if (ENABLE_STEAM_SUPPORT)
@@ -52,6 +53,7 @@ target_compile_definitions(Injector PRIVATE MOD_VERSION="${CMAKE_PROJECT_VERSION
 if (ENABLE_STEAM_SUPPORT)
     target_compile_definitions(Injector PRIVATE ENABLE_STEAM_SUPPORT)
     target_include_directories(Injector PUBLIC ${STEAM_INCLUDE_DIR})
+    target_include_directories(Injector PUBLIC ${STEAM_SDK_INCLUDE_DIR})
 endif()
 
 set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")

@@ -55,26 +55,6 @@ namespace function_relocation {
     fix_func_address_by_signature(ModuleSections &target, const Function &original, uintptr_t limit_address,
                                   SignatureInfo *signature);
 
-    bool ModuleSections::in_text(uintptr_t address) const {
-        return text.base_address <= address && address <= text.base_address + text.size;
-    }
-
-    bool ModuleSections::in_plt(uintptr_t address) const {
-        return plt.base_address <= address && address <= plt.base_address + plt.size;
-    }
-
-    bool ModuleSections::in_got_plt(uintptr_t address) const {
-        return got_plt.base_address <= address && address <= got_plt.base_address + got_plt.size;
-    }
-
-    bool ModuleSections::in_rodata(uintptr_t address) const {
-        return rodata.base_address <= address && address <= rodata.base_address + rodata.size;
-    }
-
-    bool ModuleSections::in_module(uintptr_t address) const {
-        return details.range.base_address <= address && address <= details.range.base_address + details.range.size;
-    }
-
     static GumModule *get_module(const char *path) {
         if (path == nullptr) {
             return gum_process_get_main_module();
@@ -118,6 +98,9 @@ namespace function_relocation {
                     sections->rodata = { real_address, len };
                 else if (secName == ".pdata")
                     sections->pdata = { real_address, len };
+                else if (secName == ".data")
+                    sections->bss = { real_address, len };
+                sections->sections[secName] = { real_address, len };
                 return 0;
             }, (void*)&args);
             DestructParsedPE(pe);
@@ -125,14 +108,18 @@ namespace function_relocation {
 #else
 
         gum_module_enumerate_sections(module, +[](const GumSectionDetails *details, gpointer user_data) -> gboolean {
+            auto& msec = *(ModuleSections *) user_data;
             if (details->name == ".text"sv || details->name == "__text"sv)
-                (*(ModuleSections *) user_data).text = {details->address, details->size};
+                msec.text = {details->address, details->size};
             else if (details->name == ".rodata"sv || details->name == "__cstring"sv)
-                (*(ModuleSections *) user_data).rodata = {details->address, details->size};
+                msec.rodata = {details->address, details->size};
             else if (details->name == ".plt"sv || details->name == "__stubs"sv)
-                (*(ModuleSections *) user_data).plt = {details->address, details->size};
+                msec.plt = {details->address, details->size};
             else if (details->name == ".got.plt"sv || details->name == "__got"sv)
-                (*(ModuleSections *) user_data).got_plt = {details->address, details->size};
+                msec.got_plt = {details->address, details->size};
+            else if (details->name == ".bss"sv || details->name == "__bss"sv)
+                msec.bss = {details->address, details->size};
+            msec.sections[details->name] = {details->address, details->size};
             return TRUE;
         }, (void *) &sections);
 #endif
