@@ -1,4 +1,4 @@
-/FROM ubuntu:24.04
+FROM ubuntu:24.04
 
 LABEL \
     description="Don't Starve Together dedicated server" \
@@ -33,4 +33,4 @@ RUN /root/steamcmd.sh \
     +app_update 343050 validate \
     +quit
 
-COPY ./docker/DSTWhalesConfig /root/.klei/DoNotStarveTogether/DSTWhalesCluster
+COPY docker/DSTClusterConfig /root/.klei/DoNotStarveTogether/DSTWhalesCluster/

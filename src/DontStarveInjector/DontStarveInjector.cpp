@@ -35,6 +35,7 @@
 #include "disasm.h"
 #include "ScanCtx.hpp"
 #include "ProcessMutex.hpp"
+#include "luajit_config.hpp"
 
 
 #if !ONLY_LUA51
@@ -689,6 +690,13 @@ static bool check_crash() {
 }
 extern "C" void LoadGameModConfig();
 extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
+    if (!isClient) {
+        auto config = luajit_config::read_from_file();
+        if (config && config->server_disable_luajit) {
+            return;
+        }
+    }
+
     DontStarveInjectorIsClient = isClient;
 #ifdef _WIN32
     gum_init();
@@ -759,25 +767,21 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 
 #ifndef _WIN32
 #include <dlfcn.h>
-#include "luajit_config.hpp"
 
 int (*origin)(const char* path);
 int chdir_hook(const char* path){
     static bool injector = false;
     if ("../data"sv == path && !injector) {
 #ifndef NDEBUG
-        while (!gum_process_is_debugger_attached())
-        {
-            std::this_thread::sleep_for(200ms);
-        }
-#endif
-        auto isClientMode = !getExePath().string().contains("dontstarve_dedicated_server_nullrenderer");
-        if (!isClientMode) {
-            auto config = luajit_config::read_from_file();
-            if (config && config->server_disable_luajit) {
-                return origin(path);
+        if (getenv("LUAJIT_WAIT_DEBUGGER_ENABLE")) {
+            while (!gum_process_is_debugger_attached())
+            {
+                std::this_thread::sleep_for(200ms);
             }
         }
+
+#endif
+        auto isClientMode = !getExePath().string().contains("dontstarve_dedicated_server_nullrenderer");
         Inject(isClientMode);
         spdlog::default_logger_raw()->flush();
         injector = true;

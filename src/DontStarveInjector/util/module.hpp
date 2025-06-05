@@ -1,7 +1,7 @@
 #pragma once
-
+#ifdef _WIN32
 #include <cstdint>
-#include <minwindef.h>
+#include <Windows.h>
 
 struct ExportDetails {
     enum Type {
@@ -34,3 +34,4 @@ void
 module_enumerate_imports(HMODULE module,
                          FoundImportFunc func,
                          void *user_data);
+#endif

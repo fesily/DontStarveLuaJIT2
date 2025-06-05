@@ -80,16 +80,23 @@ namespace function_relocation {
         GumMemoryRange rodata;
         GumMemoryRange plt;
         GumMemoryRange got_plt;
-
-        bool in_module(uintptr_t address) const;
-
-        bool in_text(uintptr_t address) const;
-
-        bool in_plt(uintptr_t address) const;
-
-        bool in_got_plt(uintptr_t address) const;
-
-        bool in_rodata(uintptr_t address) const;
+        GumMemoryRange bss;
+        std::unordered_map<std::string, GumMemoryRange> sections;
+#define MODULESECTION_IN_RANGE(name) \
+    bool in_##name(uintptr_t address) const { \
+        return name.base_address <= address && address <= name.base_address + name.size; \
+    }
+        MODULESECTION_IN_RANGE(text)
+        MODULESECTION_IN_RANGE(pdata)
+        MODULESECTION_IN_RANGE(rodata)
+        MODULESECTION_IN_RANGE(plt)
+        MODULESECTION_IN_RANGE(got_plt)
+        MODULESECTION_IN_RANGE(bss)
+        
+#undef MODULESECTION_IN_RANGE
+    bool in_module(uintptr_t address) const {
+        return details.range.base_address <= address && address <= details.range.base_address + details.range.size;
+    }
 
         std::list<Function> functions;
         std::list<CodeBlock> blocks;

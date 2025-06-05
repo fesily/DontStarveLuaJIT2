@@ -28,10 +28,6 @@ namespace function_relocation {
             SwitchCaseMode::Rip;
 #endif
 
-    static bool reg_is_ip(x86_reg reg) {
-        return reg == X86_REG_RIP || reg == X86_REG_EIP || reg == X86_REG_IP;
-    };
-
     static const char *read_data_string(const char *data) {
         constexpr auto data_limit = 16;
         if (!gum_memory_is_readable(data, data_limit))
@@ -67,14 +63,6 @@ namespace function_relocation {
         cs_free(insn, 1);
         return imm;
     }
-
-    uintptr_t read_operand_rip_mem(const cs_insn &insn, const cs_x86_op &op) {
-        if (op.type != X86_OP_MEM || !reg_is_ip(op.mem.base) || op.mem.segment != X86_REG_INVALID ||
-            op.mem.index != X86_REG_INVALID || op.mem.scale != 1)
-            return 0;
-        return op.mem.disp + insn.address + insn.size;
-    }
-
 
     static bool address_is_lib_plt(uint8_t *address, uintptr_t target) {
         disasm dis{std::span{address, 8}};

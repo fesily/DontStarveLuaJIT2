@@ -122,5 +122,16 @@ namespace function_relocation {
         std::span<uint8_t> buffer;
 
     };
+    
+    inline bool reg_is_ip(x86_reg reg) {
+        return reg == X86_REG_RIP || reg == X86_REG_EIP || reg == X86_REG_IP;
+    };
+
+    inline uintptr_t read_operand_rip_mem(const cs_insn &insn, const cs_x86_op &op) {
+        if (op.type != X86_OP_MEM || !reg_is_ip(op.mem.base) || op.mem.segment != X86_REG_INVALID ||
+            op.mem.index != X86_REG_INVALID || op.mem.scale != 1)
+            return 0;
+        return op.mem.disp + insn.address + insn.size;
+    }
 }
 #endif //DONTSTARVELUAJIT_DISASM_H

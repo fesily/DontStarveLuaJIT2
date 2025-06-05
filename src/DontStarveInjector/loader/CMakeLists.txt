@@ -3,7 +3,6 @@ find_package(ZLIB REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
-option(ENABLE_STEAM_SUPPORT "Enable Steam support" OFF)
 
 set(Winmm_SOURCES
         winmm.cpp
@@ -11,12 +10,8 @@ set(Winmm_SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
-        PersistentString.cpp
         ../luajit_config.cpp
 )
-if (ENABLE_STEAM_SUPPORT)
-    list(APPEND Winmm_SOURCES steam.cpp)
-endif ()
 
 add_library(Winmm SHARED ${Winmm_SOURCES})
 

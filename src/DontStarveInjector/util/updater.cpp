@@ -170,6 +170,74 @@ static void installer(bool setup, bool restart) {
     }
 }
 
+
+// auto updater
+#if 0
+
+std::filesystem::path getUserDoctmentDir() {
+    static auto p = []() -> std::filesystem::path {
+        char path[MAX_PATH];
+        SHGetFolderPathA(NULL, CSIDL_MYDOCUMENTS, NULL, 0, path);
+        return path;
+    }();
+    return p;
+}
+
+std::filesystem::path getKleiDoctmentDir() {
+    return getUserDoctmentDir() / "klei";
+}
+
+std::filesystem::path getKleiGameDoctmentDir() {
+    constexpr auto game_doctment_name = "DoNotStarveTogether";
+    return getKleiDoctmentDir() / game_doctment_name;
+}
+
+std::filesystem::path getGameDir() {
+    static std::filesystem::path p = getExePath().parent_path().parent_path();
+    return p;
+}
+
+#ifdef ENABLE_STEAM_SUPPORT
+std::optional<std::filesystem::path> getGameUserDoctmentDir()
+{
+    auto userid = getUserId();
+    if (userid)
+        return getKleiGameDoctmentDir() / std::to_string(userid.value());
+    return std::nullopt;
+}
+std::optional<std::filesystem::path> GetClientSaveDir()
+{
+    auto dir = getGameUserDoctmentDir();
+    if (dir)
+        return dir.value() / "client_save";
+    return std::nullopt;
+}
+
+std::optional<std::filesystem::path> getModindexPath()
+{
+    auto dir = GetClientSaveDir();
+    if (dir)
+        return dir.value() / "modindex";
+    return std::nullopt;
+}
+#endif
+
+const std::optional<luajit_config>& getLuajitConfig() {
+    static auto config = luajit_config::read_from_file();
+    return config;
+}
+
+
+void updater();
+
+void installer(bool unsetup);
+
+    if (isClientMod && !std::string_view(GetCommandLineA()).contains("-disable_check_luajit_mod")) {
+        updater();
+    } else {
+        std::atexit(updater);
+    }
+#endif
 void updater() {
     if (mod_has_removed()) {
         spdlog::info("mod removed, unsetup it!");

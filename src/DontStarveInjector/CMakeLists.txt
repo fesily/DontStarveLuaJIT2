@@ -1,6 +1,7 @@
 option(ENABLE_FAKE_API "check inejctor hook lua func" OFF)
 option(ENABLE_ONLY_LUA51 "load lua51.dll" OFF)
 option(ENABLE_USE_LISTENER "use api listener" OFF)
+option(ENABLE_STEAM_SUPPORT "Enable Steam support" ON)
 
 set(SOURCES
         DontStarveInjector.cpp
@@ -12,9 +13,16 @@ set(SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
         gameModConfig.cpp
         luajit_config.cpp
+        game_info.cpp
 )
+
+if (ENABLE_STEAM_SUPPORT)
+    list(APPEND SOURCES ${DONTSTARVEINJECTOR_UTIL_DIR}/steam.cpp)
+    find_package(Steam REQUIRED)
+endif ()
 
 if (NOT MSVC)
     list(APPEND SOURCES
@@ -42,6 +50,13 @@ if (MSVC)
     target_compile_definitions(Injector PRIVATE SUPPORT_PROGRESS)
 endif()
 target_compile_definitions(Injector PRIVATE MOD_VERSION="${CMAKE_PROJECT_VERSION}")
+
+if (ENABLE_STEAM_SUPPORT)
+    target_compile_definitions(Injector PRIVATE ENABLE_STEAM_SUPPORT)
+    target_link_libraries(Injector PRIVATE ${STEAM_LIBRARIES})
+    target_include_directories(Injector PUBLIC ${STEAM_INCLUDE_DIR})
+    target_include_directories(Injector PUBLIC ${STEAM_SDK_INCLUDE_DIR})
+endif()
 
 set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")
 set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../lib64")

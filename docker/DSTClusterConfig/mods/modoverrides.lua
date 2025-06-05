@@ -7,10 +7,25 @@
 -- See the example below:
 
 return {
-  -- ["workshop-000000000"]={
-  --   configuration_options={
-  --     ["CustomModSetting"]="value"
-  --   },
-  --   enabled=true
-  -- },
+  ["workshop-3322803908"]={
+    configuration_options={
+     },
+    enabled=true 
+  },
+  ["luajit2"]={
+    configuration_options={
+      ["EnabledJIT"]=true,
+      ["DisableForceFullGC"]=64,
+      ["EnbaleFrameGC"]=3,
+      ["TargetLogincFPS"]=30,
+      ["TargetRenderFPS"]=false,
+      ["ClientNetWorkTick"]=false,
+      ["JitOpt"]=true,
+      ["ModBlackList"]=true,
+      ["DisableJITWhenServer"]=false,
+      ["EnableProfiler"]="off",
+      ["EnableTracy"]="off"
+    },
+    enabled=true 
+  },
 }

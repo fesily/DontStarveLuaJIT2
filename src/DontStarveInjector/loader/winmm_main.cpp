@@ -14,9 +14,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "platform.hpp"
-#include "PersistentString.hpp"
-#include "steam.hpp"
-#include "../luajit_config.hpp"
+
 
 extern "C" {
 #include <lua.hpp>
@@ -83,64 +81,6 @@ void wait_debugger() {
     }
 }
 
-std::filesystem::path getUserDoctmentDir() {
-    static auto p = []() -> std::filesystem::path {
-        char path[MAX_PATH];
-        SHGetFolderPathA(NULL, CSIDL_MYDOCUMENTS, NULL, 0, path);
-        return path;
-    }();
-    return p;
-}
-
-std::filesystem::path getKleiDoctmentDir() {
-    return getUserDoctmentDir() / "klei";
-}
-
-std::filesystem::path getKleiGameDoctmentDir() {
-    constexpr auto game_doctment_name = "DoNotStarveTogether";
-    return getKleiDoctmentDir() / game_doctment_name;
-}
-
-std::filesystem::path getGameDir() {
-    static std::filesystem::path p = getExePath().parent_path().parent_path();
-    return p;
-}
-
-#ifdef ENABLE_STEAM_SUPPORT
-std::optional<std::filesystem::path> getGameUserDoctmentDir()
-{
-    auto userid = getUserId();
-    if (userid)
-        return getKleiGameDoctmentDir() / std::to_string(userid.value());
-    return std::nullopt;
-}
-std::optional<std::filesystem::path> GetClientSaveDir()
-{
-    auto dir = getGameUserDoctmentDir();
-    if (dir)
-        return dir.value() / "client_save";
-    return std::nullopt;
-}
-
-std::optional<std::filesystem::path> getModindexPath()
-{
-    auto dir = GetClientSaveDir();
-    if (dir)
-        return dir.value() / "modindex";
-    return std::nullopt;
-}
-#endif
-
-const std::optional<luajit_config>& getLuajitConfig() {
-    static auto config = luajit_config::read_from_file();
-    return config;
-}
-
-
-void updater();
-
-void installer(bool unsetup);
-
 void DontStarveInjectorStart() {
     std::initializer_list<std::shared_ptr<spdlog::sinks::sink>> sinks = {
             std::make_shared<spdlog::sinks::msvc_sink_st>(), std::make_shared<spdlog::sinks::stdout_color_sink_st>()};
@@ -150,24 +90,8 @@ void DontStarveInjectorStart() {
 #ifdef DEBUG
     spdlog::set_level(spdlog::level::trace);
 #endif
-    auto dir = getGameDir();
 
     bool isClientMod = !getExePath().filename().string().contains("server");
-    if (!isClientMod) {
-        auto& config = getLuajitConfig();
-        if (config && config->server_disable_luajit) {
-            spdlog::error("config found disablejit when server: ON");
-            return;
-        }
-    }
-    // auto updater
-#if 0
-    if (isClientMod && !std::string_view(GetCommandLineA()).contains("-disable_check_luajit_mod")) {
-        updater();
-    } else {
-        std::atexit(updater);
-    }
-#endif
     auto mod = LoadLibraryA("injector");
     if (!mod) {
         spdlog::error("can't load injector.dll");
