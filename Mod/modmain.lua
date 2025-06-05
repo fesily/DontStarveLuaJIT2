@@ -334,7 +334,22 @@ local function main()
 
 	if GetModConfigData("EnbaleFrameGC") ~= 0 then
 		injector.DS_LUAJIT_replace_profiler_api()
-		injector.DS_LUAJIT_set_frame_gc_time(tonumber(GetModConfigData("EnbaleFrameGC")))
+		local frame_gc_time = tonumber(GetModConfigData("EnbaleFrameGC"))
+		injector.DS_LUAJIT_set_frame_gc_time(frame_gc_time)
+
+		local old_OnSimPaused = _G.OnSimPaused
+		local old_OnSimUnpaused = _G.OnSimUnpaused
+		if old_OnSimPaused and old_OnSimUnpaused then
+			_G.OnSimPaused = function(...)
+				injector.DS_LUAJIT_set_frame_gc_time(0.01)
+				old_OnSimPaused(...)
+			end
+
+			_G.OnSimUnpaused = function(...)
+				injector.DS_LUAJIT_set_frame_gc_time(frame_gc_time)
+				old_OnSimUnpaused(...)
+			end
+		end
 	end
 
 	local function load_prefix_config(get_local_config)
