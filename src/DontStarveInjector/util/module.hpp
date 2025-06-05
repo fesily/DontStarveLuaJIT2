@@ -1,7 +1,7 @@
 #pragma once
 #ifdef _WIN32
 #include <cstdint>
-#include <minwindef.h>
+#include <Windows.h>
 
 struct ExportDetails {
     enum Type {

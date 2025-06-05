@@ -128,7 +128,6 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(uintptr_t 
     updater.exports = std::move(std::get<0>(res.value()));
     updater.signatures = std::move(std::get<1>(res.value()));
     return updater;
-
 }
 
 std::expected<SignatureUpdater, std::string>

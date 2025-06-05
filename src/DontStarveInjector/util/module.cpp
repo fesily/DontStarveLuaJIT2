@@ -77,7 +77,7 @@ module_enumerate_imports(HMODULE module,
         details.name = NULL;
         details.module = (const char *) (mod_base + desc->Name);
         details.address = 0;
-        details.slot = GUM_ADDRESS(mod_base + desc->FirstThunk); /* TODO */
+        details.slot = (void*)(mod_base + desc->FirstThunk); /* TODO */
 
         thunk_data = (const IMAGE_THUNK_DATA *)
                 (mod_base + desc->OriginalFirstThunk);

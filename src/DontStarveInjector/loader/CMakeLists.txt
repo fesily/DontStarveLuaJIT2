@@ -10,20 +10,10 @@ set(Winmm_SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
-        PersistentString.cpp
         ../luajit_config.cpp
 )
-if (ENABLE_STEAM_SUPPORT)
-    find_package(Steam REQUIRED)
-    list(APPEND Winmm_SOURCES ${DONTSTARVEINJECTOR_UTIL_DIR}/steam.cpp)
-endif ()
 
 add_library(Winmm SHARED ${Winmm_SOURCES})
-
-if (ENABLE_STEAM_SUPPORT)
-    target_compile_definitions(Winmm PRIVATE ENABLE_STEAM_SUPPORT)
-    target_include_directories(Winmm PUBLIC ${STEAM_INCLUDE_DIR})
-endif()
 
 target_include_directories(Winmm PUBLIC ${DONTSTARVEINJECTOR_UTIL_DIR})
 
