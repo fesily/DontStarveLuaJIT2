@@ -37,9 +37,7 @@
 #include <thread>
 #include <vector>
 
-#ifdef ENABLE_STEAM_SUPPORT
 #include "util/steam.hpp"
-#endif
 
 
 using namespace std::literals;

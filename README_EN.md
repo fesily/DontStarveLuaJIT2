@@ -146,7 +146,7 @@ Need vs2008 compiler the lua51.dll. You can also use the one in the Mod.
 
 ### Linux
 
-Docker Ubuntu 14.04
+Docker Ubuntu 24.04
 
 ### MacOS
 

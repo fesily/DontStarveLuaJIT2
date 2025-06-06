@@ -125,7 +125,7 @@ configuration_options = {
             zh = "渲染帧率"
         }),
         options = {
-            { description = translate({ en = "off", zh = "禁用"}), data = false },
+            { description = translate({ en = "off", zh = "禁用"}), data = 60 },
             { description = "30fps", data = 30 },
             { description = "60fps", data = 60 },
             { description = "90fps", data = 90 },
@@ -145,7 +145,7 @@ configuration_options = {
             zh = "客户端与服务器的通讯频率. 默认(10fps)."
         }),
         options = {
-            { description = translate({ en = "off", zh = "禁用"}), data = false },
+            { description = translate({ en = "off", zh = "禁用"}), data = 10 },
             { description = "15fps", data = 15 },
             { description = "20fps", data = 20 },
             { description = "25fps", data = 25 },
@@ -163,7 +163,7 @@ configuration_options = {
             { description = "115fps", data = 115 },
             { description = "120fps", data = 120 },
         },
-        default = false
+        default = 10
     },
     {
         name = "JitOpt",

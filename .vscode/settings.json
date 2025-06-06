@@ -139,8 +139,20 @@
         "luaconf.h": "c",
         "coroutine": "cpp",
         "latch": "cpp",
+        "future": "cpp",
+        "resumable": "cpp",
+        "assert.h": "c",
+        "lj_gc.h": "c",
+        "lj_io_patch.h": "c",
+        "lj_def.h": "c",
+        "lj_arch.h": "c",
+        "execution": "cpp",
+        "strstream": "cpp",
         "cfenv": "cpp",
-        "future": "cpp"
+        "*.inc": "cpp",
+        "*.def": "cpp",
+        "lj_buf.h": "c",
+        "lj_jit.h": "c"
     },
     "lua.debug.variables.showIntegerAsHex": true
 }

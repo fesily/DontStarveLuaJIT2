@@ -53,7 +53,6 @@ target_compile_definitions(Injector PRIVATE MOD_VERSION="${CMAKE_PROJECT_VERSION
 
 if (ENABLE_STEAM_SUPPORT)
     target_compile_definitions(Injector PRIVATE ENABLE_STEAM_SUPPORT)
-    target_link_libraries(Injector PRIVATE ${STEAM_LIBRARIES})
     target_include_directories(Injector PUBLIC ${STEAM_INCLUDE_DIR})
     target_include_directories(Injector PUBLIC ${STEAM_SDK_INCLUDE_DIR})
 endif()

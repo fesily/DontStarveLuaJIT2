@@ -16,6 +16,8 @@ elseif (APPLE)
     set(GAME_DIR "/Users/fesil/Library/Application Support/Steam/steamapps/common/Don't Starve Together/dontstarve_steam.app/Contents")
 endif ()
 
+set(FRIDA_GUM_VERSION "17.1.0")
+
 file(REAL_PATH ${GAME_DIR} GAME_DIR)
 
 set(PYTHON_EXECUTABLE_NAME "python3")
@@ -89,6 +91,13 @@ else ()
     set(LUA_LIBRARIES_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/src)
 endif ()
 
+execute_process(
+        COMMAND echo "Downloading Frida-Gum version ${FRIDA_GUM_VERSION}..."
+        COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tools/download_frida_gum.py" "-v=${FRIDA_GUM_VERSION}"
+        COMMAND echo "Frida-Gum downloaded successfully."
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 set(LUA_INCLUDE_DIR ${lua51_root}/src)
 if (MSVC)
     set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
@@ -119,6 +128,7 @@ if (MSVC)
     add_subdirectory("tools/Checker")
 endif ()
 add_subdirectory("tools/Creater")
+add_subdirectory("tools/PersistentString")
 
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX}
 #install(FILES ${LUA_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})

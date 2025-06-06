@@ -1,7 +1,4 @@
-find_package(libzip CONFIG REQUIRED)
-find_package(ZLIB REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
 
 
 set(Winmm_SOURCES
@@ -17,8 +14,6 @@ add_library(Winmm SHARED ${Winmm_SOURCES})
 
 target_include_directories(Winmm PUBLIC ${DONTSTARVEINJECTOR_UTIL_DIR})
 
-target_link_libraries(Winmm PRIVATE ZLIB::ZLIB)
-target_link_libraries(Winmm PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(Winmm PRIVATE spdlog::spdlog)
 add_compile_definitions(NO_FRIDA_GUM=1)
 
