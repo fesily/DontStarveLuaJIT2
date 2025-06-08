@@ -341,12 +341,12 @@ extern "C" DONTSTARVEINJECTOR_API const char *DS_LUAJIT_Fengxun_Decrypt(const ch
 
 #define SET_LUAJIT_API_FUNC(name)                               \
     {                                                           \
-        auto ptr = (void **) loadlibproc(hluajitModule, #name); \
+        auto ptr = (void **) gum_module_find_export_by_name(luaModule, #name); \
         if (ptr)                                                \
             *ptr = (void *) &name;                              \
     }
 
-void init_luajit_io(module_handler_t hluajitModule) {
+void init_luajit_io(GumModule* luaModule) {
     SET_LUAJIT_API_FUNC(lj_fclose);
     SET_LUAJIT_API_FUNC(lj_ferror);
     SET_LUAJIT_API_FUNC(lj_fgets);
@@ -365,11 +365,11 @@ void init_luajit_io(module_handler_t hluajitModule) {
     SET_LUAJIT_API_FUNC(lj_clearerr);
     SET_LUAJIT_API_FUNC(lj_need_transform_path);
     SET_LUAJIT_API_FUNC(lj_gc_fullgc_external);
-    lua_gc_func = (decltype(lua_gc_func)) loadlibproc(hluajitModule, "lua_gc");
+    lua_gc_func = (decltype(lua_gc_func)) gum_module_find_export_by_name(luaModule, "lua_gc");
 }
 
 static void hook_steam_gameserver_interface();
-void init_luajit_jit_opt(module_handler_t hluajitModule) {
+void init_luajit_jit_opt(GumModule* luaModule) {
     SET_LUAJIT_API_FUNC(lj_jit_default_flags);
     hook_steam_gameserver_interface();
 }

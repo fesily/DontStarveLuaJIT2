@@ -152,7 +152,15 @@
         "*.inc": "cpp",
         "*.def": "cpp",
         "lj_buf.h": "c",
-        "lj_jit.h": "c"
+        "lj_jit.h": "c",
+        "barrier": "cpp",
+        "generator": "cpp",
+        "mdspan": "cpp",
+        "print": "cpp",
+        "spanstream": "cpp",
+        "stacktrace": "cpp",
+        "stdfloat": "cpp",
+        "syncstream": "cpp"
     },
     "lua.debug.variables.showIntegerAsHex": true
 }

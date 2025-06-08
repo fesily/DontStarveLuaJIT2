@@ -12,6 +12,7 @@
 #include "ScanCtx.hpp"
 #include "ProcessMutex.hpp"
 #include "luajit_config.hpp"
+#include "GameLua.hpp"
 
 #include <spdlog/spdlog.h>
 

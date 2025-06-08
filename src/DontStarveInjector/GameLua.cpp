@@ -1,6 +1,13 @@
 #include "GameLua.hpp"
+#include "config.hpp"
+#include "DontStarveSignature.hpp"
+#include "LuaModule.hpp"
+#include "util/inlinehook.hpp"
 #include <string_view>
+#include <map>
 #include <spdlog/spdlog.h>
+#include <functional>
+#if 0
 using namespace std::literals;
 
 
@@ -15,151 +22,201 @@ using namespace std::literals;
 #define SHARED_LIBRARY_PRE "lib"
 #endif
 
-constexpr const char* defualtLua51LibraryName = SHARED_LIBRARY_PRE "lua51Original" SHARED_LIBRARY_EXT;
-constexpr const char* defualtLuajitLibraryName = SHARED_LIBRARY_PRE "lua51DS" SHARED_LIBRARY_EXT;
 
-GameLuaContext gameLua51Ctx{
-        .sharedlibraryName = defualtLua51LibraryName,
-        .luaType = GameLuaType::Lua51,
-        .luaState = nullptr,
-        .interface = nullptr};
-
-GameLuaContext gameLuajitCtx{
-        .sharedlibraryName = defualtLuajitLibraryName,
-        .luaType = GameLuaType::LuaJit,
-        .luaState = nullptr,
-        .interface = nullptr};
-
-GameLuaContext &GetGameLuaContext() {
-    static GameLuaContext ctx;
-    return ctx;
+#pragma region GAME_IO
+bool UseGameIO() {
+    bool use_game_io = getenv("USE_GAME_IO") != nullptr;
+    return use_game_io;
+}
+int (*luaopen_game_io)(lua_State *L);
+void GameLuaContext::luaL_openlibs_hooker(lua_State *L) {
+    interface._luaL_openlibs(L);
+    if (luaopen_game_io) {
+        interface._lua_pushcclosure(L, (luaopen_game_io), 0);
+        interface._lua_pushstring(L, LUA_IOLIBNAME);
+        interface._lua_call(L, 1, 0);
+    }
 }
 
-#include "api_listener.hpp"
-
-#if USE_FAKE_API
-extern std::unordered_map<std::string_view, void *> lua_fake_apis;
-
-#include <lua.hpp>
-void *GetLuaJitAddress(const char *name) {
-    char buf[64];
-    snprintf(buf, 64, "fake_%s", name);
-    return lua_fake_apis[name];
+void load_game_fn_io_open(const Signatures &signatures) {
+    auto offset = signatures.funcs.at("luaopen_io").offset;
+    auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
+    luaopen_game_io = decltype(luaopen_game_io)(target);
 }
-#else
-#define GetLuaJitAddress(name) loadlibproc(hluajitModule, name)
-#endif
-
-#if USE_LISTENER
-static GumInterceptor *interceptor;
-#endif
-
-enum class LUA_EVENT {
-    new_state,
-    close_state,
-    call_lua_gc,
-};
+#pragma endregion GAME_IO
 
 void lua_event_notifyer(LUA_EVENT, lua_State *);
-static void *lua_newstate_hooker(void *, void *ud) {
-    auto L = luaL_newstate();
-    lua_event_notifyer(LUA_EVENT::new_state, L);
-    spdlog::info("luaL_newstate:{}", (void *) L);
-    return L;
-}
 
-static void lua_close_hooker(lua_State *L) {
-    lua_event_notifyer(LUA_EVENT::close_state, L);
-    spdlog::info("lua_close:{}", (void *) L);
-    lua_close(L);
-}
-
-static int lua_gc_hooker(lua_State *L, int w, int d) {
-    lua_event_notifyer(LUA_EVENT::call_lua_gc, L);
-    return lua_gc(L, w, d);
-}
-#if !ONLY_LUA51
-
-#if USE_FAKE_API
-extern lua_State *map_handler(lua_State *L);
-#endif
-
-void lua_setfield_fake(lua_State *L, int idx, const char *k) {
-#if USE_FAKE_API
-    L = map_handler(L);
-#endif
-    if (lua_gettop(L) == 0)
-        lua_pushnil(L);
-    lua_setfield(L, idx, k);
-}
-
-#endif
-
-#if USE_LISTENER
-GumInvocationListener *listener;
-static gboolean PrintCallCb(const GumExportDetails *details,
-                            gpointer user_data) {
-    gum_interceptor_attach(interceptor, (void *) details->address, listener, (void *) details->name);
-    return true;
-}
-#endif
-
-int (*luaopen_game_io)(lua_State *L);
-static void luaL_openlibs_hooker(lua_State *L) {
-    luaL_openlibs(L);
-    if (luaopen_game_io) {
-        lua_pushcfunction(L, luaopen_game_io);
-        lua_pushstring(L, LUA_IOLIBNAME);
-        lua_call(L, 1, 0);
+struct GameLuaContextImpl : GameLuaContext {
+    GameLuaContextImpl(const char *sharedLibraryName, GameLuaType type)
+        : GameLuaContext{sharedLibraryName, type} {
     }
-}
+    bool LoadLuaModule() {
+        if (getenv("GAME_LUA_MODULE_NAME")) {
+            sharedlibraryName = getenv("GAME_LUA_MODULE_NAME");
+        }
 
-static void *get_luajit_address(const std::string_view &name) {
-    void *replacer = GetLuaJitAddress(name.data());
-    assert(replacer != nullptr);
-#if !ONLY_LUA51
-    if (name == "lua_newstate"sv) {
-        // TODO 2.1 delete this
-        replacer = (void *) &lua_newstate_hooker;
-    } else if (name == "lua_setfield"sv) {
-        replacer = (void *) &lua_setfield_fake;
-    } else if (name == "lua_close"sv) {
-        replacer = (void *) &lua_close_hooker;
-    } else if (name == "lua_gc"sv) {
-        replacer = (void *) &lua_gc_hooker;
+        LuaModule = gum_process_find_module_by_name(sharedlibraryName.c_str());
+        if (!LuaModule) {
+            spdlog::error("Cannot find Lua module: {}", sharedlibraryName);
+        } else {
+            GError *error = nullptr;
+            LuaModule = gum_module_load(sharedlibraryName.c_str(), &error);
+            if (!LuaModule) {
+                spdlog::error("Cannot load Lua module: {}, error: {}", sharedlibraryName, error->message);
+                g_error_free(error);
+            } else {
+                spdlog::info("Loaded Lua module: {}", sharedlibraryName);
+            }
+        }
+        return LuaModule != nullptr;
     }
-#if USE_GAME_IO
-    else if (name == "luaL_openlibs"sv) {
-        replacer = (void *) &luaL_openlibs_hooker;
+    virtual void LoadAllInterfaces() {
+        if (LuaModule) {
+#define LOAD_LUA_API(name) \
+    interface._##name = (decltype(&name)) gum_module_find_export_by_name(LuaModule, #name);
+            LUA51_API_DEFINES(LOAD_LUA_API);
+#undef LOAD_LUA_API
+        }
     }
-#endif
-#endif
-    return replacer;
-}
 
+    virtual void *GetLuaExport(const std::string_view &target) {
+        if (!LuaModule) {
+            spdlog::error("Lua module is not loaded, cannot find export: {}", target);
+            return nullptr;
+        }
+#define GET_LUA_API(name)                  \
+    if (target == #name) {                 \
+        return (void *) interface._##name; \
+    }
+        LUA51_API_DEFINES(GET_LUA_API);
+#undef GET_LUA_API
+        return nullptr;
+    }
+
+    virtual void LoadMyLuaApi() {
+        static decltype(&lua_gc) real_lua_gc;
+        real_lua_gc = interface._lua_gc;
+        interface._lua_gc = (decltype(interface._lua_gc)) +[](lua_State *L, int what, int data) {
+            lua_event_notifyer(LUA_EVENT::call_lua_gc, L);
+            return real_lua_gc(L, what, data);
+        };
+        static decltype(&lua_close) real_lua_close;
+        real_lua_close = interface._lua_close;
+        interface._lua_close = (decltype(interface._lua_close)) +[](lua_State *L) {
+            lua_event_notifyer(LUA_EVENT::close_state, L);
+            spdlog::info("lua_close:{}", (void *) L);
+            return real_lua_close(L);
+        };
+        if (UseGameIO()) {
+            decltype(&luaL_openlibs) hooker = +[](lua_State *L) {
+                return GetGameLuaContext().luaL_openlibs_hooker(L);
+            };
+        }
+    }
+
+    virtual ~GameLuaContextImpl() = default;
+    GameLuaContextImpl(const GameLuaContextImpl &) = delete;
+};
+
+GameLuaContextImpl *currentCtx;
+GameLuaContext &GetGameLuaContext() {
+    return *currentCtx;
+}
+struct GameLua51Context : GameLuaContextImpl {
+    using GameLuaContextImpl::GameLuaContextImpl;
+    virtual ~GameLua51Context() = default;
+    void LoadMyLuaApi() override {
+        GameLuaContextImpl::LoadMyLuaApi();
+        static decltype(&lua_newstate) real_lua_newstate;
+        real_lua_newstate = interface._lua_newstate;
+        interface._lua_newstate = (decltype(interface._lua_newstate)) +[](lua_Alloc f, void *ud) {
+            lua_event_notifyer(LUA_EVENT::new_state, nullptr);
+            auto L = real_lua_newstate(f, ud);
+            spdlog::info("lua_newstate:{}", (void *) L);
+            return L;
+        };
+    }
+};
+
+struct GameLuaContextJit : GameLuaContextImpl {
+    using GameLuaContextImpl::GameLuaContextImpl;
+    virtual ~GameLuaContextJit() = default;
+
+    void LoadAllInterfaces() override {
+        GameLuaContextImpl::LoadAllInterfaces();
+        if (LuaModule) {
+            interface._lua_getinfo = (decltype(&lua_getinfo)) gum_module_find_export_by_name(LuaModule, "lua_getinfo_game");
+        }
+    }
+
+    void LoadMyLuaApi() override;
+
+    void lua_setfield_fake(lua_State *L, int idx, const char *k) {
+        if (interface._lua_gettop(L) == 0)
+            interface._lua_pushnil(L);
+        interface._lua_setfield(L, idx, k);
+    }
+    void *lua_newstate_hooker(void *, void *ud) {
+        auto L = interface._luaL_newstate();
+        lua_event_notifyer(LUA_EVENT::new_state, L);
+        spdlog::info("luaL_newstate:{}", (void *) L);
+        return L;
+    }
+};
+
+constexpr const char *defualtLua51LibraryName = SHARED_LIBRARY_PRE "lua51Original" SHARED_LIBRARY_EXT;
+constexpr const char *defualtLuajitLibraryName = SHARED_LIBRARY_PRE "lua51DS" SHARED_LIBRARY_EXT;
+
+GameLua51Context gameLua51Ctx{
+        defualtLua51LibraryName,
+        GameLuaType::_51};
+
+GameLuaContextJit gameLuajitCtx{
+        defualtLuajitLibraryName,
+        GameLuaType::jit};
+
+void GameLuaContextJit::LoadMyLuaApi() {
+    GameLuaContextImpl::LoadMyLuaApi();
+    interface._lua_setfield = (decltype(interface._lua_setfield)) +[](lua_State *L, int idx, const char *k) {
+        gameLuajitCtx.lua_setfield_fake(L, idx, k);
+    };
+    interface._lua_newstate = (decltype(interface._lua_newstate)) +[](lua_Alloc f, void *ud) {
+        return gameLuajitCtx.lua_newstate_hooker(f, ud);
+    };
+}
 static void voidFunc() {
 }
 
-static std::map<std::string, std::string> replace_hook = {
-#if !ONLY_LUA51
-        {"lua_getinfo", "lua_getinfo_game"}
-#endif
-};
+GameLuaType currentLuaType = GameLuaType::jit;
 
-static void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures, const ListExports_t &exports) {
-    hluajitModule = loadlib(luajitModuleName);
-    if (!hluajitModule) {
-        spdlog::error("cannot load luajit: {}", luajitModuleName);
+extern "C" DONTSTARVEINJECTOR_API void DS_LUAJIT_set_vm_type(GameLuaType type, const char *moduleName) {
+    currentLuaType = type;
+    if (type == GameLuaType::_51) {
+        currentCtx = &gameLua51Ctx;
+    } else if (type == GameLuaType::jit) {
+        currentCtx = &gameLuajitCtx;
+    }
+    if (moduleName && std::filesystem::exists(moduleName)) {
+        currentCtx->sharedlibraryName = moduleName;
+    }
+}
+
+void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures, const ListExports_t &exports) {
+    if (currentCtx == nullptr) {
+        spdlog::error("GameLuaContext is not initialized, cannot replace Lua module");
         return;
     }
+    if (!currentCtx->LoadLuaModule())
+        return;
+    currentCtx->LoadAllInterfaces();
+    currentCtx->LoadMyLuaApi();
     std::vector<const std::string *> hookTargets;
     hookTargets.reserve(exports.size());
     for (auto &[name, _]: exports) {
-#if USE_GAME_IO
-        if (name == "luaopen_io"sv) {
+        if (UseGameIO() && name == "luaopen_io"sv) {
             continue;
         }
-#endif
         hookTargets.emplace_back(&name);
     }
 
@@ -168,13 +225,7 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
         auto &name = *_name;
         auto offset = signatures.funcs.at(name).offset;
         auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
-        auto replacer = (uint8_t *) get_luajit_address(name);
-        if (replace_hook.contains(name)) {
-            spdlog::info("ReplaceLuaModule hook {} to {}", name, replace_hook[name]);
-            auto replacer1 = (uint8_t *) get_luajit_address(replace_hook[name]);
-            if (replacer1)
-                replacer = replacer1;
-        }
+        auto replacer = (uint8_t *) currentCtx->GetLuaExport(name);
         if (!Hook(target, replacer)) {
             spdlog::error("replace {} failed", name);
             break;
@@ -190,13 +241,6 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
         spdlog::info("reset all hook");
         return;
     }
-#if USE_GAME_IO
-    {
-        auto offset = signatures.funcs.at("luaopen_io").offset;
-        auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
-        luaopen_game_io = decltype(luaopen_game_io)(target);
-    }
-#endif
 
 #if DEBUG_GETSIZE_PATCH
     // In the game code direct read the internal lua vm sturct offset, will crash here
@@ -217,28 +261,12 @@ static void ReplaceLuaModule(const std::string &mainPath, const Signatures &sign
 #endif
 
 #if REPLACE_IO
-    extern void init_luajit_io(module_handler_t hluajitModule);
-    init_luajit_io(hluajitModule);
+    extern void init_luajit_io(GumModule * luamodule);
+    init_luajit_io(currentCtx->LuaModule);
 #endif
 
-    extern void init_luajit_jit_opt(module_handler_t hluajitModule);
-    init_luajit_jit_opt(hluajitModule);
-
-#if USE_LISTENER
-    listener = (GumInvocationListener *) g_object_new(EXAMPLE_TYPE_LISTENER, NULL);
-    gum_module_enumerate_exports(target_module_name, PrintCallCb, NULL);
+    extern void init_luajit_jit_opt(GumModule * luamodule);
+    if (currentLuaType == GameLuaType::jit)
+        init_luajit_jit_opt(currentCtx->LuaModule);
+}
 #endif
-}
-
-
-void ReplaceLuaApi(GameLuaType type, const char *shared_library_name) {
-    if (type == GameLuaType::Lua51) {
-        GetGameLuaContext().luaType = GameLuaType::Lua51;
-        GetGameLuaContext().sharedlibraryName = shared_library_name;
-        GetGameLuaContext().interface = new LuaInterfaces();
-    } else if (type == GameLuaType::LuaJit) {
-        GetGameLuaContext().luaType = GameLuaType::LuaJit;
-        GetGameLuaContext().sharedlibraryName = shared_library_name;
-        GetGameLuaContext().interface = new LuaInterfaces();
-    }
-}

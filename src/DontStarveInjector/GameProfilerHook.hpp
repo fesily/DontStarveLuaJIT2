@@ -1,6 +1,7 @@
 #include "config.hpp"
 #include "MemorySignature.hpp"
 #include "util/inlinehook.hpp"
+#include "GameLua.hpp"
 #include <frida-gum.h>
 #include <list>
 #include <string>
