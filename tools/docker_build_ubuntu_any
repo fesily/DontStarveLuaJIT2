@@ -1,25 +1,32 @@
 FROM ubuntu:22.04 AS gcc_builder
 
-RUN apt update
+RUN apt update --fix-missing
 RUN apt install build-essential libmpfr-dev libgmp3-dev libmpc-dev wget -y
 RUN wget http://ftp.gnu.org/gnu/gcc/gcc-14.3.0/gcc-14.3.0.tar.gz
 RUN tar -xf gcc-14.3.0.tar.gz
-RUN cd gcc-14.3.0
+WORKDIR /gcc-14.3.0
 RUN ./configure -v --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --prefix=/usr/local/gcc-14.3.0 --enable-checking=release --enable-languages=c,c++ --disable-multilib --program-suffix=-14.3.0
-RUN make
-RUN make install
+RUN make -j$(nproc)
+RUN make install -j$(nproc)
 
-RUN rm ./gcc-14.3.0.tar.gz && \
-    rm -rf ./gcc-14.3.0
+RUN update-alternatives --install /usr/bin/g++ g++ /usr/local/gcc-14.3.0/bin/g++-14.3.0 14
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/local/gcc-14.3.0/bin/gcc-14.3.0 14
+
+RUN gcc-14.3.0 --version
+RUN g++-14.3.0 --version
 
 FROM ubuntu:22.04 AS dontstarveluajit2_builder
 
 RUN apt update && \
-    apt install -y ninja-build python3 git gcc-13 g++-13 curl zip unzip tar pkg-config
+    apt install -y ninja-build python3 git curl zip unzip tar pkg-config
     
 COPY --from=gcc_builder /usr/local/gcc-14.3.0 /usr/local/gcc-14.3.0
 RUN update-alternatives --install /usr/bin/g++ g++ /usr/local/gcc-14.3.0/bin/g++-14.3.0 14
 RUN update-alternatives --install /usr/bin/gcc gcc /usr/local/gcc-14.3.0/bin/gcc-14.3.0 14
+RUN ln -s -f /usr/local/gcc-14.3.0/lib64/libstdc++.so.6.0.33 /usr/lib/x86_64-linux-gnu/libstdc++.so.6
+
+RUN g++ --version
+RUN gcc --version
 
 WORKDIR /opt/
 
