@@ -7,7 +7,6 @@
 #include <map>
 #include <spdlog/spdlog.h>
 #include <functional>
-#if 0
 using namespace std::literals;
 
 
@@ -30,11 +29,11 @@ bool UseGameIO() {
 }
 int (*luaopen_game_io)(lua_State *L);
 void GameLuaContext::luaL_openlibs_hooker(lua_State *L) {
-    interface._luaL_openlibs(L);
+    api._luaL_openlibs(L);
     if (luaopen_game_io) {
-        interface._lua_pushcclosure(L, (luaopen_game_io), 0);
-        interface._lua_pushstring(L, LUA_IOLIBNAME);
-        interface._lua_call(L, 1, 0);
+        api._lua_pushcclosure(L, (luaopen_game_io), 0);
+        api._lua_pushstring(L, LUA_IOLIBNAME);
+        api._lua_call(L, 1, 0);
     }
 }
 
@@ -74,7 +73,7 @@ struct GameLuaContextImpl : GameLuaContext {
     virtual void LoadAllInterfaces() {
         if (LuaModule) {
 #define LOAD_LUA_API(name) \
-    interface._##name = (decltype(&name)) gum_module_find_export_by_name(LuaModule, #name);
+    api._##name = (decltype(&name)) gum_module_find_export_by_name(LuaModule, #name);
             LUA51_API_DEFINES(LOAD_LUA_API);
 #undef LOAD_LUA_API
         }
@@ -85,9 +84,15 @@ struct GameLuaContextImpl : GameLuaContext {
             spdlog::error("Lua module is not loaded, cannot find export: {}", target);
             return nullptr;
         }
+        if (UseGameIO() && target == "luaL_openlibs") {
+            decltype(&luaL_openlibs) hooker = +[](lua_State *L) {
+                return GetGameLuaContext().luaL_openlibs_hooker(L);
+            };
+            return (void *) hooker;
+        }
 #define GET_LUA_API(name)                  \
     if (target == #name) {                 \
-        return (void *) interface._##name; \
+        return (void *) api._##name; \
     }
         LUA51_API_DEFINES(GET_LUA_API);
 #undef GET_LUA_API
@@ -96,23 +101,18 @@ struct GameLuaContextImpl : GameLuaContext {
 
     virtual void LoadMyLuaApi() {
         static decltype(&lua_gc) real_lua_gc;
-        real_lua_gc = interface._lua_gc;
-        interface._lua_gc = (decltype(interface._lua_gc)) +[](lua_State *L, int what, int data) {
+        real_lua_gc = api._lua_gc;
+        api._lua_gc = (decltype(&lua_gc)) +[](lua_State *L, int what, int data) {
             lua_event_notifyer(LUA_EVENT::call_lua_gc, L);
             return real_lua_gc(L, what, data);
         };
         static decltype(&lua_close) real_lua_close;
-        real_lua_close = interface._lua_close;
-        interface._lua_close = (decltype(interface._lua_close)) +[](lua_State *L) {
+        real_lua_close = api._lua_close;
+        api._lua_close = (decltype(&lua_close)) +[](lua_State *L) {
             lua_event_notifyer(LUA_EVENT::close_state, L);
             spdlog::info("lua_close:{}", (void *) L);
             return real_lua_close(L);
         };
-        if (UseGameIO()) {
-            decltype(&luaL_openlibs) hooker = +[](lua_State *L) {
-                return GetGameLuaContext().luaL_openlibs_hooker(L);
-            };
-        }
     }
 
     virtual ~GameLuaContextImpl() = default;
@@ -129,8 +129,8 @@ struct GameLua51Context : GameLuaContextImpl {
     void LoadMyLuaApi() override {
         GameLuaContextImpl::LoadMyLuaApi();
         static decltype(&lua_newstate) real_lua_newstate;
-        real_lua_newstate = interface._lua_newstate;
-        interface._lua_newstate = (decltype(interface._lua_newstate)) +[](lua_Alloc f, void *ud) {
+        real_lua_newstate = api._lua_newstate;
+        api._lua_newstate = (decltype(&lua_newstate)) +[](lua_Alloc f, void *ud) {
             lua_event_notifyer(LUA_EVENT::new_state, nullptr);
             auto L = real_lua_newstate(f, ud);
             spdlog::info("lua_newstate:{}", (void *) L);
@@ -146,20 +146,20 @@ struct GameLuaContextJit : GameLuaContextImpl {
     void LoadAllInterfaces() override {
         GameLuaContextImpl::LoadAllInterfaces();
         if (LuaModule) {
-            interface._lua_getinfo = (decltype(&lua_getinfo)) gum_module_find_export_by_name(LuaModule, "lua_getinfo_game");
+            api._lua_getinfo = (decltype(&lua_getinfo)) gum_module_find_export_by_name(LuaModule, "lua_getinfo_game");
         }
     }
 
     void LoadMyLuaApi() override;
 
     void lua_setfield_fake(lua_State *L, int idx, const char *k) {
-        if (interface._lua_gettop(L) == 0)
-            interface._lua_pushnil(L);
-        interface._lua_setfield(L, idx, k);
+        if (api._lua_gettop(L) == 0)
+            api._lua_pushnil(L);
+        api._lua_setfield(L, idx, k);
     }
     void *lua_newstate_hooker(void *, void *ud) {
-        auto L = interface._luaL_newstate();
-        lua_event_notifyer(LUA_EVENT::new_state, L);
+        lua_event_notifyer(LUA_EVENT::new_state, nullptr);
+        auto L = api._luaL_newstate();
         spdlog::info("luaL_newstate:{}", (void *) L);
         return L;
     }
@@ -178,10 +178,10 @@ GameLuaContextJit gameLuajitCtx{
 
 void GameLuaContextJit::LoadMyLuaApi() {
     GameLuaContextImpl::LoadMyLuaApi();
-    interface._lua_setfield = (decltype(interface._lua_setfield)) +[](lua_State *L, int idx, const char *k) {
+    api._lua_setfield = (decltype(&lua_setfield)) +[](lua_State *L, int idx, const char *k) {
         gameLuajitCtx.lua_setfield_fake(L, idx, k);
     };
-    interface._lua_newstate = (decltype(interface._lua_newstate)) +[](lua_Alloc f, void *ud) {
+    api._lua_newstate = (decltype(&lua_newstate)) +[](lua_Alloc f, void *ud) {
         return gameLuajitCtx.lua_newstate_hooker(f, ud);
     };
 }
@@ -260,13 +260,14 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
     }
 #endif
 
-#if REPLACE_IO
-    extern void init_luajit_io(GumModule * luamodule);
-    init_luajit_io(currentCtx->LuaModule);
-#endif
-
     extern void init_luajit_jit_opt(GumModule * luamodule);
-    if (currentLuaType == GameLuaType::jit)
+    extern void init_luajit_io(GumModule * luamodule);
+    if (currentLuaType == GameLuaType::jit) {
         init_luajit_jit_opt(currentCtx->LuaModule);
+        if (getenv("DISABLE_REPLACE_IO") != nullptr) {
+            spdlog::info("DISABLE_REPLACE_IO is set, skip replacing io module");
+        } else {
+            init_luajit_io(currentCtx->LuaModule);
+        }
+    }
 }
-#endif

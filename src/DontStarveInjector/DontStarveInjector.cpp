@@ -13,7 +13,7 @@
 #include "ProcessMutex.hpp"
 #include "luajit_config.hpp"
 #include "GameLua.hpp"
-
+#include "GameSteam.hpp"
 #include <spdlog/spdlog.h>
 
 #ifdef _WIN32
@@ -191,6 +191,9 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     replace_game_branch_flag_to_dev(mainPath);
 
     LoadGameModConfig();
+    if (!DontStarveInjectorIsClient) {
+        HookSteamGameServerInterface();
+    }
 }
 
 

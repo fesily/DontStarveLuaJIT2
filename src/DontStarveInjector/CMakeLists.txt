@@ -18,6 +18,7 @@ set(SOURCES
         luajit_config.cpp
         game_info.cpp
         GameLua.cpp
+        GameSteam.cpp
 )
 
 if (ENABLE_STEAM_SUPPORT)

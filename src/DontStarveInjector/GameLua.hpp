@@ -21,21 +21,19 @@ enum class LUA_EVENT {
     this is a struct to hold all lua export functions
     so we can replace them with our own implementation
 */
-struct LuaInterfaces {
+struct LuaApis {
 #define IMPORT_LUA_API(name) decltype(&name) _##name;
 
     LUA51_API_DEFINES(IMPORT_LUA_API);
 #undef IMPORT_LUA_API
 };
-extern LuaInterfaces interface;
-
 
 struct GameLuaContext {
     std::string sharedlibraryName;
     GameLuaType luaType;
     lua_State *luaState;
     GumModule *LuaModule;
-    LuaInterfaces interface;
+    LuaApis api;
     void luaL_openlibs_hooker(lua_State *L);
 };
 

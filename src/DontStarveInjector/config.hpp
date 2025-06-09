@@ -18,10 +18,6 @@
 #define USE_LISTENER 0
 #endif
 
-#ifndef REPLACE_IO
-#define REPLACE_IO !ONLY_LUA51
-#endif
-
 #ifndef DEBUG_GETSIZE_PATCH
 #define DEBUG_GETSIZE_PATCH 1
 #endif
