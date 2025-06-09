@@ -19,6 +19,7 @@ set(SOURCES
         game_info.cpp
         GameLua.cpp
         GameSteam.cpp
+        GameSignature.cpp
 )
 
 if (ENABLE_STEAM_SUPPORT)

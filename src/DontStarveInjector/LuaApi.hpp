@@ -81,7 +81,6 @@
     _(lua_gethook)           \
     _(lua_gethookmask)       \
     _(lua_gethookcount)      \
-    _(luaL_openlibs)         \
     _(luaL_openlib)          \
     _(luaL_register)         \
     _(luaL_getmetafield)     \
@@ -111,11 +110,31 @@
     _(luaL_loadstring)       \
     _(luaL_newstate)         \
     _(luaL_gsub)             \
-    _(luaL_findtable)
+    _(luaL_findtable)        \
+    _(luaL_buffinit)         \
+    _(luaL_prepbuffer)       \
+    _(luaL_addlstring)       \
+    _(luaL_addstring)        \
+    _(luaL_addvalue)         \
+    _(luaL_pushresult)       \
+    _(luaL_openlibs)         \
+    _(luaopen_base)          \
+    _(luaopen_debug)         \
+    _(luaopen_io)            \
+    _(luaopen_math)          \
+    _(luaopen_os)            \
+    _(luaopen_package)       \
+    _(luaopen_string)        \
+    _(luaopen_table)
 
 #define LUA51_API_DEFINES(_) LUA_API_DEFINES(_)
+#define LUAJIT_API_DEFINES(_) \
+    _(luaopen_bit)            \
+    _(luaopen_jit)            \
+    _(luaopen_ffi)            \
+    _(luaopen_string_buffer)
+
 #define LUAJIT_API_DEFINES_5_2(_) \
-    LUA_API_DEFINES(_)            \
     _(luaL_fileresult)            \
     _(luaL_execresult)            \
     _(luaL_loadfilex)             \
@@ -125,12 +144,6 @@
     _(luaL_pushmodule)            \
     _(luaL_testudata)             \
     _(luaL_setmetatable)          \
-    _(luaL_buffinit)              \
-    _(luaL_prepbuffer)            \
-    _(luaL_addlstring)            \
-    _(luaL_addstring)             \
-    _(luaL_addvalue)              \
-    _(luaL_pushresult)            \
     _(lua_upvalueid)              \
     _(lua_upvaluejoin)            \
     _(lua_loadx)                  \
@@ -140,5 +153,4 @@
     _(lua_tointegerx)
 
 #define LUAJIT_API_DEFINES_5_3(_) \
-    LUAJIT_API_DEFINES(_)         \
     _(lua_isyieldable)

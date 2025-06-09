@@ -3,7 +3,7 @@
 
 #include "config.hpp"
 #include "util/inlinehook.hpp"
-#include "LuaModule.hpp"
+#include "GameSignature.hpp"
 #include "DontStarveSignature.hpp"
 #include "util/platform.hpp"
 #include "ctx.hpp"

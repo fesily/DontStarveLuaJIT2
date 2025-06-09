@@ -1,6 +1,7 @@
 
 #include "util/steam_sdk.hpp"
 #include "util/gum_platform.hpp"
+#include "gameio.h"
 #include <string_view>
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
@@ -49,7 +50,6 @@ union magic_offset {
     int64_t value;
 };
 
-extern void BInitWorkshopForGameServerHook(DepotId_t unWorkshopDepotID, const char *pszFolder);
 
 bool (*BInitWorkshopForGameServer)(void *self, DepotId_t unWorkshopDepotID, const char *pszFolder);
 static bool BInitWorkshopForGameServer_hook(void *self, DepotId_t unWorkshopDepotID, const char *pszFolder) {

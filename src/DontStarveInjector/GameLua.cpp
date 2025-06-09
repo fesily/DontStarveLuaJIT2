@@ -1,8 +1,9 @@
 #include "GameLua.hpp"
 #include "config.hpp"
 #include "DontStarveSignature.hpp"
-#include "LuaModule.hpp"
+#include "GameSignature.hpp"
 #include "util/inlinehook.hpp"
+#include "gameio.h"
 #include <string_view>
 #include <map>
 #include <spdlog/spdlog.h>
@@ -57,8 +58,6 @@ struct GameLuaContextImpl : GameLuaContext {
 
         LuaModule = gum_process_find_module_by_name(sharedlibraryName.c_str());
         if (!LuaModule) {
-            spdlog::error("Cannot find Lua module: {}", sharedlibraryName);
-        } else {
             GError *error = nullptr;
             LuaModule = gum_module_load(sharedlibraryName.c_str(), &error);
             if (!LuaModule) {
@@ -68,6 +67,9 @@ struct GameLuaContextImpl : GameLuaContext {
                 spdlog::info("Loaded Lua module: {}", sharedlibraryName);
             }
         }
+        if (!LuaModule) {
+            spdlog::error("Failed to load Lua module: {}", sharedlibraryName);
+        }
         return LuaModule != nullptr;
     }
     virtual void LoadAllInterfaces() {
@@ -75,7 +77,6 @@ struct GameLuaContextImpl : GameLuaContext {
 #define LOAD_LUA_API(name) \
     api._##name = (decltype(&name)) gum_module_find_export_by_name(LuaModule, #name);
             LUA51_API_DEFINES(LOAD_LUA_API);
-#undef LOAD_LUA_API
         }
     }
 
@@ -90,8 +91,8 @@ struct GameLuaContextImpl : GameLuaContext {
             };
             return (void *) hooker;
         }
-#define GET_LUA_API(name)                  \
-    if (target == #name) {                 \
+#define GET_LUA_API(name)            \
+    if (target == #name) {           \
         return (void *) api._##name; \
     }
         LUA51_API_DEFINES(GET_LUA_API);
@@ -119,10 +120,6 @@ struct GameLuaContextImpl : GameLuaContext {
     GameLuaContextImpl(const GameLuaContextImpl &) = delete;
 };
 
-GameLuaContextImpl *currentCtx;
-GameLuaContext &GetGameLuaContext() {
-    return *currentCtx;
-}
 struct GameLua51Context : GameLuaContextImpl {
     using GameLuaContextImpl::GameLuaContextImpl;
     virtual ~GameLua51Context() = default;
@@ -145,6 +142,10 @@ struct GameLuaContextJit : GameLuaContextImpl {
 
     void LoadAllInterfaces() override {
         GameLuaContextImpl::LoadAllInterfaces();
+        LUAJIT_API_DEFINES(LOAD_LUA_API);
+        LUAJIT_API_DEFINES_5_2(LOAD_LUA_API);
+        LUAJIT_API_DEFINES_5_3(LOAD_LUA_API);
+
         if (LuaModule) {
             api._lua_getinfo = (decltype(&lua_getinfo)) gum_module_find_export_by_name(LuaModule, "lua_getinfo_game");
         }
@@ -185,6 +186,12 @@ void GameLuaContextJit::LoadMyLuaApi() {
         return gameLuajitCtx.lua_newstate_hooker(f, ud);
     };
 }
+
+GameLuaContextImpl *currentCtx = &gameLuajitCtx;
+GameLuaContext &GetGameLuaContext() {
+    return *currentCtx;
+}
+
 static void voidFunc() {
 }
 
@@ -260,8 +267,6 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
     }
 #endif
 
-    extern void init_luajit_jit_opt(GumModule * luamodule);
-    extern void init_luajit_io(GumModule * luamodule);
     if (currentLuaType == GameLuaType::jit) {
         init_luajit_jit_opt(currentCtx->LuaModule);
         if (getenv("DISABLE_REPLACE_IO") != nullptr) {
