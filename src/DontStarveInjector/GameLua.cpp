@@ -45,6 +45,10 @@ void load_game_fn_io_open(const Signatures &signatures) {
 }
 #pragma endregion GAME_IO
 
+#define WAPPER_LUA_API(name)                          \
+    static decltype(&name) real_##name = api._##name; \
+    api._##name = (decltype(&name))
+
 void lua_event_notifyer(LUA_EVENT, lua_State *);
 
 struct GameLuaContextImpl : GameLuaContext {
@@ -101,15 +105,11 @@ struct GameLuaContextImpl : GameLuaContext {
     }
 
     virtual void LoadMyLuaApi() {
-        static decltype(&lua_gc) real_lua_gc;
-        real_lua_gc = api._lua_gc;
-        api._lua_gc = (decltype(&lua_gc)) +[](lua_State *L, int what, int data) {
+        WAPPER_LUA_API(lua_gc) + [](lua_State *L, int what, int data) {
             lua_event_notifyer(LUA_EVENT::call_lua_gc, L);
             return real_lua_gc(L, what, data);
         };
-        static decltype(&lua_close) real_lua_close;
-        real_lua_close = api._lua_close;
-        api._lua_close = (decltype(&lua_close)) +[](lua_State *L) {
+        WAPPER_LUA_API(lua_close) + [](lua_State *L) {
             lua_event_notifyer(LUA_EVENT::close_state, L);
             spdlog::info("lua_close:{}", (void *) L);
             return real_lua_close(L);
@@ -125,9 +125,7 @@ struct GameLua51Context : GameLuaContextImpl {
     virtual ~GameLua51Context() = default;
     void LoadMyLuaApi() override {
         GameLuaContextImpl::LoadMyLuaApi();
-        static decltype(&lua_newstate) real_lua_newstate;
-        real_lua_newstate = api._lua_newstate;
-        api._lua_newstate = (decltype(&lua_newstate)) +[](lua_Alloc f, void *ud) {
+        WAPPER_LUA_API(lua_newstate) + [](lua_Alloc f, void *ud) {
             lua_event_notifyer(LUA_EVENT::new_state, nullptr);
             auto L = real_lua_newstate(f, ud);
             spdlog::info("lua_newstate:{}", (void *) L);
@@ -153,11 +151,6 @@ struct GameLuaContextJit : GameLuaContextImpl {
 
     void LoadMyLuaApi() override;
 
-    void lua_setfield_fake(lua_State *L, int idx, const char *k) {
-        if (api._lua_gettop(L) == 0)
-            api._lua_pushnil(L);
-        api._lua_setfield(L, idx, k);
-    }
     void *lua_newstate_hooker(void *, void *ud) {
         lua_event_notifyer(LUA_EVENT::new_state, nullptr);
         auto L = api._luaL_newstate();
@@ -179,8 +172,11 @@ GameLuaContextJit gameLuajitCtx{
 
 void GameLuaContextJit::LoadMyLuaApi() {
     GameLuaContextImpl::LoadMyLuaApi();
-    api._lua_setfield = (decltype(&lua_setfield)) +[](lua_State *L, int idx, const char *k) {
-        gameLuajitCtx.lua_setfield_fake(L, idx, k);
+    WAPPER_LUA_API(lua_setfield) + [](lua_State *L, int idx, const char *k) {
+        auto &api = gameLuajitCtx.api;
+        if (api._lua_gettop(L) == 0)
+            api._lua_pushnil(L);
+        real_lua_setfield(L, idx, k);
     };
     api._lua_newstate = (decltype(&lua_newstate)) +[](lua_Alloc f, void *ud) {
         return gameLuajitCtx.lua_newstate_hooker(f, ud);

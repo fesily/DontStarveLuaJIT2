@@ -1,5 +1,5 @@
 #pragma once
-
+#include "config.hpp"
 #include "GameSignature.hpp"
 #include <frida-gum.h>
 
