@@ -1,13 +1,14 @@
-#pragma once
+﻿#pragma once
 #include <windows.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <string>
-#include "file_interface.hpp"
+#include <cassert>
 
+#include "file_interface.hpp"
 /* use wchat_t api for file on Windows*/
 struct wFile_interface : file_interface {
     wFile_interface(FILE *fp, bool textmode) : fp(fp), textmode{textmode} {
-      
     }
     ~wFile_interface() override {
         fclose();
@@ -20,51 +21,31 @@ struct wFile_interface : file_interface {
     }
 
     size_t fread(void *buf, size_t element_size, size_t count) override {
+        assert(element_size == 1);
         if (element_size != 1) {
-            // 只支持字节大小的元素
-            return 0;
+            return 0; // 不支持非字节读取
         }
-        // 分配宽字符缓冲区
-        std::wstring wbuf(count, L'\0');
-        // 读取宽字符
-        size_t read_count = ::fread(&wbuf[0], sizeof(wchar_t), count, fp);
+        std::string read_buf(count * element_size, '\0');
+        size_t read_count = ::fread(&read_buf[0], element_size, count, fp);
         if (read_count == 0) {
             return 0;
         }
-        // 把wbuf中所有的\r\n转换成\r
+        read_buf.resize(read_count);
         if (textmode) {
-            for (size_t i = 0; i < read_count; ++i) {
-                if (wbuf[i] == L'\r' && wbuf[i + 1] == L'\n') {
-                    wbuf[i] = L'\n';
-                    wbuf.erase(i + 1, 1);
-                    --read_count;
-                }
-            }
+            return replaceCRLF(read_buf, (char *) buf, count);
         }
-        // 将宽字符转换为多字节字符
-        size_t converted = wcstombs(static_cast<char*>(buf), wbuf.c_str(), count);
-        return converted == (size_t)-1 ? 0 : converted;
+        return read_count;
     }
 
     size_t fwrite(void const *buf, size_t element_size, size_t count) override {
+        assert(element_size == 1);
         if (element_size != 1) {
-            // 只支持字节大小的元素
-            return 0;
+            return 0; // 不支持非字节读取
         }
-        // 将输入的 char 数据转为字符串
-        std::string sbuf(static_cast<const char*>(buf), count);
-        // 分配宽字符缓冲区
-        std::wstring wbuf(count, L'\0');
-        // 将多字节字符转换为宽字符
-        size_t converted = mbstowcs(&wbuf[0], sbuf.c_str(), count);
-        if (converted == (size_t)-1) {
-            return 0;
-        }
-        // 写入宽字符到文件
-        return ::fwrite(wbuf.c_str(), sizeof(wchar_t), converted, fp);
+        return ::fwrite(buf, element_size, count, fp);
     }
 
-    int ferror() override { return ::ferror(fp);}
+    int ferror() override { return ::ferror(fp); }
 
     int fscanf(char const *const _Format, ...) override {
         va_list args;
@@ -77,7 +58,7 @@ struct wFile_interface : file_interface {
     char *fgets(char *buff, int maxcount) override {
         return ::fgets(buff, maxcount, fp);
     }
-    int fseeko(off_t _Offset, int _Origin) override{
+    int fseeko(off_t _Offset, int _Origin) override {
         return _fseeki64(fp, _Offset, _Origin);
     }
     off_t ftello() override {
@@ -94,31 +75,35 @@ struct wFile_interface : file_interface {
     FILE *fp = nullptr;
     bool textmode = false;
 
-    static wFile_interface* fopen(const char *path, const char *mode) {
-        auto wpath = toWstring(path);
-        auto wmode = toWstring(mode);
-        bool textmode = !wmode.contains('b');
-       
-        auto fp = _wfopen(wpath.c_str(), wmode.c_str());
+    static wFile_interface *fopen(const char *path, const char *mode) {
+        auto m = std::string_view{mode};
+        if (m.contains('t')) {
+            return nullptr;// 不支持文本模式
+        }
+        bool textmode = !m.contains('b');
+        std::string _m = textmode ? std::string{mode} + "b" : mode;
+
+
+        auto fp = ::fopen(path, _m.c_str());
         if (fp == nullptr) {
             return nullptr;
         }
         return new wFile_interface{fp, textmode};
     }
-    template<UINT CodePage = CP_ACP>
-    static std::wstring toWstring(const char *str) {
-        
-        int size_needed = MultiByteToWideChar(CodePage, 0, str, -1, nullptr, 0);
-        std::wstring wstr(size_needed, 0);
-        MultiByteToWideChar(CodePage, 0, str, -1, &wstr[0], size_needed);
-        return wstr;
-    }
-    template<UINT CodePage = CP_ACP>
-    static std::string toString(const wchar_t *wstr) {
-        int size_needed = WideCharToMultiByte(CodePage, 0, wstr, -1, nullptr, 0, nullptr, nullptr);
-        std::string str(size_needed, 0);
-        WideCharToMultiByte(CodePage, 0, wstr, -1, &str[0], size_needed, nullptr, nullptr);
-        return str;
-    }
-};
 
+    static size_t replaceCRLF(const std::string &str, char *buf, size_t buf_len) {
+        size_t write_pos = 0;// 记录写入buf的位置
+        for (size_t i = 0; i < str.length();) {
+            // 检查是否为"\r\n"序列
+            if (str[i] == '\r' && i + 1 < str.length() && str[i + 1] == '\n') {
+                buf[write_pos++] = '\r';// 写入'\n'
+                i += 2;                 // 跳过"\r\n"
+            } else {
+                buf[write_pos++] = str[i];// 直接复制当前字符
+                i += 1;
+            }
+        }
+        return write_pos;// 返回写入的字节数
+    }
+
+};

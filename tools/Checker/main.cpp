@@ -3,7 +3,7 @@
 #include "SignatureJson.hpp"
 #include "frida-gum.h"
 
-#include "LuaModule.hpp"
+#include "GameSignature.hpp"
 #include "platform.hpp"
 
 #ifndef GAMEDIR

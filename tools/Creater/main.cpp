@@ -5,7 +5,7 @@
 
 #include "platform.hpp"
 #include "SignatureJson.hpp"
-#include "LuaModule.hpp"
+#include "GameSignature.hpp"
 #include "DontStarveSignature.hpp"
 #include "ctx.hpp"
 

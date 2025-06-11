@@ -37,6 +37,12 @@
     },
     {
       "name": "sol2"
+    },
+    {
+      "name": "boost-pfr"
+    },
+    {
+      "name": "doctest"
     }
   ]
 }
