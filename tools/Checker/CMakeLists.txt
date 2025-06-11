@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.15)
 set(SOURCES
         main.cpp
         ${DONTSTARVEINJECTOR_ROOT}/SignatureJson.cpp
+        ${DONTSTARVEINJECTOR_ROOT}/GameSignature.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
 )
 find_package(nlohmann_json CONFIG REQUIRED)

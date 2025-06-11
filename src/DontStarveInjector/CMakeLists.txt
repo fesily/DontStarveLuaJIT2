@@ -17,6 +17,9 @@ set(SOURCES
         gameModConfig.cpp
         luajit_config.cpp
         game_info.cpp
+        GameLua.cpp
+        GameSteam.cpp
+        GameSignature.cpp
 )
 
 if (ENABLE_STEAM_SUPPORT)
@@ -41,6 +44,7 @@ find_package(spdlog CONFIG REQUIRED)
 find_package(range-v3 CONFIG REQUIRED)
 find_package(Tracy CONFIG REQUIRED)
 find_package(mimalloc CONFIG REQUIRED)
+find_package(Boost REQUIRED COMPONENTS pfr)
 set(CMAKE_SKIP_BUILD_RPATH  FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
@@ -59,11 +63,13 @@ endif()
 
 set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")
 set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../lib64")
+add_dependencies(Injector create_missfuncs)
 
 
 target_include_directories(Injector PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
 target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})
 
+target_link_libraries(Injector PRIVATE Boost::pfr)
 target_link_libraries(Injector PRIVATE libzip::zip)
 target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(Injector PRIVATE spdlog::spdlog)
@@ -110,4 +116,5 @@ install(TARGETS Injector RUNTIME DESTINATION .)
 if (WIN32)
     add_subdirectory(loader)
 endif ()
- 
+
+add_subdirectory(util)

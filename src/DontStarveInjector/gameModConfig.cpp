@@ -1,5 +1,6 @@
-#include "MemorySignature.hpp"
 #include "config.hpp"
+#include "MemorySignature.hpp"
+#include "GameProfilerHook.hpp"
 #include "luajit_config.hpp"
 #include "util/inlinehook.hpp"
 #include "disasm.h"
@@ -178,6 +179,68 @@ extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_client_network_tick(char
     return 0;
 }
 
+extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_update(const char* mod_directory, int tt) {
+    if (!mod_directory) return 0;
+#ifdef _WIN32
+    auto mod_dir = std::filesystem::path{mod_directory};
+    if (!std::filesystem::exists(mod_dir)) return 0;
+    mod_dir = std::filesystem::absolute(mod_dir);
+    auto installer = mod_dir / "install.bat";
+    if (!std::filesystem::exists(installer)) return 0;
+    std::string cmd = std::format("cmd /C \"{}\" {}", installer.string(), tt == 1? "uninstall" : "");
+    STARTUPINFO si;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&pi, sizeof(pi));
+    if (CreateProcess(NULL, (char*)cmd.c_str(), 0, 0, FALSE, CREATE_NEW_CONSOLE, 0, mod_directory, &si, &pi)) {
+        WaitForSingleObject( pi.hProcess, INFINITE);
+        
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        return 1;
+    }
+    #endif
+return 0;
+}  
+
+extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_profiler_api() {
+    static std::atomic_int replaced = 0;
+    if (replaced) return replaced;
+#ifdef __linux__
+    function_relocation::MemorySignature profiler_push { "41 83 84 24 80 01 00 00 01", -0xF6 };
+    function_relocation::MemorySignature profiler_pop { "64 48 8B 1C 25 F8 FF FF FF", -0x15 };
+#elif defined(__APPLE__)
+    function_relocation::MemorySignature profiler_push { "41 83 84 24 80 01 00 00 01", -0xF6 };
+    function_relocation::MemorySignature profiler_pop { "64 48 8B 1C 25 F8 FF FF FF", -0x15 };
+    return 0; //TODO
+#elif defined(_WIN32) 
+    function_relocation::MemorySignature profiler_push {"44 8B 9B 88 02 00 00", -0x175};
+    function_relocation::MemorySignature profiler_pop {"81 7F 1C 00 3C 00 00", -0x7D};
+#endif
+
+    auto path = gum_module_get_path(gum_process_get_main_module());
+    if (profiler_pop.scan(path) && profiler_push.scan(path)) {
+        Hook((uint8_t*)profiler_push.target_address, (uint8_t*)hook_profiler_push);
+        Hook((uint8_t*)profiler_pop.target_address, (uint8_t*)hook_profiler_pop);
+#ifdef profiler_lua_gc
+        static auto interceptor = gum_interceptor_obtain();
+        static Gum::InvocationListenerProxy linstener{new Gum::InvocationListenerProfiler()};
+        gum_interceptor_attach(interceptor, (void *) get_luajit_address("lua_gc"), GUM_INVOCATION_LISTENER (linstener.cproxy), (void*)"lua_gc");
+#endif
+        replaced = 1;
+    }
+    return replaced;
+}
+
+extern "C" DONTSTARVEINJECTOR_API void DS_LUAJIT_enable_tracy(int en) {
+    tracy_active = en;
+}
+extern "C" DONTSTARVEINJECTOR_API const char* DS_LUAJIT_get_mod_version() {
+    return MOD_VERSION;
+}
+
 extern "C" void LoadGameModConfig() {
     auto config = luajit_config::read_from_file();
     if (!config) return;
@@ -185,4 +248,7 @@ extern "C" void LoadGameModConfig() {
     if (logic_fps > 30) {
         DS_LUAJIT_set_target_fps(logic_fps, 0b10);
     }
+#ifdef _WIN32
+    repalce_set_thread_name();
+#endif
 }

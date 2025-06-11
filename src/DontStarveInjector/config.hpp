@@ -18,18 +18,6 @@
 #define USE_LISTENER 0
 #endif
 
-#ifndef USE_GAME_IO
-#ifdef _WIN32
-#define USE_GAME_IO 0
-#else
-#define USE_GAME_IO ONLY_LUA
-#endif
-#endif
-
-#ifndef REPLACE_IO
-#define REPLACE_IO !ONLY_LUA51
-#endif
-
 #ifndef DEBUG_GETSIZE_PATCH
 #define DEBUG_GETSIZE_PATCH 1
 #endif

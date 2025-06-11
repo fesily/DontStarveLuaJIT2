@@ -16,6 +16,7 @@ elseif (APPLE)
     set(GAME_DIR "/Users/fesil/Library/Application Support/Steam/steamapps/common/Don't Starve Together/dontstarve_steam.app/Contents")
 endif ()
 
+enable_testing()
 set(FRIDA_GUM_VERSION "17.1.0")
 
 file(REAL_PATH ${GAME_DIR} GAME_DIR)

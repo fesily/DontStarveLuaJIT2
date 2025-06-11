@@ -1,9 +1,9 @@
 #pragma once
+#include "config.hpp"
+#include "GameSignature.hpp"
+#include <frida-gum.h>
 
-#include "frida-gum.h"
-#include "MemorySignature.hpp"
-
-static function_relocation::MemorySignature luaModuleSignature{
+function_relocation::MemorySignature luaModuleSignature{
 #ifdef _WIN32
         "41 B8 EE D8 FF FF 41 3B D0 74 64 81 FA EF D8 FF FF 74 3B", -0x37
 #elif defined(__linux__)
@@ -16,7 +16,7 @@ static function_relocation::MemorySignature luaModuleSignature{
 #endif
 };
 
-static function_relocation::MemorySignature luaRegisterDebugGetsizeSignature
+function_relocation::MemorySignature luaRegisterDebugGetsizeSignature
         {
 #ifdef _WIN32
                 "4C 8B 5B 18 48 8B CB 49 8B",
