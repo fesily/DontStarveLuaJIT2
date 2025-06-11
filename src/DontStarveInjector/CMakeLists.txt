@@ -63,6 +63,7 @@ endif()
 
 set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")
 set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../lib64")
+add_dependencies(Injector create_missfuncs)
 
 
 target_include_directories(Injector PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
@@ -115,4 +116,5 @@ install(TARGETS Injector RUNTIME DESTINATION .)
 if (WIN32)
     add_subdirectory(loader)
 endif ()
- 
+
+add_subdirectory(util)

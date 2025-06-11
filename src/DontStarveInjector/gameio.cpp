@@ -42,7 +42,7 @@
 
 using namespace std::literals;
 
-static std::unordered_set<file_interface *> NoFileHandlers;
+static std::unordered_set<file_interface *> FileHandlers;
 static std::unordered_map<std::string, std::unique_ptr<zip_manager_interface>> zipPaths = []() {
     std::unordered_map<std::string, std::unique_ptr<zip_manager_interface>> zipPaths;
 #define ZIP_PATH_VALUE_KEAY(name) \
@@ -126,6 +126,7 @@ static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path 
     auto fp = GAMEIO_FILE_INTERFACE::fopen(path_s.c_str(), mode);
     if (fp) {
         if (out_real_path) *out_real_path = path;
+        FileHandlers.emplace(fp);
         return (FILE *) fp;
     }
     if (!workshop_dir) {
@@ -156,6 +157,7 @@ static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path 
                 zip_manager = zipPaths[key].get();
             }
             auto handler = zip_manager->fopen(path);
+            FileHandlers.emplace(handler);
             return (FILE *) handler;
         }
     }
@@ -165,21 +167,35 @@ static FILE *lj_fopen(char const *f, const char *mode) noexcept {
     return lj_fopen_ex(f, mode, nullptr);
 }
 static int lj_fclose(FILE *fp) noexcept {
-    int res = ((file_interface *) fp)->fclose();
-    delete fp;
-    return res;
+    if (FileHandlers.contains((file_interface *) fp)) {
+        FileHandlers.erase((file_interface *) fp);
+        int res = ((file_interface *) fp)->fclose();
+        delete fp;
+        return res;
+    }
+    return fclose(fp);
 }
 
 static int lj_fscanf(FILE *const fp, char const *const format, ...) noexcept {
+    if (FileHandlers.contains((file_interface *) fp)) {
+        va_list args;
+        va_start(args, format);
+        auto res = ((file_interface *) fp)->fscanf(format, args);
+        va_end(args);
+        return res;
+    }
     va_list args;
     va_start(args, format);
-    auto res = ((file_interface *) fp)->fscanf(format, args);
+    auto res = fscanf(fp, format, args);
     va_end(args);
     return res;
 }
 
 static char *lj_fgets(char *_Buffer, int _MaxCount, FILE *fp) noexcept {
-    return ((file_interface *) fp)->fgets(_Buffer, _MaxCount);
+    if (FileHandlers.contains((file_interface *) fp)) {
+        return ((file_interface *) fp)->fgets(_Buffer, _MaxCount);
+    }
+    return fgets(_Buffer, _MaxCount, fp);
 }
 
 static size_t lj_fread(
@@ -187,7 +203,10 @@ static size_t lj_fread(
         size_t _ElementSize,
         size_t _ElementCount,
         FILE *fp) noexcept {
-    return ((file_interface *) fp)->fread(_Buffer, _ElementSize, _ElementCount);
+    if (FileHandlers.contains((file_interface *) fp)) {
+        return ((file_interface *) fp)->fread(_Buffer, _ElementSize, _ElementCount);
+    }
+    return fread(_Buffer, _ElementSize, _ElementCount, fp);
 }
 
 static size_t lj_fwrite(
@@ -195,11 +214,17 @@ static size_t lj_fwrite(
         size_t _ElementSize,
         size_t _ElementCount,
         FILE *fp) noexcept {
-    return ((file_interface *) fp)->fwrite(_Buffer, _ElementSize, _ElementCount);
+    if (FileHandlers.contains((file_interface *) fp)) {
+        return ((file_interface *) fp)->fwrite(_Buffer, _ElementSize, _ElementCount);
+    }
+    return fwrite(_Buffer, _ElementSize, _ElementCount, fp);
 }
 
 static int lj_ferror(FILE *fp) noexcept {
-    return ((file_interface *) fp)->ferror();
+    if (FileHandlers.contains((file_interface *) fp)) {
+        return ((file_interface *) fp)->ferror();
+    }
+    return ferror(fp);
 }
 
 #ifdef _WIN32
@@ -208,31 +233,49 @@ static int lj_fseeki64(
         FILE *fp,
         __int64 _Offset,
         int _Origin) noexcept {
-    return ((file_interface *) fp)->fseeko(_Offset, _Origin);
+    if (FileHandlers.contains((file_interface *) fp)) {
+        return ((file_interface *) fp)->fseeko(_Offset, _Origin);
+    }
+    return _fseeki64(fp, _Offset, _Origin);
 }
 
 static __int64 lj_ftelli64(FILE *fp) noexcept {
-    return ((file_interface *) fp)->ftello();
+    if (FileHandlers.contains((file_interface *) fp)) {
+        return ((file_interface *) fp)->ftello();
+    }
+    return _ftelli64(fp);
 }
 
 #else
 
 static int lj_fseeko(FILE *fp, off_t _Offset, int _Origin) {
-    return ((file_interface *) fp)->fseeko(_Offset, _Origin);
+    if (FileHandlers.contains((file_interface *) fp)) {
+        return ((file_interface *) fp)->fseeko(_Offset, _Origin);
+    }
+    return fseeko(fp, _Offset, _Origin);
 }
 
 static off_t lj_ftello(FILE *fp) {
-    return ((file_interface *) fp)->ftello();
+    if (FileHandlers.contains((file_interface *) fp)) {
+        return ((file_interface *) fp)->ftello();
+    }
+    return ftello(fp);
 }
 
 #endif
 
 static int lj_feof(FILE *_Stream) {
-    return ((file_interface *) _Stream)->feof();
+    if (FileHandlers.contains((file_interface *) _Stream)) {
+        return ((file_interface *) _Stream)->feof();
+    }
+    return feof(_Stream);
 }
 
 static void lj_clearerr(FILE *fp) noexcept {
-    return ((file_interface *) fp)->clearerr();
+    if (FileHandlers.contains((file_interface *) fp)) {
+        return ((file_interface *) fp)->clearerr();
+    }
+    return clearerr(fp);
 }
 
 static int lj_need_transform_path() noexcept {
@@ -339,14 +382,14 @@ extern "C" DONTSTARVEINJECTOR_API const char *DS_LUAJIT_Fengxun_Decrypt(const ch
     }
 }
 
-#define SET_LUAJIT_API_FUNC(name)                               \
-    {                                                           \
+#define SET_LUAJIT_API_FUNC(name)                                              \
+    {                                                                          \
         auto ptr = (void **) gum_module_find_export_by_name(luaModule, #name); \
-        if (ptr)                                                \
-            *ptr = (void *) &name;                              \
+        if (ptr)                                                               \
+            *ptr = (void *) &name;                                             \
     }
 
-void init_luajit_io(GumModule* luaModule) {
+void init_luajit_io(GumModule *luaModule) {
     SET_LUAJIT_API_FUNC(lj_fclose);
     SET_LUAJIT_API_FUNC(lj_ferror);
     SET_LUAJIT_API_FUNC(lj_fgets);
@@ -368,11 +411,11 @@ void init_luajit_io(GumModule* luaModule) {
     lua_gc_func = (decltype(lua_gc_func)) gum_module_find_export_by_name(luaModule, "lua_gc");
 }
 
-void init_luajit_jit_opt(GumModule* luaModule) {
+void init_luajit_jit_opt(GumModule *luaModule) {
     SET_LUAJIT_API_FUNC(lj_jit_default_flags);
 }
 
-void BInitWorkshopForGameServerHook(uint32_t unWorkshopDepotID, const char* pszFolder) {
+void BInitWorkshopForGameServerHook(uint32_t unWorkshopDepotID, const char *pszFolder) {
     if (pszFolder != nullptr) {
         get_steam_ugc() = pszFolder;
         workshop_dir = std::nullopt;
