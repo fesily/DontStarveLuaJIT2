@@ -9,6 +9,7 @@
 #include <atomic>
 #include <unordered_map>
 #include <mutex>
+#include <thread>
 #include <lua.hpp>
 #ifndef DISABLE_TRACY_FUTURE
 #include <tracy/TracyC.h>

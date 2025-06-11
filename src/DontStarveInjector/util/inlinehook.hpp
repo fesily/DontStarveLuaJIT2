@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <array>
 #include <cassert>
+#include <stddef.h>
 
 
 inline auto format_address(uint8_t *from) {

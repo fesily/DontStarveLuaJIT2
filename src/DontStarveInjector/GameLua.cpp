@@ -8,6 +8,7 @@
 #include <map>
 #include <spdlog/spdlog.h>
 #include <functional>
+#include <list>
 using namespace std::literals;
 
 
@@ -151,7 +152,7 @@ struct GameLuaContextJit : GameLuaContextImpl {
 
     void LoadMyLuaApi() override;
 
-    void *lua_newstate_hooker(void *, void *ud) {
+    void *lua_newstate_hooker(void *ud) {
         lua_event_notifyer(LUA_EVENT::new_state, nullptr);
         auto L = api._luaL_newstate();
         spdlog::info("luaL_newstate:{}", (void *) L);
@@ -179,7 +180,7 @@ void GameLuaContextJit::LoadMyLuaApi() {
         real_lua_setfield(L, idx, k);
     };
     api._lua_newstate = (decltype(&lua_newstate)) +[](lua_Alloc f, void *ud) {
-        return gameLuajitCtx.lua_newstate_hooker(f, ud);
+        return gameLuajitCtx.lua_newstate_hooker(ud);
     };
 }
 

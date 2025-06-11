@@ -1,7 +1,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
-#include "../win_wfile.hpp"
 #include <string_view>
+#ifdef _WIN32
+#include "../win_wfile.hpp"
 
 auto TestFileRoot = std::string_view(SOURCE_DIR "/win_wfile");
 using namespace std::literals;
@@ -28,3 +29,4 @@ TEST_CASE("read_file_win_control") {
     CHECK_EQ(std::string_view(buf, readed), "Hel\x1Ao\r"sv);
     fp->fclose();
 }
+#endif

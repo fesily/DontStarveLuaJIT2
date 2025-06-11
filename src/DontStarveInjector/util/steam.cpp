@@ -34,6 +34,7 @@ struct SteamInterface {
                     return true;// Continue enumerating
                 },
                 this);
+        return steam_module != nullptr;
     }
     void init() {
         steam_module = gum_process_find_module_by_name("steam_api");

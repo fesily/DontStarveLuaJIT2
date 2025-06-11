@@ -1,4 +1,5 @@
 ﻿#include "PersistentString.hpp"
+#include <string.h>
 #include <string_view>
 #include <memory>
 #include <zlib.h>
