@@ -32,7 +32,9 @@ jobs:
         with:
           cmakeVersion: 3.31.6     # <--= optional, stick to exactly 3.25.2 version
           ninjaVersion: 1.11.1     # <--= optional, stick to exactly 1.11.1 version
-
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13' 
       - name: Restore from cache and setup vcpkg executable and data files.
         uses: lukka/run-vcpkg@v11
         with:
