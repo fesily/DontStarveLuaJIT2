@@ -98,6 +98,9 @@ execute_process(
         COMMAND echo "Frida-Gum downloaded successfully."
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+if (NOT download_result EQUAL 0)
+    message(FATAL_ERROR "Failed to download Frida-Gum. Please check your internet connection or the version specified.")
+endif ()
 
 set(LUA_INCLUDE_DIR ${lua51_root}/src)
 if (MSVC)

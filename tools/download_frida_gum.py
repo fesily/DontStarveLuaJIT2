@@ -52,8 +52,6 @@ def download_target(target: str, force: bool = False):
         f.write(version)
     
 if __name__ == "__main__":
-
-    targets = [os for os in all_os if os.startswith(platform.system().lower())]
     ## args
     ## --force,-f # 强制下载
     ## --version,-v # 指定版本
@@ -62,11 +60,17 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--force", action="store_true", help="Force download")
     parser.add_argument("-v", "--version", type=str, default=version, help="Specify Frida Gum version")
     parser.add_argument("-t", "--target", type=str, default=None, help="Specify target platform")
+    parser.add_argument("--os", type=str, choices=["macos", "windows", "linux"], help="Specify OS type")
     args = parser.parse_args()
     
+    if args.target:
+        targets = [args.target]
+    else:
+        targets = [os for os in all_os if os.startswith(args.os or platform.system().lower())]
 
-    targets = [os for os in all_os if os.startswith(platform.system().lower())]
+    if args.version:
+        version = args.version
 
     for index, target in enumerate(targets):
-        print(f"[{index+1}/{len(targets)}]")
+        print(f"[{index+1}/{len(targets)}] Downloading Frida Gum for {target}...")
         download_target(target=target)
