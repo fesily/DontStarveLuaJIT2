@@ -23,16 +23,26 @@ def download(url, output, dir):
         tar.extractall(dir)
 
 
+def get_platform():
+    if platform.system() == "Darwin":
+        return "macos"
+    elif platform.system() == "Windows":
+        return "windows"
+    elif platform.system() == "Linux":
+        return "linux"
+    else:
+        raise ValueError("Unsupported platform: %s" % platform.system())
+
+
 def map_target_dir(target:str):
-    match target:
-        case "macos-x86_64":
-            return "osx"
-        case "windows-x86_64":
-            return "win64"
-        case "linux-x86_64":
-            return "linux64"
-        case _:
-            raise ValueError(f"Unknown target: {target}")
+    if target == "macos-x86_64":
+        return "osx"
+    if target == "windows-x86_64":
+        return "win64"
+    if target == "linux-x86_64":
+        return "linux64"
+    
+    raise ValueError(f"Unknown target: {target}")
         
 def download_target(target: str, force: bool = False):
     file = file_fmt % (version, target)
@@ -66,7 +76,7 @@ if __name__ == "__main__":
     if args.target:
         targets = [args.target]
     else:
-        targets = [os for os in all_os if os.startswith(args.os or platform.system().lower())]
+        targets = [os for os in all_os if os.startswith(args.os or get_platform())]
 
     if args.version:
         version = args.version

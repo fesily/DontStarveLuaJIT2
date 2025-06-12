@@ -18,6 +18,7 @@ endif ()
 
 enable_testing()
 set(FRIDA_GUM_VERSION "17.1.0")
+set(VCPKG_INSTALL_OPTION "${VCPKG_INSTALL_OPTION} --x-abi-tools-use-exact-versions")
 
 file(REAL_PATH ${GAME_DIR} GAME_DIR)
 

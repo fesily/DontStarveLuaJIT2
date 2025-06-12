@@ -3,6 +3,7 @@
 #include <string_view>
 #include <memory>
 #include <zlib.h>
+#include <errno.h>
 
 using namespace std::literals;
 
