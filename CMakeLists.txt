@@ -92,15 +92,29 @@ else ()
     set(LUA_LIBRARIES_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/src)
 endif ()
 
-execute_process(
-        COMMAND echo "Downloading Frida-Gum version ${FRIDA_GUM_VERSION}..."
-        COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tools/download_frida_gum.py" "-v=${FRIDA_GUM_VERSION}"
-        COMMAND echo "Frida-Gum downloaded successfully."
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-if (NOT download_result EQUAL 0)
-    message(FATAL_ERROR "Failed to download Frida-Gum. Please check your internet connection or the version specified.")
-endif ()
+function(download_frida_gum version)
+    message(STATUS "Downloading Frida-Gum version ${version}...")
+    execute_process(
+            COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tools/download_frida_gum.py" "-v=${version}" 
+            RESULT_VARIABLE download_result 
+            OUTPUT_VARIABLE download_stdout
+            ERROR_VARIABLE download_stderr
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    if(download_stdout)
+        message("${download_stdout}")
+    endif()
+    if(download_stderr)
+        message(STATUS "${download_stderr}")
+    endif()
+    if (NOT download_result EQUAL 0)
+        message(FATAL_ERROR "Failed to download Frida-Gum. Please check your internet connection or the version specified.")
+    else()
+        message(STATUS "Frida-Gum downloaded successfully.")
+    endif ()
+endfunction()
+download_frida_gum(${FRIDA_GUM_VERSION})
+
 
 set(LUA_INCLUDE_DIR ${lua51_root}/src)
 if (MSVC)
