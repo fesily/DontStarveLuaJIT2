@@ -29,4 +29,22 @@ TEST_CASE("read_file_win_control") {
     CHECK_EQ(std::string_view(buf, readed), "Hel\x1Ao\r"sv);
     fp->fclose();
 }
+
+TEST_CASE("read_file_sect_modmain") {
+    auto file1 = TestFileRoot.data() + "/modmain0.lua"s;
+    auto fp = wFile_interface::fopen(file1.c_str(), "rb");
+    CHECK(fp != nullptr);
+    int all_count = 0;
+
+    std::string all_buf;
+    while (true) {
+        char buf[1024] = {};
+        auto readed = fp->fread(buf, 1, sizeof(buf) - 1);
+        if (readed == 0) break;
+        all_buf.append(buf, readed);
+        all_count += readed;
+    }
+    CHECK_EQ(all_count, 11957);
+    fp->fclose();
+}
 #endif

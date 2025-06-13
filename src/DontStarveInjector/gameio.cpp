@@ -139,6 +139,7 @@ static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path 
         auto real_path = workshop_dir.value() / mod_path;
         auto fp = GAMEIO_FILE_INTERFACE::fopen(real_path.string().c_str(), mode);
         if (out_real_path) *out_real_path = real_path;
+        FileHandlers.emplace(fp);
         return (FILE *) fp;
     }
 

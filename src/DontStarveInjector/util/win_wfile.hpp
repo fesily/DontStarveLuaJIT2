@@ -34,6 +34,7 @@ struct wFile_interface : file_interface {
         if (textmode) {
             return replaceCRLF(read_buf, (char *) buf, count);
         }
+        memcpy_s(buf, count * element_size, read_buf.data(), read_count * element_size);
         return read_count;
     }
 
