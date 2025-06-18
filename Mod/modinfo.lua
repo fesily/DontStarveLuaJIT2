@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "1.6.1"
+version = "1.6.2"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 

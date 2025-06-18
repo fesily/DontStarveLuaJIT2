@@ -47,4 +47,22 @@ TEST_CASE("read_file_sect_modmain") {
     CHECK_EQ(all_count, 11957);
     fp->fclose();
 }
+
+TEST_CASE("read_file_len") {
+    auto file1 = TestFileRoot.data() + "/bug512.txt"s;
+    auto fp = wFile_interface::fopen(file1.c_str(), "r");
+    CHECK(fp != nullptr);
+    int all_count = 0;
+
+    std::string all_buf;
+    while (true) {
+        char buf[512] = {};
+        auto readed = fp->fread(buf, 1, sizeof(buf));
+        if (readed == 0) break;
+        all_buf.append(buf, readed);
+        all_count += readed;
+    }
+    CHECK_EQ(all_count, 512);
+    fp->fclose();
+}
 #endif

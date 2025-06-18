@@ -99,6 +99,8 @@ struct wFile_interface : file_interface {
             if (str[i] == '\r' && i + 1 < str.length() && str[i + 1] == '\n') {
                 buf[write_pos++] = '\r';// 写入'\n'
                 i += 2;                 // 跳过"\r\n"
+            } else if (str[i] == '\n') {
+                i++; // 如果是'\n'，则不写入
             } else {
                 buf[write_pos++] = str[i];// 直接复制当前字符
                 i += 1;
