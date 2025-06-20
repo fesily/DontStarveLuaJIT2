@@ -37,8 +37,33 @@
             "request": "launch",
             "program": "E:/SteamLibrary/steamapps/common/Don't Starve Together/bin64/dontstarve_dedicated_server_nullrenderer_x64.exe",
             "args": [
-                "-persistent_storage_root","APP:Klei/","-conf_dir","DoNotStarveTogether","-cluster","Cluster_3","-ownernetid","76561198151751414","-ownerdir","191485686","-clouddir","191485686","-backup_log_count","25","-backup_log_period","0","-ugc_directory","E:\\SteamLibrary\\steamapps\\workshop","-shard","Master" ,"-secondary_log_prefix", "master" ,"-sigprefix", "DST_Master" ,"-token" ,""
-               ],
+                "-persistent_storage_root",
+                "APP:Klei/",
+                "-conf_dir",
+                "DoNotStarveTogether",
+                "-cluster",
+                "Cluster_3",
+                "-ownernetid",
+                "76561198151751414",
+                "-ownerdir",
+                "191485686",
+                "-clouddir",
+                "191485686",
+                "-backup_log_count",
+                "25",
+                "-backup_log_period",
+                "0",
+                "-ugc_directory",
+                "E:\\SteamLibrary\\steamapps\\workshop",
+                "-shard",
+                "Master",
+                "-secondary_log_prefix",
+                "master",
+                "-sigprefix",
+                "DST_Master",
+                "-token",
+                ""
+            ],
             "cwd": "E:/SteamLibrary/steamapps/common/Don't Starve Together/bin64",
             "environment": [],
             "externalConsole": true
@@ -52,7 +77,10 @@
             "stopAtConnect": true,
             "cwd": "/home/ubuntu/.steam/steam/steamapps/common/Don't Starve Together/bin64",
             "environment": [
-                {"name": "LD_PRELOAD", "value": "./lib64/libInjector.so"}
+                {
+                    "name": "LD_PRELOAD",
+                    "value": "./lib64/libInjector.so"
+                }
                 //,{"name": "LD_DEBUG", "value": "libs"}
             ],
             "MIMode": "gdb",
@@ -69,12 +97,21 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "/root/server_dst/bin64/dontstarve_dedicated_server_nullrenderer_x64",
-            "args": ["-cluster", "DSTWhalesCluster"],
+            "args": [
+                "-cluster",
+                "DSTWhalesCluster"
+            ],
             "stopAtConnect": true,
             "cwd": "/root/server_dst/bin64",
             "environment": [
-                {"name": "LD_PRELOAD", "value": "./lib64/libInjector.so"},
-                {"name": "LD_LIBRARY_PATH", "value": "./lib64"}
+                {
+                    "name": "LD_PRELOAD",
+                    "value": "./lib64/libInjector.so"
+                },
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "./lib64"
+                }
             ],
             "MIMode": "gdb",
             "setupCommands": [
@@ -94,7 +131,10 @@
             "stopAtConnect": true,
             "cwd": "/home/ubuntu/.steam/steam/steamapps/common/Don't Starve Together/bin64",
             "environment": [
-                {"name": "LD_PRELOAD", "value": "/home/ubuntu/dontstarveluajit2/builds/ninja-multi-vcpkg/tools/Creater/Debug/libsignature_updater.so"}
+                {
+                    "name": "LD_PRELOAD",
+                    "value": "/home/ubuntu/dontstarveluajit2/builds/ninja-multi-vcpkg/tools/Creater/Debug/libsignature_updater.so"
+                }
                 //,{"name": "LD_DEBUG", "value": "libs"}
             ],
             "MIMode": "gdb",
@@ -115,7 +155,10 @@
             "stopAtConnect": true,
             "cwd": "/home/ubuntu/dontstarveluajit2/Mod/bin64/linux",
             "environment": [
-                {"name": "LD_PRELOAD", "value": "/home/ubuntu/dontstarveluajit2/builds/ninja-multi-vcpkg/tools/Creater/Debug/libsignature_updater.so"}
+                {
+                    "name": "LD_PRELOAD",
+                    "value": "/home/ubuntu/dontstarveluajit2/builds/ninja-multi-vcpkg/tools/Creater/Debug/libsignature_updater.so"
+                }
             ],
             "MIMode": "gdb",
             "setupCommands": [
@@ -141,12 +184,64 @@
             "visualizerFile": "${workspaceFolder}/LuaJit.Natvis"
         },
         {
+            "name": "Launch lua simulator",
+            "type": "lua",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/sect/simulator.lua",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "luaVersion": "lua51",
+            "arg": [
+                "tests/2847908822/modmain12345.lua",
+                "../mods/workshop-2847908822/modmain.lua"
+            ],
+            "luaexe": "${workspaceFolder}/builds/ninja-multi-vcpkg/luajit/Debug/luajit",
+            //"luaexe": "${workspaceFolder}/builds/ninja-multi-vcpkg/src/lua51original/RelWithDebInfo/lua",
+            "stopOnEntry": true,
+            "env": {},
+            "sourceMaps": [
+                [
+                    "./*",
+                    "${workspaceFolder}/*"
+                ],
+                [
+                    "../mods/workshop-2847908822/modmain.lua",
+                    "${workspaceFolder}/tests/2847908822/modmain12345.lua"
+                ]
+            ]
+        },
+        {
+            "name": "Debug Lua Vm",
+            "type": "cppdbg",
+            "request": "launch",
+            //"program": "${workspaceFolder}/builds/ninja-multi-vcpkg/luajit/Debug/luajit",
+            "program": "${workspaceFolder}/builds/ninja-multi-vcpkg/src/lua51original/RelWithDebInfo/lua",
+            "args": [
+                "${workspaceFolder}/tests/sect/simulator.lua",
+                "tests/2847908822/modmain12345.lua",
+                "../mods/workshop-2847908822/modmain.lua"
+            ],
+            "stopAtEntry": true,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+        },
+        {
+            "arg": [],
+            "name": "launch lua script",
+            "program": "${file}",
+            "request": "launch",
+            "stopOnEntry": true,
+            "type": "lua",
+            "luaVersion": "lua51"
+        },
+        {
             "name": "Python: Current File",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": false,
+            "args": []
         },
     ]
 }

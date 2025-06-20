@@ -418,6 +418,18 @@ static int luaB_tostring (lua_State *L) {
 }
 
 
+static int closure_func(lua_State *L) {
+  int n = lua_gettop(L);  // Get the number of arguments
+  lua_pushvalue(L, lua_upvalueindex(1));  // Push the upvalue (Lua function)
+  // Copy all arguments to the top of the stack
+  for (int i = 1; i <= n; i++) {
+      lua_pushvalue(L, i);
+  }
+  lua_call(L, n, LUA_MULTRET);  // Call the function with n arguments
+  int result_count = lua_gettop(L) - n;  // Calculate the number of results
+  return result_count;  // Explicitly return the result count
+}
+
 static int luaB_newproxy (lua_State *L) {
   lua_settop(L, 1);
   lua_newuserdata(L, 0);  /* create proxy */
@@ -428,8 +440,12 @@ static int luaB_newproxy (lua_State *L) {
     lua_pushvalue(L, -1);  /* ... and mark `m' as a valid metatable */
     lua_pushboolean(L, 1);
     lua_rawset(L, lua_upvalueindex(1));  /* weaktable[m] = true */
-  }
-  else {
+  } else if (lua_isfunction(L, 1)) {
+    luaL_argcheck(L, !lua_iscfunction(L, 1), 1, "function expected"); 
+    lua_pushvalue(L, 1);
+    lua_pushcclosure(L, closure_func, 1);
+    return 1;
+  } else {
     int validproxy = 0;  /* to check if weaktable[metatable(u)] == true */
     if (lua_getmetatable(L, 1)) {
       lua_rawget(L, lua_upvalueindex(1));
