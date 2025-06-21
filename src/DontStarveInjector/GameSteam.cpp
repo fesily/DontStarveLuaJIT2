@@ -59,6 +59,7 @@ static bool BInitWorkshopForGameServer_hook(void *self, DepotId_t unWorkshopDepo
 
 static void *SteamInternal_FindOrCreateGameServerInterface_hook(uint32_t hSteamUser, const char *pszVersion) {
     void *obj = SteamInternal_FindOrCreateGameServerInterface_fn(hSteamUser, pszVersion);
+    if (pszVersion == nullptr) return obj;
     constexpr auto ugc_interface_version_prefix = "STEAMUGC_INTERFACE_VERSION"sv;
     if (std::string_view{pszVersion}.starts_with(ugc_interface_version_prefix)) {
         auto version = std::string_view{pszVersion}.substr(ugc_interface_version_prefix.size());
