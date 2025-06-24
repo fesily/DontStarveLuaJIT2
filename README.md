@@ -170,6 +170,7 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 | 18**30   | 30RMB| 修复BUG | |
 | 预*微笑   | 100RMB | MACOS | |
 | 储*佛丝   | 50RMB | | |
+| 轮回**剑  | 30RMB | (兼容mod) | |
 
 # 捐赠方式
 
