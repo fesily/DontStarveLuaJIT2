@@ -90,7 +90,7 @@ void replace_game_branch_flag_to_dev(const std::string &mainPath) {
 
 bool DontStarveInjectorIsClient = false;
 static bool server_is_master() {
-    return std::string_view{get_cwd()}.contains("DST_Master");
+    return std::string_view{get_cmd()}.contains("DST_Master");
 }
 
 static bool check_crash() {

@@ -29,7 +29,7 @@ std::filesystem::path getExePath() {
     return p;
 }
 
-module_handler_t loadlib(const char *name) {
+module_handler_t loadlib(const char *name, int mode) {
     if (!std::filesystem::exists(name)) {
         std::filesystem::path path;
         if (auto p = getExePath().parent_path() / name; std::filesystem::exists(p))
@@ -43,13 +43,13 @@ module_handler_t loadlib(const char *name) {
             path = p;
 #endif
         if (!path.empty())
-            return loadlib(path.string().c_str());
+            return loadlib(path.string().c_str(), mode);
     }
     return
 #ifdef _WIN32
         LoadLibraryA(name);
 #else
-            dlopen(name, RTLD_NOW);
+            dlopen(name, RTLD_NOW | mode);
 #endif
 }
 
@@ -154,7 +154,7 @@ uintptr_t getParentId() {
 }
 #endif
 
-std::string get_cwd(uintptr_t pid) {
+std::string get_cmd(uintptr_t pid) {
 #ifdef _WIN32
     if (pid == 0)
         return GetCommandLineA();
@@ -177,10 +177,10 @@ std::string get_cwd(uintptr_t pid) {
 #endif
 }
 
-std::vector<std::string> get_cwds(uintptr_t pid) {
+std::vector<std::string> get_cmds(uintptr_t pid) {
     std::vector<std::string> cmds;
 #ifdef _WIN32
-    auto cmd = get_cwd(pid);
+    auto cmd = get_cmd(pid);
     int n = 0;
     if (auto argv = CommandLineToArgvW(std::filesystem::path(cmd).wstring().c_str(), &n); argv) {
         cmds.resize(n);

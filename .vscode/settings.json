@@ -12,6 +12,10 @@
     "cmake.configureSettings": {
         "CMAKE_TOOLCHAIN_FILE":"$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
     },
+    "Lua.workspace.library": [
+        "/usr/local/share/lua/5.1/"
+    ],
+    "Lua.type.inferParamType": true,
     "files.associations": {
         "unordered_map": "cpp",
         "any": "cpp",
@@ -160,7 +164,9 @@
         "spanstream": "cpp",
         "stacktrace": "cpp",
         "stdfloat": "cpp",
-        "syncstream": "cpp"
+        "syncstream": "cpp",
+        "slist": "cpp",
+        "lj_libdef.h": "c"
     },
     "lua.debug.variables.showIntegerAsHex": true
 }

@@ -67,10 +67,10 @@ static std::filesystem::path to_path(const char *p) {
 }
 
 static std::optional<std::filesystem::path> get_ugc_cmd() {
-    const auto cmd = get_cwd();
+    const auto cmd = get_cmd();
     auto flag = "-ugc_directory";
     if (cmd.contains(flag)) {
-        const auto cmds = get_cwds();
+        const auto cmds = get_cmds();
         auto iter = std::find(cmds.begin(), cmds.end(), flag);
         if (iter != cmds.end()) {
             iter++;
@@ -281,9 +281,9 @@ static void lj_clearerr(FILE *fp) noexcept {
 
 static int lj_need_transform_path() noexcept {
     static bool has_lua_debug_flag = [] {
-        auto cmd = get_cwd();
+        auto cmd = get_cmd();
         if (cmd.contains("DST_Secondary") || cmd.contains("DST_Master")) {
-            cmd = get_cwd(getParentId());
+            cmd = get_cmd(getParentId());
         }
         auto ret = cmd.contains("-enable_lua_debugger");
         spdlog::info("lj_need_transform_path: {}", ret);

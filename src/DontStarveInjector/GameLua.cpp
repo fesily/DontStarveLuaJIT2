@@ -3,12 +3,15 @@
 #include "DontStarveSignature.hpp"
 #include "GameSignature.hpp"
 #include "util/inlinehook.hpp"
+#include "util/platform.hpp"
 #include "gameio.h"
 #include <string_view>
 #include <map>
 #include <spdlog/spdlog.h>
 #include <functional>
 #include <list>
+#include <cctype>
+#include <ranges>
 using namespace std::literals;
 
 
@@ -16,6 +19,7 @@ using namespace std::literals;
 #define SHARED_LIBRARY_EXT ".dll"
 #define SHARED_LIBRARY_PRE ""
 #elif defined(__linux__)
+#include <dlfcn.h>
 #define SHARED_LIBRARY_EXT ".so"
 #define SHARED_LIBRARY_PRE "lib"
 #elif defined(__APPLE__)
@@ -30,21 +34,165 @@ bool UseGameIO() {
     return use_game_io;
 }
 int (*luaopen_game_io)(lua_State *L);
-void GameLuaContext::luaL_openlibs_hooker(lua_State *L) {
-    api._luaL_openlibs(L);
-    if (luaopen_game_io) {
-        api._lua_pushcclosure(L, (luaopen_game_io), 0);
-        api._lua_pushstring(L, LUA_IOLIBNAME);
-        api._lua_call(L, 1, 0);
-    }
-}
-
 void load_game_fn_io_open(const Signatures &signatures) {
     auto offset = signatures.funcs.at("luaopen_io").offset;
     auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
     luaopen_game_io = decltype(luaopen_game_io)(target);
 }
+
+void replace_game_io_open(GameLuaContext &ctx, lua_State *L) {
+    if (luaopen_game_io) {
+        ctx.api._lua_pushcclosure(L, (luaopen_game_io), 0);
+        ctx.api._lua_pushstring(L, LUA_IOLIBNAME);
+        ctx.api._lua_call(L, 1, 0);
+    }
+}
+
 #pragma endregion GAME_IO
+
+void do_lua_env(GameLuaContext &ctx, lua_State *L, const std::string_view &env) {
+    if (env.empty())
+        return;
+    const char *init = getenv(env.data());
+    if (init == NULL)
+        return;
+    if (init[0] == '@')
+        (ctx.api._luaL_loadfile(L, init + 1) || ctx.api._lua_pcall(L, 0, 0, 0));
+    else
+        (ctx.api._luaL_loadstring(L, init) || ctx.api._lua_pcall(L, 0, 0, 0));
+}
+
+void GameLuaContext::luaL_openlibs_hooker(lua_State *L) {
+    api._luaL_openlibs(L);
+    do_lua_env(*this, L, "GAME_INIT");
+}
+
+static int split_string(const std::string_view &str, std::vector<std::string_view> &out, char delimiter) {
+    size_t start = 0;
+    size_t end = str.find(delimiter);
+    while (end != std::string_view::npos) {
+        out.push_back(str.substr(start, end - start));
+        start = end + 1;
+        end = str.find(delimiter, start);
+    }
+    out.push_back(str.substr(start, end));
+    return out.size();
+}
+
+std::string wapper_game_main_buffer(std::string_view buffer) {
+    // before replace buffer frist line
+    size_t first_newline = buffer.find('\n');
+    if (first_newline != std::string_view::npos) {
+        buffer = buffer.substr(first_newline + 1);
+    }
+    /*
+    find ModManager:LoadMods() next line
+   */
+    constexpr std::string_view modManagerLoadMods = "ModManager:LoadMods()";
+    auto pos = buffer.find(modManagerLoadMods);
+    if (pos == std::string_view::npos) {
+        spdlog::warn("ModManager:LoadMods() not found in main.lua, never injector script");
+        return std::string(buffer);
+    }
+    pos = buffer.find('\n', pos + modManagerLoadMods.size());
+    if (pos != std::string_view::npos) {
+        pos += 1; // move to next line
+    }
+
+    std::string before_buffer;
+    // handler arg "-e"
+    auto cmds = get_cmds();
+    for (size_t i = 0; i < cmds.size(); i++) {
+        const auto &cmd = cmds[i];
+        if (cmd == "-e"sv) {
+            auto next = std::next(cmds.begin(), i + 1);
+            if (next != cmds.end()) {
+                auto &script = *next;
+                if (script.empty()) {
+                    spdlog::error("No Lua script provided after -e option");
+                    continue;
+                }
+                //spdlog::info("Running Lua script from command line: {}", script);
+                before_buffer += script + ";";
+            }
+        }
+    }
+    spdlog::info("Injecting -e script: {}", before_buffer);
+
+    // handler -injector
+    std::string_view injector_file;
+    std::vector<std::string_view> injector_args;
+
+    auto injector_file_env = getenv("GAME_INJECTOR_FILE");
+    auto injector_args_env = getenv("GAME_INJECTOR_ARGS");
+
+    if (injector_file_env) {
+        injector_file = injector_file_env;
+    }
+    if (injector_args_env) {
+        split_string(injector_args_env, injector_args, ' ');
+    }
+    for (size_t i = 0; i < cmds.size(); i++) {
+        auto &cmd = cmds[i];
+        if (cmd == "-injector-file"sv) {
+            if (i + 1 < cmds.size()) {
+                injector_file = cmds[i + 1];
+            } else {
+                spdlog::error("No injector file provided after -injector option");
+                return std::string(buffer);
+            }
+        } else if (cmd == "-injector-args"sv) {
+            if (i + 1 < cmds.size()) {
+                split_string(cmds[i + 1], injector_args, ' ');
+            } else {
+                spdlog::error("No injector args provided after -injector-args option");
+                return std::string(buffer);
+            }
+        }
+    }
+
+    if (injector_file.empty()) {
+        spdlog::warn("No injector file provided, never injector script");
+        return std::string(buffer);
+    }
+    std::string inject_buffer = std::format("print('DontStarveInjector: Load Injector File: {}');", injector_file);
+    if (!injector_args.empty()) {
+        std::string args_str;
+        for (const auto &arg: injector_args) {
+            args_str += std::string{arg} + " ";
+        }
+        args_str.pop_back();// remove last space
+        /* lua code
+        */
+        inject_buffer += "global('inject_args'); inject_args={"sv;
+        for (size_t i = 0; i < injector_args.size(); i++) {
+            inject_buffer += std::format("[[{}]],", i + 1, injector_args[i]);
+        }
+        inject_buffer += "};";
+    }
+    inject_buffer += std::format(" local fn = dofile([[{}]]);"
+                                 " if fn then"
+                                 "       fn();"
+                                 "   end;"
+                                 "   error('DontStarveInjector: Load Injector File Done');"
+                                 "TheSim:Quit();",
+                                 injector_file);
+    spdlog::info("Injecting script: {}", inject_buffer);
+
+    auto buffer_prefix = buffer.substr(0, pos);
+    auto buffer_after = buffer.substr(pos);
+    auto new_line_end = buffer.find('\n', pos);
+    if (new_line_end == std::string_view::npos) {
+        new_line_end = pos;
+        spdlog::warn("No newline found after ModManager:LoadMods(), injecting at end of buffer");
+    } else {
+        if (std::ranges::all_of(buffer.substr(pos, new_line_end - pos), [](char c) { return std::isspace(c); })) {
+            buffer_after = buffer.substr(new_line_end + 1);
+        }
+    }
+    
+    return std::format("{}\n{} ;{}\n{}", before_buffer, buffer_prefix, inject_buffer, buffer_after);
+}
 
 #define WAPPER_LUA_API(name)                          \
     static decltype(&name) real_##name = api._##name; \
@@ -64,6 +212,9 @@ struct GameLuaContextImpl : GameLuaContext {
         LuaModule = gum_process_find_module_by_name(sharedlibraryName.c_str());
         if (!LuaModule) {
             GError *error = nullptr;
+#ifndef _WIN32
+            loadlib(sharedlibraryName.c_str(), RTLD_GLOBAL);
+#endif
             LuaModule = gum_module_load(sharedlibraryName.c_str(), &error);
             if (!LuaModule) {
                 spdlog::error("Cannot load Lua module: {}, error: {}", sharedlibraryName, error->message);
@@ -90,9 +241,20 @@ struct GameLuaContextImpl : GameLuaContext {
             spdlog::error("Lua module is not loaded, cannot find export: {}", target);
             return nullptr;
         }
-        if (UseGameIO() && target == "luaL_openlibs") {
+        if (target == "luaL_openlibs") {
             decltype(&luaL_openlibs) hooker = +[](lua_State *L) {
                 return GetGameLuaContext().luaL_openlibs_hooker(L);
+            };
+            return (void *) hooker;
+        }
+        if (target == "luaL_loadbuffer") {
+            decltype(&luaL_loadbuffer) hooker = +[](lua_State *L, const char *buff, size_t size, const char *name) {
+                if (name == "@scripts/main.lua"sv) {
+                    // load custom main.lua script
+                    auto new_buffer = wapper_game_main_buffer({buff, size});
+                    return GetGameLuaContext().api._luaL_loadbuffer(L, new_buffer.data(), new_buffer.size(), name);
+                }
+                return GetGameLuaContext().api._luaL_loadbuffer(L, buff, size, name);
             };
             return (void *) hooker;
         }
@@ -223,6 +385,9 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
         }
         hookTargets.emplace_back(&name);
     }
+
+    if (UseGameIO())
+        load_game_fn_io_open(signatures);
 
     std::list<uint8_t *> hookeds;
     for (auto *_name: hookTargets) {

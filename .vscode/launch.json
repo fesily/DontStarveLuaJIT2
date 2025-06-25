@@ -21,6 +21,7 @@
             "type": "cppdbg",
             "request": "attach",
             "program": "/root/server_dst/bin64/dontstarve_dedicated_server_nullrenderer_x64",
+            "processId": "${command:pickProcess}",
         },
         {
             "name": "(Windows) 启动",
@@ -172,16 +173,17 @@
         },
         {
             "name": "Launch luajit",
-            "type": "cppvsdbg",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/luajit/src/luajit.exe",
+            "program": "${workspaceFolder}/builds/ninja-multi-vcpkg/luajit/Debug/luajit",
             "args": [
-                "test.lua"
+                "${workspaceFolder}/tests/sect/simulator.lua",
+                "tests/2847908822/modmain12345.lua",
+                "../mods/workshop-2847908822/modmain.lua"
             ],
             "stopAtEntry": true,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/LuaJit.Natvis"
         },
         {
@@ -191,7 +193,7 @@
             "program": "${workspaceFolder}/tests/sect/simulator.lua",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "luaVersion": "lua51",
+            "luaVersion": "luajit",
             "arg": [
                 "tests/2847908822/modmain12345.lua",
                 "../mods/workshop-2847908822/modmain.lua"
@@ -212,11 +214,75 @@
             ]
         },
         {
+            "name": "(Linux) docker server(TEST_INJECTOR)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/root/server_dst/bin64/dontstarve_dedicated_server_nullrenderer_x64",
+            "args": [
+                "-e",
+                "dofile'/root/.vscode-server/extensions/actboy168.lua-debug-2.0.12-linux-x64/script/launch.lua' DBG'52444/ansi'",
+                "-injector-file",
+                "${workspaceFolder}/test.lua",
+                "-injector-args",
+                "1.lua 2.lua"
+            ],
+            "stopAtConnect": true,
+            "cwd": "/root/server_dst/bin64",
+            "environment": [
+                {
+                    "name": "LD_PRELOAD",
+                    "value": "./lib64/libInjector.so"
+                },
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "./lib64"
+                },
+                {
+                    "name": "LUA_DEBUG_PLATFORM",
+                    "value": "linux-x64"
+                }
+            ],
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "docker_server_init"
+        },
+        {
+            "name": "Debug GAME Lua (INJECTOR)",
+            "type": "lua",
+            "request": "launch",
+            "program": "",
+            "luaexe": "/root/server_dst/bin64/dontstarve_dedicated_server_nullrenderer_x64",
+            "cwd": "/root/server_dst/bin64",
+            "arg": [
+                "-injector-file",
+                "${workspaceFolder}/tests/sect/simulator.lua",
+                "-injector-args",
+                "tests/2847908822/modmain12345.lua",
+                "-injector-args",
+                "../mods/workshop-2847908822/modmain.lua"
+            ],
+            "stopOnEntry": true,
+            "env": {
+                "PATH": "${workspaceFolder}",
+                //"LUAJIT_WAIT_DEBUGGER_ENABLE": "1",
+                "LD_PRELOAD": "/root/server_dst/bin64/lib64/libInjector.so",
+                "LD_LIBRARY_PATH": "/root/server_dst/bin64/lib64",
+                "LUA_DEBUG_PLATFORM": "linux-x64"
+            },
+            "luaVersion": "luajit"
+        },
+        {
             "name": "Debug Lua Vm",
             "type": "cppdbg",
             "request": "launch",
-            //"program": "${workspaceFolder}/builds/ninja-multi-vcpkg/luajit/Debug/luajit",
-            "program": "${workspaceFolder}/builds/ninja-multi-vcpkg/src/lua51original/RelWithDebInfo/lua",
+            "program": "${workspaceFolder}/builds/ninja-multi-vcpkg/luajit/Debug/luajit",
+            //"program": "${workspaceFolder}/builds/ninja-multi-vcpkg/src/lua51original/RelWithDebInfo/lua",
             "args": [
                 "${workspaceFolder}/tests/sect/simulator.lua",
                 "tests/2847908822/modmain12345.lua",

@@ -301,7 +301,7 @@ update_signatures_from_disasm(Signatures &signatures, uintptr_t targetLuaModuleB
     try
     {
         auto gen = update_signatures(signatures, targetLuaModuleBase, exports, range, updated);
-        if (get_cwd().contains("-disable_progress")) {
+        if (get_cmd().contains("-disable_progress")) {
             NoShowProgressWindow(0, gen);
         } else {
             ShowProgressWindow(exports.size() + 1, gen);
