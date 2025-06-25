@@ -14,12 +14,14 @@
 #include <ranges>
 using namespace std::literals;
 
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
 
 #ifdef _WIN32
 #define SHARED_LIBRARY_EXT ".dll"
 #define SHARED_LIBRARY_PRE ""
 #elif defined(__linux__)
-#include <dlfcn.h>
 #define SHARED_LIBRARY_EXT ".so"
 #define SHARED_LIBRARY_PRE "lib"
 #elif defined(__APPLE__)
