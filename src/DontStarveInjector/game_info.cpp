@@ -123,10 +123,10 @@ std::optional<GameInfo> readGameInfo() {
     }
 
     GameInfo gameinfo;
-    gameinfo.cluster_name = cluster_name ? *cluster_name : "Cluster_1";
-    gameinfo.shared_name = shared_name ? *shared_name : "Master";
-    gameinfo.persist_root = persist_root ? *persist_root : ".klei/";
-    gameinfo.config_dir = config_dir ? *config_dir : "DoNotStarveTogether";
+    gameinfo.cluster_name = cluster_name ? *cluster_name : "Cluster_1"s;
+    gameinfo.shared_name = shared_name ? *shared_name : "Master"s;
+    gameinfo.persist_root = persist_root ? *persist_root : ".klei/"s;
+    gameinfo.config_dir = config_dir ? *config_dir : "DoNotStarveTogether"s;
     return gameinfo;
 }
 #elif defined(__APPLE__)
