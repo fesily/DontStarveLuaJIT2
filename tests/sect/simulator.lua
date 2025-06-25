@@ -1,4 +1,4 @@
-local arg = {...}
+local arg = { ... }
 TheSim = {}
 kleiloadlua = newproxy(function(...)
     print("kleiloadlua", ...)
@@ -14,7 +14,7 @@ end
 
 MODS_ROOT = "../mods/"
 ModManager = {}
-local  modname = "workshop-2847908822"
+local modname = "workshop-2847908822"
 
 local env =
 {
@@ -47,15 +47,15 @@ local env =
     MODROOT = MODS_ROOT .. modname .. "/",
 }
 env.modimport = function(modulename)
-    print("modimport: "..env.MODROOT..modulename)
-    if string.sub(modulename, #modulename-3,#modulename) ~= ".lua" then
-        modulename = modulename..".lua"
+    print("modimport: " .. env.MODROOT .. modulename)
+    if string.sub(modulename, #modulename - 3, #modulename) ~= ".lua" then
+        modulename = modulename .. ".lua"
     end
-    local result = kleiloadlua(env.MODROOT..modulename)
+    local result = kleiloadlua(env.MODROOT .. modulename)
     if result == nil then
-        error("Error in modimport: "..modulename.." not found!")
+        error("Error in modimport: " .. modulename .. " not found!")
     elseif type(result) == "string" then
-        error("Error in modimport: "..ModInfoname(modname).." importing "..modulename.."!\n"..result)
+        error("Error in modimport: " .. ModInfoname(modname) .. " importing " .. modulename .. "!\n" .. result)
     else
         setfenv(result, env.env)
         result()
@@ -74,32 +74,46 @@ io.open = newproxy(function(filename, mode)
     filename = filename:gsub("%.%.%/mods%/workshop%-2847908822/", real_ROOT)
     print("io.open:", filename, mode)
     if (filename:find(currentfilename, 1, true)) then
-        return old_io_open(real_ROOT.. "modmain.lua", mode)
+        return old_io_open(real_ROOT .. "modmain.lua", mode)
     end
     return old_io_open(filename, mode)
 end)
 
+debug.getinfo1 = debug.getinfo
+local old_load = load
+local load_get_thunk_func
+local function get_thunk()
+    local code = load_get_thunk_func()
+    print("load code:", code)
+    return code
+end
+local function load_function_proxy(chunk, chunkname, mode, env)
+    print("load:", chunkname, mode)
+    if type(chunk) == "string" then
+        return old_load(chunk, chunkname, mode, env)
+    end
+    assert(type(chunk) == 'function')
+    load_get_thunk_func = chunk
+    return old_load(get_thunk, chunkname, mode, env)
+end
+load = newproxy(load_function_proxy)
+
 local old_debug_getinfo = debug.getinfo
 debug.getinfo1 = newproxy(function(f, what)
     print("debug.getinfo:", f, what)
-    if (type(f) == 'number') then
-        f = f + 2
+    if (type(f) == 'number') and f > 0 then
+        f = f + 2 --跳过getinfo的cproxy luaproxy
+        -- 判断一下 是不是在load函数里面执行的, 这个地方执行的话直接,跳过load函数堆栈,应该有两层, get_thunk, proxy, luaproxy, load
+        local info = old_debug_getinfo(f, 'f')
+        if info.func == get_thunk then
+            f = f + 3
+        elseif info.func == load_function_proxy then
+            f = f + 2
+        elseif info.func == load then
+            f = f + 1
+        end
     end
-    local info = old_debug_getinfo(f, 'Sf')
-    if info.source and info.source:find(currentfilename, 1, true) then
-        info.source = MODS_ROOT .. "modmain.lua"
-    else
-        print("debug.getinfo:", f, what, "source:", info.source)
-    end
-    if info.short_src and info.short_src:find(currentfilename, 1, true) then
-        info.short_src = MODS_ROOT .. "modmain.lua"
-    else
-        print("debug.getinfo:", f, what, "short_src:", info.short_src)
-    end
-    if what:find('f') and not info.func then
-        info.func = old_debug_getinfo
-    end
-    print("debug.getinfo:", tostring(f), what, "source:", info.source, "short_src:", info.short_src, "func", tostring(info.func))
+    info = old_debug_getinfo(f, what)
     return info
 end)
 
@@ -120,15 +134,16 @@ function env.breakpoint(...)
 end
 
 function env.breakpoint_opcode(opcode)
-    if opcode == 7872752 then
+    if opcode == 9003795 then
         env.breakpoint()
     end
 end
 
 local t = {}
 function env.MYPRINT(str, level)
-    t[#t + 1] = {str, level}
+    t[#t + 1] = { str, level }
 end
+
 env.Deep = 0;
 
 local function main(env)
@@ -137,11 +152,11 @@ local function main(env)
     local simulatorName = assert(arg[2], usage)
     local fp = assert(io.open1(inputfile, 'r'), "Could not open input file: " .. inputfile)
     local content = fp:read("*a")
-    print ("Loaded input file: " .. inputfile, "with size: " .. #content)
+    print("Loaded input file: " .. inputfile, "with size: " .. #content)
     fp:close()
-    local fn = assert(loadstring1(content, '@'.. simulatorName)) 
+    local fn = assert(loadstring1(content, '@' .. simulatorName))
     setfenv(fn, env)
-    local ok, err = pcall(fn) 
+    local ok, err = pcall(fn)
     if not ok then
         print("Error in simulator file: " .. err)
     else
@@ -155,19 +170,19 @@ main(env)
 assert(#t > 0)
 if #t > 0 then
     local fp = io.open("1.txt", "w+")
-    		local levels = {
-			[0] = "",
-			"\t",
-			"\t\t",
-   "\t\t\t",
-   "\t\t\t\t",
-   "\t\t\t\t\t",
-   "\t\t\t\t\t\t",
-   "\t\t\t\t\t\t\t",
-		}
+    local levels = {
+        [0] = "",
+        "\t",
+        "\t\t",
+        "\t\t\t",
+        "\t\t\t\t",
+        "\t\t\t\t\t",
+        "\t\t\t\t\t\t",
+        "\t\t\t\t\t\t\t",
+    }
     for i, v in ipairs(t) do
         local str, level = v[1], v[2]
-        fp:write(levels[level]..tostring(str) .. "\n")
+        fp:write(levels[level] .. tostring(str) .. "\n")
     end
     fp:close()
 end
