@@ -65,18 +65,13 @@ end
 env.env = env
 local real_ROOT = "tests/2847908822/"
 local old_io_open = io.open
-local currentfilename = "modmain12345.lua"
 io.open1 = old_io_open
 local loadstring1 = loadstring
 ---@param filename string
 io.open = newproxy(function(filename, mode)
-    print("io.open:", filename, mode)
-    filename = filename:gsub("%.%.%/mods%/workshop%-2847908822/", real_ROOT)
-    print("io.open:", filename, mode)
-    if (filename:find(currentfilename, 1, true)) then
-        return old_io_open(real_ROOT .. "modmain.lua", mode)
-    end
-    return old_io_open(filename, mode)
+    local new_filename = filename:gsub("%.%.%/mods%/workshop%-2847908822/", real_ROOT)
+    print("io.open:", filename, '==>', new_filename, mode)
+    return old_io_open(new_filename, mode)
 end)
 
 debug.getinfo1 = debug.getinfo
