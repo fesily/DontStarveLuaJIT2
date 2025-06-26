@@ -12,6 +12,8 @@
 #include <list>
 #include <cctype>
 #include <ranges>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
 using namespace std::literals;
 
 #ifndef _WIN32
@@ -96,32 +98,13 @@ std::string wapper_game_main_buffer(std::string_view buffer) {
         spdlog::warn("ModManager:LoadMods() not found in main.lua, never injector script");
         return std::string(buffer);
     }
-    pos = buffer.find('\n', pos + modManagerLoadMods.size());
-    if (pos != std::string_view::npos) {
-        pos += 1; // move to next line
-    }
 
-    std::string before_buffer;
-    // handler arg "-e"
-    auto cmds = get_cmds();
-    for (size_t i = 0; i < cmds.size(); i++) {
-        const auto &cmd = cmds[i];
-        if (cmd == "-e"sv) {
-            auto next = std::next(cmds.begin(), i + 1);
-            if (next != cmds.end()) {
-                auto &script = *next;
-                if (script.empty()) {
-                    spdlog::error("No Lua script provided after -e option");
-                    continue;
-                }
-                //spdlog::info("Running Lua script from command line: {}", script);
-                before_buffer += script + ";";
-            }
-        }
-    }
-    spdlog::info("Injecting -e script: {}", before_buffer);
+    // - lua code
+    std::string before_code = "DBG=1;";
+    std::string before_injector_code;
+    bool default_before_code = getenv("GAME_INJECTOR_NO_DEFAULT_BEFORE") != nullptr ? false : true;
 
-    // handler -injector
+    // -injector
     std::string_view injector_file;
     std::vector<std::string_view> injector_args;
 
@@ -134,22 +117,50 @@ std::string wapper_game_main_buffer(std::string_view buffer) {
     if (injector_args_env) {
         split_string(injector_args_env, injector_args, ' ');
     }
-    for (size_t i = 0; i < cmds.size(); i++) {
-        auto &cmd = cmds[i];
-        if (cmd == "-injector-file"sv) {
-            if (i + 1 < cmds.size()) {
-                injector_file = cmds[i + 1];
+    // skip first cmd, it is executable path
+    auto cmds = get_cmds();
+    for (size_t i = 1; i < cmds.size(); i++) {
+        auto cmd = std::string_view{cmds[i]};
+        if (cmd.starts_with('-') || cmd.starts_with("--")) {
+            std::string_view key;
+            std::string_view value;
+            if (cmd.contains('=')) {
+                // single cmd with key=value
+                auto pos = cmd.find('=');
+                key = cmd.substr(0, pos);
+                value = cmd.substr(pos + 1);
             } else {
-                spdlog::error("No injector file provided after -injector option");
-                return std::string(buffer);
+                key = cmd.substr(cmd.find_first_not_of("-"));
+                if (i >= cmds.size() || cmds[i + 1].starts_with('-')) {
+                    spdlog::error("No value provided for option: {}", key);
+                    continue;
+                }
+                i++;
+                value = cmds[i];
+                if (value.empty()) {
+                    spdlog::error("No value provided for option: {}", key);
+                    continue;
+                }
             }
-        } else if (cmd == "-injector-args"sv) {
-            if (i + 1 < cmds.size()) {
-                split_string(cmds[i + 1], injector_args, ' ');
-            } else {
-                spdlog::error("No injector args provided after -injector-args option");
-                return std::string(buffer);
+            switch (key.front()) {
+                case 'e':
+                    if (key == "e"sv)
+                        (default_before_code ? before_code : before_injector_code) += std::format("{};", value);
+                    break;
+                case 'E':
+                    if (key == "E"sv)
+                        before_injector_code += std::format("{};", value);
+                default:
+                    spdlog::warn("Unknown injector command line option: {}", key);
+                    break;
             }
+        } else if (std::filesystem::exists(std::filesystem::path{cmd})) {
+            // last cmd is file args
+            injector_file = cmd;
+            for (size_t j = i + 1; j < cmds.size(); j++) {
+                injector_args.push_back(cmds[j]);
+            }
+            break;
         }
     }
 
@@ -157,43 +168,45 @@ std::string wapper_game_main_buffer(std::string_view buffer) {
         spdlog::warn("No injector file provided, never injector script");
         return std::string(buffer);
     }
-    std::string inject_buffer = std::format("print('DontStarveInjector: Load Injector File: {}');", injector_file);
-    if (!injector_args.empty()) {
-        std::string args_str;
-        for (const auto &arg: injector_args) {
-            args_str += std::string{arg} + " ";
-        }
-        args_str.pop_back();// remove last space
-        /* lua code
-        */
-        inject_buffer += "global('inject_args'); inject_args={"sv;
-        for (size_t i = 0; i < injector_args.size(); i++) {
-            inject_buffer += std::format("[[{}]],", i + 1, injector_args[i]);
-        }
-        inject_buffer += "};";
-    }
-    inject_buffer += std::format(" local fn = dofile([[{}]]);"
-                                 " if fn then"
-                                 "       fn();"
-                                 "   end;"
-                                 "   error('DontStarveInjector: Load Injector File Done');"
-                                 "TheSim:Quit();",
-                                 injector_file);
+    
+    spdlog::info("Injecting -e script: {} {}", before_code, before_injector_code);
+    if (!before_injector_code.empty()) before_injector_code += '\t';
+    spdlog::info("Injector: {} {}", injector_file, fmt::join(injector_args, " "));
+    auto v1 = fmt::format("{}", fmt::join(injector_args | std::ranges::views::transform([](auto &arg) { return std::format("[[{}]]", arg); }), ","));
+    std::string inject_buffer = before_injector_code + std::format(
+            " local inject_fp=io.open([[{}]], 'r');"
+            " if not inject_fp then error ('DontStarveInjector: Cannot open Injector File'); end;"
+            " local fn = loadstring(inject_fp:read '*a');"
+            " inject_fp:close();"
+            " if fn then"
+            "   local inject_args = {{{}}};"
+            "   setfenv(fn, setmetatable({{arg=inject_args}}, {{__index = _G, __newindex = _G}}));"
+            "       pcall(fn);"
+            "   end;",
+            injector_file, v1);
     spdlog::info("Injecting script: {}", inject_buffer);
 
     auto buffer_prefix = buffer.substr(0, pos);
     auto buffer_after = buffer.substr(pos);
-    auto new_line_end = buffer.find('\n', pos);
-    if (new_line_end == std::string_view::npos) {
-        new_line_end = pos;
-        spdlog::warn("No newline found after ModManager:LoadMods(), injecting at end of buffer");
-    } else {
-        if (std::ranges::all_of(buffer.substr(pos, new_line_end - pos), [](char c) { return std::isspace(c); })) {
-            buffer_after = buffer.substr(new_line_end + 1);
+    // 在buffer_prefix反向中寻找一个空行, 必须检查该行是空行
+    auto last_newline = buffer_prefix.find_last_of('\n');
+    if (last_newline != std::string_view::npos) {
+        // 确保找到的行是空行
+        auto line_start = buffer_prefix.substr(0, last_newline).find_last_of('\n');
+        if (line_start == std::string_view::npos) {
+            line_start = 0;
+        } else {
+            line_start += 1;// 跳过换行符
+        }
+        auto line_content = buffer_prefix.substr(line_start, last_newline - line_start);
+        if (std::ranges::all_of(line_content, [](char c) { return std::isspace(c); })) {
+            buffer_prefix = buffer_prefix.substr(0, line_start);
         }
     }
-    
-    return std::format("{}\n{} ;{}\n{}", before_buffer, buffer_prefix, inject_buffer, buffer_after);
+
+    auto new_buffer = std::format("{}\n{} ;{}\n{}", before_code, buffer_prefix, inject_buffer, buffer_after);
+    spdlog::info("New buffer:\n {}", new_buffer);
+    return new_buffer;
 }
 
 #define WAPPER_LUA_API(name)                          \
