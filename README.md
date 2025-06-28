@@ -173,9 +173,8 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 | 轮回**剑  | 30RMB | (兼容mod) | |
 
 # 捐赠方式
+![weixin_zanshang](https://github.com/user-attachments/assets/9f6485ce-5254-4207-a514-89bd02c332ce)
 
-
-![微信图片_20250320092642](https://github.com/user-attachments/assets/92490c66-fde9-4bc8-84af-1049ec6a2860)
 
 ![微信图片_20250320092648](https://github.com/user-attachments/assets/6c754bc6-6b43-45af-bc41-fa4c502b4b3e)
 
