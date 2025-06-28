@@ -179,9 +179,7 @@ std::string wapper_game_main_buffer(std::string_view buffer) {
             " local fn = loadstring(inject_fp:read '*a');"
             " inject_fp:close();"
             " if fn then"
-            "   local inject_args = {{{}}};"
-            "   setfenv(fn, setmetatable({{arg=inject_args}}, {{__index = _G, __newindex = _G}}));"
-            "       pcall(fn);"
+            "       pcall(fn, {});"
             "   end;",
             injector_file, v1);
     spdlog::info("Injecting script: {}", inject_buffer);
