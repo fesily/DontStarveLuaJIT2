@@ -43,7 +43,7 @@
                 "-conf_dir",
                 "DoNotStarveTogether",
                 "-cluster",
-                "Cluster_3",
+                "Cluster_1",
                 "-ownernetid",
                 "76561198151751414",
                 "-ownerdir",
@@ -64,7 +64,7 @@
                 "DST_Master",
                 "-token",
                 ""
-            ],
+            ], // -persistent_storage_root APP:Klei/ -conf_dir DoNotStarveTogether -cluster Cluster_3 -ownernetid 76561198151751414 -ownerdir 191485686 -clouddir 191485686 -backup_log_count 25 -backup_log_period 0 -ugc_directory E:\SteamLibrary\steamapps\workshop -shard Master -secondary_log_prefix master -sigprefix DST_Master
             "cwd": "E:/SteamLibrary/steamapps/common/Don't Starve Together/bin64",
             "environment": [],
             "externalConsole": true

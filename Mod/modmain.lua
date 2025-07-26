@@ -360,12 +360,12 @@ local function main()
 			TheSim:SetNetbookMode(false);
 		end
 
-		if GetModConfigData("TargetLogincFPS", get_local_config) then
-			local targetfps = GetModConfigData("TargetLogincFPS", get_local_config)
-			if injector.DS_LUAJIT_set_target_fps(targetfps, 2) ~= targetfps then
-				needrestart = true
-			end
-		end
+		-- if GetModConfigData("TargetLogincFPS", get_local_config) then
+		-- 	local targetfps = GetModConfigData("TargetLogincFPS", get_local_config)
+		-- 	if injector.DS_LUAJIT_set_target_fps(targetfps, 2) ~= targetfps then
+		-- 		needrestart = true
+		-- 	end
+		-- end
 
 		if GetModConfigData("ClientNetWorkTick", get_local_config) then
 			local targetfps = GetModConfigData("ClientNetWorkTick", get_local_config)
@@ -447,18 +447,18 @@ local function main()
 				end
 			end
 
-			for _, v in pairs(self.dialog.actions.items) do
-				if v.name == "应用" then
-					local old_onclick = v.onclick
-					v.onclick = function(...)
-						old_onclick(...)
-						write_luajit_config(create_luajit_config(nil, nil,
-							GetModConfigData("TargetLogincFPS", InGamePlay()), read_config_file()))
-						load_prefix_config(InGamePlay())
-					end
-					break
-				end
-			end
+			-- for _, v in pairs(self.dialog.actions.items) do
+			-- 	if v.name == "应用" then
+			-- 		local old_onclick = v.onclick
+			-- 		v.onclick = function(...)
+			-- 			old_onclick(...)
+			-- 			write_luajit_config(create_luajit_config(nil, nil,
+			-- 				GetModConfigData("TargetLogincFPS", InGamePlay()), read_config_file()))
+			-- 			load_prefix_config(InGamePlay())
+			-- 		end
+			-- 		break
+			-- 	end
+			-- end
 
 			local actions = self.dialog.actions
 			if actions then

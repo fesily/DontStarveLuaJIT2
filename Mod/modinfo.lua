@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "1.6.6"
+version = "1.6.7"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -99,24 +99,24 @@ configuration_options = {
         },
         default = 1
     },
-    {
-        name = "TargetLogincFPS",
-        label = translate({ en = "Logic FPS", zh = "逻辑帧率" }),
-        hover = translate({
-            en = "Update FPS of lua scripts. Do not change unless you know what you are doing!!",
-            zh = "lua脚本执行帧率,不要乱改,可能会爆炸!!"
-        }),
-        options = {
-            { description = translate({ en = "off", zh = "禁用"}), data = 30 },
-            { description = "45fps", data = 45 },
-            { description = "60fps", data = 60 },
-            { description = "75fps", data = 75 },
-            { description = "90fps", data = 90 },
-            { description = "105fps", data = 105 },
-            { description = "120fps", data = 120 },
-        },
-        default = 30
-    },
+    -- {
+    --     name = "TargetLogincFPS",
+    --     label = translate({ en = "Logic FPS", zh = "逻辑帧率" }),
+    --     hover = translate({
+    --         en = "Update FPS of lua scripts. Do not change unless you know what you are doing!!",
+    --         zh = "lua脚本执行帧率,不要乱改,可能会爆炸!!"
+    --     }),
+    --     options = {
+    --         { description = translate({ en = "off", zh = "禁用"}), data = 30 },
+    --         { description = "45fps", data = 45 },
+    --         { description = "60fps", data = 60 },
+    --         { description = "75fps", data = 75 },
+    --         { description = "90fps", data = 90 },
+    --         { description = "105fps", data = 105 },
+    --         { description = "120fps", data = 120 },
+    --     },
+    --     default = 30
+    -- },
     {
         name = "TargetRenderFPS",
         label = translate({ en = "Render FPS", zh = "渲染帧率" }),
@@ -137,34 +137,34 @@ configuration_options = {
         },
         default = 60
     },
-    {
-        name = "ClientNetWorkTick",
-        label = translate({ en = "Client network sync tick", zh = "客户端网络同步频率" }),
-        hover = translate({
-            en = "The frequency of communication between the client and the server.(deault:10fps)",
-            zh = "客户端与服务器的通讯频率. 默认(10fps)."
-        }),
-        options = {
-            { description = translate({ en = "off", zh = "禁用"}), data = 10 },
-            { description = "15fps", data = 15 },
-            { description = "20fps", data = 20 },
-            { description = "25fps", data = 25 },
-            { description = "30fps", data = 30 },
-            { description = "32fps", data = 32 },
-            { description = "35fps", data = 35 },
-            { description = "40fps", data = 40 },
-            { description = "45fps", data = 45 },
-            { description = "50fps", data = 50 },
-            { description = "55fps", data = 55 },
-            { description = "60fps", data = 60 },
-            { description = "64fps", data = 64 },
-            { description = "75fps", data = 75 },
-            { description = "90fps", data = 90 },
-            { description = "115fps", data = 115 },
-            { description = "120fps", data = 120 },
-        },
-        default = 10
-    },
+    -- {
+    --     name = "ClientNetWorkTick",
+    --     label = translate({ en = "Client network sync tick", zh = "客户端网络同步频率" }),
+    --     hover = translate({
+    --         en = "The frequency of communication between the client and the server.(deault:10fps)",
+    --         zh = "客户端与服务器的通讯频率. 默认(10fps)."
+    --     }),
+    --     options = {
+    --         { description = translate({ en = "off", zh = "禁用"}), data = 10 },
+    --         { description = "15fps", data = 15 },
+    --         { description = "20fps", data = 20 },
+    --         { description = "25fps", data = 25 },
+    --         { description = "30fps", data = 30 },
+    --         { description = "32fps", data = 32 },
+    --         { description = "35fps", data = 35 },
+    --         { description = "40fps", data = 40 },
+    --         { description = "45fps", data = 45 },
+    --         { description = "50fps", data = 50 },
+    --         { description = "55fps", data = 55 },
+    --         { description = "60fps", data = 60 },
+    --         { description = "64fps", data = 64 },
+    --         { description = "75fps", data = 75 },
+    --         { description = "90fps", data = 90 },
+    --         { description = "115fps", data = 115 },
+    --         { description = "120fps", data = 120 },
+    --     },
+    --     default = 10
+    -- },
     {
         name = "JitOpt",
         label = translate({ en = "JIT Optimizations", zh = "JIT优化选项" }),

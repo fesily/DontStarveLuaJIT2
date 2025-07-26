@@ -119,6 +119,7 @@ extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_set_target_fps(int fps, int tt) 
 #ifndef _WIN32
     return -1;
 #endif
+    if (!fps) return -1;
 
     float val = 1.0f / (float) fps;
     float val2 = (float) fps;
@@ -135,6 +136,7 @@ extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_set_target_fps(int fps, int tt) 
         }
     }
     if (tt & 0b10) {
+        return -1;
         static bool init_flag = DS_LUAJIT_get_logic_fps();
         if (init_flag) {
             auto old = 1.0 / (*getticktimefps);
@@ -152,6 +154,7 @@ extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_client_network_tick(char
 #ifndef _WIN32
     return 0;
 #endif
+    return -1;
     if (!DontStarveInjectorIsClient) return 0;
 
     static auto client_network_tick_addr = []() -> std::array<char *, 3> {

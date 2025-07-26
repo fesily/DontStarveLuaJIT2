@@ -37,7 +37,7 @@ else ()
     message(FATAL_ERROR "Not supported platform")
 endif ()
 
-project(DontStarveLuaJIT VERSION 1.6.6)
+project(DontStarveLuaJIT VERSION 1.6.7)
 
 option(DISABLE_TRACY_FUTURE "disable tray future" ON)
 

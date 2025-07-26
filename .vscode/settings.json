@@ -166,7 +166,10 @@
         "stdfloat": "cpp",
         "syncstream": "cpp",
         "slist": "cpp",
-        "lj_libdef.h": "c"
+        "lj_libdef.h": "c",
+        "csetjmp": "cpp",
+        "cuchar": "cpp",
+        "scoped_allocator": "cpp"
     },
     "lua.debug.variables.showIntegerAsHex": true
 }

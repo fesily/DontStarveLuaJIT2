@@ -131,7 +131,7 @@ std::string wapper_game_main_buffer(std::string_view buffer) {
                 value = cmd.substr(pos + 1);
             } else {
                 key = cmd.substr(cmd.find_first_not_of("-"));
-                if (i >= cmds.size() || cmds[i + 1].starts_with('-')) {
+                if (i >= (cmds.size()-1) || cmds[i + 1].starts_with('-')) {
                     spdlog::error("No value provided for option: {}", key);
                     continue;
                 }
