@@ -29,7 +29,7 @@ struct wFile_interface : file_interface {
         if (textmode) {
             size_t read_count = 0;
             char c = fgetc(fp);
-            for (; c != EOF;) {
+            while (c != EOF) {
                 if (c == '\r') {
                     // 如果是'\r'，则检查下一个字符
                     char next_c = fgetc(fp);
@@ -38,6 +38,7 @@ struct wFile_interface : file_interface {
                     }
                 } else if (c == '\n') {
                     // 如果是'\n'，则不写入
+                    c = fgetc(fp);
                     continue;
                 }
                 ((char *) buf)[read_count++] = c;// 直接读取字符
