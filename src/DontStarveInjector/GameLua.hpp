@@ -5,6 +5,7 @@
 #include <string_view>
 #include <frida-gum.h>
 #include <lua.hpp>
+#include <lj_arch.h>
 
 enum class GameLuaType {
     _51,

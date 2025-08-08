@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "1.6.8"
+version = "1.7.0"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -84,21 +84,14 @@ configuration_options = {
         default = 1
     },
     {
-        name = "EnbaleFrameGC",
+        name = "EnableFrameGC",
         label = translate({ en = "Frame GC", zh = "帧间gc" }),
         hover = translate({
             en = "GC during idle time between frames",
             zh = "见缝插针地gc"
         }),
-        options = {
-            { description = translate({ en = "off", zh = "禁用" }), data = 0 },
-            { description = "1ms", data = 1 },
-            { description = "2ms", data = 2 },
-            { description = "3ms", data = 3 },
-            { description = "4ms", data = 4 },
-            { description = "5ms", data = 5 },
-        },
-        default = 1
+        options = toggle,
+        default = true
     },
     -- {
     --     name = "TargetLogicFPS",
@@ -138,64 +131,63 @@ configuration_options = {
         },
         default = 60
     },
-    {
-        name = "ClientNetWorkTick",
-        label = translate({ en = "Client network sync tick", zh = "客户端网络发包频率" }),
-        hover = translate({
-            en =
-            "Client network sync frequency, the download frequency is 1.5 times the current setting. Default (10fps for upload, 15fps for download).",
-            zh = "客户端网络同步频率,下行频率=当前设置*1.5.默认(上行10fps,下行15fps)."
-        }),
-        options = {
-            { description = translate({ en = "off", zh = "禁用" }), data = 10 },
-            { description = "15fps", data = 15 },
-            { description = "20fps", data = 20 },
-            { description = "25fps", data = 25 },
-            { description = "30fps", data = 30 },
-            { description = "32fps", data = 32 },
-            { description = "35fps", data = 35 },
-            { description = "40fps", data = 40 },
-            { description = "45fps", data = 45 },
-            { description = "50fps", data = 50 },
-            { description = "55fps", data = 55 },
-            { description = "60fps", data = 60 },
-            { description = "64fps", data = 64 },
-            { description = "75fps", data = 75 },
-            { description = "90fps", data = 90 },
-            { description = "115fps", data = 115 },
-            { description = "120fps", data = 120 },
-        },
-        default = 10
-    },
-    {
-        name = "ServerNetWorkTick",
-        label = translate({ en = "Server network sync tick", zh = "服务器网络同步频率" }),
-        hover = translate({
-            en =
-            "Server network sync tick, the same frequency for both upload and download. Default (15fps for upload, 0fps for download).",
-            zh = "服务器网络同步频率,默认(上行15fps,下行0fps)."
-        }),
-        options = {
-            { description = translate({ en = "off", zh = "禁用" }), data = 15 },
-            { description = "20fps", data = 20 },
-            { description = "25fps", data = 25 },
-            { description = "30fps", data = 30 },
-            { description = "32fps", data = 32 },
-            { description = "35fps", data = 35 },
-            { description = "40fps", data = 40 },
-            { description = "45fps", data = 45 },
-            { description = "50fps", data = 50 },
-            { description = "55fps", data = 55 },
-            { description = "60fps", data = 60 },
-            { description = "64fps", data = 64 },
-            { description = "75fps", data = 75 },
-            { description = "90fps", data = 90 },
-            { description = "115fps", data = 115 },
-            { description = "120fps", data = 120 },
-        },
-        default = 15
-    },
-
+    -- {
+    --     name = "ClientNetWorkTick",
+    --     label = translate({ en = "Client network sync tick", zh = "客户端网络发包频率" }),
+    --     hover = translate({
+    --         en =
+    --         "Client network sync frequency, the download frequency is 1.5 times the current setting. Default (10fps for upload, 15fps for download).",
+    --         zh = "客户端网络同步频率,下行频率=当前设置*1.5.默认(上行10fps,下行15fps)."
+    --     }),
+    --     options = {
+    --         { description = translate({ en = "off", zh = "禁用" }), data = 10 },
+    --         { description = "15fps", data = 15 },
+    --         { description = "20fps", data = 20 },
+    --         { description = "25fps", data = 25 },
+    --         { description = "30fps", data = 30 },
+    --         { description = "32fps", data = 32 },
+    --         { description = "35fps", data = 35 },
+    --         { description = "40fps", data = 40 },
+    --         { description = "45fps", data = 45 },
+    --         { description = "50fps", data = 50 },
+    --         { description = "55fps", data = 55 },
+    --         { description = "60fps", data = 60 },
+    --         { description = "64fps", data = 64 },
+    --         { description = "75fps", data = 75 },
+    --         { description = "90fps", data = 90 },
+    --         { description = "115fps", data = 115 },
+    --         { description = "120fps", data = 120 },
+    --     },
+    --     default = 10
+    -- },
+    -- {
+    --     name = "ServerNetWorkTick",
+    --     label = translate({ en = "Server network sync tick", zh = "服务器网络同步频率" }),
+    --     hover = translate({
+    --         en =
+    --         "Server network sync tick, the same frequency for both upload and download. Default (15fps for upload, 0fps for download).",
+    --         zh = "服务器网络同步频率,默认(上行15fps,下行0fps)."
+    --     }),
+    --     options = {
+    --         { description = translate({ en = "off", zh = "禁用" }), data = 15 },
+    --         { description = "20fps", data = 20 },
+    --         { description = "25fps", data = 25 },
+    --         { description = "30fps", data = 30 },
+    --         { description = "32fps", data = 32 },
+    --         { description = "35fps", data = 35 },
+    --         { description = "40fps", data = 40 },
+    --         { description = "45fps", data = 45 },
+    --         { description = "50fps", data = 50 },
+    --         { description = "55fps", data = 55 },
+    --         { description = "60fps", data = 60 },
+    --         { description = "64fps", data = 64 },
+    --         { description = "75fps", data = 75 },
+    --         { description = "90fps", data = 90 },
+    --         { description = "115fps", data = 115 },
+    --         { description = "120fps", data = 120 },
+    --     },
+    --     default = 15
+    -- },
     {
         name = "JitOpt",
         label = translate({ en = "JIT Optimizations", zh = "JIT优化选项" }),
@@ -204,7 +196,17 @@ configuration_options = {
             zh = "可能更快, 可能更慢."
         }),
         options = toggle,
-        default = false,
+        default = true,
+    },
+    {
+        name = "NetworkOpt",
+        label = translate({ en = "Network Optimizations", zh = "网络优化" }),
+        hover = translate({
+            en = "Optimize network transmission",
+            zh = "优化网络传输"
+        }),
+        options = toggle,
+        default = true,
     },
     {
         name = "ModBlackList",

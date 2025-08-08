@@ -737,7 +737,7 @@ void gum_luajit_profiler::stop() {
 }
 
 
-extern "C" DONTSTARVEINJECTOR_API void DS_LUAJIT_enable_profiler(int en) {
+DONTSTARVEINJECTOR_API void DS_LUAJIT_enable_profiler(int en) {
     static gum_luajit_profiler profiler;
     if (en) {
         profiler.start();

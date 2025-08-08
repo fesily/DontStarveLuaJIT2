@@ -14,6 +14,7 @@
 #include "luajit_config.hpp"
 #include "GameLua.hpp"
 #include "GameSteam.hpp"
+#include "GameNetwork.hpp"
 #include <spdlog/spdlog.h>
 
 #ifdef _WIN32
@@ -120,8 +121,24 @@ static bool check_crash() {
     fclose(fp);
     return true;
 }
+
+void DisableScriptZip() {
+    auto disableScriptZip = getenv("GAME_DISABLE_SCRIPTS_ZIP");
+    if (!disableScriptZip) {
+        return;
+    }
+    // DEV=databundles/scripts.zip
+    auto key = "DEV=databundles/scripts.zip"sv;
+    function_relocation::MemorySignature signature = {key.data(), 0};
+    signature.prot_flag = GUM_PAGE_READ;
+    if (signature.scan(nullptr)) {
+        gum_memory_write((void*)signature.target_address, (const guint8 *) "DEV=databundles/script1.zip", key.size());
+        spdlog::info("disable script zip[{}]", (void*)signature.target_address);
+    }
+}
+
 extern "C" void LoadGameModConfig();
-extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
+DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     if (getenv("DontStarveInjectorDisable") || get_cmd().contains("DontStarveInjectorDisable")) {
         spdlog::info("DontStarveInjector is disabled");
         return;
@@ -198,6 +215,8 @@ extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     if (!DontStarveInjectorIsClient) {
         HookSteamGameServerInterface();
     }
+    GameNetWorkHookRpc4();
+    DisableScriptZip();
 }
 
 

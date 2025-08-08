@@ -34,14 +34,13 @@ using namespace std::literals;
 
 #pragma region GAME_IO
 bool UseGameIO() {
-    bool use_game_io = getenv("USE_GAME_IO") != nullptr;
-    return use_game_io;
+    return getenv("UNUSE_GAME_IO") == nullptr;
 }
 int (*luaopen_game_io)(lua_State *L);
 void load_game_fn_io_open(const Signatures &signatures) {
     auto offset = signatures.funcs.at("luaopen_io").offset;
     auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
-    luaopen_game_io = decltype(luaopen_game_io)(target);
+    luaopen_game_io = (decltype(luaopen_game_io)) target;
 }
 
 void replace_game_io_open(GameLuaContext &ctx, lua_State *L) {
@@ -168,20 +167,22 @@ std::string wapper_game_main_buffer(std::string_view buffer) {
         spdlog::warn("No injector file provided, never injector script");
         return std::string(buffer);
     }
-    
+
     spdlog::info("Injecting -e script: {} {}", before_code, before_injector_code);
     if (!before_injector_code.empty()) before_injector_code += '\t';
     spdlog::info("Injector: {} {}", injector_file, fmt::join(injector_args, " "));
     auto v1 = fmt::format("{}", fmt::join(injector_args | std::ranges::views::transform([](auto &arg) { return std::format("[[{}]]", arg); }), ","));
     std::string inject_buffer = before_injector_code + std::format(
-            " local inject_fp=io.open([[{}]], 'r');"
-            " if not inject_fp then error ('DontStarveInjector: Cannot open Injector File'); end;"
-            " local fn = loadstring(inject_fp:read '*a');"
-            " inject_fp:close();"
-            " if fn then"
-            "       pcall(fn, {});"
-            "   end;",
-            injector_file, v1);
+                                                               " local inject_fp=io.open([[{}]], 'r');"
+                                                               " if not inject_fp then error ('DontStarveInjector: Cannot open Injector File'); end;"
+                                                               " local fn = loadstring(inject_fp:read '*a');"
+                                                               " inject_fp:close();"
+                                                               " if fn then"
+                                                               "   local inject_args = {{{}}};"
+                                                               "   setfenv(fn, setmetatable({{arg=inject_args}}, {{__index = _G, __newindex = _G}}));"
+                                                               "       pcall(fn);"
+                                                               "   end;",
+                                                               injector_file, v1);
     spdlog::info("Injecting script: {}", inject_buffer);
 
     auto buffer_prefix = buffer.substr(0, pos);
@@ -369,7 +370,7 @@ static void voidFunc() {
 
 GameLuaType currentLuaType = GameLuaType::jit;
 
-extern "C" DONTSTARVEINJECTOR_API void DS_LUAJIT_set_vm_type(GameLuaType type, const char *moduleName) {
+DONTSTARVEINJECTOR_API void DS_LUAJIT_set_vm_type(GameLuaType type, const char *moduleName) {
     currentLuaType = type;
     if (type == GameLuaType::_51) {
         currentCtx = &gameLua51Ctx;
@@ -398,9 +399,6 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
         }
         hookTargets.emplace_back(&name);
     }
-
-    if (UseGameIO())
-        load_game_fn_io_open(signatures);
 
     std::list<uint8_t *> hookeds;
     for (auto *_name: hookTargets) {
@@ -447,6 +445,25 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
         if (getenv("DISABLE_REPLACE_IO") != nullptr) {
             spdlog::info("DISABLE_REPLACE_IO is set, skip replacing io module");
         } else {
+            if (UseGameIO()) {
+                load_game_fn_io_open(signatures);
+                //void luaL_defaultlib_update(luaL_Reg* newlib);
+                auto luaL_defaultlib_update = ((void (*)(luaL_Reg *)) gum_module_find_export_by_name(currentCtx->LuaModule, "luaL_defaultlib_update"));
+                luaL_Reg game_io_lib = {
+                        LUA_IOLIBNAME,
+                        luaopen_game_io};
+                luaL_defaultlib_update(&game_io_lib);
+
+                auto luaopen_io2 = ((int (*)(lua_State *)) gum_module_find_export_by_name(currentCtx->LuaModule, "luaopen_io2"));
+                if (luaopen_io2) {
+                    luaL_Reg io2_lib = {
+                            "io2",
+                            luaopen_io2};
+                    luaL_defaultlib_update(&io2_lib);
+                    spdlog::info("Injector luaopen_io2");
+                }
+                spdlog::info("Replaced luaopen_io with game io open function");
+            }
             init_luajit_io(currentCtx->LuaModule);
         }
     }
