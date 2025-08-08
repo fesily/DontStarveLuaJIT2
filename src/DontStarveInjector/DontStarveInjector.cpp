@@ -122,6 +122,10 @@ static bool check_crash() {
 }
 extern "C" void LoadGameModConfig();
 extern "C" DONTSTARVEINJECTOR_API void Inject(bool isClient) {
+    if (getenv("DontStarveInjectorDisable") || get_cmd().contains("DontStarveInjectorDisable")) {
+        spdlog::info("DontStarveInjector is disabled");
+        return;
+    }
     if (!isClient) {
         auto config = luajit_config::read_from_file();
         if (config && config->server_disable_luajit) {

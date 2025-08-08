@@ -91,7 +91,7 @@ local function main()
 	if jit.os ~= "Windows" then
 		local InvalidOptions = {
 			TargetRenderFPS = true,
-			TargetLogincFPS = true,
+			TargetLogicFPS = true,
 			ClientNetWorkTick = true,
 		}
 		local old_GetModConfigData = GetModConfigData
@@ -136,16 +136,14 @@ local function main()
 	end
 
 	local jit_opt = require 'jit.opt'
-	jit_opt.start("maxtrace=4000")
-	if GetModConfigData("JitOpt") then
-		jit_opt.start(
-			"minstitch=2",
-			"maxrecord=8000",
-			"sizemcode=64",
-			"maxmcode=4000",
-			"maxirconst=1000"
-		)
-	end
+	jit_opt.start(
+		"maxtrace=4000",
+		"minstitch=2",
+		"maxrecord=8000",
+		"sizemcode=64",
+		"maxmcode=4000",
+		"maxirconst=1000"
+	)
 
 
 	local ffi = require 'ffi'
@@ -159,7 +157,7 @@ local function main()
 			const char* DS_LUAJIT_get_workshop_dir();
 			int DS_LUAJIT_update(const char* mod_dictory, int tt);
 			int DS_LUAJIT_set_target_fps(int fps, int tt);
-			int DS_LUAJIT_replace_client_network_tick(char tick);
+			int DS_LUAJIT_replace_network_tick(char tick, char download_tick, bool client);
 			const char* DS_LUAJIT_Fengxun_Decrypt(const char* filename);
 		]]
 	local injector = require 'luavm.ffi_load' ("Injector")
@@ -320,7 +318,7 @@ local function main()
 		end
 		if not TheNet:IsDedicated() then
 			write_luajit_config(create_luajit_config(modmain_path, GetModConfigData("DisableJITWhenServer"),
-				GetModConfigData("TargetLogincFPS")))
+				GetModConfigData("TargetLogicFPS")))
 		end
 	end
 	if GetModConfigData("EnableTracy") == "on" then
@@ -332,9 +330,9 @@ local function main()
 		injector.DS_LUAJIT_disable_fullgc(tonumber(GetModConfigData("DisableForceFullGC")))
 	end
 
-	if GetModConfigData("EnbaleFrameGC") ~= 0 then
+	if GetModConfigData("EnableFrameGC") ~= 0 then
 		injector.DS_LUAJIT_replace_profiler_api()
-		local frame_gc_time = tonumber(GetModConfigData("EnbaleFrameGC"))
+		local frame_gc_time = tonumber(GetModConfigData("EnableFrameGC"))
 		injector.DS_LUAJIT_set_frame_gc_time(frame_gc_time)
 
 		local old_OnSimPaused = _G.OnSimPaused
@@ -356,12 +354,13 @@ local function main()
 		local needrestart = false
 		if GetModConfigData("TargetRenderFPS", get_local_config) then
 			local targetfps = GetModConfigData("TargetRenderFPS", get_local_config)
-			injector.DS_LUAJIT_set_target_fps(targetfps, 1)
-			TheSim:SetNetbookMode(false);
+			if injector.DS_LUAJIT_set_target_fps(targetfps, 1) > 0 then
+				TheSim:SetNetbookMode(false);
+			end
 		end
 
-		-- if GetModConfigData("TargetLogincFPS", get_local_config) then
-		-- 	local targetfps = GetModConfigData("TargetLogincFPS", get_local_config)
+		-- if GetModConfigData("TargetLogicFPS", get_local_config) then
+		-- 	local targetfps = GetModConfigData("TargetLogicFPS", get_local_config)
 		-- 	if injector.DS_LUAJIT_set_target_fps(targetfps, 2) ~= targetfps then
 		-- 		needrestart = true
 		-- 	end
@@ -369,7 +368,11 @@ local function main()
 
 		if GetModConfigData("ClientNetWorkTick", get_local_config) then
 			local targetfps = GetModConfigData("ClientNetWorkTick", get_local_config)
-			injector.DS_LUAJIT_replace_client_network_tick(targetfps)
+			injector.DS_LUAJIT_replace_network_tick(targetfps, targetfps * 1.5, true)
+		end
+		if GetModConfigData("ServerNetWorkTick", get_local_config) then
+			local targetfps = GetModConfigData("ServerNetWorkTick", get_local_config)
+			injector.DS_LUAJIT_replace_network_tick(targetfps, 0, false)
 		end
 		return needrestart
 	end
@@ -453,7 +456,7 @@ local function main()
 			-- 		v.onclick = function(...)
 			-- 			old_onclick(...)
 			-- 			write_luajit_config(create_luajit_config(nil, nil,
-			-- 				GetModConfigData("TargetLogincFPS", InGamePlay()), read_config_file()))
+			-- 				GetModConfigData("TargetLogicFPS", InGamePlay()), read_config_file()))
 			-- 			load_prefix_config(InGamePlay())
 			-- 		end
 			-- 		break
