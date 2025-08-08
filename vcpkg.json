@@ -43,6 +43,12 @@
     },
     {
       "name": "doctest"
+    },
+    {
+      "name": "plf-hive"
+    },
+    {
+      "name": "slikenet"
     }
   ]
 }

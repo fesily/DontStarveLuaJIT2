@@ -109,7 +109,7 @@ static std::optional<std::filesystem::path> get_workshop_dir() {
 }
 
 
-extern "C" DONTSTARVEINJECTOR_API const char *DS_LUAJIT_get_workshop_dir() {
+DONTSTARVEINJECTOR_API const char *DS_LUAJIT_get_workshop_dir() {
     auto cache = get_workshop_dir();
     if (cache) {
         static auto path = std::filesystem::absolute(cache.value()).generic_string();
@@ -119,35 +119,48 @@ extern "C" DONTSTARVEINJECTOR_API const char *DS_LUAJIT_get_workshop_dir() {
 }
 static std::optional<std::filesystem::path> workshop_dir;
 
-static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path *out_real_path) noexcept {
-    auto path = to_path(f);
-    auto path_s = path.string();
-    // TODO：在w的情况下是不是行为不一致
-    auto fp = GAMEIO_FILE_INTERFACE::fopen(path_s.c_str(), mode);
-    if (fp) {
-        if (out_real_path) *out_real_path = path;
-        FileHandlers.emplace(fp);
-        return (FILE *) fp;
-    }
+
+static std::filesystem::path lj_fpath_format(std::filesystem::path const &path) {
     if (!workshop_dir) {
         workshop_dir = get_workshop_dir();
     }
+    auto path_s = path.string();
     constexpr auto mods_root = "../mods/workshop-"sv;
-    if (path_s.starts_with(mods_root) && workshop_dir) {
-        auto mod_path = std::filesystem::path(path_s.substr(mods_root.size()));
-        // auto mod_name = *mod_path.begin();
-        auto real_path = workshop_dir.value() / mod_path;
-        auto fp = GAMEIO_FILE_INTERFACE::fopen(real_path.string().c_str(), mode);
-        if (out_real_path) *out_real_path = real_path;
-        FileHandlers.emplace(fp);
-        return (FILE *) fp;
-    }
+    if (path_s.starts_with(mods_root)) {
+        // get mod dir
+        auto left_path = path_s.substr(mods_root.size());
+        auto npos = path_s.find_first_of("/\\", mods_root.size());
+        if (npos == std::string::npos) return {};
 
-    if (mode[0] == 'w' || (mode[0] == 'a' && mode[1] == '+')) {
-        // write mode
+        auto mod_id = left_path.substr(0, npos);
+        if (std::filesystem::exists(std::filesystem::path(mods_root) / mod_id))
+            return path;
+
+        if (workshop_dir) {
+            if (std::filesystem::exists(workshop_dir.value() / mod_id))
+                return workshop_dir.value() / left_path;
+        }
+    }
+    return path;
+}
+
+static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path *out_real_path) noexcept {
+    auto fmode = std::string_view(mode);
+    auto write_mode = fmode.contains("w") || fmode.contains("a") || fmode.contains("+");
+    auto path = lj_fpath_format(to_path(f));
+    if (write_mode) {
+        return fopen(path.string().c_str(), mode);
+    }
+    file_interface *fp = nullptr;
+    // TODO：在w的情况下不是行为不一致
+    if (std::filesystem::exists(path)) {
+        fp = GAMEIO_FILE_INTERFACE::fopen(path.string().c_str(), mode);
+        if (out_real_path)
+            *out_real_path = path;
     } else {
-        // read mode
-        // try zip
+        if (write_mode) {
+            return nullptr;// write mode, not supported
+        }
         auto key = (*path.begin()).string();
         if (zipPaths.contains(key)) {
             auto zip_manager = zipPaths[key].get();
@@ -157,10 +170,12 @@ static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path 
                 zipPaths[key] = create_zip_manager(std::move(real_zip_path));
                 zip_manager = zipPaths[key].get();
             }
-            auto handler = zip_manager->fopen(path);
-            FileHandlers.emplace(handler);
-            return (FILE *) handler;
+            fp = zip_manager->fopen(path);
         }
+    }
+    if (fp) {
+        FileHandlers.emplace(fp);
+        return (FILE *) fp;
     }
     return nullptr;
 }
@@ -265,11 +280,11 @@ static off_t lj_ftello(FILE *fp) {
 
 #endif
 
-static int lj_feof(FILE *_Stream) {
-    if (FileHandlers.contains((file_interface *) _Stream)) {
-        return ((file_interface *) _Stream)->feof();
+static int lj_feof(FILE *fp) {
+    if (FileHandlers.contains((file_interface *) fp)) {
+        return ((file_interface *) fp)->feof();
     }
-    return feof(_Stream);
+    return feof(fp);
 }
 
 static void lj_clearerr(FILE *fp) noexcept {
@@ -309,11 +324,11 @@ void lj_gc_fullgc_external(void *L, void (*oldfn)(void *L)) {
         lua_gc_func(L, 5, fullgc_mb << 10);
     }
 }
-extern "C" DONTSTARVEINJECTOR_API void DS_LUAJIT_disable_fullgc(int mb) {
+DONTSTARVEINJECTOR_API void DS_LUAJIT_disable_fullgc(int mb) {
     fullgc_mb = mb;
 }
 
-extern "C" DONTSTARVEINJECTOR_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept {
+DONTSTARVEINJECTOR_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept {
     try {
         spdlog::info("DS_LUAJIT_Fengxun_Decrypt: {}", filename);
         auto infile = std::filesystem::path(filename);

@@ -38,20 +38,20 @@ static uint64_t get_time_ms() {
     uint64_t ticks = __rdtsc();
     LARGE_INTEGER freq;
     QueryPerformanceFrequency(&freq);
-    return (ticks / freq.QuadPart) * 1000; // 时钟周期转换为毫秒
+    return (ticks / freq.QuadPart) * 1000;// 时钟周期转换为毫秒
 #elif defined(__APPLE__)
     // macOS (ARM): 使用 mach_absolute_time 获取高精度时间
     mach_timebase_info_data_t timebase;
     mach_timebase_info(&timebase);
     uint64_t ticks = mach_absolute_time();
-    return (ticks * timebase.numer / timebase.denom) / 1e6; // 纳秒转换为毫秒
+    return (ticks * timebase.numer / timebase.denom) / 1e6;// 纳秒转换为毫秒
 #elif defined(__linux__)
     // Linux (ARM): 使用 clock_gettime 获取高精度时间
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec * 1000 + ts.tv_nsec / 1e6; // 秒和纳秒转换为毫秒
+    return ts.tv_sec * 1000 + ts.tv_nsec / 1e6;// 秒和纳秒转换为毫秒
 #else
-    #error "not support"
+#error "not support"
     return 0;
 #endif
 }
@@ -59,18 +59,18 @@ struct Profiler {
     std::list<TracyCZoneCtx> ctx;
     uint64_t start_time;
     int stack;
-    lua_State* L;
+    lua_State *L;
 };
 static thread_local Profiler profiler;
-extern void (* lua_gc_func)(void *L, int,int);
+extern void (*lua_gc_func)(void *L, int, int);
 static float frame_gc_time = 0;
 static bool tracy_active = 0;
-extern "C" DONTSTARVEINJECTOR_API int DS_LUAJIT_set_frame_gc_time(int ms) {
-    frame_gc_time = (float)std::min(ms, 30);
-    return (int)frame_gc_time;
+DONTSTARVEINJECTOR_API bool DS_LUAJIT_enable_framegc(bool enable) {
+    frame_gc_time = enable ? frame_time * 1000 : 0.01;
+    return frame_gc_time - 0.01f < 0.01f;
 }
 static thread_local std::string thread_name;
-static void set_thread_name(uint32_t thread_id, const char* name) {
+static void set_thread_name(uint32_t thread_id, const char *name) {
     thread_name = name;
 #ifdef _WIN32
     SetThreadDescription(GetCurrentThread(), std::filesystem::path{thread_name}.c_str());
@@ -85,15 +85,15 @@ static void repalce_set_thread_name() {
 #ifdef _WIN32
     function_relocation::MemorySignature set_thread_name_func{"B9 88 13 6D 40", -0x24};
     if (set_thread_name_func.scan(gum_module_get_path(gum_process_get_main_module()))) {
-        Hook((uint8_t*)set_thread_name_func.target_address, (uint8_t*)&set_thread_name);
+        Hook((uint8_t *) set_thread_name_func.target_address, (uint8_t *) &set_thread_name);
     }
 #endif
 }
 extern float frame_time;
-static int64_t hook_profiler_push(void* self, const char* zone, const char* source, int line) {
+static int64_t hook_profiler_push(void *self, const char *zone, const char *source, int line) {
     using namespace std::literals;
     bool is_connected = tracy_active;
-    auto& p = profiler;
+    auto &p = profiler;
     if ("Update"sv == zone) {
         if (frame_gc_time) {
             static struct {
@@ -104,11 +104,11 @@ static int64_t hook_profiler_push(void* self, const char* zone, const char* sour
             if (!thread_id_count.vaild.load(std::memory_order_relaxed)) {
                 auto tid = std::this_thread::get_id();
                 std::unique_lock<std::mutex> lock(thread_id_count.mtx);
-                auto& count = thread_id_count.count_map[tid];
+                auto &count = thread_id_count.count_map[tid];
                 lock.unlock();
                 count++;
                 bool except = false;
-                if (count >= 600 && thread_id_count.vaild.compare_exchange_strong(except, true, std::memory_order_relaxed)){
+                if (count >= 600 && thread_id_count.vaild.compare_exchange_strong(except, true, std::memory_order_relaxed)) {
                     set_thread_name(0, "SimUpdateThread");
                     thread_id_count.vaild.store(true, std::memory_order_relaxed);
                 }
@@ -121,7 +121,7 @@ static int64_t hook_profiler_push(void* self, const char* zone, const char* sour
             ___tracy_emit_frame_mark(0);
     }
     p.stack++;
-    if (!is_connected) 
+    if (!is_connected)
         return 0;
     auto v = ___tracy_alloc_srcloc_name(line, source, strlen(source), 0, 0, zone, strlen(zone), 0);
     if (v) {
@@ -130,13 +130,50 @@ static int64_t hook_profiler_push(void* self, const char* zone, const char* sour
     }
     return 0;
 }
+template<typename T>
+struct ProfilerHookerBase {
 
-static int64_t hook_profiler_pop(void* self) {
-    auto& p = profiler;
-    --p.stack;
-    if (p.stack < 0) {
-        p.stack = 0;
-    } else if (p.stack == 0 && p.start_time) {
+    static int64_t hook_profiler_pop(void *self) {
+        auto &p = profiler;
+        --p.stack;
+        if (p.stack < 0) {
+            p.stack = 0;
+        } else if (p.stack == 0 && p.start_time) {
+            if (p.L) {
+                T::GC();
+            } else {
+                p.start_time = 0;
+            }
+        }
+        if (!tracy_active)
+            return 0;
+        if (!profiler.ctx.empty()) {
+            auto k = p.ctx.back();
+            p.ctx.pop_back();
+            ___tracy_emit_zone_end(k);
+        }
+        return 0;
+    }
+};
+struct ProfilerHookerTimeLimit : ProfilerHookerBase<ProfilerHookerTimeLimit> {
+    inline static void GC() {
+        auto &p = profiler;
+        auto now = get_time_ms();
+        auto left_time = std::min<float>(33 - float(now - p.start_time), frame_gc_time);
+        p.start_time = 0;
+        if (left_time > 0) {
+            if (p.L) {
+                ZoneScopedN("frame gc");
+                lua_gc_func(p.L, LUA_GCSTEPTIME, left_time * 1000 * 1000 * 0.8f);
+                lua_gc_func(p.L, LUA_GCSTEP2, 0);
+            }
+        }
+    }
+};
+
+struct ProfilerHookerNoTimeLimit : ProfilerHookerBase<ProfilerHookerNoTimeLimit> {
+    inline static void GC() {
+        auto &p = profiler;
         auto now = get_time_ms();
         auto left_time = std::min<float>(frame_time - float(now - p.start_time), frame_gc_time);
         p.start_time = 0;
@@ -146,24 +183,17 @@ static int64_t hook_profiler_pop(void* self) {
                 ZoneScopedN("frame gc");
                 auto L = p.L;
                 p.L = 0;
-                do
-                {
-                    lua_gc_func(L, 5, 0);
+                do {
+                    lua_gc_func(L, LUA_GCSTEP, 0);
                 } while (get_time_ms() < now);
             }
         }
     }
-    if (!tracy_active)
-        return 0;
-    if (!profiler.ctx.empty()) {
-        auto k = p.ctx.back();
-        p.ctx.pop_back();
-        ___tracy_emit_zone_end(k);
-    }
-    return 0;
-}
+};
+
+
 extern void gum_luajit_profiler_update_thread_id(lua_State *target_L, GumThreadId id);
-void lua_event_notifyer(LUA_EVENT ev, lua_State * L) {
+void lua_event_notifyer(LUA_EVENT ev, lua_State *L) {
     switch (ev) {
         case LUA_EVENT::new_state:
             profiler.L = 0;
@@ -181,14 +211,14 @@ void lua_event_notifyer(LUA_EVENT ev, lua_State * L) {
 //#define profiler_lua_gc 0
 #ifdef profiler_lua_gc
 #include "util/InvocationListener.hpp"
-    struct InvocationListenerProfiler: InvocationListener {
-        virtual ~InvocationListenerProfiler () {}
+struct InvocationListenerProfiler : InvocationListener {
+    virtual ~InvocationListenerProfiler() {}
 
-        virtual void on_enter (GumInvocationContext * context) {
-            hook_profiler_push(0, (const char*)gum_invocation_context_get_listener_function_data(context), "", 0);
-        };
-        virtual void on_leave (GumInvocationContext * context) {
-            hook_profiler_pop(0);
-        };
+    virtual void on_enter(GumInvocationContext *context) {
+        hook_profiler_push(0, (const char *) gum_invocation_context_get_listener_function_data(context), "", 0);
     };
+    virtual void on_leave(GumInvocationContext *context) {
+        hook_profiler_pop(0);
+    };
+};
 #endif
