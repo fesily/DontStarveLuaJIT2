@@ -70,7 +70,7 @@ struct EntityNetWorkExtension {
 
         auto ptr = (int64_t *) vtb_ptr;
         while (*ptr != 0) {
-            GumPageProtection prot = NULL;
+            GumPageProtection prot;
             gum_memory_query_protection((void *) *ptr, &prot);
             if (prot != GUM_PAGE_RX) {
                 spdlog::error("EntityNetWorkExtension: initialize_virtual_table failed, function memory is not RX");
