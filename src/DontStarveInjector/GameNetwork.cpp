@@ -300,9 +300,9 @@ mov dword ptr [rdi+134], 3  // pro->reliability = PacketReliability::RELIABLE_OR
         gum_interceptor_attach(interceptor, (uint8_t *) RakNet__RPC4__Signal.target_address, listener, nullptr, GUM_ATTACH_FLAGS_NONE);
     }
 
-    if (RakNet_Plugin2_SendUnified.scan(nullptr)) {
-        gum_interceptor_replace_fast(interceptor, (uint8_t *) RakNet_Plugin2_SendUnified.target_address, (uint8_t *) SendUnified, (gpointer *) &original_SendUnified);
-    }
+    // if (RakNet_Plugin2_SendUnified.scan(nullptr)) {
+    //     gum_interceptor_replace_fast(interceptor, (uint8_t *) RakNet_Plugin2_SendUnified.target_address, (uint8_t *) SendUnified, (gpointer *) &original_SendUnified);
+    // }
 
     if (cNetWorkComponent_serialize.scan(nullptr) && RakNet_ReliabilityLayer_InitializeVariables_NUMBER_OF_ORDERED_STREAMS.scan(nullptr) && cNetWorkComponent_cNetworkComponent.scan(nullptr)) {
         if (EntityNetWorkExtension::initialize_virtual_table((void *) cNetWorkComponent_cNetworkComponent.target_address)) {
