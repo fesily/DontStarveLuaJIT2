@@ -65,6 +65,7 @@ static thread_local Profiler profiler;
 extern void (*lua_gc_func)(void *L, int, int);
 static float frame_gc_time = 0;
 static bool tracy_active = 0;
+extern float frame_time;
 DONTSTARVEINJECTOR_API bool DS_LUAJIT_enable_framegc(bool enable) {
     frame_gc_time = enable ? frame_time * 1000 : 0.01;
     return frame_gc_time - 0.01f < 0.01f;
@@ -89,7 +90,7 @@ static void repalce_set_thread_name() {
     }
 #endif
 }
-extern float frame_time;
+
 static int64_t hook_profiler_push(void *self, const char *zone, const char *source, int line) {
     using namespace std::literals;
     bool is_connected = tracy_active;
@@ -159,7 +160,14 @@ struct ProfilerHookerTimeLimit : ProfilerHookerBase<ProfilerHookerTimeLimit> {
     inline static void GC() {
         auto &p = profiler;
         auto now = get_time_ms();
-        auto left_time = std::min<float>(33 - float(now - p.start_time), frame_gc_time);
+        /*
+            Performce one update time range
+            < 20ms: good
+            < 33ms: normal
+            >= 33ms: bad
+        */
+        constexpr float frame_max_time = 20; 
+        auto left_time = std::min<float>(frame_max_time - float(now - p.start_time), frame_gc_time);
         p.start_time = 0;
         if (left_time > 0) {
             if (p.L) {
