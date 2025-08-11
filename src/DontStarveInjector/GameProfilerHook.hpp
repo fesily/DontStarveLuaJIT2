@@ -141,7 +141,20 @@ struct ProfilerHookerBase {
             p.stack = 0;
         } else if (p.stack == 0 && p.start_time) {
             if (p.L) {
-                T::GC();
+                /*
+                    Performce one update time range
+                    < 20ms: good
+                    < 33ms: normal
+                    >= 33ms: bad
+                */
+                constexpr float frame_max_time = 20;
+                auto &p = profiler;
+                auto now = get_time_ms();
+                auto left_time = std::min<float>(frame_max_time - float(now - p.start_time), frame_gc_time);
+                p.start_time = 0;
+                if (left_time > 0) {
+                    T::GC(p.L, left_time, now);
+                }
             } else {
                 p.start_time = 0;
             }
@@ -156,46 +169,22 @@ struct ProfilerHookerBase {
         return 0;
     }
 };
+
 struct ProfilerHookerTimeLimit : ProfilerHookerBase<ProfilerHookerTimeLimit> {
-    inline static void GC() {
-        auto &p = profiler;
-        auto now = get_time_ms();
-        /*
-            Performce one update time range
-            < 20ms: good
-            < 33ms: normal
-            >= 33ms: bad
-        */
-        constexpr float frame_max_time = 20; 
-        auto left_time = std::min<float>(frame_max_time - float(now - p.start_time), frame_gc_time);
-        p.start_time = 0;
-        if (left_time > 0) {
-            if (p.L) {
-                ZoneScopedN("frame gc");
-                lua_gc_func(p.L, LUA_GCSTEPTIME, left_time * 1000 * 1000 * 0.8f);
-                lua_gc_func(p.L, LUA_GCSTEP2, 0);
-            }
-        }
+    inline static void GC(void *L, float left_time, uint64_t nowms) {
+        ZoneScopedN("frame gc");
+        lua_gc_func(L, LUA_GCSTEPTIME, left_time * 1000 * 1000 * 0.8f);
+        lua_gc_func(L, LUA_GCSTEP2, 0);
     }
 };
 
 struct ProfilerHookerNoTimeLimit : ProfilerHookerBase<ProfilerHookerNoTimeLimit> {
-    inline static void GC() {
-        auto &p = profiler;
-        auto now = get_time_ms();
-        auto left_time = std::min<float>(frame_time - float(now - p.start_time), frame_gc_time);
-        p.start_time = 0;
-        if (left_time > 0) {
-            now += left_time;
-            if (p.L) {
-                ZoneScopedN("frame gc");
-                auto L = p.L;
-                p.L = 0;
-                do {
-                    lua_gc_func(L, LUA_GCSTEP, 0);
-                } while (get_time_ms() < now);
-            }
-        }
+    inline static void GC(void *L, float left_time, uint64_t nowms) {
+        nowms += left_time;
+        ZoneScopedN("frame gc");
+        do {
+            lua_gc_func(L, LUA_GCSTEP, 0);
+        } while (get_time_ms() < nowms);
     }
 };
 
