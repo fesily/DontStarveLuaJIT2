@@ -132,8 +132,8 @@ static std::filesystem::path lj_fpath_format(std::filesystem::path const &path) 
         auto npos = path_s.find_first_of("/\\", mods_root.size());
         if (npos == std::string::npos) return {};
 
-        auto mod_id = left_path.substr(0, npos);
-        if (std::filesystem::exists(std::filesystem::path(mods_root) / mod_id))
+        auto mod_id = path_s.substr(mods_root.size(), npos - mods_root.size());
+        if (std::filesystem::exists(std::string(mods_root).append(mod_id)))
             return path;
 
         if (workshop_dir) {
