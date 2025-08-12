@@ -2,6 +2,7 @@
 #include "MemorySignature.hpp"
 #include "luajit_config.hpp"
 #include "util/inlinehook.hpp"
+#include "util/platform.hpp"
 #include "disasm.h"
 #include "ScanCtx.hpp"
 #include <array>
@@ -333,14 +334,22 @@ DONTSTARVEINJECTOR_API const char *DS_LUAJIT_get_mod_version() {
     return MOD_VERSION;
 }
 
-extern "C" void LoadGameModConfig() {
-    auto config = luajit_config::read_from_file();
-    if (!config) return;
-    auto logic_fps = (int) ceil(config->logic_fps);
-    if (logic_fps > 30) {
-        DS_LUAJIT_set_target_fps(logic_fps, 0b10);
+void ForceLoadMod(const std::string& modmain_path) {
+    if (getenv("DISABLE_FORCE_LOAD_LUAJIT_MOD") || get_cmd().contains("-disable_force_load_luajit_mod")) {
+        return;
     }
+    if (modmain_path.empty() || !std::filesystem::exists(modmain_path)) {
+        return;
+    }
+    
+}
+
+extern "C" void LoadGameModConfig() {
 #ifdef _WIN32
     repalce_set_thread_name();
 #endif
+    auto config = luajit_config::read_from_file();
+    if (!config) return;
+    // try force load luajit mod
+    ForceLoadMod(config->modmain_path);
 }

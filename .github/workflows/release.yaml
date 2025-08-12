@@ -91,4 +91,3 @@ jobs:
           prerelease: true
           tag: "preview"
           commit: ${{ github.sha }}
-          draft: true
