@@ -203,7 +203,7 @@ configuration_options = {
         label = translate({ en = "Network RPC Optimizations", zh = "网络RPC优化" }),
         hover = translate({
             en = "Optimize network rpc transmission, out-of-order sending of RPCs, may have unexpected situations",
-            zh = "优化网络RPC传输, 乱序发送RPC, 可能导致意外的情况"
+            zh = "优化网络RPC传输, 并行发送RPC, 可能导致意外的情况"
         }),
         options = toggle,
         default = true,
@@ -213,7 +213,7 @@ configuration_options = {
         label = translate({ en = "Network Entity Optimizations", zh = "网络实体优化" }),
         hover = translate({
             en = "Optimize network entity transmission, out-of-order sending of entities, may have unexpected situations",
-            zh = "优化网络实体传输, 乱序发送实体, 可能导致意外的情况"
+            zh = "优化网络实体传输, 并行发送实体, 可能导致意外的情况"
         }),
         options = toggle,
         default = true,
