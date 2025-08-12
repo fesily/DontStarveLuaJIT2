@@ -426,47 +426,141 @@ local function main()
 		return needrestart
 	end
 
-	if GetModConfigData("NetworkOpt") and false then
+	do
 		local net_mt = getmetatable(TheNet).__index;
+		local c_packetPriority = ffi.new("enum PacketPriority[1]")
+		local c_reliability = ffi.new("enum PacketReliability[1]")
+		local c_channel = ffi.new("char[1]")
+		local default_packetPriority = ffi.C.HIGH_PRIORITY
+		local default_reliability = ffi.C.RELIABLE_ORDERED
+		local default_channel = 0
 		local old_SendRPCToServer = net_mt.SendRPCToServer
 		local old_SendRPCToClient = net_mt.SendRPCToClient
 		local old_SendRPCToShard = net_mt.SendRPCToShard
 		local old_SendModRPCToServer = net_mt.SendModRPCToServer
 		local old_SendModRPCToClient = net_mt.SendModRPCToClient
 		local old_SendModRPCToShard = net_mt.SendModRPCToShard
-		local packetPriority = ffi.new("enum PacketPriority[1]")
-		local reliability = ffi.new("enum PacketReliability[1]")
-		local channel = ffi.new("char[1]")
-		function net_mt:SendRPCToServer(code, ...)
-			channel[0] = code % 32;
-			injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, channel)
-			old_SendRPCToServer(self, code, ...)
+
+		local _FNV_offset_basis = 2166136261;
+		local _FNV_prime = 16777619;
+		local function hash_string(data)
+			assert(type(data) == "string")
+			local hash = _FNV_offset_basis
+			for i = 1, #data do
+				hash = bit.bxor(hash, data:byte(i))
+				hash = hash * _FNV_prime
+			end
+			return hash
 		end
 
-		function net_mt:SendRPCToClient(code, ...)
-			channel[0] = code % 32;
-			injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, channel)
-			old_SendRPCToClient(self, code, ...)
+		local function alloc_rpc_channel(id_table)
+			if type(id_table) == "number" then
+				return id_table % 32
+			end
+			local hash = hash_string(id_table.namespace)
+			hash = bit.bxor(hash, id_table.id + 0x9e3779b9 + bit.lshift(hash, 6) + bit.rshift(hash, 2))
+			return hash % 32
 		end
 
-		function net_mt:SendRPCToShard(code, ...)
-			channel[0] = code % 32;
-			injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, channel)
-			old_SendRPCToShard(self, code, ...)
+		local mod_namespace_id_channel = {}
+		local function get_mod_channel(id_table)
+			mod_namespace_id_channel[id_table.namespace] = mod_namespace_id_channel[id_table.namespace] or {}
+			local mod_namespace = mod_namespace_id_channel[id_table.namespace]
+			if mod_namespace[id_table.id] == nil then
+				mod_namespace[id_table.id] = alloc_rpc_channel(id_table)
+			end
+			return mod_namespace[id_table.id]
 		end
 
-		function net_mt:SendModRPCToServer(id_table, ...)
-			old_SendModRPCToServer(self, id_table.namespace, id_table.id, ...)
+		net_mt.alloc_rpc_channel = alloc_rpc_channel
+
+		function net_mt:SendRPCToServer2(code, packetPriority, reliability, channel, ...)
+			c_packetPriority[0] = packetPriority or default_packetPriority
+			c_reliability[0] = reliability or default_reliability
+			c_channel[0] = channel or  alloc_rpc_channel(code)
+			injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
+			return old_SendRPCToServer(self, code, ...)
 		end
 
-		function net_mt:SendModRPCToClient(id_table, ...)
-			old_SendModRPCToClient(self, id_table.namespace, id_table.id, ...)
+		function net_mt:SendRPCToClient2(code, packetPriority, reliability, channel, ...)
+			c_packetPriority[0] = packetPriority or default_packetPriority
+			c_reliability[0] = reliability or default_reliability
+			c_channel[0] = channel or  alloc_rpc_channel(code)
+			injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
+			return old_SendRPCToClient(self, code, ...)
 		end
 
-		function net_mt:SendModRPCToShard(id_table, ...)
-			old_SendModRPCToShard(self, id_table.namespace, id_table.id, ...)
+		function net_mt:SendRPCToShard2(code, packetPriority, reliability, channel, ...)
+			c_packetPriority[0] = packetPriority or default_packetPriority
+			c_reliability[0] = reliability or default_reliability
+			c_channel[0] = channel or  alloc_rpc_channel(code)
+			injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
+			return old_SendRPCToShard(self, code, ...)
+		end
+
+		function net_mt:SendModRPCToServer2(id_table, packetPriority, reliability, channel, ...)
+			c_packetPriority[0] = packetPriority or default_packetPriority
+			c_reliability[0] = reliability or default_reliability
+			c_channel[0] = channel or get_mod_channel(id_table)
+			injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
+			return old_SendModRPCToServer(self, id_table.namespace, id_table.id, ...)
+		end
+
+		function net_mt:SendModRPCToClient2(id_table, packetPriority, reliability, channel, ...)
+			c_packetPriority[0] = packetPriority or default_packetPriority
+			c_reliability[0] = reliability or default_reliability
+			c_channel[0] = channel or get_mod_channel(id_table)
+			injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
+			return old_SendModRPCToClient(self, id_table.namespace, id_table.id, ...)
+		end
+
+		function net_mt:SendModRPCToShard2(id_table, packetPriority, reliability, channel, ...)
+			c_packetPriority[0] = packetPriority or default_packetPriority
+			c_reliability[0] = reliability or default_reliability
+			c_channel[0] = channel or get_mod_channel(id_table)
+			injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
+			return old_SendModRPCToShard(self, id_table.namespace, id_table.id, ...)
+		end
+
+		if GetModConfigData("NetworkOpt") and false then
+			function net_mt:SendRPCToServer(code, ...)
+				c_channel[0] = alloc_rpc_channel(code);
+				injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+				return old_SendRPCToServer(self, code, ...)
+			end
+
+			function net_mt:SendRPCToClient(code, ...)
+				c_channel[0] = alloc_rpc_channel(code);
+				injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+				return old_SendRPCToClient(self, code, ...)
+			end
+
+			function net_mt:SendRPCToShard(code, ...)
+				c_channel[0] = alloc_rpc_channel(code);
+				injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+				return old_SendRPCToShard(self, code, ...)
+			end
+
+			function net_mt:SendModRPCToServer(id_table, ...)
+				c_channel[0] = get_mod_channel(id_table)
+				injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+				return old_SendModRPCToServer(self, id_table.namespace, id_table.id, ...)
+			end
+
+			function net_mt:SendModRPCToClient(id_table, ...)
+				c_channel[0] = get_mod_channel(id_table);
+				injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+				return old_SendModRPCToClient(self, id_table.namespace, id_table.id, ...)
+			end
+
+			function net_mt:SendModRPCToShard(id_table, ...)
+				c_channel[0] = get_mod_channel(id_table);
+				injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+				return old_SendModRPCToShard(self, id_table.namespace, id_table.id, ...)
+			end
 		end
 	end
+
 
 	if GetModConfigData("NetworkOptEntity") then
 		local old_SpawnPrefab = SpawnPrefab
