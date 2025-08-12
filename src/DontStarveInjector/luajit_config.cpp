@@ -8,7 +8,7 @@ static std::filesystem::path getGameDir() {
     return p;
 }
 
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(luajit_config, modmain_path, server_disable_luajit, logic_fps);
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(luajit_config, modmain_path, server_disable_luajit);
 std::optional<luajit_config> luajit_config::read_from_file(std::filesystem::path path) {
     if (path.empty()) {
         path = getGameDir() / "data" / "unsafedata";

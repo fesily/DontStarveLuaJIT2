@@ -27,10 +27,10 @@ uintptr_t MemorySignature::scan(const char* module_name) {
     target_address = 0;
     auto match_pattern = gum_match_pattern_new_from_string(pattern);
     assert(match_pattern);
-    if (log)
-        spdlog::get(logger_name)->info("{} Signature {}", module_name, pattern);
     auto ctx = std::pair{ this, match_pattern };
-    auto m = gum_process_find_module_by_name(module_name);
+    auto m = module_name ? gum_process_find_module_by_name(module_name) : gum_process_get_main_module();
+     if (log)
+        spdlog::get(logger_name)->info("{} Signature {}", gum_module_get_path(m), pattern);
     gum_module_enumerate_ranges(m, this-> prot_flag, findBaseAddrCb, (gpointer)&ctx);
     gum_match_pattern_unref(match_pattern);
     return target_address;

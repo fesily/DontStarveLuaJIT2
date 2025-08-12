@@ -36,7 +36,7 @@ constexpr auto lua51_name = "liblua51."
 constexpr auto game_name = "dontstarve_";
 
 #ifdef _WIN32
-#define DONTSTARVEINJECTOR_API __declspec(dllexport)
+#define DONTSTARVEINJECTOR_API  extern "C" __declspec(dllexport)
 #else
-#define DONTSTARVEINJECTOR_API
+#define DONTSTARVEINJECTOR_API extern "C" __attribute__((visibility("default")))
 #endif
