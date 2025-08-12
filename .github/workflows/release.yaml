@@ -86,7 +86,7 @@ jobs:
         if: ${{ ! startsWith(github.ref, 'refs/tags/') }} && ${{ ! startsWith(github.ref, 'refs/heads/master') }}
         uses: ncipollo/release-action@v1.14.0
         with:
-          artifacts: '${{ matrix.target}}_Mod_preview.zip'
+          artifacts: '${{ matrix.target}}_Mod.zip'
           allowUpdates: true
           prerelease: true
           tag: "preview"
