@@ -14,6 +14,8 @@ on:
       - master
 
 jobs:
+  publish:
+    depends: compile
   compile:
     strategy:
       fail-fast: false
@@ -89,4 +91,6 @@ jobs:
           artifacts: '${{ matrix.target}}_Mod_preview.zip'
           allowUpdates: true
           prerelease: true
+          tag: "preview"
+          commit: ${{ github.sha }}
           draft: true
