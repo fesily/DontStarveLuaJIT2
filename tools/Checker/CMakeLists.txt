@@ -4,6 +4,7 @@ set(SOURCES
         main.cpp
         ${DONTSTARVEINJECTOR_ROOT}/SignatureJson.cpp
         ${DONTSTARVEINJECTOR_ROOT}/GameSignature.cpp
+        ${DONTSTARVEINJECTOR_ROOT}/config.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
 )
 find_package(nlohmann_json CONFIG REQUIRED)

@@ -34,7 +34,7 @@ using namespace std::literals;
 
 #pragma region GAME_IO
 bool UseGameIO() {
-    return getenv("UNUSE_GAME_IO") == nullptr;
+    return !InjectorConfig::instance().DisableGameIO;
 }
 int (*luaopen_game_io)(lua_State *L);
 void load_game_fn_io_open(const Signatures &signatures) {
@@ -101,7 +101,7 @@ std::string wapper_game_main_buffer(std::string_view buffer) {
     // - lua code
     std::string before_code = "DBG=1;";
     std::string before_injector_code;
-    bool default_before_code = getenv("GAME_INJECTOR_NO_DEFAULT_BEFORE") != nullptr ? false : true;
+    bool default_before_code = !InjectorConfig::instance().GameInjectorNoDefaultBeforeCode;
 
     // -injector
     std::string_view injector_file;
@@ -442,8 +442,8 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
 
     if (currentLuaType == GameLuaType::jit) {
         init_luajit_jit_opt(currentCtx->LuaModule);
-        if (getenv("DISABLE_REPLACE_IO") != nullptr) {
-            spdlog::info("DISABLE_REPLACE_IO is set, skip replacing io module");
+        if (InjectorConfig::instance().DisableReplaceLuaIO) {
+            spdlog::info("DISABLE_REPLACE_LUA_IO is set, skip replacing io module");
         } else {
             if (UseGameIO()) {
                 load_game_fn_io_open(signatures);

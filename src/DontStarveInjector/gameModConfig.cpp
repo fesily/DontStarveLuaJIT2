@@ -45,13 +45,12 @@ float frame_time = 1.0 / 30;
 static float *fps_ptr;
 static function_relocation::MemorySignature set_notebook_mode{"F3 0F 11 89 D8 01 00 00", -0x3E};
 static void set_notebook_mode_config_hook(void *) {}
-extern bool DontStarveInjectorIsClient;
 static function_relocation::MemorySignature set_notebook_mode_config{"80 B9 D4 01 00 00 00", -0x6};
 
 auto main_module_path = [] { return gum_module_get_path(gum_process_get_main_module()); };
 
 static bool find_set_notebook_mode_imm() {
-    if (!DontStarveInjectorIsClient) {
+    if (!InjectorConfig::instance().DontStarveInjectorIsClient) {
         if (!set_notebook_mode_config.scan(main_module_path())) return false;
         //delete this mode
         Hook((uint8_t *) set_notebook_mode_config.target_address, (uint8_t *) &set_notebook_mode_config_hook);
@@ -208,7 +207,7 @@ DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_network_tick(char upload_tick, char
 #ifndef _WIN32
     return 0;
 #endif
-    if (isclient != DontStarveInjectorIsClient) return 0;
+    if (isclient != InjectorConfig::instance().DontStarveInjectorIsClient) return 0;
     if (!upload_tick)
         upload_tick = 10;
     if (!download_tick && !upload_tick)
@@ -252,7 +251,7 @@ DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_network_tick(char upload_tick, char
         return false;
     }();
     if (client_network_tick_addr) {
-        if (!DontStarveInjectorIsClient) {
+        if (!InjectorConfig::instance().DontStarveInjectorIsClient) {
             download_tick = upload_tick; // server mode, use the same tick for upload and download
         }
         upload_tick = std::min<char>(120, upload_tick);
@@ -335,7 +334,7 @@ DONTSTARVEINJECTOR_API const char *DS_LUAJIT_get_mod_version() {
 }
 
 void ForceLoadMod(const std::string& modmain_path) {
-    if (getenv("DISABLE_FORCE_LOAD_LUAJIT_MOD") || get_cmd().contains("-disable_force_load_luajit_mod")) {
+    if (InjectorConfig::instance().DisableForceLoadLuaJITMod) {
         return;
     }
     if (modmain_path.empty() || !std::filesystem::exists(modmain_path)) {

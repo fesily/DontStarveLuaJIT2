@@ -21,6 +21,7 @@ set(SOURCES
         GameSteam.cpp
         GameSignature.cpp
         GameNetwork.cpp
+        config.cpp
 )
 
 if (ENABLE_STEAM_SUPPORT)

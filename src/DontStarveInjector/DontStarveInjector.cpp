@@ -89,7 +89,6 @@ void replace_game_branch_flag_to_dev(const std::string &mainPath) {
 #endif
 }
 
-bool DontStarveInjectorIsClient = false;
 static bool server_is_master() {
     return std::string_view{get_cmd()}.contains("DST_Master");
 }
@@ -98,7 +97,7 @@ static bool check_crash() {
     if (!getenv("SteamClientLaunch")) {
         return true;
     }
-    if (!DontStarveInjectorIsClient) {
+    if (!InjectorConfig::instance().DontStarveInjectorIsClient) {
         return true;
     }
 #ifndef NDEBUG
@@ -123,8 +122,7 @@ static bool check_crash() {
 }
 
 void DisableScriptZip() {
-    auto disableScriptZip = getenv("GAME_DISABLE_SCRIPTS_ZIP");
-    if (!disableScriptZip) {
+    if (!InjectorConfig::instance().DisableGameScriptsZip) {
         return;
     }
     // DEV=databundles/scripts.zip
@@ -132,14 +130,14 @@ void DisableScriptZip() {
     function_relocation::MemorySignature signature = {key.data(), 0};
     signature.prot_flag = GUM_PAGE_READ;
     if (signature.scan(nullptr)) {
-        gum_memory_write((void*)signature.target_address, (const guint8 *) "DEV=databundles/script1.zip", key.size());
-        spdlog::info("disable script zip[{}]", (void*)signature.target_address);
+        gum_memory_write((void *) signature.target_address, (const guint8 *) "DEV=databundles/script1.zip", key.size());
+        spdlog::info("disable script zip[{}]", (void *) signature.target_address);
     }
 }
 
 extern "C" void LoadGameModConfig();
 DONTSTARVEINJECTOR_API void Inject(bool isClient) {
-    if (getenv("DontStarveInjectorDisable") || get_cmd().contains("DontStarveInjectorDisable")) {
+    if (InjectorConfig::instance().DontStarveInjectorDisable) {
         spdlog::info("DontStarveInjector is disabled");
         return;
     }
@@ -150,7 +148,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         }
     }
 
-    DontStarveInjectorIsClient = isClient;
+    InjectorConfig::instance().DontStarveInjectorIsClient = isClient;
 #ifdef _WIN32
     gum_init();
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>()));
@@ -212,7 +210,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     replace_game_branch_flag_to_dev(mainPath);
 
     LoadGameModConfig();
-    if (!DontStarveInjectorIsClient) {
+    if (!InjectorConfig::instance().DontStarveInjectorIsClient) {
         HookSteamGameServerInterface();
     }
     GameNetWorkHookRpc4();
@@ -228,7 +226,7 @@ int chdir_hook(const char *path) {
     static bool injector = false;
     if ("../data"sv == path && !injector) {
 #ifndef NDEBUG
-        if (getenv("LUAJIT_WAIT_DEBUGGER_ENABLE")) {
+        if (InjectorConfig::instance().LuajitWaitDebuggerEnable) {
             while (!gum_process_is_debugger_attached()) {
                 std::this_thread::sleep_for(200ms);
             }

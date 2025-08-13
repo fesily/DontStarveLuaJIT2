@@ -5,6 +5,7 @@ set(SOURCES
         ${DONTSTARVEINJECTOR_ROOT}/DontStarveSignature.cpp
         ${DONTSTARVEINJECTOR_ROOT}/SignatureJson.cpp
         ${DONTSTARVEINJECTOR_ROOT}/GameSignature.cpp
+        ${DONTSTARVEINJECTOR_ROOT}/config.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
