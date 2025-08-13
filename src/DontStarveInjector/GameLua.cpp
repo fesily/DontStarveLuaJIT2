@@ -5,6 +5,7 @@
 #include "util/inlinehook.hpp"
 #include "util/platform.hpp"
 #include "gameio.h"
+#include "luajit_config.hpp"
 #include <string_view>
 #include <map>
 #include <spdlog/spdlog.h>
@@ -60,160 +61,35 @@ void do_lua_env(GameLuaContext &ctx, lua_State *L, const std::string_view &env) 
     if (init == NULL)
         return;
     if (init[0] == '@')
-        (ctx.api._luaL_loadfile(L, init + 1) || ctx.api._lua_pcall(L, 0, 0, 0));
+        ctx->_luaL_dofile(L, init + 1);
     else
-        (ctx.api._luaL_loadstring(L, init) || ctx.api._lua_pcall(L, 0, 0, 0));
+        ctx->_luaL_dostring(L, init);
 }
 
 void GameLuaContext::luaL_openlibs_hooker(lua_State *L) {
     api._luaL_openlibs(L);
     do_lua_env(*this, L, "GAME_INIT");
+#include "GameLuaInjectFramework.c"
+    auto buffer = std::string{GameLuaInjectFramework, GameLuaInjectFramework_len};
+    api._luaL_dostring(L, buffer.c_str());
+    auto config = luajit_config::read_from_file();
+    if (config) {
+        if (InjectorConfig::instance().DisableForceLoadLuaJITMod) {
+            return;
+        }
+        if (config->modmain_path.empty() || !std::filesystem::exists(config->modmain_path)) {
+            return;
+        }
+        api._luaL_dostring(L, fmt::format("GameLuaInjector.forceEnableLuaMod(true, [[{}]])", config->modname).c_str());
+    }
 }
 
-static int split_string(const std::string_view &str, std::vector<std::string_view> &out, char delimiter) {
-    size_t start = 0;
-    size_t end = str.find(delimiter);
-    while (end != std::string_view::npos) {
-        out.push_back(str.substr(start, end - start));
-        start = end + 1;
-        end = str.find(delimiter, start);
-    }
-    out.push_back(str.substr(start, end));
-    return out.size();
-}
-
-std::string wapper_game_main_buffer(std::string_view buffer) {
-    // before replace buffer frist line
-    size_t first_newline = buffer.find('\n');
-    if (first_newline != std::string_view::npos) {
-        buffer = buffer.substr(first_newline + 1);
-    }
-    /*
-    find ModManager:LoadMods() next line
-   */
-    constexpr std::string_view modManagerLoadMods = "ModManager:LoadMods()";
-    auto pos = buffer.find(modManagerLoadMods);
-    if (pos == std::string_view::npos) {
-        spdlog::warn("ModManager:LoadMods() not found in main.lua, never injector script");
-        return std::string(buffer);
-    }
-
-    // - lua code
-    std::string before_code = "DBG=1;";
-    std::string before_injector_code;
-    bool default_before_code = !InjectorConfig::instance().GameInjectorNoDefaultBeforeCode;
-
-    // -injector
-    std::string_view injector_file;
-    std::vector<std::string_view> injector_args;
-
-    auto injector_file_env = getenv("GAME_INJECTOR_FILE");
-    auto injector_args_env = getenv("GAME_INJECTOR_ARGS");
-
-    if (injector_file_env) {
-        injector_file = injector_file_env;
-    }
-    if (injector_args_env) {
-        split_string(injector_args_env, injector_args, ' ');
-    }
-    // skip first cmd, it is executable path
-    auto cmds = get_cmds();
-    for (size_t i = 1; i < cmds.size(); i++) {
-        auto cmd = std::string_view{cmds[i]};
-        if (cmd.starts_with('-') || cmd.starts_with("--")) {
-            std::string_view key;
-            std::string_view value;
-            if (cmd.contains('=')) {
-                // single cmd with key=value
-                auto pos = cmd.find('=');
-                key = cmd.substr(0, pos);
-                value = cmd.substr(pos + 1);
-            } else {
-                key = cmd.substr(cmd.find_first_not_of("-"));
-                if (i + 1 >= cmds.size() || cmds[i + 1].starts_with('-')) {
-                    spdlog::error("No value provided for option: {}", key);
-                    continue;
-                }
-                i++;
-                value = cmds[i];
-                if (value.empty()) {
-                    spdlog::error("No value provided for option: {}", key);
-                    continue;
-                }
-            }
-            switch (key.front()) {
-                case 'e':
-                    if (key == "e"sv)
-                        (default_before_code ? before_code : before_injector_code) += std::format("{};", value);
-                    break;
-                case 'E':
-                    if (key == "E"sv)
-                        before_injector_code += std::format("{};", value);
-                default:
-                    spdlog::warn("Unknown injector command line option: {}", key);
-                    break;
-            }
-        } else if (std::filesystem::exists(std::filesystem::path{cmd})) {
-            // last cmd is file args
-            injector_file = cmd;
-            for (size_t j = i + 1; j < cmds.size(); j++) {
-                injector_args.push_back(cmds[j]);
-            }
-            break;
-        }
-    }
-
-    if (injector_file.empty()) {
-        spdlog::warn("No injector file provided, never injector script");
-        return std::string(buffer);
-    }
-
-    spdlog::info("Injecting -e script: {} {}", before_code, before_injector_code);
-    if (!before_injector_code.empty()) before_injector_code += '\t';
-    spdlog::info("Injector: {} {}", injector_file, fmt::join(injector_args, " "));
-    auto v1 = fmt::format("{}", fmt::join(injector_args | std::ranges::views::transform([](auto &arg) { return std::format("[[{}]]", arg); }), ","));
-    std::string inject_buffer = before_injector_code + std::format(
-                                                               " local inject_fp=io.open([[{}]], 'r');"
-                                                               " if not inject_fp then error ('DontStarveInjector: Cannot open Injector File'); end;"
-                                                               " local fn = loadstring(inject_fp:read '*a');"
-                                                               " inject_fp:close();"
-                                                               " if fn then"
-                                                               "   local inject_args = {{{}}};"
-                                                               "   setfenv(fn, setmetatable({{arg=inject_args}}, {{__index = _G, __newindex = _G}}));"
-                                                               "       pcall(fn);"
-                                                               "   end;",
-                                                               injector_file, v1);
-    spdlog::info("Injecting script: {}", inject_buffer);
-
-    auto buffer_prefix = buffer.substr(0, pos);
-    auto buffer_after = buffer.substr(pos);
-    // 在buffer_prefix反向中寻找一个空行, 必须检查该行是空行
-    auto last_newline = buffer_prefix.find_last_of('\n');
-    if (last_newline != std::string_view::npos) {
-        // 确保找到的行是空行
-        auto line_start = buffer_prefix.substr(0, last_newline).find_last_of('\n');
-        if (line_start == std::string_view::npos) {
-            line_start = 0;
-        } else {
-            line_start += 1;// 跳过换行符
-        }
-        auto line_content = buffer_prefix.substr(line_start, last_newline - line_start);
-        if (std::ranges::all_of(line_content, [](char c) { return std::isspace(c); })) {
-            buffer_prefix = buffer_prefix.substr(0, line_start);
-        }
-    }
-
-    auto new_buffer = std::format("{}\n{} ;{}\n{}", before_code, buffer_prefix, inject_buffer, buffer_after);
-    spdlog::info("New buffer:\n {}", new_buffer);
-    return new_buffer;
-}
-
-#define WAPPER_LUA_API(name)                          \
-    static decltype(&name) real_##name = api._##name; \
-    api._##name = (decltype(&name))
+#define WAPPER_LUA_API(name)               \
+    static auto real_##name = api._##name; \
+    api._##name = (decltype(real_##name))
 
 void lua_event_notifyer(LUA_EVENT, lua_State *);
-
+std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer);
 struct GameLuaContextImpl : GameLuaContext {
     GameLuaContextImpl(const char *sharedLibraryName, GameLuaType type)
         : GameLuaContext{sharedLibraryName, type} {
@@ -263,12 +139,17 @@ struct GameLuaContextImpl : GameLuaContext {
         }
         if (target == "luaL_loadbuffer") {
             decltype(&luaL_loadbuffer) hooker = +[](lua_State *L, const char *buff, size_t size, const char *name) {
+                auto &ctx = GetGameLuaContext();
                 if (name == "@scripts/main.lua"sv) {
+                    ctx->_luaL_dostring(L, "GameLuaInjector.init()");
                     // load custom main.lua script
-                    auto new_buffer = wapper_game_main_buffer({buff, size});
-                    return GetGameLuaContext().api._luaL_loadbuffer(L, new_buffer.data(), new_buffer.size(), name);
+                    auto new_buffer = wapper_game_main_buffer(L, {buff, size});
+                    if (new_buffer.empty()) {
+                        return ctx->_luaL_loadbuffer(L, buff, size, name);
+                    }
+                    return ctx->_luaL_loadbuffer(L, new_buffer.data(), new_buffer.size(), name);
                 }
-                return GetGameLuaContext().api._luaL_loadbuffer(L, buff, size, name);
+                return ctx->_luaL_loadbuffer(L, buff, size, name);
             };
             return (void *) hooker;
         }
@@ -365,9 +246,6 @@ GameLuaContext &GetGameLuaContext() {
     return *currentCtx;
 }
 
-static void voidFunc() {
-}
-
 GameLuaType currentLuaType = GameLuaType::jit;
 
 DONTSTARVEINJECTOR_API void DS_LUAJIT_set_vm_type(GameLuaType type, const char *moduleName) {
@@ -380,6 +258,195 @@ DONTSTARVEINJECTOR_API void DS_LUAJIT_set_vm_type(GameLuaType type, const char *
     if (moduleName && std::filesystem::exists(moduleName)) {
         currentCtx->sharedlibraryName = moduleName;
     }
+}
+
+static int split_string(const std::string_view &str, std::vector<std::string_view> &out, char delimiter) {
+    size_t start = 0;
+    size_t end = str.find(delimiter);
+    while (end != std::string_view::npos) {
+        out.push_back(str.substr(start, end - start));
+        start = end + 1;
+        end = str.find(delimiter, start);
+    }
+    out.push_back(str.substr(start, end));
+    return out.size();
+}
+
+std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer) {
+    // before replace buffer frist line
+    size_t first_newline = buffer.find('\n');
+    if (first_newline != std::string_view::npos) {
+        buffer = buffer.substr(first_newline + 1);
+    }
+    /*
+    find ModManager:LoadMods() next line
+   */
+    constexpr std::string_view modManagerLoadMods = "ModManager:LoadMods()";
+    auto pos = buffer.find(modManagerLoadMods);
+    if (pos == std::string_view::npos) {
+        spdlog::warn("ModManager:LoadMods() not found in main.lua, never injector script");
+        return std::string(buffer);
+    }
+
+    // - lua code
+    std::string before_code = "DBG=1;";
+    std::string before_injector_code;
+    bool default_before_code = !InjectorConfig::instance().GameInjectorNoDefaultBeforeCode;
+
+    // -injector
+    std::string_view injector_file;
+    std::vector<std::string_view> injector_args;
+
+    auto injector_file_env = getenv("GAME_INJECTOR_FILE");
+    auto injector_args_env = getenv("GAME_INJECTOR_ARGS");
+
+    if (injector_file_env) {
+        injector_file = injector_file_env;
+    }
+    if (injector_args_env) {
+        split_string(injector_args_env, injector_args, ' ');
+    }
+    // skip first cmd, it is executable path
+    auto cmds = get_cmds();
+    for (size_t i = 1; i < cmds.size(); i++) {
+        auto cmd = std::string_view{cmds[i]};
+        if (cmd.starts_with('-') || cmd.starts_with("--")) {
+            std::string_view key;
+            std::string_view value;
+            if (cmd.contains('=')) {
+                // single cmd with key=value
+                auto pos = cmd.find('=');
+                key = cmd.substr(0, pos);
+                value = cmd.substr(pos + 1);
+            } else {
+                key = cmd.substr(cmd.find_first_not_of("-"));
+                if (i + 1 >= cmds.size() || cmds[i + 1].starts_with('-')) {
+                    spdlog::error("No value provided for option: {}", key);
+                    continue;
+                }
+                i++;
+                value = cmds[i];
+                if (value.empty()) {
+                    spdlog::error("No value provided for option: {}", key);
+                    continue;
+                }
+            }
+            switch (key.front()) {
+                case 'e':
+                    if (key == "e"sv)
+                        (default_before_code ? before_code : before_injector_code) += std::format("{};", value);
+                    break;
+                case 'E':
+                    if (key == "E"sv)
+                        before_injector_code += std::format("{};", value);
+                default:
+                    spdlog::warn("Unknown injector command line option: {}", key);
+                    break;
+            }
+        } else if (std::filesystem::exists(std::filesystem::path{cmd})) {
+            // last cmd is file args
+            injector_file = cmd;
+            for (size_t j = i + 1; j < cmds.size(); j++) {
+                injector_args.push_back(cmds[j]);
+            }
+            break;
+        }
+    }
+    /*
+        local GameLuaInjector = _G.GameLuaInjector
+        GameLuaInjector.register_event_before_main(<before_code>)
+        GameLuaInjector.register_event_game_initialized(<before_injector_code>)
+        GameLuaInjector.register_event_game_initialized_injector_file(<injector_file>, <injector_args>)
+    */
+    auto& ctx = *currentCtx;
+    ctx->_lua_getglobal(L, "GameLuaInjector");
+    if (!ctx->_lua_istable(L, -1)) {
+        spdlog::error("GameLuaInjector is not a table, cannot inject scripts");
+        ctx->_lua_pop(L, 1);
+        return {};
+    }
+
+    if (!before_code.empty()) {
+        spdlog::info("Inject main before code: {}", before_code);
+
+        ctx->_lua_getfield(L, -1, "register_event_before_main");
+        if (!ctx->_lua_isfunction(L, -1)) {
+            spdlog::error("register_event_before_main is not a function");
+            ctx->_lua_pop(L, 2);
+            return {};
+        }
+
+        ctx->_lua_pushstring(L, before_code.c_str());
+
+        if (ctx->_lua_pcall(L, 1, 0, 0) != LUA_OK) {
+            spdlog::error("Error calling register_event_before_main: {}", ctx->_lua_tostring(L, -1));
+            ctx->_lua_pop(L, 1);
+        }
+    }
+
+
+    if (!before_injector_code.empty()) {
+        spdlog::info("Inject game initialized code: {}", before_injector_code);
+
+        ctx->_lua_getfield(L, -1, "register_event_game_initialized");
+        if (!ctx->_lua_isfunction(L, -1)) {
+            spdlog::error("register_event_game_initialized is not a function");
+            ctx->_lua_pop(L, 2);
+            return {};
+        }
+
+        ctx->_lua_pushstring(L, before_injector_code.c_str());
+
+        if (ctx->_lua_pcall(L, 1, 0, 0) != LUA_OK) {
+            spdlog::error("Error calling register_event_game_initialized: {}", ctx->_lua_tostring(L, -1));
+            ctx->_lua_pop(L, 1);
+        }
+    }
+
+    if (!injector_file.empty()) {
+        spdlog::info("Injector file: {}", injector_file);
+        ctx->_lua_getfield(L, -1, "register_event_game_initialized_injector_file");
+        if (!ctx->_lua_isfunction(L, -1)) {
+            spdlog::error("register_event_game_initialized_injector_file is not a function");
+            ctx->_lua_pop(L, 2);
+            return {};
+        }
+
+        ctx->_lua_pushlstring(L, injector_file.data(), injector_file.size());
+        ctx->_lua_createtable(L, injector_args.size(), 0);
+        for (const auto &arg : injector_args) {
+            ctx->_lua_pushlstring(L, arg.data(), arg.size());
+            ctx->_lua_rawseti(L, -2, ctx->_lua_objlen(L, -2) + 1);
+        }
+
+        if (ctx->_lua_pcall(L, 2, 0, 0) != LUA_OK) {
+            spdlog::error("Error calling register_event_game_initialized_injector_file: {}", ctx->_lua_tostring(L, -1));
+            ctx->_lua_pop(L, 1);
+        }
+    }
+    ctx->_lua_pop(L, 1);
+
+    auto buffer_prefix = buffer.substr(0, pos);
+    auto buffer_after = buffer.substr(pos);
+    // 在buffer_prefix反向中寻找一个空行, 必须检查该行是空行
+    auto last_newline = buffer_prefix.find_last_of('\n');
+    if (last_newline != std::string_view::npos) {
+        // 确保找到的行是空行
+        auto line_start = buffer_prefix.substr(0, last_newline).find_last_of('\n');
+        if (line_start == std::string_view::npos) {
+            line_start = 0;
+        } else {
+            line_start += 1;// 跳过换行符
+        }
+        auto line_content = buffer_prefix.substr(line_start, last_newline - line_start);
+        if (std::ranges::all_of(line_content, [](char c) { return std::isspace(c); })) {
+            buffer_prefix = buffer_prefix.substr(0, line_start);
+        }
+    }
+
+    auto new_buffer = std::format("GameLuaInjector.push_event('before_main');\n{} ;GameLuaInjector.push_event('game_initialized');\n{}", buffer_prefix, buffer_after);
+    //spdlog::info("New buffer:\n {}", new_buffer);
+    return new_buffer;
 }
 
 void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures, const ListExports_t &exports) {

@@ -75,6 +75,14 @@ set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")
 set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../lib64")
 add_dependencies(Injector create_missfuncs)
 
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.c
+        COMMAND ${PYTHON_EXECUTABLE_NAME} "../../tools/lua2c.py" "${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.lua" "${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.c"
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.lua
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_custom_target(GameLuaInjectFramework DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.c)
+add_dependencies(Injector GameLuaInjectFramework)
 
 target_include_directories(Injector PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
 target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})
@@ -98,14 +106,14 @@ target_include_directories(Injector PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
 if (NOT ENABLE_ONLY_LUA51)
     target_include_directories(Injector PUBLIC ${LUAJIT_INCLUDE_DIR})
-    target_link_libraries(Injector PRIVATE ${LUAJIT_LIBRARIES})
+    #target_link_libraries(Injector PRIVATE ${LUAJIT_LIBRARIES})
 elseif (ENABLE_FAKE_API)
     target_include_directories(Injector PUBLIC ${LUA_INCLUDE_DIR})
     target_link_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/lua51/$<IF:$<CONFIG:Debug>,Debug,Release>)
-    target_link_libraries(Injector PRIVATE ${LUA_LIBRARIES})
+    #target_link_libraries(Injector PRIVATE ${LUA_LIBRARIES})
 else ()
     target_include_directories(Injector PUBLIC ${LUA_INCLUDE_DIR})
-    target_link_libraries(Injector PRIVATE liblua)
+    #target_link_libraries(Injector PRIVATE liblua)
 endif ()
 
 if (MSVC)

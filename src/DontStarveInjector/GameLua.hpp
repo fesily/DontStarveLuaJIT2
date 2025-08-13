@@ -30,6 +30,28 @@ struct LuaApis {
     LUAJIT_API_DEFINES_5_2(IMPORT_LUA_API);
     LUAJIT_API_DEFINES_5_3(IMPORT_LUA_API);
 #undef IMPORT_LUA_API
+
+    bool _luaL_dostring(lua_State *L, const char *s) {
+        return (_luaL_loadstring(L, s) || _lua_pcall(L, 0, 0, 0));
+    }
+    bool _luaL_dofile(lua_State *L, const char *filename) {
+        return (_luaL_loadfile(L, filename) || _lua_pcall(L, 0, 0, 0));
+    }
+    void _lua_getglobal(lua_State *L, const char *name) {
+        _lua_getfield(L, LUA_GLOBALSINDEX, name);
+    }
+    bool _lua_istable(lua_State *L, int index) {
+        return _lua_type(L, index) == LUA_TTABLE;
+    }
+    bool _lua_isfunction(lua_State *L, int index) {
+        return _lua_type(L, index) == LUA_TFUNCTION;
+    }
+    const char* _lua_tostring(lua_State *L, int index) {
+        return _lua_tolstring(L, index, nullptr);
+    }
+    void _lua_pop(lua_State* L, int n) {
+        _lua_settop(L, -(n) - 1);
+    }
 };
 
 struct GameLuaContext {
@@ -38,7 +60,12 @@ struct GameLuaContext {
     lua_State *luaState;
     GumModule *LuaModule;
     LuaApis api;
+
     void luaL_openlibs_hooker(lua_State *L);
+
+    LuaApis* operator->() {
+        return &api;
+    }
 };
 
 GameLuaContext &GetGameLuaContext();

@@ -333,22 +333,8 @@ DONTSTARVEINJECTOR_API const char *DS_LUAJIT_get_mod_version() {
     return MOD_VERSION;
 }
 
-void ForceLoadMod(const std::string& modmain_path) {
-    if (InjectorConfig::instance().DisableForceLoadLuaJITMod) {
-        return;
-    }
-    if (modmain_path.empty() || !std::filesystem::exists(modmain_path)) {
-        return;
-    }
-    
-}
-
 extern "C" void LoadGameModConfig() {
 #ifdef _WIN32
     repalce_set_thread_name();
 #endif
-    auto config = luajit_config::read_from_file();
-    if (!config) return;
-    // try force load luajit mod
-    ForceLoadMod(config->modmain_path);
 }
