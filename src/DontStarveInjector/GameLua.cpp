@@ -143,7 +143,9 @@ struct GameLuaContextImpl : GameLuaContext {
                 if (name == "@scripts/main.lua"sv) {
                     ctx->_luaL_dostring(L, "GameLuaInjector.init()");
                     // load custom main.lua script
+                    int top = ctx->_lua_gettop(L);
                     auto new_buffer = wapper_game_main_buffer(L, {buff, size});
+                    assert(ctx->_lua_gettop(L) == top);
                     if (new_buffer.empty()) {
                         return ctx->_luaL_loadbuffer(L, buff, size, name);
                     }
@@ -296,6 +298,7 @@ std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer) {
     // -injector
     std::string_view injector_file;
     std::vector<std::string_view> injector_args;
+    std::vector<std::pair<std::string_view, std::string_view>> relocation_files;
 
     auto injector_file_env = getenv("GAME_INJECTOR_FILE");
     auto injector_args_env = getenv("GAME_INJECTOR_ARGS");
@@ -339,6 +342,17 @@ std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer) {
                 case 'E':
                     if (key == "E"sv)
                         before_injector_code += std::format("{};", value);
+                case 'R':
+                case 'r':
+                    if (key == "r"sv || key == "R"sv || key == "relocation"sv || key == "Relocation"sv) {
+                        std::vector<std::string_view> value_parts;
+                        split_string(value, value_parts, '=');
+                        if (value_parts.size() == 2) {
+                            relocation_files.emplace_back(value_parts[0], value_parts[1]);
+                        } else {
+                            spdlog::warn("Invalid relocation format: {}\ntargetfile=newfile", value);
+                        }
+                    }
                 default:
                     spdlog::warn("Unknown injector command line option: {}", key);
                     break;
@@ -380,7 +394,6 @@ std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer) {
 
         if (ctx->_lua_pcall(L, 1, 0, 0) != LUA_OK) {
             spdlog::error("Error calling register_event_before_main: {}", ctx->_lua_tostring(L, -1));
-            ctx->_lua_pop(L, 1);
         }
     }
 
@@ -424,6 +437,25 @@ std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer) {
             ctx->_lua_pop(L, 1);
         }
     }
+
+    if (relocation_files.size() > 0) {
+        for (const auto &[old_file, new_file] : relocation_files) {
+            spdlog::info("Relocating {} to {}", old_file, new_file);
+            ctx->_lua_getfield(L, -1, "relocation_file");
+            if (!ctx->_lua_isfunction(L, -1)) {
+                spdlog::error("relocation_file is not a function");
+                ctx->_lua_pop(L, 2);
+                return {};
+            }
+            ctx->_lua_pushlstring(L, old_file.data(), old_file.size());
+            ctx->_lua_pushlstring(L, new_file.data(), new_file.size());
+            if (ctx->_lua_pcall(L, 2, 0, 0) != LUA_OK) {
+                spdlog::error("Error calling relocation_file: {}", ctx->_lua_tostring(L, -1));
+                ctx->_lua_pop(L, 1);
+            }
+        }
+    }
+
     ctx->_lua_pop(L, 1);
 
     auto buffer_prefix = buffer.substr(0, pos);
@@ -444,7 +476,9 @@ std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer) {
         }
     }
 
-    auto new_buffer = std::format("GameLuaInjector.push_event('before_main');\n{} ;GameLuaInjector.push_event('game_initialized');\n{}", buffer_prefix, buffer_after);
+    ctx->_luaL_dostring(L, "GameLuaInjector.push_event('before_main')");
+
+    auto new_buffer = std::format("{} ;GameLuaInjector.push_event('game_initialized');\n{}", buffer_prefix, buffer_after);
     //spdlog::info("New buffer:\n {}", new_buffer);
     return new_buffer;
 }

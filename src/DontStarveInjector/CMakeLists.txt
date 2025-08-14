@@ -22,6 +22,7 @@ set(SOURCES
         GameSignature.cpp
         GameNetwork.cpp
         config.cpp
+        GameLuaInjectFramework.c
 )
 
 if (ENABLE_STEAM_SUPPORT)

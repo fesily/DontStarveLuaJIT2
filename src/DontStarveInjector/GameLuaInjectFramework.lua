@@ -4,7 +4,8 @@
 ]]
 
 GameLuaInjector = {
-    injectors = {}
+    injectors = {},
+    relocations = {}
 }
 local _M = GameLuaInjector
 
@@ -12,6 +13,10 @@ function _M.inject_module_text(target_filename, afterload)
     _M.injectors[target_filename] = {
         afterload = afterload,
     }
+end
+
+function _M.relocation_file(target_filename, new_filename)
+    _M.relocations[target_filename] = new_filename
 end
 
 function _M.get(filename)
@@ -45,6 +50,7 @@ function _M.init()
     inited = true
     local old_require = require
     function require(filename)
+        filename = _M.relocations[filename] or filename
         local m = old_require(filename)
         local injector = _M.get(filename)
         do_inject(injector, m)
@@ -53,6 +59,7 @@ function _M.init()
 
     local old_kleiloadlua = kleiloadlua
     function kleiloadlua(filename, ...)
+        filename = _M.relocations[filename] or filename
         local m = old_kleiloadlua(filename, ...)
         local injector = _M.get(filename)
         do_inject(injector, m)
@@ -75,9 +82,10 @@ function _M.forceEnableLuaMod(en, modname)
                 local modinfo = self.savedata.known_mods[modname]
                 if not modinfo then
                     print("[luajit] Mod not found: " .. modname)
+                else
+                    modinfo.enabled = true
+                    print("[luajit] Force enable mod: " .. modname)
                 end
-                modinfo.enabled = true
-                print("[luajit] Force enable mod: " .. modname)
             end
         end)
     else
