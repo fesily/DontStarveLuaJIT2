@@ -297,10 +297,13 @@ static void lj_clearerr(FILE *fp) noexcept {
 static int lj_need_transform_path() noexcept {
     static bool has_lua_debug_flag = [] {
         auto cmd = get_cmd();
-        if (cmd.contains("DST_Secondary") || cmd.contains("DST_Master")) {
-            cmd = get_cmd(getParentId());
-        }
         auto ret = cmd.contains("-enable_lua_debugger");
+        if (!ret) {
+            if (cmd.contains("DST_Secondary") || cmd.contains("DST_Master")) {
+                cmd = get_cmd(getParentId());
+            }
+            ret = cmd.contains("-enable_lua_debugger");
+        }
         spdlog::info("lj_need_transform_path: {}", ret);
         return ret;
     }();

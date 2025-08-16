@@ -1,4 +1,4 @@
-#include "config.hpp"
+#include "gameModConfig.hpp"
 #include "MemorySignature.hpp"
 #include "luajit_config.hpp"
 #include "util/inlinehook.hpp"

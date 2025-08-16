@@ -7,8 +7,24 @@ static std::filesystem::path getGameDir() {
     static std::filesystem::path p = getExePath().parent_path().parent_path();
     return p;
 }
+namespace nlohmann {
+    void to_json(json& j, const luajit_config& s) {
+        j = json{{"modmain_path", s.modmain_path},
+                  {"server_disable_luajit", s.server_disable_luajit},
+                  {"always_enable_mod", s.always_enable_mod}};
+    }
 
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(luajit_config, modmain_path, server_disable_luajit);
+    void from_json(const json& j, luajit_config& s) {
+        j.at("modmain_path").get_to(s.modmain_path);
+        if (j.contains("server_disable_luajit")) {
+            j.at("server_disable_luajit").get_to(s.server_disable_luajit);
+        }
+        if (j.contains("always_enable_mod")) {
+            j.at("always_enable_mod").get_to(s.always_enable_mod);
+        }
+    }
+}
+
 std::optional<luajit_config> luajit_config::read_from_file(std::filesystem::path path) {
     if (path.empty()) {
         path = getGameDir() / "data" / "unsafedata";

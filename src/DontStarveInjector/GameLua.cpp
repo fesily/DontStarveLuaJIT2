@@ -1,5 +1,5 @@
 #include "GameLua.hpp"
-#include "config.hpp"
+#include "gameModConfig.hpp"
 #include "DontStarveSignature.hpp"
 #include "GameSignature.hpp"
 #include "util/inlinehook.hpp"
@@ -77,10 +77,13 @@ void GameLuaContext::luaL_openlibs_hooker(lua_State *L) {
         if (InjectorConfig::instance().DisableForceLoadLuaJITMod) {
             return;
         }
+        if (!config->always_enable_mod) return;
+
         if (config->modmain_path.empty() || !std::filesystem::exists(config->modmain_path)) {
             return;
         }
         api._luaL_dostring(L, fmt::format("GameLuaInjector.forceEnableLuaMod(true, [[{}]])", config->modname).c_str());
+        spdlog::info("Forced enabled Lua mod: {}", config->modname);
     }
 }
 
@@ -372,7 +375,7 @@ std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer) {
         GameLuaInjector.register_event_game_initialized(<before_injector_code>)
         GameLuaInjector.register_event_game_initialized_injector_file(<injector_file>, <injector_args>)
     */
-    auto& ctx = *currentCtx;
+    auto &ctx = *currentCtx;
     ctx->_lua_getglobal(L, "GameLuaInjector");
     if (!ctx->_lua_istable(L, -1)) {
         spdlog::error("GameLuaInjector is not a table, cannot inject scripts");
@@ -427,7 +430,7 @@ std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer) {
 
         ctx->_lua_pushlstring(L, injector_file.data(), injector_file.size());
         ctx->_lua_createtable(L, injector_args.size(), 0);
-        for (const auto &arg : injector_args) {
+        for (const auto &arg: injector_args) {
             ctx->_lua_pushlstring(L, arg.data(), arg.size());
             ctx->_lua_rawseti(L, -2, ctx->_lua_objlen(L, -2) + 1);
         }
@@ -439,7 +442,7 @@ std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer) {
     }
 
     if (relocation_files.size() > 0) {
-        for (const auto &[old_file, new_file] : relocation_files) {
+        for (const auto &[old_file, new_file]: relocation_files) {
             spdlog::info("Relocating {} to {}", old_file, new_file);
             ctx->_lua_getfield(L, -1, "relocation_file");
             if (!ctx->_lua_isfunction(L, -1)) {
@@ -478,7 +481,7 @@ std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer) {
 
     ctx->_luaL_dostring(L, "GameLuaInjector.push_event('before_main')");
 
-    auto new_buffer = std::format("{} ;GameLuaInjector.push_event('game_initialized');\n{}", buffer_prefix, buffer_after);
+    auto new_buffer = std::format("{};GameLuaInjector.push_event('game_initialized');{}", buffer_prefix, buffer_after);
     //spdlog::info("New buffer:\n {}", new_buffer);
     return new_buffer;
 }
@@ -568,4 +571,30 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
             init_luajit_io(currentCtx->LuaModule);
         }
     }
+}
+
+int set_render_fps(lua_State *L) {
+    auto& ctx = GetGameLuaContext();
+    int fps = ctx->_luaL_checkinteger(L, 1);
+    /* check lua callback */
+    ctx->_luaL_checktype(L, 2, LUA_TFUNCTION);
+    int old_fps = DS_LUAJIT_set_target_fps(fps, 0b01);
+    if (old_fps > 0) {
+        // call cb
+        ctx->_lua_pushvalue(L, 2);
+        ctx->_lua_pcall(L, 0, 0, 0);
+        DS_LUAJIT_set_target_fps(old_fps, 0b01);
+    }
+    return 0;
+}
+
+luaL_Reg GameInjectorModule[] = {
+    {"set_render_fps", set_render_fps},
+    {nullptr, nullptr}
+};
+
+DONTSTARVEINJECTOR_API int luaopen_injector(lua_State *L) {
+    auto& ctx = GetGameLuaContext();
+    ctx->_luaL_register(L, "JitModInjector", GameInjectorModule);
+    return 1;
 }

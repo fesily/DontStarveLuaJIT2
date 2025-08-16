@@ -9,7 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(GAME_NAME "Don't Starve Together")
 #set(GAME_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 if (WIN32)
-    set(GAME_DIR "E:\\SteamLibrary\\steamapps\\common\\Don't Starve Together")
+    set(GAME_DIR "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Don't Starve Together")
 elseif (UNIX AND NOT APPLE)
     set(GAME_DIR "/root/server_dst")
 elseif (APPLE)
@@ -37,7 +37,7 @@ else ()
     message(FATAL_ERROR "Not supported platform")
 endif ()
 
-project(DontStarveLuaJIT VERSION 1.7.0)
+project(DontStarveLuaJIT VERSION 1.7.10)
 
 option(DISABLE_TRACY_FUTURE "disable tray future" ON)
 
@@ -138,6 +138,8 @@ find_package(keystone REQUIRED)
 
 set(DONTSTARVEINJECTOR_ROOT ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
 set(DONTSTARVEINJECTOR_UTIL_DIR ${DONTSTARVEINJECTOR_ROOT}/util)
+
+add_subdirectory("src/lua51original")
 
 add_subdirectory("src/FunctionRelocation")
 set(FUNCTION_RELOCATION_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/FunctionRelocation)

@@ -3,14 +3,16 @@
 	<Type Name="GCtab">
 		<DisplayString>hash={hmask?hmask+1:0} arr={asize}</DisplayString>
 		<Expand>
-			<Item Name="metatable" Condition="metatable.gcptr64!=0">((GCobj*)metatable.gcptr64)-&gt;tab</Item>
+			<Item Name="metatable" Condition="metatable.gcptr64!=0">
+				((GCobj*)metatable.gcptr64)-&gt;tab</Item>
 			<Synthetic Name="Array" Condition="asize!=0">
 				<Expand>
 					<CustomListItems>
-						<Variable Name="index" InitialValue="0"/>
+						<Variable Name="index" InitialValue="0" />
 						<Loop>
-							<Break Condition="index>=asize"/>
-							<Item Condition="(((TValue*)(array.ptr64))[index]).it64 != -1">(((TValue*)(array.ptr64))[index])</Item>
+							<Break Condition="index>=asize" />
+							<Item Condition="(((TValue*)(array.ptr64))[index]).it64 != -1">
+								(((TValue*)(array.ptr64))[index])</Item>
 							<Exec>index++</Exec>
 						</Loop>
 					</CustomListItems>
@@ -19,10 +21,11 @@
 			<Synthetic Name="Hash" Condition="hmask!=0">
 				<Expand>
 					<CustomListItems MaxItemsPerView="256">
-						<Variable Name="index" InitialValue="0"/>
+						<Variable Name="index" InitialValue="0" />
 						<Loop>
-							<Break Condition="index>=hmask+1"/>
-							<Item Condition="(((Node*)(node.ptr64))[index]).val.it64 != -1">(((Node*)(node.ptr64))[index])</Item>
+							<Break Condition="index>=hmask+1" />
+							<Item Condition="(((Node*)(node.ptr64))[index]).val.it64 != -1">
+								(((Node*)(node.ptr64))[index])</Item>
 							<Exec>index++</Exec>
 						</Loop>
 					</CustomListItems>
@@ -91,7 +94,7 @@
 			<Synthetic Name="UpvalueName" Condition="sizeuv!=0">
 				<Expand>
 					<CustomListItems MaxItemsPerView="512" Condition="uvinfo.ptr64!=0">
-						<Variable Name="ptr" InitialValue="(const char*)(uvinfo.ptr64)"/>
+						<Variable Name="ptr" InitialValue="(const char*)(uvinfo.ptr64)" />
 						<Size>sizeuv</Size>
 						<Loop>
 							<Item>ptr,s</Item>
@@ -103,11 +106,11 @@
 			<Synthetic Name="VarInfo" Condition="varinfo.ptr64!=0">
 				<Expand>
 					<CustomListItems MaxItemsPerView="512">
-						<Variable Name="ptr" InitialValue="(const char*)(varinfo.ptr64)"/>
-						<Variable Name="v" InitialValue="0"/>
-						<Variable Name="sh" InitialValue="0"/>
+						<Variable Name="ptr" InitialValue="(const char*)(varinfo.ptr64)" />
+						<Variable Name="v" InitialValue="0" />
+						<Variable Name="sh" InitialValue="0" />
 						<Loop>
-							<Break Condition="*ptr==0"/>
+							<Break Condition="*ptr==0" />
 							<Item>ptr,s</Item>
 							<If Condition="*ptr &gt;= 7">
 								<Exec>ptr += strlen(ptr)+1</Exec>
@@ -120,7 +123,7 @@
 								<Loop>
 									<Exec>sh+=7</Exec>
 									<Exec> v |= ((*ptr &amp; 0x7f) &lt;&lt; sh)</Exec>
-									<Break Condition="*ptr++&gt;=0x80"/>
+									<Break Condition="*ptr++&gt;=0x80" />
 								</Loop>
 							</If>
 						</Loop>
@@ -131,10 +134,10 @@
 				<DisplayString>{sizebc}</DisplayString>
 				<Expand>
 					<CustomListItems>
-						<Variable Name="ops" InitialValue="proto_bc()"/>
-						<Variable Name="index" InitialValue="0"/>
+						<Variable Name="ops" InitialValue="proto_bc()" />
+						<Variable Name="index" InitialValue="0" />
 						<Loop>
-							<Break Condition="index>=sizebc"/>
+							<Break Condition="index>=sizebc" />
 							<Item>ops[index]</Item>
 							<Exec>index++</Exec>
 						</Loop>
@@ -244,13 +247,13 @@
 			<Synthetic Name="traceback" Optional="true">
 				<Expand>
 					<CustomListItems>
-						<Variable Name="level" InitialValue="0"/>
-						<Variable Name="bot" InitialValue="((TValue*)stack.ptr64)+1"/>
-						<Variable Name="frame" InitialValue="base-1"/>
-						<Variable Name="nextframe" InitialValue="base-1"/>
+						<Variable Name="level" InitialValue="0" />
+						<Variable Name="bot" InitialValue="((TValue*)stack.ptr64)+1" />
+						<Variable Name="frame" InitialValue="base-1" />
+						<Variable Name="nextframe" InitialValue="base-1" />
 						<Loop>
 							<If Condition="frame &lt;= bot">
-								<Break/>
+								<Break />
 							</If>
 							<If Condition="frame->frame_gc() == (GCobj*)this">
 								<Exec>level--</Exec>
@@ -259,7 +262,8 @@
 							<Item>frame-&gt;frame_gc()-&gt;fn</Item>
 							<Exec>nextframe=frame</Exec>
 							<If Condition="frame->frame_islua()">
-								<Exec>frame=((frame) - (2+((uint32_t)(((((const uint32_t *)((ptrdiff_t)(frame)-&gt;ftsz))[-1])&gt;&gt;8)&amp;0xff))))</Exec>
+								<Exec>frame=((frame) - (2+((uint32_t)(((((const uint32_t
+									*)((ptrdiff_t)(frame)-&gt;ftsz))[-1])&gt;&gt;8)&amp;0xff))))</Exec>
 							</If>
 							<If Condition="!(frame->frame_islua())">
 								<If Condition="frame->frame_isvarg()">
@@ -297,10 +301,10 @@
 		</Expand>
 	</Type>
 	<Type Name="TValue">
-		<Intrinsic Name="frame_sized" Expression="((ptrdiff_t)ftsz) &amp; ~0x7"/>
-		<Intrinsic Name="frame_gc" Expression="(this-1)->gcval()"/>
-		<Intrinsic Name="frame_isvarg" Expression="(((ptrdiff_t)ftsz) &amp; (3|4)) == 3"/>
-		<Intrinsic Name="frame_islua" Expression="(((ptrdiff_t)ftsz) &amp; 0x3) == 0"/>
+		<Intrinsic Name="frame_sized" Expression="((ptrdiff_t)ftsz) &amp; ~0x7" />
+		<Intrinsic Name="frame_gc" Expression="(this-1)->gcval()" />
+		<Intrinsic Name="frame_isvarg" Expression="(((ptrdiff_t)ftsz) &amp; (3|4)) == 3" />
+		<Intrinsic Name="frame_islua" Expression="(((ptrdiff_t)ftsz) &amp; 0x3) == 0" />
 		<Intrinsic Name="gcval" Expression="(GCobj*)(gcr.gcptr64 &amp; 140737488355327ULL )" />
 		<Intrinsic Name="itype" Expression="(uint32_t)(it64&gt;&gt;47)" />
 		<Intrinsic Name="isgcval" Expression="itype() -4294967292U&gt;4294967286U" />
@@ -323,6 +327,28 @@
 		<Expand>
 			<Item Name="Type" Condition="!isgcval()">lj_obj_itypename[itype()&lt;=~13u?13:~itype()]</Item>
 			<ExpandedItem Condition="isgcval()">gcval()</ExpandedItem>
+		</Expand>
+	</Type>
+	<Type Name="BCInsLine">
+		<Intrinsic Name="getop" Expression="this->ins &amp; 0xff"></Intrinsic>
+		<Intrinsic Name="geta" Expression="(this->ins &gt;&gt; 8) &amp; 0xff"></Intrinsic>
+		<Intrinsic Name="getb" Expression="(this->ins &gt;&gt; 24)"></Intrinsic>
+		<Intrinsic Name="getc" Expression="(this->ins &gt;&gt; 16) &amp; 0xff"></Intrinsic>
+		<Intrinsic Name="getd" Expression="(this->ins &gt;&gt; 16)"></Intrinsic>
+		<Expand>
+			<Item Name="BCOp">(BCOp)getop()</Item>
+			<Item Name="A">geta()</Item>
+			<Item Name="B">getb()</Item>
+			<Item Name="C">getc()</Item>
+			<Item Name="D">getd()</Item>
+		</Expand>
+	</Type>
+	<Type Name="FuncState">
+		<Expand>
+			<ArrayItems>
+				<Size>pc</Size>
+				<ValuePointer>bcbase</ValuePointer>
+			</ArrayItems>
 		</Expand>
 	</Type>
 </AutoVisualizer>

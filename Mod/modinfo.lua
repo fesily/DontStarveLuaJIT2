@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "1.7.0"
+version = "1.7.10"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -188,12 +188,32 @@ configuration_options = {
     --     },
     --     default = 15
     -- },
+    -- {
+    --     name = "JitOpt",
+    --     label = translate({ en = "JIT Optimizations", zh = "JIT优化选项" }),
+    --     hover = translate({
+    --         en = "May become faster or slower.",
+    --         zh = "可能更快, 可能更慢."
+    --     }),
+    --     options = toggle,
+    --     default = true,
+    -- },
+    -- {
+    --     name = "SlowTailCall",
+    --     label = translate({ en = "Slow Tail Call", zh = "慢速尾调用" }),
+    --     hover = translate({
+    --         zh = "模拟原生lua的尾调用堆栈, 加强加密mod兼容, 但会导致尾调用性能下降",
+    --         en = "Simulate the tail call stack of native lua, enhance compatibility with encrypted mods, but will cause a performance drop in tail calls"
+    --     }),
+    --     options = toggle,
+    --     default = false
+    -- },
     {
-        name = "JitOpt",
-        label = translate({ en = "JIT Optimizations", zh = "JIT优化选项" }),
+        name = "AlwaysEnableMod",
+        label = translate({ en = "Always Enable Mod", zh = "总是启用mod" }),
         hover = translate({
-            en = "May become faster or slower.",
-            zh = "可能更快, 可能更慢."
+            zh = "强制启用当前mod,即使它在mod设置中没有启用",
+            en = "Force enable the current mod, even if it is not enabled in the mod settings"
         }),
         options = toggle,
         default = true,

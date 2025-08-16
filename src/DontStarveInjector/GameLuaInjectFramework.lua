@@ -40,6 +40,7 @@ local function do_inject(injector, m)
             end
         end
     end
+    injector.afterload = nil
 end
 
 local inited = false;

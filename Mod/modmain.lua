@@ -232,7 +232,11 @@ local function main()
 
 			void DS_LUAJIT_SetNextRpcInfo(enum PacketPriority *packetPriority, enum PacketReliability *reliability, char *orderingChannel);
 		]]
-	local injector = require 'luavm.ffi_load' ("Injector")
+	local injector, so_path = require 'luavm.ffi_load' ("Injector")
+	local init_fn = package.loadlib(so_path, "luaopen_injector")
+	if init_fn then
+		init_fn()
+	end
 
 	local zone = require("jit.zone")
 	local sim = getmetatable(TheSim).__index
@@ -345,17 +349,19 @@ local function main()
 		end
 	end)
 
-	local function create_luajit_config(modmain_path, server_disable_luajit, logic_fps, config)
+	local function create_luajit_config(modmain_path, server_disable_luajit, logic_fps, always_enable_mod, config)
 		if config == nil then
 			return {
 				modmain_path = modmain_path,
 				server_disable_luajit = server_disable_luajit,
 				logic_fps = logic_fps,
+				always_enable_mod = always_enable_mod,
 			}
 		else
 			config.modmain_path = modmain_path or config.modmain_path
 			config.server_disable_luajit = server_disable_luajit or config.server_disable_luajit
 			config.logic_fps = logic_fps or config.logic_fps
+			config.always_enable_mod = always_enable_mod or config.always_enable_mod
 		end
 	end
 
@@ -391,7 +397,7 @@ local function main()
 		end
 		if not TheNet:IsDedicated() then
 			write_luajit_config(create_luajit_config(modmain_path, GetModConfigData("DisableJITWhenServer"),
-				GetModConfigData("TargetLogicFPS")))
+				GetModConfigData("TargetLogicFPS")), GetModConfigData("AlwaysEnableMod"))
 		end
 	end
 	if GetModConfigData("EnableTracy") == "on" then
@@ -403,8 +409,11 @@ local function main()
 		local needrestart = false
 		if GetModConfigData("TargetRenderFPS", get_local_config) then
 			local targetfps = GetModConfigData("TargetRenderFPS", get_local_config)
-			if injector.DS_LUAJIT_set_target_fps(targetfps, 1) > 0 then
-				TheSim:SetNetbookMode(false);
+			if JitModInjector then
+				JitModInjector.set_render_fps(targetfps, function ()
+					print("[luajit]", "Reset fps by SetNetbookMode", targetfps)
+					TheSim:SetNetbookMode(false)
+				end)
 			end
 		end
 
@@ -617,9 +626,18 @@ local function main()
 			t.zht = t.zht or t.zh
 			return t[lc] or t.en
 		end
+
+		local function Version2Number(version)
+			local num = 0
+			string.gsub(version, "(%d+)", function(v)
+				num = num * 100000 + tonumber(v)
+			end)
+			return num
+		end
+		
 		if injector.DS_LUAJIT_get_mod_version() ~= nil and should_show_dig() then
 			local version = ffi.string(injector.DS_LUAJIT_get_mod_version())
-			if modinfo.version ~= version then
+			if Version2Number(modinfo.version) < Version2Number(version) then
 				local function update_mod()
 					return injector.DS_LUAJIT_update(root_dictory, 0) == 1
 				end
