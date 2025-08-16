@@ -37,7 +37,7 @@ else ()
     message(FATAL_ERROR "Not supported platform")
 endif ()
 
-project(DontStarveLuaJIT VERSION 1.6.8)
+project(DontStarveLuaJIT VERSION 1.7.10)
 
 option(DISABLE_TRACY_FUTURE "disable tray future" ON)
 
@@ -138,6 +138,8 @@ find_package(keystone REQUIRED)
 
 set(DONTSTARVEINJECTOR_ROOT ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
 set(DONTSTARVEINJECTOR_UTIL_DIR ${DONTSTARVEINJECTOR_ROOT}/util)
+
+add_subdirectory("src/lua51original")
 
 add_subdirectory("src/FunctionRelocation")
 set(FUNCTION_RELOCATION_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/FunctionRelocation)

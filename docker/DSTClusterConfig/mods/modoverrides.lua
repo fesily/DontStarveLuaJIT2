@@ -16,10 +16,9 @@ return {
     configuration_options={
       ["EnabledJIT"]=true,
       ["DisableForceFullGC"]=64,
-      ["EnbaleFrameGC"]=3,
-      ["TargetLogincFPS"]=30,
+      ["EnableFrameGC"]=3,
+      ["TargetLogicFPS"]=30,
       ["TargetRenderFPS"]=false,
-      ["ClientNetWorkTick"]=false,
       ["JitOpt"]=true,
       ["ModBlackList"]=true,
       ["DisableJITWhenServer"]=false,

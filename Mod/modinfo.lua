@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "1.6.8"
+version = "1.7.10"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -45,8 +45,8 @@ icon_atlas = "modicon.xml"
 icon = "modicon.tex"
 
 local toggle = {
-    {description = translate({ en = "On",  zh = "启用" }), data = true},
-    {description = translate({ en = "Off", zh = "禁用" }), data = false},
+    { description = translate({ en = "On", zh = "启用" }), data = true },
+    { description = translate({ en = "Off", zh = "禁用" }), data = false },
 }
 
 configuration_options = {
@@ -62,13 +62,14 @@ configuration_options = {
     },
     {
         name = "DisableForceFullGC",
-        label = translate({ en = "GC Incremental Only", zh = "禁用强制完全gc,仅gc小部分"}),
+        label = translate({ en = "GC Incremental Only", zh = "禁用强制完全gc,仅gc小部分" }),
         hover = translate({
-            en = "Enabling this feature will result in a larger memory footprint, and will alleviate occasional lagging issues",
+            en =
+            "Enabling this feature will result in a larger memory footprint, and will alleviate occasional lagging issues",
             zh = "启用该选项会导致更大的内存占用,将缓解偶发卡顿问题"
         }),
         options = {
-            { description = translate({ en = "off", zh = "禁用"}), data = 0 },
+            { description = translate({ en = "off", zh = "禁用" }), data = 0 },
             { description = "gc 1MB", data = 1 },
             { description = "gc 2MB", data = 2 },
             { description = "gc 4MB", data = 4 },
@@ -83,31 +84,24 @@ configuration_options = {
         default = 1
     },
     {
-        name = "EnbaleFrameGC",
+        name = "EnableFrameGC",
         label = translate({ en = "Frame GC", zh = "帧间gc" }),
         hover = translate({
             en = "GC during idle time between frames",
             zh = "见缝插针地gc"
         }),
-        options = {
-            { description = translate({ en = "off", zh = "禁用"}), data = 0 },
-            { description = "1ms", data = 1 },
-            { description = "2ms", data = 2 },
-            { description = "3ms", data = 3 },
-            { description = "4ms", data = 4 },
-            { description = "5ms", data = 5 },
-        },
-        default = 1
+        options = toggle,
+        default = true
     },
     -- {
-    --     name = "TargetLogincFPS",
+    --     name = "TargetLogicFPS",
     --     label = translate({ en = "Logic FPS", zh = "逻辑帧率" }),
     --     hover = translate({
     --         en = "Update FPS of lua scripts. Do not change unless you know what you are doing!!",
     --         zh = "lua脚本执行帧率,不要乱改,可能会爆炸!!"
     --     }),
     --     options = {
-    --         { description = translate({ en = "off", zh = "禁用"}), data = 30 },
+    --         { description = translate({ en = "off", zh = "禁用" }), data = 30 },
     --         { description = "45fps", data = 45 },
     --         { description = "60fps", data = 60 },
     --         { description = "75fps", data = 75 },
@@ -125,7 +119,7 @@ configuration_options = {
             zh = "渲染帧率"
         }),
         options = {
-            { description = translate({ en = "off", zh = "禁用"}), data = 60 },
+            { description = translate({ en = "off", zh = "禁用" }), data = 60 },
             { description = "30fps", data = 30 },
             { description = "60fps", data = 60 },
             { description = "90fps", data = 90 },
@@ -139,13 +133,14 @@ configuration_options = {
     },
     -- {
     --     name = "ClientNetWorkTick",
-    --     label = translate({ en = "Client network sync tick", zh = "客户端网络同步频率" }),
+    --     label = translate({ en = "Client network sync tick", zh = "客户端网络发包频率" }),
     --     hover = translate({
-    --         en = "The frequency of communication between the client and the server.(deault:10fps)",
-    --         zh = "客户端与服务器的通讯频率. 默认(10fps)."
+    --         en =
+    --         "Client network sync frequency, the download frequency is 1.5 times the current setting. Default (10fps for upload, 15fps for download).",
+    --         zh = "客户端网络同步频率,下行频率=当前设置*1.5.默认(上行10fps,下行15fps)."
     --     }),
     --     options = {
-    --         { description = translate({ en = "off", zh = "禁用"}), data = 10 },
+    --         { description = translate({ en = "off", zh = "禁用" }), data = 10 },
     --         { description = "15fps", data = 15 },
     --         { description = "20fps", data = 20 },
     --         { description = "25fps", data = 25 },
@@ -165,15 +160,83 @@ configuration_options = {
     --     },
     --     default = 10
     -- },
+    -- {
+    --     name = "ServerNetWorkTick",
+    --     label = translate({ en = "Server network sync tick", zh = "服务器网络同步频率" }),
+    --     hover = translate({
+    --         en =
+    --         "Server network sync tick, the same frequency for both upload and download. Default (15fps for upload, 0fps for download).",
+    --         zh = "服务器网络同步频率,默认(上行15fps,下行0fps)."
+    --     }),
+    --     options = {
+    --         { description = translate({ en = "off", zh = "禁用" }), data = 15 },
+    --         { description = "20fps", data = 20 },
+    --         { description = "25fps", data = 25 },
+    --         { description = "30fps", data = 30 },
+    --         { description = "32fps", data = 32 },
+    --         { description = "35fps", data = 35 },
+    --         { description = "40fps", data = 40 },
+    --         { description = "45fps", data = 45 },
+    --         { description = "50fps", data = 50 },
+    --         { description = "55fps", data = 55 },
+    --         { description = "60fps", data = 60 },
+    --         { description = "64fps", data = 64 },
+    --         { description = "75fps", data = 75 },
+    --         { description = "90fps", data = 90 },
+    --         { description = "115fps", data = 115 },
+    --         { description = "120fps", data = 120 },
+    --     },
+    --     default = 15
+    -- },
+    -- {
+    --     name = "JitOpt",
+    --     label = translate({ en = "JIT Optimizations", zh = "JIT优化选项" }),
+    --     hover = translate({
+    --         en = "May become faster or slower.",
+    --         zh = "可能更快, 可能更慢."
+    --     }),
+    --     options = toggle,
+    --     default = true,
+    -- },
+    -- {
+    --     name = "SlowTailCall",
+    --     label = translate({ en = "Slow Tail Call", zh = "慢速尾调用" }),
+    --     hover = translate({
+    --         zh = "模拟原生lua的尾调用堆栈, 加强加密mod兼容, 但会导致尾调用性能下降",
+    --         en = "Simulate the tail call stack of native lua, enhance compatibility with encrypted mods, but will cause a performance drop in tail calls"
+    --     }),
+    --     options = toggle,
+    --     default = false
+    -- },
     {
-        name = "JitOpt",
-        label = translate({ en = "JIT Optimizations", zh = "JIT优化选项" }),
+        name = "AlwaysEnableMod",
+        label = translate({ en = "Always Enable Mod", zh = "总是启用mod" }),
         hover = translate({
-            en = "May become faster or slower.",
-            zh = "可能更快, 可能更慢."
+            zh = "强制启用当前mod,即使它在mod设置中没有启用",
+            en = "Force enable the current mod, even if it is not enabled in the mod settings"
         }),
         options = toggle,
-        default = false,
+        default = true,
+    },
+    {
+        name = "NetworkOpt",
+        label = translate({ en = "Network RPC Optimizations", zh = "网络RPC优化" }),
+        hover = translate({
+            en = "Optimize network rpc transmission, out-of-order sending of RPCs, may have unexpected situations",
+            zh = "优化网络RPC传输, 并行发送RPC, 可能导致意外的情况"
+        }),
+        options = toggle,
+        default = true,
+    },
+    {
+        name = "NetworkOptEntity",
+        label = translate({ en = "Network Entity Optimizations", zh = "网络实体优化" }),
+        hover = translate({
+            en = "Optimize network entity transmission, out-of-order sending of entities, may have unexpected situations",
+            zh = "优化网络实体传输, 并行发送实体, 可能导致意外的情况"
+        }),
+        options = toggle,
+        default = true,
     },
     {
         name = "ModBlackList",
@@ -194,9 +257,9 @@ configuration_options = {
         label = translate({ en = "Enable Profiler Command", zh = "启用性能分析控制台命令" }),
         hover = translate({ en = "ProfilerJit.start | ProfilerJit.stop", zh = "ProfilerJit.start | ProfilerJit.stop" }),
         options = {
-            { description = translate({en = "off", zh = "关闭"}),  data = "off" },
-            { description = translate({en = "Detailed Sampling Mode", zh = "详细采样模式"}),  data = "fzvp" },
-            { description = translate({en = "Origin Sampling Mode", zh = "原始采样模式"}), data = "Gz" },
+            { description = translate({ en = "off", zh = "关闭" }), data = "off" },
+            { description = translate({ en = "Detailed Sampling Mode", zh = "详细采样模式" }), data = "fzvp" },
+            { description = translate({ en = "Origin Sampling Mode", zh = "原始采样模式" }), data = "Gz" },
         },
         default = 'off'
     },
@@ -204,8 +267,8 @@ configuration_options = {
         name = "EnableTracy",
         label = translate({ en = "Enable Tracy", zh = "启用性能追踪" }),
         options = {
-            { description = translate({en = "off", zh = "关闭"}),  data = "off" },
-            { description = translate({en = "on", zh = "开启"}),  data = "on" },
+            { description = translate({ en = "off", zh = "关闭" }), data = "off" },
+            { description = translate({ en = "on", zh = "开启" }), data = "on" },
         },
         default = 'off'
     }
