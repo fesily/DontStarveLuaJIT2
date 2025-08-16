@@ -121,13 +121,24 @@ static bool check_crash() {
     return true;
 }
 
+/* 把字符串转换成hex数组*/
+std::string String2Hex(std::string_view str) {
+    std::string hex;
+    hex.reserve(str.size() * 3);
+    for (size_t i = 0; i < str.size(); ++i) {
+        hex += fmt::format("{:02x} ", static_cast<uint8_t>(str[i]));
+    }
+    return hex;
+}
+
 void DisableScriptZip() {
     if (!InjectorConfig::instance().DisableGameScriptsZip) {
         return;
     }
     // DEV=databundles/scripts.zip
     auto key = "DEV=databundles/scripts.zip"sv;
-    function_relocation::MemorySignature signature = {key.data(), 0};
+    auto key1 = String2Hex(key);
+    function_relocation::MemorySignature signature = {key1.c_str(), 0};
     signature.prot_flag = GUM_PAGE_READ;
     if (signature.scan(nullptr)) {
         gum_memory_write((void *) signature.target_address, (const guint8 *) "DEV=databundles/script1.zip", key.size());
