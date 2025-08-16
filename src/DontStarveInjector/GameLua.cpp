@@ -573,28 +573,12 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
     }
 }
 
-int set_render_fps(lua_State *L) {
-    auto& ctx = GetGameLuaContext();
-    int fps = ctx->_luaL_checkinteger(L, 1);
-    /* check lua callback */
-    ctx->_luaL_checktype(L, 2, LUA_TFUNCTION);
-    int old_fps = DS_LUAJIT_set_target_fps(fps, 0b01);
-    if (old_fps > 0) {
-        // call cb
-        ctx->_lua_pushvalue(L, 2);
-        ctx->_lua_pcall(L, 0, 0, 0);
-        DS_LUAJIT_set_target_fps(old_fps, 0b01);
-    }
-    return 0;
-}
+// luaL_Reg GameInjectorModule[] = {
+//     {nullptr, nullptr}
+// };
 
-luaL_Reg GameInjectorModule[] = {
-    {"set_render_fps", set_render_fps},
-    {nullptr, nullptr}
-};
-
-DONTSTARVEINJECTOR_API int luaopen_injector(lua_State *L) {
-    auto& ctx = GetGameLuaContext();
-    ctx->_luaL_register(L, "JitModInjector", GameInjectorModule);
-    return 1;
-}
+// DONTSTARVEINJECTOR_API int luaopen_injector(lua_State *L) {
+//     auto& ctx = GetGameLuaContext();
+//     ctx->_luaL_register(L, "JitModInjector", GameInjectorModule);
+//     return 1;
+// }

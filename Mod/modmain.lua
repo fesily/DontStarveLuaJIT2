@@ -236,6 +236,7 @@ local function main()
 	local init_fn = package.loadlib(so_path, "luaopen_injector")
 	if init_fn then
 		init_fn()
+		print("load JitModInjector")
 	end
 
 	local zone = require("jit.zone")
@@ -409,11 +410,9 @@ local function main()
 		local needrestart = false
 		if GetModConfigData("TargetRenderFPS", get_local_config) then
 			local targetfps = GetModConfigData("TargetRenderFPS", get_local_config)
-			if JitModInjector then
-				JitModInjector.set_render_fps(targetfps, function ()
-					print("[luajit]", "Reset fps by SetNetbookMode", targetfps)
-					TheSim:SetNetbookMode(false)
-				end)
+			if injector.DS_LUAJIT_set_target_fps(targetfps, 1) > 0 then
+				print("[luajit]", "Reset fps by SetNetbookMode", targetfps)
+				TheSim:SetNetbookMode(false)
 			end
 		end
 
