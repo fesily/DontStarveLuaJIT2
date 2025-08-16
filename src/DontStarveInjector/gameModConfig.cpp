@@ -41,7 +41,7 @@ static void protect_memory_writer(T *addr, T val) {
     gum_mprotect(addr, sizeof(T), prot);
 };
 
-float frame_time = 1.0 / 30;
+float frame_time_s = 1.0 / 30;
 static float *fps_ptr;
 static function_relocation::MemorySignature set_notebook_mode{"F3 0F 11 89 D8 01 00 00", -0x3E};
 static void set_notebook_mode_config_hook(void *) {}
@@ -178,7 +178,7 @@ DONTSTARVEINJECTOR_API int DS_LUAJIT_set_target_fps(int fps, int tt) {
             auto old = fps_ptr[3];
             fps_ptr[1] = val;
             fps_ptr[3] = val2;
-            frame_time = std::min(val, 1 / 30.0f);
+            frame_time_s = std::min(val, 1 / 30.0f);
             game_configs.render_fps = fps;
             return old;
         }

@@ -33,42 +33,25 @@ typedef uint32_t TracyCZoneCtx;
 #include <fstream>
 #endif
 
-static uint64_t get_time_ms() {
-#ifdef _WIN32
-    uint64_t ticks = __rdtsc();
-    LARGE_INTEGER freq;
-    QueryPerformanceFrequency(&freq);
-    return (ticks / freq.QuadPart) * 1000;// 时钟周期转换为毫秒
-#elif defined(__APPLE__)
-    // macOS (ARM): 使用 mach_absolute_time 获取高精度时间
-    mach_timebase_info_data_t timebase;
-    mach_timebase_info(&timebase);
-    uint64_t ticks = mach_absolute_time();
-    return (ticks * timebase.numer / timebase.denom) / 1e6;// 纳秒转换为毫秒
-#elif defined(__linux__)
-    // Linux (ARM): 使用 clock_gettime 获取高精度时间
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec * 1000 + ts.tv_nsec / 1e6;// 秒和纳秒转换为毫秒
-#else
-#error "not support"
-    return 0;
-#endif
+static uint64_t get_time_ns() {
+    auto now = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
 }
 struct Profiler {
     std::list<TracyCZoneCtx> ctx;
-    uint64_t start_time;
+    uint64_t start_time_ns;
     int stack;
     lua_State *L;
 };
 static thread_local Profiler profiler;
 extern void (*lua_gc_func)(void *L, int, int);
-static float frame_gc_time = 0;
+static int frame_gc_time_ns = 0;
 static bool tracy_active = 0;
-extern float frame_time;
+extern float frame_time_s;
+constexpr auto frame_gc_time_default_ns = 10 * 1e3;
 DONTSTARVEINJECTOR_API bool DS_LUAJIT_enable_framegc(bool enable) {
-    frame_gc_time = enable ? frame_time * 1000 : 0.01;
-    return frame_gc_time - 0.01f < 0.01f;
+    frame_gc_time_ns = enable ? frame_time_s * 1e9 : frame_gc_time_default_ns;
+    return frame_gc_time_ns == frame_gc_time_default_ns;
 }
 static thread_local std::string thread_name;
 static void set_thread_name(uint32_t thread_id, const char *name) {
@@ -96,7 +79,7 @@ static int64_t hook_profiler_push(void *self, const char *zone, const char *sour
     bool is_connected = tracy_active;
     auto &p = profiler;
     if ("Update"sv == zone) {
-        if (frame_gc_time) {
+        if (frame_gc_time_ns) {
             static struct {
                 std::atomic_bool vaild;
                 std::mutex mtx;
@@ -116,7 +99,7 @@ static int64_t hook_profiler_push(void *self, const char *zone, const char *sour
             }
 
             if (thread_name == "SimUpdateThread"sv)
-                p.start_time = get_time_ms();
+                p.start_time_ns = get_time_ns();
         }
         if (is_connected)
             ___tracy_emit_frame_mark(0);
@@ -139,7 +122,7 @@ struct ProfilerHookerBase {
         --p.stack;
         if (p.stack < 0) {
             p.stack = 0;
-        } else if (p.stack == 0 && p.start_time) {
+        } else if (p.stack == 0 && p.start_time_ns) {
             if (p.L) {
                 /*
                     Performce one update time range
@@ -147,16 +130,23 @@ struct ProfilerHookerBase {
                     < 33ms: normal
                     >= 33ms: bad
                 */
-                constexpr float frame_max_time = 20;
+                constexpr float frame_max_time_ns = 33 * 1e6;
+                constexpr float frame_good_max_time_ns = 20 * 1e6;
                 auto &p = profiler;
-                auto now = get_time_ms();
-                auto left_time = std::min<float>(frame_max_time - float(now - p.start_time), frame_gc_time);
-                p.start_time = 0;
-                if (left_time > 0) {
-                    T::GC(p.L, left_time, now);
+                auto now = get_time_ns();
+                auto used_time = float(now - p.start_time_ns);
+                int left_time_ns = frame_gc_time_ns - used_time;
+                if (used_time > frame_max_time_ns) {
+                    left_time_ns = 0;
+                } else if (left_time_ns > frame_good_max_time_ns) {
+                    left_time_ns = frame_gc_time_default_ns;
+                }
+                p.start_time_ns = 0;
+                if (left_time_ns > 0) {
+                    T::GC(p.L, left_time_ns, now);
                 }
             } else {
-                p.start_time = 0;
+                p.start_time_ns = 0;
             }
         }
         if (!tracy_active)
@@ -171,20 +161,20 @@ struct ProfilerHookerBase {
 };
 
 struct ProfilerHookerTimeLimit : ProfilerHookerBase<ProfilerHookerTimeLimit> {
-    inline static void GC(void *L, float left_time, uint64_t nowms) {
+    inline static void GC(void *L, int left_time, uint64_t now) {
         ZoneScopedN("frame gc");
-        lua_gc_func(L, LUA_GCSTEPTIME, left_time * 1000 * 1000 * 0.8f);
+        lua_gc_func(L, LUA_GCSTEPTIME, int(left_time * 0.8f));
         lua_gc_func(L, LUA_GCSTEP2, 0);
     }
 };
 
 struct ProfilerHookerNoTimeLimit : ProfilerHookerBase<ProfilerHookerNoTimeLimit> {
-    inline static void GC(void *L, float left_time, uint64_t nowms) {
-        nowms += left_time;
+    inline static void GC(void *L, int left_time, uint64_t now) {
+        now += left_time;
         ZoneScopedN("frame gc");
         do {
             lua_gc_func(L, LUA_GCSTEP, 0);
-        } while (get_time_ms() < nowms);
+        } while (get_time_ns() < now);
     }
 };
 
@@ -200,7 +190,7 @@ void lua_event_notifyer(LUA_EVENT ev, lua_State *L) {
             //gum_luajit_profiler_update_thread_id(nullptr, gum_process_get_current_thread_id());
             return;
         case LUA_EVENT::call_lua_gc:
-            profiler.L = profiler.start_time ? L : 0;
+            profiler.L = profiler.start_time_ns ? L : 0;
             break;
     }
     //gum_luajit_profiler_update_thread_id(L, gum_process_get_current_thread_id());
