@@ -428,6 +428,19 @@ void init_luajit_io(GumModule *luaModule) {
     SET_LUAJIT_API_FUNC(lj_need_transform_path);
     SET_LUAJIT_API_FUNC(lj_gc_fullgc_external);
     lua_gc_func = (decltype(lua_gc_func)) gum_module_find_export_by_name(luaModule, "lua_gc");
+#ifdef _WIN32
+    gum_process_enumerate_modules([](GumModule * module, gpointer user_data)->gboolean {
+        auto module_name = std::string{gum_module_get_name(module)};
+        std::transform(module_name.begin(), module_name.end(), module_name.begin(), ::tolower);
+        if (!module_name.contains("msvcr90.dll")) return true;
+        auto m = (GumModule *)user_data;
+        auto lj_os_date_strftime = (void**) gum_module_find_export_by_name(m, "lj_os_date_strftime");
+        auto msvcr90__strftime = gum_module_find_export_by_name(module, "strftime");
+        if (lj_os_date_strftime && msvcr90__strftime)
+            *lj_os_date_strftime = (void *) msvcr90__strftime;
+        return false;
+    }, (gpointer)luaModule);
+#endif
 }
 
 void init_luajit_jit_opt(GumModule *luaModule) {
