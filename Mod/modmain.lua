@@ -389,8 +389,8 @@ local function main()
 				workshop_dir = ffi.string(workshop_dir)
 				workshop_dir = workshop_dir .. "/" .. workshop_id .. "/"
 				local io = io2 or io
-				local fp = io.open(workshop_dir .. "install.bat", "r")
-				if fp then
+				local ok, fp = pcall(io.open, workshop_dir .. "install.bat", "r")
+				if ok and fp then
 					fp:close()
 					modmain_path = workshop_dir .. "modmain.lua"
 				end
