@@ -388,7 +388,7 @@ local function main()
 			if workshop_dir ~= nil then
 				workshop_dir = ffi.string(workshop_dir)
 				workshop_dir = workshop_dir .. "/" .. workshop_id .. "/"
-				local io = io2 or io
+				local io = rawget(_G, "io2") or io
 				local ok, fp = pcall(io.open, workshop_dir .. "install.bat", "r")
 				if ok and fp then
 					fp:close()
