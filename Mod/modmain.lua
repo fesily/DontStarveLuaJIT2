@@ -103,6 +103,152 @@ local function main()
 			return old_GetModConfigData(key, get_local_config)
 		end
 	end
+
+	local function read_luajit_encryptmods()
+		local fp = io.open("unsafedata/luajit_encryptmods.json", "r")
+		if fp then
+			local str = fp:read("*a")
+			fp:close()
+			return json.decode(str)
+		end
+	end
+	local function write_luajit_encryptmods(data)
+		local fp = io.open("unsafedata/luajit_encryptmods.json", "w")
+		if fp then
+			fp:write(json.encode(data))
+			fp:close()
+		end
+	end
+	local AutoDetectEncryptedMod = GetModConfigData("AutoDetectEncryptedMod")
+
+	local EncryptedModManager = AutoDetectEncryptedMod and read_luajit_encryptmods()
+	if EncryptedModManager == nil or EncryptedModManager.version ~= APP_VERSION then
+		EncryptedModManager = { EncryptedMods = {}, frostxxMods = {}, version = APP_VERSION, hash = 0 }
+	end
+	local bit = require 'bit'
+
+	local function HashString(str)
+		local hash = 0
+		for i = 1, #str do
+			hash = bit.bxor(hash, str:byte(i))
+		end
+		return hash
+	end
+
+	local function HashModDirectoryNames(ModDirectoryNames)
+		local hash = 0
+		for i, v in ipairs(ModDirectoryNames) do
+			hash = bit.bxor(hash, HashString(v))
+		end
+		return hash
+	end
+
+	local function InitEncryptedModManager()
+		local self = EncryptedModManager
+		local ModDirectoryNames = TheSim:GetModDirectoryNames()
+		if not ModDirectoryNames then return end
+
+		local hash = HashModDirectoryNames(ModDirectoryNames)
+		if hash == self.hash then
+			return
+		end
+
+		local function is_visible_byte(b)
+			return (b >= 32 and b <= 126)
+		end
+
+		-- 检查字符串中所有不可见字符是否属于合法 UTF-8 编码
+		local function all_invisible_chars_are_utf8(str)
+			local i = 1
+			local len = #str
+			while i <= len do
+				local b = str:byte(i)
+				if not is_visible_byte(b) then
+					-- 检查 UTF-8 多字节序列
+					if b >= 0 and b <= 127 then
+						-- 单字节不可见字符，允许常见控制符（如 \n, \r, \t, \v, \f, \b, \a, ESC）
+						if not (b == 9 or b == 10 or b == 13 or b == 27) then
+							return false
+						end
+						i = i + 1
+					elseif b >= 194 and b <= 223 then
+						-- 2字节序列
+						if i + 1 > len then return false end
+						local b2 = str:byte(i + 1)
+						if not (b2 >= 128 and b2 <= 191) then return false end
+						i = i + 2
+					elseif b >= 224 and b <= 239 then
+						-- 3字节序列
+						if i + 2 > len then return false end
+						local b2, b3 = str:byte(i + 1), str:byte(i + 2)
+						if not (b2 >= 128 and b2 <= 191 and b3 >= 128 and b3 <= 191) then return false end
+						i = i + 3
+					elseif b >= 240 and b <= 244 then
+						-- 4字节序列
+						if i + 3 > len then return false end
+						local b2, b3, b4 = str:byte(i + 1), str:byte(i + 2), str:byte(i + 3)
+						if not (b2 >= 128 and b2 <= 191 and b3 >= 128 and b3 <= 191 and b4 >= 128 and b4 <= 191) then return false end
+						i = i + 4
+					else
+						return false
+					end
+				else
+					i = i + 1
+				end
+			end
+			return true
+		end
+		local function check_encrypted(filename, modname)
+			local limit = 64
+			for line in io.lines(filename) do
+				if limit <= 12 then
+					if line:find("frostxx@qq.com", 1, true) then
+						self.frostxxMods[modname] = true
+						print(filename, modname, " is frostxx mod!")
+					end
+				end
+				---@cast line string
+				if #line > 1024 then
+					self.EncryptedMods[modname] = true
+					print(filename, modname, " is encrypted! by line length")
+					return true
+				end
+				if not all_invisible_chars_are_utf8(line) then
+					self.EncryptedMods[modname] = true
+					print(filename, modname, " is encrypted! by invalid utf8", line)
+					return true
+				end
+
+				limit = limit - 1
+				if limit <= 0 then
+					return
+				end
+			end
+		end
+
+		local MODS_ROOT = "../mods/"
+		for i, modname in ipairs(ModDirectoryNames) do
+			if self.EncryptedMods[modname] == nil then
+				local ok, isencrypted = pcall(check_encrypted, MODS_ROOT .. modname .. "/modmain.lua", modname)
+				if ok and not isencrypted then
+					pcall(check_encrypted, MODS_ROOT .. modname .. "/modworldgenmain.lua", modname)
+				end
+			end
+		end
+		write_luajit_encryptmods(EncryptedModManager)
+	end
+
+	if AutoDetectEncryptedMod then
+		InitEncryptedModManager()
+	end
+
+	if GetModConfigData("ForceDisableTailCall") then
+		local jit_util = require 'jit.util'
+		jit_util.disabletailcall(true)
+	end
+
+
+
 	local function inject_server_only_mod()
 		local old_GetServerModNames = KnownModIndex.GetServerModNames
 		local old_GetServerModNamesTable = KnownModIndex.GetServerModNamesTable
@@ -281,50 +427,43 @@ local function main()
 
 	local enbaleBlackList = GetModConfigData("ModBlackList")
 	local prefix = "../mods/workshop-"
+	local modname_prefix_pos = #"../mods/" + 1
 	local blacklists = {}
+	local SlowTailCallModList = EncryptedModManager.EncryptedMods
+	local function decrypt_file(filename)
+		local str = injector.DS_LUAJIT_Fengxun_Decrypt(filename)
+		if str ~= nil then
+			return loadstring(ffi.string(str), filename)
+		end
+	end
+	local function startWith(str, prefix)
+		return str:find(prefix, 1, true) == 1
+	end
 	if true then
 		for i in ipairs(blacklists) do
 			blacklists[i] = prefix .. blacklists[i]
 		end
-		local function startWith(str, prefix)
-			return str:find(prefix, 1, true) == 1
-		end
-		local frostxxMods = {}
+
 		local _kleiloadlua = kleiloadlua
-		local function decrypt_file(filename)
-			local str = injector.DS_LUAJIT_Fengxun_Decrypt(filename)
-			if str ~= nil then
-				return loadstring(ffi.string(str), filename)
-			end
-		end
-		local function isfrostxx(filename)
-			for l in io.lines(filename) do
-				if l:find("frostxx@qq.com", 1, true) then
-					---@type string
-					local left = filename:sub(#prefix + 1)
-					local pos, id = left:find('(%d+)')
-					if pos then
-						frostxxMods[#frostxxMods + 1] = prefix .. left:sub(pos, id)
-					end
-					return true
-				end
-			end
-			return false
-		end
+
 		rawset(_G, "kleiloadlua", function(filename, ...)
-			for _, frostxxMod in ipairs(frostxxMods) do
-				if startWith(filename, frostxxMod) then
-					local fn = decrypt_file(filename)
-					if fn then
-						return fn
-					end
+			---@cast filename string
+			local modname
+			if startWith(filename, prefix) then
+				-- fixed pos = ../mods/
+				local pos = filename:find("/", #prefix + 1, true)
+				if pos then
+					modname = filename:sub(modname_prefix_pos, pos - 1)
 				end
 			end
-			if filename:find("modmain.lua", 1, true) or filename:find("modworldgenmain.lua", 1, true) then
-				local ok, needdecrypt = pcall(isfrostxx, filename)
-				if ok and needdecrypt then
-					filename = filename:gsub("modmain.lua", "modmain0.lua")
-					filename = filename:gsub("modworldgenmain.lua", "modworldgenmain0.lua")
+			if modname then
+				if EncryptedModManager.frostxxMods[modname] and not filename:find('modinfo.lua', 1, true) then
+					if filename:find("modmain.lua", 1, true) then
+						filename = filename:gsub("modmain.lua", "modmain0.lua")
+					elseif filename:find("modworldgenmain.lua", 1, true) then
+						filename = filename:gsub("modworldgenmain.lua", "modworldgenmain0.lua")
+					end
+
 					local fn = decrypt_file(filename)
 					if fn then
 						return fn
@@ -344,24 +483,53 @@ local function main()
 			return m
 		end)
 	end
+
+	if GetModConfigData("SlowTailCall") then
+		local function getmodname(env)
+			return env.modname
+		end
+		debug.getregistry()["LJ_DS_dynamic_tailcall_cb"] = function(reader, data, chunkname, mode)
+			if not chunkname then
+				return true, "no chunkname"
+			end
+
+			if startWith(chunkname, "@scripts/") then
+				return false, "@scripts"
+			end
+
+			local env = getfenv(3)
+			local ok, modname = pcall(getmodname, env)
+			if not ok or not modname then
+				return false, "no modname"
+			end
+			if modname and SlowTailCallModList[modname] then
+				return true, "slow tailcall"
+			end
+
+			if data == chunkname then
+				return false, "no filename"
+			end
+
+			return false, ""
+		end
+	end
+
 	AddSimPostInit(function()
 		if enabled_jit then
 			jit.on()
 		end
 	end)
 
-	local function create_luajit_config(modmain_path, server_disable_luajit, logic_fps, always_enable_mod, config)
+	local function create_luajit_config(modmain_path, server_disable_luajit, always_enable_mod, config)
 		if config == nil then
 			return {
 				modmain_path = modmain_path,
 				server_disable_luajit = server_disable_luajit,
-				logic_fps = logic_fps,
 				always_enable_mod = always_enable_mod,
 			}
 		else
 			config.modmain_path = modmain_path or config.modmain_path
 			config.server_disable_luajit = server_disable_luajit or config.server_disable_luajit
-			config.logic_fps = logic_fps or config.logic_fps
 			config.always_enable_mod = always_enable_mod or config.always_enable_mod
 		end
 	end
@@ -398,7 +566,7 @@ local function main()
 		end
 		if not TheNet:IsDedicated() then
 			write_luajit_config(create_luajit_config(modmain_path, GetModConfigData("DisableJITWhenServer"),
-				GetModConfigData("TargetLogicFPS")), GetModConfigData("AlwaysEnableMod"))
+				GetModConfigData("AlwaysEnableMod")))
 		end
 	end
 	if GetModConfigData("EnableTracy") == "on" then
@@ -415,13 +583,6 @@ local function main()
 				TheSim:SetNetbookMode(false)
 			end
 		end
-
-		-- if GetModConfigData("TargetLogicFPS", get_local_config) then
-		-- 	local targetfps = GetModConfigData("TargetLogicFPS", get_local_config)
-		-- 	if injector.DS_LUAJIT_set_target_fps(targetfps, 2) ~= targetfps then
-		-- 		needrestart = true
-		-- 	end
-		-- end
 
 		-- if GetModConfigData("ClientNetWorkTick", get_local_config) then
 		-- 	local targetfps = GetModConfigData("ClientNetWorkTick", get_local_config)
@@ -485,7 +646,7 @@ local function main()
 		function net_mt:SendRPCToServer2(code, packetPriority, reliability, channel, ...)
 			c_packetPriority[0] = packetPriority or default_packetPriority
 			c_reliability[0] = reliability or default_reliability
-			c_channel[0] = channel or  alloc_rpc_channel(code)
+			c_channel[0] = channel or alloc_rpc_channel(code)
 			injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
 			return old_SendRPCToServer(self, code, ...)
 		end
@@ -493,7 +654,7 @@ local function main()
 		function net_mt:SendRPCToClient2(code, packetPriority, reliability, channel, ...)
 			c_packetPriority[0] = packetPriority or default_packetPriority
 			c_reliability[0] = reliability or default_reliability
-			c_channel[0] = channel or  alloc_rpc_channel(code)
+			c_channel[0] = channel or alloc_rpc_channel(code)
 			injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
 			return old_SendRPCToClient(self, code, ...)
 		end
@@ -501,7 +662,7 @@ local function main()
 		function net_mt:SendRPCToShard2(code, packetPriority, reliability, channel, ...)
 			c_packetPriority[0] = packetPriority or default_packetPriority
 			c_reliability[0] = reliability or default_reliability
-			c_channel[0] = channel or  alloc_rpc_channel(code)
+			c_channel[0] = channel or alloc_rpc_channel(code)
 			injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
 			return old_SendRPCToShard(self, code, ...)
 		end
@@ -593,9 +754,8 @@ local function main()
 		injector.DS_LUAJIT_disable_fullgc(tonumber(GetModConfigData("DisableForceFullGC")))
 	end
 
-	if GetModConfigData("EnableFrameGC") ~= 0 then
+	if GetModConfigData("EnableFrameGC") then
 		injector.DS_LUAJIT_replace_profiler_api()
-		local frame_gc_time = tonumber(GetModConfigData("EnableFrameGC"))
 		injector.DS_LUAJIT_enable_framegc(true)
 
 		local old_OnSimPaused = _G.OnSimPaused
@@ -633,7 +793,7 @@ local function main()
 			end)
 			return num
 		end
-		
+
 		if injector.DS_LUAJIT_get_mod_version() ~= nil and should_show_dig() then
 			local version = ffi.string(injector.DS_LUAJIT_get_mod_version())
 			if Version2Number(modinfo.version) < Version2Number(version) then
@@ -688,19 +848,6 @@ local function main()
 						}))
 				end
 			end
-
-			-- for _, v in pairs(self.dialog.actions.items) do
-			-- 	if v.name == "应用" then
-			-- 		local old_onclick = v.onclick
-			-- 		v.onclick = function(...)
-			-- 			old_onclick(...)
-			-- 			write_luajit_config(create_luajit_config(nil, nil,
-			-- 				GetModConfigData("TargetLogicFPS", InGamePlay()), read_config_file()))
-			-- 			load_prefix_config(InGamePlay())
-			-- 		end
-			-- 		break
-			-- 	end
-			-- end
 
 			local actions = self.dialog.actions
 			if actions then

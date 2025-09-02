@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "1.7.16"
+version = "1.8.0"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -93,24 +93,6 @@ configuration_options = {
         options = toggle,
         default = true
     },
-    -- {
-    --     name = "TargetLogicFPS",
-    --     label = translate({ en = "Logic FPS", zh = "逻辑帧率" }),
-    --     hover = translate({
-    --         en = "Update FPS of lua scripts. Do not change unless you know what you are doing!!",
-    --         zh = "lua脚本执行帧率,不要乱改,可能会爆炸!!"
-    --     }),
-    --     options = {
-    --         { description = translate({ en = "off", zh = "禁用" }), data = 30 },
-    --         { description = "45fps", data = 45 },
-    --         { description = "60fps", data = 60 },
-    --         { description = "75fps", data = 75 },
-    --         { description = "90fps", data = 90 },
-    --         { description = "105fps", data = 105 },
-    --         { description = "120fps", data = 120 },
-    --     },
-    --     default = 30
-    -- },
     {
         name = "TargetRenderFPS",
         label = translate({ en = "Render FPS", zh = "渲染帧率" }),
@@ -188,35 +170,26 @@ configuration_options = {
     --     },
     --     default = 15
     -- },
-    -- {
-    --     name = "JitOpt",
-    --     label = translate({ en = "JIT Optimizations", zh = "JIT优化选项" }),
-    --     hover = translate({
-    --         en = "May become faster or slower.",
-    --         zh = "可能更快, 可能更慢."
-    --     }),
-    --     options = toggle,
-    --     default = true,
-    -- },
-    -- {
-    --     name = "SlowTailCall",
-    --     label = translate({ en = "Slow Tail Call", zh = "慢速尾调用" }),
-    --     hover = translate({
-    --         zh = "模拟原生lua的尾调用堆栈, 加强加密mod兼容, 但会导致尾调用性能下降",
-    --         en = "Simulate the tail call stack of native lua, enhance compatibility with encrypted mods, but will cause a performance drop in tail calls"
-    --     }),
-    --     options = toggle,
-    --     default = false
-    -- },
     {
-        name = "AlwaysEnableMod",
-        label = translate({ en = "Always Enable Mod", zh = "总是启用mod" }),
+        name = "SlowTailCall",
+        label = translate({ en = "Slow Tail Call", zh = "慢速尾调用" }),
         hover = translate({
-            zh = "强制启用当前mod,即使它在mod设置中没有启用",
-            en = "Force enable the current mod, even if it is not enabled in the mod settings"
+            zh = "模拟原生lua的尾调用堆栈, 加强加密mod兼容, 但会导致性能下降.搭配<启发式检测加密mod>选项食用",
+            en =
+            "Simulate the tail call stack of native lua, enhance compatibility with encrypted mods, but will cause a performance drop.\nUse with <Heuristic Detection of Encrypted Mods> option"
         }),
         options = toggle,
-        default = true,
+        default = false
+    },
+    {
+        name = "AutoDetectEncryptedMod",
+        label = translate({ en = "Heuristic Detection of Encrypted Mods", zh = "启发式检测加密mod" }),
+        hover = translate({
+            en = "Automatically detect and enable compatibility for encrypted mods",
+            zh = "自动检测并启用加密mod的兼容性"
+        }),
+        options = toggle,
+        default = true
     },
     {
         name = "NetworkOpt",
@@ -237,6 +210,26 @@ configuration_options = {
         }),
         options = toggle,
         default = true,
+    },
+    {
+        name = "AlwaysEnableMod",
+        label = translate({ en = "Always Enable Mod", zh = "总是启用mod" }),
+        hover = translate({
+            zh = "强制启用当前mod,即使它在mod设置中没有启用",
+            en = "Force enable the current mod, even if it is not enabled in the mod settings"
+        }),
+        options = toggle,
+        default = true,
+    },
+    {
+        name = "ForceDisableTailCall",
+        label = translate({ en = "Force Disable Tail Call", zh = "强制禁用尾调用" }),
+        hover = translate({
+            zh = "强制禁用尾调用优化, 仅用于区别是否因尾调用问题导致的mod不兼容, 非调试不应该使用",
+            en = "Force disable tail call optimization, used to determine if mod incompatibility is caused by inconsistent tail calls, should not be used in non-debugging"
+        }),
+        options = toggle,
+        default = false
     },
     {
         name = "ModBlackList",

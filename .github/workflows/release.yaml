@@ -89,5 +89,6 @@ jobs:
           artifacts: '${{ matrix.target}}_Mod.zip'
           allowUpdates: true
           prerelease: true
+          makeLatest: true
           tag: "preview"
           commit: ${{ github.sha }}
