@@ -269,6 +269,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
             continue;
         // fix the offset by module
         if (moduleMain.find_function(target) == nullptr) {
+            spdlog::info("can't find function at address: {}", (void *) target);
             auto all_address =
                     moduleMain.address_functions | std::ranges::views::transform([](auto &p) { return p.first; }) |
                     ranges::to<std::vector>();

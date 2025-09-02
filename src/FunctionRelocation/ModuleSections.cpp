@@ -119,6 +119,8 @@ namespace function_relocation {
                 msec.got_plt = {details->address, details->size};
             else if (details->name == ".bss"sv || details->name == "__bss"sv)
                 msec.bss = {details->address, details->size};
+            else if (details->name == ".eh_frame" || details->name == "__eh_frame")
+                msec.ehframe = {details->address, details->size};
             msec.sections[details->name] = {details->address, details->size};
             return TRUE;
         }, (void *) &sections);

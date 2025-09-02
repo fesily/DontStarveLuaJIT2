@@ -14,7 +14,7 @@ set(SOURCE
 )
 
 find_package(spdlog CONFIG REQUIRED)
- 
+find_package(libdwarf CONFIG REQUIRED)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_library(function_relocation STATIC ${SOURCE})
@@ -28,4 +28,5 @@ if (MSVC)
     target_link_libraries(function_relocation PRIVATE pe-parse::pe-parse)
 else()
     target_link_libraries(function_relocation PRIVATE ${KEYSTONE_LIBRARIES})
+    target_link_libraries(function_relocation PRIVATE libdwarf::dwarf)
 endif ()

@@ -49,6 +49,9 @@
     },
     {
       "name": "slikenet"
+    },
+    {
+      "name": "libdwarf"
     }
   ]
 }

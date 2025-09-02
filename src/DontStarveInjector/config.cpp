@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include <stdio.h>
+#include <string>
 #include "util/platform.hpp"
 
 InjectorConfig &InjectorConfig::instance() {
@@ -9,5 +10,6 @@ InjectorConfig &InjectorConfig::instance() {
 
 InjectorConfig::EnvOrCmdOptFlag::operator bool() const {
     if (getenv(key) != nullptr) return true;
-    return get_cmd().contains('-' + std::string{key});
+    static auto cmd = get_cmd();
+    return cmd.contains('-' + std::string{key});
 }

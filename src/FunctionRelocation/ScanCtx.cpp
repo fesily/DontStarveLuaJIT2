@@ -1,5 +1,6 @@
-#include  "ScanCtx.hpp"
+#include "ScanCtx.hpp"
 
+#include <stdio.h>
 #include <unordered_set>
 #include <vector>
 #include <map>
@@ -7,6 +8,11 @@
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
+#else
+#include <unistd.h>
+#include <fcntl.h>
+#include <libdwarf.h>
+#include <dwarf.h>
 #endif
 
 namespace function_relocation {
@@ -244,8 +250,6 @@ namespace function_relocation {
             }
             return jump_table_address;
         }
-
-
     };
 
     ScanCtx::ScanCtx(ModuleSections &_m, uintptr_t scan_address) : m{_m},
@@ -254,7 +258,7 @@ namespace function_relocation {
                                                                         (m.text.base_address + m.text.size -
                                                                          std::max<uintptr_t>(m.text.base_address,
                                                                                              scan_address)) /
-                                                                        sizeof(char)} {
+                                                                                sizeof(char)} {
     }
 
     void ScanCtx::function_end(uintptr_t addr) {
@@ -296,7 +300,7 @@ namespace function_relocation {
         std::unordered_map<uint64_t, std::unordered_set<uint64_t>> maybeFunctions;
         auto range = ctx.m.text;
         for (auto ptr = (uint8_t *) range.base_address, end = (uint8_t *) range.base_address + range.size;
-                ptr < end;) {
+             ptr < end;) {
             auto code = *ptr;
             // call
             if (code == 0xE8 || code == 0xE9) {
@@ -314,12 +318,12 @@ namespace function_relocation {
             }
             ++ptr;
         }
-#ifdef _WIN32
         auto module_base_address = ctx.m.details.range.base_address;
+#ifdef _WIN32
         range = ctx.m.pdata;
         std::vector<std::pair<RUNTIME_FUNCTION, std::vector<RUNTIME_FUNCTION>>> runtime_functions;
         for (auto ptr = (uint8_t *) range.base_address, end = (uint8_t *) range.base_address + range.size;
-        ptr < end; ptr+=12) {
+             ptr < end; ptr += 12) {
             PRUNTIME_FUNCTION function = (PRUNTIME_FUNCTION) ptr;
             if (function->BeginAddress == 0) break;
             if (!runtime_functions.empty() && runtime_functions.back().first.EndAddress == function->BeginAddress) {
@@ -333,6 +337,57 @@ namespace function_relocation {
                     ctx.sureFunctions[blockBeing] = 0;
             }
         }
+#else
+        if (gum_module_get_path(gum_process_get_main_module()) == ctx.m.details.path) {
+            module_base_address = 0;
+        }
+        auto &ehframe = ctx.m.ehframe;
+        int fd = open(ctx.m.details.path.c_str(), O_RDONLY);
+        do {
+            Dwarf_Debug dbg = nullptr;
+            Dwarf_Error err = nullptr;
+
+            // Initialize libdwarf with dwarf_init_b
+            // DW_DLC_READ might be defined as DW_ACCESS_READ in some versions
+            int res = dwarf_init_b(fd, DW_GROUPNUMBER_ANY, nullptr, nullptr, &dbg, &err);
+            if (res != DW_DLV_OK) {
+                break;
+            }
+
+            // 获取 .eh_frame 信息
+            Dwarf_Cie *cie_data = 0;
+            Dwarf_Signed cie_count = 0;
+            Dwarf_Fde *fde_data = 0;
+            Dwarf_Signed fde_count = 0;
+
+            res = dwarf_get_fde_list_eh(dbg, &cie_data, &cie_count, &fde_data, &fde_count, &err);
+            if (res != DW_DLV_OK) {
+                break;
+            }
+
+            // 打印 FDE 信息
+            for (Dwarf_Signed i = 0; i < fde_count; i++) {
+                Dwarf_Addr low_pc = 0;
+                Dwarf_Unsigned func_length = 0;
+                res = dwarf_get_fde_range(fde_data[i], &low_pc, &func_length, NULL, NULL, NULL, NULL, NULL, &err);
+                if (res == DW_DLV_OK) {
+                    auto addr = low_pc + module_base_address;
+                    if (ctx.m.in_text(addr))
+                        ctx.sureFunctions[addr] = 0;
+                }
+            }
+
+            for (Dwarf_Signed i = 0; i < cie_count; i++) {
+                dwarf_dealloc(dbg, cie_data[i], DW_DLA_CIE);
+            }
+            for (Dwarf_Signed i = 0; i < fde_count; i++) {
+                dwarf_dealloc(dbg, fde_data[i], DW_DLA_FDE);
+            }
+            dwarf_dealloc(dbg, cie_data, DW_DLA_LIST);
+            dwarf_dealloc(dbg, fde_data, DW_DLA_LIST);
+            dwarf_finish(dbg);
+        } while (0);
+        close(fd);
 #endif
         return maybeFunctions;
     }
@@ -386,7 +441,6 @@ namespace function_relocation {
                                 fprintf(stderr, "find: %s\n", m.known_functions[imm].c_str());
                             }
 #endif
-
                     }
                 }
             } else if (insn.id == X86_INS_MOV || insn.id == X86_INS_LEA) {
@@ -415,28 +469,26 @@ namespace function_relocation {
                                                                          operand.reg,
                                                                          {},
                                                                          next_insn_address +
-                                                                         size));
+                                                                                 size));
                             }
                         }
                     }
                 }
             }
         }
-#ifndef NDEBUG
+#if NDEBUG && _WIN32
         for (const auto &[address, func]: known_functions) {
             const auto guess_size = guess_function_size(address);
             if (func.size && func.size != guess_size) {
                 fprintf(stderr, "%s",
                         fmt::format("{} guess func size failed: {} guess {}\n", func.name.c_str(), func.size,
-                                    guess_size).c_str());
+                                    guess_size)
+                                .c_str());
             }
         }
 #endif
         std::unordered_map<uintptr_t, size_t> function_sizes;
-        auto maybeFuncs = maybeFunctions
-                          | ranges::views::filter([this](auto &p) { return !sureFunctions.contains(p.first); })
-                          | ranges::views::transform([](auto &p) { return std::make_pair(p.first, p.second); })
-                          | ranges::to<std::vector>();
+        auto maybeFuncs = maybeFunctions | ranges::views::filter([this](auto &p) { return !sureFunctions.contains(p.first); }) | ranges::views::transform([](auto &p) { return std::make_pair(p.first, p.second); }) | ranges::to<std::vector>();
 
         std::ranges::sort(maybeFuncs, {}, &decltype(maybeFuncs)::value_type::first);
         for (auto &[addr, ref_addrs]: maybeFuncs) {
@@ -454,8 +506,8 @@ namespace function_relocation {
                                                         : after_functions.front();
             // all ref address in range
             if (std::ranges::all_of(ref_addrs, [=](auto ref_addr) {
-                return ref_addr >= near_address && ref_addr < next_address;
-            })) {
+                    return ref_addr >= near_address && ref_addr < next_address;
+                })) {
                 continue;
             }
             if (!function_sizes.contains(near_address)) {
@@ -487,9 +539,7 @@ namespace function_relocation {
         const auto functions = pre_function();
         for (size_t i = 0; i < functions.size(); i++) {
             const auto address = functions[i];
-            function_limit = known_functions.contains(address) && known_functions.at(address).size != 0 ?
-                             known_functions[address].size + address :
-                             (i + 1 == functions.size() ? 1 : functions[i + 1]);
+            function_limit = known_functions.contains(address) && known_functions.at(address).size != 0 ? known_functions[address].size + address : (i + 1 == functions.size() ? 1 : functions[i + 1]);
 
 #ifndef NDEBUG
             if (function_limit && known_functions.contains(address)) {
@@ -623,8 +673,7 @@ namespace function_relocation {
                             cur_block->consts.emplace_back(str);
                         }
                     }
-                }
-                    break;
+                } break;
                 default:
                     if (insn.id >= X86_INS_JAE && insn.id <= X86_INS_JS) {
                         assert(x86_details.op_count == 1 &&
@@ -684,7 +733,6 @@ namespace function_relocation {
                                     }
                                 }
                             }
-
                         }
                     } else if (x86_details.operands[0].type == X86_OP_REG) {
                         if (x86_details.operands[0].reg == switch_target_reg) {
@@ -717,8 +765,7 @@ namespace function_relocation {
                     const auto &operand = x86_details.operands[1];
                     constexpr auto fixed_scale = sizeof(void *) / sizeof(char) / 2;
                     using fixed_type = int32_t;
-                    if (operand.type == X86_OP_MEM
-                        && operand.mem.scale == fixed_scale) {
+                    if (operand.type == X86_OP_MEM && operand.mem.scale == fixed_scale) {
                         auto switch_jump_table = operand.mem.base;
                         auto jump_table = static_cast<fixed_type *>(guess_switch_jump_table_address(dis,
                                                                                                     switch_jump_table,
@@ -746,4 +793,4 @@ namespace function_relocation {
         }
         return 0;
     }
-}
+}// namespace function_relocation

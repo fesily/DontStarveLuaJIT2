@@ -81,6 +81,9 @@ namespace function_relocation {
         GumMemoryRange plt;
         GumMemoryRange got_plt;
         GumMemoryRange bss;
+#ifndef _WIN32
+        GumMemoryRange ehframe;
+#endif  
         std::unordered_map<std::string, GumMemoryRange> sections;
 #define MODULESECTION_IN_RANGE(name) \
     bool in_##name(uintptr_t address) const { \
@@ -92,7 +95,10 @@ namespace function_relocation {
         MODULESECTION_IN_RANGE(plt)
         MODULESECTION_IN_RANGE(got_plt)
         MODULESECTION_IN_RANGE(bss)
-        
+#ifndef _WIN32
+        MODULESECTION_IN_RANGE(ehframe)
+#endif  
+
 #undef MODULESECTION_IN_RANGE
     bool in_module(uintptr_t address) const {
         return details.range.base_address <= address && address <= details.range.base_address + details.range.size;

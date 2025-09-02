@@ -48,7 +48,7 @@ struct InjectorConfig {
         operator bool() const;
     };
 #define ENV_OR_CMD_OPT_FLAG(name) \
-    EnvOrCmdOptFlag name{#name};
+    const EnvOrCmdOptFlag name{#name};
 
     ENV_OR_CMD_OPT_FLAG(DontStarveInjectorDisable);
     ENV_OR_CMD_OPT_FLAG(DisableGameScriptsZip);
