@@ -9,17 +9,11 @@
 #include <frida-gum.h>
 #include <optional>
 struct GameConfigs {
-    std::optional<int> logic_fps;
     std::optional<int> render_fps;
     std::optional<bool> client_network_tick;
 } game_configs;
 
 extern "C" void lj_ds_print_game_configs() {
-    if (game_configs.logic_fps) {
-        printf("Logic FPS: %d\n", game_configs.logic_fps.value());
-    } else {
-        printf("Logic FPS: not set\n");
-    }
     if (game_configs.render_fps) {
         printf("Render FPS: %d\n", game_configs.render_fps.value());
     } else {
@@ -139,27 +133,6 @@ static float *find_network_logic_fps(function_relocation::MemorySignature &sign)
     return nullptr;
 }
 
-static std::array<float *, 1> luaupdatefps;
-static double *getticktimefps;
-static float *network_tick_logic_fps_ptr;
-static function_relocation::MemorySignature luaupdate{"FF 83 C8 00 00 00 F3 0F 10 35", 6};
-static function_relocation::MemorySignature getticktime{"00 00 00 20 11 11 A1 3F", 0};
-static function_relocation::MemorySignature network_tick_logic_fps{"8B DE F3 0F 10 05", 2};
-
-static bool DS_LUAJIT_get_logic_fps() {
-    getticktime.prot_flag = GUM_PAGE_READ;
-    if (getticktime.scan(main_module_path())) {
-        getticktimefps = (double *) getticktime.target_address;
-    } else {
-        return false;
-    }
-    //function_relocation::MemorySignature luaupdate1{"48 8D 43 70", 17};
-    //function_relocation::MemorySignature luaupdate2{"B8 89 88 88 88", 4, false};
-    luaupdatefps[0] = find_luaupdate_imm(luaupdate);
-    network_tick_logic_fps_ptr = find_network_logic_fps(network_tick_logic_fps);
-    return luaupdatefps[0] && network_tick_logic_fps_ptr;
-}
-
 DONTSTARVEINJECTOR_API int DS_LUAJIT_set_target_fps(int fps, int tt) {
 #ifndef _WIN32
     return -1;
@@ -181,23 +154,6 @@ DONTSTARVEINJECTOR_API int DS_LUAJIT_set_target_fps(int fps, int tt) {
             frame_time_s = std::min(val, 1 / 30.0f);
             game_configs.render_fps = fps;
             return old;
-        }
-    }
-    if (tt & 0b10) {
-        return -1;
-        static bool init_flag = DS_LUAJIT_get_logic_fps();
-        if (!fps) return -1;
-
-        float val = 1.0f / (float) fps;
-        if (init_flag) {
-            auto old = 1.0 / (*getticktimefps);
-            if (*luaupdatefps[0] != val) {
-                game_configs.logic_fps = fps;
-                protect_memory_writer(network_tick_logic_fps_ptr, (float) fps);
-                protect_memory_writer(getticktimefps, (double) val);
-                protect_memory_writer(luaupdatefps[0], val);
-            }
-            return (int) ceil(old);
         }
     }
     return -1;
