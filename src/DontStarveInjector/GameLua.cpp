@@ -71,7 +71,7 @@ void GameLuaContext::luaL_openlibs_hooker(lua_State *L) {
     do_lua_env(*this, L, "GAME_INIT");
 #include "GameLuaInjectFramework.c"
     auto buffer = std::string{GameLuaInjectFramework, GameLuaInjectFramework_len};
-    api._luaL_dostring(L, buffer.c_str());
+    api._luaL_dostringex(L, buffer.c_str(), "@GameLuaInjectFramework.lua");
     auto config = luajit_config::read_from_file();
     if (config) {
         if (InjectorConfig::instance().DisableForceLoadLuaJITMod) {
