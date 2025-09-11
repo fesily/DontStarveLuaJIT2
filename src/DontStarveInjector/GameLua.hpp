@@ -34,6 +34,9 @@ struct LuaApis {
     bool _luaL_dostring(lua_State *L, const char *s) {
         return (_luaL_loadstring(L, s) || _lua_pcall(L, 0, 0, 0));
     }
+    bool _luaL_dostringex(lua_State *L, const char *s, const char *chunkname) {
+        return (_luaL_loadbuffer(L, s, strlen(s), chunkname) || _lua_pcall(L, 0, 0, 0));
+    }
     bool _luaL_dofile(lua_State *L, const char *filename) {
         return (_luaL_loadfile(L, filename) || _lua_pcall(L, 0, 0, 0));
     }

@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  <Type Name="lua_TValue">
+    <DisplayString Condition="(tt)==0">[nil]</DisplayString>
+    <DisplayString Condition="(tt)==1">[boolean] {value.b}</DisplayString>
+    <DisplayString Condition="(tt)==2">[lightuserdata] {value.p}</DisplayString>
+    <DisplayString Condition="(tt)==3">[number] {value.n}</DisplayString>
+    <DisplayString Condition="(tt)==4">[string] {value.gc-&gt;ts}</DisplayString>
+    <DisplayString Condition="(tt)==5">[table] {value.gc-&gt;h}</DisplayString>
+    <DisplayString Condition="(tt)==6">[closure] {value.gc-&gt;cl}</DisplayString>
+
+    <DisplayString Condition="(tt)==7">[userdata] {value.gc-&gt;u}</DisplayString>
+    <DisplayString Condition="(tt)==8">[thread] {value.gc-&gt;th}</DisplayString>
+    <DisplayString Condition="(tt)==9">[proto] {value.gc-&gt;p}</DisplayString>
+    <DisplayString Condition="(tt)==10">[upval] {value.gc-&gt;uv}</DisplayString>
+    <DisplayString Condition="(tt)==11">[deadkey]</DisplayString>
+    <DisplayString>[unknown]</DisplayString>
+    <Expand>
+      <Item Name="lightuserdata" Condition="(tt)==2">value.p</Item>
+      <Item Name="string" Condition="(tt)==4">value.gc-&gt;ts</Item>
+      <Item Name="table" Condition="(tt)==5">value.gc-&gt;h</Item>
+      <Item Name="function" Condition="(tt)==6">value.gc-&gt;cl</Item>
+      <Item Name="userdata" Condition="(tt)==7">value.gc-&gt;u</Item>
+      <Item Name="thread" Condition="(tt)==8">value.gc-&gt;th</Item>
+      <Item Name="proto" Condition="(tt)==9">value.gc-&gt;p</Item>
+      <Item Name="upval" Condition="(tt)==10">value.gc-&gt;uv</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="GCObject">
+    <DisplayString Condition="(gch.tt)==0">[nil]</DisplayString>
+    <DisplayString Condition="(gch.tt)==1">[boolean]</DisplayString>
+    <DisplayString Condition="(gch.tt)==2">[lightuserdata] </DisplayString>
+    <DisplayString Condition="(gch.tt)==3">[number] </DisplayString>
+    <DisplayString Condition="(gch.tt)==4">[string] {ts}</DisplayString>
+    <DisplayString Condition="(gch.tt)==5">[table] {h}</DisplayString>
+    <DisplayString Condition="(gch.tt)==6">[closure] {cl}</DisplayString>
+
+    <DisplayString Condition="(gch.tt)==7">[userdata] {u}</DisplayString>
+    <DisplayString Condition="(gch.tt)==8">[thread] {th}</DisplayString>
+    <DisplayString Condition="(gch.tt)==9">[proto] {p}</DisplayString>
+    <DisplayString Condition="(gch.tt)==10">[upval] {uv}</DisplayString>
+    <DisplayString Condition="(gch.tt)==11">[deadkey]</DisplayString>
+    <DisplayString>[unknown]</DisplayString>
+    <Expand>
+      <Item Name="table" Condition="(gch.tt)==5">h</Item>
+      <Item Name="string" Condition="(gch.tt)==4">ts</Item>
+      <Item Name="function" Condition="(gch.tt)==6">cl</Item>
+      <Item Name="userdata" Condition="(gch.tt)==7">u</Item>
+      <Item Name="thread" Condition="(gch.tt)==8">th</Item>
+      <Item Name="proto" Condition="(gch.tt)==9">p</Item>
+      <Item Name="upval" Condition="(gch.tt)==10">uv</Item>
+      <Item Name="next">gch.next</Item>
+    </Expand>
+  </Type>
+  <Type Name="CClosure">
+    <DisplayString>{f}</DisplayString>
+    <Expand>
+      <Item Name="func">f</Item>
+      <Item Name="env">env</Item>
+      <Synthetic Name="upvals">
+				<DisplayString>{nupvalues}</DisplayString>
+				<Expand>
+					<ArrayItems>
+						<Size>nupvalues</Size>
+						<ValuePointer>upvalue</ValuePointer>
+					</ArrayItems>
+				</Expand>
+			</Synthetic>
+    </Expand>
+  </Type>
+  <Type Name="LClosure">
+    <DisplayString>{p}</DisplayString>
+		<Expand>
+			<Item Name="proto">p</Item>
+			<Item Name="env">env</Item>
+			<Synthetic Name="upvals">
+				<DisplayString>{nupvalues}</DisplayString>
+				<Expand>
+					<ArrayItems>
+						<Size>nupvalues</Size>
+						<ValuePointer>upvals</ValuePointer>
+					</ArrayItems>
+				</Expand>
+			</Synthetic>
+		</Expand>
+  </Type>
+  <Type Name="Closure">
+    <!--lclosuse 70-64-->
+    <DisplayString Condition="c.isC" >{c}</DisplayString>
+    <!--cclosuse 102-64-->
+    <DisplayString Condition="!c.isC" >{l}</DisplayString>
+    <DisplayString  >[tag]{c}{c.tt}</DisplayString>
+    <Expand>
+      <Item Name="CClosure" Condition="c.isC">c</Item>
+      <Item Name="LClosure" Condition="!c.isC">l</Item>
+    </Expand>
+  </Type>
+  <Type Name="TString">
+    <DisplayString>{(const char *)(this+1)}</DisplayString>
+    <Expand>
+      <Item Name="str">(const char *)(this+1)</Item>
+      <Item Name="length">tsv.len</Item>
+      <Item Name="hash">tsv.hash</Item>
+    </Expand>
+  </Type>
+  <Type Name="UpVal">
+    <DisplayString Condition='&amp;u.value == v'>[closed] {v}</DisplayString>
+    <DisplayString Condition='&amp;u.value != v'>{v}</DisplayString>
+    <Expand>
+      <Item Name="value">v</Item>
+      <Item Name="isclosed">&amp;u.value == v</Item>
+      <Item Name="prev">u.l.prev</Item>
+      <Item Name="next">u.l.next</Item>
+    </Expand>
+  </Type>
+  <Type Name="Udata">
+    <DisplayString>{(void *)(u+1)}</DisplayString>
+    <Expand>
+      <Item Name="len">uv.len</Item>
+      <Item Name="metatable" Condition="uv.metatable!=0">uv.metatable</Item>
+      <Item Name="env">uv.env</Item>
+    </Expand>
+  </Type>
+  <Type Name="Table">
+    <DisplayString>A:[{sizearray}] H:{(int)(1&lt;&lt;lsizenode)} </DisplayString>
+    <Expand>
+      <Item Name="metatable" Condition="metatable!=0">metatable</Item>
+      <Synthetic Name="array" Condition="sizearray!=0">
+				<DisplayString>{sizearray}</DisplayString>
+				<Expand>
+					<ArrayItems>
+						<Size>sizearray</Size>
+						<ValuePointer>array</ValuePointer>
+					</ArrayItems>
+				</Expand>
+			</Synthetic>
+      <Synthetic Name="hash" Condition="lsizenode>=0">
+				<DisplayString>{(int)(1&lt;&lt;lsizenode)}</DisplayString>
+        <Expand>
+					<CustomListItems MaxItemsPerView="64">
+						<Variable Name="index" InitialValue="0" />
+            <Variable Name="hmask" InitialValue="(int)(1&lt;&lt;lsizenode)" />
+						<Loop>
+							<Break Condition="index>=hmask" />
+							<Item Condition="node[index].i_key.tvk.tt!=0">
+								(node[index])</Item>
+							<Exec>index++</Exec>
+						</Loop>
+					</CustomListItems>
+				</Expand>
+			</Synthetic>
+    </Expand>
+  </Type>
+  <Type Name="Node">
+    <DisplayString>{i_key.tvk} = {i_val}</DisplayString>
+    <Expand>
+      <Item Name="key">i_key.tvk</Item>
+      <Item Name="val">i_val</Item>
+      <Item Name="next">i_key.nk.next</Item>
+    </Expand>
+  </Type>
+  <Type Name="Proto">
+    <DisplayString Condition="source">{(source) }:{linedefined} </DisplayString>
+    <Expand>
+      <Item Name="source" Condition="source">(source)</Item>
+      <Item Name="linedefined">(linedefined)</Item>
+      <Item Name="lastlinedefined">(lastlinedefined)</Item>
+      <Item Name="what" Condition="linedefined == 0">"main"</Item>
+      <Item Name="what" Condition="linedefined != 0">"Lua"</Item>
+      <Item Name="numparams">numparams</Item>
+      <Item Name="is_vararg">is_vararg</Item>
+      <Item Name="maxstacksize">maxstacksize</Item>
+      <Synthetic Name="k" Condition="sizek>0">
+        <DisplayString>{sizek} constants</DisplayString>
+        <Expand>
+          <ArrayItems>
+            <Size>sizek</Size>
+            <ValuePointer>k</ValuePointer>
+          </ArrayItems>
+        </Expand>
+      </Synthetic>
+      <Synthetic Name='upvalues' Condition="sizeupvalues>0">
+        <DisplayString>{sizeupvalues} upvalues</DisplayString>
+        <Expand>
+          <ArrayItems>
+            <Size>sizeupvalues</Size>
+            <ValuePointer>upvalues</ValuePointer>
+          </ArrayItems>
+        </Expand>
+      </Synthetic>
+    </Expand>
+  </Type>
+  <Type Name="lua_State">
+    <DisplayString Condition="status==0">status:LUA_OK</DisplayString>
+		<DisplayString Condition="status==1">status:LUA_YIELD</DisplayString>
+		<DisplayString Condition="status==2">status:LUA_ERRRUN</DisplayString>
+		<DisplayString Condition="status==3">status:LUA_ERRSYNTAX</DisplayString>
+		<DisplayString Condition="status==4">status:LUA_ERRMEM</DisplayString>
+		<DisplayString Condition="status==5">status:LUA_ERRERR</DisplayString>
+    <Expand>
+			<Item Name="[G]">l_G</Item>
+      <Item Name="GC List">gclist</Item>
+      <Item Name="openupval">openupval</Item>
+			<Item Name="env">env</Item>
+      <Item Name="_G">l_gt</Item>
+			<Item Name="base">base</Item>
+			<Item Name="top">top</Item>
+      <Item Name="ci">ci</Item>
+      <Synthetic Name="CallInfo" Condition="size_ci&gt;0">
+        <DisplayString>{size_ci}</DisplayString>
+        <Expand>
+          <ArrayItems>
+            <Size>size_ci</Size>
+            <ValuePointer>base_ci</ValuePointer>
+          </ArrayItems>
+        </Expand>
+      </Synthetic>
+			<Synthetic Name="Stack">
+				<Expand>
+					<IndexListItems>
+						<Size>stacksize</Size>
+						<ValueNode>stack[$i]</ValueNode>
+					</IndexListItems>
+				</Expand>
+			</Synthetic>
+			<Synthetic Name="CurrentStack">
+				<DisplayString>len={top-base}</DisplayString>
+				<Expand>
+					<ArrayItems>
+						<Size>top-base</Size>
+						<ValuePointer>base</ValuePointer>
+					</ArrayItems>
+				</Expand>
+			</Synthetic>
+			<Synthetic Name="traceback" Optional="true">
+				<Expand>
+					<CustomListItems>
+						<Variable Name="level" InitialValue="0" />
+						<Variable Name="bot" InitialValue="((TValue*)stack.ptr64)+1" />
+						<Variable Name="frame" InitialValue="base-1" />
+						<Variable Name="nextframe" InitialValue="base-1" />
+						<Loop>
+							<If Condition="frame &lt;= bot">
+								<Break />
+							</If>
+							<If Condition="frame->frame_gc() == (GCobj*)this">
+								<Exec>level--</Exec>
+							</If>
+							<Exec>level++</Exec>
+							<Item>frame-&gt;frame_gc()-&gt;fn</Item>
+							<Exec>nextframe=frame</Exec>
+							<If Condition="frame->frame_islua()">
+								<Exec>frame=((frame) - (2+((uint32_t)(((((const uint32_t
+									*)((ptrdiff_t)(frame)-&gt;ftsz))[-1])&gt;&gt;8)&amp;0xff))))</Exec>
+							</If>
+							<If Condition="!(frame->frame_islua())">
+								<If Condition="frame->frame_isvarg()">
+									<Exec>level--</Exec>
+								</If>
+								<Exec>frame = (TValue *)((char *)frame - frame-&gt;frame_sized())</Exec>
+							</If>
+						</Loop>
+					</CustomListItems>
+				</Expand>
+			</Synthetic>
+    </Expand>
+  </Type>
+</AutoVisualizer>
