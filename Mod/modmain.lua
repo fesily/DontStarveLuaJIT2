@@ -792,6 +792,7 @@ local function main()
 	end
 
 	function _M:AlwaysLoad(injector, VersionMissMatch)
+		local workshop_dir_root = self.workshop_dir_root
 		AddGamePostInit(function()
 			local PopupDialogScreen = require "screens/popupdialog"
 
@@ -837,7 +838,7 @@ local function main()
 			local luajit_config_screen_ctor = function(self, client_config)
 				local function uninstall_mod()
 					if jit.os == "Windows" then
-						injector.DS_LUAJIT_update(root_dictory, 1)
+						injector.DS_LUAJIT_update(workshop_dir_root, 1)
 					else
 						TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.MODFAILTITLE, translate({
 								zh = "当前操作系统不支持卸载luajit模组\n麻烦手动删除",
