@@ -179,7 +179,7 @@ configuration_options = {
             "Simulate the tail call stack of native lua, enhance compatibility with encrypted mods, but will cause a performance drop.\nUse with <Heuristic Detection of Encrypted Mods> option"
         }),
         options = toggle,
-        default = false
+        default = true
     },
     {
         name = "AutoDetectEncryptedMod",
