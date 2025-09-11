@@ -157,7 +157,7 @@ local function main()
 
 		local AutoDetectEncryptedMod = GetModConfigData("AutoDetectEncryptedMod")
 
-		local EncryptedModManager = AutoDetectEncryptedMod and luajit_encryptmods:read_file()
+		local EncryptedModManager = AutoDetectEncryptedMod and luajit_encryptmods:read_file() or nil
 		if EncryptedModManager == nil or EncryptedModManager.version ~= APP_VERSION then
 			EncryptedModManager = { EncryptedMods = {}, frostxxMods = {}, version = APP_VERSION, hash = 0 }
 		end
@@ -578,16 +578,24 @@ local function main()
 
 		local modname = filename2modname(modmain_path)
 		if modname then
-			local workshop_dir = injector.DS_LUAJIT_get_workshop_dir();
-			if workshop_dir ~= nil then
-				workshop_dir = ffi.string(workshop_dir)
-				local workshop_dir_root = workshop_dir .. "/" .. modname .. "/"
-				local io = rawget(_G, "io2") or io
-				local ok, fp = pcall(io.open, workshop_dir_root .. "install.bat", "r")
-				if ok and fp then
-					fp:close()
-					self.modmain_path = workshop_dir_root .. "modmain.lua"
-					self.workshop_dir_root = workshop_dir_root
+			local modnames = { modname }
+			local workshop_context_prefix = "workshop-"
+			if startWith(modname, workshop_context_prefix) then
+				modnames[#modnames + 1] = modname:sub(#workshop_context_prefix + 1)
+			end
+			for _, modname in ipairs(modnames) do
+				local workshop_dir = injector.DS_LUAJIT_get_workshop_dir();
+				if workshop_dir ~= nil then
+					workshop_dir = ffi.string(workshop_dir)
+					local workshop_dir_root = workshop_dir .. "/" .. modname .. "/"
+					local io = rawget(_G, "io2") or io
+					local ok, fp = pcall(io.open, workshop_dir_root .. "install.bat", "r")
+					if ok and fp then
+						fp:close()
+						self.modmain_path = workshop_dir_root .. "modmain.lua"
+						self.workshop_dir_root = workshop_dir_root
+						break
+					end
 				end
 			end
 		end
