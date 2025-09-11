@@ -3,6 +3,10 @@ local modname = modname
 local modinfo = modinfo
 local EnableFrostxxMods = false
 local function main()
+	local old_print = print
+	local function print(...)
+		old_print("[luajit]", ...)
+	end
 	local function startWith(str, prefix)
 		return str:find(prefix, 1, true) == 1
 	end
@@ -142,7 +146,7 @@ local function main()
 			local old_GetModConfigData = GetModConfigData
 			function GetModConfigData(key, get_local_config)
 				if _M.NotWindowsInvalidOptions[key] then
-					print("[luajit] InvalidOptions: " .. key)
+					print("InvalidOptions: " .. key)
 					return nil
 				end
 				return old_GetModConfigData(key, get_local_config)
@@ -478,39 +482,6 @@ local function main()
 		return injector, rawget(_G, "JitModInjector")
 	end
 
-
-	function _M:SlowTailCall()
-		if GetModConfigData("SlowTailCall") then
-			local function getmodname(env)
-				return env.modname
-			end
-			debug.getregistry()["LJ_DS_dynamic_tailcall_cb"] = function(reader, data, chunkname, mode)
-				if not chunkname then
-					return true, "no chunkname"
-				end
-
-				if startWith(chunkname, "@scripts/") then
-					return false, "@scripts"
-				end
-
-				local env = getfenv(3)
-				local ok, modname = pcall(getmodname, env)
-				if not ok or not modname then
-					return false, "no modname"
-				end
-				if modname and _M.SlowTailCallModList[modname] then
-					return true, "slow tailcall", modname
-				end
-
-				if data == chunkname then
-					return false, "no filename"
-				end
-
-				return false, ""
-			end
-		end
-	end
-
 	local function filename2modname(filename)
 		local prefix = "../mods/"
 		local modname_prefix_pos = #"../mods/" + 1
@@ -519,6 +490,46 @@ local function main()
 			local pos = filename:find("/", #prefix + 1, true)
 			if pos then
 				return filename:sub(modname_prefix_pos, pos - 1)
+			end
+		end
+	end
+
+	function _M:SlowTailCall()
+		if GetModConfigData("SlowTailCall") then
+
+			local string_sub = string.sub
+			local function getmodname(env, chunkname)
+				if string_sub(chunkname, 1) == "@" then
+					chunkname = string_sub(chunkname, 2)
+				end
+				if startWith(chunkname, "../mods") then
+					return filename2modname(chunkname)
+				end
+
+				return env.modname
+			end
+			debug.getregistry()["LJ_DS_dynamic_tailcall_cb"] = function(reader, data, chunkname, mode)
+				if not chunkname then
+					return true, "no chunkname"
+				end
+				if data == chunkname then
+					return false, "no filename"
+				end
+
+				if startWith(chunkname, "@scripts/") then
+					return false, "@scripts"
+				end
+
+				--local env = getfenv(3)
+				local ok, modname = pcall(getmodname, env, chunkname)
+				if not ok or not modname then
+					return false, "no modname"
+				end
+				if modname and _M.SlowTailCallModList[modname] then
+					return true, "slow tailcall", modname
+				end
+
+				return false
 			end
 		end
 	end
@@ -793,7 +804,7 @@ local function main()
 	end
 
 	local function ReloadSim()
-		print("[luajit] need restart")
+		print("need restart")
 		scheduler:ExecuteInTime(0, function()
 			c_reset()
 		end)
@@ -931,7 +942,7 @@ local function main()
 		if GetModConfigData("TargetRenderFPS") then
 			local targetfps = GetModConfigData("TargetRenderFPS")
 			if injector.DS_LUAJIT_set_target_fps(targetfps, 1) > 0 then
-				print("[luajit]", "Reset fps by SetNetbookMode", targetfps)
+				print("Reset fps by SetNetbookMode", targetfps)
 				TheSim:SetNetbookMode(false)
 			end
 		end

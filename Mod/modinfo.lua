@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "1.8.3"
+version = "1.8.4"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -179,7 +179,7 @@ configuration_options = {
             "Simulate the tail call stack of native lua, enhance compatibility with encrypted mods, but will cause a performance drop.\nUse with <Heuristic Detection of Encrypted Mods> option"
         }),
         options = toggle,
-        default = true
+        default = false
     },
     {
         name = "AutoDetectEncryptedMod",
