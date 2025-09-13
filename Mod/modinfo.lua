@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "1.8.4"
+version = "1.8.5"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -32,7 +32,7 @@ api_version = 10
 dont_starve_compatible = true
 reign_of_giants_compatible = true
 dst_compatible = true
-
+luajit_compatible = true
 --TODO: need test compatible without the mod
 --all_clients_require_mod = true
 client_only_mod = true
@@ -177,6 +177,17 @@ configuration_options = {
             zh = "模拟原生lua的尾调用堆栈, 加强加密mod兼容, 但会导致性能下降.搭配<启发式检测加密mod>选项食用",
             en =
             "Simulate the tail call stack of native lua, enhance compatibility with encrypted mods, but will cause a performance drop.\nUse with <Heuristic Detection of Encrypted Mods> option"
+        }),
+        options = toggle,
+        default = false
+    },
+    {
+        name = "AnyModDisableTailCall",
+        label = translate({ en = "Any Mod Disable Tail Call", zh = "任何模组都禁用尾调用" }),
+        hover = translate({
+            zh = "强制模拟原生lua的尾调用堆栈, 加强加密mod兼容",
+            en =
+            "Force simulate the tail call stack of native lua, enhance compatibility with encrypted mods"
         }),
         options = toggle,
         default = false

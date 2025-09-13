@@ -39,7 +39,7 @@
 完全解决加密mod不兼容luajit的问题,除非代码依赖了lua语言的未定义行为
 
 赞助:
- ██████████░░░░░░░░░░░░ (270/500)
+ ██████████████████░░ (436/500)
 
 ## 加密插件
 
@@ -153,6 +153,35 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 
 如果没有任何其他问题，现在可以在右下角的版本号看到luajit
 
+# MOD作者兼容
+
+## modinfo.lua
+在modinfo里面添加兼容性标记
+
+对于没有兼容标记的MOD,将会根据`SlowTailCall`或者`AutoDetectEncryptedMod`选项.
+
+对启发式检测到加密MOD的代码, 自动启用`堆栈兼容性`
+```lua
+luajit_compatible = true --表示不依赖堆栈深度
+--或者
+luajit_compatible = {
+  dep_tailcall = false --表示不依赖堆栈深度
+}
+```
+
+## 堆栈深度
+一般只有加密mod会严重依赖了堆栈深度, 比如说最常见的使用了
+```lua
+local target_level = 2
+for i =0,255 do
+    local info = debug.getinfo(i, 'f')
+    if info.func == Target_func then
+        assert(i == target_level) -- i变量就是堆栈深度
+    end
+end
+```
+
+
 # 捐赠人列表
 
 如果遗漏了你的捐赠,请联系我
@@ -171,6 +200,7 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 | 预*微笑   | 100RMB | MACOS | |
 | 储*佛丝   | 50RMB | | |
 | 轮回**剑  | 30RMB | (兼容mod) | |
+| 大*雄     | 166RMB | (改进加密兼容性)| |
 
 # 捐赠方式
 ![weixin_zanshang](https://github.com/user-attachments/assets/9f6485ce-5254-4207-a514-89bd02c332ce)

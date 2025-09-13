@@ -187,6 +187,19 @@
             "visualizerFile": "${workspaceFolder}/LuaJit.Natvis"
         },
         {
+            "name": "Launch lua51",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/builds/ninja-multi-vcpkg/src/lua51original/Debug/lua.exe",
+            "args": [
+                "${workspaceFolder}/test.lua",
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/builds/ninja-multi-vcpkg",
+            "environment": [],
+            "visualizerFile": "${workspaceFolder}/Lua51.Natvis"
+        },
+        {
             "name": "Launch lua simulator",
             "type": "lua",
             "request": "launch",

@@ -126,6 +126,37 @@ In Game，please enable the mod `Dontstarveluajit2`
 
 If there aren't any other problems, you can now see luajit in the version number in the bottom right corner
 
+# MOD Author Compatibility
+
+## modinfo.lua
+
+Add compatibility flags in modinfo.
+
+For MODs without compatibility flags, the SlowTailCall or AutoDetectEncryptedMod options will be used.
+
+For code heuristically detected as encrypted MODs, "stack compatibility" will be automatically enabled.
+
+``` lua
+luajit_compatible = true -- Indicates no dependency on stack depth
+-- or
+luajit_compatible = {
+  dep_tailcall = false -- Indicates no dependency on stack depth
+}
+```
+
+## Stack Depth
+
+Generally, only encrypted mods heavily rely on stack depth. For example, the most common usage:
+
+```lua
+local target_level = 2
+for i = 0, 255 do
+    local info = debug.getinfo(i, 'f')
+    if info.func == Target_func then
+        assert(i == target_level) -- The variable i is the stack depth
+    end
+```
+
 # Compilation
 
 ## Dependencies

@@ -162,8 +162,9 @@ local function main()
 		local AutoDetectEncryptedMod = GetModConfigData("AutoDetectEncryptedMod")
 
 		local EncryptedModManager = AutoDetectEncryptedMod and luajit_encryptmods:read_file() or nil
-		if EncryptedModManager == nil or EncryptedModManager.version ~= APP_VERSION then
-			EncryptedModManager = { EncryptedMods = {}, frostxxMods = {}, version = APP_VERSION, hash = 0 }
+		local EncryptedModManager_version = APP_VERSION.."/1.0.0"
+		if EncryptedModManager == nil or EncryptedModManager.version ~= EncryptedModManager_version then
+			EncryptedModManager = { EncryptedMods = {}, frostxxMods = {}, version = EncryptedModManager_version, hash = 0 }
 		end
 
 		local function HashString(str)
@@ -271,6 +272,15 @@ local function main()
 					local ok, isencrypted = pcall(check_encrypted, MODS_ROOT .. modname .. "/modmain.lua", modname)
 					if ok and not isencrypted then
 						pcall(check_encrypted, MODS_ROOT .. modname .. "/modworldgenmain.lua", modname)
+					end
+				end
+				local modinfo = KnownModIndex:GetModInfo(modname)
+				if modinfo and modinfo.luajit_compatible then
+					local luajit_compatible = modinfo.luajit_compatible
+					if luajit_compatible == true then
+						self.EncryptedMods[modname] = nil
+					elseif type(luajit_compatible) == 'table' then
+						self.EncryptedMods[modname] = luajit_compatible.dep_tailcall
 					end
 				end
 			end
@@ -495,6 +505,7 @@ local function main()
 	end
 
 	function _M:SlowTailCall()
+		local AnyModDisableTailCall = GetModConfigData("AnyModDisableTailCall")
 		if GetModConfigData("SlowTailCall") then
 
 			local string_sub = string.sub
@@ -525,7 +536,7 @@ local function main()
 				if not ok or not modname then
 					return false, "no modname"
 				end
-				if modname and _M.SlowTailCallModList[modname] then
+				if modname and (_M.SlowTailCallModList[modname] or AnyModDisableTailCall) then
 					return true, "slow tailcall", modname
 				end
 
