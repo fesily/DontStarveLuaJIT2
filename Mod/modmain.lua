@@ -822,14 +822,14 @@ local function main()
 	end
 
 	function _M:AlwaysLoad(injector, VersionMissMatch)
-		local workshop_dir_root = self.workshop_dir_root
 		AddGamePostInit(function()
+			local workshop_dir_root = self.workshop_dir_root
 			local PopupDialogScreen = require "screens/popupdialog"
 
 			if should_show_dig() then
 				if VersionMissMatch then
 					local function update_mod()
-						return injector.DS_LUAJIT_update(self.workshop_dir_root, 0) == 1
+						return injector.DS_LUAJIT_update(workshop_dir_root, 0) == 1
 					end
 
 					local btns = {}
