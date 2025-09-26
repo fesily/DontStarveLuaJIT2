@@ -300,31 +300,6 @@ local function main()
 		end
 	end
 
-	local function inject_server_only_mod()
-		local old_GetServerModNames = KnownModIndex.GetServerModNames
-		local old_GetServerModNamesTable = KnownModIndex.GetServerModNamesTable
-		local old_GetEnabledServerModNames = ModManager.GetEnabledServerModNames
-
-		KnownModIndex.GetServerModNames = function(self, ...)
-			local names = old_GetServerModNames(self, ...)
-			table.insert(names, modname)
-			return names
-		end
-
-		KnownModIndex.GetServerModNamesTable = function(self, ...)
-			local names = old_GetServerModNamesTable(self, ...)
-			table.insert(names, { modname = modname })
-			return names
-		end
-		ModManager.GetEnabledServerModNames = function(self, ...)
-			local server_mods = old_GetEnabledServerModNames(self, ...)
-			if IsNotConsole() then
-				table.insert(server_mods, modname)
-			end
-			return server_mods
-		end
-	end
-
 	local function HookGameVersionUI()
 		local TEMPLATES = require("widgets/redux/templates")
 		local old_getbuildstring = TEMPLATES.GetBuildString
@@ -990,7 +965,8 @@ local function main()
 				end
 			end
 		end
-		inject_server_only_mod()
+
+		modimport("inject_server_only_mod")
 	end
 
 	if hasluajit then
