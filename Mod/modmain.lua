@@ -63,7 +63,8 @@ local function main()
 		local str = fp:read('*a')
 		fp:close()
 		if self.json_mode then
-			return json.decode(str)
+			local ok, result = xpcall(json.decode, str)
+			return ok and result or nil
 		end
 		return str
 	end
