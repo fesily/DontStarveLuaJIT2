@@ -99,7 +99,7 @@ print(jit)
 #!/bin/bash
 export LD_LIBRARY_PATH=./lib64
 export LD_PRELOAD=./lib64/libInjector.so
-./dontstarve_steam_x64_1
+./dontstarve_steam_x64_1 "$@"
 ```
 
 - 运行 shell `chmod +x ./dontstarve_steam_x64`

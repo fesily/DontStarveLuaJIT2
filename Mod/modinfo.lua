@@ -262,8 +262,8 @@ configuration_options = {
         hover = translate({ en = "ProfilerJit.start | ProfilerJit.stop", zh = "ProfilerJit.start | ProfilerJit.stop" }),
         options = {
             { description = translate({ en = "off", zh = "关闭" }), data = "off" },
-            { description = translate({ en = "Detailed Sampling Mode", zh = "详细采样模式" }), data = "fzvp" },
-            { description = translate({ en = "Origin Sampling Mode", zh = "原始采样模式" }), data = "Gz" },
+            { description = translate({ en = "Detailed Sampling Mode", zh = "详细采样模式" }), data = "fzvp" }, -- 会展示完整的代码路径和行数，以及虚拟机状态，还有模块zone采样点
+            { description = translate({ en = "Origin Sampling Mode", zh = "原始采样模式" }), data = "Gz" }, -- 等于EnableTracy，不过是luajit自带的分析器
         },
         default = 'off'
     },

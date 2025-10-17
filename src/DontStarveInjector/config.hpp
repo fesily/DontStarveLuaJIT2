@@ -58,6 +58,7 @@ struct InjectorConfig {
     ENV_OR_CMD_OPT_FLAG(DisableForceLoadLuaJITMod);
     ENV_OR_CMD_OPT_FLAG(GameInjectorNoDefaultBeforeCode);
     ENV_OR_CMD_OPT_FLAG(disable_progress);
+    ENV_OR_CMD_OPT_FLAG(enable_lua_debugger);
 
 #undef ENV_OR_CMD_OPT_FLAG
 

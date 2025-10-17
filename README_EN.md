@@ -115,7 +115,7 @@ is located) to be writable in order to create log files.
 ```bash
 #!/bin/bash
 export DYLD_INSERT_LIBRARIES=./libInjector.dylib
-./dontstarve_steam_1
+./dontstarve_steam_1 "$@"
 ```
 
 - Run shell `chmod +x . /dontstarve_steam`.

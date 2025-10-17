@@ -330,7 +330,7 @@ local function main()
 	end
 
 	local function EnableProfiler(injector)
-		if GetModConfigData("EnableProfiler") == "on" then
+		if GetModConfigData("EnableProfiler") ~= "off" then
 			local zone = require("jit.zone")
 			local sim = getmetatable(TheSim).__index
 			local old_profiler_push = sim.ProfilerPush
@@ -361,7 +361,7 @@ local function main()
 			rawset(_G, "ProfilerJit", {
 				start = function(m)
 					enabled_profiler = true
-					profiler.start(m or mode, "unsafedata/profiler")
+					profiler.start(m or mode, "unsafedata/profiler.txt")
 				end,
 				stop = function()
 					enabled_profiler = false
