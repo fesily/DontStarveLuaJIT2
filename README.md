@@ -201,6 +201,7 @@ end
 | 储*佛丝   | 50RMB | | |
 | 轮回**剑  | 30RMB | (兼容mod) | |
 | 大*雄     | 166RMB | (改进加密兼容性)| |
+| 星*☆     | 100RMB | | |
 
 # 捐赠方式
 ![weixin_zanshang](https://github.com/user-attachments/assets/9f6485ce-5254-4207-a514-89bd02c332ce)
