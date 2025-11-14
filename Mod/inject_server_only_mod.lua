@@ -1,31 +1,35 @@
+local modinfo = env.modinfo
+local modname = env.modname
 local KnownModIndex = _G.KnownModIndex
+local ModManager = _G.ModManager
+local scheduler = _G.scheduler
+local rawget = _G.rawget
 
-local ThisModInfo = KnownModIndex:InitializeModInfo(modname)
 local server_folder_name = string.find(modname, "workshop-") and "DontStarveLuaJIT2-Server" or "DontStarveLuaJIT2-GitHub-Server"
 
 -- 创建虚拟模组信息
 local modinfo_luajit_server = {
-    name = ThisModInfo.name, -- 名称
-    description = ThisModInfo.description, -- 介绍
-    configuration_options = ThisModInfo.configuration_options, -- 配置
-    version = ThisModInfo.version, -- 版本
-    version_compatible = ThisModInfo.version_compatible, -- 兼容的版本号
-    author = ThisModInfo.author, -- 作者
-    api_version = ThisModInfo.api_version, -- api版本
+    name = modinfo.name, -- 名称
+    description = modinfo.description, -- 介绍
+    configuration_options = modinfo.configuration_options, -- 配置
+    version = modinfo.version, -- 版本
+    version_compatible = modinfo.version_compatible, -- 兼容的版本号
+    author = modinfo.author, -- 作者
+    api_version = modinfo.api_version, -- api版本
 
-    dst_compatible = ThisModInfo.dst_compatible, -- 兼容联机版
-    forge_compatible = ThisModInfo.forge_compatible, -- 兼容熔炉
-    gorge_compatible = ThisModInfo.gorge_compatible, -- 兼容暴食
-    dont_starve_compatible = ThisModInfo.dont_starve_compatible, -- 不兼容单机版
+    dst_compatible = modinfo.dst_compatible, -- 兼容联机版
+    forge_compatible = modinfo.forge_compatible, -- 兼容熔炉
+    gorge_compatible = modinfo.gorge_compatible, -- 兼容暴食
+    dont_starve_compatible = modinfo.dont_starve_compatible, -- 不兼容单机版
 
     all_clients_require_mod = false, -- 所有人需要下载
     client_only_mod = false, -- 客户端模组
     server_only_mod = true, -- 服务器模组
 
-    server_filter_tags = ThisModInfo.server_filter_tags, -- 服务器Tag
+    server_filter_tags = modinfo.server_filter_tags, -- 服务器Tag
 
     folder_name = server_folder_name,
-    locale = ThisModInfo.locale,
+    locale = modinfo.locale,
     modinfo_message = "",
 }
 
@@ -122,7 +126,7 @@ _G.ShardIndex.GetEnabledServerMods = function(self, ...)
 end
 
 -- HOOK 点击“回到世界”时的操作
-AddClassPostConstruct("screens/redux/servercreationscreen", function(self)
+local function HookServerCreationScreen(self)
     local old_Create = self.Create
     self.Create = function(self, warnedOffline, warnedDisabledMods, warnedOutOfDateMods, ...)
         if KnownModIndex:IsModEnabled(modname) then -- 检查客户端Luajit是否还开着
@@ -138,6 +142,10 @@ AddClassPostConstruct("screens/redux/servercreationscreen", function(self)
             old_Create(self, warnedOffline, warnedDisabledMods, warnedOutOfDateMods, ...)
         end
     end
+end
+
+AddClassPostConstruct("screens/redux/servercreationscreen", function(self)
+    HookServerCreationScreen(self)
 end)
 
 local function ChangeModname()
@@ -145,7 +153,7 @@ local function ChangeModname()
         for slot, shards in pairs(ShardSaveGameIndex.slot_cache) do
             for shardName, shardIndex in pairs(shards) do
                 if shardIndex.enabled_mods and shardIndex.enabled_mods[modname] then
-                    -- print(string.format("看起来 存档%s(%s) 世界%s 开启了 %s 将其转换为 %s 以供下次使用", slot, shardIndex.server and shardIndex.server.name or "未知存档名称", shardName, ThisModInfo.name, server_folder_name))
+                    -- print(string.format("看起来 存档%s(%s) 世界%s 开启了 %s 将其转换为 %s 以供下次使用", slot, shardIndex.server and shardIndex.server.name or "未知存档名称", shardName, modinfo.name, server_folder_name))
                     if shardIndex:IsValid() then
                         if shardIndex.enabled_mods[modname] then
                             shardIndex.enabled_mods[server_folder_name], shardIndex.enabled_mods[modname] = shardIndex.enabled_mods[modname], nil
@@ -165,3 +173,26 @@ end
 AddClassPostConstruct("screens/redux/multiplayermainscreen", function(self)
     ChangeModname()
 end)
+
+-- 兼容独行长路
+-- 独行长路会覆盖servercreationscreen的Create方法，所以需要在独行长路加载后二次修改Create方法
+local old_FrontendLoadMod = ModManager.FrontendLoadMod
+ModManager.FrontendLoadMod = function(self, modname, ...)
+    old_FrontendLoadMod(self, modname, ...)
+	if modname == "workshop-2657513551" then
+		if rawget(GLOBAL, "TheFrontEnd") ~= nil then
+			-- 延迟0.1秒，等待ServerCreationScreen和独行长路加载完毕
+			scheduler:ExecuteInTime(0.1, function()
+				for _, screen in ipairs(GLOBAL.TheFrontEnd.screenstack) do
+					if screen.name == "ServerCreationScreen" then
+						if not screen.luajit_compatibility_dsa_hooked_flag then
+							HookServerCreationScreen(screen)
+							screen.luajit_compatibility_dsa_hooked_flag = true
+						end
+						break
+					end
+				end
+			end)
+		end
+	end
+end
