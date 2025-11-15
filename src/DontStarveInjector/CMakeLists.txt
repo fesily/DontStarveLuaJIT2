@@ -72,8 +72,14 @@ if (ENABLE_STEAM_SUPPORT)
     # target_link_libraries(GameSteamTest PRIVATE ${STEAM_LIBRARIES})
 endif()
 
-set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")
-set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../lib64")
+if (APPLE)
+    set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")
+    set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../lib64")
+else()
+    set_target_properties(Injector PROPERTIES INSTALL_RPATH "./lib64:\$ORIGIN/lib64")
+    set_target_properties(Injector PROPERTIES BUILD_RPATH "./lib64:\$ORIGIN/lib64")
+endif()
+
 add_dependencies(Injector create_missfuncs)
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.c
