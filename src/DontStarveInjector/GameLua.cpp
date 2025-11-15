@@ -92,7 +92,7 @@ void GameLuaContext::luaL_openlibs_hooker(lua_State *L) {
     api._##name = (decltype(real_##name))
 
 void lua_event_notifyer(LUA_EVENT, lua_State *);
-std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer);
+static std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer);
 struct GameLuaContextImpl : GameLuaContext {
     GameLuaContextImpl(const char *sharedLibraryName, GameLuaType type)
         : GameLuaContext{sharedLibraryName, type} {
@@ -225,6 +225,13 @@ struct GameLuaContextJit : GameLuaContextImpl {
 constexpr const char *defualtLua51LibraryName = SHARED_LIBRARY_PRE "lua51Original" SHARED_LIBRARY_EXT;
 constexpr const char *defualtLuajitLibraryName = SHARED_LIBRARY_PRE "lua51DS" SHARED_LIBRARY_EXT;
 
+#if DONTSTARVEINJECTOR_INITIALIZE_ALL_SO
+static __attribute__((constructor)) void initialize_all_so() {
+    loadlib(defualtLua51LibraryName);
+    loadlib(defualtLuajitLibraryName);
+}
+#endif
+
 GameLua51Context gameLua51Ctx{
         defualtLua51LibraryName,
         GameLuaType::_51};
@@ -277,7 +284,7 @@ static int split_string(const std::string_view &str, std::vector<std::string_vie
     return out.size();
 }
 
-std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer) {
+static std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer) {
     // before replace buffer frist line
     size_t first_newline = buffer.find('\n');
     if (first_newline != std::string_view::npos) {

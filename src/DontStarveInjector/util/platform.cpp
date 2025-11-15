@@ -37,9 +37,9 @@ module_handler_t loadlib(const char *name, int mode) {
         else if (auto p = std::filesystem::current_path() / name; std::filesystem::exists(p))
             path = p;
 #if defined(__linux__)
-        else if (auto p = getExePath().parent_path() / "lib"/ name; std::filesystem::exists(p))
+        else if (auto p = getExePath().parent_path() / "lib64"/ name; std::filesystem::exists(p))
             path = p;
-        else if (auto p = std::filesystem::current_path() / "lib" /name; std::filesystem::exists(p))
+        else if (auto p = std::filesystem::current_path() / "lib64" /name; std::filesystem::exists(p))
             path = p;
 #endif
         if (!path.empty())
