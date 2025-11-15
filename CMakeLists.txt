@@ -66,7 +66,7 @@ if ($ENV{GITHUB_ACTIONS})
     set(GAME_DIR OFF)
 endif ()
 
-if (NOT MSVC)
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,defs")
 endif()
 
