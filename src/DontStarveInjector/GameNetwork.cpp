@@ -205,7 +205,7 @@ DONTSTARVEINJECTOR_API void DS_LUAJIT_SetNextRpcInfo(PacketPriority *packetPrior
         next_orderingChannel.reset();
 }
 
-void ResetNextRpcInfo(GumInvocationContext *context) {
+static void ResetNextRpcInfo(GumInvocationContext *context) {
     if (next_packetPriority) {
         auto packetPriority = *next_packetPriority;
         gum_invocation_context_replace_nth_argument(context, 3, (gpointer) packetPriority);
@@ -218,7 +218,7 @@ void ResetNextRpcInfo(GumInvocationContext *context) {
     }
     if (next_orderingChannel) {
         auto orderingChannel = *next_orderingChannel;
-        gum_invocation_context_replace_nth_argument(context, 5, (gpointer) orderingChannel);
+        gum_invocation_context_replace_nth_argument(context, 5, (gpointer) (size_t) orderingChannel);
         next_orderingChannel.reset();
     }
 }
@@ -231,7 +231,7 @@ void SendUnified(SLNet::PluginInterface2 *plugin, const SLNet::BitStream *bitStr
 }
 
 
-void GameWatcherEntityNetwork(GumInterceptor *interceptor) {
+static void GameWatcherEntityNetwork(GumInterceptor *interceptor) {
 }
 
 namespace SLNet {
