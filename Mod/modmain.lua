@@ -63,7 +63,7 @@ local function main()
 		local str = fp:read('*a')
 		fp:close()
 		if self.json_mode then
-			local ok, result = xpcall(json.decode, str)
+			local ok, result = pcall(json.decode, str)
 			return ok and result or nil
 		end
 		return str
@@ -984,3 +984,4 @@ _G.setfenv(main, _G.setmetatable({}, {
 	end
 }))
 main()
+
