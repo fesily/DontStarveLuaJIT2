@@ -41,6 +41,14 @@ constexpr auto game_name = "dontstarve_";
 #define DONTSTARVEINJECTOR_API extern "C" __attribute__((visibility("default")))
 #endif
 
+#if __linux__
+
+#ifndef DONTSTARVEINJECTOR_INITIALIZE_ALL_SO
+#define DONTSTARVEINJECTOR_INITIALIZE_ALL_SO 1
+#endif
+
+#endif
+
 
 struct InjectorConfig {
     struct EnvOrCmdOptFlag {

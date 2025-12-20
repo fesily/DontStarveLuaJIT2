@@ -17,7 +17,7 @@ elseif (APPLE)
 endif ()
 
 enable_testing()
-set(FRIDA_GUM_VERSION "17.1.0")
+set(FRIDA_GUM_VERSION "17.5.1")
 set(VCPKG_INSTALL_OPTION "${VCPKG_INSTALL_OPTION} --x-abi-tools-use-exact-versions")
 
 file(REAL_PATH ${GAME_DIR} GAME_DIR)
@@ -37,7 +37,7 @@ else ()
     message(FATAL_ERROR "Not supported platform")
 endif ()
 
-project(DontStarveLuaJIT VERSION 1.9.1)
+project(DontStarveLuaJIT VERSION 1.10.1)
 
 option(DISABLE_TRACY_FUTURE "disable tray future" ON)
 
@@ -65,6 +65,10 @@ endif ()
 if ($ENV{GITHUB_ACTIONS})
     set(GAME_DIR OFF)
 endif ()
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,defs")
+endif()
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h
         COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/missfunc.py"

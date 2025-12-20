@@ -185,13 +185,6 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         return;
     }
 
-
-    if (!function_relocation::init_ctx()) {
-        showError("can't init signature");
-        return;
-    }
-    auto defer = create_defer(&function_relocation::deinit_ctx);
-
     auto lua51 = loadlib(lua51_name);
     if (!lua51) {
         showError("can't load lua51");
@@ -200,6 +193,13 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     auto defer1 = create_defer([lua51]() {
         unloadlib(lua51);
     });
+
+    if (!function_relocation::init_ctx()) {
+        showError("can't init signature");
+        return;
+    }
+    auto defer = create_defer(&function_relocation::deinit_ctx);
+
     spdlog::info("main module base address:{}", (void *) gum_module_get_range(gum_process_get_main_module())->base_address);
     auto mainPath = getExePath().string();
     if (luaModuleSignature.scan(mainPath.c_str()) == 0) {
@@ -251,18 +251,17 @@ int chdir_hook(const char *path) {
     }
     return origin(path);
 }
+
+extern char *__progname;
 __attribute__((constructor)) void init() {
-    gum_init_embedded();
-    auto path = std::filesystem::path(gum_module_get_path(gum_process_get_main_module())).filename().string();
-    if (!path.contains("dontstarve")) {
-        gum_deinit_embedded();
+    if (!getExePath().string().contains("dontstarve")) {
         return;
     }
     auto api = dlsym(RTLD_DEFAULT, "chdir");
     if (!api) {
-        gum_deinit_embedded();
         return;
     }
+    gum_init_embedded();
     auto intercetor = gum_interceptor_obtain();
     gum_interceptor_replace_fast(intercetor, api, (void *) &chdir_hook, (void **) &origin);
 }
