@@ -242,7 +242,32 @@ If you start with Steam, please set game properties > launch option: "-enable_lu
                     "E:/SteamLibrary/steamapps/workshop/content/322330/*"
                 ]
             ]
-        }
+        },
+         {
+            "name": "Launch game",
+            "type": "lua",
+            "request": "launch",
+            "luaVersion": "luajit",
+            "cwd": "${config:steam.game.root}/bin64",
+            "luaexe": "${config:steam.game.root}/bin64/dontstarve_steam_x64.exe",
+            "sourceMaps": [
+                [
+                    "../mods/workshop-*",
+                    "${config:steam.game.modroot}/*"
+                ],
+                [   "${config:steam.game.root}/data/scripts/*",
+                    "${config:steam.game.root}/dst-scripts/scripts/*" // scripts root directory
+                ]
+            ],
+            "program": "",
+            "arg": [
+                "-enable_lua_debugger"
+            ],
+            "env": {
+                "NOVSDEBUGGER": "1",
+                "NOWAITDEBUGGER": "1",
+            }
+        },
     ], "compounds": [
         {
             "name": "Compound servers",
@@ -255,83 +280,6 @@ If you start with Steam, please set game properties > launch option: "-enable_lu
     ]
 }
 ```
-
-## data/scripts/main.lua:73
-
-1. Find the code
-
-```lua
-DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated(
-if DEBUGGER_ENABLED then
-	Debuggee = require 'debuggee'
-end
-```
-
-2. Replace the above code to
-
-```lua
-if jit then
-	package.preload.debuggee = function()
-		local function dofile(filename)
-			local load = _VERSION == "Lua 5.1" and loadstring or load
-			local f = assert(io.open(filename))
-			local str = f:read "*a"
-			f:close()
-			return assert(load(str, "=(debugger.lua)"))(filename)
-		end
-		local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.12-win32-x64"
-		local debugger = dofile(path .. "/script/debugger.lua")
-		local Debuggee = {ready = false}
-		Debuggee.start = function ()
-			if Debuggee.ready then return "ok", Debuggee.host, debugger end
-			local port = 12306
-			if not TheNet:IsDedicated() then
-				port = 12306
-			else
-				port = 12307
-				if TheShard:IsMaster() then
-					port = 12307
-				elseif TheShard:IsSecondary() then
-					port = 12308
-				end
-			end
-			local host = {address = "127.0.0.1:".. port}
-			print("debuggee host:", host.address)
-			debugger:start(host):event ("autoUpdate", false)
-			--debugger:setup_patch()
-			debugger.host = host
-			Debuggee.ready = true
-			return "ok", host, debugger
-		end
-		Debuggee.poll = function ()
-			debugger:event "update"
-		end
-		return Debuggee
-	end
-end
-
-DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and not TheNet:IsDedicated()
-if DEBUGGER_ENABLED then
-	Debuggee = require 'debuggee'
--- if you want debug all scripts, use the code
-	local _, _, debugger = Debuggee.start()
--- [[
-	if not TheNet:IsDedicated() then
-		debugger:event "wait"
-
-	else
-		if TheShard:IsMaster() then
-			debugger:event "wait"
-		elseif TheShard:IsSecondary() then
-			debugger:event "wait"
-	end
-]]
-end
-```
-
-3. Change `local path = "C:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.0.4-win32-x64"` to your path
-4. In `DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= "PRODUCTION" and not TheNet:IsDedicated()`,  
-   Remove `CONFIGURATION ~= "PRODUCTION"`
 
 ## Force enable the mod
 

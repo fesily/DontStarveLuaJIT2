@@ -180,6 +180,101 @@ for i =0,255 do
     end
 end
 ```
+# 如何调试游戏：
+
+需要 `vscode` + `lua-debug` 插件
+
+## 不通过 Steam 调试游戏的方法
+
+在游戏目录/bin64 文件夹中创建 `steam_appid.txt` 文件，内容为 `322330`。
+
+## 传递进程参数 “-enable_lua_debugger”
+
+若通过Steam启动，请在游戏属性 > 启动选项中添加：“ -enable_lua_debugger”
+
+```json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "address": "127.0.0.1:12306",
+            "name": "attach client",
+            "request": "attach",
+            "stopOnEntry": true,
+            "type": "lua",
+            "luaVersion": "luajit",
+            "sourceMaps": [
+                [
+                    "../mods/workshop-*",
+                    "E:/SteamLibrary/steamapps/workshop/content/322330/*"
+                ]
+            ]
+        },
+        {
+            "address": "127.0.0.1:12307",
+            "name": "attach server",
+            "request": "attach",
+            "stopOnEntry": true,
+            "type": "lua",
+            "luaVersion": "luajit",
+            "sourceMaps": [
+                [
+                    "../mods/workshop-*",
+                    "E:/SteamLibrary/steamapps/workshop/content/322330/*"
+                ]
+            ]
+        },
+        {
+            "address": "127.0.0.1:12308",
+            "name": "attach server cave",
+            "request": "attach",
+            "stopOnEntry": true,
+            "type": "lua",
+            "luaVersion": "luajit",
+            "sourceMaps": [
+                [
+                    "../mods/workshop-*",
+                    "E:/SteamLibrary/steamapps/workshop/content/322330/*"
+                ]
+            ]
+        },
+         {
+            "name": "Launch game",
+            "type": "lua",
+            "request": "launch",
+            "luaVersion": "luajit",
+            "cwd": "${config:steam.game.root}/bin64",
+            "luaexe": "${config:steam.game.root}/bin64/dontstarve_steam_x64.exe",
+            "sourceMaps": [
+                [
+                    "../mods/workshop-*",
+                    "${config:steam.game.modroot}/*"
+                ],
+                [   "${config:steam.game.root}/data/scripts/*",
+                    "${config:steam.game.root}/dst-scripts/scripts/*" //scripts脚本文件夹目录
+                ]
+            ],
+            "program": "",
+            "arg": [
+                "-enable_lua_debugger"
+            ],
+            "env": {
+                "NOVSDEBUGGER": "1",
+                "NOWAITDEBUGGER": "1",
+            }
+        },
+    ], "compounds": [
+        {
+            "name": "Compound servers",
+            "configurations": [
+                "attach server",
+                "attach server cave"
+            ],
+            "stopAll": true
+        }
+    ]
+}
+```
 
 
 # 捐赠人列表
@@ -202,6 +297,7 @@ end
 | 轮回**剑  | 30RMB | (兼容mod) | |
 | 大*雄     | 166RMB | (改进加密兼容性)| |
 | 星*☆     | 100RMB | | |
+| 18**30    | 50RMB| 无 | |
 
 # 捐赠方式
 ![weixin_zanshang](https://github.com/user-attachments/assets/9f6485ce-5254-4207-a514-89bd02c332ce)
