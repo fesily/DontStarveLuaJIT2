@@ -14,30 +14,53 @@
             "name": "(linux) Attach game",
             "type": "cppdbg",
             "request": "attach",
-            "program": "/home/ubuntu/.steam/steam/steamapps/common/Don't Starve Together/bin64/dontstarve_steam_x64_1"
+            "program": "${config:steam.game.root}/bin64/dontstarve_steam_x64_1"
         },
         {
             "name": "(linux) Attach docker server",
             "type": "cppdbg",
             "request": "attach",
-            "program": "/root/server_dst/bin64/dontstarve_dedicated_server_nullrenderer_x64",
+            "program": "${config:steam.game.root}/bin64/dontstarve_dedicated_server_nullrenderer_x64",
             "processId": "${command:pickProcess}",
         },
         {
             "name": "(Windows) 启动",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "E:/SteamLibrary/steamapps/common/Don't Starve Together/bin64/dontstarve_steam_x64.exe",
-            "args": [],
-            "cwd": "E:/SteamLibrary/steamapps/common/Don't Starve Together/bin64",
-            "environment": [],
+            "program": "${config:steam.game.root}/bin64/dontstarve_steam_x64.exe",
+            "args": ["-enable_lua_debugger"],
+            "cwd": "${config:steam.game.root}/bin64",
+            "environment": [
+                //{"name": "DontStarveInjectorDisable", "value": "1"}
+            ],
+            "visualizerFile": "${workspaceFolder}/LuaJit.Natvis"
+        },
+        {
+            "name": "(Windows) 启动(lua)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${config:steam.game.root}/bin64/dontstarve_steam_x64.exe",
+            "args": [
+                "-e",
+                //"print 'hello'",
+                "dofile[[c:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.2.2-win32-x64/script/launch.lua]] DBG[[42128]]",
+                "",
+                "-enable_lua_debugger"
+            ],
+            "cwd": "${config:steam.game.root}/bin64",
+            "environment": [
+                //{"name": "DontStarveInjectorDisable", "value": "1"}
+            ],
+            "visualizerFile": "${workspaceFolder}/LuaJit.Natvis"
         },
         {
             "name": "(Windows) 启动服务器",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "E:/SteamLibrary/steamapps/common/Don't Starve Together/bin64/dontstarve_dedicated_server_nullrenderer_x64.exe",
+            "program": "${config:steam.game.root}/bin64/dontstarve_dedicated_server_nullrenderer_x64.exe",
+            // -persistent_storage_root APP:Klei/ -conf_dir DoNotStarveTogether -cluster Cluster_1 -ownernetid 76561198151751414 -ownerdir 191485686 -clouddir 191485686 -backup_log_count 25 -backup_log_period 0 -ugc_directory "C:\Program Files (x86)\Steam\steamapps\workshop" -shard Master -secondary_log_prefix master -sigprefix DST_Master
             "args": [
+                //"-tick","60",
                 "-persistent_storage_root",
                 "APP:Klei/",
                 "-conf_dir",
@@ -55,28 +78,62 @@
                 "-backup_log_period",
                 "0",
                 "-ugc_directory",
-                "E:\\SteamLibrary\\steamapps\\workshop",
+                "${config:steam.modroot}",
                 "-shard",
                 "Master",
                 "-secondary_log_prefix",
                 "master",
                 "-sigprefix",
                 "DST_Master",
-                "-token",
-                ""
-            ], // -persistent_storage_root APP:Klei/ -conf_dir DoNotStarveTogether -cluster Cluster_3 -ownernetid 76561198151751414 -ownerdir 191485686 -clouddir 191485686 -backup_log_count 25 -backup_log_period 0 -ugc_directory E:\SteamLibrary\steamapps\workshop -shard Master -secondary_log_prefix master -sigprefix DST_Master
-            "cwd": "E:/SteamLibrary/steamapps/common/Don't Starve Together/bin64",
-            "environment": [],
-            "externalConsole": true
+                //"-enable_lua_debugger"
+            ],
+            "cwd": "${config:steam.game.root}/bin64",
+            "visualizerFile": "${workspaceFolder}/LuaJit.Natvis",
+            //"environment": [{"name": "DontStarveInjectorDisable", "value": "1"}],
+        },
+        {
+            "name": "(Windows) 启动服务器(lua)",
+            "type": "lua",
+            "request": "launch",
+            "program": "${config:steam.game.root}/bin64/dontstarve_dedicated_server_nullrenderer_x64.exe",
+            "arg": [
+                //"-tick","60",
+                "-persistent_storage_root",
+                "APP:Klei/",
+                "-conf_dir",
+                "DoNotStarveTogether",
+                "-cluster",
+                "Cluster_1",
+                "-ownernetid",
+                "76561198151751414",
+                "-ownerdir",
+                "191485686",
+                "-clouddir",
+                "191485686",
+                "-backup_log_count",
+                "25",
+                "-backup_log_period",
+                "0",
+                "-ugc_directory",
+                "${config:steam.modroot}",
+                "-shard",
+                "Master",
+                "-secondary_log_prefix",
+                "master",
+                "-sigprefix",
+                "DST_Master",
+                "-enable_lua_debugger"
+            ],
+            "cwd": "${config:steam.game.root}/bin64",
         },
         {
             "name": "(Linux) debug game",
             "type": "cppdbg",
             "request": "launch",
-            "program": "/home/ubuntu/.steam/steam/steamapps/common/Don't Starve Together/bin64/dontstarve_steam_x64_1",
+            "program": "${config:steam.game.root}/bin64/dontstarve_steam_x64_1",
             "args": [],
             "stopAtConnect": true,
-            "cwd": "/home/ubuntu/.steam/steam/steamapps/common/Don't Starve Together/bin64",
+            "cwd": "${config:steam.game.root}/bin64",    
             "environment": [
                 {
                     "name": "LD_PRELOAD",
@@ -97,13 +154,13 @@
             "name": "(Linux) debug docker server",
             "type": "cppdbg",
             "request": "launch",
-            "program": "/root/server_dst/bin64/dontstarve_dedicated_server_nullrenderer_x64",
+            "program": "${config:steam.game.root}/bin64/dontstarve_dedicated_server_nullrenderer_x64",
             "args": [
                 "-cluster",
                 "DSTWhalesCluster"
             ],
             "stopAtConnect": true,
-            "cwd": "/root/server_dst/bin64",
+            "cwd": "${config:steam.game.root}/bin64",
             "environment": [
                 {
                     "name": "LD_PRELOAD",
@@ -128,14 +185,14 @@
             "name": "(Linux) debug signature_creater",
             "type": "cppdbg",
             "request": "launch",
-            "program": "/home/ubuntu/.steam/steam/steamapps/common/Don't Starve Together/bin64/dontstarve_steam_x64_1",
+            "program": "${config:steam.game.root}/bin64/dontstarve_steam_x64_1",
             "args": [],
             "stopAtConnect": true,
-            "cwd": "/home/ubuntu/.steam/steam/steamapps/common/Don't Starve Together/bin64",
+            "cwd": "${config:steam.game.root}/bin64",
             "environment": [
                 {
                     "name": "LD_PRELOAD",
-                    "value": "/home/ubuntu/dontstarveluajit2/builds/ninja-multi-vcpkg/tools/Creater/Debug/libsignature_updater.so"
+                    "value": "${workspaceFolder}/builds/ninja-multi-vcpkg/tools/Creater/Debug/libsignature_updater.so"
                 }
                 //,{"name": "LD_DEBUG", "value": "libs"}
             ],
@@ -152,14 +209,14 @@
             "name": "(Linux) debug file_signature",
             "type": "cppdbg",
             "request": "launch",
-            "program": "/home/ubuntu/dontstarveluajit2/Mod/bin64/linux/lib64/lua51",
+            "program": "${workspaceFolder}/Mod/bin64/linux/lib64/lua51",
             "args": [],
             "stopAtConnect": true,
-            "cwd": "/home/ubuntu/dontstarveluajit2/Mod/bin64/linux",
+            "cwd": "${workspaceFolder}/Mod/bin64/linux",
             "environment": [
                 {
                     "name": "LD_PRELOAD",
-                    "value": "/home/ubuntu/dontstarveluajit2/builds/ninja-multi-vcpkg/tools/Creater/Debug/libsignature_updater.so"
+                    "value": "${workspaceFolder}/builds/ninja-multi-vcpkg/tools/Creater/Debug/libsignature_updater.so"
                 }
             ],
             "MIMode": "gdb",
@@ -173,16 +230,15 @@
         },
         {
             "name": "Launch luajit",
-            "type": "cppdbg",
+            "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/builds/ninja-multi-vcpkg/luajit/Debug/luajit",
             "args": [
-                "${workspaceFolder}/tests/sect/simulator.lua",
-                "tests/2847908822/modmain12345.lua",
-                "../mods/workshop-2847908822/modmain.lua"
+                //"-bl",
+                "${workspaceFolder}/test.lua",
             ],
-            "stopAtEntry": true,
-            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/builds/ninja-multi-vcpkg",
             "environment": [],
             "visualizerFile": "${workspaceFolder}/LuaJit.Natvis"
         },
@@ -272,8 +328,8 @@
             "type": "lua",
             "request": "launch",
             "program": "${workspaceFolder}/test.lua",
-            "luaexe": "/root/server_dst/bin64/dontstarve_dedicated_server_nullrenderer_x64",
-            "cwd": "/root/server_dst/bin64",
+            "luaexe": "${config:steam.game.root}/bin64/dontstarve_dedicated_server_nullrenderer_x64",
+            "cwd": "${config:steam.game.root}/bin64",
             "arg": [
                 "tests/2847908822/modmain12345.lua",
                 "../mods/workshop-2847908822/modmain.lua"
@@ -282,8 +338,8 @@
             "env": {
                 "PATH": "${workspaceFolder}",
                 //"LUAJIT_WAIT_DEBUGGER_ENABLE": "1",
-                "LD_PRELOAD": "/root/server_dst/bin64/lib64/libInjector.so",
-                "LD_LIBRARY_PATH": "/root/server_dst/bin64/lib64",
+                "LD_PRELOAD": "${config:steam.game.root}/bin64/lib64/libInjector.so",
+                "LD_LIBRARY_PATH": "${config:steam.game.root}/bin64/lib64",
                 "LUA_DEBUG_PLATFORM": "linux-x64",
                 "GAME_INJECTOR_NO_DEFAULT_BEFORE": "1"
             },

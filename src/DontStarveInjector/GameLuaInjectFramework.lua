@@ -2,6 +2,7 @@
     1. Inject lua text into file afterload
     2. Replace lua text
 ]]
+local spdlog = ...
 
 GameLuaInjector = {
     injectors = {},
@@ -116,7 +117,7 @@ function _M.unregister_event(event_name, idx)
     end
     for i, v in ipairs(_M[event_name]) do
         if v.idx == idx then
-            _M[event_name] = false
+            _M[event_name] = nil
             break
         end
     end
@@ -145,17 +146,55 @@ function _M.push_event(event_name, ...)
     end
 end
 
+local myio = io2 or io
+local myenv
+local function myloadfile(filename, chunkname)
+    spdlog.info("mydofile " .. filename)
+    local load = _VERSION == "Lua 5.1" and loadstring or load
+    local f = assert(myio.open(filename))
+    ---@type string
+    local str = f:read "*a"
+    f:close()
+    if filename:find("launch.lua", 1, true) then
+        str = str:gsub('%.source:sub%(2%)', '%.source:sub(1)')
+        
+        spdlog.info(str)
+    end
+    local fn, err = load(str, chunkname or filename)
+    if fn then
+        setfenv(fn, myenv)
+    end
+    return fn, err
+end
+
+local function mydofile(filename, chunkname)
+    local fn, err = myloadfile(filename, chunkname or filename)
+    if not fn then
+        error(err)
+    end
+    return fn()
+end
+
+myenv = setmetatable({io=myio, dofile=mydofile, spdlog=spdlog}, { __index = _G, __newindex = _G })
+
 local function register_event_code(event_name, script)
     if not script or type(script) ~= "string" or script == "" then
         return
     end
+    spdlog.info("register_event[script] " .. event_name)
     _M.register_event(event_name, function()
         local f, err = loadstring(script)
         if f then
-            local res = xpcall(f, debug.traceback)
+            spdlog.info("execute_event[script] " .. event_name)
+            if event_name == "before_main" then
+                setfenv(f, myenv)
+            end
+            local res = xpcall(f, function (error)
+                spdlog.error("[luajit] in " .. event_name .. " script Error :" .. tostring(error) .. "\n" .. debug.traceback())
+            end)
             if res then return res end
         else
-            print("[luajit] Error in " .. event_name .. " script: " .. err)
+            spdlog.error("[luajit] Error in " .. event_name .. " script: " .. err)
         end
         return "unregister"
     end)
@@ -192,4 +231,54 @@ end
 
 function _M.tostring()
     return "GameLuaInjector", inited, "EnableForceLoadMod", EnableForceLoadMod, "ModName", ModName
+end
+
+function _M.check_enable_debugger()
+    if not TheSim:ShouldInitDebugger() then
+        return false
+    end
+    local debugger = debug.getregistry()["lua-debug"]
+    local launchmode = debugger;
+    package.preload.debuggee = function()
+        Debuggee = { ready = false };
+        Debuggee.start = function()
+            if Debuggee.ready then return "ok", Debuggee.host, debugger end;
+            local host;
+            if launchmode then
+                spdlog.info("[Lua Debugger] Launch mode detected.");
+                host = debugger;
+            else
+                local path = os.getenv("LUA_DEBUG_CORE_ROOT")
+                if not path then
+                    error("LUA_DEBUG_CORE_ROOT environment variable not set")
+                end
+                local filename = path .. "/script/debugger.lua"
+                debugger = assert(myloadfile(filename))(filename)
+
+                local port = 12306;
+                if not TheNet:IsDedicated() then
+                    port = 12306;
+                else
+                    port = 12307;
+                    if TheShard:IsMaster() then
+                        port = 12307;
+                    elseif TheShard:IsSecondary() then
+                        port = 12308;
+                    end
+                end
+                host = { address = "127.0.0.1:" .. port };
+                debugger:start(host);
+                spdlog.info("[Lua Debugger] Debugger host address: " .. host.address);
+            end
+            debugger:event("autoUpdate", false);
+            Debuggee.host = host.address;
+            Debuggee.ready = true;
+            return "ok", Debuggee.host, debugger
+        end
+        Debuggee.poll = function()
+            debugger:event "update";
+        end
+        return Debuggee
+    end
+    return true
 end

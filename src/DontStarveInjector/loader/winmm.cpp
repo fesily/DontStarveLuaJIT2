@@ -439,41 +439,23 @@ void wait_debugger();
 
 void DontStarveInjectorStart();
 
-BOOL APIENTRY
-DllMain(HMODULE
-hModule,
-DWORD dwReason, PVOID
-pvReserved)
-{
-static std::atomic_bool loaded = false;
-if (dwReason == DLL_PROCESS_ATTACH)
-{
-if (!
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, PVOID pvReserved) {
+    static std::atomic_bool loaded = false;
+    if (dwReason == DLL_PROCESS_ATTACH) {
+        if (!loaded && Load()) {
+            loaded = true;
 
-loaded &&Load()
+            wait_debugger();
 
-)
-{
-loaded = true;
+            module_enumerate_exports(hModule, GumFoundCb, hModule);
+            void *uname2_ptr = GetProcAddress(g_OldModule, (LPCSTR) 2);
+            Hook((uint8_t *) &AheadLib_Unnamed2, (uint8_t *) uname2_ptr);
 
-wait_debugger();
+            DontStarveInjectorStart();
+        }
+    } else if (dwReason == DLL_PROCESS_DETACH) {
+        Free();
+    }
 
-module_enumerate_exports(hModule, GumFoundCb, hModule
-);
-void *uname2_ptr = GetProcAddress(g_OldModule, (LPCSTR) 2);
-Hook((uint8_t
-*)&AheadLib_Unnamed2, (uint8_t *)uname2_ptr);
-
-DontStarveInjectorStart();
-
-}
-}
-else if (dwReason == DLL_PROCESS_DETACH)
-{
-Free();
-
-}
-
-return
-TRUE;
+    return TRUE;
 }

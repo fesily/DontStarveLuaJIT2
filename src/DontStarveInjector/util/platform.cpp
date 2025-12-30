@@ -208,3 +208,12 @@ void set_worker_directory(const char *path) {
     chdir(path);
 #endif
 }
+
+void set_env_variable(const char *key, const char *value) {
+#ifdef _WIN32
+    _putenv_s(key, value);
+#else
+    setenv(key, value, 1);
+#endif
+}
+
