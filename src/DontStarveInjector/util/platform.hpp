@@ -19,3 +19,5 @@ std::string get_cmd(uintptr_t pid = 0);
 std::vector<std::string> get_cmds(uintptr_t pid = 0);
 
 void set_worker_directory(const char *path);
+
+void set_env_variable(const char *key, const char *value);

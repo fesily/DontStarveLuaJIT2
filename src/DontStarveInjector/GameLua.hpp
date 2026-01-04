@@ -55,6 +55,15 @@ struct LuaApis {
     void _lua_pop(lua_State* L, int n) {
         _lua_settop(L, -(n) - 1);
     }
+    void _lua_newtable(lua_State* L) {
+        _lua_createtable(L, 0, 0);
+    }
+    void _lua_pushcfunction(lua_State* L, lua_CFunction f) {
+        _lua_pushcclosure(L, f, 0);
+    }
+    const char * _luaL_checkstring(lua_State* L, int n) {
+        return _luaL_checklstring(L, (n), NULL);
+    }
 };
 
 struct GameLuaContext {

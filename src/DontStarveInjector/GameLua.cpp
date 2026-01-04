@@ -6,6 +6,7 @@
 #include "util/platform.hpp"
 #include "gameio.h"
 #include "luajit_config.hpp"
+#include "lua_debugger_helper.hpp"
 #include <string_view>
 #include <map>
 #include <spdlog/spdlog.h>
@@ -66,12 +67,39 @@ void do_lua_env(GameLuaContext &ctx, lua_State *L, const std::string_view &env) 
         ctx->_luaL_dostring(L, init);
 }
 
+#define GameLuaInjectorName "GameLuaInjector"
+
 void GameLuaContext::luaL_openlibs_hooker(lua_State *L) {
     api._luaL_openlibs(L);
     do_lua_env(*this, L, "GAME_INIT");
 #include "GameLuaInjectFramework.c"
     auto buffer = std::string{GameLuaInjectFramework, GameLuaInjectFramework_len};
-    api._luaL_dostringex(L, buffer.c_str(), "@GameLuaInjectFramework.lua");
+    api._luaL_loadbuffer(L, buffer.c_str(), buffer.size(), "@GameLuaInjectFramework.lua");
+    // register spdlog in lua
+    api._lua_newtable(L);
+    api._lua_pushcfunction(L, +[](lua_State *L) -> int {
+        auto ctx = GetGameLuaContext();
+        const char *msg = ctx.api._luaL_checkstring(L, 1);
+        spdlog::info("[Lua] {}", msg); 
+        return 0;
+    });
+    api._lua_setfield(L, -2, "info");
+    api._lua_pushcfunction(L, +[](lua_State *L) -> int {
+        auto ctx = GetGameLuaContext();
+        const char *msg = ctx.api._luaL_checkstring(L, 1);
+        spdlog::warn("[Lua] {}", msg);
+        return 0;
+    });
+    api._lua_setfield(L, -2, "warn");
+    api._lua_pushcfunction(L, +[](lua_State *L) -> int {
+        auto ctx = GetGameLuaContext();
+        const char *msg = ctx.api._luaL_checkstring(L, 1);
+        spdlog::error("[Lua] {}", msg);
+        return 0;
+    });
+    api._lua_setfield(L, -2, "error");
+    api._lua_pcall(L, 1, 0, 0);
+
     auto config = luajit_config::read_from_file();
     if (config) {
         if (InjectorConfig::instance().DisableForceLoadLuaJITMod) {
@@ -82,7 +110,7 @@ void GameLuaContext::luaL_openlibs_hooker(lua_State *L) {
         if (config->modmain_path.empty() || !std::filesystem::exists(config->modmain_path)) {
             return;
         }
-        api._luaL_dostring(L, fmt::format("GameLuaInjector.forceEnableLuaMod(true, [[{}]])", config->modname).c_str());
+        api._luaL_dostring(L, fmt::format(GameLuaInjectorName ".forceEnableLuaMod(true, [[{}]])", config->modname).c_str());
         spdlog::info("Forced enabled Lua mod: {}", config->modname);
     }
 }
@@ -144,7 +172,7 @@ struct GameLuaContextImpl : GameLuaContext {
             decltype(&luaL_loadbuffer) hooker = +[](lua_State *L, const char *buff, size_t size, const char *name) {
                 auto &ctx = GetGameLuaContext();
                 if (name == "@scripts/main.lua"sv) {
-                    ctx->_luaL_dostring(L, "GameLuaInjector.init()");
+                    ctx->_luaL_dostring(L, GameLuaInjectorName ".init()");
                     // load custom main.lua script
                     int top = ctx->_lua_gettop(L);
                     auto new_buffer = wapper_game_main_buffer(L, {buff, size});
@@ -383,9 +411,9 @@ static std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer
         GameLuaInjector.register_event_game_initialized_injector_file(<injector_file>, <injector_args>)
     */
     auto &ctx = *currentCtx;
-    ctx->_lua_getglobal(L, "GameLuaInjector");
+    ctx->_lua_getglobal(L, GameLuaInjectorName);
     if (!ctx->_lua_istable(L, -1)) {
-        spdlog::error("GameLuaInjector is not a table, cannot inject scripts");
+        spdlog::error(GameLuaInjectorName " is not a table, cannot inject scripts");
         ctx->_lua_pop(L, 1);
         return {};
     }
@@ -486,10 +514,20 @@ static std::string wapper_game_main_buffer(lua_State *L, std::string_view buffer
         }
     }
 
-    ctx->_luaL_dostring(L, "GameLuaInjector.push_event('before_main')");
+    ctx->_luaL_dostring(L, GameLuaInjectorName ".push_event('before_main')");
 
-    auto new_buffer = std::format("{};GameLuaInjector.push_event('game_initialized');{}", buffer_prefix, buffer_after);
-    //spdlog::info("New buffer:\n {}", new_buffer);
+    auto new_buffer = std::format("{};" GameLuaInjectorName ".push_event('game_initialized');{}", buffer_prefix, buffer_after);
+    if (InjectorConfig::instance().enable_lua_debugger && !InjectorConfig::instance().disable_lua_debugger_code_patch) {
+        // replace buffer
+        auto target = "DEBUGGER_ENABLED = TheSim:ShouldInitDebugger() and IsNotConsole() and CONFIGURATION ~= \"PRODUCTION\" and not TheNet:IsDedicated()"sv;
+        auto npos = new_buffer.find(target);
+        if (npos != std::string_view::npos) {
+            spdlog::info("Enable lua debugger in main.lua");
+            const char *debugger_preload_code = "DEBUGGER_ENABLED =" GameLuaInjectorName ".check_enable_debugger()";
+            new_buffer = new_buffer.substr(0, npos) + debugger_preload_code + new_buffer.substr(npos + target.size());
+        }
+    }
+    spdlog::info("New buffer:\n {}", new_buffer);
     return new_buffer;
 }
 
@@ -553,6 +591,7 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
 
     if (currentLuaType == GameLuaType::jit) {
         init_luajit_jit_opt(currentCtx->LuaModule);
+        init_luajit_io(currentCtx->LuaModule);
         if (InjectorConfig::instance().DisableReplaceLuaIO) {
             spdlog::info("DISABLE_REPLACE_LUA_IO is set, skip replacing io module");
         } else {
@@ -575,9 +614,10 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
                 }
                 spdlog::info("Replaced luaopen_io with game io open function");
             }
-            init_luajit_io(currentCtx->LuaModule);
         }
     }
+    if (InjectorConfig::instance().enable_lua_debugger)
+        dontstarveinjector::lua_debugger_helper::initialize_lua_debugger();
 }
 
 // luaL_Reg GameInjectorModule[] = {

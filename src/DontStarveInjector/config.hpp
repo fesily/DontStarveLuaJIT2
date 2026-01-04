@@ -22,6 +22,10 @@
 #define DEBUG_GETSIZE_PATCH 1
 #endif
 
+#ifndef ENABLE_LUA_DEBUGGER
+#define ENABLE_LUA_DEBUGGER 1
+#endif
+
 #ifdef _WIN32
 constexpr auto lua51_name = "lua51";
 #else
@@ -49,6 +53,7 @@ constexpr auto game_name = "dontstarve_";
 
 #endif
 
+#define LUA_DEBUG_CORE_ROOT "LUA_DEBUG_CORE_ROOT"
 
 struct InjectorConfig {
     struct EnvOrCmdOptFlag {
@@ -67,6 +72,7 @@ struct InjectorConfig {
     ENV_OR_CMD_OPT_FLAG(GameInjectorNoDefaultBeforeCode);
     ENV_OR_CMD_OPT_FLAG(disable_progress);
     ENV_OR_CMD_OPT_FLAG(enable_lua_debugger);
+    ENV_OR_CMD_OPT_FLAG(disable_lua_debugger_code_patch);
 
 #undef ENV_OR_CMD_OPT_FLAG
 

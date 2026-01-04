@@ -42,32 +42,35 @@ void wait_debugger() {
     if (_tcsstr(filePath, _T("dontstarve")) != NULL) {
         const auto filename = "Debug.config";
         BOOL enableDebug = ::GetFileAttributesA(filename) != INVALID_FILE_ATTRIBUTES;
+        ::AllocConsole();
 
         if (enableDebug) {
-            ::AllocConsole();
 #ifndef NDEBUG
-            if (!IsDebuggerPresent())
-            {
-                STARTUPINFO si;
-                ZeroMemory(&si, sizeof(si));
-                si.cb = sizeof(si);
+            if (getenv("NOVSDEBUGGER") == NULL) {
+                if (!IsDebuggerPresent()) {
+                    STARTUPINFO si;
+                    ZeroMemory(&si, sizeof(si));
+                    si.cb = sizeof(si);
 
-                PROCESS_INFORMATION pi;
-                ZeroMemory(&pi, sizeof(pi));
-                auto cmd = std::format("vsjitdebugger -p {}", GetCurrentProcessId());
-                CreateProcessA(NULL, cmd.data(), NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL,
-                               NULL,
-                               &si,
-                               &pi);
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
+                    PROCESS_INFORMATION pi;
+                    ZeroMemory(&pi, sizeof(pi));
+                    auto cmd = std::format("vsjitdebugger -p {}", GetCurrentProcessId());
+                    CreateProcessA(NULL, cmd.data(), NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL,
+                                NULL,
+                                &si,
+                                &pi);
+                    CloseHandle(pi.hProcess);
+                    CloseHandle(pi.hThread);
+                }
             }
-            auto limit = std::chrono::system_clock::now() + 15s;
-            while (!IsDebuggerPresent())
-            {
-                std::this_thread::yield();
-                if (std::chrono::system_clock::now() > limit)
-                    break;
+            if (getenv("NOWAITDEBUGGER") == NULL) {
+                auto limit = std::chrono::system_clock::now() + 15s;
+                while (!IsDebuggerPresent())
+                {
+                    std::this_thread::yield();
+                    if (std::chrono::system_clock::now() > limit)
+                        break;
+                }
             }
 #endif // NDEBUG
             auto fp = fopen(filename, "r");

@@ -23,6 +23,7 @@ set(SOURCES
         GameNetwork.cpp
         config.cpp
         GameLuaInjectFramework.c
+        lua_debugger_helper.cpp
 )
 
 if (ENABLE_STEAM_SUPPORT)

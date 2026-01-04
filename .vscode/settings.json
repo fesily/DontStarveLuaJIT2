@@ -171,5 +171,8 @@
         "cuchar": "cpp",
         "scoped_allocator": "cpp"
     },
-    "lua.debug.variables.showIntegerAsHex": true
+    "steam.root": "C:/Program Files (x86)/Steam/steamapps",
+    "steam.game.root": "${config:steam.root}/common/Don't Starve Together",
+    "steam.modroot": "${config:steam.root}/workshop",
+    "steam.game.modroot": "${config:steam.modroot}/content/322330",
 }
