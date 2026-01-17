@@ -1096,11 +1096,15 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
 #ifdef _WIN32
 #define EXPORT_GAME_LUA_API(name) extern "C"
 #else
+#ifdef __linux__
 #define EXPORT_GAME_LUA_API_NAME_CONCAT(a) #a
 #define EXPORT_GAME_LUA_API_NAME(name) EXPORT_GAME_LUA_API_NAME_CONCAT(GameDbg_##name)
 #define EXPORT_GAME_LUA_API(name) \
     decltype(name) name __attribute__((alias(EXPORT_GAME_LUA_API_NAME(name)))); \
     DONTSTARVEINJECTOR_API
+#else
+#define EXPORT_GAME_LUA_API(name) DONTSTARVEINJECTOR_API 
+#endif
 #endif
 EXPORT_GAME_LUA_API(lua_getinfo)
 int GameDbg_lua_getinfo(lua_State *L, const char *what, lua_Debug *ar) {
