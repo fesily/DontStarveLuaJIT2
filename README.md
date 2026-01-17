@@ -9,7 +9,7 @@
 ## 注意
 
 请务必备份您的存档，因为我们无法保证插件不会导致存档损坏！
-使用独立开服工具需要注意,设置中`服务器禁用luajit`选项是无效的,你应该直接去除luajit启动服务器
+使用专用服务器开服需要注意，设置中`服务器禁用luajit`选项是无效的，你应该直接卸载luajit再启动服务器
 
 # Roadload
 
@@ -69,29 +69,28 @@
 
 ## 1.MOD本体：
 
-1. 先在游戏根目录下的mods文件夹中创建一个新的文件夹，名字随意取，比如luajit_mod
+1. 先在游戏根目录下的mods文件夹中创建一个新的文件夹，名字随意取，比如`Luajit`
 2. 然后把所有的文件复制到该目录
-### 此时的简单方法
-直接运行`install.bat`(windows) `install_linux.sh`
-`install_linux.sh`可能需要执行`chmod +x ./install_linux.sh`赋予权限
 
 ## 2.注入部分：
 
-### Windows
+### 方法 1（自动安装）
+- 直接运行Luajit文件夹内的`install.bat` (Windows系统) / `install_linux.sh` (Linux系统)
+- 运行`install_linux.sh`前可能需要先执行`chmod +x ./install_linux.sh`赋予权限
 
-将所有 `bin64/windows` 文件复制到游戏目录下的 `bin64` 文件夹中
+### 方法 2（手动安装）
 
-比如 C:\\steamapps\\Don't Starve Together\bin64\
+#### Windows
 
-启动游戏，按 ` 键并键入
+- 将 `Luajit/bin64/windows` 文件夹内所有文件`复制`到`游戏目录`下的 `bin64` 文件夹中
+- 比如 D:\Steam\steamapps\common\Don't Starve Together\bin64
+- 专用服务器同理
 
-print(jit)
-
-### Linux
+#### Linux
 
 我只在 ubuntu 上测试过，但如果有人能提供 steamos 环境，我也可以在 steamos 上测试，哈哈！
 
-- 将所有 `bin64/linux`文件复制到游戏目录下的 `bin64`文件夹中
+- 将 `Luajit/bin64/linux` 文件夹内所有文件`复制`到`游戏目录`下的 `bin64`文件夹中
 - 将原始游戏可执行文件 `dontstarve_steam_x64` 重命名为 `dontstarve_steam_x64_1`
 - 创建内容为 `dontstarve_steam_x64` 的新文件：
 
@@ -105,7 +104,9 @@ export LD_PRELOAD=./lib64/libInjector.so
 - 运行 shell `chmod +x ./dontstarve_steam_x64`
 - 搞定
 
-### macos
+- 专用服务器文件名为`dontstarve_dedicated_server_nullrenderer_x64`，请自行替换相关内容
+
+#### Macos
 
 - 创建一个属于自己的证书，比如名字为Dontstarve
 
@@ -135,7 +136,7 @@ export LD_PRELOAD=./lib64/libInjector.so
 ```
 
 - `sudo codesign -d --entitlements ./my.xml ./dontstarve_steam.app`
-- 将所有 `bin64/osx`文件复制到游戏目录下的 `MacOS`文件夹中
+- 将 `Luajit/bin64/osx` 文件夹内所有文件`复制`到`游戏目录`下的 `MacOS`文件夹中
 - 将原始游戏可执行文件 `dontstarve_steam` 重命名为 `dontstarve_steam_1`
 - 创建内容为 `dontstarve_steam` 的新文件：
 
@@ -151,7 +152,19 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 
 在游戏中启用名为dontstarveluajit2的mod
 
-如果没有任何其他问题，现在可以在右下角的版本号看到luajit
+如果没有任何其他问题，应该可以在右下角的版本号看到luajit
+
+若为专用服务器：输入控制台代码`print(jit)`，游戏返回一个table则为安装成功（比如table: 0x18709a30）
+
+## 4.卸载mod
+
+### Windows
+将`游戏目录`下的 `bin64`文件夹中的`Winmm.dll`删除或重命名
+
+### Linux/MacOS
+- 删除安装游戏时自己创建的`dontstarve_steam_x64`文件
+- 将 `dontstarve_steam_x64_1` 重命名为 `dontstarve_steam_x64`
+- 专用服务器同理，文件名为`dontstarve_dedicated_server_nullrenderer_x64`
 
 # MOD作者兼容
 
@@ -304,5 +317,3 @@ end
 
 
 ![微信图片_20250320092648](https://github.com/user-attachments/assets/6c754bc6-6b43-45af-bc41-fa4c502b4b3e)
-
-
