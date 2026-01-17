@@ -20,7 +20,7 @@ set(SOURCES
         luajit_config.cpp
         game_info.cpp
         GameLua.cpp
-        GameLUaModule.cpp
+        GameLuaModule.cpp
         GameSteam.cpp
         GameSignature.cpp
         GameNetwork.cpp
