@@ -240,7 +240,7 @@ int chdir_hook(const char *path) {
     static bool injector = false;
     if ("../data"sv == path && !injector) {
 #ifndef NDEBUG
-        if (InjectorConfig::instance().LuajitWaitDebuggerEnable) {
+        if (InjectorConfig::instance()->LuajitWaitDebuggerEnable) {
             while (!gum_process_is_debugger_attached()) {
                 std::this_thread::sleep_for(200ms);
             }

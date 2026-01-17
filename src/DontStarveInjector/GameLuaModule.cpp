@@ -6,6 +6,9 @@
 #include <optional>
 #include <slikenet/PacketPriority.h>
 
+#ifndef _WIN32
+#include <errno.h>
+#endif
 
 #define luaL_addlstring GameDbg_luaL_addlstring
 #define luaL_addstring GameDbg_luaL_addstring
@@ -24,9 +27,11 @@
 #define luaL_error GameDbg_luaL_error
 #define luaL_execresult GameDbg_luaL_execresult
 #define luaL_fileresult GameDbg_luaL_fileresult
+#define luaL_findtable GameDbg_luaL_findtable
 #define luaL_getmetafield GameDbg_luaL_getmetafield
 #define luaL_gsub GameDbg_luaL_gsub
 #define luaL_loadbufferx GameDbg_luaL_loadbufferx
+#define luaL_loadfile GameDbg_luaL_loadfile
 #define luaL_loadfilex GameDbg_luaL_loadfilex
 #define luaL_loadstring GameDbg_luaL_loadstring
 #define luaL_newmetatable GameDbg_luaL_newmetatable
@@ -40,6 +45,7 @@
 #define luaL_setmetatable GameDbg_luaL_setmetatable
 #define luaL_testudata GameDbg_luaL_testudata
 #define luaL_traceback GameDbg_luaL_traceback
+#define luaL_typerror GameDbg_luaL_typerror
 #define luaL_unref GameDbg_luaL_unref
 #define luaL_where GameDbg_luaL_where
 #define lua_absindex GameDbg_lua_absindex
@@ -75,6 +81,7 @@
 #define lua_len GameDbg_lua_len
 #define lua_newstate GameDbg_lua_newstate
 #define lua_newthread GameDbg_lua_newthread
+#define lua_newuserdata GameDbg_lua_newuserdata
 #define lua_next GameDbg_lua_next
 #define lua_pushboolean GameDbg_lua_pushboolean
 #define lua_pushcclosure GameDbg_lua_pushcclosure
@@ -94,10 +101,23 @@
 
 #define lua_rawset GameDbg_lua_rawset
 #define lua_rawseti GameDbg_lua_rawseti
+#define lua_replace GameDbg_lua_replace
 
 #define lua_setallocf GameDbg_lua_setallocf
 #define lua_setfield GameDbg_lua_setfield
-
+#define lua_remove GameDbg_lua_remove
+#define lua_getfenv GameDbg_lua_getfenv
+#define lua_setfenv GameDbg_lua_setfenv
+#define luaL_register GameDbg_luaL_register
+#define lua_objlen GameDbg_lua_objlen
+#define lua_call GameDbg_lua_call
+#define lua_pcall GameDbg_lua_pcall
+#define lua_cpcall GameDbg_lua_cpcall
+#define luaL_loadbuffer GameDbg_luaL_loadbuffer
+#define lua_insert GameDbg_lua_insert
+#define lua_equal GameDbg_lua_equal
+#define lua_lessthan GameDbg_lua_lessthan
+#define lua_load GameDbg_lua_load
 #define lua_sethook GameDbg_lua_sethook
 #define lua_setlocal GameDbg_lua_setlocal
 #define lua_setmetatable GameDbg_lua_setmetatable
@@ -120,6 +140,7 @@
 #define lua_upvaluejoin GameDbg_lua_upvaluejoin
 #define lua_version GameDbg_lua_version
 #define lua_xmove GameDbg_lua_xmove
+#define lua_yield GameDbg_lua_yield
 #define luaopen_base GameDbg_luaopen_base
 #define luaopen_debug GameDbg_luaopen_debug
 #define luaopen_io GameDbg_luaopen_io
@@ -131,7 +152,6 @@
 
 #include <lua.hpp>
 
-int lua_load(lua_State* L, lua_Reader reader, void* data, const char* source, const char* mode);
 DONTSTARVEINJECTOR_API int lua_absindex(lua_State *L, int idx);
 
 #define COMPAT53_API static inline
@@ -804,21 +824,19 @@ static const char* compat53_reader(lua_State* L, void* ud, size_t* size) {
 }
 
 
-// COMPAT53_API int lua_load(lua_State* L, lua_Reader reader, void* data, const char* source, const char* mode) {
-// 	int status = LUA_OK;
-// 	compat53_reader_data compat53_data = { reader, data, 1, 0, 0 };
-// 	compat53_data.peeked_data = reader(L, data, &(compat53_data.peeked_data_size));
-// 	if (compat53_data.peeked_data && compat53_data.peeked_data_size && compat53_data.peeked_data[0] == LUA_SIGNATURE[0]) /* binary file? */
-// 		status = compat53_checkmode(L, mode, "binary", LUA_ERRSYNTAX);
-// 	else
-// 		status = compat53_checkmode(L, mode, "text", LUA_ERRSYNTAX);
-// 	if (status != LUA_OK)
-// 		return status;
-// 		/* we need to call the original 5.1 version of lua_load! */
-// #undef lua_load
-// 	return lua_load(L, compat53_reader, &compat53_data, source);
-// #define lua_load COMPAT53_CONCAT(COMPAT53_PREFIX, _load_53)
-// }
+COMPAT53_API int lua_load(lua_State* L, lua_Reader reader, void* data, const char* source, const char* mode) {
+	int status = LUA_OK;
+	compat53_reader_data compat53_data = { reader, data, 1, 0, 0 };
+	compat53_data.peeked_data = reader(L, data, &(compat53_data.peeked_data_size));
+	if (compat53_data.peeked_data && compat53_data.peeked_data_size && compat53_data.peeked_data[0] == LUA_SIGNATURE[0]) /* binary file? */
+		status = compat53_checkmode(L, mode, "binary", LUA_ERRSYNTAX);
+	else
+		status = compat53_checkmode(L, mode, "text", LUA_ERRSYNTAX);
+	if (status != LUA_OK)
+		return status;
+		/* we need to call the original 5.1 version of lua_load! */
+	return GameDbg_lua_load(L, compat53_reader, &compat53_data, source);
+}
 
 
 typedef struct {

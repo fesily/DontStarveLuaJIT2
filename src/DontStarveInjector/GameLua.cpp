@@ -212,7 +212,7 @@ struct GameLuaContextImpl : GameLuaContext {
         if (!LuaModule) {
             GError *error = nullptr;
 #ifndef _WIN32
-            loadlib(sharedlibraryName.c_str(), RTLD_GLOBAL);
+            loadlib(sharedlibraryName.c_str());
 #endif
             LuaModule = gum_module_load(sharedlibraryName.c_str(), &error);
             if (!LuaModule) {
@@ -1096,7 +1096,11 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
 #ifdef _WIN32
 #define EXPORT_GAME_LUA_API(name) extern "C"
 #else
-#define EXPORT_GAME_LUA_API(name) DONTSTARVEINJECTOR_API __attribute__((alias(#name)))
+#define EXPORT_GAME_LUA_API_NAME_CONCAT(a) #a
+#define EXPORT_GAME_LUA_API_NAME(name) EXPORT_GAME_LUA_API_NAME_CONCAT(GameDbg_##name)
+#define EXPORT_GAME_LUA_API(name) \
+    decltype(name) name __attribute__((alias(EXPORT_GAME_LUA_API_NAME(name)))); \
+    DONTSTARVEINJECTOR_API
 #endif
 EXPORT_GAME_LUA_API(lua_getinfo)
 int GameDbg_lua_getinfo(lua_State *L, const char *what, lua_Debug *ar) {
@@ -1413,5 +1417,6 @@ EXPORT_GAME_LUA_API(luaL_setmetatable)
 void GameDbg_luaL_setmetatable(lua_State *L, const char *tname) { return GetGameLuaContext()->_luaL_setmetatable(L, tname); };
 
 /* lua 5.3 */
+int lua_absindex(lua_State* L, int i);
 EXPORT_GAME_LUA_API(lua_absindex)
 int GameDbg_lua_absindex(lua_State *L, int idx) { return GetGameLuaContext()->_lua_absindex(L, idx); };

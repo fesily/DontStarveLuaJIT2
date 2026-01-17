@@ -23,7 +23,7 @@ InjectorConfig::EnvOrCmdOptValue::operator const char*() const {
     if (has_cached) return value;
     const char *env_value = getenv(key);
     if (env_value != nullptr) {
-        strncpy_s(value, env_value, sizeof(value) - 1);
+        strncpy(value, env_value, sizeof(value) - 1);
         has_cached = true;
         return value;
     }
@@ -34,7 +34,7 @@ InjectorConfig::EnvOrCmdOptValue::operator const char*() const {
         if (cmd.starts_with('-' + std::string{key} + '=') || cmd.starts_with("--" + std::string{key} + '=')) {
             auto pos = cmd.find('=');
             auto val = cmd.substr(pos + 1);
-            strncpy_s(value, val.data(), std::min(val.size(), sizeof(value) - 1));
+            strncpy(value, val.data(), std::min(val.size(), sizeof(value) - 1));
             has_cached = true;
             return value;
         } else if (cmd == '-' + std::string{key} || cmd == "--" + std::string{key}) {
@@ -44,7 +44,7 @@ InjectorConfig::EnvOrCmdOptValue::operator const char*() const {
                 if (val.starts_with('-') || val.starts_with("--")) {
                     break;
                 }
-                strncpy_s(value, val.data(), std::min(val.size(), sizeof(value) - 1));
+                strncpy(value, val.data(), std::min(val.size(), sizeof(value) - 1));
                 has_cached = true;
                 return value;
             }
