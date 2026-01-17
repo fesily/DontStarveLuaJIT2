@@ -37,7 +37,6 @@
     _(lua_pushlstring)       \
     _(lua_pushstring)        \
     _(lua_pushvfstring)      \
-    _(lua_pushfstring)       \
     _(lua_pushcclosure)      \
     _(lua_pushboolean)       \
     _(lua_pushlightuserdata) \
@@ -101,7 +100,6 @@
     _(luaL_newmetatable)     \
     _(luaL_checkudata)       \
     _(luaL_where)            \
-    _(luaL_error)            \
     _(luaL_checkoption)      \
     _(luaL_ref)              \
     _(luaL_unref)            \
@@ -127,7 +125,14 @@
     _(luaopen_string)        \
     _(luaopen_table)
 
-#define LUA51_API_DEFINES(_) LUA_API_DEFINES(_)
+#define LUA_API_DEFINES_FMT_VARGS(_)    \
+    _(lua_pushfstring)        \
+    _(luaL_error)
+
+#define LUA51_API_DEFINES(_) \
+    LUA_API_DEFINES(_) \
+    LUA_API_DEFINES_FMT_VARGS(_)
+
 #define LUAJIT_API_DEFINES(_) \
     _(luaopen_bit)            \
     _(luaopen_jit)            \

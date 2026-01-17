@@ -1,5 +1,6 @@
 #pragma once
 #include "config.hpp"
+#include "GameLua.hpp"
 namespace dontstarveinjector::lua_debugger_helper
 {
 /* \\berif Launch Mode
@@ -12,7 +13,7 @@ namespace dontstarveinjector::lua_debugger_helper
  * Replace Main.lua for init debugger (start debugger)
  */
 #ifdef ENABLE_LUA_DEBUGGER
-    void initialize_lua_debugger();
+    void* initialize_lua_debugger();
 #else
 #define initialize_lua_debugger() (void)0
 #endif

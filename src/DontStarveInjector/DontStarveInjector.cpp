@@ -97,7 +97,7 @@ static bool check_crash() {
     if (!getenv("SteamClientLaunch")) {
         return true;
     }
-    if (!InjectorConfig::instance().DontStarveInjectorIsClient) {
+    if (!InjectorCtx::instance()->DontStarveInjectorIsClient) {
         return true;
     }
 #ifndef NDEBUG
@@ -132,7 +132,7 @@ std::string String2Hex(std::string_view str) {
 }
 
 void DisableScriptZip() {
-    if (!InjectorConfig::instance().DisableGameScriptsZip) {
+    if (!InjectorConfig::instance()->DisableGameScriptsZip) {
         return;
     }
     // DEV=databundles/scripts.zip
@@ -148,7 +148,8 @@ void DisableScriptZip() {
 
 extern "C" void LoadGameModConfig();
 DONTSTARVEINJECTOR_API void Inject(bool isClient) {
-    if (InjectorConfig::instance().DontStarveInjectorDisable) {
+    auto ictx = InjectorCtx::instance();
+    if (ictx->config.DontStarveInjectorDisable) {
         spdlog::info("DontStarveInjector is disabled");
         return;
     }
@@ -159,7 +160,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         }
     }
 
-    InjectorConfig::instance().DontStarveInjectorIsClient = isClient;
+    ictx->DontStarveInjectorIsClient = isClient;
 #ifdef _WIN32
     gum_init();
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>()));
@@ -169,7 +170,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     spdlog::default_logger()->sinks().push_back(std::make_shared<spdlog::sinks::basic_file_sink_st>(log_path));
 #endif
 #if USE_LISTENER
-    interceptor = gum_interceptor_obtain();
+    interceptor = InjectorCtx::instance()->GetGumInterceptor();
 #endif
 
     spdlog::set_level(spdlog::level::err);
@@ -190,8 +191,9 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         showError("can't load lua51");
         return;
     }
-    auto defer1 = create_defer([lua51]() {
-        unloadlib(lua51);
+    auto defer1 = create_defer([&lua51]() {
+        if (lua51)
+            unloadlib(lua51);
     });
 
     if (!function_relocation::init_ctx()) {
@@ -213,6 +215,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         showError(res.error());
         return;
     }
+    unloadlib(lua51);
     auto &val = res.value();
     ReplaceLuaModule(mainPath, val.signatures, val.exports);
 #if 0
@@ -221,7 +224,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     replace_game_branch_flag_to_dev(mainPath);
 
     LoadGameModConfig();
-    if (!InjectorConfig::instance().DontStarveInjectorIsClient) {
+    if (!ictx->DontStarveInjectorIsClient) {
         HookSteamGameServerInterface();
     }
     GameNetWorkHookRpc4();
@@ -262,7 +265,7 @@ __attribute__((constructor)) void init() {
         return;
     }
     gum_init_embedded();
-    auto intercetor = gum_interceptor_obtain();
+    auto intercetor = InjectorCtx::instance()->GetGumInterceptor();
     gum_interceptor_replace_fast(intercetor, api, (void *) &chdir_hook, (void **) &origin);
 }
 #endif

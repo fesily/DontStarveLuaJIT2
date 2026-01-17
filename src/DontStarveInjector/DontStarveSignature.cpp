@@ -302,7 +302,8 @@ update_signatures_from_disasm(Signatures &signatures, uintptr_t targetLuaModuleB
     try
     {
         auto gen = update_signatures(signatures, targetLuaModuleBase, exports, range, updated);
-        if (InjectorConfig::instance().disable_progress || !InjectorConfig::instance().DontStarveInjectorIsClient) {
+        auto ictx = InjectorCtx::instance();
+        if (ictx->config.disable_progress || !ictx->DontStarveInjectorIsClient) {
             NoShowProgressWindow(0, gen);
         } else {
             ShowProgressWindow(exports.size() + 1, gen);

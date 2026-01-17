@@ -14,10 +14,13 @@ set(SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/lua_io2.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/lua51_object.cpp
         gameModConfig.cpp
         luajit_config.cpp
         game_info.cpp
         GameLua.cpp
+        GameLUaModule.cpp
         GameSteam.cpp
         GameSignature.cpp
         GameNetwork.cpp
@@ -38,6 +41,7 @@ else()
     list(APPEND SOURCES
         Progress.cpp
         #profiler.cpp
+        GameLua.def
     )
 endif()
 
@@ -50,7 +54,7 @@ find_package(Tracy CONFIG REQUIRED)
 find_package(mimalloc CONFIG REQUIRED)
 find_package(Boost REQUIRED COMPONENTS pfr)
 find_package(slikenet CONFIG REQUIRED)
-find_package(sol2 CONFIG REQUIRED)
+find_path(SOL2_INCLUDE_DIRS "sol/abort.hpp")
 find_path(PLF_HIVE_INCLUDE_DIRS "plf_hive.h")
 set(CMAKE_SKIP_BUILD_RPATH  FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
@@ -92,6 +96,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.c
 add_custom_target(GameLuaInjectFramework DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.c)
 add_dependencies(Injector GameLuaInjectFramework)
 
+target_include_directories(Injector PRIVATE ${SOL2_INCLUDE_DIRS})
 target_include_directories(Injector PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
 target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})
 
