@@ -49,7 +49,7 @@ static int frame_gc_time_ns = 0;
 static bool tracy_active = 0;
 extern float frame_time_s;
 constexpr auto frame_gc_time_default_ns = 10 * 1e3;
-DONTSTARVEINJECTOR_API bool DS_LUAJIT_enable_framegc(bool enable) {
+DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable) {
     frame_gc_time_ns = enable ? frame_time_s * 1e9 : frame_gc_time_default_ns;
     return frame_gc_time_ns == frame_gc_time_default_ns;
 }

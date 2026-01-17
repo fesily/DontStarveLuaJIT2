@@ -44,7 +44,7 @@ static function_relocation::MemorySignature set_notebook_mode_config{"80 B9 D4 0
 auto main_module_path = [] { return gum_module_get_path(gum_process_get_main_module()); };
 
 static bool find_set_notebook_mode_imm() {
-    if (!InjectorConfig::instance().DontStarveInjectorIsClient) {
+    if (!InjectorCtx::instance()->DontStarveInjectorIsClient) {
         if (!set_notebook_mode_config.scan(main_module_path())) return false;
         //delete this mode
         Hook((uint8_t *) set_notebook_mode_config.target_address, (uint8_t *) &set_notebook_mode_config_hook);
@@ -133,7 +133,7 @@ static float *find_network_logic_fps(function_relocation::MemorySignature &sign)
     return nullptr;
 }
 
-DONTSTARVEINJECTOR_API int DS_LUAJIT_set_target_fps(int fps, int tt) {
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_set_target_fps(int fps, int tt) {
 #ifndef _WIN32
     return -1;
 #endif
@@ -159,11 +159,12 @@ DONTSTARVEINJECTOR_API int DS_LUAJIT_set_target_fps(int fps, int tt) {
     return -1;
 }
 
-DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_network_tick(char upload_tick, char download_tick, bool isclient) {
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_network_tick(char upload_tick, char download_tick, bool isclient) {
 #ifndef _WIN32
     return 0;
 #endif
-    if (isclient != InjectorConfig::instance().DontStarveInjectorIsClient) return 0;
+    auto ictx = InjectorCtx::instance();
+    if (isclient != ictx->DontStarveInjectorIsClient) return 0;
     if (!upload_tick)
         upload_tick = 10;
     if (!download_tick && !upload_tick)
@@ -207,7 +208,7 @@ DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_network_tick(char upload_tick, char
         return false;
     }();
     if (client_network_tick_addr) {
-        if (!InjectorConfig::instance().DontStarveInjectorIsClient) {
+        if (!ictx->DontStarveInjectorIsClient) {
             download_tick = upload_tick; // server mode, use the same tick for upload and download
         }
         upload_tick = std::min<char>(120, upload_tick);
@@ -221,7 +222,7 @@ DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_network_tick(char upload_tick, char
 }
 #include "GameProfilerHook.hpp"
 
-DONTSTARVEINJECTOR_API int DS_LUAJIT_update(const char *mod_directory, int tt) {
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int tt) {
     if (!mod_directory) return 0;
 #ifdef _WIN32
     auto mod_dir = std::filesystem::path{mod_directory};
@@ -247,7 +248,7 @@ DONTSTARVEINJECTOR_API int DS_LUAJIT_update(const char *mod_directory, int tt) {
     return 0;
 }
 
-DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_profiler_api() {
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
     static std::atomic_int replaced = 0;
     if (replaced) return replaced;
 #ifdef __linux__
@@ -273,7 +274,7 @@ DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_profiler_api() {
             Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHookerNoTimeLimit::hook_profiler_pop);
         }
 #ifdef profiler_lua_gc
-        static auto interceptor = gum_interceptor_obtain();
+        auto interceptor = InjectorCtx::instance().GetGumInterceptor();
         static Gum::InvocationListenerProxy linstener{new Gum::InvocationListenerProfiler()};
         gum_interceptor_attach(interceptor, (void *) get_luajit_address("lua_gc"), GUM_INVOCATION_LISTENER(linstener.cproxy), (void *) "lua_gc");
 #endif
@@ -282,10 +283,10 @@ DONTSTARVEINJECTOR_API int DS_LUAJIT_replace_profiler_api() {
     return replaced;
 }
 
-DONTSTARVEINJECTOR_API void DS_LUAJIT_enable_tracy(int en) {
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_tracy(int en) {
     tracy_active = en;
 }
-DONTSTARVEINJECTOR_API const char *DS_LUAJIT_get_mod_version() {
+DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version() {
     return MOD_VERSION;
 }
 

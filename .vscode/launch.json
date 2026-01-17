@@ -28,9 +28,13 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${config:steam.game.root}/bin64/dontstarve_steam_x64.exe",
-            "args": ["-enable_lua_debugger"],
+            "args": [
+                //"-enable_lua_debugger"
+            ],
             "cwd": "${config:steam.game.root}/bin64",
             "environment": [
+                // {"name": "lua_vm_type", "value": "game"},
+                // {"name": "dump_lua_mods", "value": "workshop-2847908822"},
                 //{"name": "DontStarveInjectorDisable", "value": "1"}
             ],
             "visualizerFile": "${workspaceFolder}/LuaJit.Natvis"
@@ -49,17 +53,58 @@
             ],
             "cwd": "${config:steam.game.root}/bin64",
             "environment": [
+                
                 //{"name": "DontStarveInjectorDisable", "value": "1"}
             ],
             "visualizerFile": "${workspaceFolder}/LuaJit.Natvis"
         },
+      {
+        "name": "(Windows) 启动服务器",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${config:steam.game.root}/bin64/dontstarve_dedicated_server_nullrenderer_x64.exe",
+        // -persistent_storage_root APP:Klei/ -conf_dir DoNotStarveTogether -cluster Cluster_1 -ownernetid 76561198151751414 -ownerdir 191485686 -clouddir 191485686 -backup_log_count 25 -backup_log_period 0 -ugc_directory "C:\Program Files (x86)\Steam\steamapps\workshop" -shard Master -secondary_log_prefix master -sigprefix DST_Master
+        "args": [
+          //"-tick","60",
+          "-persistent_storage_root",
+          "APP:Klei/",
+          "-conf_dir",
+          "DoNotStarveTogether",
+          "-cluster",
+          "Cluster_1",
+          "-ownernetid",
+          "76561198151751414",
+          "-ownerdir",
+          "191485686",
+          "-clouddir",
+          "191485686",
+          "-backup_log_count",
+          "25",
+          "-backup_log_period",
+          "0",
+          "-ugc_directory",
+          "${config:steam.modroot}",
+          "-shard",
+          "Master",
+          "-secondary_log_prefix",
+          "master",
+          "-sigprefix",
+          "DST_Master",
+          //"-enable_lua_debugger"
+        ],
+        "cwd": "${config:steam.game.root}/bin64",
+        "visualizerFile": "${workspaceFolder}/LuaJit.Natvis",
+        //"environment": [{"name": "DontStarveInjectorDisable", "value": "1"}],
+      },
         {
-            "name": "(Windows) 启动服务器",
+            "name": "(Windows) 启动服务器(GAME-Luadebugger-test)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${config:steam.game.root}/bin64/dontstarve_dedicated_server_nullrenderer_x64.exe",
             // -persistent_storage_root APP:Klei/ -conf_dir DoNotStarveTogether -cluster Cluster_1 -ownernetid 76561198151751414 -ownerdir 191485686 -clouddir 191485686 -backup_log_count 25 -backup_log_period 0 -ugc_directory "C:\Program Files (x86)\Steam\steamapps\workshop" -shard Master -secondary_log_prefix master -sigprefix DST_Master
             "args": [
+                "-e",
+                "dofile[[c:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.2.2-win32-x64/script/launch.lua]] DBG[[77580]]",
                 //"-tick","60",
                 "-persistent_storage_root",
                 "APP:Klei/",
@@ -88,14 +133,51 @@
                 //"-enable_lua_debugger"
             ],
             "cwd": "${config:steam.game.root}/bin64",
-            "visualizerFile": "${workspaceFolder}/LuaJit.Natvis",
-            //"environment": [{"name": "DontStarveInjectorDisable", "value": "1"}],
+            "visualizerFile": "${workspaceFolder}/lua51.Natvis",
+            "environment": [
+                {"name": "lua_vm_type", "value": "game"},
+                {"name": "enable_lua_debugger", "value": "1"}
+            ],
+            "sourceFileMap": {
+                "D:\\a\\_work\\1\\s\\src\\vctools\\delayimp\\delayhlp.cpp": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\include\\delayhlp.cpp"
+            }
+        },
+         {
+            "name": "(Windows) attach服务器(lua)",
+            "type": "lua",
+            "request": "attach",
+            "address": "@C:\\Users\\fesil\\AppData\\Local\\Temp\\luadbg_77580",
+            "sourceFormat": "string",
+            "sourceMaps": [
+                [
+                    "../mods/workshop-*",
+                    "C:/Program Files (x86)/Steam/steamapps/workshop/content/322330/*"
+                ],
+                [
+                    "../mods/workshop-2847908822/*",
+                    "${workspaceFolder}/tests/2847908822/*"
+                ],
+                [   
+                    "C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/data/scripts/*",
+                    "C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/dst-scripts/scripts/*"
+                ],
+                [
+                    "scripts/*",
+                    "C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/dst-scripts/scripts/*"
+                ],
+                [
+                    "GameLuaInjectFramework.lua",
+                    "${workspaceFolder}/src/DontStarveInjector/GameLuaInjectFramework.lua"
+                ],
+            ],
+            "luaVersion": "lua51"
         },
         {
             "name": "(Windows) 启动服务器(lua)",
             "type": "lua",
             "request": "launch",
-            "program": "${config:steam.game.root}/bin64/dontstarve_dedicated_server_nullrenderer_x64.exe",
+            "luaexe": "${config:steam.game.root}/bin64/dontstarve_dedicated_server_nullrenderer_x64.exe",
+            "program": "",
             "arg": [
                 //"-tick","60",
                 "-persistent_storage_root",
@@ -122,9 +204,36 @@
                 "master",
                 "-sigprefix",
                 "DST_Master",
-                "-enable_lua_debugger"
+            ],
+            "env": {
+                "lua_vm_type": "game",
+                "enable_lua_debugger": "1"
+            },
+            "sourceFormat": "string",
+            "sourceMaps": [
+                [
+                    "../mods/workshop-*",
+                    "C:/Program Files (x86)/Steam/steamapps/workshop/content/322330/*"
+                ],
+                [
+                    "../mods/workshop-2847908822/*",
+                    "${workspaceFolder}/tests/2847908822/*"
+                ],
+                [   
+                    "C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/data/scripts/*",
+                    "C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/dst-scripts/scripts/*"
+                ],
+                [
+                    "scripts/*",
+                    "C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/dst-scripts/scripts/*"
+                ],
+                [
+                    "GameLuaInjectFramework.lua",
+                    "${workspaceFolder}/src/DontStarveInjector/GameLuaInjectFramework.lua"
+                ]
             ],
             "cwd": "${config:steam.game.root}/bin64",
+            "luaVersion": "lua51"
         },
         {
             "name": "(Linux) debug game",
@@ -262,25 +371,26 @@
             "program": "${workspaceFolder}/tests/sect/simulator.lua",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "luaVersion": "luajit",
+            "luaVersion": "lua51",
             "arg": [
-                "tests/2847908822/modmain12345.lua",
-                "../mods/workshop-2847908822/modmain.lua"
+                "tests/2847908822/5.lua",
+                "../mods/workshop-2847908822/5.lua"
             ],
-            "luaexe": "${workspaceFolder}/builds/ninja-multi-vcpkg/luajit/Debug/luajit",
-            //"luaexe": "${workspaceFolder}/builds/ninja-multi-vcpkg/src/lua51original/RelWithDebInfo/lua",
+            //"luaexe": "${workspaceFolder}/builds/ninja-multi-vcpkg/luajit/Debug/luajit.exe",
+            "luaexe": "${workspaceFolder}/builds/ninja-multi-vcpkg/src/lua51original/Debug/lua.exe",
             "stopOnEntry": true,
             "env": {},
             "sourceMaps": [
                 [
-                    "./*",
-                    "${workspaceFolder}/*"
+                    "../mods/workshop-2847908822/modmain.*",
+                    "${workspaceFolder}/tests/2847908822/modmain1.*"
                 ],
                 [
-                    "../mods/workshop-2847908822/modmain.lua",
-                    "${workspaceFolder}/tests/2847908822/modmain12345.lua"
+                    "../mods/workshop-2847908822/*",
+                    "${workspaceFolder}/tests/2847908822/*"
                 ]
-            ]
+            ],
+            "sourceFormat": "string"
         },
         {
             "name": "(Linux) docker server(TEST_INJECTOR)",
@@ -322,6 +432,45 @@
                 }
             ],
             "preLaunchTask": "docker_server_init"
+        },
+        {
+            "name": "Dump Mods",
+            "type": "cppvsdbg",
+            "program": "${config:steam.game.root}/bin64/dontstarve_dedicated_server_nullrenderer_x64.exe",
+            "request": "launch",
+             "args": [
+                "-persistent_storage_root",
+                "APP:Klei/",
+                "-conf_dir",
+                "DoNotStarveTogether",
+                "-cluster",
+                "Cluster_1",
+                "-ownernetid",
+                "76561198151751414",
+                "-ownerdir",
+                "191485686",
+                "-clouddir",
+                "191485686",
+                "-backup_log_count",
+                "25",
+                "-backup_log_period",
+                "0",
+                "-ugc_directory",
+                "${config:steam.modroot}",
+                "-shard",
+                "Master",
+                "-secondary_log_prefix",
+                "master",
+                "-sigprefix",
+                "DST_Master",
+            ],
+            "stopAtEntry": false,
+            "cwd": "${config:steam.game.root}/bin64",
+            "environment": [
+                // {"name": "dump_lua_mods", "value": "workshop-2847908822"},
+                // {"name": "lua_vm_type", "value": "game"}
+            ], 
+            "visualizerFile": "${workspaceFolder}/lua51.natvis"
         },
         {
             "name": "Debug GAME Lua (INJECTOR)",

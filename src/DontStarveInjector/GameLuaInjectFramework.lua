@@ -2,7 +2,7 @@
     1. Inject lua text into file afterload
     2. Replace lua text
 ]]
-local spdlog = ...
+local spdlog, native_getenv= ...
 
 GameLuaInjector = {
     injectors = {},
@@ -129,15 +129,13 @@ function _M.push_event(event_name, ...)
     end
     local unregister_list
     for i, v in ipairs(_M[event_name]) do
-        if not v then
-            goto continue
+        if v then
+            local res = xpcall(v.cb, debug.traceback, ...)
+            if res == "unregister" then
+                unregister_list = unregister_list or {}
+                unregister_list[#unregister_list + 1] = v.idx
+            end
         end
-        local res = xpcall(v.cb, debug.traceback, ...)
-        if res == "unregister" then
-            unregister_list = unregister_list or {}
-            unregister_list[#unregister_list + 1] = v.idx
-        end
-        ::continue::
     end
     if unregister_list then
         for _, idx in ipairs(unregister_list) do
@@ -175,7 +173,13 @@ local function mydofile(filename, chunkname)
     return fn()
 end
 
-myenv = setmetatable({io=myio, dofile=mydofile, spdlog=spdlog}, { __index = _G, __newindex = _G })
+local os = os
+if type(os.getenv) == "nil" then
+    os = setmetatable({}, {__index = os, __newindex = os})
+    os.getenv = native_getenv
+end
+
+myenv = setmetatable({ io = myio, dofile = mydofile, spdlog = spdlog, os=os }, { __index = _G, __newindex = _G })
 
 local function register_event_code(event_name, script)
     if not script or type(script) ~= "string" or script == "" then
@@ -189,8 +193,9 @@ local function register_event_code(event_name, script)
             if event_name == "before_main" then
                 setfenv(f, myenv)
             end
-            local res = xpcall(f, function (error)
-                spdlog.error("[luajit] in " .. event_name .. " script Error :" .. tostring(error) .. "\n" .. debug.traceback())
+            local res = xpcall(f, function(error)
+                spdlog.error("[luajit] in " ..
+                event_name .. " script Error :" .. tostring(error) .. "\n" .. debug.traceback())
             end)
             if res then return res end
         else

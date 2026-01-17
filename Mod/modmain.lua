@@ -52,7 +52,14 @@ local function main()
 		end
 		return not InGamePlay()
 	end
+	
+	local function LoadGameInjector()
+		return _G.GameInjector
+	end
+
 	local hasluajit, jit = _G.pcall(require, "jit")
+	local os_is_windows = _G.IsWin32()
+	local GameInjector = LoadGameInjector()
 
 	local ModManagerFile = { filepath = nil, json_mode = true }
 
@@ -108,7 +115,7 @@ local function main()
 		}
 	}
 
-	function _M:NoJitMain()
+	function _M:NoInjectorMain()
 		AddGamePostInit(function()
 			if should_show_dig() then
 				local PopupDialogScreen = require "screens/popupdialog"
@@ -143,7 +150,7 @@ local function main()
 	end
 
 	local function HookGetModConfigData()
-		if jit.os ~= "Windows" then
+		if not os_is_windows then
 			local old_GetModConfigData = GetModConfigData
 			function GetModConfigData(key, get_local_config)
 				if _M.NotWindowsInvalidOptions[key] then
@@ -295,7 +302,7 @@ local function main()
 	end
 
 	local function ForceDisableTailCall()
-		if GetModConfigData("ForceDisableTailCall") then
+		if hasluajit and GetModConfigData("ForceDisableTailCall") then
 			local jit_util = require 'jit.util'
 			jit_util.disabletailcall(true)
 		end
@@ -310,6 +317,9 @@ local function main()
 	end
 
 	local function ForceJitOpt()
+		if not hasluajit then
+			return
+		end
 		local jit_opt = require 'jit.opt'
 		jit_opt.start(
 			"maxtrace=4000",
@@ -322,6 +332,9 @@ local function main()
 	end
 
 	local function EnabledJIT()
+		if not hasluajit then
+			return
+		end
 		local enabled_jit = GetModConfigData("EnabledJIT")
 		if enabled_jit then
 			AddSimPostInit(function()
@@ -331,6 +344,9 @@ local function main()
 	end
 
 	local function EnableProfiler(injector)
+		if not hasluajit then
+			return
+		end
 		if GetModConfigData("EnableProfiler") ~= "off" then
 			local zone = require("jit.zone")
 			local sim = getmetatable(TheSim).__index
@@ -370,102 +386,6 @@ local function main()
 				end,
 			})
 		end
-	end
-
-	local function LoadFFI()
-		local ffi = require 'ffi'
-		ffi.cdef [[
-			int DS_LUAJIT_replace_profiler_api();
-			void DS_LUAJIT_enable_tracy(int en);
-			void DS_LUAJIT_enable_profiler(int en);
-			void DS_LUAJIT_disable_fullgc(int mb);
-			bool DS_LUAJIT_enable_framegc(bool enable);
-			const char* DS_LUAJIT_get_mod_version();
-			const char* DS_LUAJIT_get_workshop_dir();
-			int DS_LUAJIT_update(const char* mod_dictory, int tt);
-			int DS_LUAJIT_set_target_fps(int fps, int tt);
-			int DS_LUAJIT_replace_network_tick(char tick, char download_tick, bool client);
-			const char* DS_LUAJIT_Fengxun_Decrypt(const char* filename);
-			struct DS_LUAJIT_NetworkExtension {
-				char channel;
-			};
-			struct DS_LUAJIT_NetworkExtension* DS_LUAJIT_EntityNetWorkExtension_Register(void *luanetworkwarrper);
-			/// These enumerations are used to describe when packets are delivered.
-			enum PacketPriority
-			{
-				/// The highest possible priority. These message trigger sends immediately, and are generally not buffered or aggregated into a single datagram.
-				IMMEDIATE_PRIORITY,
-
-				/// For every 2 IMMEDIATE_PRIORITY messages, 1 HIGH_PRIORITY will be sent.
-				/// Messages at this priority and lower are buffered to be sent in groups at 10 millisecond intervals to reduce UDP overhead and better measure congestion control.
-				HIGH_PRIORITY,
-
-				/// For every 2 HIGH_PRIORITY messages, 1 MEDIUM_PRIORITY will be sent.
-				/// Messages at this priority and lower are buffered to be sent in groups at 10 millisecond intervals to reduce UDP overhead and better measure congestion control.
-				MEDIUM_PRIORITY,
-
-				/// For every 2 MEDIUM_PRIORITY messages, 1 LOW_PRIORITY will be sent.
-				/// Messages at this priority and lower are buffered to be sent in groups at 10 millisecond intervals to reduce UDP overhead and better measure congestion control.
-				LOW_PRIORITY,
-
-				/// \internal
-				NUMBER_OF_PRIORITIES
-			};
-
-			/// These enumerations are used to describe how packets are delivered.
-			/// \note  Note to self: I write this with 3 bits in the stream.  If I add more remember to change that
-			/// \note In ReliabilityLayer::WriteToBitStreamFromInternalPacket I assume there are 5 major types
-			/// \note Do not reorder, I check on >= UNRELIABLE_WITH_ACK_RECEIPT
-			enum PacketReliability
-			{
-				/// Same as regular UDP, except that it will also discard duplicate datagrams.  RakNet adds (6 to 17) + 21 bits of overhead, 16 of which is used to detect duplicate packets and 6 to 17 of which is used for message length.
-				UNRELIABLE,
-
-				/// Regular UDP with a sequence counter.  Out of order messages will be discarded.
-				/// Sequenced and ordered messages sent on the same channel will arrive in the order sent.
-				UNRELIABLE_SEQUENCED,
-
-				/// The message is sent reliably, but not necessarily in any order.  Same overhead as UNRELIABLE.
-				RELIABLE,
-
-				/// This message is reliable and will arrive in the order you sent it.  Messages will be delayed while waiting for out of order messages.  Same overhead as UNRELIABLE_SEQUENCED.
-				/// Sequenced and ordered messages sent on the same channel will arrive in the order sent.
-				RELIABLE_ORDERED,
-
-				/// This message is reliable and will arrive in the sequence you sent it.  Out or order messages will be dropped.  Same overhead as UNRELIABLE_SEQUENCED.
-				/// Sequenced and ordered messages sent on the same channel will arrive in the order sent.
-				RELIABLE_SEQUENCED,
-
-				/// Same as UNRELIABLE, however the user will get either ID_SND_RECEIPT_ACKED or ID_SND_RECEIPT_LOSS based on the result of sending this message when calling RakPeerInterface::Receive(). Bytes 1-4 will contain the number returned from the Send() function. On disconnect or shutdown, all messages not previously acked should be considered lost.
-				UNRELIABLE_WITH_ACK_RECEIPT,
-
-				/// Same as UNRELIABLE_SEQUENCED, however the user will get either ID_SND_RECEIPT_ACKED or ID_SND_RECEIPT_LOSS based on the result of sending this message when calling RakPeerInterface::Receive(). Bytes 1-4 will contain the number returned from the Send() function. On disconnect or shutdown, all messages not previously acked should be considered lost.
-				/// 05/04/10 You can't have sequenced and ack receipts, because you don't know if the other system discarded the message, meaning you don't know if the message was processed
-				// UNRELIABLE_SEQUENCED_WITH_ACK_RECEIPT,
-
-				/// Same as RELIABLE. The user will also get ID_SND_RECEIPT_ACKED after the message is delivered when calling RakPeerInterface::Receive(). ID_SND_RECEIPT_ACKED is returned when the message arrives, not necessarily the order when it was sent. Bytes 1-4 will contain the number returned from the Send() function. On disconnect or shutdown, all messages not previously acked should be considered lost. This does not return ID_SND_RECEIPT_LOSS.
-				RELIABLE_WITH_ACK_RECEIPT,
-
-				/// Same as RELIABLE_ORDERED_ACK_RECEIPT. The user will also get ID_SND_RECEIPT_ACKED after the message is delivered when calling RakPeerInterface::Receive(). ID_SND_RECEIPT_ACKED is returned when the message arrives, not necessarily the order when it was sent. Bytes 1-4 will contain the number returned from the Send() function. On disconnect or shutdown, all messages not previously acked should be considered lost. This does not return ID_SND_RECEIPT_LOSS.
-				RELIABLE_ORDERED_WITH_ACK_RECEIPT,
-
-				/// Same as RELIABLE_SEQUENCED. The user will also get ID_SND_RECEIPT_ACKED after the message is delivered when calling RakPeerInterface::Receive(). Bytes 1-4 will contain the number returned from the Send() function. On disconnect or shutdown, all messages not previously acked should be considered lost.
-				/// 05/04/10 You can't have sequenced and ack receipts, because you don't know if the other system discarded the message, meaning you don't know if the message was processed
-				// RELIABLE_SEQUENCED_WITH_ACK_RECEIPT,
-
-				/// \internal
-				NUMBER_OF_RELIABILITIES
-			};
-
-			void DS_LUAJIT_SetNextRpcInfo(enum PacketPriority *packetPriority, enum PacketReliability *reliability, char *orderingChannel);
-		]]
-		local injector, so_path = require 'luavm.ffi_load' ("Injector")
-		local init_fn = package.loadlib(so_path, "luaopen_injector")
-		if init_fn then
-			init_fn()
-			print("load JitModInjector")
-		end
-		return injector, rawget(_G, "JitModInjector")
 	end
 
 	local function filename2modname(filename)
@@ -522,7 +442,6 @@ local function main()
 	end
 
 	local function HookKleiloadlua(frostxxMods, injector)
-		local ffi = require 'ffi'
 		local enbaleBlackList = GetModConfigData("ModBlackList")
 		local blacklists = {
 			--- format
@@ -531,7 +450,8 @@ local function main()
 		local function decrypt_file(filename)
 			local str = injector.DS_LUAJIT_Fengxun_Decrypt(filename)
 			if str ~= nil then
-				return loadstring(ffi.string(str), filename)
+				assert(type(str) == "string")
+				return loadstring(str, filename)
 			end
 		end
 
@@ -571,7 +491,7 @@ local function main()
 		end
 	end
 
-	function _M:GetModMainPath(injector, ffi)
+	function _M:GetModMainPath(injector)
 		local modmain_path = debug.getinfo(1).source
 
 		local modname = filename2modname(modmain_path)
@@ -584,7 +504,7 @@ local function main()
 			for _, modname in ipairs(modnames) do
 				local workshop_dir = injector.DS_LUAJIT_get_workshop_dir();
 				if workshop_dir ~= nil then
-					workshop_dir = ffi.string(workshop_dir)
+					assert(type(workshop_dir) == "string")
 					local workshop_dir_root = workshop_dir .. "/" .. modname .. "/"
 					local io = rawget(_G, "io2") or io
 					local ok, fp = pcall(io.open, workshop_dir_root .. "install.bat", "r")
@@ -599,10 +519,10 @@ local function main()
 		end
 	end
 
-	function _M:GetModVersion(injector, ffi)
+	function _M:GetModVersion(injector)
 		local so_version = injector.DS_LUAJIT_get_mod_version()
 		if so_version then
-			so_version = ffi.string(so_version)
+			assert(type(so_version) == "string")
 		else
 			so_version = "0.0.0"
 		end
@@ -640,14 +560,10 @@ local function main()
 	end
 
 	local function NetWorkOpt(injector)
-		local ffi = require 'ffi'
 		do
 			local net_mt = getmetatable(TheNet).__index;
-			local c_packetPriority = ffi.new("enum PacketPriority[1]")
-			local c_reliability = ffi.new("enum PacketReliability[1]")
-			local c_channel = ffi.new("char[1]")
-			local default_packetPriority = ffi.C.HIGH_PRIORITY
-			local default_reliability = ffi.C.RELIABLE_ORDERED
+			local default_packetPriority = 1 --PacketPriority::HIGH_PRIORITY
+			local default_reliability = 3 --PacketReliability::RELIABLE_ORDERED
 			local default_channel = 0
 			local old_SendRPCToServer = net_mt.SendRPCToServer
 			local old_SendRPCToClient = net_mt.SendRPCToClient
@@ -690,86 +606,86 @@ local function main()
 			net_mt.alloc_rpc_channel = alloc_rpc_channel
 
 			function net_mt:SendRPCToServer2(code, packetPriority, reliability, channel, ...)
-				c_packetPriority[0] = packetPriority or default_packetPriority
-				c_reliability[0] = reliability or default_reliability
-				c_channel[0] = channel or alloc_rpc_channel(code)
-				injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
+				packetPriority = packetPriority or default_packetPriority
+				reliability = reliability or default_reliability
+				channel = channel or alloc_rpc_channel(code)
+				injector.DS_LUAJIT_SetNextRpcInfo(packetPriority, reliability, channel)
 				return old_SendRPCToServer(self, code, ...)
 			end
 
 			function net_mt:SendRPCToClient2(code, packetPriority, reliability, channel, ...)
-				c_packetPriority[0] = packetPriority or default_packetPriority
-				c_reliability[0] = reliability or default_reliability
-				c_channel[0] = channel or alloc_rpc_channel(code)
-				injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
+				packetPriority = packetPriority or default_packetPriority
+				reliability = reliability or default_reliability
+				channel = channel or alloc_rpc_channel(code)
+				injector.DS_LUAJIT_SetNextRpcInfo(packetPriority, reliability, channel)
 				return old_SendRPCToClient(self, code, ...)
 			end
 
 			function net_mt:SendRPCToShard2(code, packetPriority, reliability, channel, ...)
-				c_packetPriority[0] = packetPriority or default_packetPriority
-				c_reliability[0] = reliability or default_reliability
-				c_channel[0] = channel or alloc_rpc_channel(code)
-				injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
+				packetPriority = packetPriority or default_packetPriority
+				reliability = reliability or default_reliability
+				channel = channel or alloc_rpc_channel(code)
+				injector.DS_LUAJIT_SetNextRpcInfo(packetPriority, reliability, channel)
 				return old_SendRPCToShard(self, code, ...)
 			end
 
 			function net_mt:SendModRPCToServer2(id_table, packetPriority, reliability, channel, ...)
-				c_packetPriority[0] = packetPriority or default_packetPriority
-				c_reliability[0] = reliability or default_reliability
-				c_channel[0] = channel or get_mod_channel(id_table)
-				injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
+				packetPriority = packetPriority or default_packetPriority
+				reliability = reliability or default_reliability
+				channel = channel or get_mod_channel(id_table)
+				injector.DS_LUAJIT_SetNextRpcInfo(packetPriority, reliability, channel)
 				return old_SendModRPCToServer(self, id_table.namespace, id_table.id, ...)
 			end
 
 			function net_mt:SendModRPCToClient2(id_table, packetPriority, reliability, channel, ...)
-				c_packetPriority[0] = packetPriority or default_packetPriority
-				c_reliability[0] = reliability or default_reliability
-				c_channel[0] = channel or get_mod_channel(id_table)
-				injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
+				packetPriority = packetPriority or default_packetPriority
+				reliability = reliability or default_reliability
+				channel = channel or get_mod_channel(id_table)
+				injector.DS_LUAJIT_SetNextRpcInfo(packetPriority, reliability, channel)
 				return old_SendModRPCToClient(self, id_table.namespace, id_table.id, ...)
 			end
 
 			function net_mt:SendModRPCToShard2(id_table, packetPriority, reliability, channel, ...)
-				c_packetPriority[0] = packetPriority or default_packetPriority
-				c_reliability[0] = reliability or default_reliability
-				c_channel[0] = channel or get_mod_channel(id_table)
-				injector.DS_LUAJIT_SetNextRpcInfo(c_packetPriority, c_reliability, c_channel)
+				packetPriority = packetPriority or default_packetPriority
+				reliability = reliability or default_reliability
+				channel = channel or get_mod_channel(id_table)
+				injector.DS_LUAJIT_SetNextRpcInfo(packetPriority, reliability, channel)
 				return old_SendModRPCToShard(self, id_table.namespace, id_table.id, ...)
 			end
 
 			if GetModConfigData("NetworkOpt") and false then
 				function net_mt:SendRPCToServer(code, ...)
-					c_channel[0] = alloc_rpc_channel(code);
+					local c_channel = alloc_rpc_channel(code);
 					injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
 					return old_SendRPCToServer(self, code, ...)
 				end
 
 				function net_mt:SendRPCToClient(code, ...)
-					c_channel[0] = alloc_rpc_channel(code);
+					local c_channel = alloc_rpc_channel(code);
 					injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
 					return old_SendRPCToClient(self, code, ...)
 				end
 
 				function net_mt:SendRPCToShard(code, ...)
-					c_channel[0] = alloc_rpc_channel(code);
+					local c_channel = alloc_rpc_channel(code);
 					injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
 					return old_SendRPCToShard(self, code, ...)
 				end
 
 				function net_mt:SendModRPCToServer(id_table, ...)
-					c_channel[0] = get_mod_channel(id_table)
+					local c_channel = get_mod_channel(id_table);
 					injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
 					return old_SendModRPCToServer(self, id_table.namespace, id_table.id, ...)
 				end
 
 				function net_mt:SendModRPCToClient(id_table, ...)
-					c_channel[0] = get_mod_channel(id_table);
+					local c_channel = get_mod_channel(id_table);
 					injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
 					return old_SendModRPCToClient(self, id_table.namespace, id_table.id, ...)
 				end
 
 				function net_mt:SendModRPCToShard(id_table, ...)
-					c_channel[0] = get_mod_channel(id_table);
+					local c_channel = get_mod_channel(id_table);
 					injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
 					return old_SendModRPCToShard(self, id_table.namespace, id_table.id, ...)
 				end
@@ -818,7 +734,7 @@ local function main()
 						en = "The current luajit mod has been updated, do you want to execute the update?" ..
 							version_info
 					})
-					if jit.os == "Windows" then
+					if os_is_windows then
 						btns[#btns + 1] = {
 							text = STRINGS.UI.MAINSCREEN.RESTART,
 							cb = function()
@@ -843,7 +759,7 @@ local function main()
 
 			local luajit_config_screen_ctor = function(self, client_config)
 				local function uninstall_mod()
-					if jit.os == "Windows" then
+					if os_is_windows then
 						injector.DS_LUAJIT_update(workshop_dir_root, 1)
 					else
 						TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.MODFAILTITLE, translate({
@@ -890,7 +806,7 @@ local function main()
 			local old_ctor = ModConfigurationScreen._ctor
 			ModConfigurationScreen._ctor = function(self, _modname, client_config, ...)
 				old_ctor(self, _modname, client_config, ...)
-				if _modname == modname and jit.os == "Windows" then
+				if _modname == modname and os_is_windows then
 					luajit_config_screen_ctor(self, client_config)
 				end
 			end
@@ -898,15 +814,14 @@ local function main()
 	end
 
 	function _M:Main()
-		local ffi = require 'ffi'
-		local injector, JitModInjector = LoadFFI()
-		self:GetModVersion(injector, ffi)
+		assert(GameInjector ~= nil, "Load GameInjector Failed!")
+		self:GetModVersion(GameInjector)
 		local VersionMissMatch = Version2Number(modinfo.version) < Version2Number(self.so_version)
-		self:AlwaysLoad(injector, VersionMissMatch)
+		self:AlwaysLoad(GameInjector, VersionMissMatch)
 		if VersionMissMatch then
 			return
 		end
-		self:GetModMainPath(injector, ffi)
+		self:GetModMainPath(GameInjector)
 		HookGetModConfigData()
 		HookGameVersionUI()
 		ForceJitOpt()
@@ -920,15 +835,15 @@ local function main()
 
 		luajit_config:WriteConfig(self.modmain_path)
 
-		EnableProfiler(injector)
-		EnableTracy(injector)
+		EnableProfiler(GameInjector)
+		EnableTracy(GameInjector)
 
-		HookKleiloadlua(EnableFrostxxMods and EncryptedModManager.frostxxMods or {}, injector)
+		HookKleiloadlua(EnableFrostxxMods and EncryptedModManager.frostxxMods or {}, GameInjector)
 
-		NetWorkOpt(injector)
+		NetWorkOpt(GameInjector)
 		if GetModConfigData("TargetRenderFPS") then
 			local targetfps = GetModConfigData("TargetRenderFPS")
-			if injector.DS_LUAJIT_set_target_fps(targetfps, 1) > 0 then
+			if GameInjector.DS_LUAJIT_set_target_fps(targetfps, 1) > 0 then
 				print("Reset fps by SetNetbookMode", targetfps)
 				TheSim:SetNetbookMode(false)
 			end
@@ -945,23 +860,23 @@ local function main()
 
 
 		if GetModConfigData("DisableForceFullGC") ~= 0 then
-			injector.DS_LUAJIT_disable_fullgc(tonumber(GetModConfigData("DisableForceFullGC")))
+			GameInjector.DS_LUAJIT_disable_fullgc(tonumber(GetModConfigData("DisableForceFullGC")))
 		end
 
 		if GetModConfigData("EnableFrameGC") then
-			injector.DS_LUAJIT_replace_profiler_api()
-			injector.DS_LUAJIT_enable_framegc(true)
+			GameInjector.DS_LUAJIT_replace_profiler_api()
+			GameInjector.DS_LUAJIT_enable_framegc(true)
 
 			local old_OnSimPaused = _G.OnSimPaused
 			local old_OnSimUnpaused = _G.OnSimUnpaused
 			if old_OnSimPaused and old_OnSimUnpaused then
 				_G.OnSimPaused = function(...)
-					injector.DS_LUAJIT_enable_framegc(false)
+					GameInjector.DS_LUAJIT_enable_framegc(false)
 					old_OnSimPaused(...)
 				end
 
 				_G.OnSimUnpaused = function(...)
-					injector.DS_LUAJIT_enable_framegc(true)
+					GameInjector.DS_LUAJIT_enable_framegc(true)
 					old_OnSimUnpaused(...)
 				end
 			end
@@ -970,10 +885,10 @@ local function main()
 		modimport("inject_server_only_mod")
 	end
 
-	if hasluajit then
+	if GameInjector then
 		_M:Main()
 	else
-		_M:NoJitMain()
+		_M:NoInjectorMain()
 	end
 end
 

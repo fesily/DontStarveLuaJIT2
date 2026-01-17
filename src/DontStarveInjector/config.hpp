@@ -45,6 +45,8 @@ constexpr auto game_name = "dontstarve_";
 #define DONTSTARVEINJECTOR_API extern "C" __attribute__((visibility("default")))
 #endif
 
+#define DONTSTARVEINJECTOR_GAME_API DONTSTARVEINJECTOR_API
+
 #if __linux__
 
 #ifndef DONTSTARVEINJECTOR_INITIALIZE_ALL_SO
@@ -54,14 +56,25 @@ constexpr auto game_name = "dontstarve_";
 #endif
 
 #define LUA_DEBUG_CORE_ROOT "LUA_DEBUG_CORE_ROOT"
+#define LUA_DEBUG_CORE_DEBUGGER "LUA_DEBUG_CORE_DEBUGGER"
 
 struct InjectorConfig {
     struct EnvOrCmdOptFlag {
         const char *key;
+        mutable bool has_cached = false;
+        mutable bool flag = false;
         operator bool() const;
+    };
+    struct EnvOrCmdOptValue {
+        const char *key;
+        mutable bool has_cached = false;
+        mutable char value[256] = {};
+        operator const char*() const;
     };
 #define ENV_OR_CMD_OPT_FLAG(name) \
     const EnvOrCmdOptFlag name{#name};
+#define ENV_OR_CMD_OPT_VALUE(name) \
+    const EnvOrCmdOptValue name{#name};
 
     ENV_OR_CMD_OPT_FLAG(DontStarveInjectorDisable);
     ENV_OR_CMD_OPT_FLAG(DisableGameScriptsZip);
@@ -74,8 +87,21 @@ struct InjectorConfig {
     ENV_OR_CMD_OPT_FLAG(enable_lua_debugger);
     ENV_OR_CMD_OPT_FLAG(disable_lua_debugger_code_patch);
 
+    ENV_OR_CMD_OPT_VALUE(lua_vm_type);
+
+#undef ENV_OR_CMD_OPT_VALUE
 #undef ENV_OR_CMD_OPT_FLAG
 
+    static InjectorConfig *instance();
+};
+typedef struct _GumInterceptor GumInterceptor;
+class InjectorCtx {
+public:
+    InjectorConfig &config;
     bool DontStarveInjectorIsClient{false};
-    static InjectorConfig &instance();
+    GumInterceptor *GetGumInterceptor();
+    InjectorCtx();
+    static InjectorCtx *instance();
+private:
+    GumInterceptor *interceptor{nullptr};
 };

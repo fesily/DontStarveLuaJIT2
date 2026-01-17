@@ -45,6 +45,7 @@ local env =
     GLOBAL = _G,
     modname = modname,
     MODROOT = MODS_ROOT .. modname .. "/",
+    TABDUMP = require 'tests.sect.table_dump'.table_to_lua_file_multiple
 }
 env.modimport = function(modulename)
     print("modimport: " .. env.MODROOT .. modulename)

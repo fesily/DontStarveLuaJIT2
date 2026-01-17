@@ -171,7 +171,7 @@ void *EntityNetWorkExtension::original_network_vtb_ptr = nullptr;
 /*
 export lua module EntityNetWorkExtension
 */
-DONTSTARVEINJECTOR_API EntityNetWorkExtension::EntityNetWorkExtensionVal *DS_LUAJIT_EntityNetWorkExtension_Register(void *networkComponentLuaProxyPtr, int64_t networkid) {
+DONTSTARVEINJECTOR_GAME_API EntityNetWorkExtension::EntityNetWorkExtensionVal *DS_LUAJIT_EntityNetWorkExtension_Register(void *networkComponentLuaProxyPtr, int64_t networkid) {
     if (!networkComponentLuaProxyPtr) {
         spdlog::error("EntityNetWorkExtension: registerEntity failed, network is null");
         return 0;
@@ -190,36 +190,24 @@ static std::optional<PacketPriority> next_packetPriority;
 static std::optional<PacketReliability> next_reliability;
 static std::optional<char> next_orderingChannel;
 
-DONTSTARVEINJECTOR_API void DS_LUAJIT_SetNextRpcInfo(PacketPriority *packetPriority, PacketReliability *reliability, char *orderingChannel) {
-    if (packetPriority)
-        next_packetPriority = *packetPriority;
-    else
-        next_packetPriority.reset();
-    if (reliability)
-        next_reliability = *reliability;
-    else
-        next_reliability.reset();
-    if (orderingChannel)
-        next_orderingChannel = *orderingChannel;
-    else
-        next_orderingChannel.reset();
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_SetNextRpcInfo(const std::optional<PacketPriority>& packetPriority, const std::optional<PacketReliability>& reliability, const std::optional<char>& orderingChannel) {
+    next_packetPriority = packetPriority;
+    next_reliability = reliability;
+    next_orderingChannel = orderingChannel;
 }
 
 static void ResetNextRpcInfo(GumInvocationContext *context) {
     if (next_packetPriority) {
         auto packetPriority = *next_packetPriority;
         gum_invocation_context_replace_nth_argument(context, 3, (gpointer) packetPriority);
-        next_packetPriority.reset();
     }
     if (next_reliability) {
         auto reliability = *next_reliability;
         gum_invocation_context_replace_nth_argument(context, 4, (gpointer) reliability);
-        next_reliability.reset();
     }
     if (next_orderingChannel) {
         auto orderingChannel = *next_orderingChannel;
         gum_invocation_context_replace_nth_argument(context, 5, (gpointer) (size_t) orderingChannel);
-        next_orderingChannel.reset();
     }
 }
 
@@ -281,7 +269,10 @@ namespace SLNet {
 }// namespace SLNet
 
 void GameNetWorkHookRpc4() {
-    static auto interceptor = gum_interceptor_obtain();
+#ifndef _WIN32
+    return;
+#endif
+    auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
     function_relocation::MemorySignature RakNet__RPC4__Signal{"48 81 EC 30 03 00 00 48 8B 05", -0x7};
     function_relocation::MemorySignature RakNet_Plugin2_SendUnified{"48 89 84 24 90 00 00 00 48 83 79 08 00", -0x18};
     // function_relocation::MemorySignature RakNet_ReplicaManager3_defaultparams{"C7 43 1C 03 00 00 00", 0x3};
