@@ -67,7 +67,7 @@ InjectorConfig::EnvOrCmdOptIntValue<T, default_value>::operator T() const {
         has_cached = true;
         return value;
     }
-    value = static_cast<T>(std::strtoll(buf, endptr, 0));
+    value = static_cast<T>(std::strtoll(buf, &endptr, 0));
     if (*endptr != '\0') {
         value = default_value;
     }
