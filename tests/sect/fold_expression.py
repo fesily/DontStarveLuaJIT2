@@ -1,4 +1,6 @@
 import re
+import argparse
+import sys
 
 #输入lua源代码文件,折叠所有算数量表达式,并写回到新文件里
 #通过正则表达式 替换模式 折叠成常量
@@ -10,9 +12,10 @@ import re
 # +-41+-22
 # +-41+-22+-22+-333
 # 73+-73
+# 89 + -87
 
 def fold_expression(code):
-    pattern = r'(\s*[-+]?\d+\s*[-+]+\s*)+\d+(\.\d+)?'
+    pattern = r'(\s*[-+]?\d+\s*[-+]\s*)+[-+]?\d+(\.\d+)?'
 
     # 定义替换函数
     def replace_expression(match):
@@ -50,11 +53,24 @@ def fold_file(input_file, output_file):
     folded_code = fold_expression(code)
     folded_code = fold_escape_sequences(folded_code)
 
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(folded_code)
+    sys.stdout.write(folded_code)
+    if output_file:
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(folded_code)
+
 if __name__ == "__main__":
-    input_file = 'tests/2847908822/modmain_12.lua'  # 输入文件名
-    output_file = 'tests/2847908822/modmain_123.lua'  # 输出文件名
+    # parse command line arguments for input and output files, output file is optional
+    parser = argparse.ArgumentParser(description="Fold expressions in a Lua source code file.")
+    parser.add_argument("input_file", help="Path to the input Lua source code file.")
+    parser.add_argument("output_file", nargs='?', default=None, help="Path to the output Lua source code file. If not provided, appends '.folded.lua' to the input file name. Use 'stdout' to print to console.")
+    args = parser.parse_args()
+
+    input_file = args.input_file
+    output_file = args.output_file
+    if output_file is None:
+        output_file = input_file + ".folded.lua"
+    if output_file == "stdout":
+        output_file = None
 
     fold_file(input_file, output_file)
     print(f"Folded expressions from {input_file} and saved to {output_file}.")

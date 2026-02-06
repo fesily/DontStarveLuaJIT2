@@ -28,7 +28,7 @@ if #arg > 4 then
 end
 
 if not pattern then
-    pattern = "("..const_table_name .. "%[(.-)%]"..")"
+    pattern = "("..const_table_name .. "%s*%[(.-)%]"..")"
 end
 
 local default_value = "nil"
@@ -37,12 +37,23 @@ if not execute then
 else
     default_value= nil
 end
+if const_table_name == "nil" then
+    const_table_name = ''
+    print("const file top table")
+end
 
 if not inputfile or not outputfile or not const_table_name or not const_table_file then
     print("Usage: lua replace_constants.lua <inputfile> <outputfile> <const_table_file> <const_table_name>")
     print("Example: lua replace_constants.lua input.lua output.lua const_table.lua a")
     return
 end
+
+print("Input file: " .. inputfile)
+print("Output file: " .. outputfile)
+print("Constant table file: " .. const_table_file)
+print("Constant table name: " .. const_table_name)
+print("Pattern: " .. pattern)
+print("Execute expression: " .. execute)
 
 
 local file = io.open(inputfile, "r")
@@ -63,8 +74,6 @@ local const_table = loadstring(const_table_content)()
 
 local function main()
     -- 匹配 table_name[key] 的模式
-    print("Pattern to match: " .. pattern)
-    print("Execute expression: " .. execute)
     -- 函数：替换源代码中的常量表访问表达式
     local function replace_constants(source, table_name, table)
         -- 替换函数
@@ -100,7 +109,8 @@ local function main()
         local result = source:gsub(pattern, replacer)
         return result
     end
-    return replace_constants(source_code, const_table_name, const_table[const_table_name])
+    local consttable = const_table_name == '' and const_table or const_table[const_table_name]
+    return replace_constants(source_code, const_table_name, consttable)
 end
 local modified_code = main()
 if not modified_code then
@@ -114,5 +124,6 @@ if not output_file then
 end
 output_file:write(modified_code)
 output_file:close()
--- lua tests/sect/fold_const.lua tests/2847908822/modmain12.lua tests/2847908822/modmain123.lua consts.lua a
--- lua tests/sect/fold_const.lua tests/2847908822/modmain123.lua tests/2847908822/modmain1234.lua consts.lua c -p "(get%_const%_string%((.-)%))" -e "48719+"
+-- lua tests/sect/fold_const.lua tests/2847908822/modmain2.lua tests/2847908822/modmain3.lua consts.lua a
+-- lua tests/sect/fold_const.lua tests/2847908822/modmain3.lua tests/2847908822/modmain4.lua consts.lua c -p "(get%_const%_string%((.-)%))" -e "-11118+"
+-- .\builds\ninja-multi-vcpkg\src\lua51original\Debug\lua.exe tests/sect/fold_const.lua .\tests\2847908822\modmain_.lua .\tests\2847908822\modmain_1.lua .\tests\2847908822\const_string_table.decoded.lua "nil" -p "(get%_const%_string%((.-)%))" -e "50983+" 
