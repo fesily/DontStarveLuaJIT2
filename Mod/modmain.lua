@@ -54,7 +54,7 @@ local function main()
 	end
 	
 	local function LoadGameInjector()
-		return _G.GameInjector
+		return _G.rawget(_G, "GameInjector")
 	end
 
 	local hasluajit, jit = _G.pcall(require, "jit")

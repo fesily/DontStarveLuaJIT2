@@ -71,10 +71,20 @@ struct InjectorConfig {
         mutable char value[256] = {};
         operator const char*() const;
     };
+    template<typename T, T default_value = 0>
+    struct EnvOrCmdOptIntValue {
+        const char *key;
+        mutable bool has_cached = false;
+        mutable T value = default_value;
+        operator T() const;
+    };
 #define ENV_OR_CMD_OPT_FLAG(name) \
     const EnvOrCmdOptFlag name{#name};
 #define ENV_OR_CMD_OPT_VALUE(name) \
     const EnvOrCmdOptValue name{#name};
+#define ENV_OR_CMD_OPT_INT_VALUE(name) \
+    const EnvOrCmdOptIntValue<int> name{#name};
+
 
     ENV_OR_CMD_OPT_FLAG(DontStarveInjectorDisable);
     ENV_OR_CMD_OPT_FLAG(DisableGameScriptsZip);

@@ -38,7 +38,27 @@ inline GameLuaType GameLuaTypeFromString(const std::string_view &str)
             return GameLuaType::name;
     GAME_LUA_TYPE_ENUM(IF_STRING_TO_ENUM)
     #undef IF_STRING_TO_ENUM
+    using namespace std::string_view_literals;
+    if (str == "51"sv)
+        return GameLuaType::_51;
+    if (str == "5.1"sv)
+        return GameLuaType::_51;
+    if (str == "lua51"sv)
+        return GameLuaType::_51;
     return GameLuaType::jit; // default
+}
+
+inline GameLuaType GameLuaTypeFromInt(int type)
+{
+    switch (type) {
+#define CASE_INT_TO_ENUM(name) \
+    case static_cast<int>(GameLuaType::name): \
+        return GameLuaType::name;
+        GAME_LUA_TYPE_ENUM(CASE_INT_TO_ENUM)
+#undef CASE_INT_TO_ENUM
+    default:
+        return GameLuaType::jit; // default
+    }
 }
 
 enum class LUA_EVENT {

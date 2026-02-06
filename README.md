@@ -11,7 +11,7 @@
 请务必备份您的存档，因为我们无法保证插件不会导致存档损坏！
 使用独立开服工具需要注意,设置中`服务器禁用luajit`选项是无效的,你应该直接去除luajit启动服务器
 
-# Roadload
+# 计划
 
 ## Don't Starve Together
 
@@ -188,6 +188,56 @@ end
 
 在游戏目录/bin64 文件夹中创建 `steam_appid.txt` 文件，内容为 `322330`。
 
+## 直接启用游戏调试
+
+### 需要`staem_appid.txt`
+
+```json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(Windows) 启动服务器(lua)",
+            "type": "lua",
+            "request": "launch",
+            "luaexe": "${config:steam.game.root}/bin64/dontstarve_steam_x64.exe",
+            "program": "",
+            "arg": [],
+            "env": {
+                //"lua_vm_type": "game", // jit|game|5.1
+                "enable_lua_debugger": "1"
+            },
+            "sourceFormat": "string",
+            "sourceMaps": [
+                [
+                    "../mods/workshop-*",
+                    "C:/Program Files (x86)/Steam/steamapps/workshop/content/322330/*"
+                ],
+                [
+                    "../mods/workshop-2847908822/*",
+                    "${workspaceFolder}/tests/2847908822/*"
+                ],
+                [   
+                    "C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/data/scripts/*",
+                    "C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/dst-scripts/scripts/*"
+                ],
+                [
+                    "scripts/*",
+                    "C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/dst-scripts/scripts/*"
+                ],
+                [
+                    "GameLuaInjectFramework.lua",
+                    "${workspaceFolder}/src/DontStarveInjector/GameLuaInjectFramework.lua"
+                ]
+            ],
+            "cwd": "${config:steam.game.root}/bin64",
+            "luaVersion": "lua51"
+        },
+    ]
+}
+
+```
+
 ## 传递进程参数 “-enable_lua_debugger”
 
 若通过Steam启动，请在游戏属性 > 启动选项中添加：“ -enable_lua_debugger”
@@ -298,6 +348,7 @@ end
 | 大*雄     | 166RMB | (改进加密兼容性)| |
 | 星*☆     | 100RMB | | |
 | 18**30    | 50RMB| 无 | |
+| 33**66    | 30RMB | 辅助安装| |
 
 # 捐赠方式
 ![weixin_zanshang](https://github.com/user-attachments/assets/9f6485ce-5254-4207-a514-89bd02c332ce)

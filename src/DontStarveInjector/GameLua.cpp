@@ -1054,7 +1054,7 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
         spdlog::info("Game export {}: {}", name, (void *) target);
         gameLuaGameCtx.exports[name] = (GumAddress) target;
     }
-#ifdef WIN32
+#if defined(WIN32) && !defined(NDEBUG)
     auto hProcess = GetCurrentProcess();
     // 步骤1: 初始化符号处理器
     BOOL initSuccess = SymInitialize(hProcess, NULL, TRUE);// FALSE 表示不自动加载所有模块符号
@@ -1076,6 +1076,7 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
     }
 #endif
     auto luaType = GameLuaTypeFromString((const char *) ictx->config.lua_vm_type);
+    set_vm_type(luaType, nullptr);
     auto currentCtx = GameLuaContextImpl::currentCtx;
     if (currentCtx == nullptr) {
         spdlog::error("GameLuaContext is not initialized, cannot replace Lua module");
