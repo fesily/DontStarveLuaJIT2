@@ -12,7 +12,6 @@ on:
   pull_request:
     branches:
       - master
-      - Preview*
 
 jobs:
   compile:
@@ -122,4 +121,5 @@ jobs:
           allowUpdates: true
           prerelease: true
           makeLatest: true
+          tag: "preview"
           commit: ${{ github.sha }}
