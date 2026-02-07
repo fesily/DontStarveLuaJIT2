@@ -12,6 +12,7 @@ on:
   pull_request:
     branches:
       - master
+      - Preview*
 
 jobs:
   compile:
@@ -100,7 +101,7 @@ jobs:
 
   publish-preview:
     needs: compile
-    if: ${{ github.ref == 'refs/heads/preview' }}
+    if: startsWith(github.ref, 'refs/heads/Preview')
     strategy:
       fail-fast: false
       matrix:
@@ -121,5 +122,4 @@ jobs:
           allowUpdates: true
           prerelease: true
           makeLatest: true
-          tag: "preview"
           commit: ${{ github.sha }}
