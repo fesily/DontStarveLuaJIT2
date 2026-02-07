@@ -12,6 +12,7 @@ on:
   pull_request:
     branches:
       - master
+      - Preview*
 
 jobs:
   compile:
@@ -76,19 +77,49 @@ jobs:
           filename: ${{ matrix.target}}_Mod.zip
           directory: ${{ github.workspace }}
 
+  publish-release:
+    needs: compile
+    if: startsWith(github.ref, 'refs/tags/')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: windows, platform: win32-x64 }
+          - { os: ubuntu-24.04,   target: linux,   platform: linux-x64 }
+          - { os: macos-latest,   target: macos,   platform: macos-x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Publish release asserts
         uses: ncipollo/release-action@v1.14.0
-        if: startsWith(github.ref, 'refs/tags/')
         with:
           artifacts: '${{ matrix.target}}_Mod.zip'
           allowUpdates: true
+
+  publish-preview:
+    needs: compile
+    if: ${{ github.ref == 'refs/heads/master' }} 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: windows, platform: win32-x64 }
+          - { os: ubuntu-24.04,   target: linux,   platform: linux-x64 }
+          - { os: macos-latest,   target: macos,   platform: macos-x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Publish preview asserts
-        if: ${{ ! startsWith(github.ref, 'refs/tags/') }} && ${{ ! startsWith(github.ref, 'refs/heads/master') }}
         uses: ncipollo/release-action@v1.14.0
         with:
           artifacts: '${{ matrix.target}}_Mod.zip'
           allowUpdates: true
           prerelease: true
           makeLatest: true
-          tag: "preview"
           commit: ${{ github.sha }}

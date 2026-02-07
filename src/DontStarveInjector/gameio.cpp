@@ -109,7 +109,7 @@ static std::optional<std::filesystem::path> get_workshop_dir() {
 }
 
 
-DONTSTARVEINJECTOR_API const char *DS_LUAJIT_get_workshop_dir() {
+DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_workshop_dir() {
     auto cache = get_workshop_dir();
     if (cache) {
         static auto path = std::filesystem::absolute(cache.value()).generic_string();
@@ -296,7 +296,7 @@ static void lj_clearerr(FILE *fp) noexcept {
 
 static int lj_need_transform_path() noexcept {
     static bool has_lua_debug_flag = [] {
-        bool ret = InjectorConfig::instance().enable_lua_debugger;
+        bool ret = InjectorConfig::instance()->enable_lua_debugger;
         if (!ret) {
             auto cmd = get_cmd();
             if (cmd.contains("DST_Secondary") || cmd.contains("DST_Master")) {
@@ -327,11 +327,11 @@ void lj_gc_fullgc_external(void *L, void (*oldfn)(void *L)) {
         lua_gc_func(L, 5, fullgc_mb << 10);
     }
 }
-DONTSTARVEINJECTOR_API void DS_LUAJIT_disable_fullgc(int mb) {
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_disable_fullgc(int mb) {
     fullgc_mb = mb;
 }
 
-DONTSTARVEINJECTOR_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept {
+DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept {
     try {
         spdlog::info("DS_LUAJIT_Fengxun_Decrypt: {}", filename);
         auto infile = std::filesystem::path(filename);

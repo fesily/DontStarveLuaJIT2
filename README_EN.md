@@ -191,6 +191,56 @@ We need `vscode` + `lua-debug` plugin
 
 Create file `steam_appid.txt` in gamedir/bin64, with contents `322330`.
 
+## Directly enable game debugging
+
+### Requires `steam_appid.txt`
+
+```json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(Windows) Launch server (lua)",
+            "type": "lua",
+            "request": "launch",
+            "luaexe": "${config:steam.game.root}/bin64/dontstarve_steam_x64.exe",
+            "program": "",
+            "arg": [],
+            "env": {
+                //"lua_vm_type": "game", // jit|game|5.1
+                "enable_lua_debugger": "1"
+            },
+            "sourceFormat": "string",
+            "sourceMaps": [
+                [
+                    "../mods/workshop-*",
+                    "C:/Program Files (x86)/Steam/steamapps/workshop/content/322330/*"
+                ],
+                [
+                    "../mods/workshop-2847908822/*",
+                    "${workspaceFolder}/tests/2847908822/*"
+                ],
+                [   
+                    "C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/data/scripts/*",
+                    "C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/dst-scripts/scripts/*"
+                ],
+                [
+                    "scripts/*",
+                    "C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/dst-scripts/scripts/*"
+                ],
+                [
+                    "GameLuaInjectFramework.lua",
+                    "${workspaceFolder}/src/DontStarveInjector/GameLuaInjectFramework.lua"
+                ]
+            ],
+            "cwd": "${config:steam.game.root}/bin64",
+            "luaVersion": "lua51"
+        },
+    ]
+}
+
+```
+
 ## Pass process args "-enable_lua_debugger"
 
 If you start with Steam, please set game properties > launch option: "-enable_lua_debugger"

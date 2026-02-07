@@ -6,6 +6,7 @@
 #else
 #endif
 #include "util/platform.hpp"
+#include <spdlog/spdlog.h>
 using namespace std::string_view_literals;
 namespace dontstarveinjector::lua_debugger_helper {
     static std::filesystem::path get_home_directory() {
@@ -51,6 +52,18 @@ namespace dontstarveinjector::lua_debugger_helper {
         return {};
     }
 
+    static std::string_view get_lua_vm_type() {
+        switch (GetGameLuaContext().luaType)
+        {
+        case GameLuaType::jit:
+            return "luajit";
+        case GameLuaType::game:
+        case GameLuaType::_51:
+        default:
+            return "lua51";
+        }
+    }
+
     static std::filesystem::path get_lua_debugger_so_path(std::filesystem::path lua_debugger_root) {
         if (lua_debugger_root.empty()) return {};
         const char *os_specific_paths[] = {
@@ -70,7 +83,7 @@ namespace dontstarveinjector::lua_debugger_helper {
             nullptr
         };
         for (const char **os_path = os_specific_paths; *os_path != nullptr; ++os_path) {
-            std::filesystem::path debugger_so_path = lua_debugger_root / "runtime" / *os_path / "luajit";
+            std::filesystem::path debugger_so_path = lua_debugger_root / "runtime" / *os_path / get_lua_vm_type();
             for (const char **so_ext = so_exts; *so_ext != nullptr; ++so_ext) {
                 std::filesystem::path full_path = debugger_so_path / ("luadebug." + std::string(*so_ext));
                 if (std::filesystem::exists(full_path) && std::filesystem::is_regular_file(full_path)) {
@@ -81,20 +94,35 @@ namespace dontstarveinjector::lua_debugger_helper {
         return {};
     }
 #ifdef ENABLE_LUA_DEBUGGER
-    void initialize_lua_debugger() {
-        auto env_key = "LUA_DEBUG_CORE_DEBUGGER"sv;
+    void* initialize_lua_debugger() {
+        static module_handler_t handler;
+        std::string_view env_key = LUA_DEBUG_CORE_DEBUGGER;
         if (getenv(env_key.data()) != nullptr) {
             // already set
-            return;
+            return handler;
         }
         auto lua_debugger_root = get_lua_debugger_root_path();
-        if (lua_debugger_root.empty()) return;
+        if (lua_debugger_root.empty()) return nullptr;
         auto debugger_so_path = get_lua_debugger_so_path(lua_debugger_root).string();
-        if (debugger_so_path.empty()) return;
-        [[unused]] module_handler_t handle = loadlib(debugger_so_path.c_str());
+        if (debugger_so_path.empty()) return nullptr;
+        handler = loadlib(debugger_so_path.c_str());
         set_env_variable("LUA_DEBUG_CORE", debugger_so_path.c_str());
         set_env_variable(env_key.data(), debugger_so_path.c_str());
         set_env_variable(LUA_DEBUG_CORE_ROOT, lua_debugger_root.string().c_str());
+// #ifdef _WIN32
+//         if (GetGameLuaContext().luaType == GameLuaType::game) {
+//             // get current module dll path 
+//             char module_file_name[MAX_PATH] = {0};
+//             static HMODULE hModule = NULL;
+//             GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+//                       (LPCSTR)initialize_lua_debugger,
+//                       &hModule);
+//             if (GetModuleFileNameA(hModule, module_file_name, MAX_PATH)) {
+//                 set_env_variable("LUA_DEBUG_DLL_PATH", module_file_name);
+//             }
+//         }
+// #endif
+        return handler;
     }
 #endif
 }// namespace dontstarveinjector::lua_debugger_helper
