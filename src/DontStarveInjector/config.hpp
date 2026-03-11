@@ -86,18 +86,19 @@ struct InjectorConfig {
     const EnvOrCmdOptIntValue<int> name{#name};
 
 
-    ENV_OR_CMD_OPT_FLAG(DontStarveInjectorDisable);
-    ENV_OR_CMD_OPT_FLAG(DisableGameScriptsZip);
-    ENV_OR_CMD_OPT_FLAG(DisableGameIO);
-    ENV_OR_CMD_OPT_FLAG(LuajitWaitDebuggerEnable);
-    ENV_OR_CMD_OPT_FLAG(DisableReplaceLuaIO);
-    ENV_OR_CMD_OPT_FLAG(DisableForceLoadLuaJITMod);
-    ENV_OR_CMD_OPT_FLAG(GameInjectorNoDefaultBeforeCode);
-    ENV_OR_CMD_OPT_FLAG(disable_progress);
-    ENV_OR_CMD_OPT_FLAG(enable_lua_debugger);
-    ENV_OR_CMD_OPT_FLAG(disable_lua_debugger_code_patch);
+    ENV_OR_CMD_OPT_FLAG(DontStarveInjectorDisable); // disbale all features
+    ENV_OR_CMD_OPT_FLAG(DisableGameScriptsZip); // disable the game builtin script zip, directly load from directory
+    ENV_OR_CMD_OPT_FLAG(DisableGameIO); // disable the game builtin io, redirect to lua io
+    ENV_OR_CMD_OPT_FLAG(LuajitWaitDebuggerEnable); // wait for debugger attach before load
+    ENV_OR_CMD_OPT_FLAG(DisableReplaceLuaIO);   // disable replace lua io, only work when DisableGameIO enabled
+    ENV_OR_CMD_OPT_FLAG(DisableForceLoadLuaJITMod); // disable force load LuaJIT mod
+    ENV_OR_CMD_OPT_FLAG(GameInjectorNoDefaultBeforeCode); // for game injector, do not patch before code
+    ENV_OR_CMD_OPT_FLAG(disable_progress);      // disable repatch progress display
+    ENV_OR_CMD_OPT_FLAG(enable_lua_debugger);   // enable lua debugger support
+    ENV_OR_CMD_OPT_FLAG(disable_lua_debugger_code_patch); // disable lua debugger code patch, only work when enable_lua_debugger enabled
+    ENV_OR_CMD_OPT_FLAG(AppVersionDevPatch);    // for developer, always treat app version as dev, so that can use dev code path
 
-    ENV_OR_CMD_OPT_VALUE(lua_vm_type);
+    ENV_OR_CMD_OPT_VALUE(lua_vm_type);     // specify lua vm type, can be lua51, luajit, or game, default is luajit
 
 #undef ENV_OR_CMD_OPT_VALUE
 #undef ENV_OR_CMD_OPT_FLAG

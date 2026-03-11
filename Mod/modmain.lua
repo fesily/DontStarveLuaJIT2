@@ -247,8 +247,14 @@ local function main()
 				return true
 			end
 			local function check_encrypted(filename, modname)
+				local fp = io.open(filename, "r")
+				if not fp then
+					return
+				end
+
 				local limit = 64
-				for line in io.lines(filename) do
+				local result
+				for line in fp:lines() do
 					if limit <= 12 then
 						if line:find("frostxx@qq.com", 1, true) then
 							self.frostxxMods[modname] = true
@@ -259,19 +265,23 @@ local function main()
 					if #line > 1024 then
 						self.EncryptedMods[modname] = true
 						print(filename, modname, " is encrypted! by line length")
-						return true
+						result = true
+						break
 					end
 					if not all_invisible_chars_are_utf8(line) then
 						self.EncryptedMods[modname] = true
 						print(filename, modname, " is encrypted! by invalid utf8", line)
-						return true
+						result = true
+						break
 					end
 
 					limit = limit - 1
 					if limit <= 0 then
-						return
+						break
 					end
 				end
+				fp:close()
+				return result
 			end
 
 			local MODS_ROOT = "../mods/"

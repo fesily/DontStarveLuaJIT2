@@ -55,6 +55,53 @@ extern "C" {
 
 using namespace std;
 
+#ifdef _WIN32
+namespace {
+using GetBuildTypeFn = const char *(*)(void *self);
+
+GetBuildTypeFn original_get_build_type = nullptr;
+
+const char *forced_get_build_type(void *self) {
+    (void) self;
+    return "dev";
+}
+
+uintptr_t find_build_type_function(const function_relocation::ModuleSections &module_main) {
+    function_relocation::MemorySignature build_type_signature{"48 8B 05 ?? ?? ?? ?? C3", 0};
+    build_type_signature.only_one = false;
+    build_type_signature.log = false;
+    build_type_signature.prot_flag = GUM_PAGE_EXECUTE;
+    if (!build_type_signature.scan(module_main.text.base_address, module_main.text.size)) {
+        return 0;
+    }
+
+    for (const auto candidate : build_type_signature.targets) {
+        auto insn = function_relocation::disasm::get_insn(reinterpret_cast<void *>(candidate), 8);
+        if (!insn || insn->detail->x86.op_count != 2) {
+            continue;
+        }
+
+        const auto &x86 = insn->detail->x86;
+        if (x86.operands[0].type != X86_OP_REG || x86.operands[1].type != X86_OP_MEM) {
+            continue;
+        }
+
+        const auto string_ptr_address = function_relocation::read_operand_rip_mem(*insn, x86.operands[1]);
+        if (!string_ptr_address || !module_main.in_rodata(*reinterpret_cast<uintptr_t *>(string_ptr_address))) {
+            continue;
+        }
+
+        const auto build_type = reinterpret_cast<const char *>(*reinterpret_cast<uintptr_t *>(string_ptr_address));
+        if (build_type && std::string_view{build_type} == "release") {
+            return candidate;
+        }
+    }
+
+    return 0;
+}
+} // namespace
+#endif
+
 G_NORETURN void showError(const std::string_view &msg) {
 #ifdef _WIN32
     MessageBoxA(NULL, msg.data(), "error!", 0);
@@ -66,26 +113,42 @@ G_NORETURN void showError(const std::string_view &msg) {
 
 
 void replace_game_branch_flag_to_dev(const std::string &mainPath) {
-#define REPALCE_CONST_STRING_BRANCH_DEV 1
-#ifndef NDEBUG
-#ifdef REPALCE_CONST_STRING_BRANCH_DEV
 #ifdef _WIN32
-    function_relocation::ModuleSections moduleMain{};
-    using namespace std::literals;
-
-    if (function_relocation::get_module_sections(mainPath.c_str(), moduleMain)) {
-        function_relocation::MemorySignature scaner{"00 72 65 6C 65 61 73 65 00", 1};
-        auto str = (char *) scaner.scan(moduleMain.rodata.base_address, moduleMain.rodata.size);
-        if (str && "release"sv == (str + 1)) {
-            GumPageProtection prot;
-            if (gum_memory_query_protection(str, &prot) && gum_try_mprotect(str, 4, GUM_PAGE_RW)) {
-                gum_memory_write(str, (const guint8 *) "dev", 4);
-                gum_try_mprotect(str, 4, prot);
-            }
-        }
+    if (!InjectorConfig::instance()->AppVersionDevPatch) {
+        return;
     }
-#endif
-#endif
+
+    static bool patched = false;
+    if (patched) {
+        return;
+    }
+
+    function_relocation::ModuleSections moduleMain{};
+    if (!function_relocation::get_module_sections(mainPath.c_str(), moduleMain)) {
+        spdlog::error("failed to get module sections for {}", mainPath);
+        return;
+    }
+
+    const auto target = find_build_type_function(moduleMain);
+    if (!target) {
+        spdlog::error("failed to locate GetBuildType function by binary signature");
+        return;
+    }
+
+    auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
+    auto replace_result = gum_interceptor_replace(
+        interceptor,
+        reinterpret_cast<void *>(target),
+        reinterpret_cast<void *>(&forced_get_build_type),
+        nullptr,
+        reinterpret_cast<void **>(&original_get_build_type));
+    if (replace_result != GUM_REPLACE_OK) {
+        spdlog::error("failed to replace GetBuildType at {}: {}", reinterpret_cast<void *>(target), static_cast<int>(replace_result));
+        return;
+    }
+
+    patched = true;
+    spdlog::info("patched GetBuildType at {} to force dev build type", reinterpret_cast<void *>(target));
 #endif
 }
 

@@ -100,16 +100,24 @@ struct encode_head {
 constexpr auto file_head = "KLEI     1"sv;
 constexpr auto encode_flag = 'D';
 
+struct file_closer {
+    void operator()(FILE *fp) const {
+        if (fp) {
+            fclose(fp);
+        }
+    }
+};
+
 std::expected<std::string, std::string> GetPersistentString(const std::string_view &filename) {
-    auto fp = fopen(filename.data(), "r");
+    std::unique_ptr<FILE, file_closer> fp(fopen(filename.data(), "r"));
     if (!fp)
         return std::unexpected(strerror(errno));
-    fseek(fp, 0, SEEK_END);
-    auto length = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
+    fseek(fp.get(), 0, SEEK_END);
+    auto length = ftell(fp.get());
+    fseek(fp.get(), 0, SEEK_SET);
     auto buffer_ptr = std::make_unique<char[]>(length + 1);
     auto buffer = buffer_ptr.get();
-    auto readeds = fread(buffer, sizeof(char), length, fp);
+    auto readeds = fread(buffer, sizeof(char), length, fp.get());
     if (readeds <= 0)
         return std::unexpected(strerror(errno));
     buffer[readeds] = 0;
@@ -135,16 +143,16 @@ std::expected<std::string, std::string> GetPersistentString(const std::string_vi
 }
 
 bool SetPersistentString(const std::string_view &filename, const std::string_view &data, bool encode) {
-    auto fp = fopen(filename.data(), "w");
+    std::unique_ptr<FILE, file_closer> fp(fopen(filename.data(), "w"));
     if (!fp)
         return false;
-    if (fwrite(file_head.data(), sizeof(char), file_head.size(), fp) != file_head.size()) {
+    if (fwrite(file_head.data(), sizeof(char), file_head.size(), fp.get()) != file_head.size()) {
         return false;
     }
     if (!encode)
-        return fwrite(data.data(), sizeof(char), data.size(), fp) == data.size();
+        return fwrite(data.data(), sizeof(char), data.size(), fp.get()) == data.size();
     auto flag = encode_flag;
-    if (fwrite(&flag, sizeof(char), 1, fp) != 1) {
+    if (fwrite(&flag, sizeof(char), 1, fp.get()) != 1) {
         return false;
     }
     encode_head head;
@@ -155,5 +163,5 @@ bool SetPersistentString(const std::string_view &filename, const std::string_vie
     if (compress(buffer_ptr.get(), &zlib_len, (Bytef *) data.data(), data.length()) != Z_OK)
         return false;
     auto output = base64_encode(buffer_ptr.get(), zlib_len);
-    return fwrite(output.data(), sizeof(char), output.length(), fp) == output.length();
+    return fwrite(output.data(), sizeof(char), output.length(), fp.get()) == output.length();
 }
