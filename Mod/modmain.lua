@@ -52,7 +52,7 @@ local function main()
 		end
 		return not InGamePlay()
 	end
-	
+
 	local function LoadGameInjector()
 		return _G.rawget(_G, "GameInjector")
 	end
@@ -170,7 +170,7 @@ local function main()
 		local AutoDetectEncryptedMod = GetModConfigData("AutoDetectEncryptedMod")
 
 		local EncryptedModManager = AutoDetectEncryptedMod and luajit_encryptmods:read_file() or nil
-		local EncryptedModManager_version = APP_VERSION.."/1.0.0"
+		local EncryptedModManager_version = APP_VERSION .. "/1.0.0"
 		if EncryptedModManager == nil or EncryptedModManager.version ~= EncryptedModManager_version then
 			EncryptedModManager = { EncryptedMods = {}, frostxxMods = {}, version = EncryptedModManager_version, hash = 0 }
 		end
@@ -321,8 +321,40 @@ local function main()
 	local function HookGameVersionUI()
 		local TEMPLATES = require("widgets/redux/templates")
 		local old_getbuildstring = TEMPLATES.GetBuildString
+		local function format_vm_name(name)
+			if name == "jit" then
+				return "LuaJIT"
+			elseif name == "_51" then
+				return "Lua 5.1"
+			elseif name == "game" then
+				return "GameLua"
+			end
+			return tostring(name or "unknown")
+		end
+
+		local function get_vm_type_suffix()
+			if not GameInjector or not GameInjector.DS_LUAJIT_get_vm_type or not GameInjector.DS_LUAJIT_get_vm_type_name then
+				return "(LuaJIT)"
+			end
+
+			local ok_current_type, current_type = pcall(GameInjector.DS_LUAJIT_get_vm_type, 0)
+			local ok_next_type, next_type = pcall(GameInjector.DS_LUAJIT_get_vm_type, 1)
+			local ok_current_name, current_name = pcall(GameInjector.DS_LUAJIT_get_vm_type_name, 0)
+			local ok_next_name, next_name = pcall(GameInjector.DS_LUAJIT_get_vm_type_name, 1)
+			if not ok_current_type or not ok_next_type or not ok_current_name or not ok_next_name then
+				return "(LuaJIT)"
+			end
+
+			current_name = format_vm_name(current_name)
+			next_name = format_vm_name(next_name)
+			if current_type ~= next_type then
+				return string.format("(%s->%s)", current_name, next_name)
+			end
+			return string.format("(%s)", current_name)
+		end
+
 		TEMPLATES.GetBuildString = function()
-			return (old_getbuildstring() or "") .. "(LuaJIT)"
+			return (old_getbuildstring() or "") .. get_vm_type_suffix()
 		end
 	end
 
@@ -413,7 +445,6 @@ local function main()
 	function _M:SlowTailCall()
 		local AnyModDisableTailCall = GetModConfigData("AnyModDisableTailCall")
 		if GetModConfigData("SlowTailCall") then
-
 			local string_sub = string.sub
 			local function getmodname(env, chunkname)
 				if string_sub(chunkname, 1) == "@" then
@@ -723,6 +754,19 @@ local function main()
 		end)
 	end
 
+	function _M:SwitchVm(noreset)
+		luavmType = GetModConfigData("LuaVmType")
+		if GameInjector and luavmType ~= GameInjector.DS_LUAJIT_get_vm_type() then
+			print("switch vm to ", luavmType)
+			GameInjector.DS_LUAJIT_set_vm_type(luavmType)
+			if not noreset then
+				ReloadSim()
+			end
+			return true
+		end
+		return false
+	end
+
 	function _M:AlwaysLoad(injector, VersionMissMatch)
 		AddGamePostInit(function()
 			local workshop_dir_root = self.workshop_dir_root
@@ -816,8 +860,25 @@ local function main()
 			local old_ctor = ModConfigurationScreen._ctor
 			ModConfigurationScreen._ctor = function(self, _modname, client_config, ...)
 				old_ctor(self, _modname, client_config, ...)
-				if _modname == modname and os_is_windows then
-					luajit_config_screen_ctor(self, client_config)
+				if _modname == modname then
+					if os_is_windows then
+						luajit_config_screen_ctor(self, client_config)
+					end
+				end
+			end
+
+			local ModsScreen = require "screens/redux/modsscreen"
+			local old_ModsScreen_ctor = ModsScreen._ctor
+			ModsScreen._ctor = function(self, ...)
+				old_ModsScreen_ctor(self, ...)
+				if self.Apply then
+					local old_Apply = self.Apply
+					self.Apply = function(...)
+						old_Apply(...)
+						if GetModConfigData "LuaVmType" then
+							_M:SwitchVm(true)
+						end
+					end
 				end
 			end
 		end)
@@ -829,6 +890,9 @@ local function main()
 		local VersionMissMatch = Version2Number(modinfo.version) < Version2Number(self.so_version)
 		self:AlwaysLoad(GameInjector, VersionMissMatch)
 		if VersionMissMatch then
+			return
+		end
+		if self:SwitchVm() then
 			return
 		end
 		self:GetModMainPath(GameInjector)
@@ -909,4 +973,3 @@ _G.setfenv(main, _G.setmetatable({}, {
 	end
 }))
 main()
-

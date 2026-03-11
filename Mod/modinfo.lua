@@ -49,6 +49,12 @@ local toggle = {
     { description = translate({ en = "Off", zh = "禁用" }), data = false },
 }
 
+local luavmtype = {
+    jit = 0,
+    game = 1,
+    _51 = 2,
+}
+
 configuration_options = {
     {
         name = "EnabledJIT",
@@ -112,6 +118,20 @@ configuration_options = {
             { description = "240fps", data = 240 },
         },
         default = 60
+    },
+    {
+        name = "LuaVmType",
+        label = translate({ en = "Lua VM Type", zh = "Lua虚拟机类型" }),
+        hover = translate({
+            en = "Choose the Lua VM type",
+            zh = "选择Lua虚拟机类型"
+        }),
+        options = {
+            { description = translate({ en = "LuaJIT", zh = "LuaJIT" }), data = luavmtype.jit },
+            -- { description = translate({ en = "Lua 5.1", zh = "lua 5.1" }), data = luavmtype._51 },
+            { description = translate({ en = "Game Default VM", zh = "游戏默认虚拟机" }), data = luavmtype.game },
+        },
+        default = luavmtype.jit
     },
     -- {
     --     name = "ClientNetWorkTick",

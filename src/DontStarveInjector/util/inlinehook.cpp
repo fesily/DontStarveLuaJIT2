@@ -30,12 +30,25 @@ static auto& hooked() {
 bool HookWriteCode(void *from, const void *code, size_t len) {
 #ifdef _WIN32
     DWORD oldProtect = 0;
-    ::VirtualProtect(from, len, PAGE_EXECUTE_READWRITE, &oldProtect);
-    if (!(oldProtect & 0xf0))
+    if (!::VirtualProtect(from, len, PAGE_EXECUTE_READWRITE, &oldProtect))
         return false;
-    assert(oldProtect & PAGE_EXECUTE_READ);
+
+    auto baseProtect = oldProtect & 0xff;
+    switch (baseProtect) {
+        case PAGE_EXECUTE:
+        case PAGE_EXECUTE_READ:
+        case PAGE_EXECUTE_READWRITE:
+        case PAGE_EXECUTE_WRITECOPY:
+            break;
+        default:
+            return false;
+    }
+
     memcpy(from, code, len);
-    return ::VirtualProtect(from, len, PAGE_EXECUTE_READ, &oldProtect);
+    ::FlushInstructionCache(GetCurrentProcess(), from, len);
+
+    DWORD ignored = 0;
+    return ::VirtualProtect(from, len, oldProtect, &ignored) != 0;
 #else
 #ifndef _SC_PAGE_SIZE
 #define  PAGE_SIZE_MACRO _SC_PAGESIZE

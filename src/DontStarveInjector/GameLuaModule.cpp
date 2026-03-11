@@ -1162,6 +1162,8 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_workshop_dir();
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_disable_fullgc(int mb);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept;
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(int type, const char *moduleName);
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_get_vm_type(int next);
+DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_vm_type_name(int next);
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_network_tick(char upload_tick, char download_tick, bool isclient);
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_set_target_fps(int fps, int tt);
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int tt);
@@ -1182,6 +1184,8 @@ int luaopen_GameInjector(lua_State* L) {
     module.set_function("DS_LUAJIT_disable_fullgc", &DS_LUAJIT_disable_fullgc);
     module.set_function("DS_LUAJIT_Fengxun_Decrypt", &DS_LUAJIT_Fengxun_Decrypt);
     module.set_function("DS_LUAJIT_set_vm_type", &DS_LUAJIT_set_vm_type);
+	module.set_function("DS_LUAJIT_get_vm_type", &DS_LUAJIT_get_vm_type);
+	module.set_function("DS_LUAJIT_get_vm_type_name", &DS_LUAJIT_get_vm_type_name);
     module.set_function("DS_LUAJIT_replace_network_tick", &DS_LUAJIT_replace_network_tick);
     module.set_function("DS_LUAJIT_set_target_fps", &DS_LUAJIT_set_target_fps);
     module.set_function("DS_LUAJIT_update", &DS_LUAJIT_update);
