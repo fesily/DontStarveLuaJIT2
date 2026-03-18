@@ -29,13 +29,16 @@
             "request": "launch",
             "program": "${config:steam.game.root}/bin64/dontstarve_steam_x64.exe",
             "args": [
-                //"-enable_lua_debugger"
+                //"-enable_lua_debugger",
+                "-debug_random_data",
+                "-offline"
             ],
             "cwd": "${config:steam.game.root}/bin64",
             "environment": [
                 // {"name": "lua_vm_type", "value": "game"},
                 // {"name": "dump_lua_mods", "value": "workshop-2847908822"},
                 //{"name": "DontStarveInjectorDisable", "value": "1"}
+                {"name": "AppVersionDevPatch", "value": "1"}
             ],
             "visualizerFile": "${workspaceFolder}/LuaJit.Natvis"
         },

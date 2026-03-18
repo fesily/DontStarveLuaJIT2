@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "2.0.0"
+version = "2.1.0"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -55,17 +55,21 @@ local luavmtype = {
     _51 = 2,
 }
 
+local function setTitle(str)
+    return {
+        label = str,
+        name = "",
+        hover = "",
+        options = {{
+            description = "",
+            data = false
+        }},
+        default = false
+    }
+end
+
 configuration_options = {
-    {
-        name = "EnabledJIT",
-        label = translate({ en = "Enable JIT", zh = "开启JIT模式" }),
-        hover = translate({
-            en = "Recommend to turn this off if there is severe lag in the game",
-            zh = "在游戏中卡顿现象很严重的建议关闭"
-        }),
-        options = toggle,
-        default = true
-    },
+    setTitle(translate({ en = "General Options", zh = "通用选项" })),
     {
         name = "DisableForceFullGC",
         label = translate({ en = "GC Incremental Only", zh = "禁用强制完全gc,仅gc小部分" }),
@@ -120,6 +124,47 @@ configuration_options = {
         default = 60
     },
     {
+        name = "AlwaysEnableMod",
+        label = translate({ en = "Always Enable Mod", zh = "总是启用mod" }),
+        hover = translate({
+            zh = "强制启用当前mod,即使它在mod设置中没有启用",
+            en = "Force enable the current mod, even if it is not enabled in the mod settings"
+        }),
+        options = toggle,
+        default = true,
+    },
+    {
+        name = "NetworkOpt",
+        label = translate({ en = "Network RPC Optimizations", zh = "网络RPC优化" }),
+        hover = translate({
+            en = "Optimize network rpc transmission, out-of-order sending of RPCs, may have unexpected situations",
+            zh = "优化网络RPC传输, 并行发送RPC, 可能导致意外的情况"
+        }),
+        options = toggle,
+        default = true,
+    },
+    {
+        name = "NetworkOptEntity",
+        label = translate({ en = "Network Entity Optimizations", zh = "网络实体优化" }),
+        hover = translate({
+            en = "Optimize network entity transmission, out-of-order sending of entities, may have unexpected situations",
+            zh = "优化网络实体传输, 并行发送实体, 可能导致意外的情况"
+        }),
+        options = toggle,
+        default = true,
+    },
+    setTitle(translate({ en = "JitOptions", zh = "JIT选项" })),
+    {
+        name = "EnabledJIT",
+        label = translate({ en = "Enable JIT", zh = "开启JIT模式" }),
+        hover = translate({
+            en = "Recommend to turn this off if there is severe lag in the game",
+            zh = "在游戏中卡顿现象很严重的建议关闭"
+        }),
+        options = toggle,
+        default = true
+    },
+    {
         name = "LuaVmType",
         label = translate({ en = "Lua VM Type", zh = "Lua虚拟机类型" }),
         hover = translate({
@@ -128,8 +173,8 @@ configuration_options = {
         }),
         options = {
             { description = translate({ en = "LuaJIT", zh = "LuaJIT" }), data = luavmtype.jit },
-            -- { description = translate({ en = "Lua 5.1", zh = "lua 5.1" }), data = luavmtype._51 },
             { description = translate({ en = "Game Default VM", zh = "游戏默认虚拟机" }), data = luavmtype.game },
+            { description = translate({ en = "Lua 5.1", zh = "lua 5.1" }), data = luavmtype._51 },
         },
         default = luavmtype.jit
     },
@@ -199,7 +244,7 @@ configuration_options = {
             "Simulate the tail call stack of native lua, enhance compatibility with encrypted mods, but will cause a performance drop.\nUse with <Heuristic Detection of Encrypted Mods> option"
         }),
         options = toggle,
-        default = false
+        default = true
     },
     {
         name = "AnyModDisableTailCall",
@@ -222,46 +267,7 @@ configuration_options = {
         options = toggle,
         default = true
     },
-    {
-        name = "NetworkOpt",
-        label = translate({ en = "Network RPC Optimizations", zh = "网络RPC优化" }),
-        hover = translate({
-            en = "Optimize network rpc transmission, out-of-order sending of RPCs, may have unexpected situations",
-            zh = "优化网络RPC传输, 并行发送RPC, 可能导致意外的情况"
-        }),
-        options = toggle,
-        default = true,
-    },
-    {
-        name = "NetworkOptEntity",
-        label = translate({ en = "Network Entity Optimizations", zh = "网络实体优化" }),
-        hover = translate({
-            en = "Optimize network entity transmission, out-of-order sending of entities, may have unexpected situations",
-            zh = "优化网络实体传输, 并行发送实体, 可能导致意外的情况"
-        }),
-        options = toggle,
-        default = true,
-    },
-    {
-        name = "AlwaysEnableMod",
-        label = translate({ en = "Always Enable Mod", zh = "总是启用mod" }),
-        hover = translate({
-            zh = "强制启用当前mod,即使它在mod设置中没有启用",
-            en = "Force enable the current mod, even if it is not enabled in the mod settings"
-        }),
-        options = toggle,
-        default = true,
-    },
-    {
-        name = "ForceDisableTailCall",
-        label = translate({ en = "Force Disable Tail Call", zh = "强制禁用尾调用" }),
-        hover = translate({
-            zh = "强制禁用尾调用优化, 仅用于区别是否因尾调用问题导致的mod不兼容, 非调试不应该使用",
-            en = "Force disable tail call optimization, used to determine if mod incompatibility is caused by inconsistent tail calls, should not be used in non-debugging"
-        }),
-        options = toggle,
-        default = false
-    },
+
     {
         name = "ModBlackList",
         label = translate({ en = "Mod JIT Blacklist", zh = "MODJit黑名单" }),
@@ -273,6 +279,17 @@ configuration_options = {
         name = "DisableJITWhenServer",
         label = translate({ en = "Disable JIT on Server", zh = "服务器禁用luajit" }),
         hover = translate({ en = "Disable luajit on the server process", zh = "服务器进程禁用luajit" }),
+        options = toggle,
+        default = false
+    },
+    setTitle(translate({ en = "DebugOptions", zh = "调试选项" })),
+    {
+        name = "ForceDisableTailCall",
+        label = translate({ en = "Force Disable Tail Call", zh = "强制禁用尾调用" }),
+        hover = translate({
+            zh = "强制禁用尾调用优化, 仅用于区别是否因尾调用问题导致的mod不兼容, 非调试不应该使用",
+            en = "Force disable tail call optimization, used to determine if mod incompatibility is caused by inconsistent tail calls, should not be used in non-debugging"
+        }),
         options = toggle,
         default = false
     },

@@ -37,7 +37,7 @@ else ()
     message(FATAL_ERROR "Not supported platform")
 endif ()
 
-project(DontStarveLuaJIT VERSION 2.0.0)
+project(DontStarveLuaJIT VERSION 2.1.0)
 
 option(DISABLE_TRACY_FUTURE "disable tray future" ON)
 
@@ -158,6 +158,7 @@ if (MSVC)
 endif ()
 add_subdirectory("tools/Creater")
 add_subdirectory("tools/PersistentString")
+add_subdirectory("tests")
 
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX}
 #install(FILES ${LUA_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})
