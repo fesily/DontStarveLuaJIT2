@@ -149,9 +149,27 @@ local function main()
 		end)
 	end
 
+	local function HookGetModConfigData0()
+		local old_GetModConfigData = GetModConfigData
+		local is_gengc = GetModConfigData("EnabledGenGC")
+		if is_gengc then
+			function GetModConfigData(key, get_local_config)
+				if key == "DisableForceFullGC" then
+					return 0
+				elseif key == "EnableFrameGC" then
+					return false
+				elseif key == "LuaVmType" then
+					return "jit_gen"
+				end
+				return old_GetModConfigData(key, get_local_config)
+			end
+		end
+	end
+
 	local function HookGetModConfigData()
+		HookGetModConfigData0()
+		local old_GetModConfigData = GetModConfigData
 		if not os_is_windows then
-			local old_GetModConfigData = GetModConfigData
 			function GetModConfigData(key, get_local_config)
 				if _M.NotWindowsInvalidOptions[key] then
 					print("InvalidOptions: " .. key)
@@ -328,26 +346,26 @@ local function main()
 				return "Lua 5.1"
 			elseif name == "game" then
 				return "GameLua"
+			elseif name == "jit_gen" then
+				return "LuaJIT-Gen"
 			end
 			return tostring(name or "unknown")
 		end
 
 		local function get_vm_type_suffix()
-			if not GameInjector or not GameInjector.DS_LUAJIT_get_vm_type or not GameInjector.DS_LUAJIT_get_vm_type_name then
+			if not GameInjector or not GameInjector.DS_LUAJIT_get_vm_type_name then
 				return "(LuaJIT)"
 			end
 
-			local ok_current_type, current_type = pcall(GameInjector.DS_LUAJIT_get_vm_type, 0)
-			local ok_next_type, next_type = pcall(GameInjector.DS_LUAJIT_get_vm_type, 1)
 			local ok_current_name, current_name = pcall(GameInjector.DS_LUAJIT_get_vm_type_name, 0)
 			local ok_next_name, next_name = pcall(GameInjector.DS_LUAJIT_get_vm_type_name, 1)
-			if not ok_current_type or not ok_next_type or not ok_current_name or not ok_next_name then
+			if not ok_current_name or not ok_next_name then
 				return "(LuaJIT)"
 			end
 
 			current_name = format_vm_name(current_name)
 			next_name = format_vm_name(next_name)
-			if current_type ~= next_type then
+			if current_name ~= next_name then
 				return string.format("(%s->%s)", current_name, next_name)
 			end
 			return string.format("(%s)", current_name)
@@ -377,6 +395,7 @@ local function main()
 		if not hasluajit then
 			return
 		end
+		jit.off()
 		local enabled_jit = GetModConfigData("EnabledJIT")
 		if enabled_jit then
 			AddSimPostInit(function()
@@ -756,7 +775,12 @@ local function main()
 
 	function _M:SwitchVm(noreset)
 		luavmType = GetModConfigData("LuaVmType")
-		if GameInjector and luavmType ~= GameInjector.DS_LUAJIT_get_vm_type() then
+		if type(luavmType) ~= "string" then
+			return false
+		end
+		print("current vm type: ", GameInjector and GameInjector.DS_LUAJIT_get_vm_type_name and GameInjector.DS_LUAJIT_get_vm_type_name() or "unknown",
+			"target vm type: ", luavmType)
+		if GameInjector and luavmType ~= GameInjector.DS_LUAJIT_get_vm_type_name() then
 			print("switch vm to ", luavmType)
 			GameInjector.DS_LUAJIT_set_vm_type(luavmType)
 			if not noreset then
@@ -875,9 +899,7 @@ local function main()
 					local old_Apply = self.Apply
 					self.Apply = function(...)
 						old_Apply(...)
-						if GetModConfigData "LuaVmType" then
-							_M:SwitchVm(true)
-						end
+						_M:SwitchVm(true)
 					end
 				end
 			end
@@ -892,11 +914,11 @@ local function main()
 		if VersionMissMatch then
 			return
 		end
+		HookGetModConfigData()
 		if self:SwitchVm() then
 			return
 		end
 		self:GetModMainPath(GameInjector)
-		HookGetModConfigData()
 		HookGameVersionUI()
 		ForceJitOpt()
 		EnabledJIT()

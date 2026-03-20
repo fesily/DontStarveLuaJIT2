@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "2.1.0"
+version = "2.2.0"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -44,32 +44,49 @@ priority = 2e53
 icon_atlas = "modicon.xml"
 icon = "modicon.tex"
 
+-- dependencies = {
+--     "workshop-3317960157",
+-- }
+
 local toggle = {
     { description = translate({ en = "On", zh = "启用" }), data = true },
     { description = translate({ en = "Off", zh = "禁用" }), data = false },
 }
 
 local luavmtype = {
-    jit = 0,
-    game = 1,
-    _51 = 2,
+    jit = 'jit',
+    game = 'game',
+    _51 = 'lua51',
+    jit_gen = 'jit_gen',
 }
 
-local function setTitle(str)
+local section_counter = 0
+local function AddSection(label, hover)
+    section_counter = section_counter + 1
+
     return {
-        label = str,
-        name = "",
-        hover = "",
-        options = {{
-            description = "",
-            data = false
-        }},
-        default = false
+        section_start = true,
+        name = "SECTION_" .. section_counter,
+        label = label,
+        hover = hover,
+        options = { { description = "", data = "" } },
+        default =
+        ""
     }
 end
 
+local disable_by_gen_gc = {
+    option = "EnabledGenGC",
+    value = true,
+    reason = translate({ en = "Not compatible with generational GC", zh = "与分代GC不兼容" }),
+}
+local disable_by_lua51 = {
+    option = "LuaVmType",
+    values = { luavmtype._51, luavmtype.game },
+    reason = translate({ en = "Not compatible with Lua 5.1 VM", zh = "与Lua 5.1虚拟机不兼容" }),
+}
 configuration_options = {
-    setTitle(translate({ en = "General Options", zh = "通用选项" })),
+    AddSection(translate({ en = "General Options", zh = "通用选项" })),
     {
         name = "DisableForceFullGC",
         label = translate({ en = "GC Incremental Only", zh = "禁用强制完全gc,仅gc小部分" }),
@@ -91,7 +108,8 @@ configuration_options = {
             { description = "gc 256MB", data = 256 },
             { description = "gc 512MB", data = 512 },
         },
-        default = 1
+        default = 1,
+        disabled_by = disable_by_gen_gc
     },
     {
         name = "EnableFrameGC",
@@ -101,7 +119,8 @@ configuration_options = {
             zh = "见缝插针地gc"
         }),
         options = toggle,
-        default = true
+        default = true,
+        disabled_by = disable_by_gen_gc
     },
     {
         name = "TargetRenderFPS",
@@ -153,7 +172,7 @@ configuration_options = {
         options = toggle,
         default = true,
     },
-    setTitle(translate({ en = "JitOptions", zh = "JIT选项" })),
+    AddSection(translate({ en = "JitOptions", zh = "JIT选项" })),
     {
         name = "EnabledJIT",
         label = translate({ en = "Enable JIT", zh = "开启JIT模式" }),
@@ -165,6 +184,16 @@ configuration_options = {
         default = true
     },
     {
+        name = "EnabledGenGC",
+        label = translate({ en = "Enabled generational GC", zh = "启用分代GC" }),
+        hover = translate({
+            en = "Enable generational GC",
+            zh = "启用分代GC"
+        }),
+        options = toggle,
+        default = false,
+    },
+    {
         name = "LuaVmType",
         label = translate({ en = "Lua VM Type", zh = "Lua虚拟机类型" }),
         hover = translate({
@@ -174,9 +203,10 @@ configuration_options = {
         options = {
             { description = translate({ en = "LuaJIT", zh = "LuaJIT" }), data = luavmtype.jit },
             { description = translate({ en = "Game Default VM", zh = "游戏默认虚拟机" }), data = luavmtype.game },
-            { description = translate({ en = "Lua 5.1", zh = "lua 5.1" }), data = luavmtype._51 },
+            -- { description = translate({ en = "Lua 5.1", zh = "lua 5.1" }), data = luavmtype._51 },
         },
-        default = luavmtype.jit
+        default = luavmtype.jit,
+        disabled_by = disable_by_gen_gc
     },
     -- {
     --     name = "ClientNetWorkTick",
@@ -244,7 +274,8 @@ configuration_options = {
             "Simulate the tail call stack of native lua, enhance compatibility with encrypted mods, but will cause a performance drop.\nUse with <Heuristic Detection of Encrypted Mods> option"
         }),
         options = toggle,
-        default = true
+        default = true,
+        disabled_by = disable_by_lua51
     },
     {
         name = "AnyModDisableTailCall",
@@ -255,7 +286,8 @@ configuration_options = {
             "Force simulate the tail call stack of native lua, enhance compatibility with encrypted mods"
         }),
         options = toggle,
-        default = false
+        default = false,
+        disabled_by = disable_by_lua51
     },
     {
         name = "AutoDetectEncryptedMod",
@@ -265,33 +297,37 @@ configuration_options = {
             zh = "自动检测并启用加密mod的兼容性"
         }),
         options = toggle,
-        default = true
+        default = true,
+        disabled_by = disable_by_lua51
     },
-
     {
         name = "ModBlackList",
         label = translate({ en = "Mod JIT Blacklist", zh = "MODJit黑名单" }),
         hover = translate({ en = "Some mods may not be appropriate for JIT", zh = "有些mod可能写的特别,不合适jit模式" }),
         options = toggle,
-        default = false
+        default = false,
+        disabled_by = disable_by_lua51
     },
     {
         name = "DisableJITWhenServer",
         label = translate({ en = "Disable JIT on Server", zh = "服务器禁用luajit" }),
         hover = translate({ en = "Disable luajit on the server process", zh = "服务器进程禁用luajit" }),
         options = toggle,
-        default = false
+        default = false,
+        disabled_by = disable_by_lua51
     },
-    setTitle(translate({ en = "DebugOptions", zh = "调试选项" })),
+    AddSection(translate({ en = "DebugOptions", zh = "调试选项" })),
     {
         name = "ForceDisableTailCall",
         label = translate({ en = "Force Disable Tail Call", zh = "强制禁用尾调用" }),
         hover = translate({
             zh = "强制禁用尾调用优化, 仅用于区别是否因尾调用问题导致的mod不兼容, 非调试不应该使用",
-            en = "Force disable tail call optimization, used to determine if mod incompatibility is caused by inconsistent tail calls, should not be used in non-debugging"
+            en =
+            "Force disable tail call optimization, used to determine if mod incompatibility is caused by inconsistent tail calls, should not be used in non-debugging"
         }),
         options = toggle,
-        default = false
+        default = false,
+        disabled_by = disable_by_lua51
     },
     {
         name = "EnableProfiler",
