@@ -1,6 +1,8 @@
 #pragma once
 #include "DstAngleBackend.hpp"
 #include <stdint.h>
+#include <cstring>
+#include <cstdlib>
 #ifdef ENABLE_FAKE_API
 #define USE_FAKE_API 1
 #else

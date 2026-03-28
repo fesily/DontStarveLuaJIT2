@@ -55,10 +55,6 @@ extern "C" {
 
 using namespace std;
 
-#ifdef _WIN32
-namespace {
-using GetBuildTypeFn = const char *(*)(void *self);
-GetBuildTypeFn original_get_build_type = nullptr;
 
 void wait_for_debugger_before_inject() {
 #ifndef NDEBUG
@@ -69,6 +65,11 @@ void wait_for_debugger_before_inject() {
     }
 #endif
 }
+
+#ifdef _WIN32
+namespace {
+using GetBuildTypeFn = const char *(*)(void *self);
+GetBuildTypeFn original_get_build_type = nullptr;
 
 const char *forced_get_build_type(void *self) {
     (void) self;
