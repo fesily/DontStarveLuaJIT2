@@ -83,8 +83,15 @@ jobs:
         uses: thedoctor0/zip-release@0.7.5
         with:
           path: ./Mod
-          filename: ${{ matrix.target}}_Mod.zip
+          filename: ${{ matrix.target }}_Mod.zip
           directory: ${{ github.workspace }}
+
+      - name: Upload packaged mod
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-mod-zip
+          path: ${{ github.workspace }}/${{ matrix.target }}_Mod.zip
+          if-no-files-found: error
 
   publish-release:
     needs: compile
@@ -102,10 +109,17 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
-      - name: Publish release asserts
+
+      - name: Download packaged mod
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.target }}-mod-zip
+          path: ${{ github.workspace }}
+
+      - name: Publish release assets
         uses: ncipollo/release-action@v1.14.0
         with:
-          artifacts: '${{ matrix.target}}_Mod.zip'
+          artifacts: ${{ github.workspace }}/${{ matrix.target }}_Mod.zip
           allowUpdates: true
 
   publish-preview:
@@ -124,10 +138,17 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
-      - name: Publish preview asserts
+
+      - name: Download packaged mod
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.target }}-mod-zip
+          path: ${{ github.workspace }}
+
+      - name: Publish preview assets
         uses: ncipollo/release-action@v1.14.0
         with:
-          artifacts: '${{ matrix.target}}_Mod.zip'
+          artifacts: ${{ github.workspace }}/${{ matrix.target }}_Mod.zip
           allowUpdates: true
           prerelease: true
           makeLatest: true
