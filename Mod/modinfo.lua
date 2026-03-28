@@ -45,7 +45,7 @@ icon_atlas = "modicon.xml"
 icon = "modicon.tex"
 
 mod_dependencies  = {
-    "buttonpicker"
+    "buttonpicker",
     "workshop-3317960157",
 }
 
