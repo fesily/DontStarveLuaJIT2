@@ -56,6 +56,7 @@ namespace dontstarveinjector::lua_debugger_helper {
         switch (GetGameLuaContext().luaType)
         {
         case GameLuaType::jit:
+        case GameLuaType::jit_gen:
             return "luajit";
         case GameLuaType::game:
         case GameLuaType::_51:

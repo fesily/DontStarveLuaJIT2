@@ -1161,9 +1161,9 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_workshop_dir();
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_disable_fullgc(int mb);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept;
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(int type, const char *moduleName);
-DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_get_vm_type(int next);
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(const char *type, const char *moduleName);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_vm_type_name(int next);
+DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_render_backend_name();
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_network_tick(char upload_tick, char download_tick, bool isclient);
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_set_target_fps(int fps, int tt);
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int tt);
@@ -1184,8 +1184,8 @@ int luaopen_GameInjector(lua_State* L) {
     module.set_function("DS_LUAJIT_disable_fullgc", &DS_LUAJIT_disable_fullgc);
     module.set_function("DS_LUAJIT_Fengxun_Decrypt", &DS_LUAJIT_Fengxun_Decrypt);
     module.set_function("DS_LUAJIT_set_vm_type", &DS_LUAJIT_set_vm_type);
-	module.set_function("DS_LUAJIT_get_vm_type", &DS_LUAJIT_get_vm_type);
 	module.set_function("DS_LUAJIT_get_vm_type_name", &DS_LUAJIT_get_vm_type_name);
+    module.set_function("DS_LUAJIT_get_render_backend_name", &DS_LUAJIT_get_render_backend_name);
     module.set_function("DS_LUAJIT_replace_network_tick", &DS_LUAJIT_replace_network_tick);
     module.set_function("DS_LUAJIT_set_target_fps", &DS_LUAJIT_set_target_fps);
     module.set_function("DS_LUAJIT_update", &DS_LUAJIT_update);
@@ -1199,4 +1199,110 @@ int luaopen_GameInjector(lua_State* L) {
 
     lua["GameInjector"] = module;
     return 1;
+}
+
+// GAME MOD CONFIG
+
+#include "../modinfo.hpp"
+#include <filesystem>
+#include <spdlog/spdlog.h>
+#include <fstream>
+#include "util/PersistentString.hpp"
+#include "gameModConfig.hpp"
+
+static std::filesystem::path GetKleiSaveDataDir(std::string_view ownid) {
+    auto home = getenv("HOME");
+    if (home == nullptr) {
+		home = getenv("USERPROFILE");
+    }
+	if (home == nullptr) {
+		return {};
+	}
+    std::filesystem::path save_dir = home;
+    save_dir = save_dir / "Documents" / "Klei" / "DoNotStarveTogether" / ownid;
+    return save_dir;
+}
+
+static std::filesystem::path GetModConfigDataDir(std::string_view ownid, const std::string_view &cluster_name = "client_save") {
+    auto save_dir = GetKleiSaveDataDir(ownid);
+    if (save_dir.empty()) {
+        return {};
+    }
+    return save_dir / cluster_name / "mod_config_data";
+}
+
+static std::filesystem::path GetModConfigDataFileName(std::string_view modname) {
+    std::string_view ext = InjectorConfig::instance()->AppVersionDevPatch ? "_dev" : "";
+    return std::string("modconfiguration_").append(modname).append(ext);
+}
+
+
+static std::filesystem::path GetModConfigDataFileName_Workshop(uint64_t modid) {
+    return GetModConfigDataFileName("workshop-" + std::to_string(modid));
+}
+
+std::optional<GameJitModConfig> LoadModConfigurationOptions() {
+    auto ictx = InjectorCtx::instance();
+    if (!ictx->DontStarveInjectorIsClient) {
+        return std::nullopt;
+    }
+
+    auto mod_config_data = GetModConfigDataDir(std::to_string(ictx->steam_account_id));
+    auto mod_filename = GetModConfigDataFileName_Workshop(3444078585);
+    auto path = mod_config_data / mod_filename;
+    spdlog::info("try load mod configuration from {}", path.string());
+    if (!std::filesystem::exists(path)) {
+        path = mod_config_data / GetModConfigDataFileName("luajit");
+		spdlog::info("try load mod configuration from {}", path.string());
+    }
+    if (!std::filesystem::exists(path)) {
+        path = mod_config_data / GetModConfigDataFileName("luajit2");
+		spdlog::info("try load mod configuration from {}", path.string());
+    }
+    if (!std::filesystem::exists(path)) {
+        spdlog::warn("mod configuration file not found at {}", path.string());
+        return std::nullopt;
+    }
+    auto persistent_string = GetPersistentString(path.string());
+    if (!persistent_string) {
+        spdlog::error("failed to load mod configuration from {}: {}", path.string(), persistent_string.error());
+        return std::nullopt;
+    }
+	sol::state lua;
+	try {
+		std::optional<GameJitModConfig> jitconfig;
+		auto config = lua.safe_script(persistent_string.value());
+		if (config.get_type() == sol::type::table) {
+			for (auto& [key, value] : config.get<sol::table>())
+			{
+				auto t = value.as<sol::table>();
+				auto optname = t["name"].get_or<std::string>("");
+				if (optname == ModConfigurationOptions::AngleBackend.name) {
+					auto val = t["saved"];
+					auto val_client = t["saved_client"];
+					auto final_val = val_client.valid() ? val_client.get<std::string>() : val.get_or<std::string>("");
+					for (auto o : ModConfigurationOptions::AngleBackend.options) {
+						if (o == final_val) {
+							if (!jitconfig) {
+								jitconfig = GameJitModConfig();
+							}
+							jitconfig->angle_backend = o;
+							spdlog::info("set angle backend to {}", o);
+							break;
+						}
+					}
+				}
+			}
+		}
+		return jitconfig;
+	} catch (const std::exception& e) {
+		spdlog::error("failed to parse mod configuration from {}: {}", path.string(), e.what());
+	}
+	return std::nullopt;
+}
+
+
+std::optional<GameJitModConfig> GameJitModConfig::instance() {
+	static std::optional<GameJitModConfig> mod_config_options = LoadModConfigurationOptions();
+	return mod_config_options;
 }

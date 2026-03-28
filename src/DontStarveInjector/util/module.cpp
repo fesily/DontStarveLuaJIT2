@@ -41,6 +41,7 @@ void module_enumerate_exports(HMODULE module,
                 details.type = ExportDetails::FUNCTION; /* TODO: data exports */
                 details.name = (const char *) &mod_base[name_rvas[index]];
                 details.address = (void *) (func_address);
+                details.ordinal = static_cast<uint16_t>(exp->Base + ord_rvas[index]);
 
                 if (!func(&details, user_data))
                     return;
@@ -63,29 +64,41 @@ module_enumerate_imports(HMODULE module,
     dos_hdr = (const IMAGE_DOS_HEADER *) module;
     nt_hdrs = (const IMAGE_NT_HEADERS *) &mod_base[dos_hdr->e_lfanew];
     entry = &nt_hdrs->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (entry->VirtualAddress == 0 || entry->Size == 0)
+        return;
+
     desc = (const IMAGE_IMPORT_DESCRIPTOR *) (mod_base + entry->VirtualAddress);
 
     for (; desc->Characteristics != 0; desc++) {
         ImportDetails details;
-        const IMAGE_THUNK_DATA *thunk_data;
+        const IMAGE_THUNK_DATA *lookup_thunk;
+        const IMAGE_THUNK_DATA *iat_thunk;
 
-        if (desc->OriginalFirstThunk == 0)
-            continue;
+        lookup_thunk = (const IMAGE_THUNK_DATA *) (mod_base + (desc->OriginalFirstThunk != 0 ? desc->OriginalFirstThunk : desc->FirstThunk));
+        iat_thunk = (const IMAGE_THUNK_DATA *) (mod_base + desc->FirstThunk);
 
         details.type = ImportDetails::FUNCTION; /* FIXME: how can we tell? */
         details.name = NULL;
         details.module = (const char *) (mod_base + desc->Name);
-        details.address = 0;
-        details.slot = (void*)(mod_base + desc->FirstThunk); /* TODO */
+        details.ordinal = 0;
 
-        thunk_data = (const IMAGE_THUNK_DATA *)
-                (mod_base + desc->OriginalFirstThunk);
-        for (; thunk_data->u1.AddressOfData != 0; thunk_data++) {
-            if ((thunk_data->u1.AddressOfData & IMAGE_ORDINAL_FLAG) != 0)
-                continue; /* FIXME: we ignore imports by ordinal */
+        for (; lookup_thunk->u1.AddressOfData != 0; lookup_thunk++, iat_thunk++) {
+            details.slot = (void *) &iat_thunk->u1.Function;
+            details.address = (void *) (uintptr_t) iat_thunk->u1.Function;
 
-            details.name = (const char *)
-                    (mod_base + thunk_data->u1.AddressOfData + 2);
+            if (
+#ifdef _WIN64
+                IMAGE_SNAP_BY_ORDINAL64(lookup_thunk->u1.Ordinal)
+#else
+                IMAGE_SNAP_BY_ORDINAL32(lookup_thunk->u1.Ordinal)
+#endif
+            ) {
+                details.name = NULL;
+                details.ordinal = IMAGE_ORDINAL(lookup_thunk->u1.Ordinal);
+            } else {
+                details.ordinal = 0;
+                details.name = (const char *) (mod_base + lookup_thunk->u1.AddressOfData + 2);
+            }
 
             if (!func(&details, user_data))
                 return;

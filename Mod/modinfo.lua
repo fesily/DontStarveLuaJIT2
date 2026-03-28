@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "2.2.0"
+version = "2.4.0"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -44,9 +44,10 @@ priority = 2e53
 icon_atlas = "modicon.xml"
 icon = "modicon.tex"
 
--- dependencies = {
---     "workshop-3317960157",
--- }
+mod_dependencies  = {
+    "buttonpicker"
+    "workshop-3317960157",
+}
 
 local toggle = {
     { description = translate({ en = "On", zh = "启用" }), data = true },
@@ -184,16 +185,6 @@ configuration_options = {
         default = true
     },
     {
-        name = "EnabledGenGC",
-        label = translate({ en = "Enabled generational GC", zh = "启用分代GC" }),
-        hover = translate({
-            en = "Enable generational GC",
-            zh = "启用分代GC"
-        }),
-        options = toggle,
-        default = false,
-    },
-    {
         name = "LuaVmType",
         label = translate({ en = "Lua VM Type", zh = "Lua虚拟机类型" }),
         hover = translate({
@@ -315,6 +306,33 @@ configuration_options = {
         options = toggle,
         default = false,
         disabled_by = disable_by_lua51
+    },
+    AddSection(translate({ en = "Experimental Features", zh = "实验性功能" })),
+    {
+        name = "EnabledGenGC",
+        label = translate({ en = "Enabled generational GC", zh = "启用分代GC" }),
+        hover = translate({
+            en = "Enable generational GC",
+            zh = "启用分代GC"
+        }),
+        options = toggle,
+        default = false,
+    },
+    {
+        name = "AngleBackend",
+        label = translate({ en = "Rendering Engine", zh = "渲染后端" }),
+        hover = translate({
+            en = "Choose the rendering backend for ANGLE.",
+            zh = "选择ANGLE的渲染后端"
+        }),
+        options = {
+            { description = translate({ en = "Auto", zh = "自动" }), data = "auto" },
+            { description = translate({ en = "Vulkan", zh = "Vulkan" }), data = "vulkan" },
+            { description = translate({ en = "D3D11", zh = "D3D11" }), data = "d3d11" },
+            { description = translate({ en = "D3D9", zh = "D3D9" }), data = "d3d9" },
+        },
+        default = "Auto",
+        require_restart = true,
     },
     AddSection(translate({ en = "DebugOptions", zh = "调试选项" })),
     {

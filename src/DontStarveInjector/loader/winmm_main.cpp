@@ -94,12 +94,17 @@ void DontStarveInjectorStart() {
     spdlog::set_level(spdlog::level::trace);
 #endif
 
-    bool isClientMod = !getExePath().filename().string().contains("server");
     auto mod = LoadLibraryA("injector");
     if (!mod) {
         spdlog::error("can't load injector.dll");
         return;
     }
-    auto ptr = (void (*)(bool)) GetProcAddress(mod, "Inject");
-    ptr(isClientMod);
+
+    auto hook_startup_entry = (bool (*)()) GetProcAddress(mod, "HookStartupEntry");
+    if (hook_startup_entry && hook_startup_entry()) {
+        spdlog::info("installed injector startup hook");
+        return;
+    }
+
+    spdlog::error("failed to install injector startup hook");
 }

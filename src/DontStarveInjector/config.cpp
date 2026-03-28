@@ -19,7 +19,7 @@ InjectorConfig::EnvOrCmdOptFlag::operator bool() const {
     return flag;
 }
 
-static const char * getEnvOrCmdValue(const char *key, char *value, size_t value_size) {
+const char * InjectorConfig::getEnvOrCmdValue(const char *key, char *value, size_t value_size) {
     const char *env_value = getenv(key);
     if (env_value != nullptr) {
         strncpy(value, env_value, value_size - 1);
@@ -52,25 +52,7 @@ static const char * getEnvOrCmdValue(const char *key, char *value, size_t value_
 InjectorConfig::EnvOrCmdOptValue::operator const char*() const {
     if (has_cached) return value;
 
-    getEnvOrCmdValue(key, value, sizeof(value));
-    has_cached = true;
-    return value;
-}
-
-template<typename T, T default_value>
-InjectorConfig::EnvOrCmdOptIntValue<T, default_value>::operator T() const {
-    if (has_cached) return value;
-    char buf[64] = {};
-    getEnvOrCmdValue(key, buf, sizeof(buf));
-    char *endptr = buf + strlen(buf);
-    if (endptr == buf) {
-        has_cached = true;
-        return value;
-    }
-    value = static_cast<T>(std::strtoll(buf, &endptr, 0));
-    if (*endptr != '\0') {
-        value = default_value;
-    }
+    InjectorConfig::getEnvOrCmdValue(key, value, sizeof(value));
     has_cached = true;
     return value;
 }

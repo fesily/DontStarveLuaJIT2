@@ -1,0 +1,79 @@
+diff --git a/src/libANGLE/renderer/vulkan/CommandQueue.cpp b/src/libANGLE/renderer/vulkan/CommandQueue.cpp
+index 85ff4f8..c3fb143 100644
+--- a/src/libANGLE/renderer/vulkan/CommandQueue.cpp
++++ b/src/libANGLE/renderer/vulkan/CommandQueue.cpp
+@@ -1006,38 +1006,71 @@ angle::Result CommandQueue::queueSubmitLocked(ErrorContext *context,
+     if (submitInfo.sType == VK_STRUCTURE_TYPE_SUBMIT_INFO)
+     {
++        auto logSubmitFailure = [&](VkResult result, VkQueue queueHandle, VkFence submitFence) {
++            const VkCommandBuffer firstCommandBuffer =
++                (submitInfo.commandBufferCount > 0 && submitInfo.pCommandBuffers != nullptr)
++                    ? submitInfo.pCommandBuffers[0]
++                    : VK_NULL_HANDLE;
++            WARN() << "vkQueueSubmit failed with " << result << " ("
++                   << VulkanResultString(result) << ")"
++                   << ", queueSerial=" << submitQueueSerial
++                   << ", priority=" << static_cast<uint32_t>(contextPriority)
++                   << ", queue=" << queueHandle
++                   << ", commandBufferCount=" << submitInfo.commandBufferCount
++                   << ", firstCommandBuffer=" << firstCommandBuffer
++                   << ", waitSemaphoreCount=" << submitInfo.waitSemaphoreCount
++                   << ", signalSemaphoreCount=" << submitInfo.signalSemaphoreCount
++                   << ", fence=" << submitFence;
++        };
++
+         CommandBatch &batch = commandBatch.get();
+ 
+         VkQueue queue = getQueue(contextPriority);
+         if (batch.getExternalFence())
+         {
+             VkFence externalFenceHandle = batch.getExternalFence()->getHandle();
+             ASSERT(externalFenceHandle != VK_NULL_HANDLE);
+-            ANGLE_VK_TRY(context, vkQueueSubmit(queue, 1, &submitInfo, externalFenceHandle));
++            VkResult primarySubmitResult = vkQueueSubmit(queue, 1, &submitInfo, externalFenceHandle);
++            if (primarySubmitResult != VK_SUCCESS)
++            {
++                logSubmitFailure(primarySubmitResult, queue, externalFenceHandle);
++            }
++            ANGLE_VK_TRY(context, primarySubmitResult);
+ 
+             // If enabled, there will be an extra fence submitted after the primary commands.
+             if (renderer->getFeatures().enableExtraSubmitFence.enabled)
+             {
+                 VkFence extraSubmitFence     = batch.getFenceHandle();
+                 VkSubmitInfo fenceSubmitInfo = {};
+                 fenceSubmitInfo.sType        = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+-                ANGLE_VK_TRY(context, vkQueueSubmit(queue, 1, &fenceSubmitInfo, extraSubmitFence));
++                VkResult extraSubmitResult =
++                    vkQueueSubmit(queue, 1, &fenceSubmitInfo, extraSubmitFence);
++                if (extraSubmitResult != VK_SUCCESS)
++                {
++                    logSubmitFailure(extraSubmitResult, queue, extraSubmitFence);
++                }
++                ANGLE_VK_TRY(context, extraSubmitResult);
+             }
+ 
+             // exportFd is exporting VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT_KHR type handle which
+             // obeys copy semantics. This means that the fence must already be signaled or the work
+             // to signal it is in the graphics pipeline at the time we export the fd.
+             // In other words, must call exportFd() after successful vkQueueSubmit() call.
+             ExternalFence &externalFence       = *batch.getExternalFence();
+             VkFenceGetFdInfoKHR fenceGetFdInfo = {};
+             fenceGetFdInfo.sType               = VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR;
+             fenceGetFdInfo.fence               = externalFenceHandle;
+             fenceGetFdInfo.handleType          = VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT_KHR;
+             externalFence.exportFd(renderer->getDevice(), fenceGetFdInfo);
+         }
+         else
+         {
+             VkFence fence = batch.getFenceHandle();
+             ASSERT(fence != VK_NULL_HANDLE);
+-            ANGLE_VK_TRY(context, vkQueueSubmit(queue, 1, &submitInfo, fence));
++            VkResult submitResult = vkQueueSubmit(queue, 1, &submitInfo, fence);
++            if (submitResult != VK_SUCCESS)
++            {
++                logSubmitFailure(submitResult, queue, fence);
++            }
++            ANGLE_VK_TRY(context, submitResult);
+         }
+     }

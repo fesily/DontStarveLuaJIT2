@@ -4,6 +4,7 @@
 #include <memory>
 #include <zlib.h>
 #include <errno.h>
+#include <filesystem>
 
 using namespace std::literals;
 
@@ -139,9 +140,11 @@ std::expected<std::string, std::string> GetPersistentString(const std::string_vi
     if (uncompress((Bytef *) original_buffer.data(), &original_len, body, head->zlib_len) != Z_OK) {
         return std::unexpected("uncompress error");
     }
+    original_buffer = std::filesystem::path((char8_t*)original_buffer.c_str()).string();
     return original_buffer;
 }
 
+//TODO: fix utf8 encodeing issue
 bool SetPersistentString(const std::string_view &filename, const std::string_view &data, bool encode) {
     std::unique_ptr<FILE, file_closer> fp(fopen(filename.data(), "w"));
     if (!fp)

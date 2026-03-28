@@ -1,5 +1,6 @@
 #pragma once
-
+#include "DstAngleBackend.hpp"
+#include <stdint.h>
 #ifdef ENABLE_FAKE_API
 #define USE_FAKE_API 1
 #else
@@ -59,6 +60,7 @@ constexpr auto game_name = "dontstarve_";
 #define LUA_DEBUG_CORE_DEBUGGER "LUA_DEBUG_CORE_DEBUGGER"
 
 struct InjectorConfig {
+    static const char * getEnvOrCmdValue(const char *key, char *value, size_t value_size);
     struct EnvOrCmdOptFlag {
         const char *key;
         mutable bool has_cached = false;
@@ -78,10 +80,19 @@ struct InjectorConfig {
         mutable T value = default_value;
         operator T() const;
     };
+
+    template<typename T>
+    struct EnvOrCmdOptEnum : public EnvOrCmdOptValue {
+        mutable T value{};
+        operator T() const;
+    };
+
 #define ENV_OR_CMD_OPT_FLAG(name) \
     const EnvOrCmdOptFlag name{#name};
 #define ENV_OR_CMD_OPT_VALUE(name) \
     const EnvOrCmdOptValue name{#name};
+#define ENV_OR_CMD_OPT_ENUM(_enum, name) \
+    const EnvOrCmdOptEnum<_enum> name{#name};
 #define ENV_OR_CMD_OPT_INT_VALUE(name) \
     const EnvOrCmdOptIntValue<int> name{#name};
 
@@ -98,18 +109,53 @@ struct InjectorConfig {
     ENV_OR_CMD_OPT_FLAG(disable_lua_debugger_code_patch); // disable lua debugger code patch, only work when enable_lua_debugger enabled
     ENV_OR_CMD_OPT_FLAG(AppVersionDevPatch);    // for developer, always treat app version as dev, so that can use dev code path
 
+    ENV_OR_CMD_OPT_ENUM(DstAngleBackend, DST_ANGLE_BACKEND); // specify ANGLE default platform, can be d3d11(default), d3d9, gl, vulkan
     ENV_OR_CMD_OPT_VALUE(lua_vm_type);     // specify lua vm type, can be lua51, luajit, or game, default is luajit
 
 #undef ENV_OR_CMD_OPT_VALUE
 #undef ENV_OR_CMD_OPT_FLAG
+#undef ENV_OR_CMD_OPT_ENUM
 
     static InjectorConfig *instance();
 };
+
+template<typename T, T default_value>
+InjectorConfig::EnvOrCmdOptIntValue<T, default_value>::operator T() const {
+    if (has_cached) return value;
+    char buf[64] = {};
+    InjectorConfig::getEnvOrCmdValue(key, buf, sizeof(buf));
+    char *endptr = buf + strlen(buf);
+    if (endptr == buf) {
+        has_cached = true;
+        return value;
+    }
+    value = static_cast<T>(std::strtoll(buf, &endptr, 0));
+    if (*endptr != '\0') {
+        value = default_value;
+    }
+    has_cached = true;
+    return value;
+}
+
+template<typename T>
+InjectorConfig::EnvOrCmdOptEnum<T>::operator T() const {
+    if (has_cached) return value;
+    const char *str_value = static_cast<const char *>(static_cast<const EnvOrCmdOptValue>(*this));
+    if (str_value == nullptr || str_value[0] == '\0') {
+        has_cached = true;
+        return value;
+    }
+    value = from_string(str_value);
+    has_cached = true;
+    return value;
+}
+
 typedef struct _GumInterceptor GumInterceptor;
 class InjectorCtx {
 public:
     InjectorConfig &config;
     bool DontStarveInjectorIsClient{false};
+    uint32_t steam_account_id{0};
     GumInterceptor *GetGumInterceptor();
     InjectorCtx();
     static InjectorCtx *instance();

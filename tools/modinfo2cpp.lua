@@ -29,7 +29,8 @@ struct ModConfigurationOption {
     T default_value;
     T options[N];
 };
-struct ModConfigurationOptions {
+namespace ModConfigurationOptions {
+using namespace std::string_view_literals;
 ]]
 
 for index, configuration_option in ipairs(configuration_options) do
@@ -57,7 +58,7 @@ for index, configuration_option in ipairs(configuration_options) do
     elseif data_type == "number" then
         cpp_data_type = "double" -- Use double for numeric values
     elseif data_type == "string" then
-        cpp_data_type = "std::string"
+        cpp_data_type = "std::string_view"
     else
         error("Unsupported data type for default value: " .. data_type)
     end
@@ -68,7 +69,7 @@ for index, configuration_option in ipairs(configuration_options) do
         elseif type(value) == "number" then
             return tostring(value)
         elseif type(value) == "string" then
-            return string.format("%q", value) -- Use %q to escape strings properly
+            return string.format("%qsv", value) -- Use %q to escape strings properly
         else
             error("Unsupported data type for casting: " .. type(value))
         end

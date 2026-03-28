@@ -11,6 +11,7 @@ struct ExportDetails {
     Type type;
     const char *name;
     void *address;
+    uint16_t ordinal;
 };
 struct ImportDetails {
     enum Type {
@@ -22,6 +23,7 @@ struct ImportDetails {
     void *address;
     const char *module;
     void *slot;
+    uint16_t ordinal;
 };
 using FoundImportFunc = bool (*)(const ImportDetails *, void *);
 using FoundExportFunc = bool (*)(const ExportDetails *, void *);

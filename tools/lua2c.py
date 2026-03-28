@@ -1,41 +1,37 @@
-import sys
 import os
+import sys
+import zlib
+
+
+def write_c_bytes(output, data):
+    for i, byte in enumerate(data):
+        if i % 12 == 0:
+            output.write('    ')
+        output.write(f'0x{byte:02x}')
+        if i < len(data) - 1:
+            output.write(',')
+        if i % 12 == 11 or i == len(data) - 1:
+            output.write('\n')
+        else:
+            output.write(' ')
 
 def file_to_c_array(input_file, output_file):
-    # 读取输入文件的二进制内容
     with open(input_file, 'rb') as f:
         data = f.read()
-    
-    # 获取文件名（不含扩展名）作为数组名
+
+    compressed = zlib.compress(data, level=9)
+
     base_name = os.path.splitext(os.path.basename(input_file))[0]
-    # 替换非法字符（例如 . 或 -）为下划线
     array_name = base_name.replace('.', '_').replace('-', '_')
-    
-    # 打开输出文件
+
     with open(output_file, 'w') as f:
-        # 写入头文件保护宏
         f.write(f'#ifndef {array_name.upper()}_H\n')
         f.write(f'#define {array_name.upper()}_H\n\n')
-        
-        # 写入字节数组
-        f.write(f'char {array_name}[] = {{\n')
-        # 每行最多输出 12 个字节
-        for i, byte in enumerate(data):
-            if i % 12 == 0:
-                f.write('    ')
-            f.write(f'0x{byte:02x}')
-            if i < len(data) - 1:
-                f.write(',')
-            if i % 12 == 11 or i == len(data) - 1:
-                f.write('\n')
-            else:
-                f.write(' ')
+        f.write(f'static const unsigned char {array_name}[] = {{\n')
+        write_c_bytes(f, compressed)
         f.write('};\n')
-        
-        # 写入数组长度
-        f.write(f'unsigned int {array_name}_len = {len(data)};\n\n')
-        
-        # 写入头文件保护宏结束
+        f.write(f'static const unsigned int {array_name}_len = {len(compressed)};\n')
+        f.write(f'static const unsigned int {array_name}_original_len = {len(data)};\n\n')
         f.write(f'#endif /* {array_name.upper()}_H */\n')
 
 if __name__ == '__main__':
