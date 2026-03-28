@@ -112,8 +112,109 @@ local function main()
 			TargetRenderFPS = true,
 			TargetLogicFPS = true,
 			ClientNetWorkTick = true,
-		}
+		},
+		ConfigDisableFallbackValues = {
+			DisableForceFullGC = 0,
+			EnableFrameGC = false,
+			LuaVmType = "jit_gen",
+			SlowTailCall = false,
+			AnyModDisableTailCall = false,
+			AutoDetectEncryptedMod = false,
+			ModBlackList = false,
+			DisableJITWhenServer = false,
+			ForceDisableTailCall = false,
+		},
 	}
+
+	local function ResolveDisabledValueByOptionData(option)
+		if type(option) ~= "table" or type(option.options) ~= "table" then
+			return nil
+		end
+
+		local has_false = false
+		local has_zero = false
+		local has_off = false
+		for _, item in ipairs(option.options) do
+			local data = type(item) == "table" and item.data or nil
+			if data == false then
+				has_false = true
+			elseif data == 0 then
+				has_zero = true
+			elseif data == "off" then
+				has_off = true
+			end
+		end
+
+		if has_false then
+			return false
+		end
+		if has_zero then
+			return 0
+		end
+		if has_off then
+			return "off"
+		end
+		return nil
+	end
+
+	local function GetDisableFallbackValue(name)
+		return _M.ConfigDisableFallbackValues[name]
+	end
+
+	local function GetModConfigurationOptionsForCurrentMod()
+		if KnownModIndex and KnownModIndex.GetModConfigurationOptions_Internal then
+			local ok, options = pcall(KnownModIndex.GetModConfigurationOptions_Internal, KnownModIndex, modname, true)
+			if ok and type(options) == "table" then
+				return options
+			end
+		end
+
+		if type(modinfo) == "table" and type(modinfo.configuration_options) == "table" then
+			return modinfo.configuration_options
+		end
+
+		return nil
+	end
+
+	local function BuildConfigDisableRulesFromModInfo()
+		local options = GetModConfigurationOptionsForCurrentMod()
+		if type(options) ~= "table" then
+			return nil
+		end
+
+		local rules = {}
+		for _, option in ipairs(options) do
+			if type(option) == "table" and type(option.name) == "string" and type(option.disabled_by) == "table" and type(option.disabled_by.option) == "string" then
+				local rule = {
+					name = option.name,
+					option = option.disabled_by.option,
+					value = option.disabled_by.value,
+					values = option.disabled_by.values,
+				}
+				local override = GetDisableFallbackValue(option.name)
+				if override ~= nil then
+					rule.disabled_value = override
+				else
+					rule.disabled_value = ResolveDisabledValueByOptionData(option)
+					if rule.disabled_value == nil then
+						rule.disabled_value = GetDisableFallbackValue(option.name)
+					end
+				end
+
+				if rule.disabled_value ~= nil then
+					rules[#rules + 1] = rule
+				else
+					print("DisableBy skip no disabled value: " .. option.name)
+				end
+			end
+		end
+
+		if #rules == 0 then
+			return nil
+		end
+
+		return rules
+	end
 
 	function _M:NoInjectorMain()
 		AddGamePostInit(function()
@@ -149,16 +250,49 @@ local function main()
 		end)
 	end
 
-	local function HookGetModConfigData()
-		if not os_is_windows then
-			local old_GetModConfigData = GetModConfigData
-			function GetModConfigData(key, get_local_config)
-				if _M.NotWindowsInvalidOptions[key] then
-					print("InvalidOptions: " .. key)
-					return nil
+	local function IsConfigDisabledByRule(rule, get_raw_config, get_local_config)
+		local option_value = get_raw_config(rule.option, get_local_config)
+		if rule.value ~= nil then
+			return option_value == rule.value
+		end
+		if rule.values ~= nil then
+			for _, v in ipairs(rule.values) do
+				if option_value == v then
+					return true
 				end
-				return old_GetModConfigData(key, get_local_config)
 			end
+		end
+		return false
+	end
+
+	local function HookGetModConfigData()
+		local old_GetModConfigData = GetModConfigData
+		local dynamic_disable_rules = BuildConfigDisableRulesFromModInfo()
+		if dynamic_disable_rules then
+			print("DisableBy rules loaded from configuration_options: " .. tostring(#dynamic_disable_rules))
+		else
+			print("DisableBy rules not available, skip runtime disable action")
+		end
+		local function get_raw_config(key, get_local_config)
+			return old_GetModConfigData(key, get_local_config)
+		end
+
+		function GetModConfigData(key, get_local_config)
+			if not os_is_windows and _M.NotWindowsInvalidOptions[key] then
+				print("InvalidOptions: " .. key)
+				return nil
+			end
+
+			if dynamic_disable_rules then
+				for _, rule in ipairs(dynamic_disable_rules) do
+					if rule.name == key and IsConfigDisabledByRule(rule, get_raw_config, get_local_config) then
+						print("DisableBy: " .. key .. " by " .. rule.option)
+						return rule.disabled_value
+					end
+				end
+			end
+
+			return get_raw_config(key, get_local_config)
 		end
 	end
 
@@ -328,29 +462,37 @@ local function main()
 				return "Lua 5.1"
 			elseif name == "game" then
 				return "GameLua"
+			elseif name == "jit_gen" then
+				return "LuaJIT-Gen"
 			end
 			return tostring(name or "unknown")
 		end
 
 		local function get_vm_type_suffix()
-			if not GameInjector or not GameInjector.DS_LUAJIT_get_vm_type or not GameInjector.DS_LUAJIT_get_vm_type_name then
+			if not GameInjector or not GameInjector.DS_LUAJIT_get_vm_type_name then
 				return "(LuaJIT)"
 			end
 
-			local ok_current_type, current_type = pcall(GameInjector.DS_LUAJIT_get_vm_type, 0)
-			local ok_next_type, next_type = pcall(GameInjector.DS_LUAJIT_get_vm_type, 1)
+			local backend_suffix = ""
+			if GameInjector.DS_LUAJIT_get_render_backend_name then
+				local ok_backend_name, backend_name = pcall(GameInjector.DS_LUAJIT_get_render_backend_name)
+				if ok_backend_name and type(backend_name) == "string" and backend_name ~= "" then
+					backend_suffix = "/" .. backend_name
+				end
+			end
+
 			local ok_current_name, current_name = pcall(GameInjector.DS_LUAJIT_get_vm_type_name, 0)
 			local ok_next_name, next_name = pcall(GameInjector.DS_LUAJIT_get_vm_type_name, 1)
-			if not ok_current_type or not ok_next_type or not ok_current_name or not ok_next_name then
+			if not ok_current_name or not ok_next_name then
 				return "(LuaJIT)"
 			end
 
 			current_name = format_vm_name(current_name)
 			next_name = format_vm_name(next_name)
-			if current_type ~= next_type then
-				return string.format("(%s->%s)", current_name, next_name)
+			if current_name ~= next_name then
+				return string.format("(%s->%s%s)", current_name, next_name, backend_suffix)
 			end
-			return string.format("(%s)", current_name)
+			return string.format("(%s%s)", current_name, backend_suffix)
 		end
 
 		TEMPLATES.GetBuildString = function()
@@ -377,6 +519,7 @@ local function main()
 		if not hasluajit then
 			return
 		end
+		jit.off()
 		local enabled_jit = GetModConfigData("EnabledJIT")
 		if enabled_jit then
 			AddSimPostInit(function()
@@ -756,7 +899,12 @@ local function main()
 
 	function _M:SwitchVm(noreset)
 		luavmType = GetModConfigData("LuaVmType")
-		if GameInjector and luavmType ~= GameInjector.DS_LUAJIT_get_vm_type() then
+		if type(luavmType) ~= "string" then
+			return false
+		end
+		print("current vm type: ", GameInjector and GameInjector.DS_LUAJIT_get_vm_type_name and GameInjector.DS_LUAJIT_get_vm_type_name() or "unknown",
+			"target vm type: ", luavmType)
+		if GameInjector and luavmType ~= GameInjector.DS_LUAJIT_get_vm_type_name() then
 			print("switch vm to ", luavmType)
 			GameInjector.DS_LUAJIT_set_vm_type(luavmType)
 			if not noreset then
@@ -875,9 +1023,7 @@ local function main()
 					local old_Apply = self.Apply
 					self.Apply = function(...)
 						old_Apply(...)
-						if GetModConfigData "LuaVmType" then
-							_M:SwitchVm(true)
-						end
+						_M:SwitchVm(true)
 					end
 				end
 			end
@@ -892,11 +1038,11 @@ local function main()
 		if VersionMissMatch then
 			return
 		end
+		HookGetModConfigData()
 		if self:SwitchVm() then
 			return
 		end
 		self:GetModMainPath(GameInjector)
-		HookGetModConfigData()
 		HookGameVersionUI()
 		ForceJitOpt()
 		EnabledJIT()

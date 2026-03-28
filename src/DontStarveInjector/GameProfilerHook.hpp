@@ -163,6 +163,8 @@ struct ProfilerHookerBase {
 struct ProfilerHookerTimeLimit : ProfilerHookerBase<ProfilerHookerTimeLimit> {
     inline static void GC(void *L, int left_time, uint64_t now) {
         ZoneScopedN("frame gc");
+        constexpr int LUA_GCSTEPTIME = 10;
+        constexpr int LUA_GCSTEP2 = 11;
         lua_gc_func(L, LUA_GCSTEPTIME, int(left_time * 0.8f));
         lua_gc_func(L, LUA_GCSTEP2, 0);
     }
@@ -176,6 +178,10 @@ struct ProfilerHookerNoTimeLimit : ProfilerHookerBase<ProfilerHookerNoTimeLimit>
             lua_gc_func(L, LUA_GCSTEP, 0);
         } while (get_time_ns() < now);
     }
+};
+
+struct ProfilerHookerNoGC : ProfilerHookerBase<ProfilerHookerNoGC> {
+    inline static void GC(void *L, int left_time, uint64_t now) {}
 };
 
 

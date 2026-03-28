@@ -55,10 +55,20 @@ extern "C" {
 
 using namespace std;
 
+
+void wait_for_debugger_before_inject() {
+#ifndef NDEBUG
+    if (InjectorConfig::instance()->LuajitWaitDebuggerEnable) {
+        while (!gum_process_is_debugger_attached()) {
+            std::this_thread::sleep_for(200ms);
+        }
+    }
+#endif
+}
+
 #ifdef _WIN32
 namespace {
 using GetBuildTypeFn = const char *(*)(void *self);
-
 GetBuildTypeFn original_get_build_type = nullptr;
 
 const char *forced_get_build_type(void *self) {
@@ -225,8 +235,10 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 
     ictx->DontStarveInjectorIsClient = isClient;
 #ifdef _WIN32
-    gum_init();
-    spdlog::set_default_logger(std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>()));
+    const auto log_path = std::format("DontStarveInjector_{}.log", isClient ? "client"s : "server"s);
+    auto logger = std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>());
+    logger->sinks().push_back(std::make_shared<spdlog::sinks::basic_file_sink_st>(log_path, true));
+    spdlog::set_default_logger(std::move(logger));
 #endif
 #ifdef __linux__
     const auto log_path = std::format("DontStarveInjector_{}.log", isClient ? "client"s : std::format("server_{}", server_is_master() ? "master" : "caves"));
@@ -237,12 +249,14 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 #endif
 
     spdlog::set_level(spdlog::level::err);
-#ifdef DEBUG
+#if defined(DEBUG) || defined(_DEBUG)
     spdlog::set_level(spdlog::level::trace);
 #endif
     if (gum_process_is_debugger_attached()) {
         spdlog::set_level(spdlog::level::debug);
     }
+    spdlog::flush_on(spdlog::level::trace);
+    spdlog::info("Inject start: isClient={} debuggerAttached={}", isClient, gum_process_is_debugger_attached());
 
     if (!check_crash()) {
         spdlog::error("skip inject, find crash content");
@@ -286,10 +300,8 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 #endif
     replace_game_branch_flag_to_dev(mainPath);
 
+    HookSteamGameServerInterface();
     LoadGameModConfig();
-    if (!ictx->DontStarveInjectorIsClient) {
-        HookSteamGameServerInterface();
-    }
     GameNetWorkHookRpc4();
     DisableScriptZip();
 }
@@ -302,14 +314,7 @@ int (*origin)(const char *path);
 int chdir_hook(const char *path) {
     static bool injector = false;
     if ("../data"sv == path && !injector) {
-#ifndef NDEBUG
-        if (InjectorConfig::instance()->LuajitWaitDebuggerEnable) {
-            while (!gum_process_is_debugger_attached()) {
-                std::this_thread::sleep_for(200ms);
-            }
-        }
-
-#endif
+        wait_for_debugger_before_inject();
         auto isClientMode = !getExePath().string().contains("dontstarve_dedicated_server_nullrenderer");
         Inject(isClientMode);
         spdlog::default_logger_raw()->flush();
@@ -331,4 +336,63 @@ __attribute__((constructor)) void init() {
     auto intercetor = InjectorCtx::instance()->GetGumInterceptor();
     gum_interceptor_replace_fast(intercetor, api, (void *) &chdir_hook, (void **) &origin);
 }
+#else
+using SetCurrentDirectoryWFn = BOOL(WINAPI *)(LPCWSTR);
+SetCurrentDirectoryWFn original_SetCurrentDirectoryW = nullptr;
+
+void inject_from_startup_entry() {
+    static std::atomic_bool startup_injected = false;
+    bool expected = false;
+    if (!startup_injected.compare_exchange_strong(expected, true)) {
+        return;
+    }
+
+    wait_for_debugger_before_inject();
+
+    const auto is_client_mode = !getExePath().string().contains("dontstarve_dedicated_server_nullrenderer");
+    Inject(is_client_mode);
+    if (auto *logger = spdlog::default_logger_raw()) {
+        logger->flush();
+    }
+}
+
+static BOOL WINAPI SetCurrentDirectoryW_hook(LPCWSTR path) {
+    if (path != nullptr && std::wstring_view{path} == L"../data") {
+        inject_from_startup_entry();
+    }
+    return original_SetCurrentDirectoryW(path);
+}
+
+DONTSTARVEINJECTOR_API bool HookStartupEntry() {
+    static std::atomic_bool startup_hook_installed = false;
+    bool expected = false;
+    if (!startup_hook_installed.compare_exchange_strong(expected, true)) {
+        return true;
+    }
+
+    gum_init_embedded();
+
+    const auto kernel32 = GetModuleHandleW(L"kernel32.dll");
+    if (!kernel32) {
+        startup_hook_installed = false;
+        return false;
+    }
+
+    const auto set_current_directory_w = GetProcAddress(kernel32, "SetCurrentDirectoryW");
+    if (!set_current_directory_w) {
+        startup_hook_installed = false;
+        return false;
+    }
+
+    auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
+    gum_interceptor_replace_fast(
+        interceptor,
+        set_current_directory_w,
+        reinterpret_cast<void *>(&SetCurrentDirectoryW_hook),
+        reinterpret_cast<void **>(&original_SetCurrentDirectoryW));
+
+    return original_SetCurrentDirectoryW != nullptr;
+}
+
+
 #endif

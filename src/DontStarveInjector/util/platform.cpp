@@ -58,7 +58,7 @@ void *loadlibproc(module_handler_t h, const char *name) {
 #ifdef _WIN32
         GetProcAddress((HMODULE)h, name);
 #else
-            dlsym(h, name);
+            dlsym(h == 0 ? RTLD_DEFAULT : h, name);
 #endif
 }
 

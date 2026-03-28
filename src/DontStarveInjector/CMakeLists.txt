@@ -16,6 +16,7 @@ set(SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/lua_io2.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/lua51_object.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/PersistentString.cpp
         gameModConfig.cpp
         luajit_config.cpp
         game_info.cpp
@@ -24,6 +25,7 @@ set(SOURCES
         GameSteam.cpp
         GameSignature.cpp
         GameNetwork.cpp
+        GameOpenGl.cpp
         config.cpp
         GameLuaInjectFramework.c
         lua_debugger_helper.cpp
@@ -56,6 +58,11 @@ find_package(Boost REQUIRED COMPONENTS pfr)
 find_package(slikenet CONFIG REQUIRED)
 find_path(SOL2_INCLUDE_DIRS "sol/abort.hpp")
 find_path(PLF_HIVE_INCLUDE_DIRS "plf_hive.h")
+
+if (WIN32)
+    find_package(unofficial-angle REQUIRED CONFIG)
+endif()
+
 set(CMAKE_SKIP_BUILD_RPATH  FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
@@ -102,10 +109,16 @@ target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})
 
 target_link_libraries(Injector PRIVATE Boost::pfr)
 target_link_libraries(Injector PRIVATE libzip::zip)
+target_link_libraries(Injector PRIVATE ZLIB::ZLIB)
 target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(Injector PRIVATE spdlog::spdlog)
 target_link_libraries(Injector PRIVATE range-v3::meta range-v3::concepts range-v3::range-v3)
 target_link_libraries(Injector PRIVATE SLikeNet)
+if (WIN32)
+    target_link_libraries(Injector PRIVATE
+        unofficial::angle::libGLESv2
+        unofficial::angle::libEGL)
+endif()
 target_include_directories(Injector PRIVATE ${PLF_HIVE_INCLUDE_DIRS})
 #target_link_libraries(Injector PRIVATE $<IF:$<TARGET_EXISTS:mimalloc-static>,mimalloc-static,mimalloc>)
 if (NOT DISABLE_TRACY_FUTURE)

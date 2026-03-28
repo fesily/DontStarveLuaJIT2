@@ -20,6 +20,7 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <fstream>
+#include <zlib.h>
 using namespace std::literals;
 
 static void PrepareForLuaStateCreate(std::string_view entryName);
@@ -114,11 +115,45 @@ void do_lua_env(GameLuaContext &ctx, lua_State *L, const std::string_view &env) 
 
 #define GameLuaInjectorName "GameLuaInjector"
 
+static std::string decompress_embedded_lua_buffer(
+    const unsigned char *buffer,
+    unsigned int compressed_len,
+    unsigned int original_len,
+    const char *buffer_name) {
+    if (buffer == nullptr || compressed_len == 0 || original_len == 0) {
+        spdlog::error("{} buffer is empty", buffer_name);
+        return {};
+    }
+
+    std::string output;
+    output.resize(original_len);
+    uLongf decompressed_len = original_len;
+    auto ret = uncompress(
+        reinterpret_cast<Bytef *>(output.data()),
+        &decompressed_len,
+        reinterpret_cast<const Bytef *>(buffer),
+        compressed_len);
+    if (ret != Z_OK) {
+        spdlog::error("Failed to decompress {}: zlib error {}", buffer_name, ret);
+        return {};
+    }
+
+    output.resize(decompressed_len);
+    return output;
+}
+
 struct GameLuaInjectorFramework {
     void init(GameLuaContext &ctx, lua_State *L) {
         LuaStackGuard guard(ctx, L);
 #include "GameLuaInjectFramework.c"
-        auto buffer = std::string{GameLuaInjectFramework, GameLuaInjectFramework_len};
+        auto buffer = decompress_embedded_lua_buffer(
+            GameLuaInjectFramework,
+            GameLuaInjectFramework_len,
+            GameLuaInjectFramework_original_len,
+            "GameLuaInjectFramework");
+        if (buffer.empty()) {
+            return;
+        }
         ctx->_luaL_loadbuffer(L, buffer.c_str(), buffer.size(), "@GameLuaInjectFramework.lua");
 
         // register spdlog in lua
@@ -781,11 +816,13 @@ struct GameLuaContextGame : GameLua51Context {
 
 constexpr const char *defualtLua51LibraryName = SHARED_LIBRARY_PRE "lua51Original" SHARED_LIBRARY_EXT;
 constexpr const char *defualtLuajitLibraryName = SHARED_LIBRARY_PRE "lua51DS" SHARED_LIBRARY_EXT;
+constexpr const char *defualtLuajitGenLibraryName = SHARED_LIBRARY_PRE "lua51DS_gengc" SHARED_LIBRARY_EXT;
 
 #if DONTSTARVEINJECTOR_INITIALIZE_ALL_SO
 static __attribute__((constructor)) void initialize_all_so() {
     loadlib(defualtLua51LibraryName);
     loadlib(defualtLuajitLibraryName);
+    loadlib(defualtLuajitGenLibraryName);
 }
 #endif
 
@@ -796,6 +833,10 @@ static GameLua51Context gameLua51Ctx{
 static GameLuaContextJit gameLuajitCtx{
         defualtLuajitLibraryName,
         GameLuaType::jit};
+
+static GameLuaContextJit gameLuajitGenCtx{
+        defualtLuajitGenLibraryName,
+        GameLuaType::jit_gen};
 
 static GameLuaContextGame gameLuaGameCtx{
         GameLuaType::game};
@@ -857,6 +898,8 @@ static GameLuaContextImpl *GetContextForType(GameLuaType type) {
             return &gameLua51Ctx;
         case GameLuaType::jit:
             return &gameLuajitCtx;
+        case GameLuaType::jit_gen:
+            return &gameLuajitGenCtx;
         case GameLuaType::game:
             return &gameLuaGameCtx;
         default:
@@ -870,6 +913,8 @@ static const char *GetDefaultModuleName(GameLuaType type) {
             return defualtLua51LibraryName;
         case GameLuaType::jit:
             return defualtLuajitLibraryName;
+        case GameLuaType::jit_gen:
+            return defualtLuajitGenLibraryName;
         case GameLuaType::game:
             return "";
         default:
@@ -932,13 +977,10 @@ void set_vm_type(GameLuaType type, const char *moduleName) {
     RequestVmType(type, moduleName, "set_vm_type");
 }
 
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(int type, const char *moduleName) {
-    set_vm_type(GameLuaTypeFromInt(type), moduleName);
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(const char *type, const char *moduleName) {
+    set_vm_type(GameLuaTypeFromString(type), moduleName);
 }
 
-DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_get_vm_type(int next) {
-    return static_cast<int>(next ? GetNextVmType() : currentLuaType);
-}
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_vm_type_name(int next) {
     return GameLuaTypeToString(next ? GetNextVmType() : currentLuaType).data();
@@ -990,12 +1032,12 @@ static bool ReinitializeCurrentVm(std::string_view reason) {
     currentCtx->LoadMyLuaApi();
     if (!currentCtx->ReplaceApis(vmSwitchCoordinator.signatures, vmSwitchCoordinator.exports)) {
         spdlog::error("Failed to replace Lua APIs while reinitializing vm type {}: {}",
-                      GameLuaTypeToString(currentCtx->luaType),
+                      GameLuaTypeToString(currentLuaType),
                       reason);
         return false;
     }
     currentCtx->HotfixApis(vmSwitchCoordinator.mainPath);
-    spdlog::info("Reinitialized Lua VM runtime: {} vm={}", reason, GameLuaTypeToString(currentCtx->luaType));
+    spdlog::info("Reinitialized Lua VM runtime: {} vm={}", reason, GameLuaTypeToString(currentLuaType));
     return true;
 }
 
@@ -1005,7 +1047,7 @@ static lua_State *CreateLuaStateForCurrentVm(lua_Alloc f, void *ud, std::string_
     lua_event_notifyer(LUA_EVENT::new_state, nullptr);
 
     lua_State *L = nullptr;
-    if (ctx.luaType == GameLuaType::jit) {
+    if (ctx.luaType == GameLuaType::jit || ctx.luaType == GameLuaType::jit_gen) {
         L = ctx.api._luaL_newstate();
     } else {
         L = ctx.api._lua_newstate(f, ud);
@@ -1024,17 +1066,18 @@ static void PrepareForLuaStateCreate(std::string_view entryName) {
 
 static void MarkLuaStateCreated(lua_State *L, std::string_view entryName) {
     vmSwitchCoordinator.liveState = L;
-    if (GameLuaContextImpl::currentCtx != nullptr) {
-        GameLuaContextImpl::currentCtx->luaState = L;
+    auto ctx = GameLuaContextImpl::currentCtx;
+    if (ctx != nullptr) {
+        ctx->luaState = L;
         spdlog::info("{} created lua state={} vm={}",
                      entryName,
                      (void *) L,
-                     GameLuaTypeToString(GameLuaContextImpl::currentCtx->luaType));
+                     GameLuaTypeToString(ctx->luaType));
     }
 }
 
 static void MarkLuaStateClosed(lua_State *L, std::string_view entryName) {
-    auto *ctx = GameLuaContextImpl::currentCtx;
+    auto ctx = GameLuaContextImpl::currentCtx;
     if (ctx != nullptr && ctx->luaState == L) {
         ctx->luaState = nullptr;
     }
@@ -1301,7 +1344,7 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
 #endif
     CacheRuntimeSetup(mainPath, signatures, exports);
     auto luaType = GameLuaTypeFromString((const char *) ictx->config.lua_vm_type);
-    set_vm_type(luaType, nullptr);
+    RequestVmType(luaType, nullptr, "Default VM type setup");
     ReinitializeCurrentVm("ReplaceLuaModule startup");
 }
 

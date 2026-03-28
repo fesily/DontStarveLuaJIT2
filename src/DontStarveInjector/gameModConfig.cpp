@@ -1,5 +1,6 @@
 #include "gameModConfig.hpp"
 #include "MemorySignature.hpp"
+#include "GameOpenGl.hpp"
 #include "luajit_config.hpp"
 #include "util/inlinehook.hpp"
 #include "util/platform.hpp"
@@ -250,7 +251,6 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int 
 
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
     static std::atomic_int replaced = 0;
-    if (replaced) return replaced;
 #ifdef __linux__
     function_relocation::MemorySignature profiler_push{"41 83 84 24 80 01 00 00 01", -0xF6};
     function_relocation::MemorySignature profiler_pop{"64 48 8B 1C 25 F8 FF FF FF", -0x15};
@@ -265,11 +265,17 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
 
     auto path = gum_module_get_path(gum_process_get_main_module());
     if (profiler_pop.scan(path) && profiler_push.scan(path)) {
-
-
-        Hook((uint8_t *) profiler_push.target_address, (uint8_t *) hook_profiler_push);
-        if (GetGameLuaContext().luaType == GameLuaType::jit) {
+        if (!replaced) {
+            Hook((uint8_t *) profiler_push.target_address, (uint8_t *) hook_profiler_push);
+        }
+        if (replaced) {
+            ResetHook((uint8_t *) profiler_pop.target_address);
+        }
+        auto luatype = GetGameLuaContext().luaType;
+        if (luatype == GameLuaType::jit) {
             Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHookerTimeLimit::hook_profiler_pop);
+        } else if (luatype == GameLuaType::jit_gen) {
+            Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHookerNoGC::hook_profiler_pop);
         } else {
             Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHookerNoTimeLimit::hook_profiler_pop);
         }
@@ -293,5 +299,6 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version() {
 extern "C" void LoadGameModConfig() {
 #ifdef _WIN32
     repalce_set_thread_name();
+    InitGameOpenGl();
 #endif
 }

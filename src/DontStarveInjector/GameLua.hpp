@@ -10,7 +10,8 @@
 #define GAME_LUA_TYPE_ENUM(_) \
     _(jit)                 \
     _(game)                \
-    _(_51)
+    _(_51)                 \
+    _(jit_gen)
 
 enum class GameLuaType {
 #define DEFINE_ENUM(name) name,

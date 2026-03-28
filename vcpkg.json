@@ -52,6 +52,13 @@
     },
     {
       "name": "libdwarf"
+    },
+    {
+      "name": "angle",
+      "platform": "windows",
+      "features": [
+        "vulkan"
+      ]
     }
   ]
 }

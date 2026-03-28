@@ -82,3 +82,23 @@ if (MSVC)
 endif ()
 
 add_dependencies(signature_updater create_missfuncs)
+
+if (WIN32)
+    add_executable(angle_iat_api_generator
+            angle_iat_api_generator.cpp
+            ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
+            ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
+    )
+
+    target_include_directories(angle_iat_api_generator PUBLIC ${DONTSTARVEINJECTOR_UTIL_DIR})
+    target_include_directories(angle_iat_api_generator PUBLIC ${PROJECT_SOURCE_DIR}/src)
+    target_compile_definitions(angle_iat_api_generator PUBLIC
+            GAMEDIR="${GAME_DIR}"
+            EXECUTABLE_SUFFIX="${CMAKE_EXECUTABLE_SUFFIX}"
+            OUTPUT_HPP_PATH="${PROJECT_SOURCE_DIR}/src/DontStarveInjector/angle_iat_generated.hpp"
+    )
+
+    if (MSVC)
+        target_link_options(angle_iat_api_generator PUBLIC "/NODEFAULTLIB:LIBCMT")
+    endif ()
+endif ()

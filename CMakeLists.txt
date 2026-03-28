@@ -27,7 +27,8 @@ set(VCPKG_TARGET_TRIPLET "x64-linux-release")
 if (WIN32)
     set(PLATFORM_NAME "windows")
     set(PYTHON_EXECUTABLE_NAME "python")
-    set(VCPKG_TARGET_TRIPLET "x64-windows-static-md")
+    set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/custom-triplets")
+    set(VCPKG_TARGET_TRIPLET "x64-windows-custom")
 elseif (UNIX AND NOT APPLE)
     set(PLATFORM_NAME "linux")
 elseif (UNIX AND APPLE)
@@ -37,7 +38,7 @@ else ()
     message(FATAL_ERROR "Not supported platform")
 endif ()
 
-project(DontStarveLuaJIT VERSION 2.0.0)
+project(DontStarveLuaJIT VERSION 2.4.0)
 
 option(DISABLE_TRACY_FUTURE "disable tray future" ON)
 
@@ -91,6 +92,9 @@ add_custom_command(OUTPUT ${Lua51_output_dir}/lua51.dll ${Lua51_output_dir}/lua5
 )
 
 add_custom_target(build_lua51 DEPENDS ${Lua51_output_dir}/lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
+
+set(LUAJIT_DISABLE_GEN_GC OFF)
+set(LUAJIT_BUILD_BOTH_GEN_GC ON)
 add_subdirectory("luajit")
 set(LUAJIT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src)
 set(LUAJIT_LIBRARIES luajit-5.1)
@@ -158,6 +162,16 @@ if (MSVC)
 endif ()
 add_subdirectory("tools/Creater")
 add_subdirectory("tools/PersistentString")
+add_subdirectory("tests")
+
+if (WIN32)
+    add_custom_target(generate_angle_iat_apis
+            COMMAND $<TARGET_FILE:angle_iat_api_generator>
+            DEPENDS angle_iat_api_generator
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            COMMENT "Generate ANGLE IAT API dependency list from game executables"
+    )
+endif ()
 
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX}
 #install(FILES ${LUA_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})

@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "2.0.0"
+version = "2.4.0"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -44,28 +44,50 @@ priority = 2e53
 icon_atlas = "modicon.xml"
 icon = "modicon.tex"
 
+mod_dependencies  = {
+    "buttonpicker",
+    "workshop-3317960157",
+}
+
 local toggle = {
     { description = translate({ en = "On", zh = "启用" }), data = true },
     { description = translate({ en = "Off", zh = "禁用" }), data = false },
 }
 
 local luavmtype = {
-    jit = 0,
-    game = 1,
-    _51 = 2,
+    jit = 'jit',
+    game = 'game',
+    _51 = 'lua51',
+    jit_gen = 'jit_gen',
 }
 
+local section_counter = 0
+local function AddSection(label, hover)
+    section_counter = section_counter + 1
+
+    return {
+        section_start = true,
+        name = "SECTION_" .. section_counter,
+        label = label,
+        hover = hover,
+        options = { { description = "", data = "" } },
+        default =
+        ""
+    }
+end
+
+local disable_by_gen_gc = {
+    option = "EnabledGenGC",
+    value = true,
+    reason = translate({ en = "Not compatible with generational GC", zh = "与分代GC不兼容" }),
+}
+local disable_by_lua51 = {
+    option = "LuaVmType",
+    values = { luavmtype._51, luavmtype.game },
+    reason = translate({ en = "Not compatible with Lua 5.1 VM", zh = "与Lua 5.1虚拟机不兼容" }),
+}
 configuration_options = {
-    {
-        name = "EnabledJIT",
-        label = translate({ en = "Enable JIT", zh = "开启JIT模式" }),
-        hover = translate({
-            en = "Recommend to turn this off if there is severe lag in the game",
-            zh = "在游戏中卡顿现象很严重的建议关闭"
-        }),
-        options = toggle,
-        default = true
-    },
+    AddSection(translate({ en = "General Options", zh = "通用选项" })),
     {
         name = "DisableForceFullGC",
         label = translate({ en = "GC Incremental Only", zh = "禁用强制完全gc,仅gc小部分" }),
@@ -87,7 +109,8 @@ configuration_options = {
             { description = "gc 256MB", data = 256 },
             { description = "gc 512MB", data = 512 },
         },
-        default = 1
+        default = 1,
+        disabled_by = disable_by_gen_gc
     },
     {
         name = "EnableFrameGC",
@@ -97,7 +120,8 @@ configuration_options = {
             zh = "见缝插针地gc"
         }),
         options = toggle,
-        default = true
+        default = true,
+        disabled_by = disable_by_gen_gc
     },
     {
         name = "TargetRenderFPS",
@@ -120,6 +144,47 @@ configuration_options = {
         default = 60
     },
     {
+        name = "AlwaysEnableMod",
+        label = translate({ en = "Always Enable Mod", zh = "总是启用mod" }),
+        hover = translate({
+            zh = "强制启用当前mod,即使它在mod设置中没有启用",
+            en = "Force enable the current mod, even if it is not enabled in the mod settings"
+        }),
+        options = toggle,
+        default = true,
+    },
+    {
+        name = "NetworkOpt",
+        label = translate({ en = "Network RPC Optimizations", zh = "网络RPC优化" }),
+        hover = translate({
+            en = "Optimize network rpc transmission, out-of-order sending of RPCs, may have unexpected situations",
+            zh = "优化网络RPC传输, 并行发送RPC, 可能导致意外的情况"
+        }),
+        options = toggle,
+        default = true,
+    },
+    {
+        name = "NetworkOptEntity",
+        label = translate({ en = "Network Entity Optimizations", zh = "网络实体优化" }),
+        hover = translate({
+            en = "Optimize network entity transmission, out-of-order sending of entities, may have unexpected situations",
+            zh = "优化网络实体传输, 并行发送实体, 可能导致意外的情况"
+        }),
+        options = toggle,
+        default = true,
+    },
+    AddSection(translate({ en = "JitOptions", zh = "JIT选项" })),
+    {
+        name = "EnabledJIT",
+        label = translate({ en = "Enable JIT", zh = "开启JIT模式" }),
+        hover = translate({
+            en = "Recommend to turn this off if there is severe lag in the game",
+            zh = "在游戏中卡顿现象很严重的建议关闭"
+        }),
+        options = toggle,
+        default = true
+    },
+    {
         name = "LuaVmType",
         label = translate({ en = "Lua VM Type", zh = "Lua虚拟机类型" }),
         hover = translate({
@@ -128,10 +193,11 @@ configuration_options = {
         }),
         options = {
             { description = translate({ en = "LuaJIT", zh = "LuaJIT" }), data = luavmtype.jit },
-            -- { description = translate({ en = "Lua 5.1", zh = "lua 5.1" }), data = luavmtype._51 },
             { description = translate({ en = "Game Default VM", zh = "游戏默认虚拟机" }), data = luavmtype.game },
+            -- { description = translate({ en = "Lua 5.1", zh = "lua 5.1" }), data = luavmtype._51 },
         },
-        default = luavmtype.jit
+        default = luavmtype.jit,
+        disabled_by = disable_by_gen_gc
     },
     -- {
     --     name = "ClientNetWorkTick",
@@ -199,7 +265,8 @@ configuration_options = {
             "Simulate the tail call stack of native lua, enhance compatibility with encrypted mods, but will cause a performance drop.\nUse with <Heuristic Detection of Encrypted Mods> option"
         }),
         options = toggle,
-        default = false
+        default = true,
+        disabled_by = disable_by_lua51
     },
     {
         name = "AnyModDisableTailCall",
@@ -210,7 +277,8 @@ configuration_options = {
             "Force simulate the tail call stack of native lua, enhance compatibility with encrypted mods"
         }),
         options = toggle,
-        default = false
+        default = false,
+        disabled_by = disable_by_lua51
     },
     {
         name = "AutoDetectEncryptedMod",
@@ -220,61 +288,64 @@ configuration_options = {
             zh = "自动检测并启用加密mod的兼容性"
         }),
         options = toggle,
-        default = true
-    },
-    {
-        name = "NetworkOpt",
-        label = translate({ en = "Network RPC Optimizations", zh = "网络RPC优化" }),
-        hover = translate({
-            en = "Optimize network rpc transmission, out-of-order sending of RPCs, may have unexpected situations",
-            zh = "优化网络RPC传输, 并行发送RPC, 可能导致意外的情况"
-        }),
-        options = toggle,
         default = true,
-    },
-    {
-        name = "NetworkOptEntity",
-        label = translate({ en = "Network Entity Optimizations", zh = "网络实体优化" }),
-        hover = translate({
-            en = "Optimize network entity transmission, out-of-order sending of entities, may have unexpected situations",
-            zh = "优化网络实体传输, 并行发送实体, 可能导致意外的情况"
-        }),
-        options = toggle,
-        default = true,
-    },
-    {
-        name = "AlwaysEnableMod",
-        label = translate({ en = "Always Enable Mod", zh = "总是启用mod" }),
-        hover = translate({
-            zh = "强制启用当前mod,即使它在mod设置中没有启用",
-            en = "Force enable the current mod, even if it is not enabled in the mod settings"
-        }),
-        options = toggle,
-        default = true,
-    },
-    {
-        name = "ForceDisableTailCall",
-        label = translate({ en = "Force Disable Tail Call", zh = "强制禁用尾调用" }),
-        hover = translate({
-            zh = "强制禁用尾调用优化, 仅用于区别是否因尾调用问题导致的mod不兼容, 非调试不应该使用",
-            en = "Force disable tail call optimization, used to determine if mod incompatibility is caused by inconsistent tail calls, should not be used in non-debugging"
-        }),
-        options = toggle,
-        default = false
+        disabled_by = disable_by_lua51
     },
     {
         name = "ModBlackList",
         label = translate({ en = "Mod JIT Blacklist", zh = "MODJit黑名单" }),
         hover = translate({ en = "Some mods may not be appropriate for JIT", zh = "有些mod可能写的特别,不合适jit模式" }),
         options = toggle,
-        default = false
+        default = false,
+        disabled_by = disable_by_lua51
     },
     {
         name = "DisableJITWhenServer",
         label = translate({ en = "Disable JIT on Server", zh = "服务器禁用luajit" }),
         hover = translate({ en = "Disable luajit on the server process", zh = "服务器进程禁用luajit" }),
         options = toggle,
-        default = false
+        default = false,
+        disabled_by = disable_by_lua51
+    },
+    AddSection(translate({ en = "Experimental Features", zh = "实验性功能" })),
+    {
+        name = "EnabledGenGC",
+        label = translate({ en = "Enabled generational GC", zh = "启用分代GC" }),
+        hover = translate({
+            en = "Enable generational GC",
+            zh = "启用分代GC"
+        }),
+        options = toggle,
+        default = false,
+    },
+    {
+        name = "AngleBackend",
+        label = translate({ en = "Rendering Engine", zh = "渲染后端" }),
+        hover = translate({
+            en = "Choose the rendering backend for ANGLE.",
+            zh = "选择ANGLE的渲染后端"
+        }),
+        options = {
+            { description = translate({ en = "Auto", zh = "自动" }), data = "auto" },
+            { description = translate({ en = "Vulkan", zh = "Vulkan" }), data = "vulkan" },
+            { description = translate({ en = "D3D11", zh = "D3D11" }), data = "d3d11" },
+            { description = translate({ en = "D3D9", zh = "D3D9" }), data = "d3d9" },
+        },
+        default = "auto",
+        require_restart = true,
+    },
+    AddSection(translate({ en = "DebugOptions", zh = "调试选项" })),
+    {
+        name = "ForceDisableTailCall",
+        label = translate({ en = "Force Disable Tail Call", zh = "强制禁用尾调用" }),
+        hover = translate({
+            zh = "强制禁用尾调用优化, 仅用于区别是否因尾调用问题导致的mod不兼容, 非调试不应该使用",
+            en =
+            "Force disable tail call optimization, used to determine if mod incompatibility is caused by inconsistent tail calls, should not be used in non-debugging"
+        }),
+        options = toggle,
+        default = false,
+        disabled_by = disable_by_lua51
     },
     {
         name = "EnableProfiler",
