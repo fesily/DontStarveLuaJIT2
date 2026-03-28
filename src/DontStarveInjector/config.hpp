@@ -142,7 +142,7 @@ InjectorConfig::EnvOrCmdOptIntValue<T, default_value>::operator T() const {
 template<typename T>
 InjectorConfig::EnvOrCmdOptEnum<T>::operator T() const {
     if (has_cached) return value;
-    const char *str_value = static_cast<const char *>(static_cast<const EnvOrCmdOptValue>(*this));
+    const char *str_value = static_cast<const char *>(static_cast<const EnvOrCmdOptValue&>(*this));
     if (str_value == nullptr || str_value[0] == '\0') {
         has_cached = true;
         return value;
