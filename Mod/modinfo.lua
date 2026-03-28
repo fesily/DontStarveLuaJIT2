@@ -45,7 +45,7 @@ icon_atlas = "modicon.xml"
 icon = "modicon.tex"
 
 mod_dependencies  = {
-    "buttonpicker"
+    "buttonpicker",
     "workshop-3317960157",
 }
 
@@ -331,7 +331,7 @@ configuration_options = {
             { description = translate({ en = "D3D11", zh = "D3D11" }), data = "d3d11" },
             { description = translate({ en = "D3D9", zh = "D3D9" }), data = "d3d9" },
         },
-        default = "Auto",
+        default = "auto",
         require_restart = true,
     },
     AddSection(translate({ en = "DebugOptions", zh = "调试选项" })),

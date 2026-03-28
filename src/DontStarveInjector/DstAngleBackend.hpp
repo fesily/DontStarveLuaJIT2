@@ -3,7 +3,7 @@
 
 enum class DstAngleBackend {
     Auto,
-    D3D11 = Auto,
+    D3D11,
     D3D9,
     Vulkan,
     GLES,
@@ -14,7 +14,9 @@ enum class DstAngleBackend {
 
 inline DstAngleBackend from_string(std::string_view str) {
     // first check number
-    if (str == "d3d11") {
+    if (str == "auto" || str == "Auto") {
+        return DstAngleBackend::Auto;
+    } else if (str == "d3d11") {
         return DstAngleBackend::D3D11;
     } else if (str == "d3d9") {
         return DstAngleBackend::D3D9;
@@ -45,6 +47,8 @@ inline DstAngleBackend from_string(std::string_view str) {
 inline std::string_view to_string(DstAngleBackend backend) {
     using namespace std::string_view_literals;
     switch (backend) {
+    case DstAngleBackend::Auto:
+        return "auto"sv;
     case DstAngleBackend::D3D11:
         return "d3d11"sv;
     case DstAngleBackend::D3D9:
