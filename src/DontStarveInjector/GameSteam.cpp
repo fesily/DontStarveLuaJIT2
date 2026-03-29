@@ -3,6 +3,8 @@
 #include "util/gum_platform.hpp"
 #include "gameio.h"
 #include "config.hpp"
+#include <bit>
+#include <cstdint>
 #include <string_view>
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
@@ -12,7 +14,7 @@ static void *get_plt_ita_address(const std::string_view &target) {
     std::pair args = {target, (void *) 0};
     gum_module_enumerate_imports_ext(gum_process_get_main_module(), +[](const GumImportDetails *details, gpointer user_data) -> gboolean {
         auto pargs = (decltype(args) *) user_data;
-        if (details->type == GUM_IMPORT_FUNCTION && details->name == pargs->first) {
+        if (details->type == GUM_IMPORT_FUNCTION && details->name && details->name == pargs->first) {
             pargs->second = (void *) details->slot;
             return false;// stop enumeration
         }
@@ -45,11 +47,26 @@ static void hook_plt_ita(const std::string_view &target, void *new_func) {
 }
 
 void *(*SteamInternal_FindOrCreateGameServerInterface_fn)(uint32_t hSteamUser, const char *pszVersion);
-template<typename T>
-union magic_offset {
-    T offset;
-    int64_t value;
-};
+
+namespace {
+
+// For this pure virtual interface, the vtable slot matches the declaration order in isteamugc016.h.
+// Deriving the slot from a member-function pointer is not portable across ABIs or compilers.
+constexpr size_t kISteamUGC016_BInitWorkshopForGameServerIndex = 73;
+
+template<typename Fn>
+Fn get_vtable_function(void *obj, size_t index) {
+    auto vtable = *reinterpret_cast<std::uintptr_t *const *>(obj);
+    return std::bit_cast<Fn>(vtable[index]);
+}
+
+template<typename Fn>
+bool replace_vtable_function(void *obj, size_t index, Fn replacement) {
+    auto vtable = *reinterpret_cast<std::uintptr_t **>(obj);
+    return memory_protect_write(&vtable[index], std::bit_cast<std::uintptr_t>(replacement));
+}
+
+}
 
 
 bool (*BInitWorkshopForGameServer)(void *self, DepotId_t unWorkshopDepotID, const char *pszFolder);
@@ -65,19 +82,15 @@ static void *SteamInternal_FindOrCreateGameServerInterface_hook(uint32_t hSteamU
     if (std::string_view{pszVersion}.starts_with(ugc_interface_version_prefix)) {
         auto version = std::string_view{pszVersion}.substr(ugc_interface_version_prefix.size());
         if (version == "016") {
-            ISteamUGC016 *ugc = (ISteamUGC016 *) obj;
-            auto offset = &ISteamUGC016::BInitWorkshopForGameServer;
-            magic_offset<decltype(offset)> magic;
-            magic.offset = offset;
-            auto vt_offset = magic.value / sizeof(int64_t);
-            auto vt = *(int64_t **) ugc;
-            if (vt[vt_offset] == (int64_t) &BInitWorkshopForGameServer_hook) {
+            auto current = get_vtable_function<decltype(BInitWorkshopForGameServer)>(obj, kISteamUGC016_BInitWorkshopForGameServerIndex);
+            if (current == BInitWorkshopForGameServer_hook) {
                 return obj;// already hooked
             }
 
-            BInitWorkshopForGameServer = (decltype(BInitWorkshopForGameServer)) vt[vt_offset];
-            auto addr = &vt[vt_offset];
-            memory_protect_write(addr, (int64_t) BInitWorkshopForGameServer_hook);
+            BInitWorkshopForGameServer = current;
+            if (!replace_vtable_function(obj, kISteamUGC016_BInitWorkshopForGameServerIndex, BInitWorkshopForGameServer_hook)) {
+                spdlog::error("Failed to hook ISteamUGC016::BInitWorkshopForGameServer");
+            }
         }
     }
     return obj;
@@ -102,5 +115,7 @@ void HookSteamGameServerInterface() {
     }
     // get user account id
     auto steamuser = SteamUser();
-    InjectorCtx::instance()->steam_account_id = steamuser->GetSteamID().GetAccountID();
+    if (steamuser) {
+        InjectorCtx::instance()->steam_account_id = steamuser->GetSteamID().GetAccountID();
+    }
 }
