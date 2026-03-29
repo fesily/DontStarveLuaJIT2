@@ -113,17 +113,6 @@ local function main()
 			TargetLogicFPS = true,
 			ClientNetWorkTick = true,
 		},
-		ConfigDisableFallbackValues = {
-			DisableForceFullGC = 0,
-			EnableFrameGC = false,
-			LuaVmType = "jit_gen",
-			SlowTailCall = false,
-			AnyModDisableTailCall = false,
-			AutoDetectEncryptedMod = false,
-			ModBlackList = false,
-			DisableJITWhenServer = false,
-			ForceDisableTailCall = false,
-		},
 	}
 
 	local function ResolveDisabledValueByOptionData(option)
@@ -157,10 +146,6 @@ local function main()
 		return nil
 	end
 
-	local function GetDisableFallbackValue(name)
-		return _M.ConfigDisableFallbackValues[name]
-	end
-
 	local function GetModConfigurationOptionsForCurrentMod()
 		if KnownModIndex and KnownModIndex.GetModConfigurationOptions_Internal then
 			local ok, options = pcall(KnownModIndex.GetModConfigurationOptions_Internal, KnownModIndex, modname, true)
@@ -191,14 +176,9 @@ local function main()
 					value = option.disabled_by.value,
 					values = option.disabled_by.values,
 				}
-				local override = GetDisableFallbackValue(option.name)
-				if override ~= nil then
-					rule.disabled_value = override
-				else
+				rule.disabled_value = option.disabled_value
+				if rule.disabled_value == nil then
 					rule.disabled_value = ResolveDisabledValueByOptionData(option)
-					if rule.disabled_value == nil then
-						rule.disabled_value = GetDisableFallbackValue(option.name)
-					end
 				end
 
 				if rule.disabled_value ~= nil then

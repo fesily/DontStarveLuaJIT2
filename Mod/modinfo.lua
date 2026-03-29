@@ -110,6 +110,7 @@ configuration_options = {
             { description = "gc 512MB", data = 512 },
         },
         default = 1,
+        disabled_value = 0,
         disabled_by = disable_by_gen_gc
     },
     {
@@ -121,6 +122,7 @@ configuration_options = {
         }),
         options = toggle,
         default = true,
+        disabled_value = false,
         disabled_by = disable_by_gen_gc
     },
     {
@@ -197,6 +199,7 @@ configuration_options = {
             -- { description = translate({ en = "Lua 5.1", zh = "lua 5.1" }), data = luavmtype._51 },
         },
         default = luavmtype.jit,
+        disabled_value = luavmtype.jit_gen,
         disabled_by = disable_by_gen_gc
     },
     -- {
@@ -266,6 +269,7 @@ configuration_options = {
         }),
         options = toggle,
         default = true,
+        disabled_value = false,
         disabled_by = disable_by_lua51
     },
     {
@@ -278,6 +282,7 @@ configuration_options = {
         }),
         options = toggle,
         default = false,
+        disabled_value = false,
         disabled_by = disable_by_lua51
     },
     {
@@ -289,6 +294,7 @@ configuration_options = {
         }),
         options = toggle,
         default = true,
+        disabled_value = false,
         disabled_by = disable_by_lua51
     },
     {
@@ -297,6 +303,7 @@ configuration_options = {
         hover = translate({ en = "Some mods may not be appropriate for JIT", zh = "有些mod可能写的特别,不合适jit模式" }),
         options = toggle,
         default = false,
+        disabled_value = false,
         disabled_by = disable_by_lua51
     },
     {
@@ -305,6 +312,7 @@ configuration_options = {
         hover = translate({ en = "Disable luajit on the server process", zh = "服务器进程禁用luajit" }),
         options = toggle,
         default = false,
+        disabled_value = false,
         disabled_by = disable_by_lua51
     },
     AddSection(translate({ en = "Experimental Features", zh = "实验性功能" })),
@@ -345,6 +353,7 @@ configuration_options = {
         }),
         options = toggle,
         default = false,
+        disabled_value = false,
         disabled_by = disable_by_lua51
     },
     {

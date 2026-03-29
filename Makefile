@@ -5,3 +5,6 @@ build_from_docker:
 build_from_docker_any:
 	chmod +x tools/build_from_docker.sh
 	cd tools && ./build_by_docker.sh docker_build_ubuntu_any ./docker_mods
+
+init:
+	python3 tools/update_steam_paths.py
