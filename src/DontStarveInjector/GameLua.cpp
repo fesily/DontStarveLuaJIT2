@@ -227,18 +227,20 @@ struct GameLuaContextImpl : GameLuaContext {
             dontstarveinjector::lua_debugger_helper::initialize_lua_debugger();
         }
 
-        auto config = luajit_config::read_from_file();
-        if (config) {
-            if (InjectorConfig::instance()->DisableForceLoadLuaJITMod) {
-                return;
-            }
-            if (!config->always_enable_mod) return;
+        if (!InjectorConfig::instance()->DisableForceLoadLuaJITMod) {
+            auto config = luajit_config::read_from_file();
+            if (config) {
+                do {
+                    if (!config->always_enable_mod) break;
 
-            if (config->modmain_path.empty() || !std::filesystem::exists(config->modmain_path)) {
-                return;
+                    if (config->modmain_path.empty() || !std::filesystem::exists(config->modmain_path)) {
+                        break;;
+                    }
+                    gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, config->modname);
+                } while(0);
             }
-            gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, config->modname);
         }
+
         // register game injector
         int luaopen_GameInjector(lua_State *L);
         api._lua_pushcfunction(L, luaopen_GameInjector);
