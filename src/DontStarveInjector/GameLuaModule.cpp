@@ -1209,9 +1209,20 @@ int luaopen_GameInjector(lua_State* L) {
 #include <fstream>
 #include "util/PersistentString.hpp"
 #include "gameModConfig.hpp"
+#ifdef _WIN32
+#include <Windows.h>
+#include <ShlObj.h>
+#pragma comment(lib, "Shell32.lib")
+#endif
 
 static std::filesystem::path GetKleiSaveDataDir(std::string_view ownid) {
     auto home = getenv("HOME");
+#ifdef _WIN32
+	char path[MAX_PATH] = { 0 };
+	if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, path))) {
+		home = path;
+	}
+#endif
     if (home == nullptr) {
 		home = getenv("USERPROFILE");
     }
@@ -1251,14 +1262,6 @@ std::optional<GameJitModConfig> LoadModConfigurationOptions() {
     auto mod_filename = GetModConfigDataFileName_Workshop(3444078585);
     auto path = mod_config_data / mod_filename;
     spdlog::info("try load mod configuration from {}", path.string());
-    if (!std::filesystem::exists(path)) {
-        path = mod_config_data / GetModConfigDataFileName("luajit");
-		spdlog::info("try load mod configuration from {}", path.string());
-    }
-    if (!std::filesystem::exists(path)) {
-        path = mod_config_data / GetModConfigDataFileName("luajit2");
-		spdlog::info("try load mod configuration from {}", path.string());
-    }
     if (!std::filesystem::exists(path)) {
         spdlog::warn("mod configuration file not found at {}", path.string());
         return std::nullopt;
