@@ -1211,18 +1211,22 @@ int luaopen_GameInjector(lua_State* L) {
 #include "gameModConfig.hpp"
 #ifdef _WIN32
 #include <Windows.h>
+#include <KnownFolders.h>
 #include <ShlObj.h>
 #pragma comment(lib, "Shell32.lib")
 #endif
 
 static std::filesystem::path GetKleiSaveDataDir(std::string_view ownid) {
-    auto home = getenv("HOME");
 #ifdef _WIN32
-	char path[MAX_PATH] = { 0 };
-	if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, path))) {
-		home = path;
+	PWSTR documents_path = nullptr;
+	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DEFAULT, nullptr, &documents_path))) {
+		std::filesystem::path save_dir = documents_path;
+		CoTaskMemFree(documents_path);
+		save_dir = save_dir / "Klei" / "DoNotStarveTogether" / ownid;
+		return save_dir;
 	}
 #endif
+	auto home = getenv("HOME");
     if (home == nullptr) {
 		home = getenv("USERPROFILE");
     }
