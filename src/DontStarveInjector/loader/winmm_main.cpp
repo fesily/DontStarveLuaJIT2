@@ -42,9 +42,9 @@ void wait_debugger() {
     if (_tcsstr(filePath, _T("dontstarve")) != NULL) {
         const auto filename = "Debug.config";
         BOOL enableDebug = ::GetFileAttributesA(filename) != INVALID_FILE_ATTRIBUTES;
-        ::AllocConsole();
 
         if (enableDebug) {
+            ::AllocConsole();
 #ifndef NDEBUG
             if (getenv("NOVSDEBUGGER") == NULL) {
                 if (!IsDebuggerPresent()) {
