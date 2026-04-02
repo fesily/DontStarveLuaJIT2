@@ -39,7 +39,7 @@ for index, configuration_option in ipairs(configuration_options) do
         goto continue
     end
 
-    if not configuration_option.name or not configuration_option.label or not configuration_option.options or not configuration_option.default then
+    if configuration_option.name == nil or configuration_option.label == nil or configuration_option.options == nil or configuration_option.default == nil then
         print("Invalid configuration option at index " .. index .. ": missing required fields")
         goto continue
     end

@@ -45,6 +45,7 @@ cmake-build-debug/
 
 vcpkg_installed/
 src/missfunc.h
+src/modinfo.hpp
 src/signatures.hpp
 /CMakeFiles
 Mod/scripts/jit

@@ -23,14 +23,16 @@ static std::string stringToHexAscii(const std::string_view &str) {
     return result;
 }
 #ifdef _WIN32
-
+std::optional<GameInfo> readGameInfo() {
+    return std::nullopt; // Not implemented for macOS
+}
 #elif defined(__linux__)
 static function_relocation::MemorySignature sig_game_info_init_fn = {"48 8D 54 24 10 48 C7 C0 FF FF FF FF"};
 
-static const std::string *shared_name = nullptr;
-static const std::string *cluster_name = nullptr;
-static const std::string *persist_root = nullptr;
-static const std::string *config_dir = nullptr;
+static const char **shared_name = nullptr;
+static const char **cluster_name = nullptr;
+static const char **persist_root = nullptr;
+static const char **config_dir = nullptr;
 
 bool initGameInfoOffsets() {
     auto mainm = gum_process_get_main_module();
@@ -50,7 +52,7 @@ bool initGameInfoOffsets() {
             auto imm = x86.operands[1].imm;
             if (reg == X86_REG_ESI && mainm_sections.in_rodata(imm)) {
                 const char *str = (const char *) imm;
-                auto cb = [&iter, &mainm_sections](const std::string *store) {
+                auto cb = [&iter, &mainm_sections]() -> const char ** {
                     ++iter;
                     auto &next_insn = *iter;
                     auto &next_x86 = next_insn.detail->x86;
@@ -59,19 +61,20 @@ bool initGameInfoOffsets() {
                         auto &next_reg = next_x86.operands[0].reg;
                         auto &next_imm = next_x86.operands[1].imm;
                         if (next_reg == X86_REG_EDI && mainm_sections.in_bss(next_imm)) {
-                            auto ptr_s = reinterpret_cast<const std::string *>(next_imm);
-                            store = ptr_s;
-                            return true;
+                            return reinterpret_cast<const char **>(next_imm);;
                         }
                     }
-                    return false;
+                    return nullptr;
                 };
                 if (str == "Master"sv) {
-                    if (cb(shared_name)) count--;
+                    shared_name = cb();
+                    if (shared_name != nullptr) count--;
                 } else if (str == "Cluster_1"sv) {
-                    if (cb(cluster_name)) count--;
+                    cluster_name = cb(); 
+                    if (cluster_name != nullptr) count--;
                 } else if (str == ".klei/"sv) {
-                    if (cb(persist_root)) count--;
+                    persist_root = cb();
+                    if (persist_root != nullptr) count--;
                 }
 
                 if (count <= 0) {
@@ -103,7 +106,7 @@ bool initGameInfoOffsets() {
             auto reg = x86.operands[0].reg;
             auto imm = x86.operands[1].imm;
             if (reg == X86_REG_EDI && mainm_sections.in_bss(imm)) {
-                auto ptr_s = reinterpret_cast<const std::string *>(imm);
+                auto ptr_s = reinterpret_cast<const char **>(imm);
                 config_dir = ptr_s;
                 break;
             }

@@ -7,7 +7,6 @@
 #include "util/lua_io2.hpp"
 #include "util/lua51_object.hpp"
 #include "gameio.h"
-#include "luajit_config.hpp"
 #include "lua_debugger_helper.hpp"
 #include <string_view>
 #include <map>
@@ -228,15 +227,13 @@ struct GameLuaContextImpl : GameLuaContext {
         }
 
         if (!InjectorConfig::instance()->DisableForceLoadLuaJITMod) {
-            auto config = luajit_config::read_from_file();
-            if (config) {
+            auto config = GameJitModConfig::instance();
+            if (config && config->AlwaysEnableMod) {
                 do {
-                    if (!config->always_enable_mod) break;
-
-                    if (config->modmain_path.empty() || !std::filesystem::exists(config->modmain_path)) {
+                    if (!config->modname || config->modname->empty()) {
                         break;;
                     }
-                    gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, config->modname);
+                    gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, *config->modname);
                 } while(0);
             }
         }
@@ -1345,7 +1342,11 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
     }
 #endif
     CacheRuntimeSetup(mainPath, signatures, exports);
-    auto luaType = GameLuaTypeFromString((const char *) ictx->config.lua_vm_type);
+    std::string_view default_vm_type = static_cast<const char *>(ictx->config.lua_vm_type);
+    if (auto config = GameJitModConfig::instance(); config) {
+        default_vm_type = config->LuaVmType;
+    }
+    auto luaType = GameLuaTypeFromString(default_vm_type);
     RequestVmType(luaType, nullptr, "Default VM type setup");
     ReinitializeCurrentVm("ReplaceLuaModule startup");
 }

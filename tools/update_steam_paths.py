@@ -29,12 +29,26 @@ def _write_if_changed(path: Path, content: str) -> bool:
 def update_cmake(cmake_path: Path, game_dir: Path) -> bool:
     text = cmake_path.read_text(encoding="utf-8")
     game_dir_text = game_dir.as_posix()
-    updated = _replace_once(
-        text,
-        r'(^if \(WIN32\)\s*\r?\n\s*set\(GAME_DIR ")[^"]*("\)\s*$)',
-        rf'\1{game_dir_text}\2',
-        f"Windows GAME_DIR in {cmake_path}",
+    anchor = "#set(GAME_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)"
+    override_block = (
+        "# Auto-updated by tools/update_steam_paths.py\n"
+        f'set(GAME_DIR "{game_dir_text}")'
     )
+
+    if "# Auto-updated by tools/update_steam_paths.py" in text:
+        updated = _replace_once(
+            text,
+            r'(^# Auto-updated by tools/update_steam_paths\.py\s*\r?\nset\(GAME_DIR ")[^"]*("\)\s*$)',
+            rf'\1{game_dir_text}\2',
+            f"auto-updated GAME_DIR in {cmake_path}",
+        )
+    else:
+        updated = _replace_once(
+            text,
+            rf'^{re.escape(anchor)}\s*$',
+            f"{anchor}\n{override_block}",
+            f"GAME_DIR anchor in {cmake_path}",
+        )
     return _write_if_changed(cmake_path, updated)
 
 
