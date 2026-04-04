@@ -52,8 +52,9 @@ def download_target(target: str, force: bool = False):
     if not os.path.exists(target_dir):
         os.makedirs(target_dir)
     target_file = os.path.join(target_dir, f"version-{version}.txt")
-    if os.path.exists(target_file):
+    if os.path.exists(target_file) and not force:
         print("use cached ", target_file)
+        return
 
             
     print(url, file)

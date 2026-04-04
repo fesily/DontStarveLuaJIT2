@@ -1227,8 +1227,12 @@ static bool is_supported_lua_vm_type(std::string_view value) {
 		   value == "jit_gen"sv || value == "_51"sv;
 }
 
+static bool is_nil_object(const sol::object &object) {
+	return !object.valid() || object.get_type() == sol::type::lua_nil;
+}
+
 static bool try_get_string(const sol::object &object, std::string &value) {
-	if (!object.valid() || object == sol::nil) {
+	if (is_nil_object(object)) {
 		return false;
 	}
 	if (object.get_type() == sol::type::string) {
@@ -1239,7 +1243,7 @@ static bool try_get_string(const sol::object &object, std::string &value) {
 }
 
 static bool try_get_bool(const sol::object &object, bool &value) {
-	if (!object.valid() || object == sol::nil) {
+	if (is_nil_object(object)) {
 		return false;
 	}
 	switch (object.get_type()) {
@@ -1275,7 +1279,7 @@ static bool try_get_option_string(const sol::object &object,
 	if (try_get_string(object, value)) {
 		return true;
 	}
-	if (!object.valid() || object == sol::nil || object.get_type() != sol::type::number) {
+	if (is_nil_object(object) || object.get_type() != sol::type::number) {
 		return false;
 	}
 
@@ -1294,7 +1298,7 @@ static bool try_get_option_string(const sol::object &object,
 
 static sol::object get_saved_value(const sol::table &option) {
 	auto saved_client = option["saved_client"].get<sol::object>();
-	if (saved_client.valid() && saved_client != sol::nil) {
+	if (!is_nil_object(saved_client)) {
 		return saved_client;
 	}
 	return option["saved"].get<sol::object>();
@@ -1463,7 +1467,7 @@ static sol::table find_or_create_option(sol::state &lua, sol::table root, std::s
 static bool find_mod_override_entry(const sol::table &root, const std::vector<std::string> &aliases, sol::table &entry) {
 	for (const auto &alias: aliases) {
 		auto object = root[alias].get<sol::object>();
-		if (!object.valid() || object == sol::nil || object.get_type() != sol::type::table) {
+		if (is_nil_object(object) || object.get_type() != sol::type::table) {
 			continue;
 		}
 		entry = object.as<sol::table>();
@@ -1535,7 +1539,7 @@ bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
 	}
 
 	auto options_object = mod_entry["configuration_options"].get<sol::object>();
-	if (!options_object.valid() || options_object == sol::nil || options_object.get_type() != sol::type::table) {
+	if (is_nil_object(options_object) || options_object.get_type() != sol::type::table) {
 		spdlog::warn("server mod overrides entry at {} has no configuration_options table", path.string());
 		return true;
 	}

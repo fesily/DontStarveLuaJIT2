@@ -18,6 +18,7 @@
 #include <vector>
 
 #ifdef _WIN32
+#define NOMINMAX
 #include <Windows.h>
 #include <KnownFolders.h>
 #include <ShlObj.h>
