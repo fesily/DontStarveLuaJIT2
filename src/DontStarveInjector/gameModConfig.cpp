@@ -391,13 +391,15 @@ static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
         }
     }
 
-    auto angle_backend = (const char*) InjectorConfig::instance()->DST_ANGLE_BACKEND;
-    if (angle_backend == nullptr) {
-        if (const auto *platform = getenv("ANGLE_DEFAULT_PLATFORM"); platform != nullptr) {
-            angle_backend = platform;
-        }
+    std::string angle_backend;
+    const auto configured_angle_backend = to_string(InjectorConfig::instance()->DST_ANGLE_BACKEND);
+    if (from_string(configured_angle_backend.c_str()) != DstAngleBackend::Unknown) {
+        angle_backend = configured_angle_backend;
+    } else if (const auto *platform = getenv("ANGLE_DEFAULT_PLATFORM");
+               platform != nullptr && from_string(platform) != DstAngleBackend::Unknown) {
+        angle_backend = platform;
     }
-    if (angle_backend != nullptr && from_string(angle_backend) != DstAngleBackend::Unknown) {
+    if (!angle_backend.empty()) {
         update_string_field(resolved.AngleBackend, resolved.AngleBackendSource, angle_backend, GameJitConfigSource::env_or_cmd);
     }
 
