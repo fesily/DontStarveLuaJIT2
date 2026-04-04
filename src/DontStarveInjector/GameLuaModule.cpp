@@ -1421,7 +1421,7 @@ static std::string serialize_lua_table(const sol::table &table, int indent) {
 
 static std::string serialize_lua_value(const sol::object &value, int indent) {
 	switch (value.get_type()) {
-	case sol::type::nil:
+	case sol::type::lua_nil:
 		return "nil";
 	case sol::type::boolean:
 		return value.as<bool>() ? "true" : "false";
