@@ -84,4 +84,4 @@ if __name__ == "__main__":
 
     for index, target in enumerate(targets):
         print(f"[{index+1}/{len(targets)}] Downloading Frida Gum for {target}...")
-        download_target(target=target)
+        download_target(target=target, force=args.force)
