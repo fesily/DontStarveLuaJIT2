@@ -1,0 +1,1 @@
+python3 tools/update_steam_paths.py
