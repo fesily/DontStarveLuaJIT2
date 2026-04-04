@@ -426,7 +426,8 @@ void InitGameOpenGl() {
     if (!InjectorCtx::instance()->DontStarveInjectorIsClient) {
         return;
     }
-    if (from_string(GameJitModConfig::instance()->AngleBackend) == DstAngleBackend::Auto) {
+    auto gameJitModConfig = GameJitModConfig::instance();
+    if (!gameJitModConfig || from_string(gameJitModConfig->AngleBackend) == DstAngleBackend::Auto) {
         return;
     }
 
