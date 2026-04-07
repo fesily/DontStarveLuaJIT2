@@ -51,3 +51,4 @@ src/signatures.hpp
 Mod/scripts/jit
 .venv/
 cmake/GameDir.cmake
+Mod/**/*.dll
