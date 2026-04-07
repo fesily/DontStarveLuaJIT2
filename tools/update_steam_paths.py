@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
+from collections.abc import Callable
+import json
 import re
 import sys
 from pathlib import Path
@@ -11,7 +13,12 @@ from steam_env import detect_steam_root, find_game_by_appid, steam_library_paths
 DEFAULT_APPID = "322330"
 
 
-def _replace_once(text: str, pattern: str, replacement: str, description: str) -> str:
+def _replace_once(
+    text: str,
+    pattern: str,
+    replacement: str | Callable[[re.Match[str]], str],
+    description: str,
+) -> str:
     new_text, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
     if count != 1:
         raise RuntimeError(f"Failed to update {description}: expected 1 match, got {count}.")
@@ -38,11 +45,11 @@ def update_game_dir_cmake(game_dir_cmake_path: Path, game_dir: Path) -> bool:
 
 def update_settings(settings_path: Path, steamapps_dir: Path) -> bool:
     text = settings_path.read_text(encoding="utf-8")
-    steamapps_text = str(steamapps_dir).replace("\\", "\\\\")
+    steamapps_text = json.dumps(str(steamapps_dir))[1:-1]
     updated = _replace_once(
         text,
         r'(^\s*"steam\.root":\s*")[^"]*(",\s*$)',
-        rf'\1{steamapps_text}\2',
+        lambda current: f'{current.group(1)}{steamapps_text}{current.group(2)}',
         f"steam.root in {settings_path}",
     )
     return _write_if_changed(settings_path, updated)
