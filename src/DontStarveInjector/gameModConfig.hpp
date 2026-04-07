@@ -1,5 +1,6 @@
 #pragma once
 #include "config.hpp"
+#include "GameLuaType.hpp"
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -14,6 +15,7 @@ enum class GameJitConfigSource {
 };
 
 struct GameJitModConfig {
+    std::optional<std::string> save_file;
     std::optional<std::string> modmain_path;
     std::optional<std::string> modname;
     std::optional<std::string> modid;
@@ -21,6 +23,7 @@ struct GameJitModConfig {
     std::string LuaVmType;
     bool AlwaysEnableMod = false;
     bool DisableJITWhenServer = false;
+    bool EnabledGenGC = false;
 
     GameJitConfigSource modmain_path_source = GameJitConfigSource::none;
     GameJitConfigSource modname_source = GameJitConfigSource::none;
@@ -29,6 +32,17 @@ struct GameJitModConfig {
     GameJitConfigSource LuaVmTypeSource = GameJitConfigSource::none;
     GameJitConfigSource AlwaysEnableModSource = GameJitConfigSource::none;
     GameJitConfigSource DisableJITWhenServerSource = GameJitConfigSource::none;
+    GameJitConfigSource EnabledGenGCSource = GameJitConfigSource::none;
+
+    GameLuaType GetLuaVmType() const {
+        if (EnabledGenGC) {
+            return GameLuaType::jit_gen;
+        }
+        if (LuaVmTypeSource == GameJitConfigSource::none) {
+            return GameLuaType::unknown;
+        }
+        return GameLuaTypeFromString(LuaVmType);
+    }
 
     static std::optional<GameJitModConfig> instance();
 };

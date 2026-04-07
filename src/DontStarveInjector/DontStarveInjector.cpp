@@ -269,6 +269,8 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         return;
     }
 
+    HookSteamGameServerInterface();
+
     auto lua51 = loadlib(lua51_name);
     if (!lua51) {
         showError("can't load lua51");
@@ -278,8 +280,6 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         if (lua51)
             unloadlib(lua51);
     });
-
-
 
     spdlog::info("main module base address:{}", (void *) gum_module_get_range(gum_process_get_main_module())->base_address);
     auto mainPath = getExePath().string();
@@ -302,7 +302,6 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 #endif
     replace_game_branch_flag_to_dev(mainPath);
 
-    HookSteamGameServerInterface();
     LoadGameModConfig();
     GameNetWorkHookRpc4();
     DisableScriptZip();

@@ -1355,11 +1355,10 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
     }
 #endif
     CacheRuntimeSetup(mainPath, signatures, exports);
-    std::string_view default_vm_type = static_cast<const char *>(ictx->config.lua_vm_type);
+    auto luaType = GameLuaType::jit;
     if (auto config = GameJitModConfig::instance(); config) {
-        default_vm_type = config->LuaVmType;
+        luaType = config->GetLuaVmType();
     }
-    auto luaType = GameLuaTypeFromString(default_vm_type);
     RequestVmType(luaType, nullptr, "Default VM type setup");
     ReinitializeCurrentVm("ReplaceLuaModule startup");
 }

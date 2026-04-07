@@ -31,10 +31,6 @@ using namespace std::string_view_literals;
 
 constexpr uint64_t kPrimaryWorkshopId = 3444078585ULL;
 constexpr auto kPrimaryWorkshopModName = "workshop-3444078585"sv;
-constexpr auto kOptionAngleBackend = "AngleBackend"sv;
-constexpr auto kOptionLuaVmType = "LuaVmType"sv;
-constexpr auto kOptionAlwaysEnableMod = "AlwaysEnableMod"sv;
-constexpr auto kOptionDisableJitWhenServer = "DisableJITWhenServer"sv;
 constexpr std::array<std::string_view, 5> kStaticModAliases = {
         kPrimaryWorkshopModName,
         "3444078585"sv,
@@ -369,6 +365,7 @@ static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
             if (LoadGameJitModConfigFromSaveFile(candidate, resolved)) {
                 if (canonical_save_path.empty()) {
                     canonical_save_path = candidate;
+                    resolved.save_file = canonical_save_path.string();
                 }
                 break;
             }
@@ -392,9 +389,9 @@ static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
     }
 
     std::string angle_backend;
-    const auto configured_angle_backend = to_string(InjectorConfig::instance()->DST_ANGLE_BACKEND);
-    if (from_string(configured_angle_backend) != DstAngleBackend::Unknown) {
-        angle_backend = configured_angle_backend;
+    const auto configured_angle_backend = InjectorConfig::instance()->DST_ANGLE_BACKEND;
+    if (configured_angle_backend != DstAngleBackend::Unknown) {
+        angle_backend = to_string(configured_angle_backend);
     } else if (const auto *platform = getenv("ANGLE_DEFAULT_PLATFORM");
                platform != nullptr && from_string(platform) != DstAngleBackend::Unknown) {
         angle_backend = platform;
@@ -658,7 +655,8 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int 
 }
 
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
-    static std::atomic_int replaced = 0;
+    static std::atomic_char replaced;
+    if (replaced) return 1;
 #ifdef __linux__
     function_relocation::MemorySignature profiler_push{"41 83 84 24 80 01 00 00 01", -0xF6};
     function_relocation::MemorySignature profiler_pop{"64 48 8B 1C 25 F8 FF FF FF", -0x15};
@@ -673,20 +671,8 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
 
     auto path = gum_module_get_path(gum_process_get_main_module());
     if (profiler_pop.scan(path) && profiler_push.scan(path)) {
-        if (!replaced) {
-            Hook((uint8_t *) profiler_push.target_address, (uint8_t *) hook_profiler_push);
-        }
-        if (replaced) {
-            ResetHook((uint8_t *) profiler_pop.target_address);
-        }
-        auto luatype = GetGameLuaContext().luaType;
-        if (luatype == GameLuaType::jit) {
-            Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHookerTimeLimit::hook_profiler_pop);
-        } else if (luatype == GameLuaType::jit_gen) {
-            Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHookerNoGC::hook_profiler_pop);
-        } else {
-            Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHookerNoTimeLimit::hook_profiler_pop);
-        }
+        Hook((uint8_t *) profiler_push.target_address, (uint8_t *) hook_profiler_push);
+        Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHooker::hook_profiler_pop);
 #ifdef profiler_lua_gc
         auto interceptor = InjectorCtx::instance().GetGumInterceptor();
         static Gum::InvocationListenerProxy linstener{new Gum::InvocationListenerProfiler()};

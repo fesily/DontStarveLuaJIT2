@@ -1211,16 +1211,10 @@ int luaopen_GameInjector(lua_State* L) {
     return 1;
 }
 
+#include "../modinfo.hpp"
 namespace {
 
 using namespace std::string_view_literals;
-
-constexpr auto kOptionAngleBackend = "AngleBackend"sv;
-constexpr auto kOptionLuaVmType = "LuaVmType"sv;
-constexpr auto kOptionAlwaysEnableMod = "AlwaysEnableMod"sv;
-constexpr auto kOptionDisableJitWhenServer = "DisableJITWhenServer"sv;
-constexpr std::array<std::string_view, 4> kAngleBackendOptionValues = {"auto"sv, "vulkan"sv, "d3d11"sv, "d3d9"sv};
-constexpr std::array<std::string_view, 2> kLuaVmTypeOptionValues = {"jit"sv, "game"sv};
 
 static bool is_supported_lua_vm_type(std::string_view value) {
 	return value == "jit"sv || value == "game"sv || value == "lua51"sv || value == "51"sv || value == "5.1"sv ||
@@ -1274,7 +1268,7 @@ static bool try_get_bool(const sol::object &object, bool &value) {
 
 template <size_t N>
 static bool try_get_option_string(const sol::object &object,
-									  const std::array<std::string_view, N> &options,
+									  const std::string_view (&options)[N],
 									  std::string &value) {
 	if (try_get_string(object, value)) {
 		return true;
@@ -1494,29 +1488,35 @@ bool LoadGameJitModConfigFromSaveFile(const std::filesystem::path &path, GameJit
 		const auto option_name = option["name"].get_or<std::string>("");
 		const auto saved_value = get_saved_value(option);
 
-		if (option_name == kOptionAngleBackend) {
-			std::string text;
+		if (option_name == ModConfigurationOptions::AngleBackend.name) {
+			std::string text{ModConfigurationOptions::AngleBackend.default_value};
 			if (try_get_string(saved_value, text) && from_string(text) != DstAngleBackend::Unknown) {
 				resolved.AngleBackend = text;
 				resolved.AngleBackendSource = GameJitConfigSource::save_file;
 			}
-		} else if (option_name == kOptionLuaVmType) {
-			std::string text;
+		} else if (option_name == ModConfigurationOptions::LuaVmType.name) {
+			std::string text{ModConfigurationOptions::LuaVmType.default_value};
 			if (try_get_string(saved_value, text) && is_supported_lua_vm_type(text)) {
 				resolved.LuaVmType = text;
 				resolved.LuaVmTypeSource = GameJitConfigSource::save_file;
 			}
-		} else if (option_name == kOptionAlwaysEnableMod) {
-			bool enabled = false;
+		} else if (option_name == ModConfigurationOptions::AlwaysEnableMod.name) {
+			bool enabled = ModConfigurationOptions::AlwaysEnableMod.default_value;
 			if (try_get_bool(saved_value, enabled)) {
 				resolved.AlwaysEnableMod = enabled;
 				resolved.AlwaysEnableModSource = GameJitConfigSource::save_file;
 			}
-		} else if (option_name == kOptionDisableJitWhenServer) {
-			bool disabled = false;
+		} else if (option_name == ModConfigurationOptions::DisableJITWhenServer.name) {
+			bool disabled = ModConfigurationOptions::DisableJITWhenServer.default_value;
 			if (try_get_bool(saved_value, disabled)) {
 				resolved.DisableJITWhenServer = disabled;
 				resolved.DisableJITWhenServerSource = GameJitConfigSource::save_file;
+			}
+		} else if (option_name == ModConfigurationOptions::EnabledGenGC.name) {
+			bool enabled = ModConfigurationOptions::EnabledGenGC.default_value;
+			if (try_get_bool(saved_value, enabled)) {
+				resolved.EnabledGenGC = enabled;
+				resolved.EnabledGenGCSource = GameJitConfigSource::save_file;
 			}
 		}
 	}
@@ -1545,29 +1545,29 @@ bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
 	}
 
 	auto options = options_object.as<sol::table>();
-	std::string text;
-	if (try_get_option_string(options[std::string{kOptionAngleBackend}].get<sol::object>(),
-							 kAngleBackendOptionValues,
+	std::string text{ModConfigurationOptions::AngleBackend.default_value};
+	if (try_get_option_string(options[ModConfigurationOptions::AngleBackend.name].get<sol::object>(),
+							 ModConfigurationOptions::AngleBackend.options,
 							 text) && from_string(text) != DstAngleBackend::Unknown) {
 		resolved.AngleBackend = text;
 		resolved.AngleBackendSource = GameJitConfigSource::save_file;
 	}
 
-	if (try_get_option_string(options[std::string{kOptionLuaVmType}].get<sol::object>(),
-							 kLuaVmTypeOptionValues,
+	if (try_get_option_string(options[ModConfigurationOptions::LuaVmType.name].get<sol::object>(),
+							 ModConfigurationOptions::LuaVmType.options,
 							 text) && is_supported_lua_vm_type(text)) {
 		resolved.LuaVmType = text;
 		resolved.LuaVmTypeSource = GameJitConfigSource::save_file;
 	}
 
-	bool enabled = false;
-	if (try_get_bool(options[std::string{kOptionAlwaysEnableMod}].get<sol::object>(), enabled)) {
+	bool enabled = ModConfigurationOptions::AlwaysEnableMod.default_value;
+	if (try_get_bool(options[ModConfigurationOptions::AlwaysEnableMod.name].get<sol::object>(), enabled)) {
 		resolved.AlwaysEnableMod = enabled;
 		resolved.AlwaysEnableModSource = GameJitConfigSource::save_file;
 	}
 
-	bool disabled = false;
-	if (try_get_bool(options[std::string{kOptionDisableJitWhenServer}].get<sol::object>(), disabled)) {
+	bool disabled = ModConfigurationOptions::DisableJITWhenServer.default_value;
+	if (try_get_bool(options[ModConfigurationOptions::DisableJITWhenServer.name].get<sol::object>(), disabled)) {
 		resolved.DisableJITWhenServer = disabled;
 		resolved.DisableJITWhenServerSource = GameJitConfigSource::save_file;
 	}
@@ -1585,21 +1585,25 @@ bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const Ga
 		serialized_before = serialize_lua_value(sol::make_object(lua, root), 0);
 	}
 
-	auto angle_backend = find_or_create_option(lua, root, kOptionAngleBackend);
+	auto angle_backend = find_or_create_option(lua, root, ModConfigurationOptions::AngleBackend.name);
 	angle_backend["saved"] = config.AngleBackend;
 	angle_backend["saved_client"] = config.AngleBackend;
 
-	auto lua_vm_type = find_or_create_option(lua, root, kOptionLuaVmType);
+	auto lua_vm_type = find_or_create_option(lua, root, ModConfigurationOptions::LuaVmType.name);
 	lua_vm_type["saved"] = config.LuaVmType;
 	lua_vm_type["saved_client"] = config.LuaVmType;
 
-	auto always_enable_mod = find_or_create_option(lua, root, kOptionAlwaysEnableMod);
+	auto always_enable_mod = find_or_create_option(lua, root, ModConfigurationOptions::AlwaysEnableMod.name);
 	always_enable_mod["saved"] = config.AlwaysEnableMod;
 	always_enable_mod["saved_client"] = config.AlwaysEnableMod;
 
-	auto disable_jit_when_server = find_or_create_option(lua, root, kOptionDisableJitWhenServer);
+	auto disable_jit_when_server = find_or_create_option(lua, root, ModConfigurationOptions::DisableJITWhenServer.name);
 	disable_jit_when_server["saved"] = config.DisableJITWhenServer;
 	disable_jit_when_server["saved_client"] = config.DisableJITWhenServer;
+
+	auto enabled_gen_gc = find_or_create_option(lua, root, ModConfigurationOptions::EnabledGenGC.name);
+	enabled_gen_gc["saved"] = config.EnabledGenGC;
+	enabled_gen_gc["saved_client"] = config.EnabledGenGC;
 
 	const auto serialized_after = serialize_lua_value(sol::make_object(lua, root), 0);
 	if (serialized_before == serialized_after) {

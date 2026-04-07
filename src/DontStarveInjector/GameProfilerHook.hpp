@@ -114,8 +114,7 @@ static int64_t hook_profiler_push(void *self, const char *zone, const char *sour
     }
     return 0;
 }
-template<typename T>
-struct ProfilerHookerBase {
+struct ProfilerHooker {
 
     static int64_t hook_profiler_pop(void *self) {
         auto &p = profiler;
@@ -143,7 +142,7 @@ struct ProfilerHookerBase {
                 }
                 p.start_time_ns = 0;
                 if (left_time_ns > 0) {
-                    T::GC(p.L, left_time_ns, now);
+                    TryDoGC(p.L, left_time_ns, now);
                 }
             } else {
                 p.start_time_ns = 0;
@@ -158,32 +157,30 @@ struct ProfilerHookerBase {
         }
         return 0;
     }
-};
-
-struct ProfilerHookerTimeLimit : ProfilerHookerBase<ProfilerHookerTimeLimit> {
-    inline static void GC(void *L, int left_time, uint64_t now) {
-        ZoneScopedN("frame gc");
+    static void TryDoGC(void *L, int left_time, uint64_t now) {
+        auto luatype = GetGameLuaContext().luaType;
         constexpr int LUA_GCSTEPTIME = 10;
         constexpr int LUA_GCSTEP2 = 11;
-        lua_gc_func(L, LUA_GCSTEPTIME, int(left_time * 0.8f));
-        lua_gc_func(L, LUA_GCSTEP2, 0);
-    }
-};
-
-struct ProfilerHookerNoTimeLimit : ProfilerHookerBase<ProfilerHookerNoTimeLimit> {
-    inline static void GC(void *L, int left_time, uint64_t now) {
-        now += left_time;
         ZoneScopedN("frame gc");
-        do {
-            lua_gc_func(L, LUA_GCSTEP, 0);
-        } while (get_time_ns() < now);
+        switch (luatype)
+        {
+        case GameLuaType::jit:
+            lua_gc_func(L, LUA_GCSTEPTIME, int(left_time * 0.8f));
+            lua_gc_func(L, LUA_GCSTEP2, 0);
+            break;
+        case GameLuaType::jit_gen:
+        case GameLuaType::game:
+             // nothing to do
+             break;
+        default:
+            now += left_time;
+            do {
+                lua_gc_func(L, LUA_GCSTEP, 0);
+            } while (get_time_ns() < now);
+            break;
+        }
     }
 };
-
-struct ProfilerHookerNoGC : ProfilerHookerBase<ProfilerHookerNoGC> {
-    inline static void GC(void *L, int left_time, uint64_t now) {}
-};
-
 
 extern void gum_luajit_profiler_update_thread_id(lua_State *target_L, GumThreadId id);
 void lua_event_notifyer(LUA_EVENT ev, lua_State *L) {
