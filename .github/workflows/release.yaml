@@ -36,8 +36,6 @@ jobs:
         with:
           path: ${{ github.workspace }}/.vcpkg-bincache
           key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'CMakeLists.txt', 'cmake/custom-triplets/**', 'cmake/ports/**') }}
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-
       - uses: lukka/get-cmake@latest
         with:
           cmakeVersion: 3.31.6     # <--= optional, stick to exactly 3.25.2 version
