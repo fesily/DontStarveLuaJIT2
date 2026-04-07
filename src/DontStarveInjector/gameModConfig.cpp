@@ -3,7 +3,6 @@
 #include "GameOpenGl.hpp"
 #include "game_info.hpp"
 #include "luajit_config.hpp"
-#include "../modinfo.hpp"
 #include "util/inlinehook.hpp"
 #include "util/platform.hpp"
 #include "disasm.h"
@@ -314,20 +313,6 @@ static void update_string_field(std::string &field, GameJitConfigSource &source,
 static void update_bool_field(bool &field, GameJitConfigSource &source, bool value, GameJitConfigSource new_source) {
     field = value;
     source = new_source;
-}
-
-static GameJitModConfig make_default_game_mod_config() {
-    GameJitModConfig resolved;
-    resolved.AngleBackend = std::string{ModConfigurationOptions::AngleBackend.default_value};
-    resolved.LuaVmType = std::string{ModConfigurationOptions::LuaVmType.default_value};
-    resolved.AlwaysEnableMod = ModConfigurationOptions::AlwaysEnableMod.default_value;
-    resolved.DisableJITWhenServer = ModConfigurationOptions::DisableJITWhenServer.default_value;
-
-    resolved.AngleBackendSource = GameJitConfigSource::modinfo_default;
-    resolved.LuaVmTypeSource = GameJitConfigSource::modinfo_default;
-    resolved.AlwaysEnableModSource = GameJitConfigSource::modinfo_default;
-    resolved.DisableJITWhenServerSource = GameJitConfigSource::modinfo_default;
-    return resolved;
 }
 
 static std::optional<GameJitModConfig> load_resolved_game_mod_config() {

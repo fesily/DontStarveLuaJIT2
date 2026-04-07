@@ -159,12 +159,18 @@ bool SetPersistentString(const std::string_view &filename, const std::string_vie
         return false;
     }
     encode_head head;
-    head.original_len = data.length();
+    head.original_len = static_cast<int32_t>(data.length());
     auto zlib_len = compressBound(data.length());
-    head.zlib_len = zlib_len;
     auto buffer_ptr = std::make_unique<Bytef[]>(zlib_len);
     if (compress(buffer_ptr.get(), &zlib_len, (Bytef *) data.data(), data.length()) != Z_OK)
         return false;
-    auto output = base64_encode(buffer_ptr.get(), zlib_len);
+    head.zlib_len = static_cast<int32_t>(zlib_len);
+
+    std::string encoded_input;
+    encoded_input.resize(sizeof(head) + zlib_len);
+    memcpy(encoded_input.data(), &head, sizeof(head));
+    memcpy(encoded_input.data() + sizeof(head), buffer_ptr.get(), zlib_len);
+
+    auto output = base64_encode((const unsigned char *) encoded_input.data(), encoded_input.length());
     return fwrite(output.data(), sizeof(char), output.length(), fp.get()) == output.length();
 }

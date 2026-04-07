@@ -1212,7 +1212,20 @@ int luaopen_GameInjector(lua_State* L) {
 }
 
 #include "../modinfo.hpp"
-namespace {
+
+GameJitModConfig make_default_game_mod_config() {
+    GameJitModConfig resolved;
+    resolved.AngleBackend = std::string{ModConfigurationOptions::AngleBackend.default_value};
+    resolved.LuaVmType = std::string{ModConfigurationOptions::LuaVmType.default_value};
+    resolved.AlwaysEnableMod = ModConfigurationOptions::AlwaysEnableMod.default_value;
+    resolved.DisableJITWhenServer = ModConfigurationOptions::DisableJITWhenServer.default_value;
+
+    resolved.AngleBackendSource = GameJitConfigSource::modinfo_default;
+    resolved.LuaVmTypeSource = GameJitConfigSource::modinfo_default;
+    resolved.AlwaysEnableModSource = GameJitConfigSource::modinfo_default;
+    resolved.DisableJITWhenServerSource = GameJitConfigSource::modinfo_default;
+    return resolved;
+}
 
 using namespace std::string_view_literals;
 
@@ -1470,8 +1483,6 @@ static bool find_mod_override_entry(const sol::table &root, const std::vector<st
 	}
 	return false;
 }
-
-} // namespace
 
 bool LoadGameJitModConfigFromSaveFile(const std::filesystem::path &path, GameJitModConfig &resolved) {
 	sol::state lua;

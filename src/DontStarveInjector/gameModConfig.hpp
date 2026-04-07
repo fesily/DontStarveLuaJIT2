@@ -47,6 +47,7 @@ struct GameJitModConfig {
     static std::optional<GameJitModConfig> instance();
 };
 
+GameJitModConfig make_default_game_mod_config();
 bool LoadGameJitModConfigFromSaveFile(const std::filesystem::path &path, GameJitModConfig &resolved);
 bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
                                              const std::vector<std::string> &aliases,
