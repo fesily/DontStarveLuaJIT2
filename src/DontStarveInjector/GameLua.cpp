@@ -246,6 +246,9 @@ struct GameLuaContextImpl : GameLuaContext {
     }
 
     virtual bool LoadLuaModule() {
+        if (LuaModule) {
+            return true;
+        }
         if (getenv("GAME_LUA_MODULE_NAME")) {
             sharedlibraryName = getenv("GAME_LUA_MODULE_NAME");
         }
@@ -577,7 +580,7 @@ struct GameLuaContextJit : GameLuaContextImpl {
 
 struct GameLuaContextGame : GameLua51Context {
     GameLuaContextGame(GameLuaType type)
-        : GameLua51Context{"", type} {
+        : GameLua51Context{"<Game>", type} {
         find_export_by_name = &GameFindExportByName;
     }
     virtual ~GameLuaContextGame() = default;
@@ -840,6 +843,7 @@ static GameLuaContextJit gameLuajitGenCtx{
 static GameLuaContextGame gameLuaGameCtx{
         GameLuaType::game};
 
+
 void GameLuaContextJit::LoadMyLuaApi() {
     GameLuaContextImpl::LoadMyLuaApi();
     HOOK_LUA_API(lua_setfield) + [](lua_State *L, int idx, const char *k) {
@@ -872,10 +876,14 @@ GumAddress GameLuaContextGame::GameFindExportByName(GumModule *self, const gchar
 }
 
 GameLuaContext &GetGameLuaContext() {
+    if(!GameLuaContextImpl::currentCtx) {
+        // default to jit
+        gameLuajitCtx.LoadLuaModule();
+        gameLuajitCtx.LoadAllInterfaces();
+        GameLuaContextImpl::currentCtx = &gameLuajitCtx;
+    }
     return *GameLuaContextImpl::currentCtx;
 }
-
-GameLuaType currentLuaType = GameLuaType::jit;
 
 namespace {
 struct VmSwitchCoordinator {
@@ -890,6 +898,11 @@ struct VmSwitchCoordinator {
 };
 
 VmSwitchCoordinator vmSwitchCoordinator;
+
+static GameLuaType GetCurrentVmType() {
+    auto *currentCtx = GameLuaContextImpl::currentCtx;
+    return currentCtx ? currentCtx->luaType : GameLuaType::jit;
+}
 
 static GameLuaContextImpl *GetContextForType(GameLuaType type) {
     switch (type) {
@@ -933,14 +946,13 @@ static std::optional<std::string> NormalizeModuleName(const char *moduleName) {
 }
 
 static void ApplyVmType(GameLuaType type, const std::optional<std::string> &moduleName, std::string_view reason) {
-    currentLuaType = type;
     GameLuaContextImpl::currentCtx = GetContextForType(type);
     auto *targetCtx = GameLuaContextImpl::currentCtx;
-    targetCtx->sharedlibraryName = moduleName.value_or(GetDefaultModuleName(type));
+    targetCtx->SetLibraryName(moduleName.value_or(GetDefaultModuleName(type)).c_str());
     spdlog::info("Applied Lua VM type: {} reason={} module={}",
                  GameLuaTypeToString(type),
                  reason,
-                 targetCtx->sharedlibraryName.empty() ? "<game>" : targetCtx->sharedlibraryName);
+                 targetCtx->GetLibraryName());
 }
 
 static void ApplyPendingVmType(std::string_view reason) {
@@ -967,7 +979,7 @@ static void CacheRuntimeSetup(const std::string &mainPath, const Signatures &sig
 }
 
 static GameLuaType GetNextVmType() {
-    return vmSwitchCoordinator.hasPendingSwitch ? vmSwitchCoordinator.pendingType : currentLuaType;
+    return vmSwitchCoordinator.hasPendingSwitch ? vmSwitchCoordinator.pendingType : GetCurrentVmType();
 }
 }
 
@@ -982,11 +994,12 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(const char *type, const c
 
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_vm_type_name(int next) {
-    return GameLuaTypeToString(next ? GetNextVmType() : currentLuaType).data();
+    return GameLuaTypeToString(next ? GetNextVmType() : GetCurrentVmType()).data();
 }
 
 static void RequestVmType(GameLuaType type, const char *moduleName, std::string_view reason) {
-    if (GameLuaContextImpl::currentCtx != nullptr && type == currentLuaType) {
+    auto currentType = GetCurrentVmType();
+    if (GameLuaContextImpl::currentCtx != nullptr && type == currentType) {
         if (vmSwitchCoordinator.hasPendingSwitch) {
             vmSwitchCoordinator.hasPendingSwitch = false;
             vmSwitchCoordinator.pendingModuleName.reset();
@@ -1006,7 +1019,7 @@ static void RequestVmType(GameLuaType type, const char *moduleName, std::string_
         vmSwitchCoordinator.pendingModuleName = std::move(normalizedModuleName);
         vmSwitchCoordinator.hasPendingSwitch = true;
         spdlog::info("Deferred Lua VM switch request: active={} pending={} reason={}",
-                     GameLuaTypeToString(currentLuaType),
+                     GameLuaTypeToString(currentType),
                      GameLuaTypeToString(type),
                      reason);
         return;
@@ -1031,12 +1044,12 @@ static bool ReinitializeCurrentVm(std::string_view reason) {
     currentCtx->LoadMyLuaApi();
     if (!currentCtx->ReplaceApis(vmSwitchCoordinator.signatures, vmSwitchCoordinator.exports)) {
         spdlog::error("Failed to replace Lua APIs while reinitializing vm type {}: {}",
-                      GameLuaTypeToString(currentLuaType),
+                      GameLuaTypeToString(GetCurrentVmType()),
                       reason);
         return false;
     }
     currentCtx->HotfixApis(vmSwitchCoordinator.mainPath);
-    spdlog::info("Reinitialized Lua VM runtime: {} vm={}", reason, GameLuaTypeToString(currentLuaType));
+    spdlog::info("Reinitialized Lua VM runtime: {} vm={}", reason, GameLuaTypeToString(GetCurrentVmType()));
     return true;
 }
 

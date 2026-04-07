@@ -147,15 +147,28 @@ struct LuaApis {
     }
 };
 
-struct GameLuaContext {
+class GameLuaContext {
+protected:
     std::string sharedlibraryName;
+    GumModule *LuaModule = nullptr;
+public:
     GameLuaType luaType;
     lua_State *luaState = nullptr;
-    GumModule *LuaModule = nullptr;
     LuaApis api;
 
     LuaApis *operator->() {
         return &api;
+    }
+
+    void SetLibraryName(const char *name) {
+        if (sharedlibraryName == name) {
+            return;
+        }
+        sharedlibraryName = name;
+        LuaModule = nullptr;
+    }
+    std::string GetLibraryName() const {
+        return sharedlibraryName;
     }
 
 protected:
