@@ -83,7 +83,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h
 add_custom_target(create_missfuncs DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h)
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp
-        COMMAND $<TARGET_FILE:luajit> "${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua" \""${CMAKE_CURRENT_SOURCE_DIR}/Mod/modinfo.lua" "${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp"\"
+        COMMAND $<TARGET_FILE:luajit> "${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua"
         DEPENDS luajit ${CMAKE_CURRENT_SOURCE_DIR}/Mod/modinfo.lua ${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
