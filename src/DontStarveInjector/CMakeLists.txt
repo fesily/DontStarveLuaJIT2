@@ -93,6 +93,7 @@ else()
 endif()
 
 add_dependencies(Injector create_missfuncs)
+add_dependencies(Injector create_modinfo_hpp)
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.c
         COMMAND ${PYTHON_EXECUTABLE_NAME} "../../tools/lua2c.py" "${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.lua" "${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.c"

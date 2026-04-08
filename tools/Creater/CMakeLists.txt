@@ -33,7 +33,7 @@ if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
                 WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
         )
     else ()
-        set(GAME_EXECUTABLE_DIR ${GAME_INSTALL_PREFIX}/bin64)
+        set(GAME_EXECUTABLE_DIR ${GAME_INSTALL_PREFIX})
         set(GAME_EXECUTABLE_NAME "dontstarve_steam_x64_1")
         if(NOT EXISTS ${GAME_EXECUTABLE_DIR}/${GAME_EXECUTABLE_NAME})
             set(GAME_EXECUTABLE_NAME "dontstarve_steam_x64")
@@ -45,8 +45,8 @@ if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
         set(PRELOAD_ENV_KEY LD_PRELOAD)
 
         add_custom_target(update_signatures
-                ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" LUA51_SIGNATURE_OUTPUT_DIR="${CMAKE_INSTALL_PREFIX}"
-                ${CMAKE_CURRENT_SOURCE_DIR}/update_signatures.sh ${LUA_EXECUTABLE_PATH} ${GAME_INSTALL_PREFIX}/${GAME_EXECUTABLE_NAME} ${GAME_INSTALL_PREFIX}/${GAME_SERVER_EXECUTABLE_NAME}
+                COMMAND ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" LUA51_SIGNATURE_OUTPUT_DIR="${CMAKE_INSTALL_PREFIX}"
+                ${CMAKE_CURRENT_SOURCE_DIR}/update_signatures.sh ${LUA_EXECUTABLE_PATH} "./${GAME_EXECUTABLE_NAME}" "./${GAME_SERVER_EXECUTABLE_NAME}"
                 WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
         )
     endif ()

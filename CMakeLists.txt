@@ -7,7 +7,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(GAME_NAME "Don't Starve Together")
-#set(GAME_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 if (WIN32)
     set(GAME_DIR "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Don't Starve Together")
 elseif (UNIX AND NOT APPLE)
@@ -15,7 +14,7 @@ elseif (UNIX AND NOT APPLE)
 elseif (APPLE)
     set(GAME_DIR "/Users/fesil/Library/Application Support/Steam/steamapps/common/Don't Starve Together/dontstarve_steam.app/Contents")
 endif ()
-
+include(cmake/GameDir.cmake OPTIONAL)
 enable_testing()
 set(FRIDA_GUM_VERSION "17.5.1")
 set(VCPKG_INSTALL_OPTION "${VCPKG_INSTALL_OPTION} --x-abi-tools-use-exact-versions")
@@ -38,7 +37,7 @@ else ()
     message(FATAL_ERROR "Not supported platform")
 endif ()
 
-project(DontStarveLuaJIT VERSION 2.4.0)
+project(DontStarveLuaJIT VERSION 2.5.0)
 
 option(DISABLE_TRACY_FUTURE "disable tray future" ON)
 
@@ -82,6 +81,14 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h
 )
 
 add_custom_target(create_missfuncs DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h)
+
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp
+        COMMAND $<TARGET_FILE:luajit> "${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua"
+        DEPENDS luajit ${CMAKE_CURRENT_SOURCE_DIR}/Mod/modinfo.lua ${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_custom_target(create_modinfo_hpp DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp)
 
 set(lua51_root ${CMAKE_CURRENT_SOURCE_DIR}/src/lua51)
 set(Lua51_output_dir ${lua51_root}/$<IF:$<CONFIG:Debug>,debug,release>/)

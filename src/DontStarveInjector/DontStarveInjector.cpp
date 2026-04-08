@@ -11,7 +11,7 @@
 #include "disasm.h"
 #include "ScanCtx.hpp"
 #include "ProcessMutex.hpp"
-#include "luajit_config.hpp"
+#include "gameModConfig.hpp"
 #include "GameLua.hpp"
 #include "GameSteam.hpp"
 #include "GameNetwork.hpp"
@@ -226,9 +226,15 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         spdlog::info("DontStarveInjector is disabled");
         return;
     }
+    if (!function_relocation::init_ctx()) {
+        showError("can't init signature");
+        return;
+    }
+    auto defer = create_defer(&function_relocation::deinit_ctx);
+
     if (!isClient) {
-        auto config = luajit_config::read_from_file();
-        if (config && config->server_disable_luajit) {
+        auto config = GameJitModConfig::instance();
+        if (config && config->DisableJITWhenServer) {
             return;
         }
     }
@@ -263,6 +269,8 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         return;
     }
 
+    HookSteamGameServerInterface();
+
     auto lua51 = loadlib(lua51_name);
     if (!lua51) {
         showError("can't load lua51");
@@ -272,12 +280,6 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         if (lua51)
             unloadlib(lua51);
     });
-
-    if (!function_relocation::init_ctx()) {
-        showError("can't init signature");
-        return;
-    }
-    auto defer = create_defer(&function_relocation::deinit_ctx);
 
     spdlog::info("main module base address:{}", (void *) gum_module_get_range(gum_process_get_main_module())->base_address);
     auto mainPath = getExePath().string();
@@ -300,7 +302,6 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 #endif
     replace_game_branch_flag_to_dev(mainPath);
 
-    HookSteamGameServerInterface();
     LoadGameModConfig();
     GameNetWorkHookRpc4();
     DisableScriptZip();

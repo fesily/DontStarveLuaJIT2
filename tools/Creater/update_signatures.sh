@@ -9,8 +9,12 @@ fi
 # 循环执行每个参数
 for program in "$@"
 do
+  if [ ! -f "$program" ]; then
+    echo "警告: 文件未找到: $program，跳过。"
+    continue
+  fi
   echo "正在运行程序: $program"
-  $program
+  "$program"
   # 检查程序是否成功执行
   if [ $? -ne 0 ]; then
     echo "程序 $program 执行失败。"

@@ -1156,6 +1156,16 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 #define SOL_NO_COMPAT 1
 
 #include <sol/sol.hpp>
+#include <array>
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <spdlog/spdlog.h>
+#include <sstream>
+
+#include "gameModConfig.hpp"
+#include "util/PersistentString.hpp"
 
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_workshop_dir();
@@ -1201,115 +1211,426 @@ int luaopen_GameInjector(lua_State* L) {
     return 1;
 }
 
-// GAME MOD CONFIG
-
 #include "../modinfo.hpp"
-#include <filesystem>
-#include <spdlog/spdlog.h>
-#include <fstream>
-#include "util/PersistentString.hpp"
-#include "gameModConfig.hpp"
-#ifdef _WIN32
-#include <Windows.h>
-#include <KnownFolders.h>
-#include <ShlObj.h>
-#pragma comment(lib, "Shell32.lib")
-#endif
 
-static std::filesystem::path GetKleiSaveDataDir(std::string_view ownid) {
-#ifdef _WIN32
-	PWSTR documents_path = nullptr;
-	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DEFAULT, nullptr, &documents_path))) {
-		std::filesystem::path save_dir = documents_path;
-		CoTaskMemFree(documents_path);
-		save_dir = save_dir / "Klei" / "DoNotStarveTogether" / ownid;
-		return save_dir;
+GameJitModConfig make_default_game_mod_config() {
+    GameJitModConfig resolved;
+    resolved.AngleBackend = std::string{ModConfigurationOptions::AngleBackend.default_value};
+    resolved.LuaVmType = std::string{ModConfigurationOptions::LuaVmType.default_value};
+    resolved.AlwaysEnableMod = ModConfigurationOptions::AlwaysEnableMod.default_value;
+    resolved.DisableJITWhenServer = ModConfigurationOptions::DisableJITWhenServer.default_value;
+
+    resolved.AngleBackendSource = GameJitConfigSource::modinfo_default;
+    resolved.LuaVmTypeSource = GameJitConfigSource::modinfo_default;
+    resolved.AlwaysEnableModSource = GameJitConfigSource::modinfo_default;
+    resolved.DisableJITWhenServerSource = GameJitConfigSource::modinfo_default;
+    return resolved;
+}
+
+using namespace std::string_view_literals;
+
+static bool is_supported_lua_vm_type(std::string_view value) {
+	return value == "jit"sv || value == "game"sv || value == "lua51"sv || value == "51"sv || value == "5.1"sv ||
+		   value == "jit_gen"sv || value == "_51"sv;
+}
+
+static bool is_nil_object(const sol::object &object) {
+	return !object.valid() || object.get_type() == sol::type::lua_nil;
+}
+
+static bool try_get_string(const sol::object &object, std::string &value) {
+	if (is_nil_object(object)) {
+		return false;
 	}
-#endif
-	auto home = getenv("HOME");
-    if (home == nullptr) {
-		home = getenv("USERPROFILE");
-    }
-	if (home == nullptr) {
-		return {};
+	if (object.get_type() == sol::type::string) {
+		value = object.as<std::string>();
+		return true;
 	}
-    std::filesystem::path save_dir = home;
-    save_dir = save_dir / "Documents" / "Klei" / "DoNotStarveTogether" / ownid;
-    return save_dir;
+	return false;
 }
 
-static std::filesystem::path GetModConfigDataDir(std::string_view ownid, const std::string_view &cluster_name = "client_save") {
-    auto save_dir = GetKleiSaveDataDir(ownid);
-    if (save_dir.empty()) {
-        return {};
-    }
-    return save_dir / cluster_name / "mod_config_data";
+static bool try_get_bool(const sol::object &object, bool &value) {
+	if (is_nil_object(object)) {
+		return false;
+	}
+	switch (object.get_type()) {
+	case sol::type::boolean:
+		value = object.as<bool>();
+		return true;
+	case sol::type::number: {
+		const auto numeric = object.as<double>();
+		value = std::fabs(numeric) > 0.5;
+		return true;
+	}
+	case sol::type::string: {
+		const auto text = object.as<std::string>();
+		if (text == "true" || text == "1") {
+			value = true;
+			return true;
+		}
+		if (text == "false" || text == "0") {
+			value = false;
+			return true;
+		}
+		return false;
+	}
+	default:
+		return false;
+	}
 }
 
-static std::filesystem::path GetModConfigDataFileName(std::string_view modname) {
-    std::string_view ext = InjectorConfig::instance()->AppVersionDevPatch ? "_dev" : "";
-    return std::string("modconfiguration_").append(modname).append(ext);
+template <size_t N>
+static bool try_get_option_string(const sol::object &object,
+									  const std::string_view (&options)[N],
+									  std::string &value) {
+	if (try_get_string(object, value)) {
+		return true;
+	}
+	if (is_nil_object(object) || object.get_type() != sol::type::number) {
+		return false;
+	}
+
+	const auto numeric = object.as<double>();
+	if (std::floor(numeric) != numeric) {
+		return false;
+	}
+
+	const auto index = static_cast<long long>(numeric);
+	if (index < 0 || index >= static_cast<long long>(N)) {
+		return false;
+	}
+	value = std::string{options[index]};
+	return true;
 }
 
-
-static std::filesystem::path GetModConfigDataFileName_Workshop(uint64_t modid) {
-    return GetModConfigDataFileName("workshop-" + std::to_string(modid));
+static sol::object get_saved_value(const sol::table &option) {
+	auto saved_client = option["saved_client"].get<sol::object>();
+	if (!is_nil_object(saved_client)) {
+		return saved_client;
+	}
+	return option["saved"].get<sol::object>();
 }
 
-std::optional<GameJitModConfig> LoadModConfigurationOptions() {
-    auto ictx = InjectorCtx::instance();
-    if (!ictx->DontStarveInjectorIsClient) {
-        return std::nullopt;
-    }
+static bool load_save_config_table(const std::filesystem::path &path, sol::state &lua, sol::table &root) {
+	const auto persistent_string = GetPersistentString(path.string());
+	if (!persistent_string) {
+		spdlog::error("failed to load mod configuration from {}: {}", path.string(), persistent_string.error());
+		return false;
+	}
 
-    auto mod_config_data = GetModConfigDataDir(std::to_string(ictx->steam_account_id));
-    auto mod_filename = GetModConfigDataFileName_Workshop(3444078585);
-    auto path = mod_config_data / mod_filename;
-    spdlog::info("try load mod configuration from {}", path.string());
-    if (!std::filesystem::exists(path)) {
-        spdlog::warn("mod configuration file not found at {}", path.string());
-        return std::nullopt;
-    }
-    auto persistent_string = GetPersistentString(path.string());
-    if (!persistent_string) {
-        spdlog::error("failed to load mod configuration from {}: {}", path.string(), persistent_string.error());
-        return std::nullopt;
-    }
-	sol::state lua;
 	try {
-		std::optional<GameJitModConfig> jitconfig;
 		auto config = lua.safe_script(persistent_string.value());
-		if (config.get_type() == sol::type::table) {
-			for (auto& [key, value] : config.get<sol::table>())
-			{
-				auto t = value.as<sol::table>();
-				auto optname = t["name"].get_or<std::string>("");
-				if (optname == ModConfigurationOptions::AngleBackend.name) {
-					auto val = t["saved"];
-					auto val_client = t["saved_client"];
-					auto final_val = val_client.valid() ? val_client.get<std::string>() : val.get_or<std::string>("");
-					for (auto o : ModConfigurationOptions::AngleBackend.options) {
-						if (o == final_val) {
-							if (!jitconfig) {
-								jitconfig = GameJitModConfig();
-							}
-							jitconfig->angle_backend = o;
-							spdlog::info("set angle backend to {}", o);
-							break;
-						}
-					}
-				}
+		if (config.get_type() != sol::type::table) {
+			spdlog::warn("mod configuration at {} is not a table", path.string());
+			return false;
+		}
+		root = config;
+		return true;
+	} catch (const std::exception &e) {
+		spdlog::error("failed to parse mod configuration from {}: {}", path.string(), e.what());
+		return false;
+	}
+}
+
+static bool load_plain_lua_table(const std::filesystem::path &path, sol::state &lua, sol::table &root) {
+	std::ifstream file(path);
+	if (!file.is_open()) {
+		spdlog::error("failed to open lua table file {}", path.string());
+		return false;
+	}
+
+	const std::string content{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+	try {
+		auto config = lua.safe_script(content);
+		if (config.get_type() != sol::type::table) {
+			spdlog::warn("lua table file at {} is not a table", path.string());
+			return false;
+		}
+		root = config;
+		return true;
+	} catch (const std::exception &e) {
+		spdlog::error("failed to parse lua table file {}: {}", path.string(), e.what());
+		return false;
+	}
+}
+
+static std::string escape_lua_string(std::string_view value) {
+	std::string escaped;
+	escaped.reserve(value.size() + 8);
+	for (unsigned char ch: value) {
+		switch (ch) {
+		case '\\':
+			escaped += "\\\\";
+			break;
+		case '"':
+			escaped += "\\\"";
+			break;
+		case '\n':
+			escaped += "\\n";
+			break;
+		case '\r':
+			escaped += "\\r";
+			break;
+		case '\t':
+			escaped += "\\t";
+			break;
+		default:
+			escaped.push_back(static_cast<char>(ch));
+			break;
+		}
+	}
+	return escaped;
+}
+
+static std::string serialize_lua_value(const sol::object &value, int indent);
+
+static std::string serialize_lua_key(const sol::object &key) {
+	if (key.get_type() == sol::type::string) {
+		return std::string{"[\""}.append(escape_lua_string(key.as<std::string>())).append("\"]");
+	}
+	if (key.get_type() == sol::type::number) {
+		auto number = key.as<double>();
+		if (std::floor(number) == number) {
+			return std::string{"["}.append(std::to_string(static_cast<long long>(number))).append("]");
+		}
+		std::ostringstream stream;
+		stream << std::setprecision(17) << number;
+		return std::string{"["}.append(stream.str()).append("]");
+	}
+	return std::string{"["}.append(serialize_lua_value(key, 0)).append("]");
+}
+
+static std::string serialize_lua_table(const sol::table &table, int indent) {
+	const auto indent_text = std::string(static_cast<size_t>(indent * 4), ' ');
+	const auto child_indent_text = std::string(static_cast<size_t>((indent + 1) * 4), ' ');
+
+	std::string serialized{"{"};
+	bool first = true;
+	for (const auto &[key, value]: table) {
+		if (first) {
+			serialized.push_back('\n');
+			first = false;
+		} else {
+			serialized += ",\n";
+		}
+		serialized += child_indent_text;
+		serialized += serialize_lua_key(key);
+		serialized += " = ";
+		serialized += serialize_lua_value(value, indent + 1);
+	}
+	if (!first) {
+		serialized.push_back('\n');
+		serialized += indent_text;
+	}
+	serialized.push_back('}');
+	return serialized;
+}
+
+static std::string serialize_lua_value(const sol::object &value, int indent) {
+	switch (value.get_type()) {
+	case sol::type::lua_nil:
+		return "nil";
+	case sol::type::boolean:
+		return value.as<bool>() ? "true" : "false";
+	case sol::type::number: {
+		const auto number = value.as<double>();
+		if (std::floor(number) == number) {
+			return std::to_string(static_cast<long long>(number));
+		}
+		std::ostringstream stream;
+		stream << std::setprecision(17) << number;
+		return stream.str();
+	}
+	case sol::type::string:
+		return std::string{"\""}.append(escape_lua_string(value.as<std::string>())).append("\"");
+	case sol::type::table:
+		return serialize_lua_table(value.as<sol::table>(), indent);
+	default:
+		return "nil";
+	}
+}
+
+static sol::table find_or_create_option(sol::state &lua, sol::table root, std::string_view option_name) {
+	lua_Integer next_index = 1;
+	for (const auto &[key, value]: root) {
+		if (key.get_type() == sol::type::number) {
+			next_index = std::max(next_index, static_cast<lua_Integer>(key.as<double>()) + 1);
+		}
+		if (value.get_type() != sol::type::table) {
+			continue;
+		}
+		auto option = value.as<sol::table>();
+		if (option["name"].get_or<std::string>("") == option_name) {
+			return option;
+		}
+	}
+
+	auto option = lua.create_table();
+	option["name"] = std::string{option_name};
+	root[next_index] = option;
+	return option;
+}
+
+static bool find_mod_override_entry(const sol::table &root, const std::vector<std::string> &aliases, sol::table &entry) {
+	for (const auto &alias: aliases) {
+		auto object = root[alias].get<sol::object>();
+		if (is_nil_object(object) || object.get_type() != sol::type::table) {
+			continue;
+		}
+		entry = object.as<sol::table>();
+		spdlog::info("matched server mod overrides entry by alias {}", alias);
+		return true;
+	}
+	return false;
+}
+
+bool LoadGameJitModConfigFromSaveFile(const std::filesystem::path &path, GameJitModConfig &resolved) {
+	sol::state lua;
+	sol::table root = lua.create_table();
+	if (!load_save_config_table(path, lua, root)) {
+		return false;
+	}
+
+	for (const auto &[key, value]: root) {
+		if (value.get_type() != sol::type::table) {
+			continue;
+		}
+		auto option = value.as<sol::table>();
+		const auto option_name = option["name"].get_or<std::string>("");
+		const auto saved_value = get_saved_value(option);
+
+		if (option_name == ModConfigurationOptions::AngleBackend.name) {
+			std::string text{ModConfigurationOptions::AngleBackend.default_value};
+			if (try_get_string(saved_value, text) && from_string(text) != DstAngleBackend::Unknown) {
+				resolved.AngleBackend = text;
+				resolved.AngleBackendSource = GameJitConfigSource::save_file;
+			}
+		} else if (option_name == ModConfigurationOptions::LuaVmType.name) {
+			std::string text{ModConfigurationOptions::LuaVmType.default_value};
+			if (try_get_string(saved_value, text) && is_supported_lua_vm_type(text)) {
+				resolved.LuaVmType = text;
+				resolved.LuaVmTypeSource = GameJitConfigSource::save_file;
+			}
+		} else if (option_name == ModConfigurationOptions::AlwaysEnableMod.name) {
+			bool enabled = ModConfigurationOptions::AlwaysEnableMod.default_value;
+			if (try_get_bool(saved_value, enabled)) {
+				resolved.AlwaysEnableMod = enabled;
+				resolved.AlwaysEnableModSource = GameJitConfigSource::save_file;
+			}
+		} else if (option_name == ModConfigurationOptions::DisableJITWhenServer.name) {
+			bool disabled = ModConfigurationOptions::DisableJITWhenServer.default_value;
+			if (try_get_bool(saved_value, disabled)) {
+				resolved.DisableJITWhenServer = disabled;
+				resolved.DisableJITWhenServerSource = GameJitConfigSource::save_file;
+			}
+		} else if (option_name == ModConfigurationOptions::EnabledGenGC.name) {
+			bool enabled = ModConfigurationOptions::EnabledGenGC.default_value;
+			if (try_get_bool(saved_value, enabled)) {
+				resolved.EnabledGenGC = enabled;
+				resolved.EnabledGenGCSource = GameJitConfigSource::save_file;
 			}
 		}
-		return jitconfig;
-	} catch (const std::exception& e) {
-		spdlog::error("failed to parse mod configuration from {}: {}", path.string(), e.what());
 	}
-	return std::nullopt;
+	return true;
 }
 
+bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
+									  const std::vector<std::string> &aliases,
+									  GameJitModConfig &resolved) {
+	sol::state lua;
+	sol::table root = lua.create_table();
+	if (!load_plain_lua_table(path, lua, root)) {
+		return false;
+	}
 
-std::optional<GameJitModConfig> GameJitModConfig::instance() {
-	static std::optional<GameJitModConfig> mod_config_options = LoadModConfigurationOptions();
-	return mod_config_options;
+	sol::table mod_entry = lua.create_table();
+	if (!find_mod_override_entry(root, aliases, mod_entry)) {
+		spdlog::warn("no matching mod entry found in server mod overrides {}", path.string());
+		return false;
+	}
+
+	auto options_object = mod_entry["configuration_options"].get<sol::object>();
+	if (is_nil_object(options_object) || options_object.get_type() != sol::type::table) {
+		spdlog::warn("server mod overrides entry at {} has no configuration_options table", path.string());
+		return true;
+	}
+
+	auto options = options_object.as<sol::table>();
+	std::string text{ModConfigurationOptions::AngleBackend.default_value};
+	if (try_get_option_string(options[ModConfigurationOptions::AngleBackend.name].get<sol::object>(),
+							 ModConfigurationOptions::AngleBackend.options,
+							 text) && from_string(text) != DstAngleBackend::Unknown) {
+		resolved.AngleBackend = text;
+		resolved.AngleBackendSource = GameJitConfigSource::save_file;
+	}
+
+	if (try_get_option_string(options[ModConfigurationOptions::LuaVmType.name].get<sol::object>(),
+							 ModConfigurationOptions::LuaVmType.options,
+							 text) && is_supported_lua_vm_type(text)) {
+		resolved.LuaVmType = text;
+		resolved.LuaVmTypeSource = GameJitConfigSource::save_file;
+	}
+
+	bool enabled = ModConfigurationOptions::AlwaysEnableMod.default_value;
+	if (try_get_bool(options[ModConfigurationOptions::AlwaysEnableMod.name].get<sol::object>(), enabled)) {
+		resolved.AlwaysEnableMod = enabled;
+		resolved.AlwaysEnableModSource = GameJitConfigSource::save_file;
+	}
+
+	bool disabled = ModConfigurationOptions::DisableJITWhenServer.default_value;
+	if (try_get_bool(options[ModConfigurationOptions::DisableJITWhenServer.name].get<sol::object>(), disabled)) {
+		resolved.DisableJITWhenServer = disabled;
+		resolved.DisableJITWhenServerSource = GameJitConfigSource::save_file;
+	}
+	return true;
+}
+
+bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const GameJitModConfig &config) {
+	sol::state lua;
+	sol::table root = lua.create_table();
+	std::string serialized_before = "{}";
+	if (std::filesystem::exists(path)) {
+		if (!load_save_config_table(path, lua, root)) {
+			return false;
+		}
+		serialized_before = serialize_lua_value(sol::make_object(lua, root), 0);
+	}
+
+	auto angle_backend = find_or_create_option(lua, root, ModConfigurationOptions::AngleBackend.name);
+	angle_backend["saved"] = config.AngleBackend;
+	angle_backend["saved_client"] = config.AngleBackend;
+
+	auto lua_vm_type = find_or_create_option(lua, root, ModConfigurationOptions::LuaVmType.name);
+	lua_vm_type["saved"] = config.LuaVmType;
+	lua_vm_type["saved_client"] = config.LuaVmType;
+
+	auto always_enable_mod = find_or_create_option(lua, root, ModConfigurationOptions::AlwaysEnableMod.name);
+	always_enable_mod["saved"] = config.AlwaysEnableMod;
+	always_enable_mod["saved_client"] = config.AlwaysEnableMod;
+
+	auto disable_jit_when_server = find_or_create_option(lua, root, ModConfigurationOptions::DisableJITWhenServer.name);
+	disable_jit_when_server["saved"] = config.DisableJITWhenServer;
+	disable_jit_when_server["saved_client"] = config.DisableJITWhenServer;
+
+	auto enabled_gen_gc = find_or_create_option(lua, root, ModConfigurationOptions::EnabledGenGC.name);
+	enabled_gen_gc["saved"] = config.EnabledGenGC;
+	enabled_gen_gc["saved_client"] = config.EnabledGenGC;
+
+	const auto serialized_after = serialize_lua_value(sol::make_object(lua, root), 0);
+	if (serialized_before == serialized_after) {
+		return true;
+	}
+
+	std::error_code ec;
+	std::filesystem::create_directories(path.parent_path(), ec);
+	if (ec) {
+		spdlog::error("failed to create mod config directory {}: {}", path.parent_path().string(), ec.message());
+		return false;
+	}
+	if (!SetPersistentString(path.string(), serialized_after, true)) {
+		spdlog::error("failed to write mod configuration to {}", path.string());
+		return false;
+	}
+	spdlog::info("updated mod configuration at {}", path.string());
+	return true;
 }

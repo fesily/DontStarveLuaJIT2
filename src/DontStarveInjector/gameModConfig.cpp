@@ -1,14 +1,404 @@
 #include "gameModConfig.hpp"
 #include "MemorySignature.hpp"
 #include "GameOpenGl.hpp"
+#include "game_info.hpp"
 #include "luajit_config.hpp"
 #include "util/inlinehook.hpp"
 #include "util/platform.hpp"
 #include "disasm.h"
 #include "ScanCtx.hpp"
+#include <algorithm>
 #include <array>
+#include <filesystem>
 #include <frida-gum.h>
 #include <optional>
+#include <spdlog/spdlog.h>
+#include <string_view>
+#include <vector>
+
+#ifdef _WIN32
+#define NOMINMAX
+#include <Windows.h>
+#include <KnownFolders.h>
+#include <ShlObj.h>
+#pragma comment(lib, "Shell32.lib")
+#endif
+
+namespace {
+
+using namespace std::string_view_literals;
+
+constexpr uint64_t kPrimaryWorkshopId = 3444078585ULL;
+constexpr auto kPrimaryWorkshopModName = "workshop-3444078585"sv;
+constexpr std::array<std::string_view, 5> kStaticModAliases = {
+        kPrimaryWorkshopModName,
+        "3444078585"sv,
+        "luajit"sv,
+        "luajit2"sv,
+        "DontStarveLuaJit2"sv,
+};
+
+struct ResolvedModIdentity {
+    std::string canonical_modname;
+    std::string modname;
+    std::string modid;
+    std::vector<std::string> aliases;
+};
+
+static void add_alias(std::vector<std::string> &aliases, std::string_view alias) {
+    if (alias.empty()) {
+        return;
+    }
+    const auto value = std::string{alias};
+    if (std::find(aliases.begin(), aliases.end(), value) == aliases.end()) {
+        aliases.push_back(value);
+    }
+}
+
+static bool is_digits(std::string_view value) {
+    return !value.empty() && std::all_of(value.begin(), value.end(), [](unsigned char ch) { return std::isdigit(ch) != 0; });
+}
+
+static void add_alias_variants(std::vector<std::string> &aliases, std::string_view alias) {
+    add_alias(aliases, alias);
+    if (alias.starts_with("workshop-"sv)) {
+        add_alias(aliases, alias.substr(sizeof("workshop-") - 1));
+    } else if (is_digits(alias)) {
+        add_alias(aliases, std::string{"workshop-"}.append(alias));
+    }
+}
+
+static std::string resolve_canonical_modname_from_modmain_path(std::string_view modmain_path) {
+    if (modmain_path.empty()) {
+        return {};
+    }
+
+    const auto folder = std::filesystem::path(modmain_path).parent_path().filename().string();
+    if (folder.empty()) {
+        return {};
+    }
+
+    if (!is_digits(folder)) {
+        return folder;
+    }
+
+    return std::string{"workshop-"}.append(folder);
+}
+
+static std::string resolve_modid_from_modname(std::string_view modname) {
+    if (modname.starts_with("workshop-"sv)) {
+        return std::string{modname.substr(sizeof("workshop-") - 1)};
+    }
+    return std::string{modname};
+}
+
+static ResolvedModIdentity build_mod_identity() {
+    ResolvedModIdentity identity;
+    identity.canonical_modname = std::string{kPrimaryWorkshopModName};
+    identity.modname = identity.canonical_modname;
+    identity.modid = resolve_modid_from_modname(identity.modname);
+
+    if (auto config = luajit_config::read_from_file(); config) {
+        if (!config->modmain_path.empty()) {
+            const auto canonical_from_modmain_path = resolve_canonical_modname_from_modmain_path(config->modmain_path);
+            if (!canonical_from_modmain_path.empty()) {
+                identity.canonical_modname = canonical_from_modmain_path;
+                identity.modname = canonical_from_modmain_path;
+                identity.modid = resolve_modid_from_modname(identity.modname);
+                add_alias_variants(identity.aliases, canonical_from_modmain_path);
+            }
+        }
+        add_alias_variants(identity.aliases, identity.modname);
+        add_alias_variants(identity.aliases, identity.modid);
+    }
+
+    for (auto alias: kStaticModAliases) {
+        add_alias_variants(identity.aliases, alias);
+    }
+
+    add_alias_variants(identity.aliases, identity.canonical_modname);
+    return identity;
+}
+
+static std::filesystem::path GetKleiSaveDataDir(std::string_view ownid) {
+#ifdef _WIN32
+    PWSTR documents_path = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DEFAULT, nullptr, &documents_path))) {
+        std::filesystem::path save_dir = documents_path;
+        CoTaskMemFree(documents_path);
+        save_dir = save_dir / "Klei" / "DoNotStarveTogether" / ownid;
+        return save_dir;
+    }
+#endif
+    auto home = getenv("HOME");
+    if (home == nullptr) {
+        home = getenv("USERPROFILE");
+    }
+    if (home == nullptr) {
+        return {};
+    }
+    std::filesystem::path save_dir = home;
+    save_dir = save_dir / "Documents" / "Klei" / "DoNotStarveTogether" / ownid;
+    return save_dir;
+}
+
+static std::filesystem::path GetModConfigDataDir(std::string_view ownid, const std::string_view &cluster_name = "client_save") {
+    auto save_dir = GetKleiSaveDataDir(ownid);
+    if (save_dir.empty()) {
+        return {};
+    }
+    return save_dir / cluster_name / "mod_config_data";
+}
+
+static std::filesystem::path GetModConfigDataFileName(std::string_view modname) {
+    std::string_view ext = InjectorConfig::instance()->AppVersionDevPatch ? "_dev" : "";
+    return std::string("modconfiguration_").append(modname).append(ext);
+}
+
+static std::string read_env_or_cmd_value(const char *key) {
+    char buffer[256] = {};
+    InjectorConfig::getEnvOrCmdValue(key, buffer, sizeof(buffer));
+    return buffer;
+}
+
+static std::filesystem::path GetUserStorageBaseDir() {
+#ifdef _WIN32
+    PWSTR documents_path = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DEFAULT, nullptr, &documents_path))) {
+        std::filesystem::path base = documents_path;
+        CoTaskMemFree(documents_path);
+        return base;
+    }
+#endif
+
+    auto home = getenv("HOME");
+    if (home == nullptr) {
+        home = getenv("USERPROFILE");
+    }
+    if (home == nullptr) {
+        return {};
+    }
+    return std::filesystem::path{home};
+}
+
+static std::filesystem::path GetPersistentStorageRootDir(std::string_view persist_root) {
+    if (persist_root.empty()) {
+        return {};
+    }
+
+    auto normalized = std::string{persist_root};
+    constexpr auto app_prefix = "APP:"sv;
+    if (std::string_view{normalized}.starts_with(app_prefix)) {
+        const auto base = GetUserStorageBaseDir();
+        if (base.empty()) {
+            return {};
+        }
+
+        normalized.erase(0, app_prefix.size());
+        if (normalized.empty()) {
+            return base;
+        }
+        return base / std::filesystem::path{normalized};
+    }
+
+    std::filesystem::path root{normalized};
+    if (root.is_absolute()) {
+        return root;
+    }
+
+    const auto base = GetUserStorageBaseDir();
+    if (base.empty()) {
+        return {};
+    }
+    return base / root;
+}
+
+static void add_path_candidate(std::vector<std::filesystem::path> &candidates, const std::filesystem::path &candidate) {
+    if (candidate.empty()) {
+        return;
+    }
+    if (std::find(candidates.begin(), candidates.end(), candidate) == candidates.end()) {
+        candidates.push_back(candidate);
+    }
+}
+
+static std::vector<std::filesystem::path> GetServerModOverridesPaths(const GameInfo &game_info,
+                                                                     const std::optional<std::string> &ownerdir_hint) {
+    std::vector<std::filesystem::path> candidates;
+    const auto persist_root = GetPersistentStorageRootDir(game_info.persist_root);
+    if (persist_root.empty()) {
+        return candidates;
+    }
+
+    const auto config_root = persist_root / game_info.config_dir;
+    const auto shard_suffix = std::filesystem::path{game_info.cluster_name} / game_info.shared_name / "modoverrides.lua";
+
+    if (ownerdir_hint && !ownerdir_hint->empty()) {
+        add_path_candidate(candidates, config_root / *ownerdir_hint / shard_suffix);
+    }
+
+    std::error_code ec;
+    if (std::filesystem::exists(config_root, ec) && std::filesystem::is_directory(config_root, ec)) {
+        std::vector<std::filesystem::path> ownerdirs;
+        for (const auto &entry: std::filesystem::directory_iterator(config_root, ec)) {
+            if (ec) {
+                break;
+            }
+            if (!entry.is_directory(ec)) {
+                continue;
+            }
+            const auto ownerdir_name = entry.path().filename().string();
+            if (ownerdir_name.empty() || ownerdir_name == game_info.cluster_name) {
+                continue;
+            }
+            ownerdirs.push_back(entry.path());
+        }
+        std::sort(ownerdirs.begin(), ownerdirs.end());
+        for (const auto &ownerdir: ownerdirs) {
+            add_path_candidate(candidates, ownerdir / shard_suffix);
+        }
+    }
+
+    add_path_candidate(candidates, config_root / shard_suffix);
+    return candidates;
+}
+
+static GameInfo GetServerGameInfo() {
+    GameInfo game_info;
+    if (auto runtime_info = readGameInfo()) {
+        game_info = *runtime_info;
+    }
+
+    if (auto value = read_env_or_cmd_value("persistent_storage_root"); !value.empty()) {
+        game_info.persist_root = value;
+    }
+    if (auto value = read_env_or_cmd_value("conf_dir"); !value.empty()) {
+        game_info.config_dir = value;
+    }
+    if (auto value = read_env_or_cmd_value("cluster"); !value.empty()) {
+        game_info.cluster_name = value;
+    }
+    if (auto value = read_env_or_cmd_value("shard"); !value.empty()) {
+        game_info.shared_name = value;
+    }
+
+    if (game_info.persist_root.empty()) {
+        game_info.persist_root = ".klei/";
+    }
+    if (game_info.config_dir.empty()) {
+        game_info.config_dir = "DoNotStarveTogether";
+    }
+    if (game_info.cluster_name.empty()) {
+        game_info.cluster_name = "Cluster_1";
+    }
+    if (game_info.shared_name.empty()) {
+        game_info.shared_name = "Master";
+    }
+    return game_info;
+}
+
+static bool is_supported_lua_vm_type(std::string_view value) {
+    return value == "jit"sv || value == "game"sv || value == "lua51"sv || value == "51"sv || value == "5.1"sv ||
+           value == "jit_gen"sv || value == "_51"sv;
+}
+
+static void update_string_field(std::string &field, GameJitConfigSource &source, std::string_view value, GameJitConfigSource new_source) {
+    if (value.empty()) {
+        return;
+    }
+    field = std::string{value};
+    source = new_source;
+}
+
+static void update_bool_field(bool &field, GameJitConfigSource &source, bool value, GameJitConfigSource new_source) {
+    field = value;
+    source = new_source;
+}
+
+static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
+    GameJitModConfig resolved = make_default_game_mod_config();
+    const auto identity = build_mod_identity();
+    resolved.modname = identity.modname;
+    resolved.modid = identity.modid;
+    resolved.modname_source = GameJitConfigSource::luajit_config;
+    resolved.modid_source = GameJitConfigSource::luajit_config;
+
+    if (const auto config = luajit_config::read_from_file(); config) {
+        if (!config->modmain_path.empty()) {
+            resolved.modmain_path = config->modmain_path;
+            resolved.modmain_path_source = GameJitConfigSource::luajit_config;
+        }
+        update_bool_field(resolved.AlwaysEnableMod, resolved.AlwaysEnableModSource, config->always_enable_mod,
+                          GameJitConfigSource::luajit_config);
+        resolved.DisableJITWhenServer = config->server_disable_luajit;
+        resolved.DisableJITWhenServerSource = GameJitConfigSource::luajit_config;
+    }
+
+    auto *ictx = InjectorCtx::instance();
+    std::filesystem::path canonical_save_path;
+    if (ictx->DontStarveInjectorIsClient) {
+        auto mod_config_data = GetModConfigDataDir(std::to_string(ictx->steam_account_id));
+        canonical_save_path = mod_config_data / GetModConfigDataFileName(identity.canonical_modname);
+
+        for (const auto &alias: identity.aliases) {
+            auto candidate = mod_config_data / GetModConfigDataFileName(alias);
+            if (!std::filesystem::exists(candidate)) {
+                continue;
+            }
+
+            spdlog::info("try load mod configuration from {}", candidate.string());
+            if (LoadGameJitModConfigFromSaveFile(candidate, resolved)) {
+                if (canonical_save_path.empty()) {
+                    canonical_save_path = candidate;
+                    resolved.save_file = canonical_save_path.string();
+                }
+                break;
+            }
+        }
+    } else {
+        const auto ownerdir_value = read_env_or_cmd_value("ownerdir");
+        const auto ownerdir_hint = !ownerdir_value.empty() ? std::make_optional(ownerdir_value)
+                                                           : (ictx->steam_account_id != 0 ? std::make_optional(std::to_string(ictx->steam_account_id))
+                                                                                         : std::optional<std::string>{});
+        const auto game_info = GetServerGameInfo();
+        for (const auto &candidate: GetServerModOverridesPaths(game_info, ownerdir_hint)) {
+            if (!std::filesystem::exists(candidate)) {
+                continue;
+            }
+
+            spdlog::info("try load server mod overrides from {}", candidate.string());
+            if (LoadGameJitModConfigFromModOverridesFile(candidate, identity.aliases, resolved)) {
+                break;
+            }
+        }
+    }
+
+    std::string angle_backend;
+    const auto configured_angle_backend = InjectorConfig::instance()->DST_ANGLE_BACKEND;
+    if (configured_angle_backend != DstAngleBackend::Unknown) {
+        angle_backend = to_string(configured_angle_backend);
+    } else if (const auto *platform = getenv("ANGLE_DEFAULT_PLATFORM");
+               platform != nullptr && from_string(platform) != DstAngleBackend::Unknown) {
+        angle_backend = platform;
+    }
+    if (!angle_backend.empty()) {
+        update_string_field(resolved.AngleBackend, resolved.AngleBackendSource, angle_backend, GameJitConfigSource::env_or_cmd);
+    }
+
+    auto lua_vm_type = (const char*) InjectorConfig::instance()->lua_vm_type;
+    if (lua_vm_type != nullptr && is_supported_lua_vm_type(lua_vm_type)) {
+        update_string_field(resolved.LuaVmType, resolved.LuaVmTypeSource, lua_vm_type, GameJitConfigSource::env_or_cmd);
+    }
+
+    if (ictx->DontStarveInjectorIsClient && !canonical_save_path.empty()) {
+        WriteGameJitModConfigToSaveFile(canonical_save_path, resolved);
+    }
+
+    return resolved;
+}
+
+} // namespace
+
 struct GameConfigs {
     std::optional<int> render_fps;
     std::optional<bool> client_network_tick;
@@ -250,7 +640,8 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int 
 }
 
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
-    static std::atomic_int replaced = 0;
+    static std::atomic_char replaced;
+    if (replaced) return 1;
 #ifdef __linux__
     function_relocation::MemorySignature profiler_push{"41 83 84 24 80 01 00 00 01", -0xF6};
     function_relocation::MemorySignature profiler_pop{"64 48 8B 1C 25 F8 FF FF FF", -0x15};
@@ -265,20 +656,8 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
 
     auto path = gum_module_get_path(gum_process_get_main_module());
     if (profiler_pop.scan(path) && profiler_push.scan(path)) {
-        if (!replaced) {
-            Hook((uint8_t *) profiler_push.target_address, (uint8_t *) hook_profiler_push);
-        }
-        if (replaced) {
-            ResetHook((uint8_t *) profiler_pop.target_address);
-        }
-        auto luatype = GetGameLuaContext().luaType;
-        if (luatype == GameLuaType::jit) {
-            Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHookerTimeLimit::hook_profiler_pop);
-        } else if (luatype == GameLuaType::jit_gen) {
-            Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHookerNoGC::hook_profiler_pop);
-        } else {
-            Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHookerNoTimeLimit::hook_profiler_pop);
-        }
+        Hook((uint8_t *) profiler_push.target_address, (uint8_t *) hook_profiler_push);
+        Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHooker::hook_profiler_pop);
 #ifdef profiler_lua_gc
         auto interceptor = InjectorCtx::instance().GetGumInterceptor();
         static Gum::InvocationListenerProxy linstener{new Gum::InvocationListenerProfiler()};
@@ -296,7 +675,13 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version() {
     return MOD_VERSION;
 }
 
+std::optional<GameJitModConfig> GameJitModConfig::instance() {
+    static std::optional<GameJitModConfig> mod_config_options = load_resolved_game_mod_config();
+    return mod_config_options;
+}
+
 extern "C" void LoadGameModConfig() {
+    (void) GameJitModConfig::instance();
 #ifdef _WIN32
     repalce_set_thread_name();
     InitGameOpenGl();

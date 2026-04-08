@@ -694,24 +694,32 @@ local function main()
 	end
 
 	local luajit_config = setmetatable({ filepath = "unsafedata/luajit_config.json" }, { __index = ModManagerFile })
-	function luajit_config:create(modmain_path, server_disable_luajit, always_enable_mod, config)
+	function luajit_config:create(modmain_path, DisableJITWhenServer, AlwaysEnableMod, config)
 		if config == nil then
 			return {
 				modmain_path = modmain_path,
-				server_disable_luajit = server_disable_luajit,
-				always_enable_mod = always_enable_mod,
+				DisableJITWhenServer = DisableJITWhenServer,
+				AlwaysEnableMod = AlwaysEnableMod,
 			}
 		else
-			config.modmain_path = modmain_path or config.modmain_path
-			config.server_disable_luajit = server_disable_luajit or config.server_disable_luajit
-			config.always_enable_mod = always_enable_mod or config.always_enable_mod
+			if modmain_path ~= nil then
+				config.modmain_path = modmain_path
+			end
+			if DisableJITWhenServer ~= nil then
+				config.DisableJITWhenServer = DisableJITWhenServer
+			end
+			if AlwaysEnableMod ~= nil then
+				config.AlwaysEnableMod = AlwaysEnableMod
+			end
+			return config
 		end
 	end
 
 	function luajit_config:WriteConfig(modmain_path)
 		if not TheNet:IsDedicated() then
-			self.data = self:create(modmain_path, GetModConfigData("DisableJITWhenServer"),
-				GetModConfigData("AlwaysEnableMod"))
+			local DisableJITWhenServer = GetModConfigData("DisableJITWhenServer")
+			local AlwaysEnableMod = GetModConfigData("AlwaysEnableMod")
+			self.data = self:create(modmain_path, DisableJITWhenServer, AlwaysEnableMod)
 			self:write_file(self.data)
 		end
 	end

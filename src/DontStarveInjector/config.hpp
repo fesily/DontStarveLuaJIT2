@@ -83,9 +83,9 @@ struct InjectorConfig {
         operator T() const;
     };
 
-    template<typename T>
+    template<typename T, T default_value = T{}>
     struct EnvOrCmdOptEnum : public EnvOrCmdOptValue {
-        mutable T value{};
+        mutable T value = default_value;
         operator T() const;
     };
 
@@ -95,6 +95,8 @@ struct InjectorConfig {
     const EnvOrCmdOptValue name{#name};
 #define ENV_OR_CMD_OPT_ENUM(_enum, name) \
     const EnvOrCmdOptEnum<_enum> name{#name};
+#define ENV_OR_CMD_OPT_ENUM1(_enum, default_value, name) \
+    const EnvOrCmdOptEnum<_enum, default_value> name{#name};
 #define ENV_OR_CMD_OPT_INT_VALUE(name) \
     const EnvOrCmdOptIntValue<int> name{#name};
 
@@ -111,7 +113,7 @@ struct InjectorConfig {
     ENV_OR_CMD_OPT_FLAG(disable_lua_debugger_code_patch); // disable lua debugger code patch, only work when enable_lua_debugger enabled
     ENV_OR_CMD_OPT_FLAG(AppVersionDevPatch);    // for developer, always treat app version as dev, so that can use dev code path
 
-    ENV_OR_CMD_OPT_ENUM(DstAngleBackend, DST_ANGLE_BACKEND); // specify ANGLE default platform, can be d3d11(default), d3d9, gl, vulkan
+    ENV_OR_CMD_OPT_ENUM1(DstAngleBackend, DstAngleBackend::Unknown, DST_ANGLE_BACKEND); // specify ANGLE default platform, can be d3d11(default), d3d9, gl, vulkan
     ENV_OR_CMD_OPT_VALUE(lua_vm_type);     // specify lua vm type, can be lua51, luajit, or game, default is luajit
 
 #undef ENV_OR_CMD_OPT_VALUE
@@ -139,8 +141,8 @@ InjectorConfig::EnvOrCmdOptIntValue<T, default_value>::operator T() const {
     return value;
 }
 
-template<typename T>
-InjectorConfig::EnvOrCmdOptEnum<T>::operator T() const {
+template<typename T, T default_value>
+InjectorConfig::EnvOrCmdOptEnum<T, default_value>::operator T() const {
     if (has_cached) return value;
     const char *str_value = static_cast<const char *>(static_cast<const EnvOrCmdOptValue&>(*this));
     if (str_value == nullptr || str_value[0] == '\0') {

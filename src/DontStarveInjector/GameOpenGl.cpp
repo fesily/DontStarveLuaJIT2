@@ -92,17 +92,13 @@ namespace {
 
     static bool IsVulkanPlatformRequested() {
         static bool result = []() {
-            DstAngleBackend backend = InjectorConfig::instance()->DST_ANGLE_BACKEND;
-            if (backend == DstAngleBackend::Auto) {
-                const auto platform = GetEnvironmentValue("ANGLE_DEFAULT_PLATFORM");
-                if (!platform.empty())
-                    return _stricmp(platform.c_str(), "vulkan") == 0;
+            DstAngleBackend backend = DstAngleBackend::Auto;
+            if (auto configs = GameJitModConfig::instance(); configs) {
+                backend = from_string(configs->AngleBackend);
             }
-            auto configs = GameJitModConfig::instance();
-            if (configs)
-                backend = from_string(configs->angle_backend);
-            if (backend != DstAngleBackend::Auto) 
+            if (backend != DstAngleBackend::Auto && backend != DstAngleBackend::Unknown) {
                 SetEnvironmentVariableA("ANGLE_DEFAULT_PLATFORM", to_string(backend).data());
+            }
             return backend == DstAngleBackend::Vulkan;
         }();
         return result;
@@ -428,6 +424,10 @@ void InitGameOpenGl() {
         return;
     }
     if (!InjectorCtx::instance()->DontStarveInjectorIsClient) {
+        return;
+    }
+    auto gameJitModConfig = GameJitModConfig::instance();
+    if (!gameJitModConfig || from_string(gameJitModConfig->AngleBackend) == DstAngleBackend::Auto) {
         return;
     }
 
