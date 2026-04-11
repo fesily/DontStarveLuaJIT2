@@ -324,7 +324,7 @@ inline void* hooked_CreateVB(void* renderer, eUsageType usage, uint32_t stride,
 // Phase 1: Release hook — pool the VB instead of destroying it
 // Only pool STREAM_DRAW buffers — STATIC_DRAW (UI, ocean) must go through normal release
 inline void hooked_ReleaseVB(void* resourceMgr, uint32_t handle) {
-    if (g_enableBufferPool && g_GetResource) {
+    if (g_enableBufferPool && g_GetResource && g_IsRenderThread && g_IsRenderThread()) {
         auto* hwBuf = reinterpret_cast<HWBuffer*>(g_GetResource(resourceMgr, handle));
         if (hwBuf && hwBuf->usageType == eUsageType::STREAM_DRAW
             && g_vbPool.release(handle, hwBuf->stride, hwBuf->count))
