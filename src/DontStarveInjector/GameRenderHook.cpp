@@ -426,6 +426,17 @@ void InstallRenderHooks() {
 }
 
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable) {
+    if (!enable && render_hook::g_enableBufferPool) {
+        // Drain the pool to avoid leaking GPU buffers when disabling at runtime.
+        if (render_hook::original_ReleaseVB && render_hook::g_renderer) {
+            void* vbMgr = *reinterpret_cast<void**>(
+                reinterpret_cast<char*>(render_hook::g_renderer) + render_hook::kVBResourceMgrOffset);
+            if (vbMgr) {
+                render_hook::g_vbPool.drainAll(vbMgr, render_hook::original_ReleaseVB);
+                spdlog::info("[RenderHook] VB Pool drained on disable");
+            }
+        }
+    }
     render_hook::g_enableBufferPool = enable;
     spdlog::info("[RenderHook] VB Pool {}", enable ? "enabled" : "disabled");
 }
