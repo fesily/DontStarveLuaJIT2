@@ -1184,8 +1184,11 @@ DONTSTARVEINJECTOR_GAME_API void *DS_LUAJIT_EntityNetWorkExtension_Register(void
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_SetNextRpcInfo(std::optional<PacketPriority> packetPriority, std::optional<PacketReliability> reliability, std::optional<char> orderingChannel);
 DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_profiler(int en);
+#ifdef _WIN32
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable);
-
+#else
+static void DS_LUAJIT_set_vbpool_enabled(bool enable) {};
+#endif
 // export DONTSTARVEINJECTOR_GAME_API functions to lua module
 int luaopen_GameInjector(lua_State* L) {
     sol::state_view lua(L);
