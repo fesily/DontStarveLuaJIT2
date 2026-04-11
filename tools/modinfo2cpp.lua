@@ -96,7 +96,7 @@ for index, configuration_option in ipairs(configuration_options) do
     end
     options_string = options_string .. "}"
     print("  Options String: " .. options_string)
-    local option_context = ([[ModConfigurationOption<%s,%d> %s = {"%s", %s, %s};]]):format(cpp_data_type, cpp_data_N,
+    local option_context = ([[constexpr ModConfigurationOption<%s,%d> %s = {"%s", %s, %s};]]):format(cpp_data_type, cpp_data_N,
         cpp_data_Name, cpp_data_Name, cast_to_cpp_string(configuration_option.default), options_string)
     context = context .. "\n" .. option_context
     ::continue::

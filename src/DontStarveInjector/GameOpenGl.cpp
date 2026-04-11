@@ -6,6 +6,7 @@
 #include "util/module.hpp"
 #include "angle_iat_generated.hpp"
 #include "gameModConfig.hpp"
+#include "GameRenderHook.hpp"
 
 #include <Windows.h>
 #include <spdlog/spdlog.h>
@@ -433,6 +434,7 @@ void InitGameOpenGl() {
 
     EnsureVulkanLayerDisableEnvironment();
     RebindMainModuleAngleImports();
+    render_hook::SetRenderHookGlFunctionsWithNew();
 
     g_angle_egl_initialized = true;
 }

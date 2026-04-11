@@ -52,3 +52,4 @@ Mod/scripts/jit
 .venv/
 cmake/GameDir.cmake
 Mod/**/*.dll
+Mod/mod.manifest
