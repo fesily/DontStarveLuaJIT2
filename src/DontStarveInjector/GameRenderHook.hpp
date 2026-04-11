@@ -7,4 +7,6 @@ void InstallRenderHooks();
 namespace render_hook {
     void SetRenderHookGlFunctionsWithNew();
 }
+#else
+inline void InstallRenderHooks() {}
 #endif
