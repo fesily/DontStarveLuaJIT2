@@ -26,7 +26,6 @@ set(SOURCES
         GameSignature.cpp
         GameNetwork.cpp
         GameOpenGl.cpp
-        GameRenderHook.cpp
         config.cpp
         GameLuaInjectFramework.c
         lua_debugger_helper.cpp
@@ -45,6 +44,7 @@ else()
         Progress.cpp
         #profiler.cpp
         GameLua.def
+        GameRenderHook.cpp
     )
 endif()
 
