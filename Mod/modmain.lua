@@ -767,6 +767,9 @@ local function main()
 
 			local mod_namespace_id_channel = {}
 			local function get_mod_channel(id_table)
+				if type(id_table) == "number" then
+					return id_table % 32
+				end
 				mod_namespace_id_channel[id_table.namespace] = mod_namespace_id_channel[id_table.namespace] or {}
 				local mod_namespace = mod_namespace_id_channel[id_table.namespace]
 				if mod_namespace[id_table.id] == nil then
