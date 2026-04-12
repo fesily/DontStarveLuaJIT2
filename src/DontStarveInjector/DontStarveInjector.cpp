@@ -15,6 +15,7 @@
 #include "GameLua.hpp"
 #include "GameSteam.hpp"
 #include "GameNetwork.hpp"
+#include "GameRenderHook.hpp"
 #include <spdlog/spdlog.h>
 
 #ifdef _WIN32
@@ -297,12 +298,10 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     unloadlib(lua51);
     auto &val = res.value();
     ReplaceLuaModule(mainPath, val.signatures, val.exports);
-#if 0
-    RedirectOpenGLEntries();
-#endif
     replace_game_branch_flag_to_dev(mainPath);
 
     LoadGameModConfig();
+    InstallRenderHooks();
     GameNetWorkHookRpc4();
     DisableScriptZip();
 }

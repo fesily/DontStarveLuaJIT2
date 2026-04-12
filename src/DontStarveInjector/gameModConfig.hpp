@@ -24,6 +24,7 @@ struct GameJitModConfig {
     bool AlwaysEnableMod = false;
     bool DisableJITWhenServer = false;
     bool EnabledGenGC = false;
+    bool EnableVBPool = false;
 
     GameJitConfigSource modmain_path_source = GameJitConfigSource::none;
     GameJitConfigSource modname_source = GameJitConfigSource::none;
@@ -33,6 +34,7 @@ struct GameJitModConfig {
     GameJitConfigSource AlwaysEnableModSource = GameJitConfigSource::none;
     GameJitConfigSource DisableJITWhenServerSource = GameJitConfigSource::none;
     GameJitConfigSource EnabledGenGCSource = GameJitConfigSource::none;
+    GameJitConfigSource EnableVBPoolSource = GameJitConfigSource::none;
 
     GameLuaType GetLuaVmType() const {
         if (EnabledGenGC) {

@@ -680,9 +680,14 @@ std::optional<GameJitModConfig> GameJitModConfig::instance() {
     return mod_config_options;
 }
 
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable);
+
 extern "C" void LoadGameModConfig() {
-    (void) GameJitModConfig::instance();
 #ifdef _WIN32
+    auto config = GameJitModConfig::instance();
+    if (config && config->EnableVBPool) {
+        DS_LUAJIT_set_vbpool_enabled(true);
+    }
     repalce_set_thread_name();
     InitGameOpenGl();
 #endif

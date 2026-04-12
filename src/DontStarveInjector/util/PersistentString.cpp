@@ -140,7 +140,7 @@ std::expected<std::string, std::string> GetPersistentString(const std::string_vi
     if (uncompress((Bytef *) original_buffer.data(), &original_len, body, head->zlib_len) != Z_OK) {
         return std::unexpected("uncompress error");
     }
-    original_buffer = std::filesystem::path((char8_t*)original_buffer.c_str()).string();
+    original_buffer.resize(original_len);
     return original_buffer;
 }
 

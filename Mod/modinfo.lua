@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "2.5.0"
+version = "2.6.0"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -325,6 +325,16 @@ configuration_options = {
         }),
         options = toggle,
         default = false,
+    },
+    {
+        name = "EnableVBPool",
+        label = translate({ en = "VB Pool (Preview)", zh = "顶点缓冲池 (预览)" }),
+        hover = translate({
+            en = "Reuse GPU vertex buffers to reduce allocation overhead. Preview feature.",
+            zh = "复用GPU顶点缓冲区以减少分配开销。预览功能。"
+        }),
+        options = toggle,
+        default = true,
     },
     {
         name = "AngleBackend",

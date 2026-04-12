@@ -825,7 +825,7 @@ local function main()
 				return old_SendModRPCToShard(self, id_table.namespace, id_table.id, ...)
 			end
 
-			if GetModConfigData("NetworkOpt") and false then
+			if GetModConfigData("NetworkOpt") then
 				function net_mt:SendRPCToServer(code, ...)
 					local c_channel = alloc_rpc_channel(code);
 					injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
@@ -1055,6 +1055,10 @@ local function main()
 				print("Reset fps by SetNetbookMode", targetfps)
 				TheSim:SetNetbookMode(false)
 			end
+		end
+
+		if GetModConfigData("EnableVBPool") == false then
+			GameInjector.DS_LUAJIT_set_vbpool_enabled(false)
 		end
 
 		-- if GetModConfigData("ClientNetWorkTick") then

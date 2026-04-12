@@ -44,6 +44,7 @@ else()
         Progress.cpp
         #profiler.cpp
         GameLua.def
+        GameRenderHook.cpp
     )
 endif()
 

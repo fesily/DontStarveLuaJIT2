@@ -1184,7 +1184,11 @@ DONTSTARVEINJECTOR_GAME_API void *DS_LUAJIT_EntityNetWorkExtension_Register(void
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_SetNextRpcInfo(std::optional<PacketPriority> packetPriority, std::optional<PacketReliability> reliability, std::optional<char> orderingChannel);
 DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_profiler(int en);
-
+#ifdef _WIN32
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable);
+#else
+static void DS_LUAJIT_set_vbpool_enabled(bool enable) {};
+#endif
 // export DONTSTARVEINJECTOR_GAME_API functions to lua module
 int luaopen_GameInjector(lua_State* L) {
     sol::state_view lua(L);
@@ -1205,6 +1209,7 @@ int luaopen_GameInjector(lua_State* L) {
     module.set_function("DS_LUAJIT_EntityNetWorkExtension_Register", &DS_LUAJIT_EntityNetWorkExtension_Register);
     module.set_function("DS_LUAJIT_SetNextRpcInfo", &DS_LUAJIT_SetNextRpcInfo);
     module.set_function("DS_LUAJIT_enable_framegc", &DS_LUAJIT_enable_framegc);
+    module.set_function("DS_LUAJIT_set_vbpool_enabled", &DS_LUAJIT_set_vbpool_enabled);
     //module.set_function("enable_profiler", &DS_LUAJIT_enable_profiler);
 
     lua["GameInjector"] = module;
@@ -1219,11 +1224,13 @@ GameJitModConfig make_default_game_mod_config() {
     resolved.LuaVmType = std::string{ModConfigurationOptions::LuaVmType.default_value};
     resolved.AlwaysEnableMod = ModConfigurationOptions::AlwaysEnableMod.default_value;
     resolved.DisableJITWhenServer = ModConfigurationOptions::DisableJITWhenServer.default_value;
+    resolved.EnableVBPool = ModConfigurationOptions::EnableVBPool.default_value;
 
     resolved.AngleBackendSource = GameJitConfigSource::modinfo_default;
     resolved.LuaVmTypeSource = GameJitConfigSource::modinfo_default;
     resolved.AlwaysEnableModSource = GameJitConfigSource::modinfo_default;
     resolved.DisableJITWhenServerSource = GameJitConfigSource::modinfo_default;
+    resolved.EnableVBPoolSource = GameJitConfigSource::modinfo_default;
     return resolved;
 }
 
@@ -1529,6 +1536,12 @@ bool LoadGameJitModConfigFromSaveFile(const std::filesystem::path &path, GameJit
 				resolved.EnabledGenGC = enabled;
 				resolved.EnabledGenGCSource = GameJitConfigSource::save_file;
 			}
+		} else if (option_name == ModConfigurationOptions::EnableVBPool.name) {
+			bool enabled = ModConfigurationOptions::EnableVBPool.default_value;
+			if (try_get_bool(saved_value, enabled)) {
+				resolved.EnableVBPool = enabled;
+				resolved.EnableVBPoolSource = GameJitConfigSource::save_file;
+			}
 		}
 	}
 	return true;
@@ -1582,6 +1595,12 @@ bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
 		resolved.DisableJITWhenServer = disabled;
 		resolved.DisableJITWhenServerSource = GameJitConfigSource::save_file;
 	}
+
+	bool vbpool_enabled = ModConfigurationOptions::EnableVBPool.default_value;
+	if (try_get_bool(options[ModConfigurationOptions::EnableVBPool.name].get<sol::object>(), vbpool_enabled)) {
+		resolved.EnableVBPool = vbpool_enabled;
+		resolved.EnableVBPoolSource = GameJitConfigSource::save_file;
+	}
 	return true;
 }
 
@@ -1615,6 +1634,10 @@ bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const Ga
 	auto enabled_gen_gc = find_or_create_option(lua, root, ModConfigurationOptions::EnabledGenGC.name);
 	enabled_gen_gc["saved"] = config.EnabledGenGC;
 	enabled_gen_gc["saved_client"] = config.EnabledGenGC;
+
+	auto enable_vbpool = find_or_create_option(lua, root, ModConfigurationOptions::EnableVBPool.name);
+	enable_vbpool["saved"] = config.EnableVBPool;
+	enable_vbpool["saved_client"] = config.EnableVBPool;
 
 	const auto serialized_after = serialize_lua_value(sol::make_object(lua, root), 0);
 	if (serialized_before == serialized_after) {
