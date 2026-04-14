@@ -1098,6 +1098,9 @@ local function main()
 		end
 
 		modimport("inject_server_only_mod")
+		if hasluajit and os_is_windows and TheWorld and TheWorld.ismastersim then
+			modimport("scripts/lag_compensation")
+		end
 	end
 
 	if GameInjector then

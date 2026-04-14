@@ -1189,6 +1189,8 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable);
 #else
 static void DS_LUAJIT_set_vbpool_enabled(bool enable) {};
 #endif
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_entity_get_raw_ptr(lua_State* L);
+
 // export DONTSTARVEINJECTOR_GAME_API functions to lua module
 int luaopen_GameInjector(lua_State* L) {
     sol::state_view lua(L);
@@ -1210,6 +1212,7 @@ int luaopen_GameInjector(lua_State* L) {
     module.set_function("DS_LUAJIT_SetNextRpcInfo", &DS_LUAJIT_SetNextRpcInfo);
     module.set_function("DS_LUAJIT_enable_framegc", &DS_LUAJIT_enable_framegc);
     module.set_function("DS_LUAJIT_set_vbpool_enabled", &DS_LUAJIT_set_vbpool_enabled);
+    module.set_function("DS_LUAJIT_entity_get_raw_ptr", &DS_LUAJIT_entity_get_raw_ptr);
     //module.set_function("enable_profiler", &DS_LUAJIT_enable_profiler);
 
     lua["GameInjector"] = module;

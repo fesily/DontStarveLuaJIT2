@@ -45,6 +45,7 @@ else()
         #profiler.cpp
         GameLua.def
         GameRenderHook.cpp
+        GameSimHook.cpp
     )
 endif()
 
