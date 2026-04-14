@@ -248,6 +248,7 @@ static void __fastcall hooked_SendBitStream(
     // G4: Queue cap — evict oldest if at limit
     if (g_queue.size() >= 2048) {
         g_queue.pop_front();
+        ++g_sim.packets_dropped;
     }
 
     // Enqueue
