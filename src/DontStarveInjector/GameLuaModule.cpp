@@ -1191,10 +1191,11 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_net_sim_enable(bool enable);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_net_sim_set(uint32_t delay_ms, uint32_t jitter_ms, uint32_t loss_pct);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_net_sim_update();
 DONTSTARVEINJECTOR_GAME_API const NetSimStats* DS_LUAJIT_net_sim_get_stats();
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_entity_get_raw_ptr(lua_State* L);
 #else
 static void DS_LUAJIT_set_vbpool_enabled(bool enable) {};
+static int DS_LUAJIT_entity_get_raw_ptr(lua_State* L) { return 0; };
 #endif
-DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_entity_get_raw_ptr(lua_State* L);
 
 // export DONTSTARVEINJECTOR_GAME_API functions to lua module
 int luaopen_GameInjector(lua_State* L) {
