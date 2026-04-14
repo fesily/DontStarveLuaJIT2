@@ -385,6 +385,14 @@ configuration_options = {
             { description = translate({ en = "on", zh = "开启" }), data = "on" },
         },
         default = 'off'
-    }
+    },
+    AddSection(translate({ en = "Network Simulation", zh = "网络模拟" })),
+    {
+        name = "EnableNetSim",
+        label = translate({ en = "Enable Network Simulator", zh = "启用网络模拟器" }),
+        hover = translate({ en = "Simulate packet delay/jitter/loss (client-side, Win x64 only)", zh = "模拟网络延迟/抖动/丢包（仅客户端，仅Win x64）" }),
+        options = toggle,
+        default = false,
+    },
 }
 --restart_required = true
