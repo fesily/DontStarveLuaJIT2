@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "2.6.0"
+version = "2.7.0"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -339,8 +339,9 @@ configuration_options = {
             zh = "复用GPU顶点缓冲区以减少分配开销。预览功能。"
         }),
         options = toggle,
-        default = true,
+        default = false,
         disabled_value = false,
+        require_restart = true,
         disabled_by = disable_by_non_win,
     },
     {
@@ -351,7 +352,7 @@ configuration_options = {
             zh = "在空间查询前外推远程玩家位置。仅服务端生效，仅支持 Win x64。"
         }),
         options = toggle,
-        default = true,
+        default = false,
         disabled_value = false,
         disabled_by = disable_by_non_win or disable_by_lua51,
     },
