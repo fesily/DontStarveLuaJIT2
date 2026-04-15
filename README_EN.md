@@ -9,6 +9,13 @@
 Make sure to back up your saves! There is no guarantee that there are no bugs!  
 Note that on dedicated servers, the `Disable JIT on Server` option in the settings is invalid; you should just remove the luajit mod to start the server.
 
+## Save Paths
+
+- Windows: `~/Documents/Klei/DoNotStarveTogether`
+- macOS: `~/Documents/Klei/DoNotStarveTogether`
+- Linux: `~/.klei/DoNotStarveTogether`
+- When a dedicated server is launched with `-persistent_storage_root APP:Klei/`, it expands to `~/Documents/Klei` on Windows and macOS, and to `~/.klei` on Linux.
+
 # Roadmap
 
 ## Don't Starve Together

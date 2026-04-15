@@ -357,6 +357,10 @@ void InstallRenderHooks() {
 #ifndef _WIN32
     return;
 #endif
+    if (!InjectorCtx::instance()->DontStarveInjectorIsClient) {
+        spdlog::info("[RenderHook] not in client process, skipping render hooks");
+        return;
+    }
     using namespace render_signatures;
     using namespace render_hook;
 

@@ -638,23 +638,79 @@ Extends cSerializableEntityComponent(16 bytes) + cBBoxProvider(vtable @0x10). Co
 | 0xCC | 4 | ptr | pSymbolExchangeTree | std::map<uint,pair<uint,uint>>* |
 
 ### AnimNode Internal Layout (0x15C bytes, accessed via pAnimNode)
-Key offsets within AnimNode:
-- +0x48: layer/orientation (uint)
-- +0x4C: sort order byte
-- +0x94: animation subobject (+0x14=frame count, +0x20=duration)
-- +0xBC: current anim time
-- +0xC0/0xC4: scale X/Y
-- +0xC8: depth bias (at decimal 200)
-- +0xDC/0xE0: vector<cHashedString> hidden layers (begin/end)
-- +0xE8/0xEC: vector<cHashedString> hidden symbols (begin/end)
-- +0xF4/0xF5: depth test/write bytes
-- +0xF8: sort order float
-- +0xFC: add colour, +0x100: mult colour
-- +0x110: _Rb_tree symbol overrides
-- +0x124: depth write flag
-- +0x128: rotation float
-- +0x12C (decimal 300): light override float
-- +0x130/0x134/0x138: final offset X/Y/Z (erosion params)
+
+| Offset | Type | Name | Notes |
+|--------|------|------|-------|
+| +0x48 | uint8_t | layer | 3-bit serialized |
+| +0x4C | uint8_t | sortOrderByte | 8-bit, vtable+0 write |
+| +0x94 | obj | animSubobject | +0x14=frame count, +0x20=duration |
+| +0xBC | float | currentAnimTime | |
+| +0xC0 | float | scaleX | mirrors cAnimStateComponent.fScaleX |
+| +0xC4 | float | scaleY | mirrors cAnimStateComponent.fScaleY |
+| +0xC8 | float | depthBias | decimal 200 |
+| +0xCC | float | lightOverride | decimal 300 (NOTE: b5 said +0xC8=lightOverride but Deserialize writes 300=0x12C; confirm) |
+| +0xDC | ptr | hiddenLayers_begin | vector<cHashedString> |
+| +0xE0 | ptr | hiddenLayers_end | |
+| +0xE8 | ptr | hiddenSymbols_begin | vector<cHashedString> |
+| +0xEC | ptr | hiddenSymbols_end | |
+| +0xF4 | bool | bDepthTestEnabled | |
+| +0xF5 | bool | bDepthWriteEnabled | |
+| +0xF8 | float | sortOrder | vtable+8 write |
+| +0xFC | uint | dwAddColour | RGBA |
+| +0x100 | — | → ApplyMultColour() | |
+| +0x110 | _Rb_tree | symbolOverrideTree | begin/end/size at 0x114/0x118/0x11C/0x120 |
+| +0x124 | uint8_t | orientation | 1-bit serialized |
+| +0x128 | float | rotation | |
+| +0x12C | float | lightOverride | decimal 300 |
+| +0x130 | float | finalOffsetX | mirrors cAnimStateComponent.fFinalOffsetX |
+| +0x134 | float | finalOffsetY | |
+| +0x138 | float | finalOffsetZ | |
+
+### Deserialize / Serialize — Network Sync Attributes
+
+**Function addresses**: Serialize=0x2c39e (578 lines), Deserialize=0x2d470 (680 lines)
+
+**DirtyFlags computation**: `uVar11 = dwCurrentDirtyFlags | (param_2 ? dwPristineDirtyFlags : 0)`
+
+**Deserialization order** (complete, 680-line analysis):
+
+| DirtyBit | Payload | Target Field(s) | Side Effects |
+|----------|---------|-----------------|--------------|
+| 0x001 | 2-bit PlayMode | `nEPlayMode` | — |
+| 0x002 | 32-bit hash | `dwAnimHash` | → OnAnimChanged |
+| 0x004 | 32-bit hash | `dwDeserializedAnimHash` | — |
+| 0x008 | 32-bit hash | `dwBuildHash` + `dwSkinHash` | → HandleClientBuildOverrides |
+| 0x010 | 32-bit hash | `dwBankHash` | → OnAnimChanged |
+| always | 1-bit | `bHidden` | — |
+| 0x040 | 5-bit count + entries (0x60-bit each) | `pSymbolExchangeTree` | update symbol override RbTree |
+| 0x080 | 5-bit count + 32-bit hashes | `pAnimNode+0xDC/0xE0` (hiddenLayers) | — |
+| (next) | 5-bit count + 32-bit hashes | `pAnimNode+0xE8/0xEC` (hiddenSymbols) | — |
+| 0x300 | 32-bit×2 (X+Y) | `fScaleX`/`fScaleY` → `pAnimNode+0xC0/0xC4` | — |
+| 0x400 | 3-bit | `pAnimNode+0x48` (layer) | — |
+| 0x800 | 1-bit | `pAnimNode+0x124` (orientation) | — |
+| 0x1000 | 32-bit float | `pAnimNode+0x128` (rotation) | — |
+| 0x2000 | 8-bit (vtable+0) | `pAnimNode+0x4C` (sortOrderByte) | — |
+| 0x4000 | 32-bit (vtable+8) | `pAnimNode+0xF8` (sortOrder float) | — |
+| 0x8000 | 32-bit float | `fDeltaTimeMultiplier` | — |
+| always | 1-bit | `bRayTestOnBB` | — |
+| 0x20000 | RGBA 32-bit | `dwRgbaAddColour` → `pAnimNode+0xFC` | — |
+| 0x40000 | RGBA 32-bit | `dwRgbaMultColour` → `pAnimNode+0x100` | → ApplyMultColour() |
+| 0x80000 | 32-bit hash | `dwOverrideBuildHash` | → ApplyBloomEffectHandle |
+| always | 1-bit bool | `fHauntStrength` (0 or const) | — |
+| 0x100000 | 32-bit float | `pAnimNode+0x12C` (lightOverride) | — |
+| 0x200000 | Vector3 (3×32-bit) | `fFinalOffsetX/Y/Z` → `pAnimNode+0x130/0x134/0x138` | — |
+| (next) | 32-bit float | `pAnimNode+0xC8` (depthBias) | — |
+| always | 1-bit | `pAnimNode+0xF4` (bDepthTestEnabled) | — |
+| always | 1-bit | `pAnimNode+0xF5` (bDepthWriteEnabled) | — |
+| (next bit) | 4×32-bit AABB | `fBBMinX/Y`, `fBBMaxX/Y`; sets `bManualHitRegion=1` | — |
+| (next) | 32-bit float | `fAnimTime` (only if param_3==false) | — |
+
+**Else-branch (full/initial sync)**:
+1. Read 2-bit PlayMode → `nEPlayMode`
+2. If BitStream has remaining bits + ReadBit==1: read 32-bit → `dwQueuedAnimHash`
+3. If param_3==false: clear anim queue, `dwAnimHash=dwQueuedAnimHash`, → OnAnimChanged; if PlayMode≠2 and not loop-replaying: `fAnimTime=0.0`
+
+**param_3 semantics**: "ignore-apply" flag — when true, AnimTime/PlayMode are not applied (prevents overriding local client state during smooth interpolation).
 
 ---
 

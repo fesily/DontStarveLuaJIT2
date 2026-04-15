@@ -243,6 +243,17 @@ struct GameLuaContextImpl : GameLuaContext {
         api._lua_pushcfunction(L, luaopen_GameInjector);
         api._lua_pushstring(L, "GameInjector");
         api._lua_call(L, 1, 0);
+
+        InjectorConfig::EnvOrCmdOptValue force_enable_opts{"force_enable_mods"};
+        auto force_enable_str = static_cast<const char *>(force_enable_opts);
+        if (force_enable_str && strlen(force_enable_str) > 0) {
+            std::string_view sv{force_enable_str};
+            std::vector<std::string_view> outs;
+            split_string(sv, outs, ';');
+            for (const auto &modname: outs) {
+                gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, modname);
+            }
+        }
     }
 
     virtual bool LoadLuaModule() {

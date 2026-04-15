@@ -32,4 +32,5 @@ Here's what I do to "generate" the `configuration_options` the _easy_ way:
     * Mac: `~/Documents/Klei/DoNotStarveTogether/{SteamAccountID}/Cluster_{N}/Master/modoverrides.lua`
     * Windows: `C:\Users\<your name>\Documents\Klei\DoNotStarveTogether\Cluster_{N}\Master\modoverrides.lua`
     * `Cluster_{N}`: `{N}` is the number of the slot you used to host the game (1-5)
+1. If you start a dedicated server with `-persistent_storage_root APP:Klei/`, it resolves to the same platform root used above: `~/Documents/Klei` on macOS, `~/Documents/Klei` on Windows, and `~/.klei` on Linux.
 1. Open this file to see the settings, you may use it as-is! Just paste it into `DSTClusterConfig/mods/modoverrides.lua` before starting up your server!
