@@ -93,6 +93,21 @@ function _M.forceEnableLuaMod(en, modname)
                 end
             end
         end)
+        _M.inject_module_text("modindex", function()
+            if not KnownModIndex then return end
+            local old_env = getfenv(KnownModIndex.InitializeModInfo)
+            local old_RunInEnvironment = old_env.RunInEnvironment or _G.RunInEnvironment
+            local new_env = setmetatable({
+                RunInEnvironment = function(fn, fnenv)
+                    fnenv.platform_info = {
+                        os = jit and jit.os or "Unknown",
+                        arch = jit and jit.arch or "Unknown",
+                    }
+                    return old_RunInEnvironment(fn, fnenv)
+                end
+            }, { __index = old_env })
+            setfenv(KnownModIndex.InitializeModInfo, new_env)
+        end)
     else
         _M.injectors[pattern] = nil
     end
