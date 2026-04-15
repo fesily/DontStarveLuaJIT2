@@ -45,8 +45,8 @@ icon_atlas = "modicon.xml"
 icon = "modicon.tex"
 
 mod_dependencies  = {
-    "buttonpicker",
-    "workshop-3317960157",
+    -- "buttonpicker",
+    -- "workshop-3317960157",
 }
 
 local toggle = {
@@ -353,7 +353,7 @@ configuration_options = {
         options = toggle,
         default = true,
         disabled_value = false,
-        disabled_by = disable_by_non_win_x64 or disable_by_lua51,
+        disabled_by = disable_by_non_win or disable_by_lua51,
     },
     {
         name = "AngleBackend",

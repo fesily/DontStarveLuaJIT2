@@ -1015,6 +1015,7 @@ local function main()
 					end
 				end
 			end
+			require "config_patch_bootstrap.bootstrap"()
 		end)
 	end
 
