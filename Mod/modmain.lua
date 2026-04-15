@@ -756,26 +756,23 @@ local function main()
 				return hash
 			end
 
-			local function alloc_rpc_channel(id_table)
-				if type(id_table) == "number" then
-					return id_table % 32
+			local function alloc_rpc_channel(namespace_or_code, id)
+				if type(namespace_or_code) == "number" then
+					return namespace_or_code % 32
 				end
-				local hash = hash_string(id_table.namespace)
-				hash = bit.bxor(hash, id_table.id + 0x9e3779b9 + bit.lshift(hash, 6) + bit.rshift(hash, 2))
+				local hash = hash_string(namespace_or_code)
+				hash = bit.bxor(hash, id + 0x9e3779b9 + bit.lshift(hash, 6) + bit.rshift(hash, 2))
 				return hash % 32
 			end
 
 			local mod_namespace_id_channel = {}
-			local function get_mod_channel(id_table)
-				if type(id_table) == "number" then
-					return id_table % 32
+			local function get_mod_channel(namespace, id)
+				mod_namespace_id_channel[namespace] = mod_namespace_id_channel[namespace] or {}
+				local mod_namespace = mod_namespace_id_channel[namespace]
+				if mod_namespace[id] == nil then
+					mod_namespace[id] = alloc_rpc_channel(namespace, id)
 				end
-				mod_namespace_id_channel[id_table.namespace] = mod_namespace_id_channel[id_table.namespace] or {}
-				local mod_namespace = mod_namespace_id_channel[id_table.namespace]
-				if mod_namespace[id_table.id] == nil then
-					mod_namespace[id_table.id] = alloc_rpc_channel(id_table)
-				end
-				return mod_namespace[id_table.id]
+				return mod_namespace[id]
 			end
 
 			net_mt.alloc_rpc_channel = alloc_rpc_channel
@@ -807,7 +804,7 @@ local function main()
 			function net_mt:SendModRPCToServer2(id_table, packetPriority, reliability, channel, ...)
 				packetPriority = packetPriority or default_packetPriority
 				reliability = reliability or default_reliability
-				channel = channel or get_mod_channel(id_table)
+				channel = channel or get_mod_channel(id_table.namespace, id_table.id)
 				injector.DS_LUAJIT_SetNextRpcInfo(packetPriority, reliability, channel)
 				return old_SendModRPCToServer(self, id_table.namespace, id_table.id, ...)
 			end
@@ -815,7 +812,7 @@ local function main()
 			function net_mt:SendModRPCToClient2(id_table, packetPriority, reliability, channel, ...)
 				packetPriority = packetPriority or default_packetPriority
 				reliability = reliability or default_reliability
-				channel = channel or get_mod_channel(id_table)
+				channel = channel or get_mod_channel(id_table.namespace, id_table.id)
 				injector.DS_LUAJIT_SetNextRpcInfo(packetPriority, reliability, channel)
 				return old_SendModRPCToClient(self, id_table.namespace, id_table.id, ...)
 			end
@@ -823,7 +820,7 @@ local function main()
 			function net_mt:SendModRPCToShard2(id_table, packetPriority, reliability, channel, ...)
 				packetPriority = packetPriority or default_packetPriority
 				reliability = reliability or default_reliability
-				channel = channel or get_mod_channel(id_table)
+				channel = channel or get_mod_channel(id_table.namespace, id_table.id)
 				injector.DS_LUAJIT_SetNextRpcInfo(packetPriority, reliability, channel)
 				return old_SendModRPCToShard(self, id_table.namespace, id_table.id, ...)
 			end
@@ -847,22 +844,22 @@ local function main()
 					return old_SendRPCToShard(self, code, ...)
 				end
 
-				function net_mt:SendModRPCToServer(id_table, ...)
-					local c_channel = get_mod_channel(id_table);
+				function net_mt:SendModRPCToServer(namespace, id, ...)
+					local c_channel = get_mod_channel(namespace, id);
 					injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
-					return old_SendModRPCToServer(self, id_table.namespace, id_table.id, ...)
+					return old_SendModRPCToServer(self, namespace, id, ...)
 				end
 
-				function net_mt:SendModRPCToClient(id_table, ...)
-					local c_channel = get_mod_channel(id_table);
+				function net_mt:SendModRPCToClient(namespace, id, ...)
+					local c_channel = get_mod_channel(namespace, id);
 					injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
-					return old_SendModRPCToClient(self, id_table.namespace, id_table.id, ...)
+					return old_SendModRPCToClient(self, namespace, id, ...)
 				end
 
-				function net_mt:SendModRPCToShard(id_table, ...)
-					local c_channel = get_mod_channel(id_table);
+				function net_mt:SendModRPCToShard(namespace, id, ...)
+					local c_channel = get_mod_channel(namespace, id);
 					injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
-					return old_SendModRPCToShard(self, id_table.namespace, id_table.id, ...)
+					return old_SendModRPCToShard(self, namespace, id, ...)
 				end
 			end
 		end
@@ -1018,6 +1015,7 @@ local function main()
 					end
 				end
 			end
+			require "config_patch_bootstrap.bootstrap"()
 		end)
 	end
 
@@ -1098,6 +1096,16 @@ local function main()
 		end
 
 		modimport("inject_server_only_mod")
+		if hasluajit and os_is_windows and TheWorld and TheWorld.ismastersim then
+			if GetModConfigData("EnableLagCompensation") then
+				modimport("scripts/lag_compensation")
+			end
+		end
+		if hasluajit and os_is_windows and TheWorld and not TheWorld.ismastersim then
+			if GetModConfigData("EnableNetSim") then
+				modimport("scripts/netsim")
+			end
+		end
 	end
 
 	if GameInjector then

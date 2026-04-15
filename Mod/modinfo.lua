@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "2.6.0"
+version = "2.7.0"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -45,8 +45,8 @@ icon_atlas = "modicon.xml"
 icon = "modicon.tex"
 
 mod_dependencies  = {
-    "buttonpicker",
-    "workshop-3317960157",
+    -- "buttonpicker",
+    -- "workshop-3317960157",
 }
 
 local toggle = {
@@ -86,6 +86,7 @@ local disable_by_lua51 = {
     values = { luavmtype._51, luavmtype.game },
     reason = translate({ en = "Not compatible with Lua 5.1 VM", zh = "与Lua 5.1虚拟机不兼容" }),
 }
+local disable_by_non_win = platform_info and not (platform_info.os == "Windows") or false
 configuration_options = {
     AddSection(translate({ en = "General Options", zh = "通用选项" })),
     {
@@ -164,6 +165,8 @@ configuration_options = {
         }),
         options = toggle,
         default = true,
+        disabled_value = false,
+        disabled_by = disable_by_non_win,
     },
     {
         name = "NetworkOptEntity",
@@ -174,6 +177,8 @@ configuration_options = {
         }),
         options = toggle,
         default = true,
+        disabled_value = false,
+        disabled_by = disable_by_non_win,
     },
     AddSection(translate({ en = "JitOptions", zh = "JIT选项" })),
     {
@@ -328,13 +333,28 @@ configuration_options = {
     },
     {
         name = "EnableVBPool",
-        label = translate({ en = "VB Pool (Preview)", zh = "顶点缓冲池 (预览)" }),
+        label = translate({ en = "VB Pool (Preview)", zh = "顶点缓冲池" }),
         hover = translate({
             en = "Reuse GPU vertex buffers to reduce allocation overhead. Preview feature.",
             zh = "复用GPU顶点缓冲区以减少分配开销。预览功能。"
         }),
         options = toggle,
-        default = true,
+        default = false,
+        disabled_value = false,
+        require_restart = true,
+        disabled_by = disable_by_non_win,
+    },
+    {
+        name = "EnableLagCompensation",
+        label = translate({ en = "Lag Compensation (Preview)", zh = "延迟补偿" }),
+        hover = translate({
+            en = "Extrapolate remote player positions before spatial queries. Server-side only, Win x64 only.",
+            zh = "在空间查询前外推远程玩家位置。仅服务端生效，仅支持 Win x64。"
+        }),
+        options = toggle,
+        default = false,
+        disabled_value = false,
+        disabled_by = disable_by_non_win or disable_by_lua51,
     },
     {
         name = "AngleBackend",
@@ -350,6 +370,8 @@ configuration_options = {
             { description = translate({ en = "D3D9", zh = "D3D9" }), data = "d3d9" },
         },
         default = "auto",
+        disabled_by = disable_by_non_win,
+        disabled_value = "auto",
         require_restart = true,
     },
     AddSection(translate({ en = "DebugOptions", zh = "调试选项" })),
@@ -385,6 +407,16 @@ configuration_options = {
             { description = translate({ en = "on", zh = "开启" }), data = "on" },
         },
         default = 'off'
-    }
+    },
+    AddSection(translate({ en = "Network Simulation", zh = "网络模拟" })),
+    {
+        name = "EnableNetSim",
+        label = translate({ en = "Enable Network Simulator", zh = "启用网络模拟器" }),
+        hover = translate({ en = "Simulate packet delay/jitter/loss (client-side, Win x64 only)", zh = "模拟网络延迟/抖动/丢包（仅客户端，仅Win x64）" }),
+        options = toggle,
+        default = false,
+        disabled_value = false,
+        disabled_by = disable_by_non_win,
+    },
 }
 --restart_required = true

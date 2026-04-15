@@ -1166,6 +1166,7 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 
 #include "gameModConfig.hpp"
 #include "util/PersistentString.hpp"
+#include "GameNetwork.hpp"
 
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_workshop_dir();
@@ -1186,9 +1187,37 @@ DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_profiler(int en);
 #ifdef _WIN32
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable);
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_net_sim_enable(bool enable);
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_net_sim_set(uint32_t delay_ms, uint32_t jitter_ms, uint32_t loss_pct);
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_net_sim_update();
+DONTSTARVEINJECTOR_GAME_API const NetSimStats* DS_LUAJIT_net_sim_get_stats();
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_entity_get_raw_ptr(lua_State* L);
 #else
 static void DS_LUAJIT_set_vbpool_enabled(bool enable) {};
+static int DS_LUAJIT_entity_get_raw_ptr(lua_State* L) { return 0; };
 #endif
+
+static std::optional<PacketPriority> parse_lua_packet_priority(const sol::optional<int>& value) {
+	if (!value) {
+		return std::nullopt;
+	}
+	return static_cast<PacketPriority>(*value);
+}
+
+static std::optional<PacketReliability> parse_lua_packet_reliability(const sol::optional<int>& value) {
+	if (!value) {
+		return std::nullopt;
+	}
+	return static_cast<PacketReliability>(*value);
+}
+
+static std::optional<char> parse_lua_ordering_channel(const sol::optional<int>& value) {
+	if (!value) {
+		return std::nullopt;
+	}
+	return static_cast<char>(*value);
+}
+
 // export DONTSTARVEINJECTOR_GAME_API functions to lua module
 int luaopen_GameInjector(lua_State* L) {
     sol::state_view lua(L);
@@ -1207,9 +1236,38 @@ int luaopen_GameInjector(lua_State* L) {
     module.set_function("DS_LUAJIT_enable_tracy", &DS_LUAJIT_enable_tracy);
     module.set_function("DS_LUAJIT_get_mod_version", &DS_LUAJIT_get_mod_version);
     module.set_function("DS_LUAJIT_EntityNetWorkExtension_Register", &DS_LUAJIT_EntityNetWorkExtension_Register);
-    module.set_function("DS_LUAJIT_SetNextRpcInfo", &DS_LUAJIT_SetNextRpcInfo);
+	module.set_function("DS_LUAJIT_SetNextRpcInfo", [](sol::optional<int> packetPriority, sol::optional<int> reliability, sol::optional<int> orderingChannel) {
+		DS_LUAJIT_SetNextRpcInfo(
+				parse_lua_packet_priority(packetPriority),
+				parse_lua_packet_reliability(reliability),
+				parse_lua_ordering_channel(orderingChannel));
+	});
     module.set_function("DS_LUAJIT_enable_framegc", &DS_LUAJIT_enable_framegc);
     module.set_function("DS_LUAJIT_set_vbpool_enabled", &DS_LUAJIT_set_vbpool_enabled);
+#ifdef _WIN32
+    module.set_function("DS_LUAJIT_net_sim_enable", &DS_LUAJIT_net_sim_enable);
+    module.set_function("DS_LUAJIT_net_sim_set", &DS_LUAJIT_net_sim_set);
+    module.set_function("DS_LUAJIT_net_sim_update", &DS_LUAJIT_net_sim_update);
+    module.set_function("DS_LUAJIT_net_sim_get_stats", [L = lua.lua_state()]() -> sol::table {
+        const NetSimStats* s = DS_LUAJIT_net_sim_get_stats();
+        sol::state_view sv(L);
+        sol::table t = sv.create_table();
+        if (s == nullptr) {
+            return t;
+        }
+        t["enabled"] = s->enabled;
+        t["delay_ms"] = s->delay_ms;
+        t["jitter_ms"] = s->jitter_ms;
+        t["loss_pct"] = s->loss_pct;
+        t["packets_total"] = s->packets_total;
+        t["packets_delayed"] = s->packets_delayed;
+        t["packets_dropped"] = s->packets_dropped;
+        t["packets_released"] = s->packets_released;
+        t["queue_depth"] = s->queue_depth;
+        return t;
+    });
+#endif
+    module.set_function("DS_LUAJIT_entity_get_raw_ptr", &DS_LUAJIT_entity_get_raw_ptr);
     //module.set_function("enable_profiler", &DS_LUAJIT_enable_profiler);
 
     lua["GameInjector"] = module;
@@ -1542,7 +1600,7 @@ bool LoadGameJitModConfigFromSaveFile(const std::filesystem::path &path, GameJit
 				resolved.EnableVBPool = enabled;
 				resolved.EnableVBPoolSource = GameJitConfigSource::save_file;
 			}
-		}
+        }
 	}
 	return true;
 }
@@ -1601,7 +1659,8 @@ bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
 		resolved.EnableVBPool = vbpool_enabled;
 		resolved.EnableVBPoolSource = GameJitConfigSource::save_file;
 	}
-	return true;
+
+    return true;
 }
 
 bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const GameJitModConfig &config) {
@@ -1639,7 +1698,7 @@ bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const Ga
 	enable_vbpool["saved"] = config.EnableVBPool;
 	enable_vbpool["saved_client"] = config.EnableVBPool;
 
-	const auto serialized_after = serialize_lua_value(sol::make_object(lua, root), 0);
+    const auto serialized_after = serialize_lua_value(sol::make_object(lua, root), 0);
 	if (serialized_before == serialized_after) {
 		return true;
 	}

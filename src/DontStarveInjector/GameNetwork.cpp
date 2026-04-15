@@ -10,7 +10,6 @@
 #include <slikenet/RPC4Plugin.h>
 #include <slikenet/ReplicaManager3.h>
 #include <optional>
-#include <mutex>
 #include <memory_resource>
 struct EntityNetWorkExtension {
     static constexpr auto vtb_length = 41;
@@ -190,24 +189,28 @@ static std::optional<PacketPriority> next_packetPriority;
 static std::optional<PacketReliability> next_reliability;
 static std::optional<char> next_orderingChannel;
 
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_SetNextRpcInfo(const std::optional<PacketPriority>& packetPriority, const std::optional<PacketReliability>& reliability, const std::optional<char>& orderingChannel) {
-    next_packetPriority = packetPriority;
-    next_reliability = reliability;
-    next_orderingChannel = orderingChannel;
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_SetNextRpcInfo(std::optional<PacketPriority> packetPriority, std::optional<PacketReliability> reliability, std::optional<char> orderingChannel) {
+    next_packetPriority = std::move(packetPriority);
+    next_reliability = std::move(reliability);
+    next_orderingChannel = std::move(orderingChannel);
 }
 
 static void ResetNextRpcInfo(GumInvocationContext *context) {
-    if (next_packetPriority) {
-        auto packetPriority = *next_packetPriority;
-        gum_invocation_context_replace_nth_argument(context, 3, (gpointer) packetPriority);
+    auto packetPriority = next_packetPriority;
+    auto reliability = next_reliability;
+    auto orderingChannel = next_orderingChannel;
+    next_packetPriority.reset();
+    next_reliability.reset();
+    next_orderingChannel.reset();
+
+    if (packetPriority) {
+        gum_invocation_context_replace_nth_argument(context, 3, (gpointer) (size_t) *packetPriority);
     }
-    if (next_reliability) {
-        auto reliability = *next_reliability;
-        gum_invocation_context_replace_nth_argument(context, 4, (gpointer) reliability);
+    if (reliability) {
+        gum_invocation_context_replace_nth_argument(context, 4, (gpointer) (size_t) *reliability);
     }
-    if (next_orderingChannel) {
-        auto orderingChannel = *next_orderingChannel;
-        gum_invocation_context_replace_nth_argument(context, 5, (gpointer) (size_t) orderingChannel);
+    if (orderingChannel) {
+        gum_invocation_context_replace_nth_argument(context, 5, (gpointer) (size_t) *orderingChannel);
     }
 }
 

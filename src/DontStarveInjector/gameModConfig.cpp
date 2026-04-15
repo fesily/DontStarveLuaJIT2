@@ -120,16 +120,7 @@ static ResolvedModIdentity build_mod_identity() {
     return identity;
 }
 
-static std::filesystem::path GetKleiSaveDataDir(std::string_view ownid) {
-#ifdef _WIN32
-    PWSTR documents_path = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DEFAULT, nullptr, &documents_path))) {
-        std::filesystem::path save_dir = documents_path;
-        CoTaskMemFree(documents_path);
-        save_dir = save_dir / "Klei" / "DoNotStarveTogether" / ownid;
-        return save_dir;
-    }
-#endif
+static std::filesystem::path GetHomeDir() {
     auto home = getenv("HOME");
     if (home == nullptr) {
         home = getenv("USERPROFILE");
@@ -137,8 +128,91 @@ static std::filesystem::path GetKleiSaveDataDir(std::string_view ownid) {
     if (home == nullptr) {
         return {};
     }
-    std::filesystem::path save_dir = home;
-    save_dir = save_dir / "Documents" / "Klei" / "DoNotStarveTogether" / ownid;
+    return std::filesystem::path{home};
+}
+
+static std::filesystem::path GetUserDocumentsDir() {
+#ifdef _WIN32
+    PWSTR documents_path = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DEFAULT, nullptr, &documents_path))) {
+        std::filesystem::path documents_dir = documents_path;
+        CoTaskMemFree(documents_path);
+        return documents_dir;
+    }
+#endif
+
+    const auto home_dir = GetHomeDir();
+    if (home_dir.empty()) {
+        return {};
+    }
+    return home_dir / "Documents";
+}
+
+static std::filesystem::path GetPlatformKleiRootDir() {
+#if defined(__linux__)
+    const auto home_dir = GetHomeDir();
+    if (home_dir.empty()) {
+        return {};
+    }
+    return home_dir / ".klei";
+#else
+    const auto documents_dir = GetUserDocumentsDir();
+    if (documents_dir.empty()) {
+        return {};
+    }
+    return documents_dir / "Klei";
+#endif
+}
+
+static std::filesystem::path GetAppStorageBaseDir(std::string_view relative_path = {}) {
+#if defined(__linux__)
+    const auto home_dir = GetHomeDir();
+    if (home_dir.empty()) {
+        return {};
+    }
+    if (relative_path.empty()) {
+        return home_dir;
+    }
+
+    const auto normalized = std::filesystem::path{relative_path}.generic_string();
+    if (normalized == "Klei") {
+        return home_dir / ".klei";
+    }
+    if (std::string_view{normalized}.starts_with("Klei/"sv)) {
+        return home_dir / std::filesystem::path{std::string{".klei/"}.append(normalized.substr(sizeof("Klei/") - 1))};
+    }
+    return home_dir / std::filesystem::path{relative_path};
+#else
+    const auto documents_dir = GetUserDocumentsDir();
+    if (documents_dir.empty()) {
+        return {};
+    }
+    if (relative_path.empty()) {
+        return documents_dir;
+    }
+    return documents_dir / std::filesystem::path{relative_path};
+#endif
+}
+
+static std::string_view GetDefaultPersistentStorageRoot() {
+#if defined(_WIN32) || defined(__APPLE__)
+    return "APP:Klei/"sv;
+#else
+    return ".klei/"sv;
+#endif
+}
+
+static std::filesystem::path GetKleiSaveDataDir(std::string_view ownid) {
+    const auto klei_root = GetPlatformKleiRootDir();
+    if (klei_root.empty()) {
+        return {};
+    }
+
+    auto save_dir = klei_root / "DoNotStarveTogether";
+    if (!ownid.empty()) {
+        save_dir /= ownid;
+    }
+    spdlog::info("resolved Klei save data dir for ownid '{}' to {}", ownid, save_dir.string());
     return save_dir;
 }
 
@@ -161,26 +235,6 @@ static std::string read_env_or_cmd_value(const char *key) {
     return buffer;
 }
 
-static std::filesystem::path GetUserStorageBaseDir() {
-#ifdef _WIN32
-    PWSTR documents_path = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DEFAULT, nullptr, &documents_path))) {
-        std::filesystem::path base = documents_path;
-        CoTaskMemFree(documents_path);
-        return base;
-    }
-#endif
-
-    auto home = getenv("HOME");
-    if (home == nullptr) {
-        home = getenv("USERPROFILE");
-    }
-    if (home == nullptr) {
-        return {};
-    }
-    return std::filesystem::path{home};
-}
-
 static std::filesystem::path GetPersistentStorageRootDir(std::string_view persist_root) {
     if (persist_root.empty()) {
         return {};
@@ -189,28 +243,25 @@ static std::filesystem::path GetPersistentStorageRootDir(std::string_view persis
     auto normalized = std::string{persist_root};
     constexpr auto app_prefix = "APP:"sv;
     if (std::string_view{normalized}.starts_with(app_prefix)) {
-        const auto base = GetUserStorageBaseDir();
-        if (base.empty()) {
-            return {};
-        }
-
         normalized.erase(0, app_prefix.size());
-        if (normalized.empty()) {
-            return base;
-        }
-        return base / std::filesystem::path{normalized};
+        const auto resolved_root = GetAppStorageBaseDir(normalized);
+        spdlog::info("resolved persistent storage root '{}' to {}", persist_root, resolved_root.string());
+        return resolved_root;
     }
 
     std::filesystem::path root{normalized};
     if (root.is_absolute()) {
+        spdlog::info("using absolute persistent storage root {}", root.string());
         return root;
     }
 
-    const auto base = GetUserStorageBaseDir();
+    const auto base = GetHomeDir();
     if (base.empty()) {
         return {};
     }
-    return base / root;
+    const auto resolved_root = base / root;
+    spdlog::info("resolved relative persistent storage root '{}' to {}", persist_root, resolved_root.string());
+    return resolved_root;
 }
 
 static void add_path_candidate(std::vector<std::filesystem::path> &candidates, const std::filesystem::path &candidate) {
@@ -283,7 +334,7 @@ static GameInfo GetServerGameInfo() {
     }
 
     if (game_info.persist_root.empty()) {
-        game_info.persist_root = ".klei/";
+        game_info.persist_root = std::string{GetDefaultPersistentStorageRoot()};
     }
     if (game_info.config_dir.empty()) {
         game_info.config_dir = "DoNotStarveTogether";
@@ -339,9 +390,12 @@ static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
     if (ictx->DontStarveInjectorIsClient) {
         auto mod_config_data = GetModConfigDataDir(std::to_string(ictx->steam_account_id));
         canonical_save_path = mod_config_data / GetModConfigDataFileName(identity.canonical_modname);
+        spdlog::info("resolved client mod config data dir to {}", mod_config_data.string());
+        spdlog::info("resolved canonical mod config save path to {}", canonical_save_path.string());
 
         for (const auto &alias: identity.aliases) {
             auto candidate = mod_config_data / GetModConfigDataFileName(alias);
+            spdlog::info("checking client mod config candidate {}", candidate.string());
             if (!std::filesystem::exists(candidate)) {
                 continue;
             }
@@ -361,7 +415,15 @@ static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
                                                            : (ictx->steam_account_id != 0 ? std::make_optional(std::to_string(ictx->steam_account_id))
                                                                                          : std::optional<std::string>{});
         const auto game_info = GetServerGameInfo();
-        for (const auto &candidate: GetServerModOverridesPaths(game_info, ownerdir_hint)) {
+        spdlog::info("resolved server game storage config: persist_root='{}', config_dir='{}', cluster='{}', shard='{}'",
+                     game_info.persist_root, game_info.config_dir, game_info.cluster_name, game_info.shared_name);
+        if (ownerdir_hint && !ownerdir_hint->empty()) {
+            spdlog::info("using server ownerdir hint '{}'", *ownerdir_hint);
+        }
+
+        const auto candidates = GetServerModOverridesPaths(game_info, ownerdir_hint);
+        for (const auto &candidate: candidates) {
+            spdlog::info("checking server mod overrides candidate {}", candidate.string());
             if (!std::filesystem::exists(candidate)) {
                 continue;
             }

@@ -11,9 +11,10 @@ GameLuaInjector = {
 local _M = GameLuaInjector
 
 function _M.inject_module_text(target_filename, afterload)
-    _M.injectors[target_filename] = {
-        afterload = afterload,
-    }
+    if not _M.injectors[target_filename] then
+        _M.injectors[target_filename] = {}
+    end
+    table.insert(_M.injectors[target_filename], { afterload = afterload })
 end
 
 function _M.relocation_file(target_filename, new_filename)
@@ -24,24 +25,26 @@ function _M.get(filename)
     return _M.injectors[filename]
 end
 
-local function do_inject(injector, m)
-    if not injector then
+local function do_inject(injector_list, m)
+    if not injector_list then
         return
     end
-    local afterload = injector.afterload
-    if afterload then
-        if type(afterload) == "function" then
-            xpcall(afterload, debug.traceback, m)
-        elseif type(afterload) == "string" then
-            local f, err = loadstring(afterload)
-            if f then
-                xpcall(f, debug.traceback, m)
-            else
-                print("[luajit] Error in afterload function: " .. err)
+    for _, entry in ipairs(injector_list) do
+        local afterload = entry.afterload
+        if afterload then
+            if type(afterload) == "function" then
+                xpcall(afterload, debug.traceback, m)
+            elseif type(afterload) == "string" then
+                local f, err = loadstring(afterload)
+                if f then
+                    xpcall(f, debug.traceback, m)
+                else
+                    print("[luajit] Error in afterload function: " .. err)
+                end
             end
         end
+        entry.afterload = nil
     end
-    injector.afterload = nil
 end
 
 local inited = false;
@@ -89,6 +92,21 @@ function _M.forceEnableLuaMod(en, modname)
                     print("[luajit] Force enable mod: " .. modname)
                 end
             end
+        end)
+        _M.inject_module_text("modindex", function()
+            if not KnownModIndex then return end
+            local old_env = getfenv(KnownModIndex.InitializeModInfo)
+            local old_RunInEnvironment = old_env.RunInEnvironment or _G.RunInEnvironment
+            local new_env = setmetatable({
+                RunInEnvironment = function(fn, fnenv)
+                    fnenv.platform_info = {
+                        os = jit and jit.os or "Unknown",
+                        arch = jit and jit.arch or "Unknown",
+                    }
+                    return old_RunInEnvironment(fn, fnenv)
+                end
+            }, { __index = old_env })
+            setfenv(KnownModIndex.InitializeModInfo, new_env)
         end)
     else
         _M.injectors[pattern] = nil

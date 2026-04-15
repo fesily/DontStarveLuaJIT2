@@ -11,6 +11,13 @@
 请务必备份您的存档，因为我们无法保证插件不会导致存档损坏！
 使用专用服务器开服需要注意，设置中`服务器禁用luajit`选项是无效的，你应该直接卸载luajit再启动服务器
 
+## 存档路径
+
+- Windows: `~/Documents/Klei/DoNotStarveTogether`
+- macOS: `~/Documents/Klei/DoNotStarveTogether`
+- Linux: `~/.klei/DoNotStarveTogether`
+- 专用服务器传入 `-persistent_storage_root APP:Klei/` 时，Windows 和 macOS 会展开到 `~/Documents/Klei`，Linux 会展开到 `~/.klei`
+
 # 计划
 
 ## Don't Starve Together
