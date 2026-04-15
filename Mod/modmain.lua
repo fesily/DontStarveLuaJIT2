@@ -1096,7 +1096,9 @@ local function main()
 
 		modimport("inject_server_only_mod")
 		if hasluajit and os_is_windows and TheWorld and TheWorld.ismastersim then
-			modimport("scripts/lag_compensation")
+			if GetModConfigData("EnableLagCompensation") then
+				modimport("scripts/lag_compensation")
+			end
 		end
 		if hasluajit and os_is_windows and TheWorld and not TheWorld.ismastersim then
 			if GetModConfigData("EnableNetSim") then

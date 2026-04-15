@@ -337,6 +337,18 @@ configuration_options = {
         default = true,
     },
     {
+        name = "EnableLagCompensation",
+        label = translate({ en = "Lag Compensation (Preview)", zh = "延迟补偿 (预览)" }),
+        hover = translate({
+            en = "Extrapolate remote player positions before spatial queries. Server-side only, Win x64 only.",
+            zh = "在空间查询前外推远程玩家位置。仅服务端生效，仅支持 Win x64。"
+        }),
+        options = toggle,
+        default = true,
+        disabled_value = false,
+        disabled_by = disable_by_lua51,
+    },
+    {
         name = "AngleBackend",
         label = translate({ en = "Rendering Engine", zh = "渲染后端" }),
         hover = translate({
