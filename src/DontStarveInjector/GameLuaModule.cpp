@@ -1197,6 +1197,27 @@ static void DS_LUAJIT_set_vbpool_enabled(bool enable) {};
 static int DS_LUAJIT_entity_get_raw_ptr(lua_State* L) { return 0; };
 #endif
 
+static std::optional<PacketPriority> parse_lua_packet_priority(const sol::optional<int>& value) {
+	if (!value) {
+		return std::nullopt;
+	}
+	return static_cast<PacketPriority>(*value);
+}
+
+static std::optional<PacketReliability> parse_lua_packet_reliability(const sol::optional<int>& value) {
+	if (!value) {
+		return std::nullopt;
+	}
+	return static_cast<PacketReliability>(*value);
+}
+
+static std::optional<char> parse_lua_ordering_channel(const sol::optional<int>& value) {
+	if (!value) {
+		return std::nullopt;
+	}
+	return static_cast<char>(*value);
+}
+
 // export DONTSTARVEINJECTOR_GAME_API functions to lua module
 int luaopen_GameInjector(lua_State* L) {
     sol::state_view lua(L);
@@ -1215,7 +1236,12 @@ int luaopen_GameInjector(lua_State* L) {
     module.set_function("DS_LUAJIT_enable_tracy", &DS_LUAJIT_enable_tracy);
     module.set_function("DS_LUAJIT_get_mod_version", &DS_LUAJIT_get_mod_version);
     module.set_function("DS_LUAJIT_EntityNetWorkExtension_Register", &DS_LUAJIT_EntityNetWorkExtension_Register);
-    module.set_function("DS_LUAJIT_SetNextRpcInfo", &DS_LUAJIT_SetNextRpcInfo);
+	module.set_function("DS_LUAJIT_SetNextRpcInfo", [](sol::optional<int> packetPriority, sol::optional<int> reliability, sol::optional<int> orderingChannel) {
+		DS_LUAJIT_SetNextRpcInfo(
+				parse_lua_packet_priority(packetPriority),
+				parse_lua_packet_reliability(reliability),
+				parse_lua_ordering_channel(orderingChannel));
+	});
     module.set_function("DS_LUAJIT_enable_framegc", &DS_LUAJIT_enable_framegc);
     module.set_function("DS_LUAJIT_set_vbpool_enabled", &DS_LUAJIT_set_vbpool_enabled);
 #ifdef _WIN32
