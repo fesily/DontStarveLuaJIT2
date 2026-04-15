@@ -78,6 +78,7 @@ AddSimPostInit(function()
 end)
 
 -- HUD overlay: shows live NetSim stats on the player HUD (client only)
+local Text = require "widgets/text"
 AddClassPostConstruct("screens/playerhud", function(self)
     local text = self.over_root:AddChild(Text(BODYTEXTFONT, 18))
     text:SetColour(1, 0.843, 0, 0.8)  -- #FFD700 at 80% opacity

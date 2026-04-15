@@ -60,6 +60,10 @@ static char* UnwrapEntity(void* ud) {
 
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_entity_get_raw_ptr(lua_State* L) {
     auto& api = GetGameLuaContext().api;
+    if (api._lua_type(L, 1) != LUA_TUSERDATA) {
+        api._lua_pushnil(L);
+        return 1;
+    }
     void* ud = api._lua_touserdata(L, 1);
     char* ent = UnwrapEntity(ud);
     if (ent) {
