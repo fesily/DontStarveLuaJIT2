@@ -1515,6 +1515,10 @@ static std::string serialize_lua_value(const sol::object &value, int indent) {
 	}
 }
 
+static std::string serialize_lua_chunk(const sol::object &value) {
+	return std::string{"return "}.append(serialize_lua_value(value, 0));
+}
+
 static sol::table find_or_create_option(sol::state &lua, sol::table root, std::string_view option_name) {
 	lua_Integer next_index = 1;
 	for (const auto &[key, value]: root) {
@@ -1666,12 +1670,12 @@ bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
 bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const GameJitModConfig &config) {
 	sol::state lua;
 	sol::table root = lua.create_table();
-	std::string serialized_before = "{}";
+	std::string serialized_before = "return {}";
 	if (std::filesystem::exists(path)) {
 		if (!load_save_config_table(path, lua, root)) {
 			return false;
 		}
-		serialized_before = serialize_lua_value(sol::make_object(lua, root), 0);
+		serialized_before = serialize_lua_chunk(sol::make_object(lua, root));
 	}
 
 	auto angle_backend = find_or_create_option(lua, root, ModConfigurationOptions::AngleBackend.name);
@@ -1698,7 +1702,7 @@ bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const Ga
 	enable_vbpool["saved"] = config.EnableVBPool;
 	enable_vbpool["saved_client"] = config.EnableVBPool;
 
-    const auto serialized_after = serialize_lua_value(sol::make_object(lua, root), 0);
+	const auto serialized_after = serialize_lua_chunk(sol::make_object(lua, root));
 	if (serialized_before == serialized_after) {
 		return true;
 	}
