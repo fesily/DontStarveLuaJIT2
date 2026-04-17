@@ -22,6 +22,7 @@
 #include "MemorySignature.hpp"
 #include "GameNetwork.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <chrono>
@@ -40,25 +41,38 @@
 // Internal types
 // ---------------------------------------------------------------------------
 
-// Minimal fake BitStream header matching RakNet x64 layout:
-//   offset  0  : int32_t numberOfBitsUsed
-//   offset  4  : int32_t numberOfBitsAllocated  (unused by us, set to same)
-//   offset  8  : uint8_t* data                  (pointer, 8 bytes on x64)
-// There are additional fields after offset 16 that we zero-init.
-// The callee (original_SendBitStream) only reads numberOfBitsUsed and data.
+static constexpr size_t kSystemAddressSize = 0x14;
+
+// Minimal fake BitStream header matching the validated Win64 RakNet layout:
+//   offset  0x00 : uint32_t numberOfBitsUsed
+//   offset  0x04 : uint32_t numberOfBitsAllocated
+//   offset  0x08 : uint32_t readOffset
+//   offset  0x0c : uint32_t padding / alignment
+//   offset  0x10 : uint8_t* data
+//   offset  0x18 : uint8_t copyData
+// The original send path only needs the header prefix above, but we keep extra
+// zeroed storage after it so incidental reads stay inside initialized memory.
 struct FakeBitStream {
-    int32_t  numberOfBitsUsed    = 0;
-    int32_t  numberOfBitsAllocated = 0;
-    uint8_t* data                = nullptr;
-    // Pad to a reasonable size so any innocent field reads don't AV.
-    // In practice the callee only reads the two fields above.
-    uint8_t  _pad[64]            = {};
+    uint32_t numberOfBitsUsed      = 0;
+    uint32_t numberOfBitsAllocated = 0;
+    uint32_t readOffset            = 0;
+    uint32_t reserved0             = 0;
+    uint8_t* data                  = nullptr;
+    uint8_t  copyData              = 0;
+    uint8_t  _pad[71]              = {};
 };
+
+static_assert(offsetof(FakeBitStream, numberOfBitsUsed) == 0x0);
+static_assert(offsetof(FakeBitStream, numberOfBitsAllocated) == 0x4);
+static_assert(offsetof(FakeBitStream, readOffset) == 0x8);
+static_assert(offsetof(FakeBitStream, data) == 0x10);
+static_assert(offsetof(FakeBitStream, copyData) == 0x18);
+static_assert(sizeof(FakeBitStream) >= 0x20);
 
 struct QueuedPacket {
     void*                this_ptr;       // ReliabilityLayer* (connection tracking)
     void*                socket_ptr;     // RakNetSocket2* — kept as opaque pointer
-    std::vector<uint8_t> sys_addr;       // deep copy of SystemAddress (136 bytes)
+    std::vector<uint8_t> sys_addr;       // deep copy of current send-path SystemAddress (20 bytes)
     std::vector<uint8_t> bitstream_data; // deep copy of BitStream data buffer
     int32_t              bits_used;      // numberOfBitsUsed from original BitStream
     void*                rnr;            // RakNetRandom* — opaque
@@ -71,7 +85,7 @@ struct QueuedPacket {
 // Win x64 calling convention:
 //   rcx  = ReliabilityLayer* this
 //   rdx  = RakNetSocket2*
-//   r8   = SystemAddress& (passed by ref, 136 bytes)
+//   r8   = SystemAddress& (passed by ref to the current 20-byte IPv4 record)
 //   r9   = BitStream*
 //   [rsp+0x28] = RakNetRandom*
 //   [rsp+0x30] = CCTimeType (uint64_t)
@@ -145,7 +159,9 @@ static void flush_packet(const QueuedPacket& pkt) {
     FakeBitStream fbs;
     fbs.numberOfBitsUsed     = pkt.bits_used;
     fbs.numberOfBitsAllocated = pkt.bits_used;
+    fbs.readOffset = 0;
     fbs.data = const_cast<uint8_t*>(pkt.bitstream_data.data());
+    fbs.copyData = 0;
 
     // Reconstruct SystemAddress: copy raw bytes into local buffer, pass by ptr
     std::vector<uint8_t> sys_addr_local(pkt.sys_addr);
@@ -216,9 +232,10 @@ static void __fastcall hooked_SendBitStream(
     }
 
     // Deep-copy BitStream data buffer (G2)
-    const int32_t bits_used = *reinterpret_cast<const int32_t*>(bitStream);
-    const uint8_t* src_data = *reinterpret_cast<const uint8_t* const*>(reinterpret_cast<const uint8_t*>(bitStream) + 8);
-    const int byte_count    = (bits_used + 7) / 8;
+    const auto* source_bitstream = reinterpret_cast<const FakeBitStream*>(bitStream);
+    const int32_t bits_used = static_cast<int32_t>(source_bitstream->numberOfBitsUsed);
+    const uint8_t* src_data = source_bitstream->data;
+    const int byte_count    = (bits_used > 0) ? ((bits_used + 7) / 8) : 0;
 
     std::vector<uint8_t> bs_copy;
     if (byte_count > 0 && src_data != nullptr) {
@@ -226,10 +243,10 @@ static void __fastcall hooked_SendBitStream(
         std::memcpy(bs_copy.data(), src_data, static_cast<size_t>(byte_count));
     }
 
-    // Deep-copy SystemAddress (136 bytes)
-    std::vector<uint8_t> sa_copy(136);
+    // Deep-copy the current send-path SystemAddress record.
+    std::vector<uint8_t> sa_copy(kSystemAddressSize);
     if (sysAddr != nullptr) {
-        std::memcpy(sa_copy.data(), sysAddr, 136);
+        std::memcpy(sa_copy.data(), sysAddr, kSystemAddressSize);
     }
 
     // Calculate release time with jitter
