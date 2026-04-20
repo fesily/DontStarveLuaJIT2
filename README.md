@@ -369,6 +369,7 @@ end
 | 星*☆     | 100RMB | | |
 | 18**30    | 50RMB| 无 | |
 | 33**66    | 30RMB | 辅助安装| |
+| 朝*花     | 50RMB | 无| |
 
 # 捐赠方式
 ![weixin_zanshang](https://github.com/user-attachments/assets/9f6485ce-5254-4207-a514-89bd02c332ce)
