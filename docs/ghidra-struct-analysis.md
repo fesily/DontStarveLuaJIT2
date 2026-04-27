@@ -28,6 +28,29 @@
   - [GroundCreepEntity (24 bytes / 0x18)](#groundcreepentity-24-bytes--0x18)
   - [GroundCreep (213 bytes / 0xD5)](#groundcreep-213-bytes--0xd5)
   - [TileGrid (28 bytes / 0x1C)](#tilegrid-28-bytes--0x1c)
+  - [TDataCacheAnimNode (248 bytes / 0xF8)](#tdatacacheanimnode-248-bytes--0xf8)
+  - [SceneGraphNode (145 bytes / 0x91)](#scenegraphnode-145-bytes--0x91)
+  - [AnimNode (~348 bytes / 0x15C)](#animnode-348-bytes--0x15c)
+  - [AnimationFile (40 bytes / 0x28)](#animationfile-40-bytes--0x28)
+  - [sAnim (36 bytes / 0x24)](#sanim-36-bytes--0x24)
+  - [sFrame (40 bytes / 0x28)](#sframe-40-bytes--0x28)
+  - [sAnimElement (84 bytes / 0x54)](#sanimelement-84-bytes--0x54)
+  - [sBuild (76 bytes / 0x4C)](#sbuild-76-bytes--0x4c)
+  - [sBuildSymbolFrame (52 bytes / 0x34)](#sbuildsymbolframe-52-bytes--0x34)
+  - [sAnimEntry (44 bytes / 0x2C)](#sanimentry-44-bytes--0x2c)
+  - [AnimManager (116 bytes / 0x74)](#animmanager-116-bytes--0x74)
+  - [BatchVertex (24 bytes / 0x18)](#batchvertex-24-bytes--0x18)
+  - [Batcher (68 bytes / 0x44)](#batcher-68-bytes--0x44)
+  - [UIRenderAssetManager (32 bytes / 0x20)](#uirenderassetmanager-32-bytes--0x20)
+  - [AutoShaderConstant (9 bytes)](#autoshaderconstant-9-bytes)
+  - [StencilState (28 bytes / 0x1C)](#stencilstate-28-bytes--0x1c)
+  - [TextureStage (24 bytes / 0x18)](#texturestage-24-bytes--0x18)
+  - [Matrix4 (64 bytes / 0x40)](#matrix4-64-bytes--0x40)
+  - [RenderState (372 bytes / 0x174)](#renderstate-372-bytes--0x174)
+  - [CommandBuffer (120 bytes / 0x78)](#commandbuffer-120-bytes--0x78)
+  - [Renderer (564 bytes / 0x234)](#renderer-564-bytes--0x234)
+  - [GameRenderer (2024 bytes / 0x7E8)](#gamerenderer-2024-bytes--0x7e8)
+- [TDataCacheAnimNode::DrawCacheRender — Render Pipeline](#tdatacacheanimnode-drawcacherender--render-pipeline)
 - [EntityLuaProxy Methods](#entityluaproxy-methods)
 - [Key Addresses](#key-addresses)
 - [Registered Component Types](#registered-component-types)
@@ -1043,7 +1066,7 @@ cTransformComponent, cUITransformComponent, cSoundEmitterComponent, cAnimStateCo
 - cUITransformComponent (50 namespace functions found)
 - cLightEmitterComponent
 - cSoundEmitterComponent
-- AnimNode (0x15C bytes) — internal layout partially mapped
+- AnimNode (0x15C bytes) — field mapping complete (ctor + dtor + GetOverrideBuildForSymbol; not yet created as Ghidra struct)
 - cEntityComponent vtable slots
 - sRenderJobThread struct
 - DontStarveInputHandler (720 bytes, embedded in cDontStarveSim)
@@ -1051,3 +1074,971 @@ cTransformComponent, cUITransformComponent, cSoundEmitterComponent, cAnimStateCo
 - cConsoleInput (220 bytes, embedded in cNetworkManager)
 - cLoggerImplementation (4180 bytes, embedded in cNetworkManager)
 - MigrationInfo (72 bytes, embedded in cNetworkManager)
+
+---
+
+## TDataCacheAnimNode (248 bytes / 0xF8)
+
+**Source**: `dontstarve_steam` macOS 32-bit, full symbols  
+**Functions analyzed**: ctor `0x000c2d1e`, dtor `0x000c2cc6`, `GetOverrideBuildForSymbol` `0x000c2836`, `DrawCacheRender` `0x000c156a`, `CalculateScaleMatrix` `0x000c26e4`  
+**Note**: TDataCacheAnimNode is a **snapshot/cache** of AnimNode data for render submission. Size = 0xF8 = 248 bytes. AnimNode+0xF8 (sortOrder) is deliberately NOT cached here — sortOrder is only used for render-queue ordering, not for actual rendering.
+
+### Layout
+
+| Offset | Size | Type | Name | Source / Notes |
+|--------|------|------|------|----------------|
+| 0x00 | 4 | `void*` | `vtable` | `PTR_DrawCacheRender_004563f8` |
+| 0x04 | 4 | `void*` | `pAnimNode` | Pointer to source `AnimNode` (param_1) |
+| 0x08 | 64 | `float[16]` | `matrix_0..15` | Transform `Matrix4` copy from param_2 |
+| 0x48 | 4 | `float` | `scaleX` | `AnimNode+0xC0` (lo word of uint64) |
+| 0x4C | 4 | `float` | `scaleY` | `AnimNode+0xC4` (hi word of uint64) |
+| 0x50 | 4 | `uint` | `facingMode` | `AnimNode+0xB4`; `8` = mirrored/flipped. Checked by `CalculateScaleMatrix` and `DrawCacheRender` |
+| 0x54 | 4 | `int` | `billboardType` | `AnimNode+0x124`; `0`=billboard, `1`=Y-axis rotation, else=normal |
+| 0x58 | 4 | `float` | `rotation` | `AnimNode+0x128` |
+| 0x5C | 4 | `float` | `lightOverride` | `AnimNode+0x12C`; 300.0 = no override sentinel |
+| 0x60 | 4 | `float` | `finalOffsetX` | `AnimNode+0x130` |
+| 0x64 | 4 | `float` | `finalOffsetY` | `AnimNode+0x134` |
+| 0x68 | 4 | `float` | `finalOffsetZ` | `AnimNode+0x138`; used to select effect fallback branch |
+| 0x6C | 4 | `float` | `depthFogParam` | `AnimNode+0x104`; controls shader effect selection (0.0 = use cached effect ID) |
+| 0x70 | 4 | `undefined4` | `unk_70` | `AnimNode+0x94` |
+| 0x74 | 4 | `void*` | `pBuild` | `sBuild*` primary build; `AnimNode+0x98`. Used as default in `GetOverrideBuildForSymbol` |
+| 0x78 | 4 | `undefined4` | `unk_78` | `AnimNode+0xB8` |
+| 0x7C | 4 | `undefined4` | `unk_7C` | `AnimNode+0xBC` |
+| 0x80 | 4 | `undefined4` | `effectFallbackZ0` | `AnimNode+0xCC`; effect ID when `finalOffsetZ==0` and `depthFogParam==0` |
+| 0x84 | 4 | `undefined4` | `effectFallbackZN` | `AnimNode+0xD0`; effect ID when `finalOffsetZ!=0` and `depthFogParam==0` |
+| 0x88 | 4 | `float` | `effectOverride` | `AnimNode+0xD4`; NaN = use fallback effect ID |
+| 0x8C | 4 | `uint` | `dwAddColour` | `AnimNode+0xFC`; packed RGBA additive colour |
+| 0x90 | 4 | `uint` | `dwMultColour` | `AnimNode+0x100`; packed RGBA multiply colour |
+| 0x94 | 4 | `float` | `unk_94` | `AnimNode+0x108`; passed as shader constant |
+| 0x98 | 4 | `void*` | `pAnimNodeRef` | Back-pointer to source `AnimNode` (same as `param_1`) |
+| 0x9C | 1 | `byte` | `bDepthWriteEnabled` | `AnimNode+0xF5` (**swapped** from AnimNode field order) |
+| 0x9D | 1 | `byte` | `bDepthTestEnabled` | `AnimNode+0xF4` (**swapped** from AnimNode field order) |
+| 0x9E | 2 | `byte[2]` | `pad_9E` | Padding |
+| 0xA0 | 4 | `float` | `depthBias` | `AnimNode+0xC8` |
+| 0xA4 | 4 | `uint` | `vertexDescHandle` | `AnimNode+0xD8`; vertex description handle |
+| 0xA8 | 12 | `vector<int>` | `hiddenLayers` | `AnimNode+0xDC` (begin/end/cap ptrs); freed in dtor |
+| 0xB4 | 12 | `vector<int>` | `hiddenSymbols` | `AnimNode+0xE8` (begin/end/cap ptrs); freed in dtor |
+| 0xC0 | 24 | `_Rb_tree` | `symbolOverrideTree` | `map<cHashedString, AnimNode::sSymbolOverride>`; copied from `AnimNode+0x10C`; freed in dtor |
+| — | — | — | `rbTree_comparator` @ 0xC0 | Comparator object (4B) |
+| — | — | — | `rbTree_hdr_color` @ 0xC4 | `_M_header._M_color` / sentinel node |
+| — | — | — | `rbTree_hdr_parent` @ 0xC8 | `_M_header._M_parent` (root) |
+| — | — | — | `rbTree_hdr_left` @ 0xCC | `_M_header._M_left`; points to self when empty |
+| — | — | — | `rbTree_hdr_right` @ 0xD0 | `_M_header._M_right`; points to self when empty |
+| — | — | — | `rbTree_nodeCount` @ 0xD4 | `_M_node_count`; checked by `GetOverrideBuildForSymbol` |
+| 0xD8 | 8 | `int+uint` | `overrideBankHandle1` / `overrideBankHash1` | `AnimNode+0x13C`; handle==-1 means no override. Checked in `DrawCacheRender` inner loop |
+| 0xE0 | 8 | `int+uint` | `overrideBankHandle2` / `overrideBankHash2` | `AnimNode+0x144` |
+| 0xE8 | 8 | `int+uint` | `overrideSymbolHandle1` / `overrideSymbolHash1` | `AnimNode+0x14C`; symbol frame indices matched against render symbols |
+| 0xF0 | 8 | `int+uint` | `overrideSymbolHandle2` / `overrideSymbolHash2` | `AnimNode+0x154` |
+
+### Key Design Notes
+
+1. **`AnimNode+0xF8` (sortOrder, float) is NOT copied** into `TDataCacheAnimNode`. It is used only for render-queue ordering before cache construction, not during actual rendering.
+
+2. **`overrideBankHandle` / `overrideSymbolHandle` pairs** (`+0xD8`–`+0xF7`): initialized to empty `cHashedString` pairs (`{0, mEmptyString}`) in ctor, then overwritten with AnimNode data. The `int` part acts as a handle/index (-1=invalid); the `uint` is the hash for lookup in the inner render loop.
+
+3. **`bDepthWriteEnabled` / `bDepthTestEnabled` field order is swapped** from the AnimNode source:  
+   - `AnimNode+0xF4` → TDC+0x9D (`bDepthTestEnabled`)  
+   - `AnimNode+0xF5` → TDC+0x9C (`bDepthWriteEnabled`)
+
+4. **`symbolOverrideTree`** (`+0xC0`): `std::map<cHashedString, AnimNode::sSymbolOverride>`. `GetOverrideBuildForSymbol` checks `rbTree_nodeCount` (+0xD4) first; if non-zero, traverses the tree to find a per-symbol build override.
+
+5. **`CalculateScaleMatrix`** reads `this+0x50` (facingMode==8 branch), `in_stack_0000000c` = the input Matrix4, `in_stack_00000010` = the Vector2 scale. Output is an identity-based scale matrix, optionally negated for mirror.
+
+### AnimNode Offset Cross-Reference (partial, from TDataCacheAnimNode ctor)
+
+| AnimNode Offset | Copied To | Semantic |
+|-----------------|-----------|---------|
+| +0xB4 | TDC+0x50 | facingMode |
+| +0xB8/0xBC | TDC+0x78/0x7C | unk |
+| +0xC0 | TDC+0x48 | scaleX |
+| +0xC4 | TDC+0x4C | scaleY |
+| +0xC8 | TDC+0xA0 | depthBias |
+| +0xCC/0xD0 | TDC+0x80/0x84 | effectFallback Z0/ZN |
+| +0xD4 | TDC+0x88 | effectOverride |
+| +0xD8 | TDC+0xA4 | vertexDescHandle |
+| +0xDC | TDC+0xA8 | hiddenLayers vector |
+| +0xE8 | TDC+0xB4 | hiddenSymbols vector |
+| +0xF4 | TDC+0x9D | bDepthTestEnabled |
+| +0xF5 | TDC+0x9C | bDepthWriteEnabled |
+| +0xFC | TDC+0x8C | dwAddColour |
+| +0x100 | TDC+0x90 | dwMultColour |
+| +0x104 | TDC+0x6C | depthFogParam |
+| +0x108 | TDC+0x94 | unk_94 (shader constant) |
+| +0x10C | TDC+0xC0 | symbolOverrideTree |
+| +0x124 | TDC+0x54 | billboardType |
+| +0x128 | TDC+0x58 | rotation |
+| +0x12C | TDC+0x5C | lightOverride |
+| +0x130 | TDC+0x60 | finalOffsetX |
+| +0x134 | TDC+0x64 | finalOffsetY |
+| +0x138 | TDC+0x68 | finalOffsetZ |
+| +0x13C | TDC+0xD8 | overrideBankHandle1 / overrideBankHash1 |
+| +0x144 | TDC+0xE0 | overrideBankHandle2 / overrideBankHash2 |
+| +0x14C | TDC+0xE8 | overrideSymbolHandle1 / overrideSymbolHash1 |
+| +0x154 | TDC+0xF0 | overrideSymbolHandle2 / overrideSymbolHash2 |
+| **+0xF8** | **NOT COPIED** | **sortOrder (float) — render queue only** |
+
+---
+
+## SceneGraphNode (145 bytes / 0x91)
+
+> Source: `SceneGraphNode::SceneGraphNode` ctors (@ 0x000c53d6, 0x000c5514, 0x000c5542), `SceneGraphNode::~SceneGraphNode` (@ 0x000c563e), `SceneGraphNode::AddChild` (@ 0x000c575c), `SceneGraphNode::SetAABBDirty` (@ 0x000c54d0), `SceneGraphNode::RecalculateAABB` (@ 0x000c5d1c)  
+> Created in Ghidra as `SceneGraphNode`.  
+> Base class for all scene graph nodes including `AnimNode`.
+
+| Offset | Size | Type | Name | Notes |
+|--------|------|------|------|-------|
+| 0x00 | 4 | vtable ptr | `vtable` | Points to `PTR_RendersAlpha_004564b8` vtable |
+| 0x04 | 2 | `ushort` | `flags` | Init = 0x100 in `(cGame*, cHashedString)` ctor; 0 in no-arg ctor |
+| 0x06 | 2 | `ushort` | `pad6` | Padding |
+| 0x08 | 64 | 16×`float` | `matrix0`..`matrix15` | World transform matrix (4×4 float, identity init from `PTR_Identity_00450744`) |
+| 0x48 | 4 | `uint` | `renderFlags` | Init = 3 |
+| 0x4C | 1 | `byte` | `bFlag4C` | Init = 0; exact semantics TBD |
+| 0x4D | 1 | `byte` | `pad4D` | Padding |
+| 0x4E | 2 | `ushort` | `field4E` | Init = 0 |
+| 0x50 | 4 | `pointer` | `pChildren_begin` | `std::vector<SceneGraphNode*>` begin; used by `AddChild`/dtor |
+| 0x54 | 4 | `pointer` | `pChildren_end` | `std::vector<SceneGraphNode*>` end |
+| 0x58 | 4 | `pointer` | `pChildren_cap` | `std::vector<SceneGraphNode*>` capacity; heap-freed in dtor |
+| 0x5A | 2 | `ushort` | `field5A` | Init = 0 |
+| 0x5C | 4 | `pointer` | `pGame` | `cGame*`; null in no-arg ctor |
+| 0x60 | 4 | `uint` | `nameHash0` | `cHashedString` word 0 (node name); init = 0 |
+| 0x64 | 4 | `uint` | `nameHash1` | `cHashedString` word 1 (COW string ptr); init = `mEmptyString` |
+| 0x68 | 4 | `pointer` | `pParentNode` | Parent `SceneGraphNode*`; set by `AddChild`, read by `SetAABBDirty` |
+| 0x6C | 4 | `uint` | `field6C` | Init = 0 |
+| 0x70 | 4 | `float` | `sortDepth` | Init = 5.0f (`0x40A00000`) in `(cGame*, cHashedString)` ctor; 0 in no-arg |
+| 0x74 | 4 | `uint` | `field74` | Init = 0 |
+| 0x78 | 4 | `float` | `aabb_min_x` | AABB min X; init = `FLT_MAX` (`0x7f7fffff`) |
+| 0x7C | 4 | `float` | `aabb_min_y` | AABB min Y |
+| 0x80 | 4 | `float` | `aabb_min_z` | AABB min Z |
+| 0x84 | 4 | `float` | `aabb_max_x` | AABB max X; init = `-FLT_MAX` (`0xff7fffff`) |
+| 0x88 | 4 | `float` | `aabb_max_y` | AABB max Y |
+| 0x8C | 4 | `float` | `aabb_max_z` | AABB max Z |
+| 0x90 | 1 | `byte` | `bAABBDirty` | Set by `SetAABBDirty`; cleared after recalculation |
+
+**Total size: 145 bytes / 0x91** (+ 3 bytes padding → AnimNode fields start at 0x94)
+
+### QuadTree integration
+
+`SetAABBDirty` also propagates up via `*(QuadTreeNode**)(this+0x68)` (same offset as `pParentNode`; actually the QuadTreeNode parent pointer). When `*(int*)(this+0x6c) != 0` it calls `QuadTreeNode::UpdateQuadTreeForNode` directly.
+
+### Key Functions
+
+| Function | Address | Notes |
+|----------|---------|-------|
+| ctor (no-arg) | 0x000c53d6 | Initialises all fields; pGame = null |
+| ctor (cGame*, cHashedString) | 0x000c5542 | Full init with game ptr and node name |
+| dtor | 0x000c563e | Frees children vector heap; removes from parent |
+| `AddChild` | 0x000c575c | Appends child; sets child's `pParentNode` |
+| `RemoveChild` | 0x000c5810 | |
+| `SetAABBDirty` | 0x000c54d0 | Marks AABB dirty and propagates up |
+| `RecalculateAABB` | 0x000c5d1c | Rebuilds AABB from children; writes `+0x78..+0x8F` |
+| `GetWorldTransform` | 0x000c5974 | Returns matrix at `+0x08..+0x47` |
+| `CacheForRender` | 0x000155ac | Builds `TDataCacheAnimNode` snapshot |
+
+---
+
+## AnimNode (~348 bytes / 0x15C)
+
+> Source: `AnimNode::AnimNode` ctor (@ 0x000c0746), `AnimNode::~AnimNode` (@ 0x000c0a6e), `AnimNode::SetAnimInfo`, `AnimNode::GetOverrideBuildForSymbol` (@ 0x000c0f32)  
+> Created in Ghidra as `AnimNode`.  
+> Inherits from `SceneGraphNode` (first 0x91 bytes). Own fields start at +0x94 (after 3 bytes padding at 0x91..0x93).
+
+| Offset | Size | Type | Name | Notes |
+|--------|------|------|------|-------|
+| 0x00 | 4 | vtable ptr | `vtable` | Points to `PTR_RendersAlpha_004563b8` vtable |
+| 0x00–0x5B | 92 | `SceneGraphNode` | (base) | Base class; not fully mapped |
+| 0x5C | 4 | `cGame*` | `pGame` | Back-pointer to game instance (ctor `param_2`) |
+| 0x94 | 4 | `AnimationFile*` | `pAnimFile` | Set by `SetAnimInfo` via `AnimManager::GetAnimation` |
+| 0x98 | 4 | `sBuild*` | `pBuild` | Set by `SetAnimInfo` via `AnimManager::GetBuild`; used as default in `GetOverrideBuildForSymbol` |
+| 0x9C | 4 | `uint` | `bankHash0` | Bank name `cHashedString` word 0 |
+| 0xA0 | 4 | COW str ptr | `bankHash1` | Bank name `cHashedString` word 1 (COW string) |
+| 0xA4 | 4 | `uint` | `animHash0` | Anim name `cHashedString` word 0 |
+| 0xA8 | 4 | COW str ptr | `animHash1` | Anim name `cHashedString` word 1 |
+| 0xAC | 4 | `uint` | `buildHash0` | Build name `cHashedString` word 0 |
+| 0xB0 | 4 | COW str ptr | `buildHash1` | Build name `cHashedString` word 1 |
+| 0xB4 | 4 | `uint` | `facingMode` | `eFacing` enum; init = 8 |
+| 0xB8 | 4 | `uint` | `playMode` | `ePlayMode` enum; init = 0 |
+| 0xBC | 4 | `float` | `time` | Current playback time; init = 0 |
+| 0xC0 | 4 | `float` | `scaleX` | Horizontal scale; init = 1.0f |
+| 0xC4 | 4 | `float` | `scaleY` | Vertical scale; init = 1.0f |
+| 0xC8 | 4 | `float` | `depthBias` | init = 0 |
+| 0xCC | 4 | `uint` | `effectFallbackZ0` | init = 0xFFFFFFFF |
+| 0xD0 | 4 | `uint` | `effectFallbackZN` | init = 0xFFFFFFFF |
+| 0xD4 | 4 | `float` | `effectOverride` | init = 0xFFFFFFFF (bit-pattern) |
+| 0xD8 | 4 | `uint` | `vertexDescHandle` | Renderer vertex description handle; sourced from `game+0x44+0x6C` |
+| 0xDC | 12 | `vector<cHashedString>` | `hiddenLayers` | Hidden layer list (begin/end/cap); heap-freed in dtor |
+| 0xE8 | 12 | `vector<cHashedString>` | `hiddenSymbols` | Hidden symbol list (begin/end/cap); heap-freed in dtor |
+| 0xF4 | 1 | `byte` | `bDepthTestEnabled` | init = 0 |
+| 0xF5 | 1 | `byte` | `bDepthWriteEnabled` | init = 0xFF |
+| 0xF8 | 4 | `float` | `sortOrder` | Render-queue sort key; **NOT copied to TDataCacheAnimNode** |
+| 0xFC | 4 | `uint` | `dwAddColour` | Additive tint; init = Transparent (0) |
+| 0x100 | 4 | `uint` | `dwMultColour` | Multiplicative tint; init = White (0xFFFFFFFF) |
+| 0x104 | 4 | `float` | `depthFogParam` | init = 0 |
+| 0x108 | 4 | `float` | `randSeed` | `rand() % 0x400`; used as shader constant |
+| 0x10C | 20 | `std::map<cHashedString,sSymbolOverride>` | `symbolOverride_tree` | Per-symbol build overrides; RbTree header at `+0x10C`, 20 bytes |
+| 0x120 | 4 | `int` | `has_overrides` | Non-zero if `symbolOverride_tree` has entries; checked first in `GetOverrideBuildForSymbol` |
+| 0x124 | 4 | `int` | `billboardType` | init = 0 |
+| 0x128 | 4 | `float` | `rotation` | init = 0 |
+| 0x12C | 4 | `float` | `lightOverride` | init = 0 |
+| 0x130 | 4 | `float` | `finalOffsetX` | init = 0 |
+| 0x134 | 4 | `float` | `finalOffsetY` | init = 0 |
+| 0x138 | 4 | `float` | `finalOffsetZ` | init = 0 |
+| 0x13C | 8 | `int+uint` | `overrideBankHandle1` / `overrideBankHash1` | init = empty cHashedString; handle = -1 means inactive |
+| 0x144 | 8 | `int+uint` | `overrideBankHandle2` / `overrideBankHash2` | init = empty cHashedString |
+| 0x14C | 8 | `int+uint` | `overrideSymbolHandle1` / `overrideSymbolHash1` | init = empty cHashedString |
+| 0x154 | 8 | `int+uint` | `overrideSymbolHandle2` / `overrideSymbolHash2` | init = empty cHashedString |
+
+**Total observed size**: at least 0x15C (348 bytes), based on the last fields written in ctor.
+
+### sSymbolOverride (node struct in symbolOverride_tree)
+
+Each rb-tree node has the standard `_Rb_tree_node` layout (color + parent + left + right at node+0x00..0x0F), followed by the value:
+
+| Node Offset | Name | Notes |
+|-------------|------|-------|
+| +0x10 | (std::map value start) | |
+| +0x20 | `overrideSymbolHash0` | `cHashedString` key word 0 |
+| +0x24 | `overrideSymbolHash1` | `cHashedString` key word 1 |
+| +0x28 | `pOverrideBuild` | `sBuild*`; non-null = active override |
+
+### Key Functions
+
+| Function | Address | Notes |
+|----------|---------|-------|
+| `AnimNode::AnimNode` (ctor) | 0x000c0746 | Initializes all fields above |
+| `AnimNode::~AnimNode` | 0x000c0a6e | Frees `hiddenLayers`, `hiddenSymbols`, `symbolOverride_tree` |
+| `AnimNode::SetAnimInfo` | — | Sets `pAnimFile` and `pBuild` via AnimManager |
+| `AnimNode::GetOverrideBuildForSymbol` | 0x000c0f32 | Returns `sBuildSymbolFrame*` and populates `out_pBuild`; checks `has_overrides` before tree traversal |
+
+---
+
+## AnimationFile (40 bytes / 0x28)
+
+> Source: `AnimationFile::AnimationFile` (ctor @ 0x0012f9dc), `AnimationFile::LoadFile` (@ 0x0012fbc0), `AnimationFile::~AnimationFile` (@ 0x0012fa88)
+> Created in Ghidra as `AnimationFile`.
+
+Loads and owns `anim.bin` + `build.bin` for one animation bank. The `pAnimArray` and `pFrameArray` pointers are heap-allocated counted arrays (prefix `uint count` at ptr-4).
+
+| Offset | Size | Type | Name | Notes |
+|--------|------|------|------|-------|
+| 0x00 | 4 | COW string ptr | `filename_str_ptr` | Bank filename (macOS 32-bit COW std::string) |
+| 0x04 | 4 | `sAnim*` | `pAnimArray` | Heap array of `sAnim` entries (stride 0x24). Count prefix at ptr-4 |
+| 0x08 | 4 | `sAnimElement*` | `pAnimElemArray` | Heap array of `sAnimElement` entries (stride 0x54). Shared across all frames |
+| 0x0C | 4 | `sFrame*` | `pFrameArray` | Heap array of `sFrame` entries (stride 0x28). Count prefix at ptr-4 |
+| 0x10 | 4 | `uint*` | `pElemHashArray` | Heap array of element hash pairs (stride 8); count = `numElements` |
+| 0x14 | 4 | `uint` | `numElements` | Total element entry count (anim.bin version > 2) |
+| 0x18 | 4 | `uint` | `numAnims` | Number of `sAnim` entries |
+| 0x1C | 4 | `uint` | `numFrames` | Total number of `sFrame` entries |
+| 0x20 | 4 | `uint` | `numAnimElems` | Number of `sAnimElement` entries |
+| 0x24 | 4 | `sBuild*` | `pBuild` | Pointer to `sBuild` (loaded from build.bin); freed in dtor |
+
+---
+
+## sAnim (36 bytes / 0x24)
+
+> Source: `sAnim::GetFrame` (@ 0x0012f79c), `AnimationFile::LoadFile` inner loop, `AnimationFile::~AnimationFile`
+> Created in Ghidra as `sAnim`.
+
+One animation clip entry inside an `AnimationFile`. Points into the shared `pFrameArray` for its frame slice.
+
+| Offset | Size | Type | Name | Notes |
+|--------|------|------|------|-------|
+| 0x00 | 4 | `AnimationFile*` | `pParent` | Back-pointer to owning `AnimationFile` |
+| 0x04 | 4 | `sFrame*` | `pFrames` | Pointer into `AnimationFile::pFrameArray` for first frame |
+| 0x08 | 4 | `float` | `fps` | Frames per second |
+| 0x0C | 4 | `uint` | `bankHash0` | cHashedString bank name w0 (used by AnimManager::DoLoad as outer map key) |
+| 0x10 | 4 | `uint` | `bankHash1` | cHashedString bank name w1 |
+| 0x14 | 4 | `uint` | `numFrames` | Frame count (used by `GetFrame` for clamp/loop/pingpong) |
+| 0x18 | 4 | COW string ptr | `name` | Animation name (COW std::string, read via `ReadString`) |
+| 0x1C | 1 | `uchar` | `facingByte` | Facing flags; `0xFF` if anim.bin version < 2 |
+| 0x1D | 3 | padding | — | Alignment bytes |
+| 0x20 | 4 | `float` | `duration` | `numFrames / fps` (computed and stored) |
+
+### PlayMode enum (ePlayMode, param to GetFrame)
+
+| Value | Name | Behaviour |
+|-------|------|-----------|
+| 0 | `Clamp` | `frame = (int)(t * fps)`, clamped to `[0, numFrames-1]` |
+| 1 | `Loop` | `frame = (int)(fmod(t, numFrames/fps) * fps)` |
+| 2 | `PingPong` | Reflects at ends; maps `t` to `[0, numFrames-1]` round-trip |
+
+---
+
+## sFrame (40 bytes / 0x28)
+
+> Source: `AnimationFile::LoadFile` frame-reading loop
+> Created in Ghidra as `sFrame`.
+
+One frame of an animation clip. Stores a 2-D AABB (bounding box) and slices into the shared element and object arrays.
+
+| Offset | Size | Type | Name | Notes |
+|--------|------|------|------|-------|
+| 0x00 | 4 | `float` | `bb_min_x` | AABB min X, pivot-adjusted: `x - w*0.5` |
+| 0x04 | 4 | `float` | `bb_min_y` | AABB min Y: `y - h*0.5` |
+| 0x08 | 4 | `float` | `bb_min_z` | Always 0 |
+| 0x0C | 4 | `float` | `bb_max_x` | AABB max X: `(x + w) - w*0.5` |
+| 0x10 | 4 | `float` | `bb_max_y` | AABB max Y: `h*0.5 + y` |
+| 0x14 | 4 | `float` | `bb_max_z` | Always 0 |
+| 0x18 | 4 | `uint*` | `pElements` | Pointer into `AnimationFile::pElemHashArray` for this frame's elements |
+| 0x1C | 4 | `uint` | `numElements` | Element count (written only if anim.bin version > 2) |
+| 0x20 | 4 | `sAnimElement*` | `pObjects` | Pointer into `AnimationFile::pAnimElemArray` for this frame's objects |
+| 0x24 | 4 | `uint` | `numObjects` | Object/element count |
+
+---
+
+## sAnimElement (84 bytes / 0x54)
+
+> Source: `AnimationFile::LoadFile` inner object-writing loop
+> Created in Ghidra as `sAnimElement`.
+
+One rendered sprite element within a frame. Stores a 2-D affine transform matrix, two `cHashedString` identifiers, and the build frame index.
+
+The "constants" rows (`+0x20..+0x3F`) are initialised from global constants `DAT_003c7e20` and `DAT_003c7e30` (identity-like 3rd/4th matrix rows, e.g. `{0,0,1,0}` and `{0,0,0,1}`).
+
+| Offset | Size | Type | Name | Notes |
+|--------|------|------|------|-------|
+| 0x00 | 4 | `float` | `m_a` | Transform: scale×cos (col0, row0) |
+| 0x04 | 4 | `float` | `m_c` | Transform: sin (col1, row0) |
+| 0x08 | 4 | `float` | `pad08` | Always 0 |
+| 0x0C | 4 | `float` | `m_tx` | Translation X |
+| 0x10 | 4 | `float` | `m_b` | Transform: -sin (col0, row1) |
+| 0x14 | 4 | `float` | `m_d` | Transform: scale×cos (col1, row1) |
+| 0x18 | 4 | `float` | `pad18` | Always 0 |
+| 0x1C | 4 | `float` | `m_ty` | Translation Y |
+| 0x20 | 16 | 4×`uint` | `const20..2C` | Init from `DAT_003c7e20..2C` (row 3 of 4×4 matrix) |
+| 0x30 | 16 | 4×`uint` | `const30..3C` | Init from `DAT_003c7e30..3C` (row 4 of 4×4 matrix) |
+| 0x40 | 4 | `uint` | `layerHash` | Layer name hash (`cHashedString` word 0) |
+| 0x44 | 4 | `uint` | `pad44` | `cHashedString` padding = 0 |
+| 0x48 | 4 | `uint` | `symbolHash` | Symbol name hash (`cHashedString` word 0) |
+| 0x4C | 4 | `uint` | `pad4C` | `cHashedString` padding = 0 |
+| 0x50 | 4 | `uint` | `buildFrame` | Which build frame index to use for texture UV lookup |
+
+---
+
+## sBuild (76 bytes / 0x4C)
+
+> Source: `sBuild::GetFrame` (@ 0x00135956), `sBuild::~sBuild` (@ 0x001359de), `sBuild::ApplyTextures` (@ 0x00135ab8), `AnimationFile::LoadFile` (build.bin section)
+> **Note:** Not yet created as a Ghidra struct (the type is a Ghidra class node). Fields documented here are confirmed via multiple functions.
+
+| Offset | Size | Type | Name | Notes |
+|--------|------|------|------|-------|
+| 0x00 | 4 | `AnimationFile*` | `pParent` | Back-pointer to owning `AnimationFile` |
+| 0x04 | 4 | COW string ptr | `name` | Build name (COW std::string, from build.bin) |
+| 0x08 | 12 | `std::vector<std::string>` | `textures` | Texture name list (begin/end/cap ptrs) |
+| 0x14 | 4 | `uint*` | `pTextureHandles_begin` | Texture handle vector begin |
+| 0x18 | 4 | `uint*` | `pTextureHandles_end` | Texture handle vector end |
+| 0x20 | 4 | `sBuildSymbolEntry*` | `pSymbols` | Sorted array of symbol entries (each 0x10 bytes, sorted by hash) |
+| 0x24 | 4 | `sBuildSymbolFrame*` | `pSymbolFrames` | Array of `sBuildSymbolFrame` entries |
+| 0x28 | 4 | VB handle | `vbHandle` | Renderer vertex buffer handle (primary) |
+| 0x2C | 4 | VB handle | `vbHandle2` | Renderer VB handle (secondary; only if build.bin version < 5) |
+| 0x30 | 4 | `void*` | `pVertexData` | Heap copy of primary VB data |
+| 0x34 | 4 | `void*` | `pVertexData2` | Heap copy of secondary VB data |
+| 0x38 | 4 | `uint` | `numVerts` | Primary vertex count |
+| 0x3C | 4 | `uint` | `numVerts2` | Secondary vertex count (version < 5 only) |
+| 0x40 | 4 | `uint` | `numSymbolFrames` | Total `sBuildSymbolFrame` count |
+| 0x44 | 4 | `uint` | `numSymbols` | Number of symbol entries |
+| 0x48 | 1 | `bool` | `bTexturesLoaded` | Set to `true` after `ApplyTextures` loads all textures |
+
+### sBuildSymbolEntry (0x10 bytes, inline array at pSymbols)
+
+Each entry in the sorted symbol array (binary-searched by hash in `GetFrame`):
+
+| Dword | Name | Notes |
+|-------|------|-------|
+| [0] | `hashValue` | `cHashedString` hash — sort key |
+| [1] | `hashPad` | `cHashedString` padding = 0 |
+| [2] | `pFrames` | Pointer to first `sBuildSymbolFrame` for this symbol |
+| [3] | `numFrames` | Number of `sBuildSymbolFrame` entries for this symbol |
+
+---
+
+## sBuildSymbolFrame (52 bytes / 0x34)
+
+> Source: `sBuild::GetFrame` (stride `0xd * 4 = 0x34`), `AnimationFile::LoadFile` symbol-frame loop
+> Created in Ghidra as `sBuildSymbolFrame`.
+
+One frame entry within a build symbol. Provides the mapping from animation frame index to texture atlas UV and optional bounding box.
+
+`GetFrame` iterates entries with `puVar4 = puVar4 + 0xd` (i.e. +0x34 stride) and returns the first entry where `frameStart <= frameIndex < frameStart + frameCount`.
+
+| Offset | Size | Type | Name | Notes |
+|--------|------|------|------|-------|
+| 0x00 | 4 | `uint` | `frameStart` | First animation frame index this entry covers |
+| 0x04 | 4 | `uint` | `frameCount` | Number of frames covered |
+| 0x08 | 4 | `uint` | `vertexStart` | Vertex start index within the VB (1st read from file; used as `Renderer::Draw` start) |
+| 0x0C | 4 | `uint` | `vertexCount` | Vertex count for primary VB draw call (`vbHandle`); 0 = skip draw |
+| 0x10 | 4 | `uint` | `vertexStart2` | Vertex start for secondary VB (`vbHandle2`; version < 5; init = `0xFFFFFFFF`) |
+| 0x14 | 4 | `uint` | `vertexCount2` | Vertex count for secondary VB draw call; 0 = skip draw |
+| 0x18 | 4 | `float` | `bb_min_x` | Bounding box min X, pivot-adjusted (written if version > 3) |
+| 0x1C | 4 | `float` | `bb_min_y` | Bounding box min Y |
+| 0x20 | 4 | `float` | `bb_min_z` | Always 0 |
+| 0x24 | 4 | `float` | `bb_max_x` | Bounding box max X |
+| 0x28 | 4 | `float` | `bb_max_y` | Bounding box max Y |
+| 0x2C | 4 | `float` | `bb_max_z` | Always 0 |
+| 0x30 | 4 | `float` | `radius` | `SQRT(dX² + dY²)` — bounding circle radius (version > 3) |
+
+### Initial values (from LoadFile allocation loop)
+
+```c
+entry->frameStart   = 0;
+entry->frameCount   = 0;
+entry->vertexStart  = 0xFFFFFFFF; // invalid
+entry->vertexCount  = 0;
+entry->vertexStart2 = 0xFFFFFFFF; // invalid
+entry->vertexCount2 = 0;
+entry->bb_min_x    = -50.0f;  // 0xC2480000
+entry->bb_min_y    = -50.0f;
+entry->bb_min_z    = 0;
+entry->bb_max_x    = 50.0f;   // 0x42480000
+entry->bb_max_y    = 50.0f;
+entry->bb_max_z    = 0;
+entry->radius      = 0;
+```
+
+---
+
+### sAnimEntry (44 bytes / 0x2C)
+
+`sAnimEntry` is the value type stored inside each bank's inner `linear_map<cHashedString, sAnimEntry>`. It maps an animation name to up to 8 facing-specific `sAnim*` pointers.
+
+**Source:** `AnimManager::DoLoad` (insertion path) + `AnimManager::GetAnimation` (read path, switch on `eFacing`).
+
+**Ghidra struct:** `sAnimEntry` (44 bytes, 11 fields) ✓
+
+| Offset | Size | Type | Name | Notes |
+|--------|------|------|------|-------|
+| 0x00 | 4 | uint | `animHash0` | cHashedString key w0 (anim name hash) |
+| 0x04 | 4 | uint | `animHash1` | cHashedString key w1 |
+| 0x08 | 4 | pointer | `animName` | std::string ptr (COW) — anim name string |
+| 0x0C | 4 | pointer | `pAnim_face2` | `sAnim*` for `eFacing==2` |
+| 0x10 | 4 | pointer | `pAnim_face1` | `sAnim*` for `eFacing==1` |
+| 0x14 | 4 | pointer | `pAnim_face5` | `sAnim*` for `eFacing==5` |
+| 0x18 | 4 | pointer | `pAnim_face4` | `sAnim*` for `eFacing==4` |
+| 0x1C | 4 | pointer | `pAnim_face0` | `sAnim*` for `eFacing==0 or 8` (default/any) |
+| 0x20 | 4 | pointer | `pAnim_face3` | `sAnim*` for `eFacing==3` |
+| 0x24 | 4 | pointer | `pAnim_face7` | `sAnim*` for `eFacing==7` |
+| 0x28 | 4 | pointer | `pAnim_face6` | `sAnim*` for `eFacing==6` |
+
+`GetAnimation` returns the appropriate `sAnim*` field based on `eFacing` parameter (switch statement). Only facing slots whose bit is set in `sAnim::facingByte` are populated by `DoLoad`.
+
+---
+
+### AnimManager (116 bytes / 0x74)
+
+`AnimManager` is the central registry for all loaded animation banks and builds. It inherits from `cResourceManager<AnimationFile, unsigned int, FakeLock>`.
+
+**Functions analyzed:** `AnimManager::AnimManager` @ 0x00131efe, `AnimManager::~AnimManager` @ 0x00131fd8, `AnimManager::Initialize` @ 0x0013210e, `AnimManager::GetAnimation` @ 0x00132368, `AnimManager::GetBuild` @ 0x00132afc, `AnimManager::DoLoad` @ 0x001324a0, `AnimManager::SetErosionTexture` @ 0x00132e94.
+
+**Ghidra struct:** `AnimManager` (116 bytes, 29 fields) ✓
+
+| Offset | Size | Type | Name | Notes |
+|--------|------|------|------|-------|
+| 0x00 | 4 | pointer | `vtable` | → `PTR_GetResourceNameType_00456a38` |
+| 0x04 | 4 | uint | `base_04` | `cResourceManager` base field |
+| 0x08 | 4 | uint | `base_08` | init=0 |
+| 0x0C | 4 | uint | `base_0C` | init=0 |
+| 0x10 | 4 | uint | `base_10` | init=0 |
+| 0x14 | 4 | uint | `pad14` | padding |
+| 0x18 | 4 | pointer | `vec_begin` | vector begin (= `this+0x18` when empty) |
+| 0x1C | 4 | uint | `field_1C` | init=0 |
+| 0x20 | 4 | pointer | `vec_end` | vector end ptr (→ `this+0x18` when empty) |
+| 0x24 | 4 | pointer | `vec_cap` | vector capacity ptr |
+| 0x28 | 4 | uint | `field_28` | init=0 |
+| 0x2C | 4 | uint | `field_2C` | init=0 |
+| 0x30 | 4 | uint | `field_30` | init=0 |
+| 0x34 | 4 | uint | `field_34` | init=0 |
+| 0x38 | 4 | pointer | `strField38` | COW string ptr (empty string init) |
+| 0x3C | 4 | pointer | `pRenderer` | `Renderer*` (constructor param) |
+| 0x40 | 4 | pointer | `bankMap_begin` | `linear_map<cHashedString, bankInner>` begin |
+| 0x44 | 4 | pointer | `bankMap_end` | end sentinel (checked in `GetAnimation` find) |
+| 0x48 | 4 | pointer | `bankMap_cap` | capacity |
+| 0x4C | 4 | pointer | `buildMap_begin` | `linear_map<cHashedString, sBuild*>` begin |
+| 0x50 | 4 | pointer | `buildMap_end` | end sentinel (checked in `GetBuild` find) |
+| 0x54 | 4 | uint | `field_54` | init=0 |
+| 0x58 | 4 | uint | `hShader_anim` | `shaders/anim.ksh` handle |
+| 0x5C | 4 | uint | `hShader_anim_fade` | `shaders/anim_fade.ksh` handle |
+| 0x60 | 4 | uint | `hShader_anim_haunted` | `shaders/anim_haunted.ksh` (fallback: `anim.ksh`) |
+| 0x64 | 4 | uint | `hShader_bloom` | `shaders/anim_bloom.ksh` (offset=0x64=100) |
+| 0x68 | 4 | uint | `hShader_fade_haunted` | `shaders/anim_fade_haunted.ksh` (fallback: `anim_fade.ksh`) |
+| 0x6C | 4 | uint | `hVertexDesc` | `VertexDescription` resource handle |
+| 0x70 | 4 | uint | `hErosionTexture` | erosion texture handle (init=0xFFFFFFFF = invalid) |
+
+**Data structures inside AnimManager:**
+
+- **Bank map** (`+0x40`): `linear_map<cHashedString, linear_map<cHashedString, sAnimEntry>>` — two-level lookup: bank name → anim name → `sAnimEntry`.
+- **Build map** (`+0x4C`): `linear_map<cHashedString, sBuild*>` — build name → `sBuild*`.
+
+**Key flow — `DoLoad`:**
+
+1. Calls `AnimationFile::LoadFile` on a new `AnimationFile` (0x28 bytes).
+2. For each `sAnim` in the file, inserts into the bank map using the anim's bank hash (`sAnim+0x0C/+0x10`) as the outer key and anim name hash as the inner key.
+3. If the file has a `pBuild`, inserts `sBuild*` into the build map by build name hash.
+
+**Key flow — `GetAnimation(bankHash, animHash, eFacing)`:**
+
+1. `find` in bank map → inner `linear_map<cHashedString, sAnimEntry>`.
+2. `find` in inner map by anim hash → `sAnimEntry`.
+3. Return `sAnimEntry.pAnim_faceN` for the requested `eFacing` (switch).
+
+**`sAnim` bank hash fields (from `DoLoad` analysis):**
+
+- `sAnim+0x0C` = `bankHash0` — cHashedString w0 of the bank name
+- `sAnim+0x10` = `bankHash1` — cHashedString w1 of the bank name
+
+---
+
+## TDataCacheAnimNode::DrawCacheRender — Render Pipeline
+
+> Source: `TDataCacheAnimNode::DrawCacheRender` @ 0x000c156a (macOS DS 32-bit)  
+> Signature: `void DrawCacheRender(GameRenderer* renderer, Camera const& camera, TRenderCache* cache)`  
+> Caller: render queue dispatch after `CacheForRender` snapshot is taken.
+
+This is the core per-entity rendering function. It iterates over every `sAnimElement` in the current animation frame and emits one or two `Renderer::Draw` calls per visible element using the pre-built vertex buffers in `sBuild`.
+
+---
+
+### Phase 1 — Frame Selection
+
+```c
+sFrame* pFrame = sAnim::GetFrame(animNode->pAnim, playMode, time);
+if (!pFrame) return;  // animation not active
+```
+
+Calls `sAnim::GetFrame` with `(playMode, time)` to get the current `sFrame*`. If null, aborts rendering.
+
+---
+
+### Phase 2 — Transform Matrix
+
+`TDataCacheAnimNode::CalculateScaleMatrix` constructs a local scale+flip matrix from `TDC::scaleX`, `TDC::scaleY`, and the world transform matrix. Three branches:
+
+| Condition | Matrix source |
+|-----------|---------------|
+| `GameRenderer+0x50 == 8` (billboard facing mode 8) | Use scale matrix as-is (no billboard) |
+| `GameRenderer+0x54 == 0` (billboard type 0) | Build billboard from camera view matrix via `KleiMath::BuildBillboard`, then `operator*` |
+| `GameRenderer+0x54 == 1` (cylindrical billboard) | Build XY rotation matrices, multiply together |
+
+The resulting matrix is stored in a stack local `Matrix4 finalMatrix`.
+
+---
+
+### Phase 3 — Global Shader Setup (once per node)
+
+Executed once for the whole `TDataCacheAnimNode`:
+
+1. **Erosion texture** (`Renderer::SetTexture`) — bound to slot 0 via `AnimManager::hErosionTexture` (AnimManager@0x70).
+2. **Texture state / filter** (`Renderer::SetTextureState`, `Renderer::SetTextureFilter`).
+3. **Colour constants** — `dwAddColour` (`TDC+0x8C`) and `dwMultColour` (`TDC+0x90`) are unpacked from RGBA bytes to float `[0..1]` vectors using SSE `divps` and pushed as `AutoShaderConstant` uploads.
+4. **Depth-fog / offset** — uploaded as shader constants (4-component float4 vectors).
+5. **Effect shader selection** — reads `Camera+0x7C4` (is_haunted flag) and `TDC+0x88` (effectOverride) to select among `hShader_anim`, `hShader_anim_haunted`, `hShader_anim_fade`, or `hShader_bloom` via `Renderer::SetEffect`.
+6. **Blend mode** — `Renderer::SetBlendMode`.
+7. **Depth bias** — `Renderer::SetDepthBias` (only if `TDC+0x9C/0x9D` non-zero).
+8. **Vertex description** — `Renderer::SetVertexDescription(TDC::vertexDescHandle)`.
+
+---
+
+### Phase 4 — Pass Loop
+
+The outer loop iterates over passes (stencil passes). There are 1 or 2 passes:
+
+| Pass index | Mode | Notes |
+|---|---|---|
+| 0 | Normal render | `EnableColourWrite(false)`, `EnableDepthWrite(false)`, `EnableStencilWrite(true)` — stencil mask write |
+| 1 | Colour render | `EnableColourWrite(true)`, `EnableDepthWrite(false)`, `EnableStencilWrite(false)` — actual colour draw |
+
+Pass count = 2 if `bDepthWriteEnabled == 0xFF` (default), else 1.
+
+Per-pass setup:
+- **Rotation matrix** via `KleiMath::BuildYRotation(TDC::rotation)` and `operator*` with `finalMatrix`.
+- **Stencil func** set via `Renderer::SetStencilFunc` at pass boundaries.
+- **Depth func** override if `TDC::bDepthTestEnabled` is set.
+- **Model matrix** uploaded as `AutoShaderConstant`.
+
+---
+
+### Phase 5 — Hidden Layers / Symbols Pre-processing
+
+Before iterating elements, if `TDC::hiddenLayers` or `TDC::hiddenSymbols` vectors are non-empty, the function scans the `sFrame::numObjects` elements to pre-compute visibility indices into per-override-slot locals (`fVar_1b`, `fVar_19`, `fVar_1a`, `fVar_14`, `fVar_16`, `fVar_13`). These map override bank/symbol handles (`TDC+0xD8..0xF7`) to element indices for fast skip/substitution in the inner loop.
+
+Specifically:
+- `TDC+0xD8` (`overrideBankHandle1`) and `TDC+0xE8` (`overrideSymbolHandle1/2`) are compared against each `sAnimElement::layerHash` and `symbolHash` to find the override slots.
+
+---
+
+### Phase 6 — Element Inner Loop
+
+Main per-element loop iterates `sFrame::numObjects` times:
+
+```c
+for (int i = 0; i < pFrame->numObjects; i++) {
+    sAnimElement* elem = &pFrame->pObjects[i];
+    // hidden layer/symbol skip logic here
+    // get override build for this symbol
+    sBuildSymbolFrame* pSBSF;
+    sBuild* pBuild;
+    GetOverrideBuildForSymbol(elem->symbolHash, elem->buildFrame, &pBuild, &pSBSF);
+    if (!pSBSF) continue;  // symbol not in build
+    // ApplyTextures if new build
+    if (pBuild != lastBuild) {
+        sBuild::ApplyTextures(pBuild, renderer, ...);
+        lastBuild = pBuild;
+    }
+    // Build element transform matrix
+    // = perPassMatrix * elemMatrix (from sAnimElement m_a/m_b/m_c/m_d/m_tx/m_ty)
+    Matrix4 elemFinal = perPassMatrix * elemAffine;
+    // Upload as shader constant
+    AutoShaderConstant::AutoShaderConstant(elemFinal, ...);
+    // Draw primary VB
+    if (pBuild->vbHandle2 != -1 && pSBSF->vertexCount2 != 0) {
+        Renderer::SetVertexBuffer(pBuild->vbHandle2);
+        Renderer::Draw(pSBSF->vertexStart2, pSBSF->vertexCount2, TRIANGLES);
+    }
+    // Draw secondary VB
+    if (pBuild->vbHandle != -1 && pSBSF->vertexCount != 0) {
+        Renderer::SetVertexBuffer(pBuild->vbHandle);
+        Renderer::Draw(pSBSF->vertexStart, pSBSF->vertexCount, TRIANGLES);
+    }
+    AutoShaderConstant::~AutoShaderConstant();
+}
+```
+
+Key observations:
+- **Per-element `GetOverrideBuildForSymbol`** checks symbol override tree; falls back to `TDC::pBuild`.
+- **`ApplyTextures`** called lazily — only when build pointer changes (tracked in `lastBuild` local). This avoids redundant texture rebinding.
+- **`AutoShaderConstant`** is a RAII wrapper that uploads a constant to the shader and restores the previous value in dtor. Used for per-element model matrix and colour.
+- **Draw order**: secondary VB (`vbHandle2`) drawn *before* primary (`vbHandle`). This matches the "underlay" pass pattern (e.g., bloom layer drawn first).
+- `Renderer::Draw` signature: `(Renderer*, PrimitiveType, uint start, uint count, VertexBuffer*)`.
+
+---
+
+### Phase 7 — Post-Pass Cleanup
+
+After all elements in a pass:
+- Restore depth func (`Renderer::SetDepthFunc` with original func).
+- Destroy pass-level `AutoShaderConstant`.
+
+After all passes:
+- Restore stencil func to default.
+- Re-enable colour write (`Renderer::EnableColourWrite(true)`).
+- Destroy all global `AutoShaderConstant` objects (6 destructor calls for the constants set in Phase 3).
+
+---
+
+### Key `TDataCacheAnimNode` Fields Used in DrawCacheRender
+
+| TDC Offset | Name | Usage in DrawCacheRender |
+|---|---|---|
+| +0x04 | `pAnimNode` | Accessed for pass/override metadata |
+| +0x48 | `scaleX` | Input to `CalculateScaleMatrix` |
+| +0x4C | `scaleY` | Input to `CalculateScaleMatrix` |
+| +0x50 | `facingMode` | Selects billboard branch |
+| +0x54 | `billboardType` | 0=full billboard, 1=cylindrical |
+| +0x58 | `rotation` | `BuildYRotation` per-pass |
+| +0x6C | `depthFogParam` | Shader constant upload |
+| +0x60/64/68 | `finalOffset X/Y/Z` | Shader constant (position offset) |
+| +0x74 | `pBuild` | Default `sBuild*` (= `AnimNode::pBuild`) |
+| +0x8C | `dwAddColour` | Additive colour constant |
+| +0x90 | `dwMultColour` | Multiplicative colour constant |
+| +0x9C | `bDepthWriteEnabled` | Controls pass count and `EnableDepthWrite` |
+| +0x9D | `bDepthTestEnabled` | Controls `SetDepthFunc` override |
+| +0xA0 | `depthBias` | `Renderer::SetDepthBias` |
+| +0xA4 | `vertexDescHandle` | `Renderer::SetVertexDescription` |
+| +0xA8 | `hiddenLayers` | Vector of hidden layer hashes |
+| +0xB4 | `hiddenSymbols` | Vector of hidden symbol hashes |
+| +0xC0 | `symbolOverrideTree` | Per-symbol build override rb-tree |
+| +0xD8..0xF7 | `overrideBankHandle1/2`, `overrideSymbolHandle1/2` | Element override slot matching |
+
+---
+
+## Renderer Class Hierarchy
+
+```
+BaseRenderer  (empty base)
+└── HWRenderer  (empty inheritance)
+    └── Renderer  (0x234 bytes)
+        └── GameRenderer  (0x7E8 bytes)
+```
+
+---
+
+### BatchVertex (24 bytes / 0x18)
+
+> `BatchVertex` — single vertex in the UI/2D batcher's dynamic vertex buffer.
+
+| Offset | Size | Type | Field | Notes |
+|--------|------|------|-------|-------|
+| +0x00 | 4 | float | x | position X |
+| +0x04 | 4 | float | y | position Y |
+| +0x08 | 4 | float | z | position Z |
+| +0x0C | 4 | float | u | texture coord U |
+| +0x10 | 4 | float | v | texture coord V |
+| +0x14 | 4 | uint  | color | packed RGBA8 |
+
+Vertex description: slot0=pos(xyz float×3), slot1=uv(float×2), slot10=color(RGBA8).
+
+---
+
+### Batcher (68 bytes / 0x44)
+
+> `Batcher` — UI/sprite 2D quad batcher. Collects `BatchVertex` quads and flushes when state changes.
+>
+> Source: `Batcher::Batcher` @ 0x000a7fd0, `Batcher::Flush` @ 0x000a81ca
+
+| Offset | Size | Type | Field | Notes |
+|--------|------|------|-------|-------|
+| +0x00 | 4 | uint (GameRenderer*) | pRenderer | owning renderer |
+| +0x04 | 4 | uint | texHandle0 | bound texture slot 0, init=0xFFFFFFFF |
+| +0x08 | 4 | uint | texHandle1 | bound texture slot 1, init=0xFFFFFFFF |
+| +0x0C | 4 | uint | texHandle2 | bound texture slot 2, init=0xFFFFFFFF |
+| +0x10 | 4 | uint | vertDescHandle | vertex description resource handle |
+| +0x14 | 4 | uint | blendMode | current blend mode, default=3 |
+| +0x18 | 4 | uint | effectHandle | current effect handle, init=0xFFFFFFFF |
+| +0x1C | 4 | float | alphaMin | alpha range min, default=0.0 |
+| +0x20 | 4 | float | alphaMax | alpha range max, default=1.0 |
+| +0x24 | 4 | float | effectParam0 | shader effect param Vector4[0] |
+| +0x28 | 4 | float | effectParam1 | shader effect param Vector4[1] |
+| +0x2C | 4 | float | effectParam2 | shader effect param Vector4[2] |
+| +0x30 | 4 | float | effectParam3 | shader effect param Vector4[3] |
+| +0x34 | 1 | byte  | hasEffectParams | 1=upload effectParam0..3 to shader in Flush |
+| +0x35 | 3 | byte[3] | _pad35 | alignment padding |
+| +0x38 | 4 | uint (BatchVertex*) | pVertBegin | vertex vector begin |
+| +0x3C | 4 | uint (BatchVertex*) | pVertEnd | vertex vector end |
+| +0x40 | 4 | uint (BatchVertex*) | pVertCap | vertex vector capacity |
+
+**State-change methods** (each calls `Flush` if state differs):
+- `Batcher::SetTexture` @ 0x000a8562
+- `Batcher::SetBlendMode` @ 0x000a858e
+- `Batcher::SetAlphaRange` @ 0x000a85b0
+- `Batcher::SetEffect` @ 0x000a85ec
+- `Batcher::SetEffectParams` @ 0x000a860e
+
+**`Flush` logic summary:**
+1. Guard: `pVertEnd == pVertBegin` → early-out.
+2. `Renderer::SetEffect`, `SetVertexDescription`, `SetTexture`×3, `SetBlendMode`.
+3. `Renderer::CreateVB` (transient VB from vertex array).
+4. `GameRenderer::GetMatrix(1)` × `GetMatrix(0)` → MVP matrix → `PushShaderConstantHash`.
+5. If `hasEffectParams`: additional `PushShaderConstantHash` for effect params.
+6. `Renderer::SetVertexBuffer` + `Renderer::Draw`.
+7. Release VB, `PopShaderConstantHash`, reset `pVertEnd = pVertBegin`.
+
+---
+
+### UIRenderAssetManager (32 bytes / 0x20)
+
+> Owned by `GameRenderer+0x7BC`. Holds shared UI/anim shader handles and the `Batcher`.
+>
+> Source: `UIRenderAssetManager::UIRenderAssetManager` @ 0x000bcd15
+
+| Offset | Size | Type | Field | Notes |
+|--------|------|------|-------|-------|
+| +0x00 | 4 | uint | vtable | |
+| +0x04 | 4 | uint (GameRenderer*) | pRenderer | owning renderer |
+| +0x08 | 4 | uint | vertDescHandle | pos+uv+color vertex description |
+| +0x0C | 4 | uint | effectHandle_ui | `shaders/ui.ksh` |
+| +0x10 | 4 | uint | effectHandle_yuv | `shaders/ui_yuv.ksh` |
+| +0x14 | 4 | uint | effectHandle_anim | `shaders/ui_anim.ksh` |
+| +0x18 | 4 | uint | vbHandle | pre-built UI VB |
+| +0x1C | 4 | uint (Batcher*) | pBatcher | `new Batcher(pRenderer)` |
+
+---
+
+### AutoShaderConstant (9 bytes)
+
+> RAII guard: pushes a shader constant in ctor, pops in dtor.
+> Used throughout `DrawCacheRender` for per-element model matrix and colour.
+>
+> Source: ctor1 @ 0x001d500e, ctor2 @ 0x001d50a8, dtor @ 0x001d5164
+
+| Offset | Size | Type | Field | Notes |
+|--------|------|------|-------|-------|
+| +0x00 | 4 | uint | dataOrType | ctor1: `Matrix4*`; ctor2: `ShaderConstant::Type` enum |
+| +0x04 | 4 | uint (Renderer*) | pRenderer | owning renderer |
+| +0x08 | 1 | byte | bPushed | 1 = pushed on construction → dtor calls Pop |
+
+**Condition enum:**
+
+| Value | Meaning |
+|-------|---------|
+| 0 | Always — push unconditionally |
+| 1 | Never — skip push |
+| 2 | ConditionCheckStack — compare with stack top; reuse if identical (float array overload only) |
+
+**Relation to Renderer:**
+- Push writes to `Renderer+0x184` (`pShaderConstantSet`).
+- `Renderer+0x188` (`shaderPushCount`) incremented on each push.
+
+---
+
+### StencilState (28 bytes / 0x1C)
+
+> `StencilState` — front-face or back-face stencil parameters inside `RenderState`.
+
+| Offset | Size | Type | Field | Notes |
+|--------|------|------|-------|-------|
+| +0x00 | 4 | uint | compareFunc | stencil comparison function |
+| +0x04 | 4 | uint | failOp | stencil fail action |
+| +0x08 | 4 | uint | depthFailOp | stencil-pass / depth-fail action |
+| +0x0C | 4 | uint | passOp | stencil-pass / depth-pass action |
+| +0x10 | 4 | uint | ref | stencil reference value |
+| +0x14 | 4 | uint | mask | stencil read/write mask |
+| +0x18 | 1 | byte | dirty_op | ops dirty flag |
+| +0x19 | 1 | byte | dirty_func | func dirty flag |
+| +0x1A | 2 | byte[2] | _pad | alignment |
+
+---
+
+### TextureStage (24 bytes / 0x18)
+
+> Per-texture-unit state stored in `RenderState::texStages[8]`.
+
+| Offset | Size | Type | Field | Notes |
+|--------|------|------|-------|-------|
+| +0x00 | 4 | uint | filterMin | minification filter |
+| +0x04 | 4 | uint | filterMag | magnification filter |
+| +0x08 | 4 | uint | blendOp | blend operation |
+| +0x0C | 4 | uint | combineRGB | RGB combine mode |
+| +0x10 | 4 | uint | wrapMode | texture wrap mode |
+| +0x14 | 4 | uint | field_14 | |
+
+---
+
+### Matrix4 (64 bytes / 0x40)
+
+> Column-major 4×4 float matrix. 18 instances stored inside `GameRenderer`.
+
+| Offset | Size | Type | Field | Notes |
+|--------|------|------|-------|-------|
+| +0x00 | 64 | float[16] | m | 4×4 column-major matrix data |
+
+---
+
+### RenderState (372 bytes / 0x174)
+
+> Full GPU render state snapshot embedded inside `Renderer` at +0x10.
+>
+> Source: `RenderState::RenderState` @ 0x001db33a
+
+| Offset | Size | Type | Field | Notes |
+|--------|------|------|-------|-------|
+| +0x00 | 68 | byte[68] | field_00 | misc state bytes |
+| +0x44 | 192 | TextureStage[8] | texStages | 8 texture unit states |
+| +0x104 | 12 | byte[12] | field_104 | |
+| +0x110 | 1 | byte | alphaBlendSrc | alpha blend source factor |
+| +0x111 | 1 | byte | alphaBlendDst | alpha blend destination factor |
+| +0x112 | 1 | byte | alphaTestEnable | alpha test enable flag |
+| +0x113 | 1 | byte | alphaRef | alpha test reference, init=0xFF |
+| +0x114 | 4 | uint | activeTexUnit | active texture unit index |
+| +0x118 | 12 | byte[12] | field_118 | |
+| +0x124 | 1 | byte | depthWrite | depth write enable, init=1 |
+| +0x125 | 1 | byte | depthTest | depth test enable, init=0 |
+| +0x126 | 2 | byte[2] | _pad126 | alignment |
+| +0x128 | 4 | uint | depthFunc | depth comparison func, init=8 |
+| +0x12C | 4 | uint | field_12C | |
+| +0x130 | 1 | byte | stencilEnable | front stencil enable |
+| +0x131 | 1 | byte | stencilEnableBack | back stencil enable |
+| +0x132 | 2 | byte[2] | _pad132 | alignment |
+| +0x134 | 4 | uint | stencilRef | |
+| +0x138 | 4 | uint | stencilMask | |
+| +0x13C | 28 | StencilState | stencilFront | front-face stencil |
+| +0x158 | 28 | StencilState | stencilBack | back-face stencil |
+
+---
+
+### CommandBuffer (120 bytes / 0x78)
+
+> `RenderBuffer::CommandBuffer` — embedded in `Renderer` at +0x1BC.
+>
+> Source: `CommandBuffer::CommandBuffer` @ 0x001d3a0a
+
+| Offset | Size | Type | Field | Notes |
+|--------|------|------|-------|-------|
+| +0x00 | 4 | uint | cmdVec0_begin | command vector 0 begin |
+| +0x04 | 4 | uint | cmdVec0_end | command vector 0 end |
+| +0x08 | 4 | uint | cmdVec0_cap | command vector 0 capacity |
+| +0x0C | 4 | uint | cmdVec1_begin | command vector 1 begin |
+| +0x10 | 4 | uint | cmdVec1_end | command vector 1 end |
+| +0x14 | 4 | uint | cmdVec1_cap | command vector 1 capacity |
+| +0x18 | 4 | uint | field_18 | |
+| +0x1C | 4 | uint | field_1C | |
+| +0x20 | 4 | uint | field_20 | init=0 |
+| +0x24 | 4 | uint | field_24 | init=0xFFFFFFFF |
+| +0x28 | 4 | uint | pSelf | self-pointer |
+| +0x2C | 4 | uint | field_2C | |
+| +0x30 | 64 | byte[64] | mutex | `pthread_mutex_t`-equivalent |
+| +0x70 | 4 | uint | field_70 | init=0 |
+| +0x74 | 4 | uint | capacity | init from ctor param |
+
+---
+
+### Renderer (564 bytes / 0x234)
+
+> `Renderer` — base hardware renderer. `GameRenderer` inherits from this at +0x000.
+>
+> Source: `Renderer::Renderer` @ 0x001d415a
+
+| Offset | Size | Type | Field | Notes |
+|--------|------|------|-------|-------|
+| +0x000 | 4 | uint | vtable | `&PTR__Renderer_00457948` |
+| +0x004 | 4 | uint | dwField_04 | |
+| +0x008 | 4 | uint | dwField_08 | |
+| +0x00C | 1 | byte | bField_0C | |
+| +0x00D | 3 | byte[3] | _pad0D | alignment |
+| +0x010 | 372 | RenderState | renderState | full GPU state snapshot |
+| +0x184 | 4 | uint (ShaderConstantSet*) | pShaderConstantSet | shader constant stack |
+| +0x188 | 4 | uint | shaderPushCount | push counter incremented per `AutoShaderConstant` push |
+| +0x18C | 4 | uint | pResManager | resource manager pointer |
+| +0x190 | 4 | uint | vertDescMgr | vertex description manager |
+| +0x194 | 4 | uint | dwField_194 | |
+| +0x198 | 4 | uint | dwField_198 | |
+| +0x19C | 4 | uint | dwField_19C | |
+| +0x1A0 | 4 | uint | dwField_1A0 | |
+| +0x1A4 | 4 | uint | dwField_1A4 | |
+| +0x1A8 | 8 | byte[8] | _gap1A8 | |
+| +0x1B0 | 4 | uint | dwField_1B0 | |
+| +0x1B4 | 4 | uint (Renderer*) | dwListSentinel | self-referential linked-list sentinel |
+| +0x1B8 | 4 | uint (Renderer*) | dwListNext | next renderer in list |
+| +0x1BC | 120 | CommandBuffer | cmdBuf | render command buffer |
+
+---
+
+### GameRenderer (2024 bytes / 0x7E8)
+
+> `GameRenderer` — main game renderer; extends `Renderer`. Holds 18 transform matrix slots, UI render manager, and erosion effect state.
+>
+> Source: `GameRenderer::GameRenderer` @ 0x000b31ec
+
+| Offset | Size | Type | Field | Notes |
+|--------|------|------|-------|-------|
+| +0x000 | 564 | Renderer | base | inherited Renderer |
+| +0x234 | 1152 | Matrix4[18] | matrices | 18 transform matrices (Model, View, Proj, etc.) |
+| +0x6B4 | 72 | uint[18] | pMatrices | pointer array; index `i` → `this + i*4 + stack_layer*8 + 0x6B4` |
+| +0x6FC | 72 | byte[72] | _pad6FC | padding / reserved |
+| +0x744 | 4 | uint | field_744 | init=0 |
+| +0x748 | 32 | byte[32] | _gap748 | |
+| +0x768 | 4 | uint | field_768 | init=0 |
+| +0x76C | 32 | byte[32] | _gap76C | |
+| +0x78C | 4 | uint | ptr78C | obj ptr, dtor released |
+| +0x790 | 4 | uint | ptr790 | obj ptr |
+| +0x794 | 4 | uint | ptr794 | obj ptr |
+| +0x798 | 4 | uint | ptr798 | obj ptr |
+| +0x79C | 4 | uint | ptr79C | obj ptr |
+| +0x7A0 | 4 | uint | ptr7A0 | obj ptr, dtor released |
+| +0x7A4 | 4 | uint | ptr7A4 | obj ptr |
+| +0x7A8 | 4 | uint | ptr7A8 | obj ptr, dtor released |
+| +0x7AC | 4 | uint | ptr7AC | obj ptr |
+| +0x7B0 | 4 | uint | ptr7B0 | obj ptr, dtor released |
+| +0x7B4 | 4 | uint | ptr7B4 | init=0 |
+| +0x7B8 | 4 | uint | ptr7B8 | init=0 |
+| +0x7BC | 4 | uint (UIRenderAssetManager*) | pUIRenderMgr | UI asset manager (holds Batcher at +0x1C) |
+| +0x7C0 | 4 | uint (cGame*) | pGame | owning game object (ctor param) |
+| +0x7C4 | 4 | uint | erosionMode | 2=default, 1=camera erosion |
+| +0x7C8 | 4 | uint | effectH_7C8 | init=0xFFFFFFFF |
+| +0x7CC | 4 | uint | effectH_7CC | init=0xFFFFFFFF |
+| +0x7D0 | 4 | byte[4] | _gap7D0 | |
+| +0x7D4 | 4 | uint | effectH_7D4 | init=0xFFFFFFFF |
+| +0x7D8 | 4 | uint | effectH_7D8 | init=0xFFFFFFFF |
+| +0x7DC | 4 | uint | effectH_7DC | init=0xFFFFFFFF |
+| +0x7E0 | 4 | byte[4] | _gap7E0 | |
+| +0x7E4 | 4 | uint | effectH_7E4 | init=0xFFFFFFFF |
+
+**`GetMatrix` formula:** `GetMatrix(type)` = `*(this + type*4 + stack_layer*8 + 0x6B4)`
+

@@ -532,6 +532,7 @@ struct GameLua51Context : GameLuaContextImpl {
         api._lua_concat(L, api._lua_gettop(L) - basetop);
     }
 };
+char luajit_ds_check_slowtailcall(lua_State *L, const char *chunkname);
 
 struct GameLuaContextJit : GameLuaContextImpl {
     using GameLuaContextImpl::GameLuaContextImpl;
@@ -550,6 +551,12 @@ struct GameLuaContextJit : GameLuaContextImpl {
                 return;
             }
             api._lua_getinfo = (decltype(&lua_getinfo)) addr;
+            typedef char (*lj_check_slowtailcall_fn)(lua_State *L, const char *chunkname);
+            void (*lua_ds_set_slowtailcall_cb)(lj_check_slowtailcall_fn fn);
+            lua_ds_set_slowtailcall_cb = (decltype(lua_ds_set_slowtailcall_cb)) gum_module_find_export_by_name(LuaModule, "lua_ds_set_slowtailcall_cb");
+            if (lua_ds_set_slowtailcall_cb) {
+                lua_ds_set_slowtailcall_cb(&luajit_ds_check_slowtailcall);
+            }
         }
     }
 

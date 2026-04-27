@@ -1,13 +1,8 @@
 local registry = debug.getregistry()
-local callback_calls = {}
 
-registry["LJ_DS_dynamic_tailcall_cb"] = function(reader, data, chunkname, mode)
-    callback_calls[#callback_calls + 1] = {
-        chunkname = chunkname,
-        mode = mode,
-    }
-    return chunkname == "@dynamic_tailcall_wrapped.lua"
-end
+registry["LJ_DS_slowtailcall_mods"] = {
+    ["test-wrapped"] = true,
+}
 
 local function compile_case(chunkname)
     local source = [[
@@ -30,12 +25,8 @@ return result
     return assert(loadstring(source, chunkname))()
 end
 
-local plain = compile_case("@dynamic_tailcall_plain.lua")
-local wrapped = compile_case("@dynamic_tailcall_wrapped.lua")
-
-assert(#callback_calls == 2)
-assert(callback_calls[1].chunkname == "@dynamic_tailcall_plain.lua")
-assert(callback_calls[2].chunkname == "@dynamic_tailcall_wrapped.lua")
+local plain = compile_case("@../mods/test-plain/test.lua")
+local wrapped = compile_case("@../mods/test-wrapped/test.lua")
 
 assert(plain.level1.what == "Lua")
 assert(plain.level1.istailcall == false)
@@ -52,4 +43,4 @@ assert(wrapped.traceback:find("(tail call): ?", 1, true))
 assert(not wrapped.traceback:find("LJ_DS_tailcall", 1, true))
 assert(not wrapped.traceback:find("___tailcall", 1, true))
 
-registry["LJ_DS_dynamic_tailcall_cb"] = nil
+registry["LJ_DS_slowtailcall_mods"] = nil

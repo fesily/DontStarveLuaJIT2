@@ -1219,6 +1219,51 @@ static std::optional<char> parse_lua_ordering_channel(const sol::optional<int>& 
 }
 
 // export DONTSTARVEINJECTOR_GAME_API functions to lua module
+
+char luajit_ds_check_slowtailcall(lua_State *L, const char *chunkname) {
+    const char *path, *modstart, *slash;
+    char modname[256];
+    size_t len;
+
+    if (!chunkname) return 0;
+
+    path = chunkname;
+    if (path[0] == '@') path++;
+
+    if (!(path[0] == '.' && path[1] == '.' && path[2] == '/' &&
+          path[3] == 'm' && path[4] == 'o' && path[5] == 'd' &&
+          path[6] == 's' && path[7] == '/'))
+        return 0;
+
+    modstart = path + 8;
+    slash = modstart;
+    while (*slash && *slash != '/') slash++;
+    len = (size_t)(slash - modstart);
+    if (len == 0 || len >= sizeof(modname)) return 0;
+    memcpy(modname, modstart, len);
+    modname[len] = '\0';
+
+    lua_getfield(L, LUA_REGISTRYINDEX, "LJ_DS_slowtailcall_mods");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        return 0;
+    }
+
+    lua_getfield(L, -1, "__any__");
+    if (lua_toboolean(L, -1)) {
+        lua_pop(L, 2);
+        return 1;
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, -1, modname);
+    {
+        char result = (char)lua_toboolean(L, -1);
+        lua_pop(L, 2);
+        return result;
+    }
+}
+
 int luaopen_GameInjector(lua_State* L) {
     sol::state_view lua(L);
     sol::table module = lua.create_table();

@@ -314,6 +314,7 @@ local function main()
 			if hash == self.hash then
 				return
 			end
+			self.hash = hash
 
 			local function is_visible_byte(b)
 				return (b >= 32 and b <= 126)
@@ -400,11 +401,9 @@ local function main()
 
 			local MODS_ROOT = "../mods/"
 			for i, modname in ipairs(ModDirectoryNames) do
-				if self.EncryptedMods[modname] == nil then
-					local ok, isencrypted = pcall(check_encrypted, MODS_ROOT .. modname .. "/modmain.lua", modname)
-					if ok and not isencrypted then
-						pcall(check_encrypted, MODS_ROOT .. modname .. "/modworldgenmain.lua", modname)
-					end
+				local ok, isencrypted = pcall(check_encrypted, MODS_ROOT .. modname .. "/modmain.lua", modname)
+				if ok and not isencrypted then
+					pcall(check_encrypted, MODS_ROOT .. modname .. "/modworldgenmain.lua", modname)
 				end
 				local modinfo = KnownModIndex:GetModInfo(modname)
 				if modinfo and modinfo.luajit_compatible then
@@ -568,40 +567,15 @@ local function main()
 	function _M:SlowTailCall()
 		local AnyModDisableTailCall = GetModConfigData("AnyModDisableTailCall")
 		if GetModConfigData("SlowTailCall") then
-			local string_sub = string.sub
-			local function getmodname(env, chunkname)
-				if string_sub(chunkname, 1) == "@" then
-					chunkname = string_sub(chunkname, 2)
+			local mods_table = {}
+			if AnyModDisableTailCall then
+				mods_table["__any__"] = true
+			else
+				for modname, _ in pairs(_M.SlowTailCallModList) do
+					mods_table[modname] = true
 				end
-				if startWith(chunkname, "../mods") then
-					return filename2modname(chunkname)
-				end
-
-				return env.modname
 			end
-			debug.getregistry()["LJ_DS_dynamic_tailcall_cb"] = function(reader, data, chunkname, mode)
-				if not chunkname then
-					return true, "no chunkname"
-				end
-				if data == chunkname then
-					return false, "no filename"
-				end
-
-				if startWith(chunkname, "@scripts/") then
-					return false, "@scripts"
-				end
-
-				--local env = getfenv(3)
-				local ok, modname = pcall(getmodname, env, chunkname)
-				if not ok or not modname then
-					return false, "no modname"
-				end
-				if modname and (_M.SlowTailCallModList[modname] or AnyModDisableTailCall) then
-					return true, "slow tailcall", modname
-				end
-
-				return false
-			end
+			debug.getregistry()["LJ_DS_slowtailcall_mods"] = mods_table
 		end
 	end
 

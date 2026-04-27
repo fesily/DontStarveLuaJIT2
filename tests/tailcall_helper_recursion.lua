@@ -1,10 +1,8 @@
 local registry = debug.getregistry()
-local callback_count = 0
 
-registry["LJ_DS_dynamic_tailcall_cb"] = function(reader, data, chunkname, mode)
-    callback_count = callback_count + 1
-    return chunkname == "@dynamic_tailcall_helper_recursion.lua"
-end
+registry["LJ_DS_slowtailcall_mods"] = {
+    ["test-recursion"] = true,
+}
 
 local source = [[
 local function leaf()
@@ -19,11 +17,10 @@ local result = bounce()
 return result
 ]]
 
-local fn = assert(loadstring(source, "@dynamic_tailcall_helper_recursion.lua"))
+local fn = assert(loadstring(source, "@../mods/test-recursion/main.lua"))
 local ok, result = pcall(fn)
 
-registry["LJ_DS_dynamic_tailcall_cb"] = nil
+registry["LJ_DS_slowtailcall_mods"] = nil
 
-assert(callback_count == 1)
 assert(ok == true)
 assert(result == 123)
