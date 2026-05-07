@@ -74,6 +74,10 @@ end
 
 local EnableForceLoadMod = false
 local ModName
+local platform_info = {
+    os = jit and jit.os or "Unknown",
+    arch = jit and jit.arch or "Unknown",
+}
 function _M.forceEnableLuaMod(en, modname)
     EnableForceLoadMod = en
     ModName = modname
@@ -99,10 +103,7 @@ function _M.forceEnableLuaMod(en, modname)
             local old_RunInEnvironment = old_env.RunInEnvironment or _G.RunInEnvironment
             local new_env = setmetatable({
                 RunInEnvironment = function(fn, fnenv)
-                    fnenv.platform_info = {
-                        os = jit and jit.os or "Unknown",
-                        arch = jit and jit.arch or "Unknown",
-                    }
+                    fnenv.platform_info = platform_info
                     return old_RunInEnvironment(fn, fnenv)
                 end
             }, { __index = old_env })

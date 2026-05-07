@@ -1403,10 +1403,21 @@ int GameDbg_lua_getinfo(lua_State *L, const char *what, lua_Debug *ar) {
     int ret = GetGameLuaContext()->_lua_getinfo(L, what, ar);
     if (ret && std::string_view{what}.contains('S')) {
         std::string_view source{ar->source ? ar->source : ""};
-        if (source[0] != '=') {
+        if (!source.empty() && source[0] != '=' && source[0] != '@') {
             // transform source path
-            
-            if (source.starts_with("../mods/") || source.starts_with("scripts/") || std::filesystem::exists(source)) {
+            bool is_path = source.starts_with("../mods/") || source.starts_with("scripts/");
+            if (!is_path) {
+                std::string_view short_src{ar->short_src ? ar->short_src : ""};
+                if (short_src.starts_with("[string")) {
+                    return ret;
+                }
+                try {
+                    is_path = std::filesystem::exists(source);
+                } catch (const std::filesystem::filesystem_error &e) {
+                    spdlog::warn("Error checking file existence for lua source path {}: {}", source, e.what());
+                }
+            }
+            if (is_path) {
                 thread_local std::string source_path;
                 source_path = fmt::format("@{}", source);
                 ar->source = source_path.c_str();
