@@ -301,7 +301,6 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     replace_game_branch_flag_to_dev(mainPath);
 
     LoadGameModConfig();
-    InstallRenderHooks();
     GameNetWorkHookRpc4();
     DisableScriptZip();
 }
