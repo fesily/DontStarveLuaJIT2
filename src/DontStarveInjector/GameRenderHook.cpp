@@ -251,19 +251,20 @@ inline void hooked_HWBufferDtor(void* hwBuffer) {
 // Batcher::Flush hook — passthrough + periodic stats logging
 inline void hooked_BatcherFlush(void* batcher) {
     original_BatcherFlush(batcher);
-#define ENABLE_RENDER_HOOK_STATS 1
+
 #if ENABLE_RENDER_HOOK_STATS
     static uint32_t s_frameCounter = 0;
-    static constexpr uint32_t kLogInterval = 600;
+    static constexpr uint32_t kLogInterval = 30000;
     if (++s_frameCounter % kLogInterval == 0 && g_enableBufferPool) {
         const auto& s = g_bufferNamePool.stats();
         const uint64_t total = s.hits + s.misses;
-        spdlog::info("[RenderHook] Pool hits={} misses={} evictions={} hitRate={:.1f}% "
-                     "reusedBytes={}KB genSaved={} deleteSaved={} pooled={} poolBytes={}KB",
-                     s.hits, s.misses, s.evictions,
+        spdlog::info("[RenderHook] Pool emaHitRate={:.1f}% cumHitRate={:.1f}% "
+                     "hits={} misses={} evictions={} reusedBytes={}KB "
+                     "pooled={} poolBytes={}KB",
+                     s.emaHitRate * 100.0,
                      total > 0 ? 100.0 * s.hits / total : 0.0,
+                     s.hits, s.misses, s.evictions,
                      s.reusedBytes / 1024,
-                     s.genSaved, s.deleteSaved,
                      g_bufferNamePool.totalPooled(),
                      g_bufferNamePool.totalBytes() / 1024);
     }

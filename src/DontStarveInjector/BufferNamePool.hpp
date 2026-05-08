@@ -41,12 +41,11 @@ public:
             it->second.pop_back();
             totalPooled_--;
             totalBytes_ -= key.capacityBucket;
-            stats_.hits++;
+            stats_.recordHit();
             stats_.reusedBytes += key.capacityBucket;
-            stats_.genSaved++;
             return name;
         }
-        stats_.misses++;
+        stats_.recordMiss();
         return 0;
     }
 
@@ -133,12 +132,27 @@ public:
     }
 
     struct Stats {
-        uint64_t hits        = 0; // acquire() cache hits
-        uint64_t misses      = 0; // acquire() cache misses
-        uint64_t evictions   = 0; // release() rejected due to capacity limits
-        uint64_t reusedBytes = 0; // bytes served from pool (sum of bucket sizes on hit)
-        uint64_t genSaved    = 0; // glGenBuffers calls avoided
-        uint64_t deleteSaved = 0; // glDeleteBuffers calls avoided
+        uint64_t hits        = 0;
+        uint64_t misses      = 0;
+        uint64_t evictions   = 0;
+        uint64_t reusedBytes = 0;
+        uint64_t genSaved    = 0;
+        uint64_t deleteSaved = 0;
+
+        // EMA hit rate: updated on every acquire(), α = 0.01
+        // Reflects recent trend, not cumulative average
+        double emaHitRate = 0.0;
+        static constexpr double kAlpha = 0.01;
+
+        void recordHit() noexcept {
+            hits++;
+            genSaved++;
+            emaHitRate += kAlpha * (1.0 - emaHitRate);
+        }
+        void recordMiss() noexcept {
+            misses++;
+            emaHitRate += kAlpha * (0.0 - emaHitRate);
+        }
     };
 
     const Stats& stats() const noexcept { return stats_; }
