@@ -316,7 +316,7 @@ static uint32_t lj_jit_default_flags() noexcept {
 }
 
 static int fullgc_mb = 0;
-void (*lua_gc_func)(void *L, int, int);
+int (*lua_gc_func)(void *L, int, int);
 void lj_gc_fullgc_external(void *L, void (*oldfn)(void *L)) {
 
     if (fullgc_mb == 0) {

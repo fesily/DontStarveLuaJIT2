@@ -44,7 +44,7 @@ struct Profiler {
     lua_State *L;
 };
 static thread_local Profiler profiler;
-extern void (*lua_gc_func)(void *L, int, int);
+extern int (*lua_gc_func)(void *L, int, int);
 static int frame_gc_time_ns = 0;
 static bool tracy_active = 0;
 extern float frame_time_s;
@@ -159,8 +159,6 @@ struct ProfilerHooker {
     }
     static void TryDoGC(void *L, int left_time, uint64_t now) {
         auto luatype = GetGameLuaContext().luaType;
-        constexpr int LUA_GCSTEPTIME = 10;
-        constexpr int LUA_GCSTEP2 = 11;
         ZoneScopedN("frame gc");
         switch (luatype)
         {
@@ -169,6 +167,11 @@ struct ProfilerHooker {
             lua_gc_func(L, LUA_GCSTEP2, 0);
             break;
         case GameLuaType::jit_gen:
+            if (lua_gc_func(L, LUA_GCINC, 0) == LUA_GCINC) {
+                lua_gc_func(L, LUA_GCSTEPTIME, int(left_time * 0.8f));
+                lua_gc_func(L, LUA_GCSTEP2, 0);
+            }
+            break;
         case GameLuaType::game:
              // nothing to do
              break;

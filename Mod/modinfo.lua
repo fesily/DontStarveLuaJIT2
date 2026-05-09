@@ -23,7 +23,7 @@ description = translate(
 
 author = "fesil"
 
-version = "2.7.4"
+version = "2.7.5"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -112,7 +112,6 @@ configuration_options = {
         },
         default = 1,
         disabled_value = 0,
-        disabled_by = disable_by_gen_gc
     },
     {
         name = "EnableFrameGC",
@@ -124,7 +123,6 @@ configuration_options = {
         options = toggle,
         default = true,
         disabled_value = false,
-        disabled_by = disable_by_gen_gc
     },
     {
         name = "TargetRenderFPS",
