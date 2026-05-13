@@ -1709,6 +1709,12 @@ bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
 		resolved.EnableVBPoolSource = GameJitConfigSource::save_file;
 	}
 
+	bool gen_gc_enabled = ModConfigurationOptions::EnabledGenGC.default_value;
+	if (try_get_bool(options[ModConfigurationOptions::EnabledGenGC.name].get<sol::object>(), gen_gc_enabled)) {
+		resolved.EnabledGenGC = gen_gc_enabled;
+		resolved.EnabledGenGCSource = GameJitConfigSource::save_file;
+	}
+
     return true;
 }
 

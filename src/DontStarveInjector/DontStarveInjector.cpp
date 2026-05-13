@@ -26,6 +26,7 @@
 #include <spdlog/sinks/msvc_sink.h>
 #else
 #include <pthread.h>
+#include <unistd.h>
 #endif
 
 #include <string>
@@ -323,6 +324,8 @@ int chdir_hook(const char *path) {
 }
 
 extern char *__progname;
+static bool gum_initialized = false;
+
 __attribute__((constructor)) void init() {
     if (!getExePath().string().contains("dontstarve")) {
         return;
@@ -332,8 +335,16 @@ __attribute__((constructor)) void init() {
         return;
     }
     gum_init_embedded();
+    gum_initialized = true;
     auto intercetor = InjectorCtx::instance()->GetGumInterceptor();
     gum_interceptor_replace_fast(intercetor, api, (void *) &chdir_hook, (void **) &origin);
+}
+
+__attribute__((destructor)) void fini() {
+    if (!gum_initialized) {
+        return;
+    }
+    _exit(0);
 }
 #else
 using SetCurrentDirectoryWFn = BOOL(WINAPI *)(LPCWSTR);
