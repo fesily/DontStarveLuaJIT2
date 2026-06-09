@@ -38,6 +38,7 @@ endif ()
 
 if (NOT MSVC)
     list(APPEND SOURCES
+        GameForkSave.cpp
     )
 else()
     list(APPEND SOURCES

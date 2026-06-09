@@ -1080,6 +1080,9 @@ local function main()
 				modimport("scripts/netsim")
 			end
 		end
+		if hasluajit and not os_is_windows and TheWorld and TheNet:IsDedicated() then
+			modimport("scripts/fork_save")
+		end
 	end
 
 	if GameInjector then
