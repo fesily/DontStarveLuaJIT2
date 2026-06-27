@@ -59,7 +59,7 @@ find_package(range-v3 CONFIG REQUIRED)
 find_package(Tracy CONFIG REQUIRED)
 find_package(mimalloc CONFIG REQUIRED)
 find_package(Boost REQUIRED COMPONENTS pfr)
-#find_package(slikenet CONFIG REQUIRED)
+find_package(slikenet CONFIG REQUIRED)
 find_path(SOL2_INCLUDE_DIRS "sol/abort.hpp")
 find_path(PLF_HIVE_INCLUDE_DIRS "plf_hive.h")
 
@@ -118,7 +118,7 @@ target_link_libraries(Injector PRIVATE ZLIB::ZLIB)
 target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(Injector PRIVATE spdlog::spdlog)
 target_link_libraries(Injector PRIVATE range-v3::meta range-v3::concepts range-v3::range-v3)
-target_link_libraries(Injector PRIVATE SLikeNet)
+#target_link_libraries(Injector PRIVATE SLikeNet)
 if (WIN32)
     target_link_libraries(Injector PRIVATE
         unofficial::angle::libGLESv2

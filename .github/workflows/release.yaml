@@ -93,7 +93,7 @@ jobs:
 
   publish-release:
     needs: compile
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') && !startsWith(github.ref, 'refs/tags/preview-')
     strategy:
       fail-fast: false
       matrix:
@@ -122,33 +122,21 @@ jobs:
 
   publish-preview:
     needs: compile
-    if: ${{ github.ref == 'refs/heads/master' }} 
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: windows-2022, target: windows, platform: win32-x64 }
-          - { os: ubuntu-24.04,   target: linux,   platform: linux-x64 }
-          - { os: macos-14,       target: macos,   platform: macos-x64 }
-    runs-on: ${{ matrix.os }}
+    if: ${{ github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Download packaged mod
+      - name: Download packaged mods
         uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.target }}-mod-zip
-          path: ${{ github.workspace }}
+          path: ${{ github.workspace }}/artifacts
 
-      - name: Publish preview assets
+      - name: Publish preview release
         uses: ncipollo/release-action@v1.14.0
         with:
-          artifacts: ${{ github.workspace }}/${{ matrix.target }}_Mod.zip
+          artifacts: ${{ github.workspace }}/artifacts/*/*_Mod.zip
           allowUpdates: true
           prerelease: true
-          makeLatest: true
-          tag: "preview"
+          makeLatest: false
+          tag: preview-${{ github.run_id }}
+          name: Preview Build ${{ github.run_number }}
           commit: ${{ github.sha }}
