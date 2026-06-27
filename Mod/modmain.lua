@@ -7,6 +7,16 @@ local function main()
 	local function print(...)
 		old_print("[luajit]", ...)
 	end
+
+	local main_fenv = getfenv(1)
+	local _modimport = modimport
+	local function modimport(modulename)
+		local saved_env = env.env
+		env.env = main_fenv
+		_modimport(modulename)
+		env.env = saved_env
+	end
+
 	local function startWith(str, prefix)
 		return str:find(prefix, 1, true) == 1
 	end
@@ -864,7 +874,9 @@ local function main()
 		if type(luavmType) ~= "string" then
 			return false
 		end
-		print("current vm type: ", GameInjector and GameInjector.DS_LUAJIT_get_vm_type_name and GameInjector.DS_LUAJIT_get_vm_type_name() or "unknown",
+		print("current vm type: ",
+			GameInjector and GameInjector.DS_LUAJIT_get_vm_type_name and GameInjector.DS_LUAJIT_get_vm_type_name() or
+			"unknown",
 			"target vm type: ", luavmType)
 		if GameInjector and luavmType ~= GameInjector.DS_LUAJIT_get_vm_type_name() then
 			print("switch vm to ", luavmType)
@@ -989,7 +1001,7 @@ local function main()
 					end
 				end
 			end
-			require "config_patch_bootstrap.bootstrap"()
+			require "config_patch_bootstrap.bootstrap" ()
 		end)
 	end
 
@@ -1050,7 +1062,7 @@ local function main()
 			GameInjector.DS_LUAJIT_disable_fullgc(tonumber(GetModConfigData("DisableForceFullGC")))
 		end
 
-		if GetModConfigData("EnableFrameGC") then
+		if GetModConfigData("EnableFrameGC") and not GetModConfigData("EnabledGenGC") then
 			GameInjector.DS_LUAJIT_replace_profiler_api()
 			GameInjector.DS_LUAJIT_enable_framegc(true)
 
@@ -1080,8 +1092,13 @@ local function main()
 				modimport("scripts/netsim")
 			end
 		end
-		if hasluajit and not os_is_windows and TheWorld and TheNet:IsDedicated() then
-			modimport("scripts/fork_save")
+		if hasluajit and not os_is_windows and TheNet:IsDedicated() then
+			if GetModConfigData("EnableForkSave") then
+				print("Dedicated server, load fork_save")
+				AddGamePostInit(function()
+					modimport("scripts/fork_save")
+				end)
+			end
 		end
 	end
 

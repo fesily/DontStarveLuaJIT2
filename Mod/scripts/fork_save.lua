@@ -25,13 +25,14 @@ _G.SaveGame = function(isshutdown, callback, ...)
     end
 
     local result = fork_save()
-
+    print("[fork_save] SaveGame result: " .. tostring(result))
     if result == "unsupported" then
         return run_default_save(isshutdown, callback, ...)
     elseif result == "parent" then
         if callback ~= nil then
             callback()
         end
+        print("[fork_save] parent: SaveGame skiped, child process is saving the game")
         return
     elseif result == "child" then
         in_fork_save = true

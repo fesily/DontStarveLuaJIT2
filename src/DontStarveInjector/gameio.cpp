@@ -310,9 +310,12 @@ static int lj_need_transform_path() noexcept {
     return has_lua_debug_flag;
 }
 
-static uint32_t lj_jit_default_flags() noexcept {
+static uint32_t lj_jit_default_flags(uint32_t flags) noexcept {
     auto path = getExePath();
-    return path.string().contains("nullrenderer") ? 1 : 0;
+    bool jitflag = path.string().contains("nullrenderer") ? 1 : 0;
+    flags &= ~1;
+    flags |= jitflag;
+    return flags;
 }
 
 static int fullgc_mb = 0;

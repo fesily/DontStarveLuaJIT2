@@ -3,12 +3,15 @@
 # Set default values if variables are not already set
 ROOT_CONFIG_DIR=${ROOT_CONFIG_DIR:="$HOME/.klei/DoNotStarveTogether/DSTWhalesCluster"}
 ROOT_GAME_DIR=${ROOT_GAME_DIR:="$HOME/server_dst"}
-# Check if the directory /workspaces/dontstarveluajit2 exists
-if [ -d "/workspaces/dontstarveluajit2" ]; then
-  mkdir -p $ROOT_CONFIG_DIR
-  cp -rvf $PWD/docker/DSTClusterConfig/* $ROOT_CONFIG_DIR
-  mkdir -p $ROOT_GAME_DIR/mods/luajit2
-  cp -rvf $PWD/Mod/* $ROOT_GAME_DIR/mods/luajit2
+ROOT_DEV_DIR=${ROOT_DEV_DIR:="/workspaces/dontstarveluajit2"}
+echo "Using ROOT_CONFIG_DIR: $ROOT_CONFIG_DIR"
+echo "Using ROOT_GAME_DIR: $ROOT_GAME_DIR"
+# Check if the directory $ROOT_DEV_DIR exists
+if [ -d "$ROOT_DEV_DIR" ]; then
+  mkdir -p "$ROOT_CONFIG_DIR"
+  cp -rvf "$PWD/config/server/DoNotStarveTogether/." "$ROOT_CONFIG_DIR"
+  mkdir -p "$ROOT_GAME_DIR/mods/luajit2"
+  cp -rvf "$PWD/Mod/." "$ROOT_GAME_DIR/mods/luajit2"
 fi
 
 

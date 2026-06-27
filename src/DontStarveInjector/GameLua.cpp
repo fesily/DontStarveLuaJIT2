@@ -315,6 +315,16 @@ struct GameLuaContextImpl : GameLuaContext {
     overrideapis[#name] = (void *) (decltype(&#name))
 
         HOOK_LUA_API(lua_gc) + [](lua_State *L, int what, int data) {
+            if (currentCtx->luaType == GameLuaType::jit_gen) {
+                switch (what) {
+                    case LUA_GCCOUNT:
+                    case LUA_GCCOUNTB:
+                        return (*currentCtx)->_lua_gc(L, what, data);
+                    default:
+                        lua_event_notifyer(LUA_EVENT::call_lua_gc, L);
+                        return 0;
+                }
+            }
             lua_event_notifyer(LUA_EVENT::call_lua_gc, L);
             return (*currentCtx)->_lua_gc(L, what, data);
         };

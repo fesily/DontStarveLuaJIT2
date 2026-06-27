@@ -14,16 +14,7 @@ return {
   },
   ["luajit2"]={
     configuration_options={
-      ["EnabledJIT"]=true,
-      ["DisableForceFullGC"]=64,
-      ["EnableFrameGC"]=3,
-      ["TargetLogicFPS"]=30,
-      ["TargetRenderFPS"]=false,
-      ["JitOpt"]=true,
-      ["ModBlackList"]=true,
-      ["DisableJITWhenServer"]=false,
-      ["EnableProfiler"]="off",
-      ["EnableTracy"]="off"
+      ["EnabledGenGC"]=false
     },
     enabled=true 
   },

@@ -50,6 +50,10 @@ static bool tracy_active = 0;
 extern float frame_time_s;
 constexpr auto frame_gc_time_default_ns = 10 * 1e3;
 DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable) {
+    if (GetGameLuaContext().luaType == GameLuaType::jit_gen) {
+        frame_gc_time_ns = 0;
+        return false;
+    }
     frame_gc_time_ns = enable ? frame_time_s * 1e9 : frame_gc_time_default_ns;
     return frame_gc_time_ns == frame_gc_time_default_ns;
 }
@@ -160,17 +164,14 @@ struct ProfilerHooker {
     static void TryDoGC(void *L, int left_time, uint64_t now) {
         auto luatype = GetGameLuaContext().luaType;
         ZoneScopedN("frame gc");
+        if (luatype == GameLuaType::jit_gen) {
+            return;
+        }
         switch (luatype)
         {
         case GameLuaType::jit:
             lua_gc_func(L, LUA_GCSTEPTIME, int(left_time * 0.8f));
             lua_gc_func(L, LUA_GCSTEP2, 0);
-            break;
-        case GameLuaType::jit_gen:
-            if (lua_gc_func(L, LUA_GCINC, 0) == LUA_GCINC) {
-                lua_gc_func(L, LUA_GCSTEPTIME, int(left_time * 0.8f));
-                lua_gc_func(L, LUA_GCSTEP2, 0);
-            }
             break;
         case GameLuaType::game:
              // nothing to do

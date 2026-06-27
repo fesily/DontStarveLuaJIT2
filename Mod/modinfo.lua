@@ -6,9 +6,9 @@ local function translate(t)
     t.zht = t.zht or t.zh
     return t[lc] or t.en
 end
-name = "DontStarveLuaJit2"
+name                       = "DontStarveLuaJit2"
 
-description = translate(
+description                = translate(
     {
         zh = [[
         替换游戏底层虚拟机为LUAJIT,加速整个游戏
@@ -21,47 +21,47 @@ description = translate(
     }
 )
 
-author = "fesil"
+author                     = "fesil"
 
-version = "2.7.6"
+version                    = "2.7.6"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
-api_version = 10
+api_version                = 10
 
-dont_starve_compatible = true
+dont_starve_compatible     = true
 reign_of_giants_compatible = true
-dst_compatible = true
-luajit_compatible = true
+dst_compatible             = true
+luajit_compatible          = true
 --TODO: need test compatible without the mod
 --all_clients_require_mod = true
-client_only_mod = true
-server_only_mod = true
+client_only_mod            = true
+server_only_mod            = true
 
-priority = 2e53
+priority                   = 2e53
 
 -- Preview image
-icon_atlas = "modicon.xml"
-icon = "modicon.tex"
+icon_atlas                 = "modicon.xml"
+icon                       = "modicon.tex"
 
-mod_dependencies  = {
+mod_dependencies           = {
     -- "buttonpicker",
     -- "workshop-3317960157",
 }
 
-local toggle = {
+local toggle               = {
     { description = translate({ en = "On", zh = "启用" }), data = true },
     { description = translate({ en = "Off", zh = "禁用" }), data = false },
 }
 
-local luavmtype = {
+local luavmtype            = {
     jit = 'jit',
     game = 'game',
     _51 = 'lua51',
     jit_gen = 'jit_gen',
 }
 
-local section_counter = 0
+local section_counter      = 0
 local function AddSection(label, hover)
     section_counter = section_counter + 1
 
@@ -123,6 +123,7 @@ configuration_options = {
         options = toggle,
         default = true,
         disabled_value = false,
+        disabled_by = disable_by_gen_gc,
     },
     {
         name = "TargetRenderFPS",
@@ -323,8 +324,8 @@ configuration_options = {
         name = "EnabledGenGC",
         label = translate({ en = "Enabled generational GC", zh = "启用分代GC" }),
         hover = translate({
-            en = "Enable generational GC",
-            zh = "启用分代GC"
+            en = "Enable generational GC(many issues, not recommended)",
+            zh = "启用分代GC(问题很多,不建议使用)"
         }),
         options = toggle,
         default = false,
@@ -353,6 +354,18 @@ configuration_options = {
         default = false,
         disabled_value = false,
         disabled_by = disable_by_non_win or disable_by_lua51,
+    },
+    {
+        name = "EnableForkSave",
+        label = translate({ en = "Fork Save (Preview)", zh = "分叉存档" }),
+        hover = translate({
+            en = "Fork a child process to save the game, reducing save lag. Only supported on Linux/MacOS.",
+            zh = "fork子进程保存游戏,存档不再卡顿.仅支持Linux/Macos"
+        }),
+        options = toggle,
+        default = true,
+        disabled_value = false,
+        disabled_by = not disable_by_non_win,
     },
     {
         name = "AngleBackend",
@@ -410,7 +423,8 @@ configuration_options = {
     {
         name = "EnableNetSim",
         label = translate({ en = "Enable Network Simulator", zh = "启用网络模拟器" }),
-        hover = translate({ en = "Simulate packet delay/jitter/loss (client-side, Win x64 only)", zh = "模拟网络延迟/抖动/丢包（仅客户端，仅Win x64）" }),
+        hover = translate({ en = "Simulate packet delay/jitter/loss (client-side, Win x64 only)", zh =
+        "模拟网络延迟/抖动/丢包（仅客户端，仅Win x64）" }),
         options = toggle,
         default = false,
         disabled_value = false,

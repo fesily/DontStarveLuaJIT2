@@ -705,7 +705,10 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
     static std::atomic_char replaced;
     if (replaced) return 1;
 #ifdef __linux__
-    function_relocation::MemorySignature profiler_push{"41 83 84 24 80 01 00 00 01", -0xF6};
+    // profiler_push: compiler now emits `add dword [rbx+0x180],1` (was r12-based 41 83 84 24 ...).
+    // Anchor on the surrounding `mov [rbp+0x18],0x42 ; mov [rbp+0x28],r14d ; add [rbx+0x180],1`
+    // tail to stay unique (the bare increment matches twice), func entry is -0xEE from match start.
+    function_relocation::MemorySignature profiler_push{"C6 45 18 42 44 89 75 28 83 83 80 01 00 00 01", -0xEE};
     function_relocation::MemorySignature profiler_pop{"64 48 8B 1C 25 F8 FF FF FF", -0x15};
 #elif defined(__APPLE__)
     function_relocation::MemorySignature profiler_push{"41 83 84 24 80 01 00 00 01", -0xF6};
