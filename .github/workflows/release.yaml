@@ -32,10 +32,16 @@ jobs:
         with:
           submodules: true
       - name: Restore vcpkg binary cache
-        uses: actions/cache@v4
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/.vcpkg-bincache
           key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'CMakeLists.txt', 'cmake/custom-triplets/**', 'cmake/ports/**') }}
+      - name: Initialize MSVC developer environment
+        if: ${{ matrix.target == 'windows' }}
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
       - uses: lukka/get-cmake@latest
         with:
           cmakeVersion: 3.31.6     # <--= optional, stick to exactly 3.25.2 version
@@ -48,12 +54,22 @@ jobs:
         with:
           vcpkgJsonGlob: 'vcpkg.json'
 
-      - name: Run CMake+vcpkg+Ninja+CTest to build packages and generate/build/test the code.
+      - name: Configure CMake and populate vcpkg binary cache
         uses: lukka/run-cmake@v10
         with:
           configurePreset: 'ninja-multi-vcpkg'
           configurePresetAdditionalArgs: "['-DCMAKE_OSX_ARCHITECTURES=x86_64']"
-          buildPreset: 'ninja-vcpkg-release-dbg'
+
+      - name: Save vcpkg binary cache
+        if: ${{ always() && steps.vcpkg-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-bincache
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+      - name: Build
+        run: |
+          cmake --build ./builds/ninja-multi-vcpkg --config RelWithDebInfo
 
       - name: CMake install
         run: |
