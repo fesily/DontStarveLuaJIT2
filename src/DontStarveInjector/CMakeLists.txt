@@ -59,7 +59,7 @@ find_package(range-v3 CONFIG REQUIRED)
 find_package(Tracy CONFIG REQUIRED)
 find_package(mimalloc CONFIG REQUIRED)
 find_package(Boost REQUIRED COMPONENTS pfr)
-find_package(slikenet CONFIG REQUIRED)
+#find_package(slikenet CONFIG REQUIRED)
 find_path(SOL2_INCLUDE_DIRS "sol/abort.hpp")
 find_path(PLF_HIVE_INCLUDE_DIRS "plf_hive.h")
 
