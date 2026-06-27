@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.15)
 
 cmake_policy(SET CMP0091 NEW)
 
+project(DontStarveLuaJIT VERSION 2.8.0)
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -36,8 +38,6 @@ elseif (UNIX AND APPLE)
 else ()
     message(FATAL_ERROR "Not supported platform")
 endif ()
-
-project(DontStarveLuaJIT VERSION 2.7.6)
 
 option(DISABLE_TRACY_FUTURE "disable tray future" ON)
 
