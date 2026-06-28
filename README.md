@@ -373,7 +373,7 @@ end
 | 匿名     | 20RMB | 无| |
 | 18**30   | 100RMB| 无 | |
 | 朝*花     | 100RMB | 无| |
-| starv.ing | 299RMB | 无| |
+| LST | 299RMB | 无| |
 
 # 捐赠方式
 ![weixin_zanshang](https://github.com/user-attachments/assets/9f6485ce-5254-4207-a514-89bd02c332ce)
