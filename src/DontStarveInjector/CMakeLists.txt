@@ -42,6 +42,7 @@ if (NOT MSVC)
     )
 else()
     list(APPEND SOURCES
+        GameForkSave.cpp
         Progress.cpp
         #profiler.cpp
         GameLua.def
