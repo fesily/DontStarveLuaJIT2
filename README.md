@@ -58,12 +58,12 @@
 
 功能描述:
 
-预计减少卡顿情况.(ps: 预计你懂的😄)
-
 极大减少stopworld时间,减少逻辑帧过长导致的卡顿
 
+目前看服务器进程效果显著
+
 赞助:
-░░░░░░░░░░░░░ (0/500)
+██████████████████████ (500/500)
 
 ## Nintendo switch插件
 
@@ -373,6 +373,7 @@ end
 | 匿名     | 20RMB | 无| |
 | 18**30   | 100RMB| 无 | |
 | 朝*花     | 100RMB | 无| |
+| starv.ing | 299RMB | 无| |
 
 # 捐赠方式
 ![weixin_zanshang](https://github.com/user-attachments/assets/9f6485ce-5254-4207-a514-89bd02c332ce)
