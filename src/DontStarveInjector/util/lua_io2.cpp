@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "../GameLua.hpp"
+#include "../gameio.h"
 
 #undef LUA_FILEHANDLE
 #define LUA_FILEHANDLE "IO2FILE*"
@@ -124,7 +125,7 @@ static int io_pclose (GameLuaContext &ctx, lua_State *L) {
 static int io_fclose (lua_State *L) {
   auto &ctx = GetGameLuaContext();
   FILE **p = tofilep(ctx, L);
-  int ok = (fclose(*p) == 0);
+  int ok = (lj_fclose(*p) == 0);
   *p = NULL;
   return pushresult(ctx, L, ok, NULL);
 }
@@ -172,7 +173,7 @@ static int io_open (lua_State *L) {
   const char *filename = ctx->_luaL_checkstring(L, 1);
   const char *mode = ctx->_luaL_optstring(L, 2, "r");
   FILE **pf = newfile(ctx, L);
-  *pf = fopen(filename, mode);
+  *pf = lj_fopen(filename, mode);
   return (*pf == NULL) ? pushresult(ctx, L, 0, filename) : 1;
 }
 
@@ -214,7 +215,7 @@ static int g_iofile (GameLuaContext &ctx, lua_State *L, int f, const char *mode)
     const char *filename = ctx->_lua_tostring(L, 1);
     if (filename) {
       FILE **pf = newfile(ctx, L);
-      *pf = fopen(filename, mode);
+      *pf = lj_fopen(filename, mode);
       if (*pf == NULL)
         fileerror(ctx, L, 1, filename);
     }
@@ -270,7 +271,7 @@ static int io_lines (lua_State *L) {
   else {
     const char *filename = ctx->_luaL_checkstring(L, 1);
     FILE **pf = newfile(ctx, L);
-    *pf = fopen(filename, "r");
+    *pf = lj_fopen(filename, "r");
     if (*pf == NULL)
       fileerror(ctx, L, 1, filename);
     aux_lines(ctx, L, ctx->_lua_gettop(L), 1);
@@ -288,7 +289,7 @@ static int io_lines (lua_State *L) {
 
 static int read_number (GameLuaContext &ctx, lua_State *L, FILE *f) {
   lua_Number d;
-  if (fscanf(f, LUA_NUMBER_SCAN, &d) == 1) {
+  if (lj_fscanf(f, LUA_NUMBER_SCAN, &d) == 1) {
     ctx->_lua_pushnumber(L, d);
     return 1;
   }
@@ -300,10 +301,12 @@ static int read_number (GameLuaContext &ctx, lua_State *L, FILE *f) {
 
 
 static int test_eof (GameLuaContext &ctx, lua_State *L, FILE *f) {
-  int c = getc(f);
-  ungetc(c, f);
+  char c;
+  size_t n = lj_fread(&c, 1, 1, f);
+  if (n > 0)
+    lj_fseek(f, -1, SEEK_CUR);
   ctx->_lua_pushlstring(L, NULL, 0);
-  return (c != EOF);
+  return (n > 0);
 }
 
 
@@ -313,7 +316,7 @@ static int read_line (GameLuaContext &ctx, lua_State *L, FILE *f) {
   for (;;) {
     size_t l;
     char *p = ctx->_luaL_prepbuffer(&b);
-    if (fgets(p, LUAL_BUFFERSIZE, f) == NULL) {  /* eof? */
+    if (lj_fgets(p, LUAL_BUFFERSIZE, f) == NULL) {  /* eof? */
       ctx->_luaL_pushresult(&b);  /* close buffer */
       return (ctx->_lua_objlen(L, -1) > 0);  /* check whether read something */
     }
@@ -338,7 +341,7 @@ static int read_chars (GameLuaContext &ctx, lua_State *L, FILE *f, size_t n) {
   do {
     char *p = ctx->_luaL_prepbuffer(&b);
     if (rlen > n) rlen = n;  /* cannot read more than asked */
-    nr = fread(p, sizeof(char), rlen, f);
+    nr = lj_fread(p, sizeof(char), rlen, f);
     ctx->_luaL_addlstring(&b, p, nr);
     n -= nr;  /* still have to read `n' chars */
   } while (n > 0 && nr == rlen);  /* until end of count or eof */
@@ -351,7 +354,7 @@ static int g_read (GameLuaContext &ctx, lua_State *L, FILE *f, int first) {
   int nargs = ctx->_lua_gettop(L) - 1;
   int success;
   int n;
-  clearerr(f);
+  lj_clearerr(f);
   if (nargs == 0) {  /* no arguments? */
     success = read_line(ctx, L, f);
     n = first+1;  /* to return 1 result */
@@ -384,7 +387,7 @@ static int g_read (GameLuaContext &ctx, lua_State *L, FILE *f, int first) {
       }
     }
   }
-  if (ferror(f))
+  if (lj_ferror(f))
     return pushresult(ctx, L, 0, NULL);
   if (!success) {
     ctx->_lua_pop(L, 1);  /* remove last result */
@@ -413,7 +416,7 @@ static int io_readline (lua_State *L) {
   if (f == NULL)  /* file is already closed? */
     ctx->_luaL_error(L, "file is already closed");
   sucess = read_line(ctx, L, f);
-  if (ferror(f))
+  if (lj_ferror(f))
     return ctx->_luaL_error(L, "%s", strerror(errno));
   if (sucess) return 1;
   else {  /* EOF */
@@ -434,14 +437,14 @@ static int g_write (GameLuaContext &ctx, lua_State *L, FILE *f, int arg) {
   int status = 1;
   for (; nargs--; arg++) {
     if (ctx->_lua_type(L, arg) == LUA_TNUMBER) {
-      /* optimization: could be done exactly as for strings */
-      status = status &&
-          fprintf(f, LUA_NUMBER_FMT, ctx->_lua_tonumber(L, arg)) > 0;
+      char buf[64];
+      int n = snprintf(buf, sizeof(buf), LUA_NUMBER_FMT, ctx->_lua_tonumber(L, arg));
+      status = status && n > 0 && (lj_fwrite(buf, 1, n, f) == (size_t)n);
     }
     else {
       size_t l;
       const char *s = ctx->_luaL_checklstring(L, arg, &l);
-      status = status && (fwrite(s, sizeof(char), l, f) == l);
+      status = status && (lj_fwrite(s, sizeof(char), l, f) == l);
     }
   }
   return pushresult(ctx, L, status, NULL);
@@ -467,11 +470,11 @@ static int f_seek (lua_State *L) {
   FILE *f = tofile(ctx, L);
   int op = ctx->_luaL_checkoption(L, 2, "cur", modenames);
   long offset = (long)ctx->_luaL_optinteger(L, 3, 0);
-  op = fseek(f, offset, mode[op]);
+  op = lj_fseek(f, offset, mode[op]);
   if (op)
     return pushresult(ctx, L, 0, NULL);  /* error */
   else {
-    ctx->_lua_pushinteger(L, ftell(f));
+    ctx->_lua_pushinteger(L, lj_ftell(f));
     return 1;
   }
 }
@@ -484,7 +487,7 @@ static int f_setvbuf (lua_State *L) {
   FILE *f = tofile(ctx, L);
   int op = ctx->_luaL_checkoption(L, 2, NULL, modenames);
   lua_Integer sz = ctx->_luaL_optinteger(L, 3, LUAL_BUFFERSIZE);
-  int res = setvbuf(f, NULL, mode[op], sz);
+  int res = lj_setvbuf(f, NULL, mode[op], sz);
   return pushresult(ctx, L, res == 0, NULL);
 }
 
@@ -492,13 +495,13 @@ static int f_setvbuf (lua_State *L) {
 
 static int io_flush (lua_State *L) {
     auto& ctx = GetGameLuaContext();
-  return pushresult(ctx, L, fflush(getiofile(ctx, L, IO_OUTPUT)) == 0, NULL);
+  return pushresult(ctx, L, lj_fflush(getiofile(ctx, L, IO_OUTPUT)) == 0, NULL);
 }
 
 
 static int f_flush (lua_State *L) {
     auto& ctx = GetGameLuaContext();
-  return pushresult(ctx, L, fflush(tofile(ctx, L)) == 0, NULL);
+  return pushresult(ctx, L, lj_fflush(tofile(ctx, L)) == 0, NULL);
 }
 
 

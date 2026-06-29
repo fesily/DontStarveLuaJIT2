@@ -144,7 +144,7 @@ static std::filesystem::path lj_fpath_format(std::filesystem::path const &path) 
     return path;
 }
 
-static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path *out_real_path) noexcept {
+FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path *out_real_path) noexcept {
     auto fmode = std::string_view(mode);
     auto write_mode = fmode.contains("w") || fmode.contains("a") || fmode.contains("+");
     auto path = lj_fpath_format(to_path(f));
@@ -179,10 +179,10 @@ static FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path 
     }
     return nullptr;
 }
-static FILE *lj_fopen(char const *f, const char *mode) noexcept {
+FILE *lj_fopen(char const *f, const char *mode) noexcept {
     return lj_fopen_ex(f, mode, nullptr);
 }
-static int lj_fclose(FILE *fp) noexcept {
+int lj_fclose(FILE *fp) noexcept {
     if (FileHandlers.contains((file_interface *) fp)) {
         FileHandlers.erase((file_interface *) fp);
         int res = ((file_interface *) fp)->fclose();
@@ -192,7 +192,7 @@ static int lj_fclose(FILE *fp) noexcept {
     return fclose(fp);
 }
 
-static int lj_fscanf(FILE *const fp, char const *const format, ...) noexcept {
+int lj_fscanf(FILE *const fp, char const *const format, ...) noexcept {
     if (FileHandlers.contains((file_interface *) fp)) {
         va_list args;
         va_start(args, format);
@@ -207,14 +207,14 @@ static int lj_fscanf(FILE *const fp, char const *const format, ...) noexcept {
     return res;
 }
 
-static char *lj_fgets(char *_Buffer, int _MaxCount, FILE *fp) noexcept {
+char *lj_fgets(char *_Buffer, int _MaxCount, FILE *fp) noexcept {
     if (FileHandlers.contains((file_interface *) fp)) {
         return ((file_interface *) fp)->fgets(_Buffer, _MaxCount);
     }
     return fgets(_Buffer, _MaxCount, fp);
 }
 
-static size_t lj_fread(
+size_t lj_fread(
         void *_Buffer,
         size_t _ElementSize,
         size_t _ElementCount,
@@ -225,7 +225,7 @@ static size_t lj_fread(
     return fread(_Buffer, _ElementSize, _ElementCount, fp);
 }
 
-static size_t lj_fwrite(
+size_t lj_fwrite(
         void const *_Buffer,
         size_t _ElementSize,
         size_t _ElementCount,
@@ -236,7 +236,7 @@ static size_t lj_fwrite(
     return fwrite(_Buffer, _ElementSize, _ElementCount, fp);
 }
 
-static int lj_ferror(FILE *fp) noexcept {
+int lj_ferror(FILE *fp) noexcept {
     if (FileHandlers.contains((file_interface *) fp)) {
         return ((file_interface *) fp)->ferror();
     }
@@ -245,7 +245,7 @@ static int lj_ferror(FILE *fp) noexcept {
 
 #ifdef _WIN32
 
-static int lj_fseeki64(
+int lj_fseeki64(
         FILE *fp,
         __int64 _Offset,
         int _Origin) noexcept {
@@ -255,7 +255,7 @@ static int lj_fseeki64(
     return _fseeki64(fp, _Offset, _Origin);
 }
 
-static __int64 lj_ftelli64(FILE *fp) noexcept {
+__int64 lj_ftelli64(FILE *fp) noexcept {
     if (FileHandlers.contains((file_interface *) fp)) {
         return ((file_interface *) fp)->ftello();
     }
@@ -264,14 +264,14 @@ static __int64 lj_ftelli64(FILE *fp) noexcept {
 
 #else
 
-static int lj_fseeko(FILE *fp, off_t _Offset, int _Origin) {
+int lj_fseeko(FILE *fp, off_t _Offset, int _Origin) {
     if (FileHandlers.contains((file_interface *) fp)) {
         return ((file_interface *) fp)->fseeko(_Offset, _Origin);
     }
     return fseeko(fp, _Offset, _Origin);
 }
 
-static off_t lj_ftello(FILE *fp) {
+off_t lj_ftello(FILE *fp) {
     if (FileHandlers.contains((file_interface *) fp)) {
         return ((file_interface *) fp)->ftello();
     }
@@ -280,18 +280,32 @@ static off_t lj_ftello(FILE *fp) {
 
 #endif
 
-static int lj_feof(FILE *fp) {
+int lj_feof(FILE *fp) noexcept {
     if (FileHandlers.contains((file_interface *) fp)) {
         return ((file_interface *) fp)->feof();
     }
     return feof(fp);
 }
 
-static void lj_clearerr(FILE *fp) noexcept {
+void lj_clearerr(FILE *fp) noexcept {
     if (FileHandlers.contains((file_interface *) fp)) {
         return ((file_interface *) fp)->clearerr();
     }
     return clearerr(fp);
+}
+
+int lj_fflush(FILE *fp) noexcept {
+    if (FileHandlers.contains((file_interface *) fp)) {
+        return 0;
+    }
+    return fflush(fp);
+}
+
+int lj_setvbuf(FILE *fp, char *buf, int mode, size_t size) noexcept {
+    if (FileHandlers.contains((file_interface *) fp)) {
+        return 0;
+    }
+    return setvbuf(fp, buf, mode, size);
 }
 
 static int lj_need_transform_path() noexcept {

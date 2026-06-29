@@ -436,8 +436,7 @@ local function main()
 
 	local function ForceDisableTailCall()
 		if hasluajit and GetModConfigData("ForceDisableTailCall") then
-			local jit_util = require 'jit.util'
-			jit_util.disabletailcall(true)
+			jit.disabletailcall(true)
 		end
 	end
 
