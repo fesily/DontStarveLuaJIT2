@@ -45,7 +45,9 @@ struct Profiler {
 };
 static thread_local Profiler profiler;
 extern int (*lua_gc_func)(void *L, int, int);
-static int frame_gc_time_ns = 0;
+extern int fullgc_deferred; /* from gameio.cpp */
+int frame_gc_time_ns = 0;
+static bool enable_frame_gc = false; 
 static bool tracy_active = 0;
 extern float frame_time_s;
 constexpr auto frame_gc_time_default_ns = 10 * 1e3;
@@ -54,8 +56,9 @@ DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable) {
         frame_gc_time_ns = 0;
         return false;
     }
-    frame_gc_time_ns = enable ? frame_time_s * 1e9 : frame_gc_time_default_ns;
-    return frame_gc_time_ns == frame_gc_time_default_ns;
+    enable_frame_gc = enable;
+    frame_gc_time_ns = frame_time_s * 1e9;
+    return enable_frame_gc;
 }
 static thread_local std::string thread_name;
 static void set_thread_name(uint32_t thread_id, const char *name) {
@@ -83,7 +86,7 @@ static int64_t hook_profiler_push(void *self, const char *zone, const char *sour
     bool is_connected = tracy_active;
     auto &p = profiler;
     if ("Update"sv == zone) {
-        if (frame_gc_time_ns) {
+        if (frame_gc_time_ns || fullgc_deferred) {
             static struct {
                 std::atomic_bool vaild;
                 std::mutex mtx;
@@ -133,16 +136,16 @@ struct ProfilerHooker {
                     < 33ms: normal
                     >= 33ms: bad
                 */
-                constexpr float frame_max_time_ns = 33 * 1e6;
-                constexpr float frame_good_max_time_ns = 20 * 1e6;
+                constexpr int frame_max_time_ns = 33 * 1e6;
+                constexpr int frame_good_max_time_ns = 20 * 1e6;
                 auto &p = profiler;
                 auto now = get_time_ns();
-                auto used_time = float(now - p.start_time_ns);
+                auto used_time = int(now - p.start_time_ns);
                 int left_time_ns = frame_gc_time_ns - used_time;
                 if (used_time > frame_max_time_ns) {
                     left_time_ns = 0;
-                } else if (left_time_ns > frame_good_max_time_ns) {
-                    left_time_ns = frame_gc_time_default_ns;
+                } else if (left_time_ns > frame_good_max_time_ns && fullgc_deferred == 0) {
+                    left_time_ns = 0;
                 }
                 p.start_time_ns = 0;
                 if (left_time_ns > 0) {
@@ -169,10 +172,20 @@ struct ProfilerHooker {
         }
         switch (luatype)
         {
-        case GameLuaType::jit:
+        case GameLuaType::jit: {
             lua_gc_func(L, LUA_GCSTEPTIME, int(left_time * 0.8f));
             lua_gc_func(L, LUA_GCSTEP2, 0);
+            static int lua_gccycle_count = 0;
+            auto lua_gccycle = lua_gc_func(L, LUA_GCCYCLE, 0);
+            if (lua_gccycle_count != lua_gccycle) {
+                lua_gccycle_count = lua_gccycle;
+                fullgc_deferred++;
+                if (fullgc_deferred > 2) {
+                    fullgc_deferred = 0; /* 两个周期完成，退出延迟模式 */
+                }
+            }
             break;
+        }
         case GameLuaType::game:
              // nothing to do
              break;

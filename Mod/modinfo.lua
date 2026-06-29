@@ -23,7 +23,7 @@ description                = translate(
 
 author                     = "fesil"
 
-version                    = "2.8.1"
+version                    = "2.8.2"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -97,21 +97,10 @@ configuration_options = {
             "Enabling this feature will result in a larger memory footprint, and will alleviate occasional lagging issues",
             zh = "启用该选项会导致更大的内存占用,将缓解偶发卡顿问题"
         }),
-        options = {
-            { description = translate({ en = "off", zh = "禁用" }), data = 0 },
-            { description = "gc 1MB", data = 1 },
-            { description = "gc 2MB", data = 2 },
-            { description = "gc 4MB", data = 4 },
-            { description = "gc 8MB", data = 8 },
-            { description = "gc 16MB", data = 16 },
-            { description = "gc 32MB", data = 32 },
-            { description = "gc 64MB", data = 64 },
-            { description = "gc 128MB", data = 128 },
-            { description = "gc 256MB", data = 256 },
-            { description = "gc 512MB", data = 512 },
-        },
-        default = 1,
-        disabled_value = 0,
+        options = toggle,
+        default = true,
+        disabled_value = false,
+        disabled_by = disable_by_gen_gc,
     },
     {
         name = "EnableFrameGC",

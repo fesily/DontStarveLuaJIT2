@@ -1056,26 +1056,30 @@ local function main()
 		-- 	injector.DS_LUAJIT_replace_network_tick(targetfps, 0, false)
 		-- end
 
+		GameInjector.DS_LUAJIT_disable_fullgc(false)
+		GameInjector.DS_LUAJIT_enable_framegc(false)
+		if not GetModConfigData("EnabledGenGC") then
+			if GetModConfigData("DisableForceFullGC")then
+				GameInjector.DS_LUAJIT_replace_profiler_api()
+				GameInjector.DS_LUAJIT_disable_fullgc(true)
+			end
 
-		if GetModConfigData("DisableForceFullGC") ~= 0 then
-			GameInjector.DS_LUAJIT_disable_fullgc(tonumber(GetModConfigData("DisableForceFullGC")))
-		end
+			if GetModConfigData("EnableFrameGC")then
+				GameInjector.DS_LUAJIT_replace_profiler_api()
+				GameInjector.DS_LUAJIT_enable_framegc(true)
 
-		if GetModConfigData("EnableFrameGC") and not GetModConfigData("EnabledGenGC") then
-			GameInjector.DS_LUAJIT_replace_profiler_api()
-			GameInjector.DS_LUAJIT_enable_framegc(true)
+				local old_OnSimPaused = _G.OnSimPaused
+				local old_OnSimUnpaused = _G.OnSimUnpaused
+				if old_OnSimPaused and old_OnSimUnpaused then
+					_G.OnSimPaused = function(...)
+						GameInjector.DS_LUAJIT_enable_framegc(false)
+						old_OnSimPaused(...)
+					end
 
-			local old_OnSimPaused = _G.OnSimPaused
-			local old_OnSimUnpaused = _G.OnSimUnpaused
-			if old_OnSimPaused and old_OnSimUnpaused then
-				_G.OnSimPaused = function(...)
-					GameInjector.DS_LUAJIT_enable_framegc(false)
-					old_OnSimPaused(...)
-				end
-
-				_G.OnSimUnpaused = function(...)
-					GameInjector.DS_LUAJIT_enable_framegc(true)
-					old_OnSimUnpaused(...)
+					_G.OnSimUnpaused = function(...)
+						GameInjector.DS_LUAJIT_enable_framegc(true)
+						old_OnSimUnpaused(...)
+					end
 				end
 			end
 		end

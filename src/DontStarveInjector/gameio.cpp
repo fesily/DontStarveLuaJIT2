@@ -332,20 +332,20 @@ static uint32_t lj_jit_default_flags(uint32_t flags) noexcept {
     return flags;
 }
 
-static int fullgc_mb = 0;
+static bool fullgc_deferred_enabled = false;
+int fullgc_deferred = 0; /* 0=idle, 1=phase1(第一周期), 2=phase2(第二周期) */
 int (*lua_gc_func)(void *L, int, int);
 void lj_gc_fullgc_external(void *L, void (*oldfn)(void *L)) {
 
-    if (fullgc_mb == 0) {
+    if (!fullgc_deferred_enabled) {
         ZoneScopedN("lua_full_gc");
         oldfn(L);
     } else {
-        ZoneScopedN("lua_small_gc");
-        lua_gc_func(L, 5, fullgc_mb << 10);
+        fullgc_deferred = 1;
     }
 }
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_disable_fullgc(int mb) {
-    fullgc_mb = mb;
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_disable_fullgc(bool enable) {
+    fullgc_deferred_enabled = enable;
 }
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept {

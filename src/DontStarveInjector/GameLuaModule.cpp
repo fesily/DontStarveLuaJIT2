@@ -1170,7 +1170,7 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_workshop_dir();
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_disable_fullgc(int mb);
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_disable_fullgc(bool enable);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept;
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(const char *type, const char *moduleName);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_vm_type_name(int next);
