@@ -1201,18 +1201,6 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_fork_save();
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_exit();
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_cleanup();
 
-#ifdef _WIN32
-DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_fork_save() {
-    return "unsupported";
-}
-
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_exit() {
-}
-
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_cleanup() {
-}
-#endif
-
 static std::optional<PacketPriority> parse_lua_packet_priority(const sol::optional<int>& value) {
 	if (!value) {
 		return std::nullopt;

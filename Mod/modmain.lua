@@ -1091,7 +1091,7 @@ local function main()
 				modimport("scripts/netsim")
 			end
 		end
-		if hasluajit and not os_is_windows and TheNet:IsDedicated() then
+		if hasluajit and TheNet:IsDedicated() then
 			if GetModConfigData("EnableForkSave") then
 				print("Dedicated server, load fork_save")
 				AddGamePostInit(function()

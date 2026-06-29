@@ -24,6 +24,15 @@ if (WIN32)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif ()
 
+add_test(
+    NAME fork_save_lua
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/fork_save/run.py
+)
+set_tests_properties(fork_save_lua PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
 add_executable(test_buffer_name_pool
     ${CMAKE_CURRENT_SOURCE_DIR}/test_buffer_name_pool.cpp)
 target_include_directories(test_buffer_name_pool PRIVATE
