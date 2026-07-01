@@ -44,6 +44,8 @@ priority                   = 2e53
 icon_atlas                 = "modicon.xml"
 icon                       = "modicon.tex"
 
+server_filter_tags         = { "DontStarveLuaJit2" }
+
 mod_dependencies           = {
     -- "buttonpicker",
     -- "workshop-3317960157",
@@ -344,18 +346,19 @@ configuration_options = {
         disabled_value = false,
         disabled_by = disable_by_non_win or disable_by_lua51,
     },
-	    {
-	        name = "EnableForkSave",
-	        label = translate({ en = "Fork Save (Preview)", zh = "分叉存档" }),
-	        hover = translate({
-	            en = "Fork or clone a child process to save the game, reducing save lag. Supported on Linux, macOS, and Windows x64 preview builds.",
-	            zh = "通过fork或克隆子进程保存游戏,存档不再卡顿.支持Linux、MacOS和Windows x64预览版"
-	        }),
-	        options = toggle,
-	        default = true,
-	        disabled_value = false,
-	        disabled_by = disable_by_lua51,
-	    },
+    {
+        name = "EnableForkSave",
+        label = translate({ en = "Fork Save (Preview)", zh = "分叉存档" }),
+        hover = translate({
+            en =
+            "Fork or clone a child process to save the game, reducing save lag. Supported on Linux, macOS, and Windows x64 preview builds.",
+            zh = "通过fork或克隆子进程保存游戏,存档不再卡顿.支持Linux、MacOS和Windows x64预览版"
+        }),
+        options = toggle,
+        default = true,
+        disabled_value = false,
+        disabled_by = disable_by_lua51,
+    },
     {
         name = "AngleBackend",
         label = translate({ en = "Rendering Engine", zh = "渲染后端" }),
@@ -412,8 +415,11 @@ configuration_options = {
     {
         name = "EnableNetSim",
         label = translate({ en = "Enable Network Simulator", zh = "启用网络模拟器" }),
-        hover = translate({ en = "Simulate packet delay/jitter/loss (client-side, Win x64 only)", zh =
-        "模拟网络延迟/抖动/丢包（仅客户端，仅Win x64）" }),
+        hover = translate({
+            en = "Simulate packet delay/jitter/loss (client-side, Win x64 only)",
+            zh =
+            "模拟网络延迟/抖动/丢包（仅客户端，仅Win x64）"
+        }),
         options = toggle,
         default = false,
         disabled_value = false,
