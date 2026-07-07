@@ -154,6 +154,7 @@ static WinCloneApi& clone_api() {
 }
 
 static std::atomic<HANDLE> g_save_child_handle{nullptr};
+static std::atomic<ULONGLONG> g_save_child_started_at{0};
 
 static void close_child_handle(HANDLE handle) {
     if (handle != nullptr) {
@@ -177,6 +178,7 @@ static void reap_children() {
         }
         close_child_handle(expected);
         g_save_child_handle.store(nullptr);
+        g_save_child_started_at.store(0);
     }
 }
 
@@ -190,6 +192,37 @@ static void wait_for_previous_save() {
     WaitForSingleObject(expected, INFINITE);
     close_child_handle(expected);
     g_save_child_handle.store(nullptr);
+    g_save_child_started_at.store(0);
+}
+
+static void kill_stale_child() {
+    HANDLE expected = g_save_child_handle.load();
+    if (expected == nullptr) {
+        return;
+    }
+
+    const ULONGLONG started_at = g_save_child_started_at.load();
+    if (started_at == 0) {
+        return;
+    }
+
+    const ULONGLONG runtime_ms = GetTickCount64() - started_at;
+    if (runtime_ms < 30000) {
+        return;
+    }
+
+    auto& api = clone_api();
+    if (!api.ready) {
+        return;
+    }
+
+    spdlog::warn("[fork_save] killing stale child {} after {} ms",
+                 static_cast<const void*>(expected),
+                 runtime_ms);
+    api.terminate(expected, STATUS_SUCCESS);
+    close_child_handle(expected);
+    g_save_child_handle.store(nullptr);
+    g_save_child_started_at.store(0);
 }
 
 #endif
@@ -242,6 +275,7 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_fork_save() {
         return "error";
     }
     g_save_child_handle.store(process_info.Process);
+    g_save_child_started_at.store(GetTickCount64());
     spdlog::info("[fork_save] forked child {} for save", static_cast<const void*>(process_info.Process));
     return "parent";
 #else
@@ -269,5 +303,6 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_cleanup() {
     reap_children();
 #elif defined(_WIN32)
     reap_children();
+    kill_stale_child();
 #endif
 }
