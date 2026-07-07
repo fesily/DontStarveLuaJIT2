@@ -324,14 +324,6 @@ static int lj_need_transform_path() noexcept {
     return has_lua_debug_flag;
 }
 
-static uint32_t lj_jit_default_flags(uint32_t flags) noexcept {
-    auto path = getExePath();
-    bool jitflag = path.string().contains("nullrenderer") ? 1 : 0;
-    flags &= ~1;
-    flags |= jitflag;
-    return flags;
-}
-
 static bool fullgc_deferred_enabled = false;
 int fullgc_deferred = 0; /* 0=idle, 1=phase1(第一周期), 2=phase2(第二周期) */
 int (*lua_gc_func)(void *L, int, int);
@@ -458,10 +450,6 @@ void init_luajit_io(GumModule *luaModule) {
         return false;
     }, (gpointer)luaModule);
 #endif
-}
-
-void init_luajit_jit_opt(GumModule *luaModule) {
-    SET_LUAJIT_API_FUNC(lj_jit_default_flags);
 }
 
 void BInitWorkshopForGameServerHook(uint32_t unWorkshopDepotID, const char *pszFolder) {
