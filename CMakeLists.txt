@@ -37,7 +37,7 @@ else ()
     message(FATAL_ERROR "Not supported platform")
 endif ()
 
-project(DontStarveLuaJIT VERSION 2.8.2)
+project(DontStarveLuaJIT VERSION 2.9.0)
 
 message(STATUS "CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
 message(STATUS "VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}")
@@ -80,6 +80,37 @@ elseif (APPLE)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-undefined,error")
 endif()
 
+# --- LuaJIT variant registry (early setup) ---
+# Include the descriptor module and register the LuaJIT variants before any
+# consumer (modinfo command, add_subdirectory, etc.) references their target
+# names. Registration is descriptor-only: it records target/output/include
+# names but does NOT require the targets to exist yet.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/LuajitVariants.cmake)
+
+luajit_register_variant(
+    NAME default
+    TARGET luajit-5.1
+    EXECUTABLE luajit
+    INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src
+    OUTPUT_NAME lua51DS
+)
+
+luajit_register_variant(
+    NAME gengc
+    TARGET luajit-5.1-gengc
+    EXECUTABLE luajit-gengc
+    INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src
+    OUTPUT_NAME lua51DS_gengc
+)
+
+# Derive compatibility variables from the registry so downstream consumers
+# no longer depend on raw target-name literals.  These are available from
+# this point onward — before add_subdirectory(luajit) — because the
+# descriptor is just metadata.
+luajit_get_variant_property(LUAJIT_INCLUDE_DIR default INCLUDE_DIR)
+luajit_get_variant_property(LUAJIT_LIBRARIES  default TARGET)
+luajit_get_variant_property(LUAJIT_EXECUTABLE_TARGET default EXECUTABLE)
+
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h
         COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/missfunc.py"
         DEPENDS src/missfunc.txt
@@ -89,8 +120,8 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h
 add_custom_target(create_missfuncs DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h)
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp
-        COMMAND $<TARGET_FILE:luajit> "${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua"
-        DEPENDS luajit ${CMAKE_CURRENT_SOURCE_DIR}/Mod/modinfo.lua ${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua
+        COMMAND $<TARGET_FILE:${LUAJIT_EXECUTABLE_TARGET}> "${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua"
+        DEPENDS ${LUAJIT_EXECUTABLE_TARGET} ${CMAKE_CURRENT_SOURCE_DIR}/Mod/modinfo.lua ${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
@@ -106,11 +137,54 @@ add_custom_command(OUTPUT ${Lua51_output_dir}/lua51.dll ${Lua51_output_dir}/lua5
 
 add_custom_target(build_lua51 DEPENDS ${Lua51_output_dir}/lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
 
-set(LUAJIT_DISABLE_GEN_GC OFF)
-set(LUAJIT_BUILD_BOTH_GEN_GC ON)
 add_subdirectory("luajit")
-set(LUAJIT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src)
-set(LUAJIT_LIBRARIES luajit-5.1)
+
+# Bridge the reverted inner arenagc targets to the public gengc contract.
+if(TARGET luajit-5.1-arenagc)
+    set_target_properties(luajit-5.1-arenagc PROPERTIES
+        OUTPUT_NAME lua51DS_gengc)
+    if(NOT TARGET luajit-5.1-gengc)
+        add_custom_target(luajit-5.1-gengc
+            DEPENDS luajit-5.1-arenagc)
+    endif()
+
+    file(GENERATE
+        OUTPUT "${CMAKE_BINARY_DIR}/$<CONFIG>/luajit_gengc_target_file_name.txt"
+        CONTENT "$<TARGET_FILE_NAME:luajit-5.1-arenagc>\n")
+endif()
+
+if(TARGET luajit-arenagc AND NOT TARGET luajit-gengc)
+    add_custom_target(luajit-gengc
+        DEPENDS luajit-arenagc)
+endif()
+
+# Post-add_subdirectory assertions: verify the registered target and
+# executable names actually exist.  This catches descriptor/target drift
+# early instead of letting downstream consumers fail with obscure errors.
+if(NOT TARGET luajit-5.1)
+    message(FATAL_ERROR
+        "LuaJIT variant 'default': registered TARGET 'luajit-5.1' "
+        "does not exist after add_subdirectory(luajit)")
+endif()
+if(NOT TARGET luajit)
+    message(FATAL_ERROR
+        "LuaJIT variant 'default': registered EXECUTABLE 'luajit' "
+        "does not exist after add_subdirectory(luajit)")
+endif()
+if(NOT TARGET luajit-5.1-gengc)
+    message(FATAL_ERROR
+        "LuaJIT variant 'gengc': registered TARGET 'luajit-5.1-gengc' "
+        "does not exist after add_subdirectory(luajit)")
+endif()
+if(NOT TARGET luajit-gengc)
+    message(FATAL_ERROR
+        "LuaJIT variant 'gengc': registered EXECUTABLE 'luajit-gengc' "
+        "does not exist after add_subdirectory(luajit)")
+endif()
+
+# Generate the variant contract file consumed by the characterization test
+# (tests/luajit_variant_registry_test.cmake).
+luajit_generate_variant_contract(${CMAKE_BINARY_DIR}/luajit_variant_contract.txt)
 
 if (CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(LUA_LIBRARIES_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/src/x64)
