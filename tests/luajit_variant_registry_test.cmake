@@ -74,6 +74,19 @@ if(NOT "${_ct_VARIANT_default_TARGET}" STREQUAL "luajit-5.1")
         "got '${_ct_VARIANT_default_TARGET}'")
 endif()
 
+# --- Assertion 3b: default INCLUDE_DIR covers source and generated variant headers ---
+if(NOT DEFINED _ct_VARIANT_default_INCLUDE_DIR)
+    message(FATAL_ERROR "FAIL: VARIANT_default_INCLUDE_DIR key missing from contract file")
+endif()
+if(NOT "${_ct_VARIANT_default_INCLUDE_DIR}" MATCHES "luajit/src")
+    message(FATAL_ERROR
+        "FAIL: expected default INCLUDE_DIR to include 'luajit/src', got '${_ct_VARIANT_default_INCLUDE_DIR}'")
+endif()
+if(NOT "${_ct_VARIANT_default_INCLUDE_DIR}" MATCHES "luajit/variants/default")
+    message(FATAL_ERROR
+        "FAIL: expected default INCLUDE_DIR to include generated default variant headers, got '${_ct_VARIANT_default_INCLUDE_DIR}'")
+endif()
+
 # --- Assertion 4: default EXECUTABLE is luajit ---
 if(NOT DEFINED _ct_VARIANT_default_EXECUTABLE)
     message(FATAL_ERROR "FAIL: VARIANT_default_EXECUTABLE key missing from contract file")
@@ -112,6 +125,19 @@ if(NOT "${_ct_VARIANT_gengc_EXECUTABLE}" STREQUAL "luajit-gengc")
     message(FATAL_ERROR
         "FAIL: expected gengc EXECUTABLE='luajit-gengc', "
         "got '${_ct_VARIANT_gengc_EXECUTABLE}'")
+endif()
+
+# --- Assertion 7b: gengc INCLUDE_DIR covers source and bridged arenagc generated headers ---
+if(NOT DEFINED _ct_VARIANT_gengc_INCLUDE_DIR)
+    message(FATAL_ERROR "FAIL: VARIANT_gengc_INCLUDE_DIR key missing from contract file")
+endif()
+if(NOT "${_ct_VARIANT_gengc_INCLUDE_DIR}" MATCHES "luajit/src")
+    message(FATAL_ERROR
+        "FAIL: expected gengc INCLUDE_DIR to include 'luajit/src', got '${_ct_VARIANT_gengc_INCLUDE_DIR}'")
+endif()
+if(NOT "${_ct_VARIANT_gengc_INCLUDE_DIR}" MATCHES "luajit/variants/arenagc")
+    message(FATAL_ERROR
+        "FAIL: expected gengc INCLUDE_DIR to include bridged arenagc generated headers, got '${_ct_VARIANT_gengc_INCLUDE_DIR}'")
 endif()
 
 message(STATUS "PASS: luajit_variant_registry contract verified "

@@ -91,7 +91,9 @@ luajit_register_variant(
     NAME default
     TARGET luajit-5.1
     EXECUTABLE luajit
-    INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src
+    INCLUDE_DIR
+        ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src
+        ${CMAKE_CURRENT_BINARY_DIR}/luajit/variants/default
     OUTPUT_NAME lua51DS
 )
 
@@ -99,7 +101,9 @@ luajit_register_variant(
     NAME gengc
     TARGET luajit-5.1-gengc
     EXECUTABLE luajit-gengc
-    INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src
+    INCLUDE_DIR
+        ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src
+        ${CMAKE_CURRENT_BINARY_DIR}/luajit/variants/arenagc
     OUTPUT_NAME lua51DS_gengc
 )
 

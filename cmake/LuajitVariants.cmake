@@ -34,13 +34,13 @@ set(LUAJIT_VARIANTS "" CACHE INTERNAL "Registered LuaJIT variant names (ordered)
 #   NAME        <id>      - variant identifier (e.g. "default")
 #   TARGET      <target>  - CMake shared-library target name (e.g. "luajit-5.1")
 #   EXECUTABLE  <target>  - CMake executable target name (e.g. "luajit")
-#   INCLUDE_DIR <dir>     - path to the LuaJIT headers
+#   INCLUDE_DIR <dir...>  - path(s) to the LuaJIT headers
 #   OUTPUT_NAME <name>    - output library base name (e.g. "lua51DS")
 # ---------------------------------------------------------------------------
 function(luajit_register_variant)
     set(options)
-    set(oneValueArgs NAME TARGET EXECUTABLE INCLUDE_DIR OUTPUT_NAME)
-    set(multiValueArgs)
+    set(oneValueArgs NAME TARGET EXECUTABLE OUTPUT_NAME)
+    set(multiValueArgs INCLUDE_DIR)
     cmake_parse_arguments(VAR "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     foreach(req NAME TARGET EXECUTABLE INCLUDE_DIR OUTPUT_NAME)
@@ -49,7 +49,7 @@ function(luajit_register_variant)
                 "luajit_register_variant: missing required argument '${req}'\n"
                 "Usage: luajit_register_variant(\n"
                 "    NAME <id> TARGET <lib-target> EXECUTABLE <exe-target>\n"
-                "    INCLUDE_DIR <dir> OUTPUT_NAME <output-name>)")
+                "    INCLUDE_DIR <dir...> OUTPUT_NAME <output-name>)")
         endif()
     endforeach()
 
