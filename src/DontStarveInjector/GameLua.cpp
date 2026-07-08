@@ -178,10 +178,6 @@ struct GameLuaInjectorFramework {
         ctx->_lua_setfield(L, -2, "error");
 
         if (ctx.luaType == GameLuaType::game) {
-            // custom io2 for game lua
-            ctx->_lua_pushcfunction(L, luaopen_io2);
-            ctx->_lua_pushstring(L, "io2");
-            ctx->_lua_call(L, 1, 0);
             // push native_getenv
             ctx->_lua_pushcfunction(L, +[](lua_State *L) -> int {
                 auto &ctx = GetGameLuaContext();
@@ -218,8 +214,35 @@ struct GameLuaContextImpl : GameLuaContext {
         : GameLuaContext{sharedLibraryName, type} {
     }
 
+    void cleanup_lua_io_lib(lua_State *L) {
+        api._lua_pushnil(L);
+        api._lua_setglobal(L, "io");
+
+        api._lua_pushnil(L);
+        api._lua_setfield(L, LUA_REGISTRYINDEX, LUA_FILEHANDLE);
+
+        api._lua_gc(L, LUA_GCCOLLECT, 0);
+    }
+
     virtual void luaL_openlibs_hooker(lua_State *L) {
         api._luaL_openlibs(L);
+         if (InjectorCtx::instance()->config.DisableReplaceLuaIO) {
+            spdlog::info("DISABLE_REPLACE_LUA_IO is set, skip replacing io module");
+        } else if (UseGameIO()) {
+            cleanup_lua_io_lib(L);
+
+            api._lua_pushcfunction(L, luaopen_game_io);
+            api._lua_pushstring(L, LUA_IOLIBNAME);
+            api._lua_call(L, 1, 0);
+            spdlog::info("Replaced luaopen_io with game io open function");
+
+            // open io2 module
+            api._lua_pushcfunction(L, luaopen_io2);
+            api._lua_pushstring(L, "io2");
+            api._lua_call(L, 1, 0);
+            spdlog::info("Injector luaopen_io2");
+        }
+
         do_lua_env(*this, L, "GAME_INIT");
         gameLuaInjectorFramework.init(*this, L);
 
@@ -232,7 +255,7 @@ struct GameLuaContextImpl : GameLuaContext {
             if (config && config->AlwaysEnableMod) {
                 do {
                     if (!config->modname || config->modname->empty()) {
-                        break;;
+                        break;
                     }
                     gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, *config->modname);
                 } while(0);
@@ -578,31 +601,8 @@ struct GameLuaContextJit : GameLuaContextImpl {
     }
     bool ReplaceApis(const Signatures &signatures, const ListExports_t &exports) override {
         if (!GameLuaContextImpl::ReplaceApis(signatures, exports)) return false;
-        init_luajit_jit_opt(LuaModule);
         init_luajit_io(LuaModule);
-        if (InjectorCtx::instance()->config.DisableReplaceLuaIO) {
-            spdlog::info("DISABLE_REPLACE_LUA_IO is set, skip replacing io module");
-        } else {
-            if (UseGameIO()) {
-                load_game_fn_io_open(signatures);
-                //void luaL_defaultlib_update(luaL_Reg* newlib);
-                auto luaL_defaultlib_update = ((void (*)(luaL_Reg *)) gum_module_find_export_by_name(LuaModule, "luaL_defaultlib_update"));
-                luaL_Reg game_io_lib = {
-                        LUA_IOLIBNAME,
-                        luaopen_game_io};
-                luaL_defaultlib_update(&game_io_lib);
-
-                auto luaopen_io2 = ((int (*)(lua_State *)) gum_module_find_export_by_name(LuaModule, "luaopen_io2"));
-                if (luaopen_io2) {
-                    luaL_Reg io2_lib = {
-                            "io2",
-                            luaopen_io2};
-                    luaL_defaultlib_update(&io2_lib);
-                    spdlog::info("Injector luaopen_io2");
-                }
-                spdlog::info("Replaced luaopen_io with game io open function");
-            }
-        }
+        load_game_fn_io_open(signatures);
         return true;
     }
 };

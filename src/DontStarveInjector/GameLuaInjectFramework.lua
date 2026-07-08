@@ -4,6 +4,10 @@
 ]]
 local spdlog, native_getenv= ...
 
+if jit and jit.off then
+    jit.off()
+end
+
 GameLuaInjector = {
     injectors = {},
     relocations = {}
