@@ -2,7 +2,7 @@ if (WIN32)
     add_library(lua51_sync_strfmt_pushfstring_module MODULE
         lua51_sync/strfmt_pushfstring_module.c)
     add_custom_target(lua51_sync_artifacts
-        DEPENDS lua luajit lua51_sync_strfmt_pushfstring_module)
+        DEPENDS lua ${LUAJIT_EXECUTABLE_TARGET} lua51_sync_strfmt_pushfstring_module)
     set_target_properties(lua51_sync_strfmt_pushfstring_module PROPERTIES
         PREFIX ""
         OUTPUT_NAME "strfmt_pushfstring_module")
@@ -39,3 +39,21 @@ target_include_directories(test_buffer_name_pool PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
 target_compile_features(test_buffer_name_pool PRIVATE cxx_std_17)
 add_test(NAME BufferNamePool COMMAND test_buffer_name_pool)
+
+# --- LuaJIT variant registry characterization test ---
+# Asserts that the generated variant contract file describes the registered
+# LuaJIT variants and their target/output/executable names. The contract file
+# is generated at configure time by luajit_generate_variant_contract().
+add_test(
+    NAME luajit_variant_registry
+    COMMAND ${CMAKE_COMMAND}
+        -DLUAJIT_VARIANT_CONTRACT_FILE=${CMAKE_BINARY_DIR}/luajit_variant_contract.txt
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/luajit_variant_registry_test.cmake
+)
+
+add_test(
+    NAME luajit_gengc_output_name
+    COMMAND ${CMAKE_COMMAND}
+        -DLUAJIT_GENGC_TARGET_FILE_NAME_FILE=${CMAKE_BINARY_DIR}/$<CONFIG>/luajit_gengc_target_file_name.txt
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/luajit_gengc_output_name_test.cmake
+)
