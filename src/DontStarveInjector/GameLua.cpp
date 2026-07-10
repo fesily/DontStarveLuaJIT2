@@ -21,6 +21,7 @@
 #include <fmt/ranges.h>
 #include <fstream>
 #include <zlib.h>
+#include <cassert>
 using namespace std::literals;
 
 static void PrepareForLuaStateCreate(std::string_view entryName);
@@ -215,13 +216,49 @@ struct GameLuaContextImpl : GameLuaContext {
     }
 
     void cleanup_lua_io_lib(lua_State *L) {
+        // Drop global io table reference.
         api._lua_pushnil(L);
         api._lua_setglobal(L, "io");
 
+        // Drop FILE* metatable so game io can recreate its own.
         api._lua_pushnil(L);
         api._lua_setfield(L, LUA_REGISTRYINDEX, LUA_FILEHANDLE);
 
+        // Critical: clear package.loaded/registry._LOADED["io"].
+        // Both Lua 5.1 and LuaJIT reuse _LOADED[libname] on re-open.
+        // Without this, reloading io just mutates the old table (or fails).
+        api._lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");
+        if (api._lua_istable(L, -1)) {
+            api._lua_pushnil(L);
+            api._lua_setfield(L, -2, LUA_IOLIBNAME);
+        }
+        api._lua_pop(L, 1);
+
+        // package.loaded is usually the same table as registry._LOADED,
+        // but clear it explicitly for safety.
+        api._lua_getglobal(L, "package");
+        if (api._lua_istable(L, -1)) {
+            api._lua_getfield(L, -1, "loaded");
+            if (api._lua_istable(L, -1)) {
+                api._lua_pushnil(L);
+                api._lua_setfield(L, -2, LUA_IOLIBNAME);
+            }
+            api._lua_pop(L, 1);
+        }
+        api._lua_pop(L, 1);
+
         api._lua_gc(L, LUA_GCCOLLECT, 0);
+        assert(!check_lua_io_lib(L));
+    }
+
+    bool check_lua_io_lib(lua_State *L) {
+        api._lua_getglobal(L, "io");
+        const bool ok = api._lua_istable(L, -1);
+        if (!ok) {
+            spdlog::error("Lua io library is not a table");
+        }
+        api._lua_pop(L, 1);  // always balance the getglobal above
+        return ok;
     }
 
     virtual void luaL_openlibs_hooker(lua_State *L) {
@@ -229,13 +266,12 @@ struct GameLuaContextImpl : GameLuaContext {
          if (InjectorCtx::instance()->config.DisableReplaceLuaIO) {
             spdlog::info("DISABLE_REPLACE_LUA_IO is set, skip replacing io module");
         } else if (UseGameIO()) {
-            cleanup_lua_io_lib(L);
-
-            api._lua_pushcfunction(L, luaopen_game_io);
-            api._lua_pushstring(L, LUA_IOLIBNAME);
-            api._lua_call(L, 1, 0);
-            spdlog::info("Replaced luaopen_io with game io open function");
-
+            if (luaopen_game_io) {
+                cleanup_lua_io_lib(L);
+                replace_game_io_open(*this, L);
+                assert(check_lua_io_lib(L));
+                spdlog::info("Replaced Lua io library with game io library");
+            }
             // open io2 module
             api._lua_pushcfunction(L, luaopen_io2);
             api._lua_pushstring(L, "io2");

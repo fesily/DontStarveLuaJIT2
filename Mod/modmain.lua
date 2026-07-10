@@ -72,7 +72,6 @@ local function main()
 	local GameInjector = LoadGameInjector()
 
 	local ModManagerFile = { filepath = nil, json_mode = true }
-
 	function ModManagerFile:read_file()
 		if not self.filepath then return end
 		local fp = io.open(self.filepath, 'r')
@@ -514,6 +513,83 @@ local function main()
 				jit.on()
 			end)
 		end
+	end
+
+	local function skip_jit()
+		-- Keep a local reference via env.jit / closure jit.
+		-- Clear global visibility so normal mods cannot see jit via GLOBAL/require.
+		_G.jit = nil
+		if _G.package and _G.package.loaded then
+			_G.package.loaded['jit'] = nil
+		end
+		local reg = _G.debug and _G.debug.getregistry and _G.debug.getregistry()
+		if reg and reg['_LOADED'] then
+			reg['_LOADED']['jit'] = nil
+		end
+	end
+
+	local function mod_wants_jit(modinfo)
+		if type(modinfo) ~= "table" then
+			return false
+		end
+		local compatible = modinfo.luajit_compatible
+		return compatible == true or type(compatible) == "table"
+	end
+
+	-- Only inject into the mod sandbox env (modenv.jit).
+	-- Do NOT proxy GLOBAL / patch _G metatable: mods may rawget/rawset GLOBAL,
+	-- and strict.lua owns the real _G metatable.
+	-- Do NOT scan ModManager.mods: later mods receive env via
+	-- InitializeModMain -> RunInEnvironment/setfenv.
+	local function inject_jit_into_mod_env(modenv, jit_table)
+		if not jit_table or type(modenv) ~= "table" then
+			return false
+		end
+		if not mod_wants_jit(modenv.modinfo) then
+			return false
+		end
+		modenv.jit = jit_table
+		return true
+	end
+
+	local function HookInitializeModMainForJit(jit_table)
+		local ModManager = _G.ModManager
+		if not ModManager or not ModManager.InitializeModMain then
+			return
+		end
+		if ModManager._ds_luajit_initmodmain_hooked then
+			return
+		end
+		ModManager._ds_luajit_initmodmain_hooked = true
+
+		local old_InitializeModMain = ModManager.InitializeModMain
+		function ModManager:InitializeModMain(modname, env, mainfile, safe, ...)
+			if inject_jit_into_mod_env(env, jit_table) then
+				print("inject jit to mod env:", modname or (env and env.modname) or "?", mainfile or "")
+			end
+			return old_InitializeModMain(self, modname, env, mainfile, safe, ...)
+		end
+	end
+
+	local function HideGlobalJIT()
+		if not hasluajit then
+			return
+		end
+		-- Default: hide global jit; only inject into mods with luajit_compatible.
+		local hide = GetModConfigData("HideGlobalJIT")
+		if hide == nil then
+			hide = true
+		end
+		if not hide then
+			return
+		end
+
+		local jit_table = env.jit or jit
+		-- Hook first so subsequent mods get env.jit before setfenv.
+		HookInitializeModMainForJit(jit_table)
+		-- Our own env is already running (priority first).
+		inject_jit_into_mod_env(env, jit_table)
+		skip_jit()
 	end
 
 	local function EnableProfiler(injector)
@@ -1059,12 +1135,12 @@ local function main()
 		GameInjector.DS_LUAJIT_disable_fullgc(false)
 		GameInjector.DS_LUAJIT_enable_framegc(false)
 		if not GetModConfigData("EnabledGenGC") then
-			if GetModConfigData("DisableForceFullGC")then
+			if GetModConfigData("DisableForceFullGC") then
 				GameInjector.DS_LUAJIT_replace_profiler_api()
 				GameInjector.DS_LUAJIT_disable_fullgc(true)
 			end
 
-			if GetModConfigData("EnableFrameGC")then
+			if GetModConfigData("EnableFrameGC") then
 				GameInjector.DS_LUAJIT_replace_profiler_api()
 				GameInjector.DS_LUAJIT_enable_framegc(true)
 
@@ -1103,6 +1179,10 @@ local function main()
 				end)
 			end
 		end
+
+		-- Hide global jit after our own jit.* requires finish.
+		-- Only inject env.jit for luajit_compatible mods via InitializeModMain hook.
+		HideGlobalJIT()
 	end
 
 	if GameInjector then
@@ -1113,6 +1193,7 @@ local function main()
 end
 
 local env = _G.getfenv(main)
+env.jit = _G.jit
 _G.setfenv(main, _G.setmetatable({}, {
 	__index = function(t, k)
 		return env[k] or _G[k]

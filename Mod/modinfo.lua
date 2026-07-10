@@ -182,6 +182,18 @@ configuration_options = {
         default = true
     },
     {
+        name = "HideGlobalJIT",
+        label = translate({ en = "Hide Global jit", zh = "隐藏全局jit变量" }),
+        hover = translate({
+            en = "Hide the global jit variable from normal mods. Only inject jit into mods that declare luajit_compatible in modinfo.lua",
+            zh = "隐藏全局jit变量。仅向在modinfo.lua中声明了luajit_compatible的mod注入jit"
+        }),
+        options = toggle,
+        default = true,
+        disabled_value = false,
+        disabled_by = disable_by_lua51
+    },
+    {
         name = "LuaVmType",
         label = translate({ en = "Lua VM Type", zh = "Lua虚拟机类型" }),
         hover = translate({
