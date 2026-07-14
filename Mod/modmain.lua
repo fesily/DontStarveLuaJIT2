@@ -1193,10 +1193,41 @@ local function main()
 end
 
 local env = _G.getfenv(main)
-env.jit = _G.jit
-_G.setfenv(main, _G.setmetatable({}, {
+-- Keep a real jit table on this mod env (not pcall's boolean status).
+env.jit = _G.rawget(_G, "jit") or env.jit
+local new_env = _G.setmetatable({}, {
 	__index = function(t, k)
 		return env[k] or _G[k]
 	end
-}))
+})
+_G.setfenv(main, new_env)
+
+-- Workshop require goes through package.path + mod.manifest. Files under this
+-- mod's scripts/ that are missing from the manifest (e.g. config_patch_bootstrap)
+-- fail even though they exist on disk. Prefer MODROOT/scripts like modimport.
+local _require = env.require
+env.require = function(modulename)
+	if package.loaded[modulename] ~= nil then
+		return package.loaded[modulename]
+	end
+
+	local modulepath = string.gsub(modulename, "[%.\\]", "/")
+	local filepath = env.MODROOT .. "scripts/" .. modulepath .. ".lua"
+	local chunk = kleiloadlua(filepath)
+	if type(chunk) == "string" then
+		error(string.format("error loading module '%s' from '%s':\n%s", modulename, filepath, chunk), 2)
+	end
+	if type(chunk) == "function" then
+		package.loaded[modulename] = true
+		_G.setfenv(chunk, new_env)
+		local result = chunk(modulename)
+		if result ~= nil then
+			package.loaded[modulename] = result
+		end
+		return package.loaded[modulename]
+	end
+
+	return _require(modulename)
+end
+_G.setfenv(env.require, new_env)
 main()

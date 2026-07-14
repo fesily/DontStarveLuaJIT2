@@ -266,7 +266,7 @@ struct GameLuaContextImpl : GameLuaContext {
          if (InjectorCtx::instance()->config.DisableReplaceLuaIO) {
             spdlog::info("DISABLE_REPLACE_LUA_IO is set, skip replacing io module");
         } else if (UseGameIO()) {
-            if (luaopen_game_io) {
+            if (luaType != GameLuaType::game && luaopen_game_io) {
                 cleanup_lua_io_lib(L);
                 replace_game_io_open(*this, L);
                 assert(check_lua_io_lib(L));
@@ -541,6 +541,14 @@ struct GameLua51Context : GameLuaContextImpl {
             ctx->_luaL_checkstack(L, 1, "not enough stack slots");
             ctx->_luaL_getmetatable(L, tname);
             ctx->_lua_setmetatable(L, -2);
+        };
+        api._lua_tonumberx = +[](lua_State *L, int i, int *isnum) -> lua_Number {
+            auto &ctx = static_cast<GameLua51Context &>(*currentCtx);
+            lua_Number n = ctx->_lua_tonumber(L, i);
+            if (isnum) {
+                *isnum = (n != 0 || ctx->_lua_isnumber(L, i));
+            }
+            return n;
         };
         api._lua_tointegerx = +[](lua_State *L, int i, int *isnum) -> lua_Integer {
             auto &ctx = static_cast<GameLua51Context &>(*currentCtx);
