@@ -895,35 +895,49 @@ struct GameLuaContextGame : GameLua51Context {
 // filenames are assembled here using SHARED_LIBRARY_PRE / SHARED_LIBRARY_EXT
 // (defined at the top of this file), replacing the previously scattered
 // string-literal constants.
+//
+// IMPORTANT: Use function-local statics (not namespace-scope std::string).
+// __attribute__((constructor)) functions can run before dynamic initialization
+// of namespace-scope objects in the same TU (static init order fiasco), which
+// previously caused loadlib(nullptr) → filesystem::path SEGV under ASAN.
 namespace {
     std::string MakeFullLibraryName(const char *baseName) {
         if (!baseName) return {};
         return std::string(SHARED_LIBRARY_PRE) + baseName + SHARED_LIBRARY_EXT;
     }
 
-    const std::string defaultLua51LibraryName     = MakeFullLibraryName(GetLuajitVariantBaseName(GameLuaType::_51));
-    const std::string defaultLuajitLibraryName    = MakeFullLibraryName(GetLuajitVariantBaseName(GameLuaType::jit));
-    const std::string defaultLuajitGenLibraryName = MakeFullLibraryName(GetLuajitVariantBaseName(GameLuaType::jit_gen));
+    const char *DefaultLua51LibraryName() {
+        static const std::string name = MakeFullLibraryName(GetLuajitVariantBaseName(GameLuaType::_51));
+        return name.c_str();
+    }
+    const char *DefaultLuajitLibraryName() {
+        static const std::string name = MakeFullLibraryName(GetLuajitVariantBaseName(GameLuaType::jit));
+        return name.c_str();
+    }
+    const char *DefaultLuajitGenLibraryName() {
+        static const std::string name = MakeFullLibraryName(GetLuajitVariantBaseName(GameLuaType::jit_gen));
+        return name.c_str();
+    }
 }
 
 #if DONTSTARVEINJECTOR_INITIALIZE_ALL_SO
 static __attribute__((constructor)) void initialize_all_so() {
-    loadlib(defaultLua51LibraryName.c_str());
-    loadlib(defaultLuajitLibraryName.c_str());
-    loadlib(defaultLuajitGenLibraryName.c_str());
+    loadlib(DefaultLua51LibraryName());
+    loadlib(DefaultLuajitLibraryName());
+    loadlib(DefaultLuajitGenLibraryName());
 }
 #endif
 
 static GameLua51Context gameLua51Ctx{
-        defaultLua51LibraryName.c_str(),
+        DefaultLua51LibraryName(),
         GameLuaType::_51};
 
 static GameLuaContextJit gameLuajitCtx{
-        defaultLuajitLibraryName.c_str(),
+        DefaultLuajitLibraryName(),
         GameLuaType::jit};
 
 static GameLuaContextJit gameLuajitGenCtx{
-        defaultLuajitGenLibraryName.c_str(),
+        DefaultLuajitGenLibraryName(),
         GameLuaType::jit_gen};
 
 static GameLuaContextGame gameLuaGameCtx{
@@ -1014,13 +1028,13 @@ static const char *GetDefaultModuleName(GameLuaType type) {
     // table.  Falls back to the default JIT variant if the type is not found.
     switch (type) {
         case GameLuaType::_51:
-            return defaultLua51LibraryName.c_str();
+            return DefaultLua51LibraryName();
         case GameLuaType::jit:
-            return defaultLuajitLibraryName.c_str();
+            return DefaultLuajitLibraryName();
         case GameLuaType::jit_gen:
-            return defaultLuajitGenLibraryName.c_str();
+            return DefaultLuajitGenLibraryName();
         default:
-            return defaultLuajitLibraryName.c_str();
+            return DefaultLuajitLibraryName();
     }
 }
 

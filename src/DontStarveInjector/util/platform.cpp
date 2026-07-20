@@ -30,6 +30,11 @@ std::filesystem::path getExePath() {
 }
 
 module_handler_t loadlib(const char *name, int mode) {
+    // Callers (e.g. __attribute__((constructor))) can race static init and
+    // pass a null/empty name; filesystem::path(const char*) would SEGV on strlen.
+    if (!name || !*name) {
+        return nullptr;
+    }
     if (!std::filesystem::exists(name)) {
         std::filesystem::path path;
         if (auto p = getExePath().parent_path() / name; std::filesystem::exists(p))
