@@ -6,6 +6,7 @@ end
 local fork_save = GameInjector.DS_LUAJIT_fork_save
 local fork_save_exit = GameInjector.DS_LUAJIT_fork_save_exit
 local fork_save_cleanup = GameInjector.DS_LUAJIT_fork_save_cleanup
+local fork_save_wait = GameInjector.DS_LUAJIT_fork_save_wait
 
 local old_SaveGame = _G.SaveGame
 if type(old_SaveGame) ~= "function" then
@@ -21,6 +22,14 @@ end
 
 _G.SaveGame = function(isshutdown, callback, ...)
     if in_fork_save then
+        return run_default_save(isshutdown, callback, ...)
+    end
+
+    if isshutdown then
+        if fork_save_wait then
+            fork_save_wait()
+        end
+        print("[fork_save] isshutdown: use main process save")
         return run_default_save(isshutdown, callback, ...)
     end
 

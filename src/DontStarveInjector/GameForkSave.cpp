@@ -306,3 +306,11 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_cleanup() {
     kill_stale_child();
 #endif
 }
+
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_wait() {
+#ifdef __linux__
+    wait_for_previous_save();
+#elif defined(_WIN32)
+    wait_for_previous_save();
+#endif
+}

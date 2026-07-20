@@ -53,3 +53,4 @@ Mod/scripts/jit
 cmake/GameDir.cmake
 Mod/**/*.dll
 Mod/mod.manifest
+dst-scripts/

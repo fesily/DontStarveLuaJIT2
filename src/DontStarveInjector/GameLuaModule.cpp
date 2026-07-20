@@ -1200,6 +1200,7 @@ static int DS_LUAJIT_entity_get_raw_ptr(lua_State* L) { return 0; };
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_fork_save();
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_exit();
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_cleanup();
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_wait();
 
 static std::optional<PacketPriority> parse_lua_packet_priority(const sol::optional<int>& value) {
 	if (!value) {
@@ -1321,6 +1322,7 @@ int luaopen_GameInjector(lua_State* L) {
     module.set_function("DS_LUAJIT_fork_save", &DS_LUAJIT_fork_save);
     module.set_function("DS_LUAJIT_fork_save_exit", &DS_LUAJIT_fork_save_exit);
     module.set_function("DS_LUAJIT_fork_save_cleanup", &DS_LUAJIT_fork_save_cleanup);
+    module.set_function("DS_LUAJIT_fork_save_wait", &DS_LUAJIT_fork_save_wait);
 
     lua["GameInjector"] = module;
     return 1;

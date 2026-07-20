@@ -11,6 +11,7 @@ local function assert_truthy(value, message)
 end
 
 local function run_case(name, fork_result, opts)
+    opts = opts or {}
     local old_print = print
     local old_save_game = _G.SaveGame
     local old_game_injector = _G.GameInjector
@@ -20,7 +21,9 @@ local function run_case(name, fork_result, opts)
         callback_count = 0,
         cleanup_count = 0,
         exit_count = 0,
+        wait_count = 0,
         save_count = 0,
+        last_isshutdown = nil,
         timeout_task = nil,
         periodic_task = nil,
     }
@@ -55,11 +58,15 @@ local function run_case(name, fork_result, opts)
         DS_LUAJIT_fork_save_cleanup = function()
             events.cleanup_count = events.cleanup_count + 1
         end,
+        DS_LUAJIT_fork_save_wait = function()
+            events.wait_count = events.wait_count + 1
+        end,
     }
 
     _G.SaveGame = function(isshutdown, callback, ...)
         events.save_count = events.save_count + 1
-        if opts and opts.raise_error then
+        events.last_isshutdown = isshutdown
+        if opts.raise_error then
             error("save failed")
         end
         if callback ~= nil then
@@ -82,25 +89,37 @@ local function run_case(name, fork_result, opts)
         callback_args = { ... }
     end
 
-    local ok, result = pcall(_G.SaveGame, false, callback, "extra")
+    local isshutdown = opts.isshutdown
+    local ok, result = pcall(_G.SaveGame, isshutdown, callback, "extra")
     restore_globals()
     if not ok then
         error(string.format("%s: unexpected SaveGame error: %s", name, tostring(result)))
     end
 
-    if fork_result == "unsupported" or fork_result == "other" then
+    if isshutdown then
+        assert_equal(events.wait_count, 1, name .. " should wait for previous fork child")
+        assert_equal(events.save_count, 1, name .. " should save on main process")
+        assert_equal(events.last_isshutdown, true, name .. " should pass isshutdown=true")
+        assert_equal(events.callback_count, 1, name .. " should invoke callback through main process save")
+        assert_equal(events.exit_count, 0, name .. " should not exit child on isshutdown")
+        assert_equal(events.timeout_task, nil, name .. " should not arm child timeout on isshutdown")
+    elseif fork_result == "unsupported" or fork_result == "other" then
+        assert_equal(events.wait_count, 0, name .. " should not wait when forking")
         assert_equal(events.save_count, 1, name .. " should fall back to default save")
         assert_equal(events.callback_count, 1, name .. " should invoke callback through default save")
         assert_equal(events.exit_count, 0, name .. " should not exit child")
     elseif fork_result == "parent" then
+        assert_equal(events.wait_count, 0, name .. " should not wait when forking")
         assert_equal(events.save_count, 0, name .. " should skip default save in parent")
         assert_equal(events.callback_count, 1, name .. " should invoke callback in parent path")
         assert_equal(events.exit_count, 0, name .. " should not exit in parent path")
-    elseif fork_result == "child" and opts and opts.raise_error then
+    elseif fork_result == "child" and opts.raise_error then
+        assert_equal(events.wait_count, 0, name .. " should not wait when forking")
         assert_equal(events.save_count, 1, name .. " should attempt save in child path")
         assert_equal(events.callback_count, 0, name .. " should not invoke callback after save error")
         assert_equal(events.exit_count, 1, name .. " should exit once after child save error")
     elseif fork_result == "child" then
+        assert_equal(events.wait_count, 0, name .. " should not wait when forking")
         assert_equal(events.save_count, 1, name .. " should execute default save in child path")
         assert_equal(events.callback_count, 1, name .. " should invoke callback from child path")
         assert_equal(events.exit_count, 1, name .. " should exit once after child save completes")
@@ -124,5 +143,7 @@ run_case("parent skips save", "parent")
 run_case("child saves and exits", "child")
 run_case("other result falls back", "other")
 run_case("child save failure exits", "child", { raise_error = true })
+run_case("isshutdown uses main process", "parent", { isshutdown = true })
+run_case("isshutdown ignores child fork result", "child", { isshutdown = true })
 
 print("fork_save_spec: all tests passed")
