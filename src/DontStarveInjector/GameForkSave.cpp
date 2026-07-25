@@ -35,6 +35,14 @@ static void reap_children() {
     }
 }
 
+static const char *poll_child_status() {
+    reap_children();
+    if (g_save_child_pid.load() > 0) {
+        return "running";
+    }
+    return "idle";
+}
+
 static void wait_for_previous_save() {
     pid_t expected = g_save_child_pid.load();
     if (expected <= 0) return;
@@ -225,6 +233,15 @@ static void kill_stale_child() {
     g_save_child_started_at.store(0);
 }
 
+static const char *poll_child_status() {
+    reap_children();
+    kill_stale_child();
+    if (g_save_child_handle.load() != nullptr) {
+        return "running";
+    }
+    return "idle";
+}
+
 #endif
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_fork_save() {
@@ -312,5 +329,13 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_wait() {
     wait_for_previous_save();
 #elif defined(_WIN32)
     wait_for_previous_save();
+#endif
+}
+
+DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_fork_save_poll() {
+#if defined(__linux__) || defined(_WIN32)
+    return poll_child_status();
+#else
+    return "idle";
 #endif
 }

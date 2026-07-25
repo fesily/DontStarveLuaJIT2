@@ -1201,6 +1201,7 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_fork_save();
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_exit();
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_cleanup();
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_wait();
+DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_fork_save_poll();
 
 static std::optional<PacketPriority> parse_lua_packet_priority(const sol::optional<int>& value) {
 	if (!value) {
@@ -1323,6 +1324,7 @@ int luaopen_GameInjector(lua_State* L) {
     module.set_function("DS_LUAJIT_fork_save_exit", &DS_LUAJIT_fork_save_exit);
     module.set_function("DS_LUAJIT_fork_save_cleanup", &DS_LUAJIT_fork_save_cleanup);
     module.set_function("DS_LUAJIT_fork_save_wait", &DS_LUAJIT_fork_save_wait);
+    module.set_function("DS_LUAJIT_fork_save_poll", &DS_LUAJIT_fork_save_poll);
 
     lua["GameInjector"] = module;
     return 1;
