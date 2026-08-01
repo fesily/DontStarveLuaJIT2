@@ -19,16 +19,51 @@ local in_fork_save = false
 local PARENT_POLL_INTERVAL = 1
 local PARENT_POLL_TIMEOUT = 30
 
+-- TheNet APIs that mutate shared snapshot disk/state. Child must not run them:
+-- SerializeWorldSession already writes the current snapshot file; Truncate/Increment
+-- belong only to the live parent after the child exits (see SnapshotManager in engine).
+local CHILD_NET_NOOPS = {
+    "TruncateSnapshots",
+    "TruncateSnapshotsInClusterSlot",
+    "IncrementSnapshot",
+    "SetCurrentSnapshot",
+    "EndWorldSave",
+}
+
 local function run_default_save(isshutdown, callback, ...)
     return old_SaveGame(isshutdown, callback, ...)
 end
 
+local function with_child_net_noops(fn)
+    local TheNet = _G.TheNet
+    local saved = {}
+    for _, name in ipairs(CHILD_NET_NOOPS) do
+        saved[name] = TheNet[name]
+        TheNet[name] = function()
+            -- intentionally no-op in forked save child
+        end
+    end
+
+    local ok, err = pcall(fn)
+
+    for _, name in ipairs(CHILD_NET_NOOPS) do
+        TheNet[name] = saved[name]
+    end
+
+    if not ok then
+        error(err)
+    end
+end
+
 -- Mirrors mainfunctions.lua SaveGame internal callback post-IO steps.
+-- Must run only in the live parent process.
 local function parent_finish_postsave(callback)
     local TheNet = _G.TheNet
     local TheWorld = _G.TheWorld
     local ShardGameIndex = _G.ShardGameIndex
 
+    -- Vanilla: TruncateSnapshots(session) with omitted id uses GetCurrentSnapshot().
+    -- Keeps [current - max_snapshots + 1, current], deletes the rest on disk.
     if #_G.AllPlayers <= 0 then
         TheNet:TruncateSnapshots(TheWorld.meta.session_identifier)
     end
@@ -106,14 +141,19 @@ _G.SaveGame = function(isshutdown, callback, ...)
             end
         end
 
-        -- Parent owns external callback + memory postsave.
-        -- Child only performs disk write, then exits.
+        -- Disk write only. Snapshot retention / id advance happen in parent.
         local function on_saved()
             exit_child()
         end
 
-        local success, err = pcall(old_SaveGame, isshutdown, on_saved, ...)
-        if not success then
+        local save_args = { ... }
+        local ok, err = pcall(function()
+            with_child_net_noops(function()
+                old_SaveGame(isshutdown, on_saved, unpack(save_args))
+            end)
+        end)
+
+        if not ok then
             print("[fork_save] child: SaveGame failed: " .. tostring(err))
             exit_child()
             return

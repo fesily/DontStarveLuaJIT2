@@ -32,6 +32,7 @@ local function run_case(name, fork_result, opts)
         end_world_save_count = 0,
         increment_snapshot_count = 0,
         truncate_snapshots_count = 0,
+        set_current_snapshot_count = 0,
         shard_save_count = 0,
         write_time_file_count = 0,
         last_isshutdown = nil,
@@ -92,6 +93,12 @@ local function run_case(name, fork_result, opts)
             events.truncate_snapshots_count = events.truncate_snapshots_count + 1
             events.last_truncate_session = session_id
         end,
+        TruncateSnapshotsInClusterSlot = function()
+            events.truncate_snapshots_count = events.truncate_snapshots_count + 1
+        end,
+        SetCurrentSnapshot = function()
+            events.set_current_snapshot_count = events.set_current_snapshot_count + 1
+        end,
     }
 
     _G.ShardGameIndex = {
@@ -150,12 +157,20 @@ local function run_case(name, fork_result, opts)
         if opts.raise_error then
             error("save failed")
         end
+        -- Vanilla SaveGame internal callback mutates snapshot state.
+        -- Child path must no-op these; parent path must still perform them.
+        if _G.TheNet then
+            if #(_G.AllPlayers or {}) <= 0 then
+                _G.TheNet:TruncateSnapshots("session-test")
+            end
+            _G.TheNet:IncrementSnapshot()
+            _G.TheNet:EndWorldSave()
+        end
         if callback ~= nil then
             callback("save-finished", ...)
         end
         return "default-save", isshutdown
     end
-
     package.loaded["scripts.fork_save"] = nil
     local chunk, load_err = loadfile("Mod/scripts/fork_save.lua")
     if not chunk then
@@ -234,11 +249,17 @@ local function run_case(name, fork_result, opts)
         assert_equal(events.save_count, 1, name .. " should attempt save in child path")
         assert_equal(events.callback_count, 0, name .. " should not invoke external callback after save error")
         assert_equal(events.exit_count, 1, name .. " should exit once after child save error")
+        assert_equal(events.increment_snapshot_count, 0, name .. " child must not IncrementSnapshot")
+        assert_equal(events.truncate_snapshots_count, 0, name .. " child must not TruncateSnapshots")
     elseif fork_result == "child" then
         assert_equal(events.wait_count, 0, name .. " should not wait when forking")
         assert_equal(events.save_count, 1, name .. " should execute default save in child path")
         assert_equal(events.callback_count, 0, name .. " child should not invoke external callback")
         assert_equal(events.exit_count, 1, name .. " should exit once after child save completes")
+        assert_equal(events.increment_snapshot_count, 0, name .. " child must not IncrementSnapshot")
+        assert_equal(events.truncate_snapshots_count, 0, name .. " child must not TruncateSnapshots")
+        assert_equal(events.set_current_snapshot_count, 0, name .. " child must not SetCurrentSnapshot")
+        assert_equal(events.end_world_save_count, 0, name .. " child must not EndWorldSave")
         assert_truthy(#events.timeout_tasks >= 1, name .. " should arm child timeout task")
         assert_equal(events.timeout_tasks[1].delay, 30, name .. " should arm 30 second timeout")
     else
