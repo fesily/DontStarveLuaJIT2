@@ -2,7 +2,7 @@
 
 **Status:** DONE  
 **Date:** 2026-08-03  
-**Commit:** `fdd87ef` — `feat(plugin): migrate network.rpc + network.entity with hard depends (M2 Task 5)`
+**Commit:** `90114ba` — `feat(plugin): migrate network.rpc + network.entity with hard depends (M2 Task 5)`
 
 ## Summary
 
