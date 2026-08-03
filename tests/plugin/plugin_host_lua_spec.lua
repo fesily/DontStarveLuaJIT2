@@ -402,6 +402,8 @@ local function test_save_fork_enable_matrix()
     package.loaded["plugins.save_fork"] = nil
     package.loaded["plugins.sim_lagcomp"] = nil
     package.loaded["plugins.network_sim"] = nil
+    package.loaded["plugins.network_rpc"] = nil
+    package.loaded["plugins.network_entity"] = nil
     local list = require("plugins.init")
     assert_eq(type(list), "table", "init returns table")
     assert_true(#list >= 1, "init has plugins")
@@ -493,6 +495,8 @@ local function test_sim_lagcomp_enable_matrix()
     package.loaded["plugins.save_fork"] = nil
     package.loaded["plugins.sim_lagcomp"] = nil
     package.loaded["plugins.network_sim"] = nil
+    package.loaded["plugins.network_rpc"] = nil
+    package.loaded["plugins.network_entity"] = nil
     local list = require("plugins.init")
     local plugin = plugin_by_id(list, "sim.lagcomp")
     assert_true(plugin ~= nil, "sim.lagcomp registered")
@@ -583,6 +587,8 @@ local function test_network_sim_enable_matrix()
     package.loaded["plugins.save_fork"] = nil
     package.loaded["plugins.sim_lagcomp"] = nil
     package.loaded["plugins.network_sim"] = nil
+    package.loaded["plugins.network_rpc"] = nil
+    package.loaded["plugins.network_entity"] = nil
     local list = require("plugins.init")
     local plugin = plugin_by_id(list, "network.sim")
     assert_true(plugin ~= nil, "network.sim registered")
@@ -667,7 +673,214 @@ local function test_network_sim_enable_matrix()
     print("PASS: network_sim_enable_matrix")
 end
 
+local function clear_plugin_modules()
+    package.loaded["plugins.init"] = nil
+    package.loaded["plugins.save_fork"] = nil
+    package.loaded["plugins.sim_lagcomp"] = nil
+    package.loaded["plugins.network_sim"] = nil
+    package.loaded["plugins.network_rpc"] = nil
+    package.loaded["plugins.network_entity"] = nil
+end
 
+local function make_bit_stub()
+    return {
+        bxor = function(a, b)
+            local r, p = 0, 1
+            a, b = a % 4294967296, b % 4294967296
+            for _ = 1, 32 do
+                local abit, bbit = a % 2, b % 2
+                if abit ~= bbit then
+                    r = r + p
+                end
+                a, b, p = (a - abit) / 2, (b - bbit) / 2, p * 2
+            end
+            return r
+        end,
+        lshift = function(a, n)
+            return (a * (2 ^ n)) % 4294967296
+        end,
+        rshift = function(a, n)
+            return math.floor((a % 4294967296) / (2 ^ n))
+        end,
+    }
+end
+
+local function test_network_rpc_enable_matrix()
+    -- L-E: network.rpc NetworkOpt true/false (Lua face AfterModMain).
+    clear_plugin_modules()
+    local list = require("plugins.init")
+    local plugin = plugin_by_id(list, "network.rpc")
+    assert_true(plugin ~= nil, "network.rpc registered")
+    assert_eq(plugin.priority, 40, "network.rpc priority")
+    assert_eq(plugin.options.all_of[1], "NetworkOpt", "network.rpc option")
+    assert_eq(#(plugin.depends or {}), 0, "network.rpc no hard deps")
+
+    -- Stub TheNet metatable + bit helpers used by production load.
+    local set_next_calls = {}
+    local injector = {
+        DS_LUAJIT_SetNextRpcInfo = function(p, r, c)
+            set_next_calls[#set_next_calls + 1] = { p, r, c }
+        end,
+    }
+    local net_index = {
+        SendRPCToServer = function() end,
+        SendRPCToClient = function() end,
+        SendRPCToShard = function() end,
+        SendModRPCToServer = function() end,
+        SendModRPCToClient = function() end,
+        SendModRPCToShard = function() end,
+    }
+    local TheNet = setmetatable({}, { __index = net_index })
+    local prev_TheNet = rawget(_G, "TheNet")
+    local prev_bit = rawget(_G, "bit")
+    rawset(_G, "TheNet", TheNet)
+    rawset(_G, "bit", make_bit_stub())
+    local ok, err = pcall(function()
+        -- Row: NetworkOpt=true → Loaded, wraps SendRPC*
+        local host_on = PluginHost.new()
+        host_on:register_all(list)
+        host_on:resolve({ NetworkOpt = true }, { injector = injector })
+        local lr_on = host_on:load_phase(PHASE.AfterModMain)
+        assert_true(lr_on.ok, "network.rpc on load ok")
+        assert_eq(host_on:status("network.rpc"), STATUS.Loaded, "network.rpc on Loaded")
+        assert_eq(pos(lr_on.loaded_order, "network.rpc") ~= nil and 1 or 0, 1, "network.rpc in order")
+        local e_on = host_on:find("network.rpc")
+        assert_eq(e_on.load_count, 1, "network.rpc load_count on")
+        assert_true(type(net_index.SendRPCToServer) == "function", "SendRPCToServer wrapped")
+        assert_true(type(net_index.SendRPCToServer2) == "function", "SendRPCToServer2 installed")
+        assert_true(type(net_index.alloc_rpc_channel) == "function", "alloc_rpc_channel installed")
+
+        -- Row: NetworkOpt=false → Disabled, no load
+        local host_off = PluginHost.new()
+        host_off:register_all(list)
+        host_off:resolve({ NetworkOpt = false }, { injector = injector })
+        local lr_off = host_off:load_phase(PHASE.AfterModMain)
+        assert_true(lr_off.ok, "network.rpc off resolve ok")
+        assert_eq(host_off:status("network.rpc"), STATUS.Disabled, "network.rpc off Disabled")
+        assert_eq(pos(lr_off.loaded_order, "network.rpc"), nil, "network.rpc not loaded when off")
+        local e_off = host_off:find("network.rpc")
+        assert_eq(e_off.load_count or 0, 0, "network.rpc load_count off")
+    end)
+
+    rawset(_G, "TheNet", prev_TheNet)
+    rawset(_G, "bit", prev_bit)
+    if not ok then
+        error(err, 0)
+    end
+    print("PASS: network_rpc_enable_matrix")
+end
+
+local function test_network_entity_enable_matrix()
+    -- L-E / S9: network.entity × network.rpc hard dep matrix.
+    clear_plugin_modules()
+    local list = require("plugins.init")
+    local plugin = plugin_by_id(list, "network.entity")
+    assert_true(plugin ~= nil, "network.entity registered")
+    assert_eq(plugin.priority, 40, "network.entity priority")
+    assert_eq(plugin.options.all_of[1], "NetworkOptEntity", "network.entity option")
+    assert_eq(plugin.depends[1], "network.rpc", "network.entity depends network.rpc")
+
+    local register_calls = {}
+    local injector = {
+        DS_LUAJIT_EntityNetWorkExtension_Register = function(net, id)
+            register_calls[#register_calls + 1] = { net, id }
+            return { registered = true, id = id }
+        end,
+        DS_LUAJIT_SetNextRpcInfo = function() end,
+    }
+
+    -- Minimal TheNet for rpc face when both on.
+    local net_index = {
+        SendRPCToServer = function() end,
+        SendRPCToClient = function() end,
+        SendRPCToShard = function() end,
+        SendModRPCToServer = function() end,
+        SendModRPCToClient = function() end,
+        SendModRPCToShard = function() end,
+    }
+    local TheNet = setmetatable({}, { __index = net_index })
+    local prev_TheNet = rawget(_G, "TheNet")
+    local prev_bit = rawget(_G, "bit")
+    local prev_SpawnPrefab = rawget(_G, "SpawnPrefab")
+    rawset(_G, "TheNet", TheNet)
+    rawset(_G, "bit", make_bit_stub())
+    rawset(_G, "SpawnPrefab", function(name)
+        return {
+            prefab = name,
+            Network = {
+                GetNetworkID = function() return 42 end,
+            },
+        }
+    end)
+
+    local ok, err = pcall(function()
+        -- Row: entity on + rpc on → both Loaded; SpawnPrefab registers extension
+        register_calls = {}
+        local host_both = PluginHost.new()
+        host_both:register_all(list)
+        host_both:resolve(
+            { NetworkOpt = true, NetworkOptEntity = true },
+            { injector = injector }
+        )
+        local lr_both = host_both:load_phase(PHASE.AfterModMain)
+        assert_true(lr_both.ok, "entity+rpc load ok")
+        assert_eq(host_both:status("network.rpc"), STATUS.Loaded, "rpc Loaded with entity")
+        assert_eq(host_both:status("network.entity"), STATUS.Loaded, "entity Loaded with rpc")
+        -- hard dep: rpc before entity in load order
+        local pr = pos(lr_both.loaded_order, "network.rpc")
+        local pe = pos(lr_both.loaded_order, "network.entity")
+        assert_true(pr ~= nil and pe ~= nil and pr < pe, "rpc before entity")
+        local inst = SpawnPrefab("walrus")
+        assert_true(inst.NetworkExtension ~= nil, "NetworkExtension registered")
+        assert_eq(#register_calls, 1, "EntityNetWorkExtension_Register once")
+
+        -- Row: entity on + rpc off → entity Failed MissingHardDep, no load
+        register_calls = {}
+        local host_ent_only = PluginHost.new()
+        host_ent_only:register_all(list)
+        host_ent_only:resolve(
+            { NetworkOpt = false, NetworkOptEntity = true },
+            { injector = injector }
+        )
+        local lr_ent = host_ent_only:load_phase(PHASE.AfterModMain)
+        assert_eq(host_ent_only:status("network.rpc"), STATUS.Disabled, "rpc Disabled")
+        assert_eq(host_ent_only:status("network.entity"), STATUS.Failed, "entity Failed alone")
+        assert_eq(host_ent_only:fail_reason("network.entity"), FAIL.MissingHardDep, "MissingHardDep")
+        local e_ent = host_ent_only:find("network.entity")
+        assert_eq(e_ent.load_count or 0, 0, "entity not loaded without rpc")
+        assert_eq(pos(lr_ent.loaded_order, "network.entity"), nil, "entity not in order alone")
+
+        -- Row: entity off + rpc on → entity Disabled, rpc Loaded
+        local host_rpc_only = PluginHost.new()
+        host_rpc_only:register_all(list)
+        host_rpc_only:resolve(
+            { NetworkOpt = true, NetworkOptEntity = false },
+            { injector = injector }
+        )
+        host_rpc_only:load_phase(PHASE.AfterModMain)
+        assert_eq(host_rpc_only:status("network.rpc"), STATUS.Loaded, "rpc alone Loaded")
+        assert_eq(host_rpc_only:status("network.entity"), STATUS.Disabled, "entity off Disabled")
+
+        -- Row: both off → both Disabled
+        local host_off = PluginHost.new()
+        host_off:register_all(list)
+        host_off:resolve(
+            { NetworkOpt = false, NetworkOptEntity = false },
+            { injector = injector }
+        )
+        host_off:load_phase(PHASE.AfterModMain)
+        assert_eq(host_off:status("network.rpc"), STATUS.Disabled, "rpc both-off Disabled")
+        assert_eq(host_off:status("network.entity"), STATUS.Disabled, "entity both-off Disabled")
+    end)
+
+    rawset(_G, "TheNet", prev_TheNet)
+    rawset(_G, "bit", prev_bit)
+    rawset(_G, "SpawnPrefab", prev_SpawnPrefab)
+    if not ok then
+        error(err, 0)
+    end
+    print("PASS: network_entity_enable_matrix")
+end
 
 local function test_option_rules_unit()
     local eval = PluginHost.evaluate_option_rule
@@ -707,6 +920,8 @@ test_config_function_getmodconfigdata()
 test_save_fork_enable_matrix()
 test_sim_lagcomp_enable_matrix()
 test_network_sim_enable_matrix()
+test_network_rpc_enable_matrix()
+test_network_entity_enable_matrix()
 test_option_rules_unit()
 
 print("plugin_host_lua_spec: all tests passed")

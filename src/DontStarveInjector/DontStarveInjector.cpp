@@ -308,8 +308,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     LoadGameModConfig();
 
     // Path A PluginHost: register builtins, resolve from GameJitModConfig, EarlyNative.
-    // Registry is empty until feature plugins migrate (M1+); dual-call with legacy
-    // GameNetWorkHookRpc4 / LoadGameModConfig side effects is intentional until M2/M3.
+    // network.rpc EarlyNative owns GameNetWorkHookRpc4 when NetworkOpt is enabled.
     {
         using namespace ds::plugin;
         static PluginHost g_plugin_host;
@@ -327,7 +326,6 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         (void) g_plugin_host.load_phase(PluginPhase::EarlyNative);
     }
 
-    GameNetWorkHookRpc4();
     DisableScriptZip();
 }
 

@@ -64,7 +64,6 @@ add_test(NAME plugin_option_rules COMMAND test_plugin_option_rules)
 
 set(PLUGIN_CONFIG_BRIDGE_SOURCES
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginConfigBridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/RegisterBuiltinPlugins.cpp
 )
 
 add_executable(test_plugin_config_bridge

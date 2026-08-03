@@ -430,6 +430,135 @@ static void test_reload_unload() {
     printf("PASS: reload_unload\n");
 }
 
+static void test_network_rpc_option_matrix() {
+    // L-E: NetworkOpt true/false gates EarlyNative network.rpc.
+    FakePlugin rpc;
+    rpc.man.id = "network.rpc";
+    rpc.man.phases = PluginPhase::EarlyNative;
+    rpc.man.priority = 40;
+    rpc.man.options = opt_all({"NetworkOpt"});
+
+    {
+        PluginHost host;
+        host.register_plugin(&rpc);
+        PluginContext ctx;
+        ConfigView cfg = cfg_true({"NetworkOpt"});
+        host.resolve(cfg, ctx);
+        auto lr = host.load_phase(PluginPhase::EarlyNative);
+        assert(lr.ok);
+        assert(lr.loaded_order.size() == 1);
+        assert(lr.loaded_order[0] == "network.rpc");
+        assert(rpc.load_count == 1);
+        assert(host.status("network.rpc") == PluginStatus::Loaded);
+    }
+    rpc.load_count = 0;
+    {
+        PluginHost host;
+        host.register_plugin(&rpc);
+        PluginContext ctx;
+        ConfigView cfg;
+        cfg["NetworkOpt"] = ConfigValue::boolean(false);
+        host.resolve(cfg, ctx);
+        auto lr = host.load_phase(PluginPhase::EarlyNative);
+        assert(lr.ok);
+        assert(lr.loaded_order.empty());
+        assert(rpc.load_count == 0);
+        assert(host.status("network.rpc") == PluginStatus::Disabled);
+    }
+    printf("PASS: network_rpc_option_matrix\n");
+}
+
+static void test_network_entity_hard_dep_on_rpc() {
+    // L-E / S9: network.entity cannot enable alone; MissingHardDep when rpc off.
+    FakePlugin rpc, entity;
+    rpc.man.id = "network.rpc";
+    rpc.man.phases = PluginPhase::EarlyNative | PluginPhase::AfterModMain;
+    rpc.man.priority = 40;
+    rpc.man.options = opt_all({"NetworkOpt"});
+
+    entity.man.id = "network.entity";
+    entity.man.phases = PluginPhase::AfterModMain;
+    entity.man.priority = 40;
+    entity.man.depends = {"network.rpc"};
+    entity.man.options = opt_all({"NetworkOptEntity"});
+
+    // Row: entity on, rpc off → entity Failed MissingHardDep
+    {
+        PluginHost host;
+        host.register_plugin(&rpc);
+        host.register_plugin(&entity);
+        PluginContext ctx;
+        ConfigView cfg;
+        cfg["NetworkOpt"] = ConfigValue::boolean(false);
+        cfg["NetworkOptEntity"] = ConfigValue::boolean(true);
+        auto rr = host.resolve(cfg, ctx);
+        assert(host.status("network.rpc") == PluginStatus::Disabled);
+        assert(host.status("network.entity") == PluginStatus::Failed);
+        assert(host.fail_reason("network.entity") == PluginFailReason::MissingHardDep);
+        assert(std::find(rr.failed.begin(), rr.failed.end(), "network.entity") != rr.failed.end());
+        host.load_phase(PluginPhase::EarlyNative);
+        host.load_phase(PluginPhase::AfterModMain);
+        assert(rpc.load_count == 0);
+        assert(entity.load_count == 0);
+    }
+
+    // Row: both on → rpc EarlyNative then entity AfterModMain
+    rpc.load_count = 0;
+    entity.load_count = 0;
+    {
+        PluginHost host;
+        host.register_plugin(&rpc);
+        host.register_plugin(&entity);
+        PluginContext ctx;
+        ConfigView cfg = cfg_true({"NetworkOpt", "NetworkOptEntity"});
+        auto rr = host.resolve(cfg, ctx);
+        assert(rr.failed.empty());
+        assert(host.status("network.rpc") == PluginStatus::Registered);
+        assert(host.status("network.entity") == PluginStatus::Registered);
+
+        auto lr_early = host.load_phase(PluginPhase::EarlyNative);
+        assert(lr_early.ok);
+        assert(lr_early.loaded_order.size() == 1);
+        assert(lr_early.loaded_order[0] == "network.rpc");
+        assert(rpc.load_count == 1);
+
+        auto lr_late = host.load_phase(PluginPhase::AfterModMain);
+        assert(lr_late.ok);
+        assert(entity.load_count == 1);
+        assert(host.status("network.entity") == PluginStatus::Loaded);
+        assert(host.status("network.rpc") == PluginStatus::Loaded);
+        // entity after rpc within AfterModMain when both phases load
+        auto pos_rpc = std::find(lr_late.loaded_order.begin(), lr_late.loaded_order.end(), "network.rpc");
+        auto pos_ent = std::find(lr_late.loaded_order.begin(), lr_late.loaded_order.end(), "network.entity");
+        assert(pos_ent != lr_late.loaded_order.end());
+        if (pos_rpc != lr_late.loaded_order.end()) {
+            assert(pos_rpc < pos_ent);
+        }
+    }
+
+    // Row: entity off, rpc on → entity Disabled, rpc loads
+    rpc.load_count = 0;
+    entity.load_count = 0;
+    {
+        PluginHost host;
+        host.register_plugin(&rpc);
+        host.register_plugin(&entity);
+        PluginContext ctx;
+        ConfigView cfg;
+        cfg["NetworkOpt"] = ConfigValue::boolean(true);
+        cfg["NetworkOptEntity"] = ConfigValue::boolean(false);
+        host.resolve(cfg, ctx);
+        assert(host.status("network.rpc") == PluginStatus::Registered);
+        assert(host.status("network.entity") == PluginStatus::Disabled);
+        host.load_phase(PluginPhase::EarlyNative);
+        host.load_phase(PluginPhase::AfterModMain);
+        assert(rpc.load_count >= 1);
+        assert(entity.load_count == 0);
+    }
+
+    printf("PASS: network_entity_hard_dep_on_rpc\n");
+}
+
 int main() {
     test_empty_registry();
     test_topo_linear();
@@ -447,6 +576,8 @@ int main() {
     test_profiler_before_hide();
     test_sticky_no_unload();
     test_reload_unload();
+    test_network_rpc_option_matrix();
+    test_network_entity_hard_dep_on_rpc();
     printf("All host graph tests passed!\n");
     return 0;
 }

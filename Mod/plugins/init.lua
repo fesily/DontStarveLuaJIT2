@@ -20,4 +20,6 @@ return {
     load_plugin("save_fork"),
     load_plugin("sim_lagcomp"),
     load_plugin("network_sim"),
+    load_plugin("network_rpc"),
+    load_plugin("network_entity"),
 }
