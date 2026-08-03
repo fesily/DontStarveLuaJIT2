@@ -16,6 +16,7 @@
 | D4 | Unload policy | **Sticky by default**. Only plugins that set `support_reload = true` (and Lua plugins that implement `unload`) may be unloaded. Most native hooks remain sticky for process lifetime. |
 | D5 | Config surface | `Mod/modinfo.lua` `configuration_options` remains the **only** user-facing config. Multiple options may map to one plugin. |
 | D6 | Fail-fast style | No defensive “if API missing then no-op”. Missing required APIs/symbols error immediately (project convention). |
+| D7 | Success requires tests | Architecture is **not done** without automated gates in §12. Narrative goals without a §13 mapping are non-blocking. |
 
 ---
 
@@ -45,6 +46,7 @@ Today features are hard-wired, not modular:
 4. One plugin may bind multiple `configuration_options`.
 5. Adding a feature = new plugin + manifest; **no** edits to `Inject()` / `_M:Main()` trunks beyond host calls.
 6. With all plugins disabled, core still injects and the game remains playable on the selected VM.
+7. **Every success criterion is proven by an automated test** (or an explicit manual smoke with PR evidence where hooks require a live game).
 
 ### Non-goals (YAGNI)
 
@@ -54,6 +56,7 @@ Today features are hard-wired, not modular:
 - Extra factory/framework libraries “for flexibility”.
 - Turning Signature / FunctionRelocation into user plugins.
 - Shipping dynamic plugin DLLs in this phase (documented as Phase B only).
+- Fully automated in-game graphics/network integration suite in Phase A (manual L-G only).
 
 ---
 
@@ -136,12 +139,35 @@ enum class PluginPhase : uint32_t {
     OnDemand       = 1 << 3,
 };
 
+enum class PluginStatus : uint8_t {
+    Registered,
+    Disabled,   // options/when off — not an error
+    Failed,     // hard dep / conflict / cycle / load error
+    Loaded,
+};
+
+enum class PluginFailReason : uint8_t {
+    None,
+    MissingHardDep,
+    Conflict,
+    Cycle,
+    LoadThrew,
+    CanLoadFalse, // treated as Disabled, not Failed, if options were on but gate false — see §6
+};
+
+struct PluginEvent {
+    std::string_view plugin_id;
+    PluginPhase phase;       // meaningful for load/unload events
+    PluginStatus status;
+    PluginFailReason reason;
+    std::string_view detail; // missing dep id, conflict peer, cycle path, etc.
+};
+
 struct PluginContext {
-    InjectorCtx* injector;
-    const GameJitModConfig* config;   // resolved cascade snapshot
+    InjectorCtx* injector;                 // may be null in unit tests
+    const GameJitModConfig* config;        // may be null in unit tests; use ConfigView
     bool is_client;
-    // Config option lookup for this process (already merged)
-    // Exact API: Host-owned; plugins do not re-parse save files.
+    // Host-owned option lookup (already merged). Plugins do not re-parse save files.
 };
 
 struct PluginManifest {
@@ -152,15 +178,13 @@ struct PluginManifest {
     std::span<const std::string_view> conflicts;
     PluginPhase phases;
     bool support_reload;
+    int priority; // lower runs first within a phase when topo-tied; see §7.3
 };
 
 struct IPlugin {
     virtual const PluginManifest& manifest() const = 0;
-    // Platform/role/config gate after options resolved.
     virtual bool can_load(const PluginContext&) const = 0;
-    // Install hooks / register APIs. Throw or return error → Host fail-fast this plugin.
     virtual void load(PluginContext&) = 0;
-    // Only called if support_reload; default no-op or assert sticky.
     virtual void unload(PluginContext&) = 0;
 };
 ```
@@ -171,6 +195,21 @@ Registration (Phase A):
 // Explicit table preferred over magic static init order:
 void RegisterBuiltinPlugins(PluginHost&);
 // Called once from L0 after Config is ready, before EarlyNative phase.
+```
+
+**Testability requirement:** `PluginHost` must expose (at least for tests):
+
+```cpp
+void register_plugin(IPlugin*);
+// ConfigView = resolved key→variant map (bool/string/number), no file IO.
+struct ResolveResult { /* enabled set, failed set, events */ };
+ResolveResult resolve(const ConfigView&, const PluginContext& gate_ctx);
+struct LoadResult { /* loaded order, events */ };
+LoadResult load_phase(PluginPhase);
+const std::vector<PluginEvent>& events() const;
+PluginStatus status(std::string_view id) const;
+// Optional: ordered list of successfully loaded ids for a phase.
+std::vector<std::string_view> loaded_order(PluginPhase) const;
 ```
 
 ### 5.3 Lua plugin shape
@@ -185,29 +224,27 @@ return {
   conflicts = {},
   options = { all_of = { "EnableForkSave" } },
   support_reload = false,
+  priority = 60, -- align with §7.3 band
   when = function(ctx)
     return ctx.has_luajit and TheNet:IsDedicated()
   end,
   load = function(ctx)
-    -- existing path preserved:
     modimport("scripts/fork_save")
   end,
   unload = function(ctx) end,
 }
 ```
 
-Lua plugins are discovered from a fixed directory list (or an explicit registry table in `Mod/plugins/init.lua` for Phase A — **explicit registry preferred** to avoid filesystem scanning surprises in the game sandbox).
+Phase A discovery: **explicit registry** in `Mod/plugins/init.lua` (no filesystem scanning in the game sandbox).
 
 ### 5.4 Dual-face plugins
-
-For features with native + Lua:
 
 | Face | Phase | Role |
 |---|---|---|
 | Native | EarlyNative and/or AfterLuaBridge | Hooks, `DS_LUAJIT_*` export registration |
 | Lua | AfterModMain | Game-facing hooks (`SaveGame`, `FindEntities`, HUD, etc.) |
 
-Host tracks one logical plugin id; faces are ordered: native load completes before Lua `load` for that id when both exist.
+Host tracks one logical plugin id; native face completes before Lua `load` for that id when both exist.
 
 ---
 
@@ -215,48 +252,48 @@ Host tracks one logical plugin id; faces are ordered: native load completes befo
 
 ### 6.1 Option rules
 
-Manifest `options` supports:
-
 | Form | Meaning |
 |---|---|
 | `{ all_of = { "A", "B" } }` | Enabled only if every listed option is “on” |
 | `{ any_of = { "A", "B" } }` | Enabled if any listed option is “on” |
 | `{ option = "A" }` | Shorthand for `all_of = { "A" }` |
+| predicate | For string enums: e.g. `EnableProfiler != "off"`, `EnableTracy == "on"` |
 
 **“On” definition** (must match current modinfo semantics):
 
-- Boolean options: `true` is on, `false` is off.
-- Enum/string options used as feature switches (e.g. `EnableProfiler ~= "off"`, `EnableTracy == "on"`): plugin manifests use an explicit predicate where needed, not raw truthiness alone.
-- Options with `disabled_by` in modinfo: Host uses the **already resolved** `GetModConfigData` / native cascade value (same as today after disable rules). Do not reimplement `disabled_by` inside Host.
+- Boolean: `true` on, `false` off.
+- String feature switches: use explicit predicates in the manifest (not raw Lua truthiness).
+- `disabled_by` in modinfo: Host consumes **already resolved** values (same as `GetModConfigData` / native cascade after disable rules). Host does **not** reimplement `disabled_by`.
 
 ### 6.2 Resolve order
 
 ```text
 1. Load config cascade (L0)
 2. For each registered plugin:
-   a. Evaluate options rule → enabled?
-   b. Evaluate when(ctx) → allowed?
-   c. If not enabled or not allowed → mark Disabled (not an error)
-3. Among Enabled plugins:
-   a. Detect conflicts → fail-fast (error, plugin not loaded)
-   b. Detect missing hard depends → fail-fast
-   c. Detect cycles → fail-fast (Host error; do not load the cyclic set)
+   a. Evaluate options rule → option_enabled?
+   b. Evaluate when/can_load(ctx) → allowed?
+   c. If not option_enabled or not allowed → status=Disabled (not Failed)
+3. Among option+gate Enabled plugins:
+   a. Conflicts → both Failed (Conflict); load neither
+   b. Missing hard depends → dependent Failed (MissingHardDep)
+   c. Cycles → all members Failed (Cycle)
 4. Topological sort (hard + soft edges where soft target is Enabled)
 5. Load by phase barrier:
    EarlyNative (all) → AfterLuaBridge (all) → AfterModMain (all)
+   Within phase: topo order, then priority ascending for ties
 ```
 
 ### 6.3 Fail-fast semantics (D2)
 
 | Condition | Behavior |
 |---|---|
-| Hard dep missing (not registered or Disabled) | Error log with plugin id + missing dep; **do not load** this plugin; continue other independent plugins |
-| Conflict between two Enabled plugins | Error both ids; **load neither** |
-| Cycle | Error the cycle path; **load none** in the cycle |
-| `load()` throws / returns failure | Error; plugin considered failed; dependents that hard-depend on it fail-fast as missing |
-| L0 failure (signature, VM replace) | Existing behavior: abort inject |
+| Hard dep missing (not registered or Disabled/Failed) | `Failed` + `MissingHardDep`; **do not** call `load()`; other independent plugins continue |
+| Conflict between two Enabled plugins | both `Failed` + `Conflict`; **load neither** |
+| Cycle | all in cycle `Failed` + `Cycle`; **load none** in cycle |
+| `load()` throws | that plugin `Failed` + `LoadThrew`; hard dependents become Failed as missing |
+| L0 failure (signature, VM replace) | abort inject (existing) |
 
-Note: “fail-fast” means **no silent degradation** of a plugin that cannot correctly run. It does **not** mean one plugin failure kills the entire inject unless L0 itself fails.
+“Fail-fast” = **no silent half-enable**. It does **not** mean one feature failure kills entire inject unless L0 fails.
 
 ---
 
@@ -276,37 +313,40 @@ Note: “fail-fast” means **no silent degradation** of a plugin that cannot co
 
 | Plugin id | Options | Phase(s) | Current code | Notes |
 |---|---|---|---|---|
-| `steam.workshop` | (always when Steam build) | EarlyNative | `GameSteam.cpp` | Soft: infrastructure for workshop paths |
-| `render.angle` | `AngleBackend` | EarlyNative | `GameOpenGl.cpp` | Win; sticky |
-| `render.vbpool` | `EnableVBPool` | EarlyNative | `GameRenderHook.cpp` | Early enable; modmain may only disable late today → move disable into plugin policy |
-| `network.rpc` | `NetworkOpt` | EarlyNative + AfterModMain | `GameNetwork.cpp` + modmain NetWorkOpt | Hook install early; Lua use late |
-| `network.entity` | `NetworkOptEntity` | AfterModMain | entity register path | **depends:** `network.rpc` |
-| `network.sim` | `EnableNetSim` | AfterModMain | `GameNetworkSim.cpp` + `scripts/netsim.lua` | Client, Win |
-| `sim.lagcomp` | `EnableLagCompensation` | AfterModMain | `GameSimHook.cpp` + `scripts/lag_compensation.lua` | Mastersim, Win |
-| `save.fork` | `EnableForkSave` | AfterModMain | `GameForkSave.cpp` + `scripts/fork_save.lua` | Dedicated; has_luajit |
-| `jit.runtime` | `EnabledJIT`, `HideGlobalJIT`, `ModBlackList` | AfterModMain | modmain JIT paths | HideGlobalJIT **after** profiler plugins |
-| `jit.tailcall` | `SlowTailCall`, `AnyModDisableTailCall`, `ForceDisableTailCall`, `AutoDetectEncryptedMod` | AfterModMain | SlowTailCall + encrypt manager | Before encrypted mods load |
-| `gc.policy` | `DisableForceFullGC`, `EnableFrameGC` | AfterModMain | fullgc/framegc | Soft/hard conflict with GenGC via options already disabled_by |
+| `steam.workshop` | (always when Steam build) | EarlyNative | `GameSteam.cpp` | workshop path infra |
+| `render.angle` | `AngleBackend` | EarlyNative | `GameOpenGl.cpp` | Win; sticky; backend is param |
+| `render.vbpool` | `EnableVBPool` | EarlyNative | `GameRenderHook.cpp` | early enable before first HWBuffer |
+| `network.rpc` | `NetworkOpt` | EarlyNative + AfterModMain | `GameNetwork.cpp` + modmain NetWorkOpt | hook early; Lua late |
+| `network.entity` | `NetworkOptEntity` | AfterModMain | entity register | **depends:** `network.rpc` |
+| `network.sim` | `EnableNetSim` | AfterModMain | `GameNetworkSim` + `scripts/netsim.lua` | Client, Win |
+| `sim.lagcomp` | `EnableLagCompensation` | AfterModMain | `GameSimHook` + `scripts/lag_compensation.lua` | Mastersim, Win |
+| `save.fork` | `EnableForkSave` | AfterModMain | `GameForkSave` + `scripts/fork_save.lua` | Dedicated; has_luajit |
+| `jit.runtime` | `EnabledJIT`, `HideGlobalJIT`, `ModBlackList` | AfterModMain | modmain JIT | HideGlobalJIT **last** among jit-related |
+| `jit.tailcall` | `SlowTailCall`, `AnyModDisableTailCall`, `ForceDisableTailCall`, `AutoDetectEncryptedMod` | AfterModMain | SlowTailCall + encrypt | before encrypted mods |
+| `gc.policy` | `DisableForceFullGC`, `EnableFrameGC` | AfterModMain | fullgc/framegc | GenGC disables via modinfo `disabled_by` |
 | `fps.render` | `TargetRenderFPS` | AfterModMain | `DS_LUAJIT_set_target_fps` | Win-meaningful |
-| `debug.profiler` | `EnableProfiler`, `EnableTracy` | AfterModMain | profiler/tracy | Must load **before** `jit.runtime` HideGlobalJIT; use depends/soft_depends |
-| `compat.frostxx` | (internal / tied to encrypt path) | AfterModMain | decrypt + kleiloadlua | May merge into `jit.tailcall` if too thin |
+| `debug.profiler` | `EnableProfiler`, `EnableTracy` | AfterModMain | profiler/tracy | before `jit.runtime` hide |
+| `compat.frostxx` | (internal / encrypt path) | AfterModMain | decrypt + kleiloadlua | may fold into `jit.tailcall` |
 
-**Ordering constraints to encode in depends:**
+**Hard depends to encode:**
 
-- `network.entity` → depends `network.rpc`
-- `debug.profiler` loads before `jit.runtime` (HideGlobalJIT): `jit.runtime` soft_depends or depends `debug.profiler` when profiler options on — prefer: Host phase sub-order list for AfterModMain fixed as: tailcall → profiler → gc → network.* → fps → lagcomp/netsim/fork → jit.runtime (hide last). Document this as **default AfterModMain priority** plus explicit depends for true requirements.
+- `network.entity` → `network.rpc`
+
+**Priority list encodes soft ordering** when there is no hard edge (especially profiler before HideGlobalJIT).
 
 ### 7.3 Default AfterModMain priority (stable sort key)
 
-When topology ties, use this priority (low number first):
+Lower number first (store as `PluginManifest.priority`):
 
-1. `jit.tailcall` / `compat.frostxx`
-2. `debug.profiler`
-3. `gc.policy`
-4. `network.rpc` (Lua face), `network.entity`
-5. `fps.render`
-6. `sim.lagcomp`, `network.sim`, `save.fork`
-7. `jit.runtime` (including HideGlobalJIT)
+| priority | plugin ids |
+|---:|---|
+| 10 | `jit.tailcall`, `compat.frostxx` |
+| 20 | `debug.profiler` |
+| 30 | `gc.policy` |
+| 40 | `network.rpc` (Lua face), `network.entity` |
+| 50 | `fps.render` |
+| 60 | `sim.lagcomp`, `network.sim`, `save.fork` |
+| 70 | `jit.runtime` (including HideGlobalJIT) |
 
 ---
 
@@ -347,21 +387,17 @@ When topology ties, use this priority (low number first):
 | A2 | Namespace: `GameInjector.core.*`, `GameInjector.plugins[id].*` with **aliases** to old names |
 | A3 (later) | Remove aliases after call sites migrated |
 
-No big-bang rename required for first merge.
-
 ### 8.2 What happens to `LoadGameModConfig`
 
-Today it enables VBPool + OpenGL. After split:
-
-- Config **resolution** stays L0 (`GameJitModConfig::instance` cascade).
+- Config **resolution** stays L0.
 - Side effects move into `render.vbpool` / `render.angle` EarlyNative `load()`.
-- `LoadGameModConfig()` becomes “resolve config + run EarlyNative phase” or is inlined into `Inject` as two clear steps.
+- Function becomes “resolve config + `load_phase(EarlyNative)`” or is inlined into `Inject` as two clear steps.
 
 ---
 
 ## 9. Build layout (Phase A)
 
-Still one SHARED target `Injector`, but sources grouped:
+Still one SHARED target `Injector`, sources grouped over time:
 
 ```text
 src/DontStarveInjector/
@@ -376,25 +412,17 @@ src/DontStarveInjector/
     save_fork/
     debug_profiler/
     steam_workshop/
-  # transitional: existing files move gradually; no mandatory rename in first PR
 ```
-
-CMake: source lists per plugin object group; still `target_link_libraries(Injector ...)`.  
-Optional compile flags later: `-DDL_PLUGIN_VBPOOL=0` style is **not** required in Phase A (config gates at runtime).
 
 Lua:
 
 ```text
 Mod/
   plugins/
-    init.lua              # explicit registry of plugin modules
+    init.lua              # explicit registry
     jit_runtime.lua
-    jit_tailcall.lua
-    gc_policy.lua
-    fps_render.lua
-    save_fork.lua         # thin wrapper → scripts/fork_save.lua or inlined
     ...
-  scripts/                # heavy implementations stay until moved
+  scripts/                # heavy implementations until moved
   modmain.lua             # host bootstrap only
 ```
 
@@ -402,52 +430,243 @@ Mod/
 
 ## 10. Migration plan (incremental, always shippable)
 
-| Step | Deliverable | Success check |
-|---|---|---|
-| M0 | `PluginHost` + manifest types + empty registry; `Inject` / Main still linear | Game boots unchanged |
-| M1 | Move `save.fork`, `sim.lagcomp`, `network.sim` into plugins (dual-face) | Toggles via modinfo identical |
-| M2 | `network.rpc` + `network.entity` + depends edge | Entity opt off when rpc plugin failed |
-| M3 | `render.angle` + `render.vbpool` EarlyNative | Early GL/ANGLE behavior preserved |
-| M4 | `jit.*`, `gc.policy`, `debug.profiler`, `fps.render` | HideGlobalJIT still after profiler |
-| M5 | Slim `modmain._M:Main` → host; slim `Inject` / `LoadGameModConfig` | No feature logic in trunks |
-| M6 | Docs: plugin table + how to add a plugin | Contributor can add feature without touching Inject |
-| M7 (later Phase B) | Dynamic library loader behind same interface | Out of scope for initial implementation |
+Each step has **gate tests**. “Game boots” is never the only gate.
 
-Each step is one or more PRs; no “stop the world” rewrite.
+| Step | Deliverable | Automated gate | Manual gate |
+|---|---|---|---|
+| M0 | `PluginHost` + types + empty registry; trunks still linear | L-A + L-B green | none |
+| M1 | `save.fork`, `sim.lagcomp`, `network.sim` as plugins | L-A/B + L-C + L-E rows for 3 ids + `fork_save_lua` | optional in-game lagcomp/netsim |
+| M2 | `network.rpc` + `network.entity` + depends | L-E entity×rpc matrix; L-A hard dep | multiplayer smoke if available |
+| M3 | `render.angle` + `render.vbpool` EarlyNative | L-A phase_barrier; `BufferNamePool`; L-E vbpool/angle | client boot Angle/VBPool on·off |
+| M4 | `jit.*`, `gc.policy`, `debug.profiler`, `fps.render` | L-A `profiler_before_hide`; L-B string predicates; L-E rows | JIT/profiler smoke |
+| M5 | Slim `Inject` / `modmain` trunks | **L-F** trunk surface + full unit suite | client+server boot |
+| M6 | Contributor docs + “add dummy plugin” | doc present; optional dummy plugin unit | — |
+| M7 | Dynamic libs (later) | out of scope | — |
 
 ---
 
 ## 11. Error handling & logging
 
 - Host logs: `plugin=id phase=... event=resolve|load|fail|skip reason=...`
-- Fail-fast messages must include: plugin id, dependency id / conflict peer, phase.
-- Match existing spdlog levels; inject path already sets level by build/debugger.
-- Lua: `print("[luajit][plugin] ...")` or host-provided `ctx.log` for consistency.
+- Fail-fast messages include: plugin id, dependency id / conflict peer, phase.
+- Match existing spdlog levels.
+- Lua: `print("[luajit][plugin] ...")` or `ctx.log`.
+- **Test oracle:** assertions use `PluginEvent` / `PluginStatus` / `load_count`, **not** log-string scraping as the primary proof.
 
 ---
 
-## 12. Testing strategy
+## 12. Testable scheme (normative)
 
-| Layer | What |
+Without automated tests, success criteria are not enforceable. This section defines **what is tested, how, where, and what pass means**.
+
+### 12.1 Principles
+
+1. **Observable contracts** — load order, enable/disable, error outcomes, option rules, phase barriers.
+2. **Host is pure-logic first** — graph resolve/load runs **without** Frida, game process, or OpenGL.
+3. **Match repo test style** — C++ `assert` + `printf("PASS")` (`tests/test_buffer_name_pool.cpp`); Lua specs + Python runner (`tests/fork_save/`); wire via `tests/CMakeLists.txt` `add_test`.
+4. **Every migration step has a gate** — §10.
+5. **Fail-fast is behavior** — missing hard dep / conflict / cycle ⇒ Failed status + **no** `load()` on the failing set.
+
+### 12.2 Test layers
+
+| Layer | CTest / name | Artifact | Game? | Required from |
+|---|---|---|---|---|
+| L-A Host graph | `plugin_host_graph` | `tests/plugin/test_plugin_host_graph.cpp` | No | **M0** |
+| L-B Option rules | `plugin_option_rules` | same target or `tests/plugin/test_plugin_option_rules.cpp` | No | **M0** |
+| L-C Lua host | `plugin_host_lua` | `tests/plugin/plugin_host_lua_spec.lua` + runner | No | **M1** |
+| L-D Feature regression | existing names | `fork_save_lua`, `BufferNamePool`, variant tests | No | each related Mn |
+| L-E Enable matrix | `plugin_enable_matrix` | C++/Lua fake plugins + config maps | No | **M1+** per id |
+| L-F Trunk surface | `plugin_trunk_surface` | `tests/plugin/check_trunk_surface.py` (or cmake -P) | No | **M5** |
+| L-G In-game smoke | checklist only | PR description evidence | Yes | per native migrate |
+
+### 12.3 Host test doubles (required for L-A/L-B/L-E)
+
+```cpp
+struct FakePlugin final : IPlugin {
+    PluginManifest man{};
+    bool allow = true;
+    int load_count = 0;
+    int unload_count = 0;
+    bool throw_on_load = false;
+    // manifest() returns man;
+    // can_load() returns allow;
+    // load() increments load_count or throws;
+    // unload() increments unload_count;
+};
+```
+
+`ConfigView`: in-memory map only (no save-file parsing inside Host unit tests).
+
+Prefer compiling `PluginHost` without Frida. If staged: `PLUGIN_HOST_TESTBUILD` and a small `plugin_host` object set linked into the test executable.
+
+### 12.4 L-A cases (M0 gate — all required)
+
+| Case | Setup | Expected |
+|---|---|---|
+| `empty_registry` | no plugins | `load_phase` any phase succeeds; loaded_order empty |
+| `topo_linear` | A depends B; both enabled | order: B, A; both Loaded |
+| `topo_diamond` | A→B, A→C, B→D, C→D | D before B and C; B and C before A |
+| `soft_dep_missing` | A soft_depends Z; Z absent | A Loaded; no Failed |
+| `soft_dep_present` | A soft_depends Z; both enabled | Z before A |
+| `hard_dep_missing` | A depends Z; Z Disabled | A Failed/`MissingHardDep`; `A.load_count==0` |
+| `conflict_both_enabled` | A conflicts B; both on | both Failed/`Conflict`; both `load_count==0` |
+| `conflict_one_enabled` | only A on | A Loaded |
+| `cycle_three` | A→B→C→A | all Failed/`Cycle`; all `load_count==0` |
+| `phase_barrier` | X EarlyNative; Y AfterModMain depends X | Y not in EarlyNative loaded_order; after both phases: X then Y |
+| `phase_skip_disabled` | options off | `load_count==0`, status Disabled |
+| `load_throw_fails_dependents` | B OK; A depends B and throws; C depends A | B Loaded; A Failed/`LoadThrew`; C Failed; C.load_count==0 |
+| `priority_tiebreak` | A,B no edges; priority(A)<priority(B) | A before B |
+| `profiler_before_hide` | fake `debug.profiler` prio 20 + `jit.runtime` prio 70 | profiler before jit.runtime in AfterModMain order |
+| `sticky_no_unload` | support_reload=false after load | `unload` not invoked by host default API |
+| `reload_unload` | support_reload=true; host unload API | `unload_count==1` |
+
+**Pass:** process exit 0; each case prints `PASS: <name>`.
+
+### 12.5 L-B cases (M0 gate)
+
+| Case | Rule | Config | Expected |
+|---|---|---|---|
+| `all_of_true` | all_of {A,B} | A=true,B=true | enabled |
+| `all_of_partial` | all_of {A,B} | A=true,B=false | disabled |
+| `any_of_one` | any_of {A,B} | A=false,B=true | enabled |
+| `any_of_none` | any_of {A,B} | both false | disabled |
+| `shorthand_option` | option=A | A=true | enabled |
+| `string_ne_off` | EnableProfiler ≠ `"off"` | `"fzvp"` | enabled |
+| `string_off` | same | `"off"` | disabled |
+| `string_eq_on` | EnableTracy == `"on"` | `"on"` / `"off"` | enabled / disabled |
+| `when_false` | options on, can_load false | — | Disabled (not Failed) |
+| `when_true` | options on, can_load true | — | enabled path |
+
+### 12.6 L-C cases (M1+)
+
+Lua registry path (`Mod/plugins` host):
+
+- depends order for two plugins
+- option off ⇒ load not called
+- hard dep missing ⇒ error/Failed, no half load
+- dual-face: native marked loaded ⇒ Lua face still runs AfterModMain
+
+Runner: same pattern as `tests/fork_save/run.py` (luajit / lua / lua5.1).
+
+### 12.7 L-E enable matrix (per migrated plugin)
+
+For each id after migration, minimum rows:
+
+| Plugin | Matrix |
 |---|---|
-| Host unit (C++ or Lua harness) | Topo sort, cycle detect, conflict, missing hard dep, soft dep ignored, priority tie-break |
-| Option rule | `all_of` / `any_of` / profiler string predicates |
-| Integration (manual / existing game runs) | Each migrated plugin: option on → behavior on; option off → no hook / no modimport |
-| Regression | fork_save tests under `tests/fork_save/` stay green after `save.fork` migration |
-| Boot | All plugins disabled (or defaults) still enters game |
+| `save.fork` | EnableForkSave true/false |
+| `sim.lagcomp` | EnableLagCompensation true/false |
+| `network.sim` | EnableNetSim true/false |
+| `network.rpc` | NetworkOpt true/false |
+| `network.entity` | NetworkOptEntity × NetworkOpt (entity cannot load when rpc off) |
+| `render.vbpool` | EnableVBPool true/false |
+| `render.angle` | AngleBackend ∈ {auto,vulkan,d3d11,d3d9} as **parameter** (plugin still “enabled” on Win client EarlyNative; assert backend value reaches plugin context) |
+| `gc.policy` | DisableForceFullGC / EnableFrameGC combos |
+| `debug.profiler` | EnableProfiler off/fzvp; EnableTracy on/off |
+| `jit.runtime` | EnabledJIT true/false; HideGlobalJIT true/false (order vs profiler = L-A) |
+| `jit.tailcall` | SlowTailCall / AnyMod / ForceDisable / AutoDetect combinations that change enablement |
+| `fps.render` | TargetRenderFPS off-ish default vs elevated value (predicate: “calls set_target_fps when resolved value present / Win gate”) |
 
-No requirement to invent a full native hook integration suite in M0; Host graph tests are mandatory before M1.
+Assertions per row:
+
+- on + when ⇒ `Loaded` after phase, `load_count==1`
+- off ⇒ `Disabled`, `load_count==0`
+- hard dep down ⇒ `Failed`, `load_count==0`
+
+### 12.8 L-D existing regressions
+
+| Test | Command | Guards |
+|---|---|---|
+| `fork_save_lua` | `ctest -R fork_save_lua --output-on-failure` | `save.fork` Lua |
+| `BufferNamePool` | `ctest -R BufferNamePool --output-on-failure` | vbpool pool |
+| `luajit_variant_registry` / `luajit_gengc_output_name` | ctest | L0 VM names |
+
+Do not weaken assertions to greenlight moves.
+
+### 12.9 L-F trunk surface (M5)
+
+Script fails if:
+
+- `DontStarveInjector.cpp` `Inject()` calls feature entrypoints by name: `GameNetWorkHookRpc4`, `InitGameOpenGl`, `DS_LUAJIT_set_vbpool_enabled` (must go through Host phase).
+- `LoadGameModConfig` directly enables VBPool/OpenGL side effects (must be resolve + `load_phase(EarlyNative)` or equivalent).
+- `modmain.lua` `_M:Main` directly `modimport`s `scripts/fork_save`, `scripts/lag_compensation`, `scripts/netsim`.
+
+Allowed: L0 (`ReplaceLuaModule`, signature, crash guard, `RegisterBuiltinPlugins`, `PluginHost::*`).
+
+### 12.10 L-G in-game smoke (manual)
+
+Not a substitute for L-A..L-F. PR that migrates a native plugin lists pass/fail:
+
+| Plugin | Smoke |
+|---|---|
+| core only | experimental opts off: client + dedicated enter world |
+| `save.fork` | dedicated `c_save`: child write + parent snapshot increment |
+| `network.rpc` / `entity` | Win: opts on, basic multiplayer smoke |
+| `render.angle` / `vbpool` | Win client boot; backend change still restart-required |
+| `sim.lagcomp` | mastersim Win, no crash on FindEntities path |
+| `network.sim` | client Win, update/overlay path |
+| `jit.runtime` / `gc.policy` / `debug.profiler` | toggles; profiler command if on |
+
+### 12.11 Build wiring
+
+```cmake
+# tests/CMakeLists.txt (same style as BufferNamePool / fork_save_lua)
+add_executable(test_plugin_host_graph
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_host_graph.cpp
+    # + PluginHost sources or plugin_host object lib
+)
+target_include_directories(test_plugin_host_graph PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+add_test(NAME plugin_host_graph COMMAND test_plugin_host_graph)
+
+add_executable(test_plugin_option_rules
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_option_rules.cpp)
+# ... same includes / host option evaluator sources
+add_test(NAME plugin_option_rules COMMAND test_plugin_option_rules)
+
+add_test(NAME plugin_host_lua
+    COMMAND ${CMAKE_COMMAND} -E env REPO_ROOT=${CMAKE_SOURCE_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_lua_host.py)
+set_tests_properties(plugin_host_lua PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+add_test(NAME plugin_trunk_surface
+    COMMAND ${PYTHON_EXECUTABLE_NAME}
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugin/check_trunk_surface.py
+        ${CMAKE_SOURCE_DIR})
+```
+
+### 12.12 Definition of Done (global)
+
+Architecture work is **done** only when:
+
+1. L-A + L-B green in ctest.
+2. L-C green once Lua plugins exist.
+3. L-D green after each related move.
+4. L-E rows exist for **every** migrated §7.2 plugin.
+5. L-F green at M5.
+6. Every §13 criterion maps to at least one automated assertion (S6 = interface review checklist on Host headers, still explicit).
+7. L-G evidence attached for migrated native plugins in their PR.
 
 ---
 
-## 13. Success criteria
+## 13. Success criteria (test-mapped)
 
-1. New feature = new plugin + manifest registration; **no** trunk edits to feature lists in `Inject()` / `_M:Main()`.
-2. Disabling a modinfo option prevents that plugin’s hooks/modimport.
-3. Missing hard dep / cycle / conflict → visible error, no silent half-enable.
-4. `modinfo` remains sole user config; multi-option → single plugin documented in §7.
-5. Core-only (plugins all disabled) still injects and runs selected VM.
-6. Phase B possible without rewriting manifests (interface does not assume static-only).
+| # | Criterion | Proof | Pass condition |
+|---|---|---|---|
+| S1 | New feature does not edit feature lists in `Inject()` / `_M:Main` trunks | L-F + register-only path | L-F exit 0 |
+| S2 | Disabling modinfo option prevents plugin load | L-E off-rows | all off-rows `load_count==0` |
+| S3 | Missing hard dep / cycle / conflict → failure, no half-enable | L-A `hard_dep_missing`, `cycle_three`, `conflict_both_enabled`, `load_throw_fails_dependents` | those PASS |
+| S4 | `modinfo` sole user config; multi-option → one plugin | L-B multi-key rules; no second channel | L-B PASS |
+| S5 | Core-only still injects / VM runs | L-A `empty_registry`; L-G core-only | unit PASS + smoke |
+| S6 | Phase B possible without manifest rewrite | Host headers review: no static-only types in `IPlugin`/`PluginManifest` | checklist signed in M0 PR |
+| S7 | Phase barriers respected | L-A `phase_barrier` | PASS |
+| S8 | Profiler before HideGlobalJIT | L-A `profiler_before_hide` + §7.3 priorities | PASS |
+| S9 | `network.entity` requires `network.rpc` | L-E cross row + hard dep | PASS |
+| S10 | Feature regressions preserved | L-D ctest | green |
+| S11 | Fail-fast is structured | L-A asserts `PluginStatus`/`PluginFailReason` | not log-scrape-only |
+| S12 | Sticky unload default | L-A `sticky_no_unload` / `reload_unload` | PASS |
+
+**S1–S12 are the acceptance bar.** Goals in §3 without a row here are non-blocking preferences.
 
 ---
 
@@ -455,9 +674,10 @@ No requirement to invent a full native hook integration suite in M0; Host graph 
 
 - Dynamic plugin DLLs/SOs (Phase B).
 - Hot reload UX / console commands for `support_reload` plugins.
-- Splitting `GameLuaModule.cpp` god-export into per-plugin registration only after A2 aliases.
-- Whether `compat.frostxx` stays separate or folds into `jit.tailcall`.
-- CMake per-plugin object libraries as optional cleanup after M5.
+- Splitting `GameLuaModule.cpp` god-export after A2 aliases.
+- Whether `compat.frostxx` folds into `jit.tailcall`.
+- CMake per-plugin object libraries after M5.
+- Automating L-G (not required for Phase A DoD).
 
 ---
 
@@ -471,6 +691,7 @@ No requirement to invent a full native hook integration suite in M0; Host graph 
 | Config UI | `Mod/modinfo.lua` `configuration_options` ~92–440 |
 | GameInjector export | `GameLuaModule.cpp` `luaopen_GameInjector` |
 | Build target | `src/DontStarveInjector/CMakeLists.txt` single `Injector` SHARED |
+| Test style refs | `tests/test_buffer_name_pool.cpp`, `tests/fork_save/`, `tests/CMakeLists.txt` |
 
 ---
 
@@ -478,8 +699,10 @@ No requirement to invent a full native hook integration suite in M0; Host graph 
 
 | Check | Result |
 |---|---|
-| Placeholders | None intentional; Phase B intentionally deferred with boundary |
-| Consistency | D1–D6 match §4–§8; fail-fast = no silent plugin degradation, not “kill whole inject” |
-| Scope | Single architecture spec; implementation will be multi-PR via §10 |
-| Ambiguity | Option “on” for string enums requires explicit predicates — stated in §6.1 |
-| Locked decisions | Path A, fail-fast, L0 vm/force-mod, sticky unload — §1 |
+| Placeholders | Phase B deferred with boundary; Phase A contracts concrete |
+| Consistency | D1–D7 match body; fail-fast = no silent plugin degradation |
+| Scope | Single architecture spec; multi-PR via §10 with **test gates** |
+| Ambiguity | String option “on” via explicit predicates — §6.1 + L-B |
+| Locked decisions | Path A, fail-fast, L0 vm/force-mod, sticky unload, tests-required |
+| Testability | §12 normative cases + §13 S1–S12 mapped to proof |
+| Success without tests? | **Rejected** (D7 + §12.12) |
