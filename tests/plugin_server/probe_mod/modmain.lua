@@ -1,84 +1,81 @@
--- L-G probe: write marker files for automated dedicated harness.
--- Marker directory comes from global LG_MARKER_DIR if set by harness inject, else unsafedata/lg_probe.
-
+-- L-G probe: emit log tokens for automated dedicated harness.
 local _G = GLOBAL
+local print = _G.print
+local tostring = _G.tostring
+local type = _G.type
+local rawget = _G.rawget
+local pcall = _G.pcall
 
-local function marker_dir()
-    local dir = _G.rawget(_G, "LG_MARKER_DIR")
-    if type(dir) == "string" and #dir > 0 then
-        return dir
-    end
-    return "unsafedata/lg_probe"
-end
-
-local function write_marker(name, body)
-    local dir = marker_dir()
-    -- best-effort mkdir via TheSim if available
-    if TheSim and TheSim.GetUserPrefPath then
-        -- keep relative; DST often resolves under data/
-    end
-    local path = dir .. "/" .. name
-    local ok, err = pcall(function()
-        local fp = io.open(path, "w")
-        if not fp then
-            -- try creating via simple path under current cwd
-            fp = io.open(name, "w")
-            if fp then
-                path = name
-            end
-        end
-        if not fp then
-            error("cannot open marker " .. path)
-        end
-        fp:write(body or "1")
-        fp:close()
-    end)
-    if ok then
-        print("[lg_probe] marker " .. name .. " -> " .. path)
-    else
-        print("[lg_probe] marker fail " .. name .. ": " .. tostring(err))
-    end
-end
-
-local function check_inject()
-    local gi = _G.rawget(_G, "GameInjector")
-    if gi ~= nil then
-        write_marker("LG_INJECT_OK", "GameInjector")
-        return true
-    end
-    write_marker("LG_INJECT_MISSING", "GameInjector nil")
-    return false
+local function token(name, body)
+    print("[lg_probe] TOKEN " .. name .. " " .. (body or "1"))
 end
 
 AddGamePostInit(function()
-    write_marker("LG_MOD_LOADED", "probe_modmain")
-    local inject_ok = check_inject()
-    -- M0: empty plugin host is OK if inject present; production host may report later.
-    if inject_ok then
-        write_marker("LG_PLUGINS_OK", "inject_present")
+    token("LG_MOD_LOADED", "probe_modmain")
+    local gi = rawget(_G, "GameInjector")
+    if gi ~= nil then
+        token("LG_INJECT_OK", "GameInjector")
+        token("LG_PLUGINS_OK", "inject_present")
+    else
+        token("LG_INJECT_MISSING", "GameInjector nil")
     end
 end)
 
 AddSimPostInit(function()
-    write_marker("LG_WORLD_READY", "sim_post_init")
+    token("LG_WORLD_READY", "sim_post_init")
 
+    local TheNet = _G.TheNet
+    local TheSim = _G.TheSim
     local paused = false
-    if TheNet and TheNet.SetServerPaused then
-        TheNet:SetServerPaused(true)
-        if TheNet.GetServerPaused then
-            paused = TheNet:GetServerPaused() and true or false
+    local method = "none"
+
+    if TheNet ~= nil and TheNet.SetServerPaused ~= nil then
+        local ok, err = pcall(function()
+            TheNet:SetServerPaused(true)
+        end)
+        if ok then
+            if TheNet.GetServerPaused ~= nil then
+                paused = TheNet:GetServerPaused() and true or false
+            else
+                paused = true
+            end
+            if paused then
+                method = "SetServerPaused"
+            else
+                method = "SetServerPaused_false"
+            end
         else
-            paused = true
+            method = "SetServerPaused_err:" .. tostring(err)
         end
-    elseif _G.c_pause then
-        -- fallback if present
-        pcall(_G.c_pause)
-        paused = true
     end
 
+    if not paused and TheSim ~= nil and TheSim.SetTimeScale ~= nil then
+        local ok, err = pcall(function()
+            TheSim:SetTimeScale(0)
+        end)
+        if ok then
+            local scale = 1
+            if TheSim.GetTimeScale ~= nil then
+                scale = TheSim:GetTimeScale() or 1
+            else
+                scale = 0
+            end
+            if scale == 0 then
+                paused = true
+                method = "SetTimeScale0"
+            else
+                method = "SetTimeScale_nonzero:" .. tostring(scale)
+            end
+        else
+            method = "SetTimeScale_err:" .. tostring(err)
+        end
+    end
+
+    -- Last resort: schedule a periodic no-op and mark "stable_running" as paused surrogate
+    -- Spec wants sim paused; if APIs missing, still report failure explicitly.
     if paused then
-        write_marker("LG_SIM_PAUSED", "paused")
+        token("LG_SIM_PAUSED", method)
     else
-        write_marker("LG_SIM_PAUSE_FAILED", "could_not_pause")
+        token("LG_SIM_PAUSE_FAILED", method)
     end
 end)
