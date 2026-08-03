@@ -19,6 +19,8 @@
 #include "core/PluginHost.hpp"
 #include "core/PluginConfigBridge.hpp"
 #include "core/RegisterBuiltinPlugins.hpp"
+#include "core/DynamicPluginLoader.hpp"
+
 
 #include <spdlog/spdlog.h>
 
@@ -313,6 +315,17 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         using namespace ds::plugin;
         static PluginHost g_plugin_host;
         RegisterBuiltinPlugins(g_plugin_host);
+        {
+            static DynamicPluginLoader g_dyn_loader;
+            auto report = g_dyn_loader.load_all(g_plugin_host);
+            for (auto &p : report.loaded_modules) {
+                spdlog::info("dynamic plugin module loaded: {}", p);
+            }
+            for (auto &s : report.skipped) {
+                spdlog::warn("dynamic plugin module skipped: {}", s);
+            }
+        }
+
 
         ConfigView plugin_cfg;
         if (auto modcfg = GameJitModConfig::instance()) {

@@ -57,6 +57,9 @@ int main() {
     test_empty_dir();
     test_non_plugin_file_ignored();
     test_bad_library_skipped();
+    // Real plugin_dummy load is skipped here: MODULE imports Injector.dll
+    // (and its transitive deps). Under Inject() Injector is already mapped so
+    // LoadLibrary binds cleanly; a bare unit EXE cannot satisfy that graph.
     printf("ALL PASS dynamic_plugin_loader\n");
     return 0;
 }
