@@ -2,7 +2,7 @@
 
 **Status:** DONE  
 **Date:** 2026-08-03  
-**Commit:** `c595fab` — `feat(plugin): migrate sim.lagcomp and network.sim Lua faces (M1 Task 4)`
+**Commit:** `c9f272d` — `feat(plugin): migrate sim.lagcomp and network.sim Lua faces (M1 Task 4)`
 
 ## Summary
 
