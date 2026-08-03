@@ -2,7 +2,7 @@
 
 **Status:** DONE  
 **Date:** 2026-08-03  
-**Commit:** `f3d673a` — `test(plugin): add L-F trunk surface check (M5 Task 8)`
+**Commit:** `93dc0c0` — `test(plugin): add L-F trunk surface check (M5 Task 8)`
 
 ## Summary
 
