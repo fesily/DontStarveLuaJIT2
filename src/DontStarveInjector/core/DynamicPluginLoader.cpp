@@ -172,8 +172,11 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
             continue;
         }
 
-        const auto abs = std::filesystem::weakly_canonical(entry.path(), ec);
-        const auto path = ec ? entry.path() : abs;
+        // Do not reuse `ec` from the iterator — a failed weakly_canonical
+        // must not abort the rest of the directory scan.
+        std::error_code path_ec;
+        const auto abs = std::filesystem::weakly_canonical(entry.path(), path_ec);
+        const auto path = path_ec ? entry.path() : abs;
         const auto path_str = path.string();
 
         void *handle = load_library(path);
