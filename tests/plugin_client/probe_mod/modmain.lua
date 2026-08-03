@@ -3,6 +3,7 @@
 local _G = GLOBAL
 local print = _G.print
 local tostring = _G.tostring
+local tonumber = _G.tonumber
 local type = _G.type
 local rawget = _G.rawget
 local pcall = _G.pcall

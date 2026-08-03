@@ -34,6 +34,7 @@ STRESS_SRC = ROOT / "tests" / "stress_test_mod"
 T_INJECT = float(os.environ.get("LC_T_INJECT", os.environ.get("LG_T_INJECT", "90")))
 T_WORLD = float(os.environ.get("LC_T_WORLD", os.environ.get("LG_T_WORLD", "300")))
 T_HOLD = float(os.environ.get("LC_T_HOLD", os.environ.get("LG_T_HOLD", "30")))
+T_HOST = float(os.environ.get("LC_T_HOST", "120"))
 T_SHUTDOWN = float(os.environ.get("LC_T_SHUTDOWN", "60"))
 T_DEDICATED_READY = float(os.environ.get("LC_T_DEDICATED_READY", "180"))
 
@@ -249,7 +250,7 @@ def wait_dedicated_ready(ded: LogProcess, timeout: float) -> bool:
     return False
 
 
-def start_client(game_dir: Path, force_mods: str) -> LogProcess:
+def start_client(game_dir: Path, force_mods: str, extra_env: Optional[dict] = None) -> LogProcess:
     exe = find_client_exe(game_dir)
     assert exe is not None
     lp = LogProcess("client")
@@ -262,7 +263,11 @@ def start_client(game_dir: Path, force_mods: str) -> LogProcess:
     ]
     env = os.environ.copy()
     env["AppVersionDevPatch"] = "1"
+    if extra_env:
+        env.update({k: str(v) for k, v in extra_env.items()})
     print(f"[lc] client: {' '.join(cmd)}")
+    if extra_env:
+        print(f"[lc] client extra_env: {sorted(extra_env.keys())}")
     lp.proc = subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
@@ -275,6 +280,16 @@ def start_client(game_dir: Path, force_mods: str) -> LogProcess:
     lp._thread = threading.Thread(target=lp._read, daemon=True)
     lp._thread.start()
     return lp
+
+
+def start_client_host(game_dir: Path) -> LogProcess:
+    force_mods = "plugin_lc_probe"  # no stress_test_bot
+    extra = {
+        "LC_HOST_MODE": "1",
+        "LC_HOST_SLOT": os.environ.get("LC_HOST_SLOT", "1"),
+        "AppVersionDevPatch": "1",
+    }
+    return start_client(game_dir, force_mods, extra_env=extra)
 
 
 def wait_tokens(client: LogProcess, names: tuple[str, ...], timeout: float) -> bool:
@@ -400,15 +415,68 @@ def run_p1b(game_dir: Path, cluster: str, profile: Optional[str] = None) -> int:
         ded.stop(graceful_lua="c_shutdown(true)")
 
 
+def run_p1_host(game_dir: Path, profile: Optional[str] = None) -> int:
+    if not ensure_injector(game_dir):
+        return 1
+    if not find_client_exe(game_dir):
+        eprint("[lc] client binary missing")
+        return 1
+
+    install_probe(game_dir)
+    # Do NOT install/enable stress_test_bot
+
+    client = start_client_host(game_dir)
+    try:
+        if not wait_tokens(
+            client,
+            ("LG_CLIENT_MOD_LOADED", "LG_CLIENT_INJECT_OK", "LG_CLIENT_PLUGINS_OK"),
+            T_INJECT,
+        ):
+            if "LG_CLIENT_INJECT_MISSING" in client.tokens:
+                eprint("[lc] inject missing")
+            return 1
+
+        if profile and not verify_profile_tokens(client, profile):
+            return 1
+
+        # Host may emit HOST_STARTED before world; require HOST_OK or fail after T_HOST+T_WORLD window
+        if not wait_tokens(client, ("LG_CLIENT_WORLD_READY",), T_WORLD):
+            if "LG_CLIENT_HOST_FAIL" in client.tokens:
+                eprint(f"[lc] host fail: {client.token_bodies.get('LG_CLIENT_HOST_FAIL')}")
+            return 1
+
+        if "LG_CLIENT_HOST_OK" not in client.tokens:
+            # allow late emit shortly after world
+            if not wait_tokens(client, ("LG_CLIENT_HOST_OK",), min(T_HOST, 60)):
+                if "LG_CLIENT_HOST_FAIL" in client.tokens:
+                    eprint(f"[lc] host fail: {client.token_bodies.get('LG_CLIENT_HOST_FAIL')}")
+                else:
+                    eprint("[lc] missing LG_CLIENT_HOST_OK")
+                return 1
+
+        print(f"[lc] holding stable for {T_HOLD}s...")
+        hold_end = time.time() + T_HOLD
+        while time.time() < hold_end:
+            if not client.alive() or client.fatal:
+                eprint("[lc] lost stability during hold")
+                return 1
+            time.sleep(0.5)
+
+        print("[lc] LG_CLIENT_STABLE (orchestrator)")
+        print("[lc] PASS client inject smoke (host)")
+        return 0
+    finally:
+        client.stop()
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="L-C client inject smoke")
     parser.add_argument("--cluster", default=os.environ.get("LC_CLUSTER", "LGPluginTest"))
     parser.add_argument("--game-dir", default=None)
     parser.add_argument(
         "--mode",
-        choices=("p1b", "offline"),
-        default="p1b",
-        help="p1b=dedicated+LAN bot (default); offline=client only experiment",
+        choices=("p1b", "host", "offline"),
+        default=os.environ.get("LC_MODE", "p1b"),
+        help="p1b=dedicated+LAN; host=client-host single process; offline=alias of host",
     )
     parser.add_argument(
         "--profile",
@@ -424,6 +492,7 @@ def main() -> int:
         return 2
 
     print(f"[lc] game_dir={game_dir}")
+    print(f"[lc] mode={args.mode}")
 
     if args.profile:
         # Local import so dry SKIP path does not require config file present.
@@ -435,9 +504,11 @@ def main() -> int:
         apply_profile(args.profile)
         print(f"[lc] saved options sample: {load_saved_options(cfg_path)}")
 
-    if args.mode == "offline":
-        eprint("[lc] offline P1a not fully automated yet; use --mode p1b")
-        return 1
+    mode = args.mode
+    if mode == "offline":
+        mode = "host"
+    if mode == "host":
+        return run_p1_host(game_dir, profile=args.profile)
     return run_p1b(game_dir, args.cluster, profile=args.profile)
 
 
