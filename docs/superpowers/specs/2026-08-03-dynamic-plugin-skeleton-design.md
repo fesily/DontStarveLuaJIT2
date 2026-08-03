@@ -1,7 +1,7 @@
 # Dynamic Plugin Skeleton Design — DontStarveLuaJIT2
 
 **Date:** 2026-08-03  
-**Status:** Draft for review  
+**Status:** Implemented  
 **Scope:** Phase B **skeleton only** — Host can discover and load external `plugin_*.dll` / `plugin_*.so` modules that register `IPlugin` instances. Business plugins stay static in Path A. Not a full per-plugin split.
 
 Related:

@@ -1,7 +1,8 @@
 # Plugin System Contributor Guide
 
-Path A: single `Injector` shared library, static native registration + explicit Lua registry.
-No dynamic per-plugin DLLs in this phase.
+Path A remains the primary path: single `Injector` shared library with static native registration + explicit Lua registry.
+Phase B skeleton adds optional dynamic `plugin_*.dll` / `plugin_*.so` modules that register the same `IPlugin` contract (see §11).
+No mandatory per-plugin DLL split; business features stay static until a later migration plan.
 
 Design source of truth: `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md`.
 This guide maps **what is in code today** and how to extend it.
@@ -319,6 +320,7 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 | **Config bridge** | `GameJitModConfig` → `ConfigView` keys | `ctest -R plugin_config_bridge --output-on-failure` |
 | **L-C / L-E** Lua host | registry, dual-face, enable matrix per plugin | `ctest -R plugin_host_lua --output-on-failure` (`tests/plugin/run_lua_host.py` + `plugin_host_lua_spec.lua`) |
 | **L-D** regressions | `fork_save_lua`, pool / VM name tests as applicable | `ctest -R fork_save_lua --output-on-failure` |
+| **L-D0** Dynamic loader | empty dir, noise file, bad library isolation | `ctest -R plugin_dynamic_loader --output-on-failure` |
 | **L-F** trunk surface | no feature entrypoints in Inject / LoadGameModConfig / modmain | `ctest -R plugin_trunk_surface --output-on-failure` (`tests/plugin/check_trunk_surface.py`) |
 | **L-G** dedicated sim pause | injector + plugins load → world ready → stable pause | `ctest -R plugin_dedicated_sim_pause` — skips without `DST_GAME_DIR`; require game for DoD (`tests/plugin_server/`) |
 
@@ -352,9 +354,12 @@ When adding a plugin:
 | `src/DontStarveInjector/core/PluginHost.*` | Native host |
 | `src/DontStarveInjector/core/PluginOptionRules.*` | Option evaluation |
 | `src/DontStarveInjector/core/PluginTypes.hpp` | Phases, status, manifest, `IPlugin` |
-| `src/DontStarveInjector/core/RegisterBuiltinPlugins.*` | Native registry |
+| `src/DontStarveInjector/core/PluginModuleAbi.hpp` | Dynamic module C ABI (`ds_plugin_module_init`) |
+| `src/DontStarveInjector/core/DynamicPluginLoader.*` | Scan / load / isolate dynamic modules |
+| `src/DontStarveInjector/core/RegisterBuiltinPlugins.*` | Native static registry |
 | `src/DontStarveInjector/core/PluginConfigBridge.*` | Early ConfigView |
-| `src/DontStarveInjector/DontStarveInjector.cpp` | EarlyNative host call site |
+| `src/DontStarveInjector/plugins/plugin_dummy/` | Phase B proof MODULE |
+| `src/DontStarveInjector/DontStarveInjector.cpp` | EarlyNative host + dynamic loader call site |
 | `Mod/plugins/host.lua` | Lua host |
 | `Mod/plugins/init.lua` | Lua registry |
 | `Mod/plugins/*.lua` | Lua plugins |
@@ -362,3 +367,16 @@ When adding a plugin:
 | `tests/plugin/*` | L-A/B/C/E/F |
 | `tests/plugin_server/*` | L-G |
 | `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md` | Full architecture |
+
+## 11. Dynamic modules (Phase B skeleton)
+
+1. Create `src/DontStarveInjector/plugins/plugin_<name>/plugin_<name>.cpp`
+2. Export `ds_plugin_module_init` / optional `ds_plugin_module_abi_version` (see `PluginModuleAbi.hpp`)
+3. Register `IPlugin*` with static storage duration
+4. Add CMake `MODULE` target like `plugin_dummy`, output to `Injector/plugins/`
+5. Deploy next to game Injector under `bin64/plugins/`
+6. Override search with `DS_LUAJIT_PLUGIN_DIR`
+
+Business features remain in `RegisterBuiltinPlugins` until a later migration plan.
+
+Related design: `docs/superpowers/specs/2026-08-03-dynamic-plugin-skeleton-design.md`.

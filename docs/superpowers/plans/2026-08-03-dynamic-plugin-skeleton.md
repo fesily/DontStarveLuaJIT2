@@ -476,7 +476,7 @@ git commit -m "feat(plugin): plugin_dummy module and Inject dynamic load hook"
 - Modify: `docs/plugin-system.md` if present; else add short section to architecture design or create `docs/plugin-dynamic-modules.md`  
 - Modify: this plan checkboxes when done
 
-- [ ] **Step 1: Contributor snippet (exact content)**
+- [x] **Step 1: Contributor snippet (exact content)**
 
 ```markdown
 ## Dynamic modules (Phase B skeleton)
@@ -491,7 +491,7 @@ git commit -m "feat(plugin): plugin_dummy module and Inject dynamic load hook"
 Business features remain in `RegisterBuiltinPlugins` until a later migration plan.
 ```
 
-- [ ] **Step 2: Run unit ctests**
+- [x] **Step 2: Run unit ctests**
 
 ```bash
 ctest -R "plugin_host_graph|plugin_dynamic_loader|plugin_trunk_surface" --output-on-failure
@@ -499,7 +499,7 @@ ctest -R "plugin_host_graph|plugin_dynamic_loader|plugin_trunk_surface" --output
 
 Expected: all PASS (trunk still forbids hard-wiring features into Inject trunk beyond Host).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/
