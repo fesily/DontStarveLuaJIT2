@@ -1,7 +1,7 @@
 # Client Inject Smoke Design — DontStarveLuaJIT2
 
 **Date:** 2026-08-03  
-**Status:** Draft for review  
+**Status:** Implemented (Phase-1 + Phase-2 DoD green)  
 **Scope:** Phase-1 automated **client** proof that Injector + mod/plugins load and reach a stable in-world state; **Phase-2** automated **mod configuration_options** mutation for profiled smoke.
 
 Related:
