@@ -1,7 +1,6 @@
 _G = GLOBAL
 local modname = modname
 local modinfo = modinfo
-local EnableFrostxxMods = false
 local function main()
 	local old_print = print
 	local function print(...)
@@ -28,18 +27,6 @@ local function main()
 		return num
 	end
 
-	local function table_hmask(tab)
-		if type(tab) ~= "table" then
-			return 0
-		end
-		local count = 0
-		for k, v in pairs(tab) do
-			if k ~= nil and v ~= nil then
-				count = count + 1
-			end
-		end
-		return count
-	end
 
 	local locale = LOC.GetLocaleCode()
 	local lc = locale
@@ -285,159 +272,7 @@ local function main()
 		end
 	end
 
-	function _M:GetEncryptedModManager()
-		local luajit_encryptmods = setmetatable({ filepath = "unsafedata/luajit_encryptmods.json" },
-			{ __index = ModManagerFile })
 
-
-		local AutoDetectEncryptedMod = GetModConfigData("AutoDetectEncryptedMod")
-
-		local EncryptedModManager = AutoDetectEncryptedMod and luajit_encryptmods:read_file() or nil
-		local EncryptedModManager_version = APP_VERSION .. "/1.0.0"
-		if EncryptedModManager == nil or EncryptedModManager.version ~= EncryptedModManager_version then
-			EncryptedModManager = { EncryptedMods = {}, frostxxMods = {}, version = EncryptedModManager_version, hash = 0 }
-		end
-
-		local function HashString(str)
-			local hash = 0
-			for i = 1, #str do
-				hash = bit.bxor(hash, str:byte(i))
-			end
-			return hash
-		end
-
-		local function HashModDirectoryNames(ModDirectoryNames)
-			local hash = 0
-			for i, v in ipairs(ModDirectoryNames) do
-				hash = bit.bxor(hash, HashString(v))
-			end
-			return hash
-		end
-
-		local function InitEncryptedModManager()
-			local self = EncryptedModManager
-			local ModDirectoryNames = TheSim:GetModDirectoryNames()
-			if not ModDirectoryNames then return end
-
-			local hash = HashModDirectoryNames(ModDirectoryNames)
-			if hash == self.hash then
-				return
-			end
-			self.hash = hash
-
-			local function is_visible_byte(b)
-				return (b >= 32 and b <= 126)
-			end
-
-			-- 检查字符串中所有不可见字符是否属于合法 UTF-8 编码
-			local function all_invisible_chars_are_utf8(str)
-				local i = 1
-				local len = #str
-				while i <= len do
-					local b = str:byte(i)
-					if not is_visible_byte(b) then
-						-- 检查 UTF-8 多字节序列
-						if b >= 0 and b <= 127 then
-							-- 单字节不可见字符，允许常见控制符（如 \n, \r, \t, \v, \f, \b, \a, ESC）
-							if not (b == 9 or b == 10 or b == 13 or b == 27) then
-								return false
-							end
-							i = i + 1
-						elseif b >= 194 and b <= 223 then
-							-- 2字节序列
-							if i + 1 > len then return false end
-							local b2 = str:byte(i + 1)
-							if not (b2 >= 128 and b2 <= 191) then return false end
-							i = i + 2
-						elseif b >= 224 and b <= 239 then
-							-- 3字节序列
-							if i + 2 > len then return false end
-							local b2, b3 = str:byte(i + 1), str:byte(i + 2)
-							if not (b2 >= 128 and b2 <= 191 and b3 >= 128 and b3 <= 191) then return false end
-							i = i + 3
-						elseif b >= 240 and b <= 244 then
-							-- 4字节序列
-							if i + 3 > len then return false end
-							local b2, b3, b4 = str:byte(i + 1), str:byte(i + 2), str:byte(i + 3)
-							if not (b2 >= 128 and b2 <= 191 and b3 >= 128 and b3 <= 191 and b4 >= 128 and b4 <= 191) then return false end
-							i = i + 4
-						else
-							return false
-						end
-					else
-						i = i + 1
-					end
-				end
-				return true
-			end
-			local function check_encrypted(filename, modname)
-				local fp = io.open(filename, "r")
-				if not fp then
-					return
-				end
-
-				local limit = 64
-				local result
-				for line in fp:lines() do
-					if limit <= 12 then
-						if line:find("frostxx@qq.com", 1, true) then
-							self.frostxxMods[modname] = true
-							print(filename, modname, " is frostxx mod!")
-						end
-					end
-					---@cast line string
-					if #line > 1024 then
-						self.EncryptedMods[modname] = true
-						print(filename, modname, " is encrypted! by line length")
-						result = true
-						break
-					end
-					if not all_invisible_chars_are_utf8(line) then
-						self.EncryptedMods[modname] = true
-						print(filename, modname, " is encrypted! by invalid utf8", line)
-						result = true
-						break
-					end
-
-					limit = limit - 1
-					if limit <= 0 then
-						break
-					end
-				end
-				fp:close()
-				return result
-			end
-
-			local MODS_ROOT = "../mods/"
-			for i, modname in ipairs(ModDirectoryNames) do
-				local ok, isencrypted = pcall(check_encrypted, MODS_ROOT .. modname .. "/modmain.lua", modname)
-				if ok and not isencrypted then
-					pcall(check_encrypted, MODS_ROOT .. modname .. "/modworldgenmain.lua", modname)
-				end
-				local modinfo = KnownModIndex:GetModInfo(modname)
-				if modinfo and modinfo.luajit_compatible then
-					local luajit_compatible = modinfo.luajit_compatible
-					if luajit_compatible == true then
-						self.EncryptedMods[modname] = nil
-					elseif type(luajit_compatible) == 'table' then
-						self.EncryptedMods[modname] = luajit_compatible.dep_tailcall
-					end
-				end
-			end
-			luajit_encryptmods:write_file(EncryptedModManager)
-		end
-
-		if AutoDetectEncryptedMod then
-			InitEncryptedModManager()
-		end
-		return EncryptedModManager
-	end
-
-	local function ForceDisableTailCall()
-		if hasluajit and GetModConfigData("ForceDisableTailCall") then
-			jit.disabletailcall(true)
-		end
-	end
 
 	local function HookGameVersionUI()
 		local TEMPLATES = require("widgets/redux/templates")
@@ -487,155 +322,6 @@ local function main()
 		end
 	end
 
-	local function ForceJitOpt()
-		if not hasluajit then
-			return
-		end
-		local jit_opt = require 'jit.opt'
-		jit_opt.start(
-			"maxtrace=4000",
-			"minstitch=2",
-			"maxrecord=8000",
-			"sizemcode=64",
-			"maxmcode=4000",
-			"maxirconst=1000"
-		)
-	end
-
-	local function EnabledJIT()
-		if not hasluajit then
-			return
-		end
-		jit.off()
-		local enabled_jit = GetModConfigData("EnabledJIT")
-		if enabled_jit then
-			AddSimPostInit(function()
-				jit.on()
-			end)
-		end
-	end
-
-	local function skip_jit()
-		-- Keep a local reference via env.jit / closure jit.
-		-- Clear global visibility so normal mods cannot see jit via GLOBAL/require.
-		_G.jit = nil
-		if _G.package and _G.package.loaded then
-			_G.package.loaded['jit'] = nil
-		end
-		local reg = _G.debug and _G.debug.getregistry and _G.debug.getregistry()
-		if reg and reg['_LOADED'] then
-			reg['_LOADED']['jit'] = nil
-		end
-	end
-
-	local function mod_wants_jit(modinfo)
-		if type(modinfo) ~= "table" then
-			return false
-		end
-		local compatible = modinfo.luajit_compatible
-		return compatible == true or type(compatible) == "table"
-	end
-
-	-- Only inject into the mod sandbox env (modenv.jit).
-	-- Do NOT proxy GLOBAL / patch _G metatable: mods may rawget/rawset GLOBAL,
-	-- and strict.lua owns the real _G metatable.
-	-- Do NOT scan ModManager.mods: later mods receive env via
-	-- InitializeModMain -> RunInEnvironment/setfenv.
-	local function inject_jit_into_mod_env(modenv, jit_table)
-		if not jit_table or type(modenv) ~= "table" then
-			return false
-		end
-		if not mod_wants_jit(modenv.modinfo) then
-			return false
-		end
-		modenv.jit = jit_table
-		return true
-	end
-
-	local function HookInitializeModMainForJit(jit_table)
-		local ModManager = _G.ModManager
-		if not ModManager or not ModManager.InitializeModMain then
-			return
-		end
-		if ModManager._ds_luajit_initmodmain_hooked then
-			return
-		end
-		ModManager._ds_luajit_initmodmain_hooked = true
-
-		local old_InitializeModMain = ModManager.InitializeModMain
-		function ModManager:InitializeModMain(modname, env, mainfile, safe, ...)
-			if inject_jit_into_mod_env(env, jit_table) then
-				print("inject jit to mod env:", modname or (env and env.modname) or "?", mainfile or "")
-			end
-			return old_InitializeModMain(self, modname, env, mainfile, safe, ...)
-		end
-	end
-
-	local function HideGlobalJIT()
-		if not hasluajit then
-			return
-		end
-		-- Default: hide global jit; only inject into mods with luajit_compatible.
-		local hide = GetModConfigData("HideGlobalJIT")
-		if hide == nil then
-			hide = true
-		end
-		if not hide then
-			return
-		end
-
-		local jit_table = env.jit or jit
-		-- Hook first so subsequent mods get env.jit before setfenv.
-		HookInitializeModMainForJit(jit_table)
-		-- Our own env is already running (priority first).
-		inject_jit_into_mod_env(env, jit_table)
-		skip_jit()
-	end
-
-	local function EnableProfiler(injector)
-		if not hasluajit then
-			return
-		end
-		if GetModConfigData("EnableProfiler") ~= "off" then
-			local zone = require("jit.zone")
-			local sim = getmetatable(TheSim).__index
-			local old_profiler_push = sim.ProfilerPush
-			local old_profiler_pop = sim.ProfilerPop
-			rawset(_G, "ProfilerJitEx", {
-				start = function(m)
-					injector.DS_LUAJIT_enable_profiler(1)
-				end,
-				stop = function()
-					injector.DS_LUAJIT_enable_profiler(0)
-				end,
-			})
-			local profiler = require("jit.p")
-			local mode = GetModConfigData("EnableProfiler")
-			local enabled_profiler = false
-			sim.ProfilerPush = function(self, name, ...)
-				if enabled_profiler then
-					zone(name)
-				end
-				old_profiler_push(self, name, ...)
-			end
-			sim.ProfilerPop = function(...)
-				if enabled_profiler then
-					zone()
-				end
-				old_profiler_pop(...)
-			end
-			rawset(_G, "ProfilerJit", {
-				start = function(m)
-					enabled_profiler = true
-					profiler.start(m or mode, "unsafedata/profiler.txt")
-				end,
-				stop = function()
-					enabled_profiler = false
-					profiler.stop()
-				end,
-			})
-		end
-	end
 
 	local function filename2modname(filename)
 		local prefix = "../mods/"
@@ -649,70 +335,6 @@ local function main()
 		end
 	end
 
-	function _M:SlowTailCall()
-		local AnyModDisableTailCall = GetModConfigData("AnyModDisableTailCall")
-		if GetModConfigData("SlowTailCall") then
-			local mods_table = {}
-			if AnyModDisableTailCall then
-				mods_table["__any__"] = true
-			else
-				for modname, _ in pairs(_M.SlowTailCallModList) do
-					mods_table[modname] = true
-				end
-			end
-			debug.getregistry()["LJ_DS_slowtailcall_mods"] = mods_table
-		end
-	end
-
-	local function HookKleiloadlua(frostxxMods, injector)
-		local enbaleBlackList = GetModConfigData("ModBlackList")
-		local blacklists = {
-			--- format
-			--- 'workshop-<modid>'
-		}
-		local function decrypt_file(filename)
-			local str = injector.DS_LUAJIT_Fengxun_Decrypt(filename)
-			if str ~= nil then
-				assert(type(str) == "string")
-				return loadstring(str, filename)
-			end
-		end
-
-		if enbaleBlackList then
-			enbaleBlackList = #blacklists > 0
-		end
-		local hmask = table_hmask(frostxxMods)
-		if enbaleBlackList or hmask > 0 then
-			local _kleiloadlua = kleiloadlua
-
-			rawset(_G, "kleiloadlua", function(filename, ...)
-				---@cast filename string
-				local modname = filename2modname(filename)
-				if modname and hmask > 0 then
-					if frostxxMods[modname] and not filename:find('modinfo.lua', 1, true) then
-						if filename:find("modmain.lua", 1, true) then
-							filename = filename:gsub("modmain.lua", "modmain0.lua")
-						elseif filename:find("modworldgenmain.lua", 1, true) then
-							filename = filename:gsub("modworldgenmain.lua", "modworldgenmain0.lua")
-						end
-
-						local fn = decrypt_file(filename)
-						if fn then
-							return fn
-						end
-					end
-				end
-
-				local m = _kleiloadlua(filename, ...)
-				if enbaleBlackList and modname and type(m) == "function" then
-					if blacklists[modname] then
-						jit.off(m, true)
-					end
-				end
-				return m
-			end)
-		end
-	end
 
 	function _M:GetModMainPath(injector)
 		local modmain_path = debug.getinfo(1).source
@@ -783,12 +405,6 @@ local function main()
 		end
 	end
 
-	local function EnableTracy(injector)
-		if GetModConfigData("EnableTracy") == "on" then
-			injector.DS_LUAJIT_replace_profiler_api()
-			injector.DS_LUAJIT_enable_tracy(1)
-		end
-	end
 
 
 	local function ReloadSim()
@@ -944,8 +560,7 @@ local function main()
 			return
 		end
 		HookGetModConfigData()
-		-- Path A Lua PluginHost (AfterModMain). Migrated features load from plugins/init;
-		-- remaining hard-wiring below stays until each feature migrates.
+		-- Path A Lua PluginHost (AfterModMain). M4+ features load from plugins/init.
 		do
 			local PluginHost = kleiloadlua(MODROOT .. "plugins/host.lua")
 			if type(PluginHost) == "function" then
@@ -970,6 +585,9 @@ local function main()
 				-- nil when TheWorld is not ready yet; plugins fall back to TheWorld.
 				-- Keep boolean false (client shard) distinct from nil (world not ready).
 				is_mastersim = TheWorld and TheWorld.ismastersim,
+				-- jit.runtime HideGlobalJIT needs the real jit table + this mod env.
+				jit = env.jit or jit,
+				mod_env = env,
 			}
 			host:resolve(config_lookup, gate_ctx)
 			local lr = host:load_phase(PluginHost.Phase.AfterModMain)
@@ -991,75 +609,9 @@ local function main()
 		end
 		self:GetModMainPath(GameInjector)
 		HookGameVersionUI()
-		ForceJitOpt()
-		EnabledJIT()
-		ForceDisableTailCall()
-
-		local EncryptedModManager = self:GetEncryptedModManager()
-		self.SlowTailCallModList = EncryptedModManager.EncryptedMods
-		self:SlowTailCall()
-
-
 		luajit_config:WriteConfig(self.modmain_path)
 
-		EnableProfiler(GameInjector)
-		EnableTracy(GameInjector)
-
-		HookKleiloadlua(EnableFrostxxMods and EncryptedModManager.frostxxMods or {}, GameInjector)
-
-		-- NetWorkOpt / NetworkOptEntity migrated to plugins/network_rpc + network_entity
-		if GetModConfigData("TargetRenderFPS") then
-			local targetfps = GetModConfigData("TargetRenderFPS")
-			if GameInjector.DS_LUAJIT_set_target_fps(targetfps, 1) > 0 then
-				print("Reset fps by SetNetbookMode", targetfps)
-				TheSim:SetNetbookMode(false)
-			end
-		end
-
-		-- EnableVBPool EarlyNative owned by native plugin render.vbpool (host/config only)
-
-		-- if GetModConfigData("ClientNetWorkTick") then
-		-- 	local targetfps = GetModConfigData("ClientNetWorkTick")
-		-- 	injector.DS_LUAJIT_replace_network_tick(targetfps, targetfps * 1.5, true)
-		-- end
-		-- if GetModConfigData("ServerNetWorkTick") then
-		-- 	local targetfps = GetModConfigData("ServerNetWorkTick")
-		-- 	injector.DS_LUAJIT_replace_network_tick(targetfps, 0, false)
-		-- end
-
-		GameInjector.DS_LUAJIT_disable_fullgc(false)
-		GameInjector.DS_LUAJIT_enable_framegc(false)
-		if not GetModConfigData("EnabledGenGC") then
-			if GetModConfigData("DisableForceFullGC") then
-				GameInjector.DS_LUAJIT_replace_profiler_api()
-				GameInjector.DS_LUAJIT_disable_fullgc(true)
-			end
-
-			if GetModConfigData("EnableFrameGC") then
-				GameInjector.DS_LUAJIT_replace_profiler_api()
-				GameInjector.DS_LUAJIT_enable_framegc(true)
-
-				local old_OnSimPaused = _G.OnSimPaused
-				local old_OnSimUnpaused = _G.OnSimUnpaused
-				if old_OnSimPaused and old_OnSimUnpaused then
-					_G.OnSimPaused = function(...)
-						GameInjector.DS_LUAJIT_enable_framegc(false)
-						old_OnSimPaused(...)
-					end
-
-					_G.OnSimUnpaused = function(...)
-						GameInjector.DS_LUAJIT_enable_framegc(true)
-						old_OnSimUnpaused(...)
-					end
-				end
-			end
-		end
-
 		modimport("inject_server_only_mod")
-
-		-- Hide global jit after our own jit.* requires finish.
-		-- Only inject env.jit for luajit_compatible mods via InitializeModMain hook.
-		HideGlobalJIT()
 	end
 
 	if GameInjector then

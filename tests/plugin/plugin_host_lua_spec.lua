@@ -680,6 +680,11 @@ local function clear_plugin_modules()
     package.loaded["plugins.network_sim"] = nil
     package.loaded["plugins.network_rpc"] = nil
     package.loaded["plugins.network_entity"] = nil
+    package.loaded["plugins.jit_tailcall"] = nil
+    package.loaded["plugins.debug_profiler"] = nil
+    package.loaded["plugins.gc_policy"] = nil
+    package.loaded["plugins.fps_render"] = nil
+    package.loaded["plugins.jit_runtime"] = nil
 end
 
 local function make_bit_stub()
@@ -715,11 +720,20 @@ local function test_network_rpc_enable_matrix()
     assert_eq(plugin.options.all_of[1], "NetworkOpt", "network.rpc option")
     assert_eq(#(plugin.depends or {}), 0, "network.rpc no hard deps")
 
-    -- Stub TheNet metatable + bit helpers used by production load.
     local set_next_calls = {}
+    -- Stub TheNet metatable + bit helpers used by production load.
     local injector = {
         DS_LUAJIT_SetNextRpcInfo = function(p, r, c)
             set_next_calls[#set_next_calls + 1] = { p, r, c }
+        end,
+        DS_LUAJIT_disable_fullgc = function() end,
+        DS_LUAJIT_enable_framegc = function() end,
+        DS_LUAJIT_replace_profiler_api = function() end,
+        DS_LUAJIT_set_target_fps = function()
+            return 0
+        end,
+        DS_LUAJIT_Fengxun_Decrypt = function()
+            return nil
         end,
     }
     local net_index = {
@@ -787,8 +801,16 @@ local function test_network_entity_enable_matrix()
             return { registered = true, id = id }
         end,
         DS_LUAJIT_SetNextRpcInfo = function() end,
+        DS_LUAJIT_disable_fullgc = function() end,
+        DS_LUAJIT_enable_framegc = function() end,
+        DS_LUAJIT_replace_profiler_api = function() end,
+        DS_LUAJIT_set_target_fps = function()
+            return 0
+        end,
+        DS_LUAJIT_Fengxun_Decrypt = function()
+            return nil
+        end,
     }
-
     -- Minimal TheNet for rpc face when both on.
     local net_index = {
         SendRPCToServer = function() end,
@@ -897,6 +919,592 @@ local function test_option_rules_unit()
     print("PASS: option_rules_unit")
 end
 
+local function fresh_m4_injector()
+    local inj = {
+        fullgc = nil,
+        framegc = nil,
+        profiler_api = 0,
+        tracy = 0,
+        profiler = 0,
+        target_fps = nil,
+    }
+    function inj.DS_LUAJIT_disable_fullgc(v)
+        inj.fullgc = v
+    end
+    function inj.DS_LUAJIT_enable_framegc(v)
+        inj.framegc = v
+    end
+    function inj.DS_LUAJIT_replace_profiler_api()
+        inj.profiler_api = inj.profiler_api + 1
+    end
+    function inj.DS_LUAJIT_enable_tracy(v)
+        inj.tracy = v
+    end
+    function inj.DS_LUAJIT_enable_profiler(v)
+        inj.profiler = v
+    end
+    function inj.DS_LUAJIT_set_target_fps(fps, mode)
+        inj.target_fps = fps
+        return 1
+    end
+    function inj.DS_LUAJIT_Fengxun_Decrypt()
+        return nil
+    end
+    return inj
+end
+
+local function install_m4_game_stubs()
+    local prev = {
+        TheSim = rawget(_G, "TheSim"),
+        TheNet = rawget(_G, "TheNet"),
+        AddSimPostInit = rawget(_G, "AddSimPostInit"),
+        AddGamePostInit = rawget(_G, "AddGamePostInit"),
+        KnownModIndex = rawget(_G, "KnownModIndex"),
+        APP_VERSION = rawget(_G, "APP_VERSION"),
+        bit = rawget(_G, "bit"),
+        json = rawget(_G, "json"),
+        debug = rawget(_G, "debug"),
+        jit = rawget(_G, "jit"),
+        package_preload_jit_opt = package.preload["jit.opt"],
+        package_preload_jit_zone = package.preload["jit.zone"],
+        package_preload_jit_p = package.preload["jit.p"],
+        package_loaded_jit_opt = package.loaded["jit.opt"],
+        package_loaded_jit_zone = package.loaded["jit.zone"],
+        package_loaded_jit_p = package.loaded["jit.p"],
+    }
+
+    local sim_index = {
+        ProfilerPush = function() end,
+        ProfilerPop = function() end,
+        GetModDirectoryNames = function()
+            return {}
+        end,
+        SetNetbookMode = function() end,
+    }
+    rawset(_G, "TheSim", setmetatable({}, { __index = sim_index }))
+    -- debug.profiler uses getmetatable(TheSim).__index for method wraps
+    getmetatable(rawget(_G, "TheSim")).__index = sim_index
+    rawset(_G, "TheNet", {
+        IsDedicated = function()
+            return false
+        end,
+    })
+    rawset(_G, "AddSimPostInit", function(fn)
+        -- do not run immediately; just accept
+    end)
+    rawset(_G, "AddGamePostInit", function(fn) end)
+    rawset(_G, "KnownModIndex", {
+        GetModInfo = function()
+            return nil
+        end,
+    })
+    rawset(_G, "APP_VERSION", "test-1.0")
+    rawset(_G, "bit", make_bit_stub())
+    rawset(_G, "json", {
+        encode = function()
+            return "{}"
+        end,
+        decode = function()
+            return nil
+        end,
+    })
+    local reg = {}
+    rawset(_G, "debug", {
+        getregistry = function()
+            return reg
+        end,
+    })
+    local jit_stub = {
+        off = function() end,
+        on = function() end,
+        disabletailcall = function() end,
+    }
+    rawset(_G, "jit", jit_stub)
+    package.preload["jit.opt"] = function()
+        return {
+            start = function() end,
+        }
+    end
+    package.preload["jit.zone"] = function()
+        return function() end
+    end
+    package.preload["jit.p"] = function()
+        return {
+            start = function() end,
+            stop = function() end,
+        }
+    end
+    package.loaded["jit.opt"] = nil
+    package.loaded["jit.zone"] = nil
+    package.loaded["jit.p"] = nil
+    return prev, reg, jit_stub
+end
+
+local function restore_m4_game_stubs(prev)
+    rawset(_G, "TheSim", prev.TheSim)
+    rawset(_G, "TheNet", prev.TheNet)
+    rawset(_G, "AddSimPostInit", prev.AddSimPostInit)
+    rawset(_G, "AddGamePostInit", prev.AddGamePostInit)
+    rawset(_G, "KnownModIndex", prev.KnownModIndex)
+    rawset(_G, "APP_VERSION", prev.APP_VERSION)
+    rawset(_G, "bit", prev.bit)
+    rawset(_G, "json", prev.json)
+    rawset(_G, "debug", prev.debug)
+    rawset(_G, "jit", prev.jit)
+    package.preload["jit.opt"] = prev.package_preload_jit_opt
+    package.preload["jit.zone"] = prev.package_preload_jit_zone
+    package.preload["jit.p"] = prev.package_preload_jit_p
+    package.loaded["jit.opt"] = prev.package_loaded_jit_opt
+    package.loaded["jit.zone"] = prev.package_loaded_jit_zone
+    package.loaded["jit.p"] = prev.package_loaded_jit_p
+end
+
+local function test_m4_plugin_priorities_and_order()
+    -- L-A / S8: real registry priorities + profiler before jit.runtime.
+    clear_plugin_modules()
+    local list = require("plugins.init")
+    local expected = {
+        ["jit.tailcall"] = 10,
+        ["debug.profiler"] = 20,
+        ["gc.policy"] = 30,
+        ["fps.render"] = 50,
+        ["jit.runtime"] = 70,
+    }
+    for id, prio in pairs(expected) do
+        local p = plugin_by_id(list, id)
+        assert_true(p ~= nil, id .. " registered")
+        assert_eq(p.priority, prio, id .. " priority")
+    end
+
+    local prev, reg, jit_stub = install_m4_game_stubs()
+    local injector = fresh_m4_injector()
+    local ok, err = pcall(function()
+        local host = PluginHost.new()
+        host:register_all(list)
+        host:resolve({
+            SlowTailCall = true,
+            AutoDetectEncryptedMod = false,
+            ForceDisableTailCall = false,
+            EnableProfiler = "fzvp",
+            EnableTracy = "off",
+            DisableForceFullGC = true,
+            EnableFrameGC = false,
+            EnabledGenGC = false,
+            TargetRenderFPS = 120,
+            EnabledJIT = true,
+            HideGlobalJIT = false,
+            ModBlackList = false,
+            NetworkOpt = false,
+            NetworkOptEntity = false,
+            EnableForkSave = false,
+            EnableLagCompensation = false,
+            EnableNetSim = false,
+        }, {
+            injector = injector,
+            has_luajit = true,
+            is_client = true,
+            is_windows = true,
+            jit = jit_stub,
+            mod_env = { modinfo = { luajit_compatible = true }, jit = jit_stub },
+        })
+        local lr = host:load_phase(PHASE.AfterModMain)
+        assert_true(lr.ok, "m4 load ok")
+        local p_prof = pos(lr.loaded_order, "debug.profiler")
+        local p_jit = pos(lr.loaded_order, "jit.runtime")
+        local p_tail = pos(lr.loaded_order, "jit.tailcall")
+        local p_gc = pos(lr.loaded_order, "gc.policy")
+        local p_fps = pos(lr.loaded_order, "fps.render")
+        assert_true(p_tail ~= nil and p_prof ~= nil and p_jit ~= nil, "m4 plugins loaded")
+        assert_true(p_tail < p_prof, "tailcall before profiler")
+        assert_true(p_prof < p_jit, "profiler before jit.runtime")
+        assert_true(p_gc ~= nil and p_gc < p_jit, "gc before jit.runtime")
+        assert_true(p_fps ~= nil and p_fps < p_jit, "fps before jit.runtime")
+        assert_eq(host:status("debug.profiler"), STATUS.Loaded, "profiler Loaded")
+        assert_eq(host:status("jit.runtime"), STATUS.Loaded, "jit.runtime Loaded")
+        assert_eq(injector.target_fps, 120, "fps set")
+        assert_eq(injector.fullgc, true, "fullgc enabled")
+    end)
+    restore_m4_game_stubs(prev)
+    if not ok then
+        error(err, 0)
+    end
+    print("PASS: m4_plugin_priorities_and_order")
+end
+
+local function test_debug_profiler_enable_matrix()
+    -- L-E: EnableProfiler off/fzvp; EnableTracy on/off
+    clear_plugin_modules()
+    local list = require("plugins.init")
+    local plugin = plugin_by_id(list, "debug.profiler")
+    assert_true(plugin ~= nil, "debug.profiler registered")
+    assert_eq(plugin.priority, 20, "debug.profiler priority")
+
+    local prev = install_m4_game_stubs()
+    local ok, err = pcall(function()
+        local inj = fresh_m4_injector()
+        local host_off = PluginHost.new()
+        host_off:register_all(list)
+        host_off:resolve({
+            EnableProfiler = "off",
+            EnableTracy = "off",
+            NetworkOpt = false,
+            NetworkOptEntity = false,
+            EnableForkSave = false,
+            EnableLagCompensation = false,
+            EnableNetSim = false,
+            SlowTailCall = false,
+            ForceDisableTailCall = false,
+            AutoDetectEncryptedMod = false,
+            TargetRenderFPS = false,
+        }, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
+        host_off:load_phase(PHASE.AfterModMain)
+        assert_eq(host_off:status("debug.profiler"), STATUS.Disabled, "profiler both-off Disabled")
+
+        local inj2 = fresh_m4_injector()
+        local host_prof = PluginHost.new()
+        host_prof:register_all(list)
+        host_prof:resolve({
+            EnableProfiler = "fzvp",
+            EnableTracy = "off",
+            NetworkOpt = false,
+            NetworkOptEntity = false,
+            EnableForkSave = false,
+            EnableLagCompensation = false,
+            EnableNetSim = false,
+            SlowTailCall = false,
+            ForceDisableTailCall = false,
+            AutoDetectEncryptedMod = false,
+            TargetRenderFPS = false,
+            EnabledJIT = false,
+            HideGlobalJIT = false,
+        }, { injector = inj2, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
+        host_prof:load_phase(PHASE.AfterModMain)
+        assert_eq(host_prof:status("debug.profiler"), STATUS.Loaded, "profiler fzvp Loaded")
+        assert_true(rawget(_G, "ProfilerJit") ~= nil, "ProfilerJit installed")
+
+        local inj3 = fresh_m4_injector()
+        local host_tracy = PluginHost.new()
+        host_tracy:register_all(list)
+        host_tracy:resolve({
+            EnableProfiler = "off",
+            EnableTracy = "on",
+            NetworkOpt = false,
+            NetworkOptEntity = false,
+            EnableForkSave = false,
+            EnableLagCompensation = false,
+            EnableNetSim = false,
+            SlowTailCall = false,
+            ForceDisableTailCall = false,
+            AutoDetectEncryptedMod = false,
+            TargetRenderFPS = false,
+            EnabledJIT = false,
+            HideGlobalJIT = false,
+        }, { injector = inj3, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
+        host_tracy:load_phase(PHASE.AfterModMain)
+        assert_eq(host_tracy:status("debug.profiler"), STATUS.Loaded, "tracy on Loaded")
+        assert_eq(inj3.tracy, 1, "tracy enabled")
+        assert_true(inj3.profiler_api >= 1, "profiler api replaced for tracy")
+    end)
+    restore_m4_game_stubs(prev)
+    if not ok then
+        error(err, 0)
+    end
+    print("PASS: debug_profiler_enable_matrix")
+end
+
+local function test_gc_policy_enable_matrix()
+    -- L-E: DisableForceFullGC / EnableFrameGC combos (+ EnabledGenGC short-circuit)
+    clear_plugin_modules()
+    local list = require("plugins.init")
+    local plugin = plugin_by_id(list, "gc.policy")
+    assert_true(plugin ~= nil, "gc.policy registered")
+    assert_eq(plugin.priority, 30, "gc.policy priority")
+
+    local prev = install_m4_game_stubs()
+    local ok, err = pcall(function()
+        local base = {
+            NetworkOpt = false,
+            NetworkOptEntity = false,
+            EnableForkSave = false,
+            EnableLagCompensation = false,
+            EnableNetSim = false,
+            SlowTailCall = false,
+            ForceDisableTailCall = false,
+            AutoDetectEncryptedMod = false,
+            EnableProfiler = "off",
+            EnableTracy = "off",
+            TargetRenderFPS = false,
+            EnabledJIT = false,
+            HideGlobalJIT = false,
+        }
+
+        local inj = fresh_m4_injector()
+        local host = PluginHost.new()
+        host:register_all(list)
+        local cfg = {}
+        for k, v in pairs(base) do
+            cfg[k] = v
+        end
+        cfg.DisableForceFullGC = true
+        cfg.EnableFrameGC = true
+        cfg.EnabledGenGC = false
+        host:resolve(cfg, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
+        host:load_phase(PHASE.AfterModMain)
+        assert_eq(host:status("gc.policy"), STATUS.Loaded, "gc Loaded")
+        assert_eq(inj.fullgc, true, "fullgc on")
+        assert_eq(inj.framegc, true, "framegc on")
+
+        local inj2 = fresh_m4_injector()
+        local host2 = PluginHost.new()
+        host2:register_all(list)
+        local cfg2 = {}
+        for k, v in pairs(base) do
+            cfg2[k] = v
+        end
+        cfg2.DisableForceFullGC = true
+        cfg2.EnableFrameGC = true
+        cfg2.EnabledGenGC = true
+        host2:resolve(cfg2, { injector = inj2, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
+        host2:load_phase(PHASE.AfterModMain)
+        assert_eq(host2:status("gc.policy"), STATUS.Loaded, "gc still Loaded under GenGC")
+        assert_eq(inj2.fullgc, false, "fullgc reset under GenGC")
+        assert_eq(inj2.framegc, false, "framegc reset under GenGC")
+    end)
+    restore_m4_game_stubs(prev)
+    if not ok then
+        error(err, 0)
+    end
+    print("PASS: gc_policy_enable_matrix")
+end
+
+local function test_fps_render_enable_matrix()
+    -- L-E: TargetRenderFPS present vs off-ish; Win gate
+    clear_plugin_modules()
+    local list = require("plugins.init")
+    local plugin = plugin_by_id(list, "fps.render")
+    assert_true(plugin ~= nil, "fps.render registered")
+    assert_eq(plugin.priority, 50, "fps.render priority")
+
+    local prev = install_m4_game_stubs()
+    local ok, err = pcall(function()
+        local base = {
+            NetworkOpt = false,
+            NetworkOptEntity = false,
+            EnableForkSave = false,
+            EnableLagCompensation = false,
+            EnableNetSim = false,
+            SlowTailCall = false,
+            ForceDisableTailCall = false,
+            AutoDetectEncryptedMod = false,
+            EnableProfiler = "off",
+            EnableTracy = "off",
+            EnabledJIT = false,
+            HideGlobalJIT = false,
+            DisableForceFullGC = false,
+            EnableFrameGC = false,
+            EnabledGenGC = false,
+        }
+
+        local inj = fresh_m4_injector()
+        local host = PluginHost.new()
+        host:register_all(list)
+        local cfg = {}
+        for k, v in pairs(base) do
+            cfg[k] = v
+        end
+        cfg.TargetRenderFPS = 144
+        host:resolve(cfg, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
+        host:load_phase(PHASE.AfterModMain)
+        assert_eq(host:status("fps.render"), STATUS.Loaded, "fps Loaded")
+        assert_eq(inj.target_fps, 144, "target fps 144")
+
+        local inj2 = fresh_m4_injector()
+        local host2 = PluginHost.new()
+        host2:register_all(list)
+        local cfg2 = {}
+        for k, v in pairs(base) do
+            cfg2[k] = v
+        end
+        cfg2.TargetRenderFPS = 0
+        host2:resolve(cfg2, { injector = inj2, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
+        host2:load_phase(PHASE.AfterModMain)
+        assert_eq(host2:status("fps.render"), STATUS.Disabled, "fps 0 Disabled")
+
+        local inj3 = fresh_m4_injector()
+        local host3 = PluginHost.new()
+        host3:register_all(list)
+        local cfg3 = {}
+        for k, v in pairs(base) do
+            cfg3[k] = v
+        end
+        cfg3.TargetRenderFPS = 120
+        host3:resolve(cfg3, { injector = inj3, has_luajit = true, is_windows = false, jit = rawget(_G, "jit") })
+        host3:load_phase(PHASE.AfterModMain)
+        assert_eq(host3:status("fps.render"), STATUS.Disabled, "fps non-win Disabled")
+    end)
+    restore_m4_game_stubs(prev)
+    if not ok then
+        error(err, 0)
+    end
+    print("PASS: fps_render_enable_matrix")
+end
+
+local function test_jit_tailcall_enable_matrix()
+    -- L-E: SlowTailCall / ForceDisable / AutoDetect combinations
+    clear_plugin_modules()
+    local list = require("plugins.init")
+    local plugin = plugin_by_id(list, "jit.tailcall")
+    assert_true(plugin ~= nil, "jit.tailcall registered")
+    assert_eq(plugin.priority, 10, "jit.tailcall priority")
+
+    local prev, reg = install_m4_game_stubs()
+    local ok, err = pcall(function()
+        local base = {
+            NetworkOpt = false,
+            NetworkOptEntity = false,
+            EnableForkSave = false,
+            EnableLagCompensation = false,
+            EnableNetSim = false,
+            EnableProfiler = "off",
+            EnableTracy = "off",
+            TargetRenderFPS = false,
+            EnabledJIT = false,
+            HideGlobalJIT = false,
+            DisableForceFullGC = false,
+            EnableFrameGC = false,
+            EnabledGenGC = false,
+        }
+
+        local inj = fresh_m4_injector()
+        local host = PluginHost.new()
+        host:register_all(list)
+        local cfg = {}
+        for k, v in pairs(base) do
+            cfg[k] = v
+        end
+        cfg.SlowTailCall = true
+        cfg.AnyModDisableTailCall = true
+        cfg.ForceDisableTailCall = false
+        cfg.AutoDetectEncryptedMod = false
+        host:resolve(cfg, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
+        host:load_phase(PHASE.AfterModMain)
+        assert_eq(host:status("jit.tailcall"), STATUS.Loaded, "tailcall Loaded")
+        assert_true(reg["LJ_DS_slowtailcall_mods"] ~= nil, "slowtail registry set")
+        assert_eq(reg["LJ_DS_slowtailcall_mods"]["__any__"], true, "any mod disable")
+
+        local host_off = PluginHost.new()
+        host_off:register_all(list)
+        local cfg2 = {}
+        for k, v in pairs(base) do
+            cfg2[k] = v
+        end
+        cfg2.SlowTailCall = false
+        cfg2.ForceDisableTailCall = false
+        cfg2.AutoDetectEncryptedMod = false
+        host_off:resolve(cfg2, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
+        host_off:load_phase(PHASE.AfterModMain)
+        assert_eq(host_off:status("jit.tailcall"), STATUS.Disabled, "tailcall all-off Disabled")
+
+        local host_nojit = PluginHost.new()
+        host_nojit:register_all(list)
+        local cfg3 = {}
+        for k, v in pairs(base) do
+            cfg3[k] = v
+        end
+        cfg3.SlowTailCall = true
+        host_nojit:resolve(cfg3, { injector = inj, has_luajit = false, is_windows = true })
+        host_nojit:load_phase(PHASE.AfterModMain)
+        assert_eq(host_nojit:status("jit.tailcall"), STATUS.Disabled, "tailcall no-luajit Disabled")
+    end)
+    restore_m4_game_stubs(prev)
+    if not ok then
+        error(err, 0)
+    end
+    print("PASS: jit_tailcall_enable_matrix")
+end
+
+local function test_jit_runtime_enable_matrix()
+    -- L-E: EnabledJIT true/false; HideGlobalJIT true/false; order vs profiler
+    clear_plugin_modules()
+    local list = require("plugins.init")
+    local plugin = plugin_by_id(list, "jit.runtime")
+    assert_true(plugin ~= nil, "jit.runtime registered")
+    assert_eq(plugin.priority, 70, "jit.runtime priority")
+
+    local prev, reg, jit_stub = install_m4_game_stubs()
+    local ok, err = pcall(function()
+        local base = {
+            NetworkOpt = false,
+            NetworkOptEntity = false,
+            EnableForkSave = false,
+            EnableLagCompensation = false,
+            EnableNetSim = false,
+            EnableProfiler = "off",
+            EnableTracy = "off",
+            TargetRenderFPS = false,
+            SlowTailCall = false,
+            ForceDisableTailCall = false,
+            AutoDetectEncryptedMod = false,
+            DisableForceFullGC = false,
+            EnableFrameGC = false,
+            EnabledGenGC = false,
+            ModBlackList = false,
+        }
+
+        local inj = fresh_m4_injector()
+        local host = PluginHost.new()
+        host:register_all(list)
+        local cfg = {}
+        for k, v in pairs(base) do
+            cfg[k] = v
+        end
+        cfg.EnabledJIT = true
+        cfg.HideGlobalJIT = false
+        host:resolve(cfg, {
+            injector = inj,
+            has_luajit = true,
+            is_windows = true,
+            jit = jit_stub,
+            mod_env = { modinfo = { luajit_compatible = true }, jit = jit_stub },
+        })
+        local lr = host:load_phase(PHASE.AfterModMain)
+        assert_eq(host:status("jit.runtime"), STATUS.Loaded, "jit.runtime Loaded")
+        assert_true(pos(lr.loaded_order, "jit.runtime") ~= nil, "jit.runtime in order")
+
+        local host_nojit = PluginHost.new()
+        host_nojit:register_all(list)
+        host_nojit:resolve(cfg, { injector = inj, has_luajit = false, is_windows = true })
+        host_nojit:load_phase(PHASE.AfterModMain)
+        assert_eq(host_nojit:status("jit.runtime"), STATUS.Disabled, "jit.runtime no-luajit Disabled")
+
+        -- HideGlobalJIT true clears global jit
+        rawset(_G, "jit", jit_stub)
+        local host_hide = PluginHost.new()
+        host_hide:register_all(list)
+        local cfg2 = {}
+        for k, v in pairs(base) do
+            cfg2[k] = v
+        end
+        cfg2.EnabledJIT = false
+        cfg2.HideGlobalJIT = true
+        host_hide:resolve(cfg2, {
+            injector = inj,
+            has_luajit = true,
+            is_windows = true,
+            jit = jit_stub,
+            mod_env = { modinfo = { luajit_compatible = true }, jit = jit_stub },
+        })
+        host_hide:load_phase(PHASE.AfterModMain)
+        assert_eq(host_hide:status("jit.runtime"), STATUS.Loaded, "hide path Loaded")
+        assert_eq(rawget(_G, "jit"), nil, "global jit hidden")
+    end)
+    restore_m4_game_stubs(prev)
+    if not ok then
+        error(err, 0)
+    end
+    print("PASS: jit_runtime_enable_matrix")
+end
+
 -- Required L-C cases from task brief: topo, hard dep missing, option off, priority
 test_empty_registry()
 test_topo_linear()
@@ -923,5 +1531,11 @@ test_network_sim_enable_matrix()
 test_network_rpc_enable_matrix()
 test_network_entity_enable_matrix()
 test_option_rules_unit()
+test_m4_plugin_priorities_and_order()
+test_debug_profiler_enable_matrix()
+test_gc_policy_enable_matrix()
+test_fps_render_enable_matrix()
+test_jit_tailcall_enable_matrix()
+test_jit_runtime_enable_matrix()
 
 print("plugin_host_lua_spec: all tests passed")
