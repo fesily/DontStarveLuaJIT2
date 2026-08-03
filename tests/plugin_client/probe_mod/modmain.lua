@@ -13,7 +13,46 @@ local function token(name, body)
     print("[lc_probe] TOKEN " .. name .. " " .. (body or "1"))
 end
 
+-- Host-mode helpers (LC_HOST_MODE=1): StartServer + LOAD_SLOT, no LAN join.
+local function env_flag(name)
+    local v = rawget(_G, "os") and _G.os.getenv and _G.os.getenv(name)
+    return v == "1" or v == "true" or v == "TRUE"
+end
+
+local function host_slot()
+    local v = rawget(_G, "os") and _G.os.getenv and _G.os.getenv("LC_HOST_SLOT")
+    local n = tonumber(v or "1") or 1
+    if n < 1 then n = 1 end
+    return n
+end
+
 local world_ready_emitted = false
+local host_started = false
+local host_ok_emitted = false
+
+local function emit_host_ok(reason)
+    if host_ok_emitted then
+        return
+    end
+    host_ok_emitted = true
+    local TheNet = rawget(_G, "TheNet")
+    local TheWorld = rawget(_G, "TheWorld")
+    local hosted = false
+    local mastersim = false
+    pcall(function()
+        if TheNet and TheNet.GetServerIsClientHosted then
+            hosted = TheNet:GetServerIsClientHosted() and true or false
+        end
+    end)
+    pcall(function()
+        if TheWorld then mastersim = TheWorld.ismastersim and true or false end
+    end)
+    if hosted or mastersim then
+        token("LG_CLIENT_HOST_OK", tostring(reason or "host") .. " hosted=" .. tostring(hosted) .. " mastersim=" .. tostring(mastersim))
+    else
+        token("LG_CLIENT_HOST_FAIL", "not_client_hosted reason=" .. tostring(reason))
+    end
+end
 
 local function emit_world_ready(reason)
     if world_ready_emitted then
@@ -21,6 +60,9 @@ local function emit_world_ready(reason)
     end
     world_ready_emitted = true
     token("LG_CLIENT_WORLD_READY", reason or "world")
+    if env_flag("LC_HOST_MODE") then
+        emit_host_ok(reason)
+    end
 end
 
 -- Main LuaJit2 mod aliases (workshop + local folder names).
@@ -123,6 +165,141 @@ local function emit_config_samples()
         local v = map[k]
         token("LG_CLIENT_CONFIG", tostring(k) .. "=" .. tostring(v))
     end
+end
+
+local function try_start_host()
+    if host_started then
+        return
+    end
+    if not env_flag("LC_HOST_MODE") then
+        return
+    end
+    host_started = true
+
+    local TheNet = rawget(_G, "TheNet")
+    local ShardSaveGameIndex = rawget(_G, "ShardSaveGameIndex")
+    local KnownModIndex = rawget(_G, "KnownModIndex")
+    local StartNextInstance = rawget(_G, "StartNextInstance")
+    local RESET_ACTION = rawget(_G, "RESET_ACTION")
+    local DisableAllDLC = rawget(_G, "DisableAllDLC")
+
+    if not TheNet or not ShardSaveGameIndex or not StartNextInstance or not RESET_ACTION then
+        token("LG_CLIENT_HOST_FAIL", "missing_globals")
+        return
+    end
+
+    local slot = host_slot()
+    token("LG_CLIENT_HOST_BEGIN", "slot=" .. tostring(slot))
+
+    local ok_inv, TheInventory = pcall(function() return rawget(_G, "TheInventory") end)
+    if ok_inv and TheInventory then
+        pcall(function()
+            if TheInventory.HasSupportForOfflineSkins and TheInventory:HasSupportForOfflineSkins()
+                and TheInventory.HasDownloadedInventory and not TheInventory:HasDownloadedInventory()
+                and TheInventory.ForceLoadOfflineCache then
+                TheInventory:ForceLoadOfflineCache()
+            end
+        end)
+    end
+
+    pcall(function()
+        if ShardSaveGameIndex.LoadSlotEnabledServerMods then
+            ShardSaveGameIndex:LoadSlotEnabledServerMods()
+        end
+        if KnownModIndex and KnownModIndex.Save then
+            KnownModIndex:Save()
+        end
+    end)
+
+    local serverdata = nil
+    pcall(function()
+        serverdata = ShardSaveGameIndex:GetSlotServerData(slot)
+    end)
+
+    local started = false
+    local ok_start, ret = pcall(function()
+        return TheNet:StartServer(false, slot, serverdata)
+    end)
+    started = ok_start and ret and true or false
+
+    if not started then
+        token("LG_CLIENT_HOST_FAIL", "StartServer_false")
+        return
+    end
+
+    pcall(function()
+        if DisableAllDLC then DisableAllDLC() end
+    end)
+
+    local ok_next, err = pcall(function()
+        StartNextInstance({ reset_action = RESET_ACTION.LOAD_SLOT, save_slot = slot })
+    end)
+    if not ok_next then
+        token("LG_CLIENT_HOST_FAIL", "StartNextInstance:" .. tostring(err))
+        return
+    end
+    token("LG_CLIENT_HOST_STARTED", "slot=" .. tostring(slot))
+end
+
+-- Host-only auto-spawn (stress bot Part 2 only; no LAN search).
+local original_ResumeRequestLoadComplete = nil
+local spawn_pending = false
+
+local function host_send_spawn_request()
+    local TheNet = rawget(_G, "TheNet")
+    if not TheNet or not TheNet.SendSpawnRequestToServer then
+        return
+    end
+    local char = "wilson"
+    local skin = char .. "_none"
+    pcall(function()
+        TheNet:SendSpawnRequestToServer(char, skin, "", "", "", "", {}, nil)
+    end)
+end
+
+local function hooked_ResumeRequestLoadComplete(success)
+    if success then
+        if original_ResumeRequestLoadComplete then
+            original_ResumeRequestLoadComplete(success)
+        end
+        return
+    end
+
+    local TheNet = rawget(_G, "TheNet")
+    if TheNet and TheNet.DeleteUserSession and TheNet.GetUserID then
+        pcall(function()
+            TheNet:DeleteUserSession(TheNet:GetUserID())
+        end)
+    end
+
+    if spawn_pending then
+        return
+    end
+    spawn_pending = true
+
+    local TheWorld = rawget(_G, "TheWorld")
+    if TheWorld and TheWorld.DoTaskInTime then
+        TheWorld:DoTaskInTime(1, function()
+            spawn_pending = false
+            host_send_spawn_request()
+        end)
+    else
+        spawn_pending = false
+        host_send_spawn_request()
+    end
+end
+
+if env_flag("LC_HOST_MODE") then
+    AddClassPostConstruct("screens/redux/mainscreen", function(self)
+        self.inst:DoTaskInTime(1, function()
+            try_start_host()
+        end)
+    end)
+
+    AddGamePostInit(function()
+        original_ResumeRequestLoadComplete = rawget(_G, "ResumeRequestLoadComplete")
+        _G.rawset(_G, "ResumeRequestLoadComplete", hooked_ResumeRequestLoadComplete)
+    end)
 end
 
 AddGamePostInit(function()
