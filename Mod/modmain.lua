@@ -1016,9 +1016,7 @@ local function main()
 			end
 		end
 
-		if GetModConfigData("EnableVBPool") == false then
-			GameInjector.DS_LUAJIT_set_vbpool_enabled(false)
-		end
+		-- EnableVBPool EarlyNative owned by native plugin render.vbpool (host/config only)
 
 		-- if GetModConfigData("ClientNetWorkTick") then
 		-- 	local targetfps = GetModConfigData("ClientNetWorkTick")

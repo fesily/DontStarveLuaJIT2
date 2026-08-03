@@ -308,7 +308,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     LoadGameModConfig();
 
     // Path A PluginHost: register builtins, resolve from GameJitModConfig, EarlyNative.
-    // network.rpc EarlyNative owns GameNetWorkHookRpc4 when NetworkOpt is enabled.
+    // network.rpc / render.vbpool / render.angle own their former Inject-side side effects.
     {
         using namespace ds::plugin;
         static PluginHost g_plugin_host;

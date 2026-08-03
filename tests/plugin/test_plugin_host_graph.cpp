@@ -559,6 +559,143 @@ static void test_network_entity_hard_dep_on_rpc() {
     printf("PASS: network_entity_hard_dep_on_rpc\n");
 }
 
+static void test_render_vbpool_option_matrix() {
+    // L-E: render.vbpool EnableVBPool true/false; Win client gate.
+    FakePlugin vb;
+    vb.man.id = "render.vbpool";
+    vb.man.phases = PluginPhase::EarlyNative;
+    vb.man.priority = 20;
+    vb.man.options = opt_all({"EnableVBPool"});
+
+    // Row: EnableVBPool true + client → Loaded
+    {
+        PluginHost host;
+        host.register_plugin(&vb);
+        PluginContext ctx;
+        ctx.is_client = true;
+        ConfigView cfg;
+        cfg["EnableVBPool"] = ConfigValue::boolean(true);
+        auto rr = host.resolve(cfg, ctx);
+        assert(std::find(rr.enabled.begin(), rr.enabled.end(), "render.vbpool") != rr.enabled.end());
+        assert(rr.failed.empty());
+        auto lr = host.load_phase(PluginPhase::EarlyNative);
+        assert(lr.ok);
+        assert(lr.loaded_order.size() == 1);
+        assert(lr.loaded_order[0] == "render.vbpool");
+        assert(vb.load_count == 1);
+        assert(host.status("render.vbpool") == PluginStatus::Loaded);
+    }
+
+    // Row: EnableVBPool false → Disabled, no load
+    vb.load_count = 0;
+    {
+        PluginHost host;
+        host.register_plugin(&vb);
+        PluginContext ctx;
+        ctx.is_client = true;
+        ConfigView cfg;
+        cfg["EnableVBPool"] = ConfigValue::boolean(false);
+        auto rr = host.resolve(cfg, ctx);
+        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "render.vbpool") != rr.disabled.end());
+        auto lr = host.load_phase(PluginPhase::EarlyNative);
+        assert(lr.ok);
+        assert(lr.loaded_order.empty());
+        assert(vb.load_count == 0);
+        assert(host.status("render.vbpool") == PluginStatus::Disabled);
+    }
+
+    // Row: option true but dedicated (not client) → can_load false → Disabled
+    vb.load_count = 0;
+    vb.allow = false; // mirrors can_load(is_client==false)
+    {
+        PluginHost host;
+        host.register_plugin(&vb);
+        PluginContext ctx;
+        ctx.is_client = false;
+        ConfigView cfg;
+        cfg["EnableVBPool"] = ConfigValue::boolean(true);
+        auto rr = host.resolve(cfg, ctx);
+        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "render.vbpool") != rr.disabled.end());
+        auto lr = host.load_phase(PluginPhase::EarlyNative);
+        assert(lr.loaded_order.empty());
+        assert(vb.load_count == 0);
+    }
+    vb.allow = true;
+
+    printf("PASS: render_vbpool_option_matrix\n");
+}
+
+static void test_render_angle_backend_parameter_matrix() {
+    // L-E: render.angle AlwaysOn on Win client; AngleBackend is a parameter that
+    // must reach PluginContext.config for every backend value (auto/vulkan/d3d11/d3d9).
+    struct AngleStandIn final : IPlugin {
+        PluginManifest man{};
+        int load_count = 0;
+        std::string last_backend;
+        bool allow = true;
+
+        AngleStandIn() {
+            man.id = "render.angle";
+            man.version = "1.0.0";
+            man.phases = PluginPhase::EarlyNative;
+            man.priority = 30;
+            man.options.kind = OptionRuleKind::AlwaysOn;
+        }
+
+        const PluginManifest &manifest() const override { return man; }
+        bool can_load(const PluginContext &) const override { return allow; }
+        void load(PluginContext &ctx) override {
+            ++load_count;
+            if (ctx.config) {
+                auto it = ctx.config->find("AngleBackend");
+                if (it != ctx.config->end() && it->second.type == ConfigValueType::String) {
+                    last_backend = it->second.s;
+                }
+            }
+        }
+        void unload(PluginContext &) override {}
+    };
+
+    const char *backends[] = {"auto", "vulkan", "d3d11", "d3d9"};
+    for (const char *backend : backends) {
+        AngleStandIn angle;
+        PluginHost host;
+        host.register_plugin(&angle);
+        PluginContext ctx;
+        ctx.is_client = true;
+        ConfigView cfg;
+        cfg["AngleBackend"] = ConfigValue::string(backend);
+        auto rr = host.resolve(cfg, ctx);
+        assert(std::find(rr.enabled.begin(), rr.enabled.end(), "render.angle") != rr.enabled.end());
+        assert(rr.failed.empty());
+        auto lr = host.load_phase(PluginPhase::EarlyNative);
+        assert(lr.ok);
+        assert(lr.loaded_order.size() == 1);
+        assert(lr.loaded_order[0] == "render.angle");
+        assert(angle.load_count == 1);
+        assert(angle.last_backend == backend);
+        assert(host.status("render.angle") == PluginStatus::Loaded);
+    }
+
+    // Non-client gate → Disabled even with AlwaysOn options
+    {
+        AngleStandIn angle;
+        angle.allow = false;
+        PluginHost host;
+        host.register_plugin(&angle);
+        PluginContext ctx;
+        ctx.is_client = false;
+        ConfigView cfg;
+        cfg["AngleBackend"] = ConfigValue::string("vulkan");
+        auto rr = host.resolve(cfg, ctx);
+        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "render.angle") != rr.disabled.end());
+        host.load_phase(PluginPhase::EarlyNative);
+        assert(angle.load_count == 0);
+    }
+
+    printf("PASS: render_angle_backend_parameter_matrix\n");
+}
+
 int main() {
     test_empty_registry();
     test_topo_linear();
@@ -578,6 +715,8 @@ int main() {
     test_reload_unload();
     test_network_rpc_option_matrix();
     test_network_entity_hard_dep_on_rpc();
+    test_render_vbpool_option_matrix();
+    test_render_angle_backend_parameter_matrix();
     printf("All host graph tests passed!\n");
     return 0;
 }

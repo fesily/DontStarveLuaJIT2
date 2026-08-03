@@ -1,6 +1,5 @@
 #include "gameModConfig.hpp"
 #include "MemorySignature.hpp"
-#include "GameOpenGl.hpp"
 #include "game_info.hpp"
 #include "luajit_config.hpp"
 #include "util/inlinehook.hpp"
@@ -745,18 +744,12 @@ std::optional<GameJitModConfig> GameJitModConfig::instance() {
     return mod_config_options;
 }
 
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable);
-
-// EarlyNative feature side effects (VBPool / OpenGL-ANGLE) remain here until M3 migrates
-// them into render.vbpool / render.angle plugins. Config resolution is L0; Host is wired
-// in Inject() with an empty registry so behavior is unchanged for M1 Task 1.
+// Config resolution is L0 (GameJitModConfig cascade via instance()).
+// EarlyNative side effects for VBPool / ANGLE live in render.vbpool / render.angle
+// plugins registered by RegisterBuiltinPlugins and loaded from Inject().
 extern "C" void LoadGameModConfig() {
 #ifdef _WIN32
-    auto config = GameJitModConfig::instance();
-    if (config && config->EnableVBPool) {
-        DS_LUAJIT_set_vbpool_enabled(true);
-    }
+    // Thread naming is L0 process hygiene, not a feature plugin.
     repalce_set_thread_name();
-    InitGameOpenGl();
 #endif
 }
