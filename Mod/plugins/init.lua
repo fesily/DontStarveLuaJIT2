@@ -1,8 +1,21 @@
--- Explicit Lua plugin registry (Path A). Empty until features migrate (M1+).
+-- Explicit Lua plugin registry (Path A).
 -- Each entry is a plugin table consumed by Mod/plugins/host.lua.
 --
--- return {
---   require("plugins.save_fork"),
--- }
+-- Game path: init is kleiloadlua'd with MODROOT in env; sibling plugins load the same way
+-- because custom env.require only rewrites under MODROOT/scripts/.
+-- Test path: package.path includes Mod/?.lua so require("plugins.*") works.
 
-return {}
+local function load_plugin(name)
+    if MODROOT then
+        local chunk = kleiloadlua(MODROOT .. "plugins/" .. name .. ".lua")
+        if type(chunk) == "function" then
+            return chunk()
+        end
+        error("failed to load plugin plugins/" .. name .. ".lua: " .. tostring(chunk))
+    end
+    return require("plugins." .. name)
+end
+
+return {
+    load_plugin("save_fork"),
+}

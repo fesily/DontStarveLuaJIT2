@@ -387,18 +387,94 @@ local function test_config_function_getmodconfigdata()
     print("PASS: config_function_getmodconfigdata")
 end
 
-local function test_empty_init_registry()
+local function test_save_fork_enable_matrix()
+    -- L-E: save.fork EnableForkSave true/false (+ when gate).
     package.loaded["plugins.init"] = nil
+    package.loaded["plugins.save_fork"] = nil
     local list = require("plugins.init")
     assert_eq(type(list), "table", "init returns table")
-    assert_eq(#list, 0, "init empty")
-    local host = PluginHost.new()
-    host:register_all(list)
-    host:resolve({}, {})
-    local lr = host:load_phase(PHASE.AfterModMain)
-    assert_eq(#lr.loaded_order, 0, "empty registry no loads")
-    print("PASS: empty_init_registry")
+    assert_eq(#list, 1, "init has save.fork")
+    assert_eq(list[1].id, "save.fork", "save.fork id")
+    assert_eq(list[1].priority, 60, "save.fork priority")
+
+    -- Stub production load side effects (AddGamePostInit + modimport).
+    local postinits = {}
+    local modimports = {}
+    local prev_AddGamePostInit = rawget(_G, "AddGamePostInit")
+    local prev_modimport = rawget(_G, "modimport")
+    rawset(_G, "AddGamePostInit", function(fn)
+        postinits[#postinits + 1] = fn
+    end)
+    rawset(_G, "modimport", function(path)
+        modimports[#modimports + 1] = path
+    end)
+
+    local ok, err = pcall(function()
+        -- Row: EnableForkSave=true + dedicated + has_luajit → Loaded
+        local host_on = PluginHost.new()
+        host_on:register_all(list)
+        host_on:resolve(
+            { EnableForkSave = true },
+            { has_luajit = true, is_client = false }
+        )
+        local lr_on = host_on:load_phase(PHASE.AfterModMain)
+        assert_true(lr_on.ok, "save.fork on load ok")
+        assert_eq(host_on:status("save.fork"), STATUS.Loaded, "save.fork on Loaded")
+        assert_eq(pos(lr_on.loaded_order, "save.fork") ~= nil and 1 or 0, 1, "save.fork in order")
+        local e_on = host_on:find("save.fork")
+        assert_eq(e_on.load_count, 1, "save.fork load_count on")
+        assert_eq(#postinits, 1, "save.fork scheduled PostInit")
+        postinits[1]()
+        assert_eq(#modimports, 1, "save.fork modimport once")
+        assert_eq(modimports[1], "scripts/fork_save", "save.fork modimport path")
+
+        -- Row: EnableForkSave=false → Disabled, no load
+        postinits = {}
+        modimports = {}
+        local host_off = PluginHost.new()
+        host_off:register_all(list)
+        host_off:resolve(
+            { EnableForkSave = false },
+            { has_luajit = true, is_client = false }
+        )
+        local lr_off = host_off:load_phase(PHASE.AfterModMain)
+        assert_true(lr_off.ok, "save.fork off resolve ok")
+        assert_eq(host_off:status("save.fork"), STATUS.Disabled, "save.fork off Disabled")
+        assert_eq(pos(lr_off.loaded_order, "save.fork"), nil, "save.fork not loaded when off")
+        local e_off = host_off:find("save.fork")
+        assert_eq(e_off.load_count or 0, 0, "save.fork load_count off")
+        assert_eq(#postinits, 0, "no PostInit when off")
+        assert_eq(#modimports, 0, "no modimport when off")
+
+        -- when gate: client (not dedicated) disables even if option on
+        local host_client = PluginHost.new()
+        host_client:register_all(list)
+        host_client:resolve(
+            { EnableForkSave = true },
+            { has_luajit = true, is_client = true }
+        )
+        host_client:load_phase(PHASE.AfterModMain)
+        assert_eq(host_client:status("save.fork"), STATUS.Disabled, "save.fork disabled on client")
+
+        -- when gate: no luajit disables
+        local host_nojit = PluginHost.new()
+        host_nojit:register_all(list)
+        host_nojit:resolve(
+            { EnableForkSave = true },
+            { has_luajit = false, is_client = false }
+        )
+        host_nojit:load_phase(PHASE.AfterModMain)
+        assert_eq(host_nojit:status("save.fork"), STATUS.Disabled, "save.fork disabled without luajit")
+    end)
+
+    rawset(_G, "AddGamePostInit", prev_AddGamePostInit)
+    rawset(_G, "modimport", prev_modimport)
+    if not ok then
+        error(err, 0)
+    end
+    print("PASS: save_fork_enable_matrix")
 end
+
 
 local function test_option_rules_unit()
     local eval = PluginHost.evaluate_option_rule
@@ -435,7 +511,7 @@ test_profiler_before_hide()
 test_when_false()
 test_sticky_and_reload()
 test_config_function_getmodconfigdata()
-test_empty_init_registry()
+test_save_fork_enable_matrix()
 test_option_rules_unit()
 
 print("plugin_host_lua_spec: all tests passed")

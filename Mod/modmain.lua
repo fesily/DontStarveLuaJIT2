@@ -1090,8 +1090,8 @@ local function main()
 			return
 		end
 		HookGetModConfigData()
-		-- Path A Lua PluginHost (AfterModMain). Empty registry dual-path: host loads
-		-- nothing yet; existing feature hard-wiring below remains until each migrates.
+		-- Path A Lua PluginHost (AfterModMain). Migrated features load from plugins/init;
+		-- remaining hard-wiring below stays until each feature migrates.
 		do
 			local PluginHost = kleiloadlua(MODROOT .. "plugins/host.lua")
 			if type(PluginHost) == "function" then
@@ -1208,14 +1208,6 @@ local function main()
 		if hasluajit and os_is_windows and TheWorld and not TheWorld.ismastersim then
 			if GetModConfigData("EnableNetSim") then
 				modimport("scripts/netsim")
-			end
-		end
-		if hasluajit and TheNet:IsDedicated() then
-			if GetModConfigData("EnableForkSave") then
-				print("Dedicated server, load fork_save")
-				AddGamePostInit(function()
-					modimport("scripts/fork_save")
-				end)
 			end
 		end
 
