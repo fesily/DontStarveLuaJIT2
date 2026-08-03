@@ -53,4 +53,4 @@ Mod/scripts/jit
 cmake/GameDir.cmake
 Mod/**/*.dll
 Mod/mod.manifest
-dst-scripts/
+dst-scripts/tests/plugin_server/_markers/
