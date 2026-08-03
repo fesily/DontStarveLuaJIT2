@@ -54,3 +54,6 @@ cmake/GameDir.cmake
 Mod/**/*.dll
 Mod/mod.manifest
 dst-scripts/tests/plugin_server/_markers/
+
+__pycache__/
+*.py[cod]
