@@ -84,6 +84,15 @@ add_test(
 set_tests_properties(plugin_host_lua PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
+add_test(
+    NAME plugin_trunk_surface
+    COMMAND ${PYTHON_EXECUTABLE_NAME}
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugin/check_trunk_surface.py
+        ${CMAKE_SOURCE_DIR})
+set_tests_properties(plugin_trunk_surface PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+
 
 
 add_test(NAME plugin_dedicated_sim_pause
