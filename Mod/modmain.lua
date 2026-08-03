@@ -561,16 +561,23 @@ local function main()
 		end
 		HookGetModConfigData()
 		-- Path A Lua PluginHost (AfterModMain). M4+ features load from plugins/init.
+		-- kleiloadlua chunks do NOT inherit the mod env (strict.lua treats MODROOT as undeclared).
+		-- Always setfenv to main_fenv so MODROOT / modimport / Add*PostInit resolve.
 		do
-			local PluginHost = kleiloadlua(MODROOT .. "plugins/host.lua")
-			if type(PluginHost) == "function" then
-				PluginHost = PluginHost()
+			local function run_mod_chunk(relpath)
+				local path = MODROOT .. relpath
+				local chunk = kleiloadlua(path)
+				if type(chunk) == "string" then
+					error(string.format("error loading %s:\n%s", path, chunk), 2)
+				end
+				if type(chunk) ~= "function" then
+					error(string.format("expected function chunk for %s, got %s", path, type(chunk)), 2)
+				end
+				setfenv(chunk, main_fenv)
+				return chunk()
 			end
-			local registry_chunk = kleiloadlua(MODROOT .. "plugins/init.lua")
-			local registry = {}
-			if type(registry_chunk) == "function" then
-				registry = registry_chunk() or {}
-			end
+			local PluginHost = run_mod_chunk("plugins/host.lua")
+			local registry = run_mod_chunk("plugins/init.lua") or {}
 			local host = PluginHost.new()
 			host:register_all(registry)
 			-- Resolve against already-hooked GetModConfigData when available; raw otherwise.

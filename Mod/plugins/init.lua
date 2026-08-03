@@ -10,9 +10,15 @@
 --   50 fps.render | 60 sim/save | 70 jit.runtime
 
 local function load_plugin(name)
-    if MODROOT then
-        local chunk = kleiloadlua(MODROOT .. "plugins/" .. name .. ".lua")
+    -- In-game: modmain setfenv's this chunk so MODROOT is a real key on the env.
+    -- Under strict.lua, bare global MODROOT errors if missing — only rawget/getfenv.
+    local env = getfenv(1)
+    local root = (type(env) == "table" and rawget(env, "MODROOT")) or rawget(_G, "MODROOT")
+    local loadlua = (type(env) == "table" and rawget(env, "kleiloadlua")) or rawget(_G, "kleiloadlua")
+    if root and loadlua then
+        local chunk = loadlua(root .. "plugins/" .. name .. ".lua")
         if type(chunk) == "function" then
+            setfenv(chunk, env)
             return chunk()
         end
         error("failed to load plugin plugins/" .. name .. ".lua: " .. tostring(chunk))
