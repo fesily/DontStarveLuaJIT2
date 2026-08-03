@@ -76,6 +76,16 @@ target_include_directories(test_plugin_config_bridge PRIVATE
 target_compile_features(test_plugin_config_bridge PRIVATE cxx_std_23)
 add_test(NAME plugin_config_bridge COMMAND test_plugin_config_bridge)
 
+add_test(
+    NAME plugin_host_lua
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_lua_host.py
+)
+set_tests_properties(plugin_host_lua PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+
 
 add_test(NAME plugin_dedicated_sim_pause
     COMMAND ${CMAKE_COMMAND} -E env

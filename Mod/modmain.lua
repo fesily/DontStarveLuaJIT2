@@ -1082,6 +1082,7 @@ local function main()
 
 	function _M:Main()
 		assert(GameInjector ~= nil, "Load GameInjector Failed!")
+
 		self:GetModVersion(GameInjector)
 		local VersionMissMatch = Version2Number(modinfo.version) < Version2Number(self.so_version)
 		self:AlwaysLoad(GameInjector, VersionMissMatch)
@@ -1089,6 +1090,44 @@ local function main()
 			return
 		end
 		HookGetModConfigData()
+		-- Path A Lua PluginHost (AfterModMain). Empty registry dual-path: host loads
+		-- nothing yet; existing feature hard-wiring below remains until each migrates.
+		do
+			local PluginHost = kleiloadlua(MODROOT .. "plugins/host.lua")
+			if type(PluginHost) == "function" then
+				PluginHost = PluginHost()
+			end
+			local registry_chunk = kleiloadlua(MODROOT .. "plugins/init.lua")
+			local registry = {}
+			if type(registry_chunk) == "function" then
+				registry = registry_chunk() or {}
+			end
+			local host = PluginHost.new()
+			host:register_all(registry)
+			-- Resolve against already-hooked GetModConfigData when available; raw otherwise.
+			local function config_lookup(key)
+				return GetModConfigData(key)
+			end
+			local gate_ctx = {
+				injector = GameInjector,
+				has_luajit = hasluajit,
+				is_client = not TheNet:IsDedicated(),
+			}
+			host:resolve(config_lookup, gate_ctx)
+			local lr = host:load_phase(PluginHost.Phase.AfterModMain)
+			if not lr.ok then
+				print("[luajit][plugin] AfterModMain load reported failures")
+			end
+			for _, ev in ipairs(host:events_list()) do
+				if ev.status == PluginHost.Status.Failed then
+					print(string.format(
+						"[luajit][plugin] plugin=%s phase=%s status=%s reason=%s detail=%s",
+						tostring(ev.plugin_id), tostring(ev.phase), tostring(ev.status),
+						tostring(ev.reason), tostring(ev.detail)))
+				end
+			end
+			_M.plugin_host = host
+		end
 		if self:SwitchVm() then
 			return
 		end
