@@ -77,6 +77,16 @@ target_compile_features(test_plugin_config_bridge PRIVATE cxx_std_23)
 target_compile_definitions(test_plugin_config_bridge PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME plugin_config_bridge COMMAND test_plugin_config_bridge)
 
+add_executable(test_dynamic_plugin_loader
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_dynamic_plugin_loader.cpp
+    ${PLUGIN_HOST_SOURCES}
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/DynamicPluginLoader.cpp)
+target_include_directories(test_dynamic_plugin_loader PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_dynamic_plugin_loader PRIVATE cxx_std_23)
+target_compile_definitions(test_dynamic_plugin_loader PRIVATE DS_PLUGIN_HOST_STATIC)
+add_test(NAME plugin_dynamic_loader COMMAND test_dynamic_plugin_loader)
+
 add_test(
     NAME plugin_host_lua
     COMMAND ${CMAKE_COMMAND} -E env

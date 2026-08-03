@@ -33,6 +33,7 @@ set(SOURCES
         core/PluginOptionRules.cpp
         core/RegisterBuiltinPlugins.cpp
         core/PluginConfigBridge.cpp
+        core/DynamicPluginLoader.cpp
 )
 
 
