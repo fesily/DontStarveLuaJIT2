@@ -208,13 +208,27 @@ def stage_from_install(install_prefix: Path, stage_dir: Path, release_only: bool
         copy_file(vulkan_dll, stage_dir / "bin" / "vulkan-1.dll")
 
 
-def ensure_binary_cache_dir(env: dict[str, str]) -> None:
-    """vcpkg requires VCPKG_DEFAULT_BINARY_CACHE to already be a directory."""
-    cache = env.get("VCPKG_DEFAULT_BINARY_CACHE")
-    if not cache:
-        return
-    path = Path(cache)
+def ensure_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def resolve_binary_cache_dir(env: dict[str, str]) -> Path:
+    """Return a real directory for vcpkg binary caching.
+
+    vcpkg hard-fails if VCPKG_DEFAULT_BINARY_CACHE is set but is not an existing
+    directory. Prefer an explicit env value when present; otherwise use a
+    repo-local fallback so local/CI runs never depend on pre-created dirs.
+    """
+    configured = env.get("VCPKG_DEFAULT_BINARY_CACHE", "").strip().strip('"')
+    if configured:
+        cache_dir = Path(configured)
+    else:
+        cache_dir = ROOT / ".angle-bincache"
+    ensure_dir(cache_dir)
+    if not cache_dir.is_dir():
+        die(f"VCPKG_DEFAULT_BINARY_CACHE is not a directory: {cache_dir}")
+    return cache_dir.resolve()
 
 
 def build_with_vcpkg(vcpkg: Path, triplet: str, release_only: bool) -> Path:
@@ -224,7 +238,13 @@ def build_with_vcpkg(vcpkg: Path, triplet: str, release_only: bool) -> Path:
     if release_only:
         # Force the custom triplet's release-only path and avoid debug builds.
         env.setdefault("CI", "1")
-    ensure_binary_cache_dir(env)
+
+    cache_dir = resolve_binary_cache_dir(env)
+    env["VCPKG_DEFAULT_BINARY_CACHE"] = str(cache_dir)
+    # Always pin the files provider to the same absolute directory we created.
+    # A missing/relative path in VCPKG_BINARY_SOURCES is a common CI footgun.
+    env["VCPKG_BINARY_SOURCES"] = f"clear;files,{cache_dir},readwrite"
+    print(f"vcpkg binary cache: {cache_dir}")
     cmd = [
         str(vcpkg),
         "install",

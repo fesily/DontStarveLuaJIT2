@@ -58,6 +58,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13' 
+      - name: Ensure vcpkg binary cache directories
+        shell: bash
+        run: |
+          mkdir -p "${{ github.workspace }}/.vcpkg-bincache"
+          if [ "${{ matrix.target }}" = "windows" ]; then
+            mkdir -p "${{ github.workspace }}/.angle-bincache"
+          fi
       - name: Restore from cache and setup vcpkg executable and data files.
         uses: lukka/run-vcpkg@v11
         with:
@@ -68,8 +75,10 @@ jobs:
         env:
           VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.angle-bincache
           VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.angle-bincache,readwrite
+        shell: bash
         run: |
-          mkdir -Force "${{ github.workspace }}/.angle-bincache" | Out-Null
+          mkdir -p "${{ github.workspace }}/.angle-bincache"
+          test -d "${{ github.workspace }}/.angle-bincache"
           python tools/setup_angle.py --release-only --vcpkg "${{ github.workspace }}/vcpkg/vcpkg.exe"
 
       - name: Configure CMake and populate vcpkg binary cache
