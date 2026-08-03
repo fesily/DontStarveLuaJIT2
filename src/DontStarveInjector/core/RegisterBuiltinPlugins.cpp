@@ -6,7 +6,8 @@
 #include "GameOpenGl.hpp"
 
 // Declared by GameRenderHook (Win) / stubbed by GameLuaModule (non-Win).
-void DS_LUAJIT_set_vbpool_enabled(bool enable);
+// DONTSTARVEINJECTOR_GAME_API exports as extern "C".
+extern "C" void DS_LUAJIT_set_vbpool_enabled(bool enable);
 
 namespace ds::plugin {
 namespace {
