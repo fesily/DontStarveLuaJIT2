@@ -6,6 +6,22 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+
+// C++ export for PluginHost methods used across the Injector <-> plugin DLL boundary.
+// Not covered by DONTSTARVEINJECTOR_API (which is always extern "C").
+#if defined(_WIN32)
+#  if defined(DONTSTARVEINJECTOR_BUILD)
+#    define DS_PLUGIN_HOST_API __declspec(dllexport)
+#  elif defined(DS_PLUGIN_HOST_STATIC)
+// Standalone unit tests compile PluginHost.cpp into the test binary (no DLL).
+#    define DS_PLUGIN_HOST_API
+#  else
+#    define DS_PLUGIN_HOST_API __declspec(dllimport)
+#  endif
+#else
+#  define DS_PLUGIN_HOST_API __attribute__((visibility("default")))
+#endif
+
 namespace ds::plugin {
 
 struct ResolveResult {
@@ -21,7 +37,7 @@ struct LoadResult {
 
 class PluginHost {
 public:
-    void register_plugin(IPlugin *plugin); // non-owning; caller keeps lifetime
+    DS_PLUGIN_HOST_API void register_plugin(IPlugin *plugin); // non-owning; caller keeps lifetime
 
     ResolveResult resolve(const ConfigView &config, const PluginContext &gate_ctx);
     LoadResult load_phase(PluginPhase phase);

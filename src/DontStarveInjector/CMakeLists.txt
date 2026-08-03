@@ -83,6 +83,7 @@ if (MSVC)
     target_compile_definitions(Injector PRIVATE SUPPORT_PROGRESS)
 endif()
 target_compile_definitions(Injector PRIVATE MOD_VERSION="${CMAKE_PROJECT_VERSION}")
+target_compile_definitions(Injector PRIVATE DONTSTARVEINJECTOR_BUILD)
 target_include_directories(Injector PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 if (ENABLE_STEAM_SUPPORT)

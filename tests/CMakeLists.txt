@@ -52,6 +52,7 @@ add_executable(test_plugin_host_graph
 target_include_directories(test_plugin_host_graph PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
 target_compile_features(test_plugin_host_graph PRIVATE cxx_std_23)
+target_compile_definitions(test_plugin_host_graph PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME plugin_host_graph COMMAND test_plugin_host_graph)
 
 add_executable(test_plugin_option_rules
@@ -73,6 +74,7 @@ add_executable(test_plugin_config_bridge
 target_include_directories(test_plugin_config_bridge PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
 target_compile_features(test_plugin_config_bridge PRIVATE cxx_std_23)
+target_compile_definitions(test_plugin_config_bridge PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME plugin_config_bridge COMMAND test_plugin_config_bridge)
 
 add_test(
