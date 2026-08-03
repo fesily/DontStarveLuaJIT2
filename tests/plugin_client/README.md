@@ -1,17 +1,17 @@
 # plugin_client (L-C client inject smoke)
 
-Phase-1 automated client proof for Injector + mod/plugins + world stability.
+Automated client proof for Injector + mod/plugins + world stability + optional config profiles.
 
 Spec: `docs/superpowers/specs/2026-08-03-client-inject-smoke-design.md`
 
 ## Contract tokens
 
-Log lines:
-
 ```text
 [lc_probe] TOKEN LG_CLIENT_MOD_LOADED ...
 [lc_probe] TOKEN LG_CLIENT_INJECT_OK ...
 [lc_probe] TOKEN LG_CLIENT_PLUGINS_OK ...
+[lc_probe] TOKEN LG_CLIENT_CONFIG_SRC <main-modname>
+[lc_probe] TOKEN LG_CLIENT_CONFIG key=value
 [lc_probe] TOKEN LG_CLIENT_WORLD_READY ...
 ```
 
@@ -19,11 +19,40 @@ Orchestrator then holds `LC_T_HOLD` (default 30s) and prints `LG_CLIENT_STABLE`.
 
 ## Default mode (P1b)
 
-1. Start dedicated cluster `LGPluginTest` (same offline cluster as L-G).  
-2. Install `plugin_lc_probe` + `stress_test_bot`.  
-3. Launch `dontstarve_steam_x64` with inject (`Injector.dll` / `Winmm.dll` in `bin64`), `-offline -debug_random_data -force_enable_mods=plugin_lc_probe,stress_test_bot`.  
-4. Stress bot LAN-joins and auto-spawns; probe emits tokens.  
+1. Start dedicated cluster `LGPluginTest` (same offline cluster as L-G).
+2. Install `plugin_lc_probe` + `stress_test_bot`.
+3. Launch `dontstarve_steam_x64` with inject (`Injector.dll` / `Winmm.dll` in `bin64`),
+   `-offline -debug_random_data -force_enable_mods=plugin_lc_probe;stress_test_bot`
+   (**`;` separator** — Injector `split_string` in `GameLua.cpp`).
+4. Stress bot LAN-joins and auto-spawns; probe emits tokens.
 5. Hold + kill.
+
+## Phase-2: mod config profiles
+
+`mod_config.py` rewrites the client `modconfiguration_*` KLEI Lua file **before** launch
+(path: `Documents/Klei/DoNotStarveTogether/<steam_id>/client_save/mod_config_data/`).
+
+Profiles:
+
+| Profile | File | Intent |
+|---|---|---|
+| `defaults` | `profiles/defaults.json` | no-op (`{}`) |
+| `minimal` | `profiles/minimal.json` | risk-off: VBPool/NetSim/LagComp/ForkSave/NetworkOpt off |
+
+```bash
+# inspect current saved options
+python tests/plugin_client/mod_config.py show
+
+# apply profile only
+python tests/plugin_client/mod_config.py apply --profile minimal
+
+# restore first backup (original before first apply)
+python tests/plugin_client/mod_config.py restore
+
+# smoke with profile (applies then asserts LG_CLIENT_CONFIG)
+set LC_T_HOLD=15
+python tests/plugin_client/run_client_inject_smoke.py --cluster LGPluginTest --profile minimal
+```
 
 ## Run
 
@@ -41,11 +70,8 @@ Exit: `0` PASS, `1` FAIL, `2` SKIP (mapped to 0 for ctest unless `LG_REQUIRE_GAM
 
 ## Prerequisites
 
-- Built Injector installed to game `bin64`  
-- Cluster `LGPluginTest` under Klei (offline) — create via L-G / design notes  
-- Steam client binary present  
-- GPU/desktop session for client window  
-
-## Phase-2 (later)
-
-`mod_config.py` + profiles under `profiles/` to rewrite `modconfiguration_*` before launch.
+- Built Injector installed to game `bin64`
+- Cluster `LGPluginTest` under Klei (offline) — create via L-G / design notes
+- Steam client binary present
+- GPU/desktop session for client window
+- For `--profile`: existing `modconfiguration_workshop-3444078585_dev` (launch client once with mod)

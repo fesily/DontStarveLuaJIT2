@@ -135,6 +135,8 @@ class LogProcess:
         self.lines: List[str] = []
         self.tokens: Set[str] = set()
         self.token_bodies: dict[str, str] = {}
+        # Multi-value tokens (e.g. LG_CLIENT_CONFIG key=value samples)
+        self.token_values: dict[str, List[str]] = {}
         self.fatal = False
         self._thread: Optional[threading.Thread] = None
 
@@ -153,10 +155,12 @@ class LogProcess:
                     part = line.split(TOKEN_PREFIX, 1)[1]
                     bits = part.split(None, 1)
                     tok = bits[0]
-                    body = bits[1] if len(bits) > 1 else ""
+                    # DST client logs often append a trailing tab.
+                    body = (bits[1] if len(bits) > 1 else "").strip()
                     self.tokens.add(tok)
                     self.token_bodies[tok] = body
-                    print(f"[lc] log-token {tok}")
+                    self.token_values.setdefault(tok, []).append(body)
+                    print(f"[lc] log-token {tok} {body}".rstrip())
                 except Exception:
                     pass
             for pat in FATAL_PATTERNS:
@@ -294,7 +298,48 @@ def wait_tokens(client: LogProcess, names: tuple[str, ...], timeout: float) -> b
     return False
 
 
-def run_p1b(game_dir: Path, cluster: str) -> int:
+def verify_profile_tokens(client: LogProcess, profile_name: str) -> bool:
+    """Phase-2: assert LG_CLIENT_CONFIG samples match profile overrides."""
+    sys.path.insert(0, str(SELF))
+    from mod_config import load_profile
+
+    expected = load_profile(profile_name)
+    if not expected:
+        print(f"[lc] profile {profile_name} is empty (defaults) — skip config assert")
+        return True
+
+    samples = client.token_values.get("LG_CLIENT_CONFIG", [])
+    got: dict[str, str] = {}
+    for body in samples:
+        if "=" not in body:
+            continue
+        k, v = body.split("=", 1)
+        got[k] = v
+
+    if not got:
+        eprint("[lc] no LG_CLIENT_CONFIG tokens — cannot verify profile")
+        return False
+
+    ok = True
+    for k, exp in expected.items():
+        if k not in got:
+            # profile may set keys probe does not sample; skip unknown
+            continue
+        actual = got[k]
+        exp_s = str(exp).lower() if isinstance(exp, bool) else str(exp)
+        act_s = actual.lower() if actual in ("true", "false", "True", "False") else actual
+        if isinstance(exp, bool):
+            act_s = actual.lower()
+            exp_s = "true" if exp else "false"
+        if act_s != exp_s:
+            eprint(f"[lc] config mismatch {k}: expected={exp_s!r} got={actual!r}")
+            ok = False
+        else:
+            print(f"[lc] config ok {k}={actual}")
+    return ok
+
+
+def run_p1b(game_dir: Path, cluster: str, profile: Optional[str] = None) -> int:
     if not ensure_injector(game_dir):
         return 1
     if not find_server_exe(game_dir):
@@ -326,6 +371,11 @@ def run_p1b(game_dir: Path, cluster: str) -> int:
             if "LG_CLIENT_INJECT_MISSING" in client.tokens:
                 eprint("[lc] inject missing")
             return 1
+
+        if profile:
+            # Config samples are emitted in same AddGamePostInit as inject tokens.
+            if not verify_profile_tokens(client, profile):
+                return 1
 
         if not wait_tokens(client, ("LG_CLIENT_WORLD_READY",), T_WORLD):
             return 1
@@ -360,6 +410,11 @@ def main() -> int:
         default="p1b",
         help="p1b=dedicated+LAN bot (default); offline=client only experiment",
     )
+    parser.add_argument(
+        "--profile",
+        default=os.environ.get("LC_PROFILE"),
+        help="Phase-2: apply tests/plugin_client/profiles/<name>.json before launch",
+    )
     args = parser.parse_args()
 
     game_dir = Path(args.game_dir) if args.game_dir else resolve_game_dir()
@@ -369,10 +424,21 @@ def main() -> int:
         return 2
 
     print(f"[lc] game_dir={game_dir}")
+
+    if args.profile:
+        # Local import so dry SKIP path does not require config file present.
+        sys.path.insert(0, str(SELF))
+        from mod_config import apply_profile, load_saved_options, resolve_config_path
+
+        cfg_path = resolve_config_path()
+        print(f"[lc] applying profile={args.profile} -> {cfg_path}")
+        apply_profile(args.profile)
+        print(f"[lc] saved options sample: {load_saved_options(cfg_path)}")
+
     if args.mode == "offline":
         eprint("[lc] offline P1a not fully automated yet; use --mode p1b")
         return 1
-    return run_p1b(game_dir, args.cluster)
+    return run_p1b(game_dir, args.cluster, profile=args.profile)
 
 
 if __name__ == "__main__":
