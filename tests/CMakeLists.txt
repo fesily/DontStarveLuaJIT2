@@ -115,6 +115,19 @@ set_tests_properties(plugin_client_inject_smoke PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 900)
 
+add_test(NAME plugin_client_host_smoke
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        DST_GAME_DIR=$ENV{DST_GAME_DIR}
+        LC_MODE=host
+        ${PYTHON_EXECUTABLE_NAME}
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugin_client/run_client_inject_smoke.py
+        --mode host)
+set_tests_properties(plugin_client_host_smoke PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 900)
+
+
 # --- LuaJIT variant registry characterization test ---
 # Asserts that the generated variant contract file describes the registered
 # LuaJIT variants and their target/output/executable names. The contract file

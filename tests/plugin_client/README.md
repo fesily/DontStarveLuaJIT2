@@ -68,6 +68,28 @@ python tests/plugin_client/run_client_inject_smoke.py --cluster LGPluginTest
 
 Exit: `0` PASS, `1` FAIL, `2` SKIP (mapped to 0 for ctest unless `LG_REQUIRE_GAME=1` / `LC_REQUIRE_GAME=1`).
 
+## Mode: host (client-hosted)
+
+Single process: steam client hosts offline world (`TheNet:StartServer` + LOAD_SLOT).
+No dedicated. No stress_test_bot.
+
+```bash
+set LC_T_HOLD=15
+set LC_HOST_SLOT=1
+python tests/plugin_client/run_client_inject_smoke.py --mode host
+
+# with profile
+python tests/plugin_client/run_client_inject_smoke.py --mode host --profile minimal
+```
+
+Tokens: existing `LG_CLIENT_*` plus `LG_CLIENT_HOST_OK` / `LG_CLIENT_HOST_FAIL`.
+Requires a usable offline save slot (default 1) unless empty-slot fallback is implemented.
+
+CTest: `plugin_client_host_smoke` (`LC_MODE=host` / `--mode host`, TIMEOUT 900; SKIP without game same as sibling).
+
+Env extras: `LC_HOST_MODE=1` (set by orchestrator), `LC_HOST_SLOT` (default `1`), `LC_T_HOST` (default 120s host-ok window).
+
+
 ## Prerequisites
 
 - Built Injector installed to game `bin64`
