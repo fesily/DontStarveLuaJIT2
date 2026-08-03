@@ -17,6 +17,7 @@
 | D5 | Config surface | `Mod/modinfo.lua` `configuration_options` remains the **only** user-facing config. Multiple options may map to one plugin. |
 | D6 | Fail-fast style | No defensive “if API missing then no-op”. Missing required APIs/symbols error immediately (project convention). |
 | D7 | Success requires tests | Architecture is **not done** without automated gates in §12. Narrative goals without a §13 mapping are non-blocking. |
+| D8 | Final game proof | **Automated dedicated-server harness (L-G)**. Must prove injector + plugin modules load successfully and the sim reaches a **stable paused** state. **Implementation is the next step after Host unit gates (M0+)** — specified now, built as its own deliverable (`M-G`), not left as permanent manual-only. |
 
 ---
 
@@ -46,7 +47,7 @@ Today features are hard-wired, not modular:
 4. One plugin may bind multiple `configuration_options`.
 5. Adding a feature = new plugin + manifest; **no** edits to `Inject()` / `_M:Main()` trunks beyond host calls.
 6. With all plugins disabled, core still injects and the game remains playable on the selected VM.
-7. **Every success criterion is proven by an automated test** (or an explicit manual smoke with PR evidence where hooks require a live game).
+7. **Every success criterion is proven by an automated test.** Final runtime proof is automated dedicated-server L-G (§12.10), not “boots on my machine.”
 
 ### Non-goals (YAGNI)
 
@@ -56,7 +57,7 @@ Today features are hard-wired, not modular:
 - Extra factory/framework libraries “for flexibility”.
 - Turning Signature / FunctionRelocation into user plugins.
 - Shipping dynamic plugin DLLs in this phase (documented as Phase B only).
-- Fully automated in-game graphics/network integration suite in Phase A (manual L-G only).
+- Full multiplayer client-bot graphics/network fidelity suite in Phase A (L-G is **dedicated-server** path first; client bots optional later).
 
 ---
 
@@ -435,11 +436,12 @@ Each step has **gate tests**. “Game boots” is never the only gate.
 | Step | Deliverable | Automated gate | Manual gate |
 |---|---|---|---|
 | M0 | `PluginHost` + types + empty registry; trunks still linear | L-A + L-B green | none |
-| M1 | `save.fork`, `sim.lagcomp`, `network.sim` as plugins | L-A/B + L-C + L-E rows for 3 ids + `fork_save_lua` | optional in-game lagcomp/netsim |
-| M2 | `network.rpc` + `network.entity` + depends | L-E entity×rpc matrix; L-A hard dep | multiplayer smoke if available |
-| M3 | `render.angle` + `render.vbpool` EarlyNative | L-A phase_barrier; `BufferNamePool`; L-E vbpool/angle | client boot Angle/VBPool on·off |
-| M4 | `jit.*`, `gc.policy`, `debug.profiler`, `fps.render` | L-A `profiler_before_hide`; L-B string predicates; L-E rows | JIT/profiler smoke |
-| M5 | Slim `Inject` / `modmain` trunks | **L-F** trunk surface + full unit suite | client+server boot |
+| **M-G** | **Dedicated L-G harness** (may land right after M0 or parallel early Mn) | **L-G green**: server load + stable sim pause | none (this *replaces* manual core boot) |
+| M1 | `save.fork`, `sim.lagcomp`, `network.sim` as plugins | L-A/B + L-C + L-E rows for 3 ids + `fork_save_lua` + L-G core profile | none for core path |
+| M2 | `network.rpc` + `network.entity` + depends | L-E entity×rpc matrix; L-A hard dep | optional multiplayer beyond L-G |
+| M3 | `render.angle` + `render.vbpool` EarlyNative | L-A phase_barrier; `BufferNamePool`; L-E vbpool/angle | client-only render still optional manual |
+| M4 | `jit.*`, `gc.policy`, `debug.profiler`, `fps.render` | L-A `profiler_before_hide`; L-B string predicates; L-E rows | — |
+| M5 | Slim `Inject` / `modmain` trunks | **L-F** + full unit suite + **L-G** | — |
 | M6 | Contributor docs + “add dummy plugin” | doc present; optional dummy plugin unit | — |
 | M7 | Dynamic libs (later) | out of scope | — |
 
@@ -477,7 +479,7 @@ Without automated tests, success criteria are not enforceable. This section defi
 | L-D Feature regression | existing names | `fork_save_lua`, `BufferNamePool`, variant tests | No | each related Mn |
 | L-E Enable matrix | `plugin_enable_matrix` | C++/Lua fake plugins + config maps | No | **M1+** per id |
 | L-F Trunk surface | `plugin_trunk_surface` | `tests/plugin/check_trunk_surface.py` (or cmake -P) | No | **M5** |
-| L-G In-game smoke | checklist only | PR description evidence | Yes | per native migrate |
+| L-G Dedicated server integration | `plugin_dedicated_sim_pause` | `tests/plugin_server/` harness + cluster fixture | Yes (nullrenderer) | **Specified now; implement as M-G (next step after Host units)** |
 
 ### 12.3 Host test doubles (required for L-A/L-B/L-E)
 
@@ -593,19 +595,110 @@ Script fails if:
 
 Allowed: L0 (`ReplaceLuaModule`, signature, crash guard, `RegisterBuiltinPlugins`, `PluginHost::*`).
 
-### 12.10 L-G in-game smoke (manual)
+### 12.10 L-G Automated dedicated server (normative; implement next)
 
-Not a substitute for L-A..L-F. PR that migrates a native plugin lists pass/fail:
+**Status:** Contract is **normative**. Implementation is the **next engineering step** after (or overlapping early with) Host unit tests — tracked as migration **M-G**. Until M-G lands, Mn feature PRs may still attach interim evidence, but **architecture DoD requires L-G green**.
 
-| Plugin | Smoke |
+L-G is **not** a permanent manual checklist. Manual client/render checks may remain optional; the **required** end-to-end proof is:
+
+> Start dedicated server with Injector → this mod / plugins load successfully → world sim becomes ready → enter **stable sim-paused** state → hold without crash → harness reports PASS.
+
+#### 12.10.1 Why dedicated-first
+
+- Matches server-critical plugins (`save.fork`, lagcomp mastersim path, inject server path).
+- Reuses existing assets: `config/server/DoNotStarveTogether/`, `tests/stress_test_mod/run_stress_test.py` (`DSTServer`), `docker/start-docker-server.sh` (`LD_PRELOAD=libInjector.so`), `Mod/install_linux.sh` inject wrapper.
+- Headless `dontstarve_dedicated_server_nullrenderer_x64` is CI-feasible; full client GL is not required for module-load proof.
+
+#### 12.10.2 Harness layout (target)
+
+```text
+tests/plugin_server/
+  run_dedicated_sim_pause.py   # orchestrator (ctest entry)
+  probe_mod/                   # tiny server mod OR commands injected via server console
+    modinfo.lua
+    modmain.lua                # reports plugin/host status; requests sim pause
+  cluster/                     # or generate from config/server template
+    # offline_server=true, minimal Master shard
+  README.md                    # GAME_DIR, token, platform notes
+```
+
+CTest (when game dir available):
+
+```cmake
+add_test(NAME plugin_dedicated_sim_pause
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        DST_GAME_DIR=${GAME_DIR}   # or env-only; skip if unset
+        ${PYTHON_EXECUTABLE_NAME}
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugin_server/run_dedicated_sim_pause.py)
+# Mark SKIP if DST_GAME_DIR missing; FAIL only when game present and contract breaks.
+```
+
+#### 12.10.3 Boot contract (ordered)
+
+| Step | Action | Pass signal (oracle) |
+|---|---|---|
+| 1. Prep | Copy/install Injector + Mod into game/mod paths; cluster with **offline_server** (or valid token); enable this mod in `modoverrides` | files present; exit non-zero if install incomplete |
+| 2. Launch | Start `dontstarve_dedicated_server_nullrenderer_x64` with inject (`LD_PRELOAD` / Windows inject layout) + `-cluster <L-G cluster>` + Master shard | process starts; pid alive |
+| 3. Inject alive | Wait for injector log / console evidence | e.g. log contains inject success **or** in-game `GameInjector ~= nil` reported by probe |
+| 4. Mod loaded | Probe or log proves DontStarveLuaJit2 modmain ran | marker file or console line `LG_MOD_LOADED` |
+| 5. Plugins OK | For **core profile** (defaults / all experimental off as configured): no required plugin in `Failed`; Host AfterModMain completed | marker `LG_PLUGINS_OK` + optional structured dump |
+| 6. World ready | Shard reaches running world (mastersim exists / “Done loading world” class signal) | marker `LG_WORLD_READY` within timeout `T_world` |
+| 7. Sim pause | Explicitly enter paused sim (pin exact API in harness README on first green run, e.g. `TheNet:SetServerPaused(true)` or project-standard equivalent) | marker `LG_SIM_PAUSED` when paused query is true |
+| 8. Stability hold | Remain paused **≥ `T_hold`** (default **30s**) with process alive, no fatal log pattern, no unexpected exit | marker `LG_STABLE` after hold |
+| 9. Shutdown | Graceful stop (console quit / SIGTERM policy documented); expect harness-accepted exit | process reaped; no hang beyond `T_shutdown` |
+
+**Defaults (tunable in harness, fixed in CI):**
+
+| Param | Default | Meaning |
+|---|---|---|
+| `T_world` | 300s | max wait world ready |
+| `T_hold` | 30s | stable paused duration |
+| `T_shutdown` | 60s | max wait process exit |
+| `T_inject` | 60s | max wait inject/mod markers |
+
+#### 12.10.4 Profiles
+
+| Profile | Config | Required for |
+|---|---|---|
+| `core` | Injector on; mod on; experimental server plugins at safe defaults (or explicitly off matrix row) | M-G gate; S5; S13 |
+| `save.fork` | EnableForkSave on (dedicated) | after M1 migrate; optional extended L-G job |
+| `matrix-N` | future: one ctest row per heavy server plugin | not all required on day one of M-G |
+
+M-G **minimum ship:** profile `core` green. Extended profiles added when those plugins migrate (still automated, same harness).
+
+#### 12.10.5 Fail conditions (any ⇒ FAIL)
+
+- Process crashes / abort before `LG_STABLE`
+- Injector missing (`GameInjector` nil) when inject was required
+- Mod did not load / modmain error
+- Required plugin status `Failed` on core profile
+- World not ready before `T_world`
+- Sim never reports paused
+- Process dies during `T_hold`
+- Fatal patterns in server/injector logs (list maintained in harness; tune without swallowing real faults)
+- Hang past `T_shutdown` on teardown
+
+#### 12.10.6 Skip vs fail
+
+| Environment | Result |
 |---|---|
-| core only | experimental opts off: client + dedicated enter world |
-| `save.fork` | dedicated `c_save`: child write + parent snapshot increment |
-| `network.rpc` / `entity` | Win: opts on, basic multiplayer smoke |
-| `render.angle` / `vbpool` | Win client boot; backend change still restart-required |
-| `sim.lagcomp` | mastersim Win, no crash on FindEntities path |
-| `network.sim` | client Win, update/overlay path |
-| `jit.runtime` / `gc.policy` / `debug.profiler` | toggles; profiler command if on |
+| No `DST_GAME_DIR` / no server binary | **SKIP** (ctest skip) — not silent pass |
+| Game present, contract broken | **FAIL** |
+| Game present, all markers + hold | **PASS** |
+
+CI with game artifacts: run L-G. Dev machines without game: unit layers still gate merges; L-G runs where binary exists.
+
+#### 12.10.7 Probe implementation notes
+
+- Prefer **server console / remote command** or a **tiny companion mod** that only writes markers under `unsafedata/` or cluster dir — keep production mod free of test-only branches when possible.
+- Marker files beat brittle log scraping as primary oracle; logs are secondary diagnostics.
+- Exact pause API must be verified against current DST. Harness README pins the chosen call after first green run; if API name differs, update harness only — contract step 7 stays “server sim paused and holds.”
+- Reuse `DSTServer` patterns from `tests/stress_test_mod/run_stress_test.py` (stdin commands, process life) rather than inventing a second process manager.
+
+#### 12.10.8 Interim (before M-G merges)
+
+Feature migration PRs may still record manual dedicated boot notes. That does **not** satisfy §12.12 item 7 once M-G exists; after M-G, L-G ctest is mandatory for DoD.
 
 ### 12.11 Build wiring
 
@@ -633,6 +726,17 @@ add_test(NAME plugin_trunk_surface
     COMMAND ${PYTHON_EXECUTABLE_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/plugin/check_trunk_surface.py
         ${CMAKE_SOURCE_DIR})
+
+# L-G: implement under tests/plugin_server/ (M-G). Skip if DST_GAME_DIR unset.
+add_test(NAME plugin_dedicated_sim_pause
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        DST_GAME_DIR=$ENV{DST_GAME_DIR}
+        ${PYTHON_EXECUTABLE_NAME}
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugin_server/run_dedicated_sim_pause.py)
+set_tests_properties(plugin_dedicated_sim_pause PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 600)
 ```
 
 ### 12.12 Definition of Done (global)
@@ -645,7 +749,7 @@ Architecture work is **done** only when:
 4. L-E rows exist for **every** migrated §7.2 plugin.
 5. L-F green at M5.
 6. Every §13 criterion maps to at least one automated assertion (S6 = interface review checklist on Host headers, still explicit).
-7. L-G evidence attached for migrated native plugins in their PR.
+7. **L-G `plugin_dedicated_sim_pause` green** on an environment with the game binary (core profile: module load success + stable sim pause). Skip-without-game is allowed in bare CI; **DoD requires at least one recorded green L-G run** (local or game-enabled CI).
 
 ---
 
@@ -657,7 +761,7 @@ Architecture work is **done** only when:
 | S2 | Disabling modinfo option prevents plugin load | L-E off-rows | all off-rows `load_count==0` |
 | S3 | Missing hard dep / cycle / conflict → failure, no half-enable | L-A `hard_dep_missing`, `cycle_three`, `conflict_both_enabled`, `load_throw_fails_dependents` | those PASS |
 | S4 | `modinfo` sole user config; multi-option → one plugin | L-B multi-key rules; no second channel | L-B PASS |
-| S5 | Core-only still injects / VM runs | L-A `empty_registry`; L-G core-only | unit PASS + smoke |
+| S5 | Core-only still injects / VM runs | L-A `empty_registry` + **L-G core profile** | unit PASS + L-G PASS |
 | S6 | Phase B possible without manifest rewrite | Host headers review: no static-only types in `IPlugin`/`PluginManifest` | checklist signed in M0 PR |
 | S7 | Phase barriers respected | L-A `phase_barrier` | PASS |
 | S8 | Profiler before HideGlobalJIT | L-A `profiler_before_hide` + §7.3 priorities | PASS |
@@ -665,19 +769,26 @@ Architecture work is **done** only when:
 | S10 | Feature regressions preserved | L-D ctest | green |
 | S11 | Fail-fast is structured | L-A asserts `PluginStatus`/`PluginFailReason` | not log-scrape-only |
 | S12 | Sticky unload default | L-A `sticky_no_unload` / `reload_unload` | PASS |
+| **S13** | **Dedicated: modules load successfully and sim stays stable paused** | **L-G** steps 3–8 (`LG_MOD_LOADED` … `LG_STABLE`) | harness exit 0; hold ≥ T_hold |
 
-**S1–S12 are the acceptance bar.** Goals in §3 without a row here are non-blocking preferences.
+**S1–S13 are the acceptance bar.** Goals in §3 without a row here are non-blocking preferences.
 
 ---
 
-## 14. Open follow-ups (explicitly deferred)
+## 14. Open follow-ups
+
+### Next step (scheduled, not vague)
+
+- **M-G implement L-G harness** (`tests/plugin_server/run_dedicated_sim_pause.py` + cluster fixture + ctest). Depends on: game binary path, inject install path, pause API pin. Does **not** depend on finishing all plugin migrations.
+
+### Later
 
 - Dynamic plugin DLLs/SOs (Phase B).
 - Hot reload UX / console commands for `support_reload` plugins.
 - Splitting `GameLuaModule.cpp` god-export after A2 aliases.
 - Whether `compat.frostxx` folds into `jit.tailcall`.
 - CMake per-plugin object libraries after M5.
-- Automating L-G (not required for Phase A DoD).
+- L-G extended profiles (`save.fork`, multi-shard Caves) and optional client-bot smoke.
 
 ---
 
@@ -692,6 +803,9 @@ Architecture work is **done** only when:
 | GameInjector export | `GameLuaModule.cpp` `luaopen_GameInjector` |
 | Build target | `src/DontStarveInjector/CMakeLists.txt` single `Injector` SHARED |
 | Test style refs | `tests/test_buffer_name_pool.cpp`, `tests/fork_save/`, `tests/CMakeLists.txt` |
+| Dedicated process harness ref | `tests/stress_test_mod/run_stress_test.py` (`DSTServer`) |
+| Server cluster fixture ref | `config/server/DoNotStarveTogether/` |
+| Linux inject preload ref | `docker/start-docker-server.sh`, `Mod/install_linux.sh` |
 
 ---
 
@@ -699,10 +813,10 @@ Architecture work is **done** only when:
 
 | Check | Result |
 |---|---|
-| Placeholders | Phase B deferred with boundary; Phase A contracts concrete |
-| Consistency | D1–D7 match body; fail-fast = no silent plugin degradation |
-| Scope | Single architecture spec; multi-PR via §10 with **test gates** |
-| Ambiguity | String option “on” via explicit predicates — §6.1 + L-B |
-| Locked decisions | Path A, fail-fast, L0 vm/force-mod, sticky unload, tests-required |
-| Testability | §12 normative cases + §13 S1–S12 mapped to proof |
-| Success without tests? | **Rejected** (D7 + §12.12) |
+| Placeholders | Phase B deferred; L-G **contract complete**, implementation = M-G next step |
+| Consistency | D1–D8 match body; fail-fast = no silent plugin degradation |
+| Scope | Architecture + test gates; multi-PR via §10 including M-G |
+| Ambiguity | String option “on” via predicates; pause API pinned in harness README on first green |
+| Locked decisions | Path A, fail-fast, L0 vm/force-mod, sticky unload, tests-required, **automated dedicated L-G** |
+| Testability | §12 L-A..L-G + §13 S1–S13 |
+| Final game proof manual-only? | **Rejected** (D8, S13, §12.10) |
