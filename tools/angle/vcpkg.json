@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "dontstarve-angle",
+  "version-string": "chromium_7258",
+  "dependencies": [
+    {
+      "name": "angle",
+      "platform": "windows",
+      "features": [
+        "vulkan"
+      ]
+    }
+  ]
+}

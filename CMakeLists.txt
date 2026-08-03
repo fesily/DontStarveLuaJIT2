@@ -217,6 +217,39 @@ function(download_frida_gum version)
         message(STATUS "Frida-Gum downloaded successfully.")
     endif ()
 endfunction()
+
+function(setup_angle)
+    if (NOT WIN32)
+        return()
+    endif ()
+    message(STATUS "Setting up prebuilt ANGLE...")
+    set(_angle_setup_args "")
+    if ((DEFINED ENV{GITHUB_ACTIONS} AND NOT "$ENV{GITHUB_ACTIONS}" STREQUAL "")
+            OR (DEFINED ENV{CI} AND NOT "$ENV{CI}" STREQUAL ""))
+        list(APPEND _angle_setup_args "--release-only")
+    endif ()
+    execute_process(
+            COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/setup_angle.py" ${_angle_setup_args}
+            RESULT_VARIABLE angle_setup_result
+            OUTPUT_VARIABLE angle_setup_stdout
+            ERROR_VARIABLE angle_setup_stderr
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    if (angle_setup_stdout)
+        message("${angle_setup_stdout}")
+    endif ()
+    if (angle_setup_stderr)
+        message(STATUS "${angle_setup_stderr}")
+    endif ()
+    if (NOT angle_setup_result EQUAL 0)
+        message(FATAL_ERROR
+                "Failed to set up ANGLE. Run: ${PYTHON_EXECUTABLE_NAME} tools/setup_angle.py\n"
+                "Or stage from an existing install with --from-prefix.")
+    else ()
+        message(STATUS "ANGLE setup completed.")
+    endif ()
+endfunction()
+setup_angle()
 download_frida_gum(${FRIDA_GUM_VERSION})
 
 

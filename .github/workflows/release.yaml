@@ -31,12 +31,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Restore ANGLE cache
+        if: ${{ matrix.target == 'windows' }}
+        id: angle-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ github.workspace }}/3rd/angle
+            ${{ github.workspace }}/.angle-bincache
+          key: ${{ runner.os }}-angle-${{ hashFiles('tools/angle/**', 'cmake/ports/angle/**', 'cmake/custom-triplets/**', 'tools/setup_angle.py') }}
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/.vcpkg-bincache
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'CMakeLists.txt', 'cmake/custom-triplets/**', 'cmake/ports/**') }}
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'CMakeLists.txt', 'cmake/custom-triplets/**') }}
       - name: Initialize MSVC developer environment
         if: ${{ matrix.target == 'windows' }}
         uses: ilammy/msvc-dev-cmd@v1
@@ -54,12 +63,29 @@ jobs:
         with:
           vcpkgJsonGlob: 'vcpkg.json'
 
+      - name: Setup ANGLE (Windows)
+        if: ${{ matrix.target == 'windows' }}
+        env:
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.angle-bincache
+          VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.angle-bincache,readwrite
+        run: |
+          python tools/setup_angle.py --release-only --vcpkg "${{ github.workspace }}/vcpkg/vcpkg.exe"
+
       - name: Configure CMake and populate vcpkg binary cache
         uses: lukka/run-cmake@v10
         with:
           configurePreset: 'ninja-multi-vcpkg'
           configurePresetAdditionalArgs: "['-DCMAKE_OSX_ARCHITECTURES=x86_64']"
 
+
+      - name: Save ANGLE cache
+        if: ${{ always() && matrix.target == 'windows' && steps.angle-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ github.workspace }}/3rd/angle
+            ${{ github.workspace }}/.angle-bincache
+          key: ${{ steps.angle-cache.outputs.cache-primary-key }}
       - name: Save vcpkg binary cache
         if: ${{ always() && steps.vcpkg-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4

@@ -66,7 +66,7 @@ find_path(SOL2_INCLUDE_DIRS "sol/abort.hpp")
 find_path(PLF_HIVE_INCLUDE_DIRS "plf_hive.h")
 
 if (WIN32)
-    find_package(unofficial-angle REQUIRED CONFIG)
+    find_package(unofficial-angle REQUIRED MODULE)
 endif()
 
 set(CMAKE_SKIP_BUILD_RPATH  FALSE)
