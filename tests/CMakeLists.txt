@@ -40,6 +40,28 @@ target_include_directories(test_buffer_name_pool PRIVATE
 target_compile_features(test_buffer_name_pool PRIVATE cxx_std_17)
 add_test(NAME BufferNamePool COMMAND test_buffer_name_pool)
 
+# --- PluginHost pure-logic unit tests (M0) ---
+set(PLUGIN_HOST_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginHost.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginOptionRules.cpp
+)
+
+add_executable(test_plugin_host_graph
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_host_graph.cpp
+    ${PLUGIN_HOST_SOURCES})
+target_include_directories(test_plugin_host_graph PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_plugin_host_graph PRIVATE cxx_std_23)
+add_test(NAME plugin_host_graph COMMAND test_plugin_host_graph)
+
+add_executable(test_plugin_option_rules
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_option_rules.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginOptionRules.cpp)
+target_include_directories(test_plugin_option_rules PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_plugin_option_rules PRIVATE cxx_std_23)
+add_test(NAME plugin_option_rules COMMAND test_plugin_option_rules)
+
 # --- LuaJIT variant registry characterization test ---
 # Asserts that the generated variant contract file describes the registered
 # LuaJIT variants and their target/output/executable names. The contract file
