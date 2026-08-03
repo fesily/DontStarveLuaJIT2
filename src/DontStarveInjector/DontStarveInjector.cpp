@@ -16,6 +16,10 @@
 #include "GameSteam.hpp"
 #include "GameNetwork.hpp"
 #include "GameRenderHook.hpp"
+#include "core/PluginHost.hpp"
+#include "core/PluginConfigBridge.hpp"
+#include "core/RegisterBuiltinPlugins.hpp"
+
 #include <spdlog/spdlog.h>
 
 #ifdef _WIN32
@@ -302,6 +306,27 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     replace_game_branch_flag_to_dev(mainPath);
 
     LoadGameModConfig();
+
+    // Path A PluginHost: register builtins, resolve from GameJitModConfig, EarlyNative.
+    // Registry is empty until feature plugins migrate (M1+); dual-call with legacy
+    // GameNetWorkHookRpc4 / LoadGameModConfig side effects is intentional until M2/M3.
+    {
+        using namespace ds::plugin;
+        static PluginHost g_plugin_host;
+        RegisterBuiltinPlugins(g_plugin_host);
+
+        ConfigView plugin_cfg;
+        if (auto modcfg = GameJitModConfig::instance()) {
+            plugin_cfg = FromGameJitModConfig(*modcfg);
+        }
+        PluginContext gate_ctx;
+        gate_ctx.injector = InjectorCtx::instance();
+        gate_ctx.is_client = isClient;
+        gate_ctx.config = &plugin_cfg;
+        (void) g_plugin_host.resolve(plugin_cfg, gate_ctx);
+        (void) g_plugin_host.load_phase(PluginPhase::EarlyNative);
+    }
+
     GameNetWorkHookRpc4();
     DisableScriptZip();
 }

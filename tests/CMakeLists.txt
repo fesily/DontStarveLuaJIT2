@@ -62,6 +62,21 @@ target_include_directories(test_plugin_option_rules PRIVATE
 target_compile_features(test_plugin_option_rules PRIVATE cxx_std_23)
 add_test(NAME plugin_option_rules COMMAND test_plugin_option_rules)
 
+set(PLUGIN_CONFIG_BRIDGE_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginConfigBridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/RegisterBuiltinPlugins.cpp
+)
+
+add_executable(test_plugin_config_bridge
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_config_bridge.cpp
+    ${PLUGIN_HOST_SOURCES}
+    ${PLUGIN_CONFIG_BRIDGE_SOURCES})
+target_include_directories(test_plugin_config_bridge PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_plugin_config_bridge PRIVATE cxx_std_23)
+add_test(NAME plugin_config_bridge COMMAND test_plugin_config_bridge)
+
+
 add_test(NAME plugin_dedicated_sim_pause
     COMMAND ${CMAKE_COMMAND} -E env
         REPO_ROOT=${CMAKE_SOURCE_DIR}

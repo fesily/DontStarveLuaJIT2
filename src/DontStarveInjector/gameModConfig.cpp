@@ -747,6 +747,9 @@ std::optional<GameJitModConfig> GameJitModConfig::instance() {
 
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable);
 
+// EarlyNative feature side effects (VBPool / OpenGL-ANGLE) remain here until M3 migrates
+// them into render.vbpool / render.angle plugins. Config resolution is L0; Host is wired
+// in Inject() with an empty registry so behavior is unchanged for M1 Task 1.
 extern "C" void LoadGameModConfig() {
 #ifdef _WIN32
     auto config = GameJitModConfig::instance();

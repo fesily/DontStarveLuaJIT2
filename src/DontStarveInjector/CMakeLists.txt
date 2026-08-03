@@ -29,7 +29,12 @@ set(SOURCES
         config.cpp
         GameLuaInjectFramework.c
         lua_debugger_helper.cpp
+        core/PluginHost.cpp
+        core/PluginOptionRules.cpp
+        core/RegisterBuiltinPlugins.cpp
+        core/PluginConfigBridge.cpp
 )
+
 
 if (ENABLE_STEAM_SUPPORT)
     list(APPEND SOURCES ${DONTSTARVEINJECTOR_UTIL_DIR}/steam.cpp)
