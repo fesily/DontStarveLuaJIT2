@@ -1,7 +1,7 @@
 # Client Host Smoke Design — DontStarveLuaJIT2
 
 **Date:** 2026-08-03  
-**Status:** Draft for review  
+**Status:** Implemented (H-1..H-3 green; H-4 empty-slot not needed)  
 **Scope:** Add a **client-host** automated path: single `dontstarve_steam_x64` process hosts an offline world in-process (no separate dedicated). Complements existing P1b (dedicated + LAN client).
 
 Related:
