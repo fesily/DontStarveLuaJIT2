@@ -69,6 +69,7 @@ jobs:
           VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.angle-bincache
           VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.angle-bincache,readwrite
         run: |
+          mkdir -Force "${{ github.workspace }}/.angle-bincache" | Out-Null
           python tools/setup_angle.py --release-only --vcpkg "${{ github.workspace }}/vcpkg/vcpkg.exe"
 
       - name: Configure CMake and populate vcpkg binary cache

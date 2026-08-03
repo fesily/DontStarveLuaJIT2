@@ -208,6 +208,15 @@ def stage_from_install(install_prefix: Path, stage_dir: Path, release_only: bool
         copy_file(vulkan_dll, stage_dir / "bin" / "vulkan-1.dll")
 
 
+def ensure_binary_cache_dir(env: dict[str, str]) -> None:
+    """vcpkg requires VCPKG_DEFAULT_BINARY_CACHE to already be a directory."""
+    cache = env.get("VCPKG_DEFAULT_BINARY_CACHE")
+    if not cache:
+        return
+    path = Path(cache)
+    path.mkdir(parents=True, exist_ok=True)
+
+
 def build_with_vcpkg(vcpkg: Path, triplet: str, release_only: bool) -> Path:
     env = os.environ.copy()
     env["VCPKG_OVERLAY_TRIPLETS"] = str(TRIPLET_DIR)
@@ -215,7 +224,7 @@ def build_with_vcpkg(vcpkg: Path, triplet: str, release_only: bool) -> Path:
     if release_only:
         # Force the custom triplet's release-only path and avoid debug builds.
         env.setdefault("CI", "1")
-
+    ensure_binary_cache_dir(env)
     cmd = [
         str(vcpkg),
         "install",
