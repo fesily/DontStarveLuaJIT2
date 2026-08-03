@@ -573,7 +573,16 @@ local function main()
 				if type(chunk) ~= "function" then
 					error(string.format("expected function chunk for %s, got %s", path, type(chunk)), 2)
 				end
-				setfenv(chunk, main_fenv)
+				-- main_fenv is often a proxy (MODROOT only via __index). Give plugin chunks
+				-- a thin env with raw MODROOT/kleiloadlua so rawget and loaders work.
+				local plugin_env = setmetatable({
+					MODROOT = MODROOT,
+					kleiloadlua = kleiloadlua,
+					modimport = modimport,
+					GetModConfigData = GetModConfigData,
+					print = print,
+				}, { __index = main_fenv, __newindex = main_fenv })
+				setfenv(chunk, plugin_env)
 				return chunk()
 			end
 			local PluginHost = run_mod_chunk("plugins/host.lua")
