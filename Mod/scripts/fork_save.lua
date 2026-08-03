@@ -178,6 +178,9 @@ _G.SaveGame = function(isshutdown, callback, ...)
     end
 end
 
-_G.TheWorld:DoPeriodicTask(10, function()
-    fork_save_cleanup()
-end)
+-- TheWorld obj maybe is nil when create world map
+if _G.TheWorld then
+    _G.TheWorld:DoPeriodicTask(10, function()
+        fork_save_cleanup()
+    end)
+end
