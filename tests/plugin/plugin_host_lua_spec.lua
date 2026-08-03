@@ -387,15 +387,27 @@ local function test_config_function_getmodconfigdata()
     print("PASS: config_function_getmodconfigdata")
 end
 
+local function plugin_by_id(list, id)
+    for i = 1, #list do
+        if list[i].id == id then
+            return list[i]
+        end
+    end
+    return nil
+end
+
 local function test_save_fork_enable_matrix()
     -- L-E: save.fork EnableForkSave true/false (+ when gate).
     package.loaded["plugins.init"] = nil
     package.loaded["plugins.save_fork"] = nil
+    package.loaded["plugins.sim_lagcomp"] = nil
+    package.loaded["plugins.network_sim"] = nil
     local list = require("plugins.init")
     assert_eq(type(list), "table", "init returns table")
-    assert_eq(#list, 1, "init has save.fork")
-    assert_eq(list[1].id, "save.fork", "save.fork id")
-    assert_eq(list[1].priority, 60, "save.fork priority")
+    assert_true(#list >= 1, "init has plugins")
+    local save_fork = plugin_by_id(list, "save.fork")
+    assert_true(save_fork ~= nil, "save.fork registered")
+    assert_eq(save_fork.priority, 60, "save.fork priority")
 
     -- Stub production load side effects (AddGamePostInit + modimport).
     local postinits = {}
@@ -475,6 +487,187 @@ local function test_save_fork_enable_matrix()
     print("PASS: save_fork_enable_matrix")
 end
 
+local function test_sim_lagcomp_enable_matrix()
+    -- L-E: sim.lagcomp EnableLagCompensation true/false (+ when gates).
+    package.loaded["plugins.init"] = nil
+    package.loaded["plugins.save_fork"] = nil
+    package.loaded["plugins.sim_lagcomp"] = nil
+    package.loaded["plugins.network_sim"] = nil
+    local list = require("plugins.init")
+    local plugin = plugin_by_id(list, "sim.lagcomp")
+    assert_true(plugin ~= nil, "sim.lagcomp registered")
+    assert_eq(plugin.priority, 60, "sim.lagcomp priority")
+    assert_eq(plugin.options.all_of[1], "EnableLagCompensation", "sim.lagcomp option")
+
+    local modimports = {}
+    local prev_modimport = rawget(_G, "modimport")
+    rawset(_G, "modimport", function(path)
+        modimports[#modimports + 1] = path
+    end)
+
+    local ok, err = pcall(function()
+        -- Row: option on + has_luajit + windows + mastersim → Loaded
+        modimports = {}
+        local host_on = PluginHost.new()
+        host_on:register_all(list)
+        host_on:resolve(
+            { EnableLagCompensation = true },
+            { has_luajit = true, is_windows = true, is_mastersim = true }
+        )
+        local lr_on = host_on:load_phase(PHASE.AfterModMain)
+        assert_true(lr_on.ok, "sim.lagcomp on load ok")
+        assert_eq(host_on:status("sim.lagcomp"), STATUS.Loaded, "sim.lagcomp on Loaded")
+        assert_eq(pos(lr_on.loaded_order, "sim.lagcomp") ~= nil and 1 or 0, 1, "sim.lagcomp in order")
+        local e_on = host_on:find("sim.lagcomp")
+        assert_eq(e_on.load_count, 1, "sim.lagcomp load_count on")
+        assert_eq(#modimports, 1, "sim.lagcomp modimport once")
+        assert_eq(modimports[1], "scripts/lag_compensation", "sim.lagcomp modimport path")
+
+        -- Row: option off → Disabled
+        modimports = {}
+        local host_off = PluginHost.new()
+        host_off:register_all(list)
+        host_off:resolve(
+            { EnableLagCompensation = false },
+            { has_luajit = true, is_windows = true, is_mastersim = true }
+        )
+        local lr_off = host_off:load_phase(PHASE.AfterModMain)
+        assert_true(lr_off.ok, "sim.lagcomp off resolve ok")
+        assert_eq(host_off:status("sim.lagcomp"), STATUS.Disabled, "sim.lagcomp off Disabled")
+        assert_eq(pos(lr_off.loaded_order, "sim.lagcomp"), nil, "sim.lagcomp not loaded when off")
+        local e_off = host_off:find("sim.lagcomp")
+        assert_eq(e_off.load_count or 0, 0, "sim.lagcomp load_count off")
+        assert_eq(#modimports, 0, "no modimport when off")
+
+        -- when gate: not mastersim
+        local host_client = PluginHost.new()
+        host_client:register_all(list)
+        host_client:resolve(
+            { EnableLagCompensation = true },
+            { has_luajit = true, is_windows = true, is_mastersim = false }
+        )
+        host_client:load_phase(PHASE.AfterModMain)
+        assert_eq(host_client:status("sim.lagcomp"), STATUS.Disabled, "sim.lagcomp disabled when not mastersim")
+
+        -- when gate: non-windows
+        local host_nowin = PluginHost.new()
+        host_nowin:register_all(list)
+        host_nowin:resolve(
+            { EnableLagCompensation = true },
+            { has_luajit = true, is_windows = false, is_mastersim = true }
+        )
+        host_nowin:load_phase(PHASE.AfterModMain)
+        assert_eq(host_nowin:status("sim.lagcomp"), STATUS.Disabled, "sim.lagcomp disabled without windows")
+
+        -- when gate: no luajit
+        local host_nojit = PluginHost.new()
+        host_nojit:register_all(list)
+        host_nojit:resolve(
+            { EnableLagCompensation = true },
+            { has_luajit = false, is_windows = true, is_mastersim = true }
+        )
+        host_nojit:load_phase(PHASE.AfterModMain)
+        assert_eq(host_nojit:status("sim.lagcomp"), STATUS.Disabled, "sim.lagcomp disabled without luajit")
+    end)
+
+    rawset(_G, "modimport", prev_modimport)
+    if not ok then
+        error(err, 0)
+    end
+    print("PASS: sim_lagcomp_enable_matrix")
+end
+
+local function test_network_sim_enable_matrix()
+    -- L-E: network.sim EnableNetSim true/false (+ when gates).
+    package.loaded["plugins.init"] = nil
+    package.loaded["plugins.save_fork"] = nil
+    package.loaded["plugins.sim_lagcomp"] = nil
+    package.loaded["plugins.network_sim"] = nil
+    local list = require("plugins.init")
+    local plugin = plugin_by_id(list, "network.sim")
+    assert_true(plugin ~= nil, "network.sim registered")
+    assert_eq(plugin.priority, 60, "network.sim priority")
+    assert_eq(plugin.options.all_of[1], "EnableNetSim", "network.sim option")
+
+    local modimports = {}
+    local prev_modimport = rawget(_G, "modimport")
+    rawset(_G, "modimport", function(path)
+        modimports[#modimports + 1] = path
+    end)
+
+    local ok, err = pcall(function()
+        -- Row: option on + has_luajit + windows + not mastersim → Loaded
+        modimports = {}
+        local host_on = PluginHost.new()
+        host_on:register_all(list)
+        host_on:resolve(
+            { EnableNetSim = true },
+            { has_luajit = true, is_windows = true, is_mastersim = false }
+        )
+        local lr_on = host_on:load_phase(PHASE.AfterModMain)
+        assert_true(lr_on.ok, "network.sim on load ok")
+        assert_eq(host_on:status("network.sim"), STATUS.Loaded, "network.sim on Loaded")
+        assert_eq(pos(lr_on.loaded_order, "network.sim") ~= nil and 1 or 0, 1, "network.sim in order")
+        local e_on = host_on:find("network.sim")
+        assert_eq(e_on.load_count, 1, "network.sim load_count on")
+        assert_eq(#modimports, 1, "network.sim modimport once")
+        assert_eq(modimports[1], "scripts/netsim", "network.sim modimport path")
+
+        -- Row: option off → Disabled
+        modimports = {}
+        local host_off = PluginHost.new()
+        host_off:register_all(list)
+        host_off:resolve(
+            { EnableNetSim = false },
+            { has_luajit = true, is_windows = true, is_mastersim = false }
+        )
+        local lr_off = host_off:load_phase(PHASE.AfterModMain)
+        assert_true(lr_off.ok, "network.sim off resolve ok")
+        assert_eq(host_off:status("network.sim"), STATUS.Disabled, "network.sim off Disabled")
+        assert_eq(pos(lr_off.loaded_order, "network.sim"), nil, "network.sim not loaded when off")
+        local e_off = host_off:find("network.sim")
+        assert_eq(e_off.load_count or 0, 0, "network.sim load_count off")
+        assert_eq(#modimports, 0, "no modimport when off")
+
+        -- when gate: mastersim (server) disables even if option on
+        local host_master = PluginHost.new()
+        host_master:register_all(list)
+        host_master:resolve(
+            { EnableNetSim = true },
+            { has_luajit = true, is_windows = true, is_mastersim = true }
+        )
+        host_master:load_phase(PHASE.AfterModMain)
+        assert_eq(host_master:status("network.sim"), STATUS.Disabled, "network.sim disabled on mastersim")
+
+        -- when gate: non-windows
+        local host_nowin = PluginHost.new()
+        host_nowin:register_all(list)
+        host_nowin:resolve(
+            { EnableNetSim = true },
+            { has_luajit = true, is_windows = false, is_mastersim = false }
+        )
+        host_nowin:load_phase(PHASE.AfterModMain)
+        assert_eq(host_nowin:status("network.sim"), STATUS.Disabled, "network.sim disabled without windows")
+
+        -- when gate: no luajit
+        local host_nojit = PluginHost.new()
+        host_nojit:register_all(list)
+        host_nojit:resolve(
+            { EnableNetSim = true },
+            { has_luajit = false, is_windows = true, is_mastersim = false }
+        )
+        host_nojit:load_phase(PHASE.AfterModMain)
+        assert_eq(host_nojit:status("network.sim"), STATUS.Disabled, "network.sim disabled without luajit")
+    end)
+
+    rawset(_G, "modimport", prev_modimport)
+    if not ok then
+        error(err, 0)
+    end
+    print("PASS: network_sim_enable_matrix")
+end
+
+
 
 local function test_option_rules_unit()
     local eval = PluginHost.evaluate_option_rule
@@ -512,6 +705,8 @@ test_when_false()
 test_sticky_and_reload()
 test_config_function_getmodconfigdata()
 test_save_fork_enable_matrix()
+test_sim_lagcomp_enable_matrix()
+test_network_sim_enable_matrix()
 test_option_rules_unit()
 
 print("plugin_host_lua_spec: all tests passed")

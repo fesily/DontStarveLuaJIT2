@@ -1112,6 +1112,10 @@ local function main()
 				injector = GameInjector,
 				has_luajit = hasluajit,
 				is_client = not TheNet:IsDedicated(),
+				is_windows = os_is_windows,
+				-- nil when TheWorld is not ready yet; plugins fall back to TheWorld.
+				-- Keep boolean false (client shard) distinct from nil (world not ready).
+				is_mastersim = TheWorld and TheWorld.ismastersim,
 			}
 			host:resolve(config_lookup, gate_ctx)
 			local lr = host:load_phase(PluginHost.Phase.AfterModMain)
@@ -1200,16 +1204,6 @@ local function main()
 		end
 
 		modimport("inject_server_only_mod")
-		if hasluajit and os_is_windows and TheWorld and TheWorld.ismastersim then
-			if GetModConfigData("EnableLagCompensation") then
-				modimport("scripts/lag_compensation")
-			end
-		end
-		if hasluajit and os_is_windows and TheWorld and not TheWorld.ismastersim then
-			if GetModConfigData("EnableNetSim") then
-				modimport("scripts/netsim")
-			end
-		end
 
 		-- Hide global jit after our own jit.* requires finish.
 		-- Only inject env.jit for luajit_compatible mods via InitializeModMain hook.

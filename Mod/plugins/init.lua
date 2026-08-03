@@ -18,4 +18,6 @@ end
 
 return {
     load_plugin("save_fork"),
+    load_plugin("sim_lagcomp"),
+    load_plugin("network_sim"),
 }
