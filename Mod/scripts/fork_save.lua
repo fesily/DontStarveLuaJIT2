@@ -22,12 +22,13 @@ local PARENT_POLL_TIMEOUT = 30
 -- TheNet APIs that mutate shared snapshot disk/state. Child must not run them:
 -- SerializeWorldSession already writes the current snapshot file; Truncate/Increment
 -- belong only to the live parent after the child exits (see SnapshotManager in engine).
+-- TheNet is userdata, so we cannot assign methods on it; install a proxy table instead.
 local CHILD_NET_NOOPS = {
-    "TruncateSnapshots",
-    "TruncateSnapshotsInClusterSlot",
-    "IncrementSnapshot",
-    "SetCurrentSnapshot",
-    "EndWorldSave",
+    TruncateSnapshots = true,
+    TruncateSnapshotsInClusterSlot = true,
+    IncrementSnapshot = true,
+    SetCurrentSnapshot = true,
+    EndWorldSave = true,
 }
 
 local function run_default_save(isshutdown, callback, ...)
@@ -35,20 +36,28 @@ local function run_default_save(isshutdown, callback, ...)
 end
 
 local function with_child_net_noops(fn)
-    local TheNet = _G.TheNet
-    local saved = {}
-    for _, name in ipairs(CHILD_NET_NOOPS) do
-        saved[name] = TheNet[name]
-        TheNet[name] = function()
-            -- intentionally no-op in forked save child
-        end
-    end
+    local real_net = _G.TheNet
+    local proxy = {}
+    setmetatable(proxy, {
+        __index = function(_, key)
+            if CHILD_NET_NOOPS[key] then
+                return function()
+                    -- intentionally no-op in forked save child
+                end
+            end
+            local value = real_net[key]
+            if type(value) == "function" then
+                return function(_, ...)
+                    return value(real_net, ...)
+                end
+            end
+            return value
+        end,
+    })
 
+    _G.TheNet = proxy
     local ok, err = pcall(fn)
-
-    for _, name in ipairs(CHILD_NET_NOOPS) do
-        TheNet[name] = saved[name]
-    end
+    _G.TheNet = real_net
 
     if not ok then
         error(err)
@@ -169,8 +178,6 @@ _G.SaveGame = function(isshutdown, callback, ...)
     end
 end
 
-if _G.TheWorld then
-    _G.TheWorld:DoPeriodicTask(10, function()
-        fork_save_cleanup()
-    end)
-end
+_G.TheWorld:DoPeriodicTask(10, function()
+    fork_save_cleanup()
+end)

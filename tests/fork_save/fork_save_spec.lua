@@ -79,7 +79,7 @@ local function run_case(name, fork_result, opts)
         end,
     }
 
-    _G.TheNet = {
+    local net = {
         StartWorldSave = function()
             events.start_world_save_count = events.start_world_save_count + 1
         end,
@@ -100,6 +100,13 @@ local function run_case(name, fork_result, opts)
             events.set_current_snapshot_count = events.set_current_snapshot_count + 1
         end,
     }
+    -- Mirror game TheNet userdata: method fields are not assignable.
+    _G.TheNet = setmetatable({}, {
+        __index = net,
+        __newindex = function()
+            error("attempt to index local 'TheNet' (a userdata value)", 2)
+        end,
+    })
 
     _G.ShardGameIndex = {
         GetGenOptions = function()
