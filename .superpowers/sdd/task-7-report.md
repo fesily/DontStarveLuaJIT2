@@ -2,7 +2,7 @@
 
 **Status:** DONE  
 **Date:** 2026-08-03  
-**Commit:** `c265dbe` — `feat(plugin): migrate jit/gc/profiler/fps/tailcall Lua plugins (M4 Task 7)`
+**Commit:** `48fd06a` — `feat(plugin): migrate jit/gc/profiler/fps/tailcall Lua plugins (M4 Task 7)`
 
 ## Summary
 
