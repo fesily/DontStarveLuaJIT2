@@ -2,7 +2,7 @@
 
 **Status:** DONE  
 **Date:** 2026-08-03  
-**Commit:** `aa19507` — `feat(plugin): migrate save.fork Lua face to PluginHost (M1 Task 3)`
+**Commit:** `b0ebb63` — `feat(plugin): migrate save.fork Lua face to PluginHost (M1 Task 3)`
 
 ## Summary
 
