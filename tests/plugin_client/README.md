@@ -71,7 +71,7 @@ Exit: `0` PASS, `1` FAIL, `2` SKIP (mapped to 0 for ctest unless `LG_REQUIRE_GAM
 ## Mode: host (client-hosted)
 
 Single process: steam client hosts offline world (`TheNet:StartServer` + LOAD_SLOT).
-No dedicated. No stress_test_bot.
+No dedicated. No stress_test_bot force_enable.
 
 ```bash
 set LC_T_HOLD=15
@@ -80,14 +80,28 @@ python tests/plugin_client/run_client_inject_smoke.py --mode host
 
 # with profile
 python tests/plugin_client/run_client_inject_smoke.py --mode host --profile minimal
+
+# empty-slot auto worldgen (new free local slot)
+set LC_HOST_SLOT=new
+python tests/plugin_client/run_client_inject_smoke.py --mode host
+
+# force wipe slot then worldgen (destructive)
+set LC_HOST_SLOT=1
+set LC_HOST_FORCE_EMPTY=1
+python tests/plugin_client/run_client_inject_smoke.py --mode host
 ```
 
-Tokens: existing `LG_CLIENT_*` plus `LG_CLIENT_HOST_OK` / `LG_CLIENT_HOST_FAIL`.
-Requires a usable offline save slot (default 1) unless empty-slot fallback is implemented.
+Tokens: existing `LG_CLIENT_*` plus:
+
+- `LG_CLIENT_HOST_BEGIN` / `LG_CLIENT_HOST_STARTED`
+- `LG_CLIENT_HOST_EMPTY_SLOT` when slot empty → `SetServerShardData` worldgen path
+- `LG_CLIENT_HOST_OK` / `LG_CLIENT_HOST_FAIL`
+
+`LC_HOST_SLOT`: numeric slot (default `1`), or `new`/`0` for first free local slot.
+`LC_HOST_FORCE_EMPTY=1`: delete chosen slot before host (worldgen).
+`LC_T_HOST`: host-ok wait window (default 120s). Worldgen may need higher `LC_T_WORLD`.
 
 CTest: `plugin_client_host_smoke` (`LC_MODE=host` / `--mode host`, TIMEOUT 900; SKIP without game same as sibling).
-
-Env extras: `LC_HOST_MODE=1` (set by orchestrator), `LC_HOST_SLOT` (default `1`), `LC_T_HOST` (default 120s host-ok window).
 
 
 ## Prerequisites

@@ -289,6 +289,9 @@ def start_client_host(game_dir: Path) -> LogProcess:
         "LC_HOST_SLOT": os.environ.get("LC_HOST_SLOT", "1"),
         "AppVersionDevPatch": "1",
     }
+    # Optional destructive empty-slot worldgen (probe reads these).
+    if os.environ.get("LC_HOST_FORCE_EMPTY"):
+        extra["LC_HOST_FORCE_EMPTY"] = os.environ["LC_HOST_FORCE_EMPTY"]
     return start_client(game_dir, force_mods, extra_env=extra)
 
 
