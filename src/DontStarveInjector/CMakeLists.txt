@@ -29,6 +29,7 @@ set(SOURCES
         lua_debugger_helper.cpp
         core/PluginHost.cpp
         core/PluginOptionRules.cpp
+        core/ConfigSchema.cpp
         core/RegisterBuiltinPlugins.cpp
         core/PluginConfigBridge.cpp
         core/DynamicPluginLoader.cpp

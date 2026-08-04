@@ -63,6 +63,14 @@ target_include_directories(test_plugin_option_rules PRIVATE
 target_compile_features(test_plugin_option_rules PRIVATE cxx_std_23)
 add_test(NAME plugin_option_rules COMMAND test_plugin_option_rules)
 
+add_executable(test_config_schema
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_config_schema.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ConfigSchema.cpp)
+target_include_directories(test_config_schema PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_config_schema PRIVATE cxx_std_23)
+add_test(NAME config_schema COMMAND test_config_schema)
+
 set(PLUGIN_CONFIG_BRIDGE_SOURCES
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginConfigBridge.cpp
 )
