@@ -4,6 +4,7 @@
 #include "config.hpp"
 
 #include <frida-gum.h>
+#include <cstring>
 
 DONTSTARVEINJECTOR_GAME_API GumProbeListener *DS_GUM_make_probe_listener(DsGumProbeCallback on_hit,
                                                                          void *user_data) {
@@ -12,7 +13,6 @@ DONTSTARVEINJECTOR_GAME_API GumProbeListener *DS_GUM_make_probe_listener(DsGumPr
         void *ud;
     };
     auto *node = new Node{on_hit, user_data};
-    // gum_make_probe_listener returns GumInvocationListener*; keep opaque as GumProbeListener*.
     return reinterpret_cast<GumProbeListener *>(gum_make_probe_listener(
         +[](GumInvocationContext *context, gpointer user_data) {
             auto *n = static_cast<Node *>(user_data);
@@ -32,6 +32,25 @@ DONTSTARVEINJECTOR_GAME_API int DS_GUM_interceptor_attach(GumInterceptor *interc
     return static_cast<int>(gum_interceptor_attach(
         interceptor, target_address, reinterpret_cast<GumInvocationListener *>(listener), nullptr,
         GUM_ATTACH_FLAGS_NONE));
+}
+
+DONTSTARVEINJECTOR_GAME_API int DS_GUM_interceptor_replace(GumInterceptor *interceptor,
+                                                           void *target_address,
+                                                           void *replacement,
+                                                           void **original_out) {
+    if (!interceptor || !target_address || !replacement) {
+        return -1;
+    }
+    return static_cast<int>(gum_interceptor_replace(interceptor, target_address, replacement, nullptr,
+                                                    original_out));
+}
+
+DONTSTARVEINJECTOR_GAME_API void DS_GUM_interceptor_revert(GumInterceptor *interceptor,
+                                                           void *target_address) {
+    if (!interceptor || !target_address) {
+        return;
+    }
+    gum_interceptor_revert(interceptor, target_address);
 }
 
 DONTSTARVEINJECTOR_GAME_API void DS_GUM_invocation_replace_nth_argument(GumInvocationContext *context,
@@ -59,13 +78,31 @@ DONTSTARVEINJECTOR_GAME_API int DS_GUM_memory_query_protection(const void *addr,
     return 1;
 }
 
+DONTSTARVEINJECTOR_GAME_API int DS_GUM_main_module_path(char *buf, int buf_len) {
+    if (!buf || buf_len <= 0) {
+        return 0;
+    }
+    const char *path = gum_module_get_path(gum_process_get_main_module());
+    if (!path) {
+        buf[0] = '\0';
+        return 0;
+    }
+    std::strncpy(buf, path, static_cast<size_t>(buf_len) - 1);
+    buf[buf_len - 1] = '\0';
+    return static_cast<int>(std::strlen(buf));
+}
+
 DONTSTARVEINJECTOR_GAME_API uintptr_t DS_SIG_scan(const char *pattern, int offset) {
+    return DS_SIG_scan_module(nullptr, pattern, offset);
+}
+
+DONTSTARVEINJECTOR_GAME_API uintptr_t DS_SIG_scan_module(const char *module_path,
+                                                         const char *pattern, int offset) {
     if (!pattern) {
         return 0;
     }
     function_relocation::MemorySignature sig{pattern, offset};
-    // scan(nullptr) scans main module (existing GameNetwork usage).
-    return sig.scan(static_cast<const char *>(nullptr));
+    return sig.scan(module_path);
 }
 
 DONTSTARVEINJECTOR_GAME_API uintptr_t DS_DISASM_read_operand_rip_mem(const void *addr, size_t max_len,

@@ -1,10 +1,7 @@
 #include "GameRenderHook.hpp"
 #include "BufferNamePool.hpp"
-#include "ctx.hpp"
-
 #include "config.hpp"
-#include "MemorySignature.hpp"
-#include <frida-gum.h>
+#include "gum_bridge.hpp"
 #include <spdlog/spdlog.h>
 
 #include <cstdint>
@@ -51,46 +48,32 @@ static_assert(offsetof(HWBuffer, usageType)  == 0x14);
 using BatcherFlush_t = void (*)(void* batcher);
 
 // Signature definitions — byte patterns from Ghidra/IDA.
+// Scanned via DS_SIG_scan_module (Injector gum_bridge; no local Frida).
 namespace render_signatures {
 
-// HWBuffer::Init(this, const void* data)
-// macOS x86: 0x001c6338 | Windows x64: 0x1403e69f0
-// Unique: confirmed 1 match in target binary
-inline function_relocation::MemorySignature HWBufferInit_sig{
 #ifdef _WIN32
-    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 54 48 83 EC 20 4C 8B E2 48 8D 51 10 48 8B E9 B9 01 00 00 00", 0
-#elif defined(__linux__)
-    "TODO_FILL_LINUX_PATTERN", 0
-#elif defined(__APPLE__)
-    "TODO_FILL_MACOS_PATTERN", 0
+inline constexpr const char *kHWBufferInit =
+    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 54 48 83 EC 20 4C 8B E2 48 8D 51 10 48 8B E9 B9 01 00 00 00";
+inline constexpr int kHWBufferInitOff = 0;
+inline constexpr const char *kHWBufferDtor =
+    "40 53 48 83 EC 20 48 8D 05 ?? ?? ?? ?? 48 8D 51 10 48 8B D9 48 89 01 B9 01 00 00 00";
+inline constexpr int kHWBufferDtorOff = 0;
+inline constexpr const char *kBatcherFlush =
+    "4C 8B DC 49 89 6B 18 57 48 83 EC 70 48 8B 51 78 48 BD AB AA AA AA AA AA AA 2A";
+inline constexpr int kBatcherFlushOff = 0;
+#else
+inline constexpr const char *kHWBufferInit = "TODO_FILL";
+inline constexpr int kHWBufferInitOff = 0;
+inline constexpr const char *kHWBufferDtor = "TODO_FILL";
+inline constexpr int kHWBufferDtorOff = 0;
+inline constexpr const char *kBatcherFlush = "TODO_FILL";
+inline constexpr int kBatcherFlushOff = 0;
 #endif
-};
 
-// HWBuffer::~HWBuffer() non-deleting dtor
-// macOS x86: vtable 00457758 slot[0] = 001c62bc | Windows x64: 0x1403e68e0
-// Unique: confirmed 1 match in target binary
-// Strategy: zero glBufferID before calling original → glDeleteBuffers(1, &0) is a no-op in OpenGL
-inline function_relocation::MemorySignature HWBufferDtor_sig{
-#ifdef _WIN32
-    "40 53 48 83 EC 20 48 8D 05 ?? ?? ?? ?? 48 8D 51 10 48 8B D9 48 89 01 B9 01 00 00 00", 0
-#elif defined(__linux__)
-    "TODO_FILL_LINUX_PATTERN", 0
-#elif defined(__APPLE__)
-    "TODO_FILL_MACOS_PATTERN", 0
-#endif
-};
-
-// Batcher::Flush(this)
-// macOS: 0x100167c6c | Windows: 0x140036360
-inline function_relocation::MemorySignature BatcherFlush_sig{
-#ifdef _WIN32
-    "4C 8B DC 49 89 6B 18 57 48 83 EC 70 48 8B 51 78 48 BD AB AA AA AA AA AA AA 2A", 0
-#elif defined(__linux__)
-    "TODO_FILL_LINUX_PATTERN", 0
-#elif defined(__APPLE__)
-    "TODO_FILL_MACOS_PATTERN", 0
-#endif
-};
+// Filled by installPoolHooks / set_vbpool_enabled.
+inline uintptr_t HWBufferInit_addr = 0;
+inline uintptr_t HWBufferDtor_addr = 0;
+inline uintptr_t BatcherFlush_addr = 0;
 
 } // namespace render_signatures
 
@@ -272,41 +255,45 @@ static bool g_hooksInstalled = false;
 static bool installPoolHooks() {
     using namespace render_signatures;
 
-    auto mainPath    = gum_module_get_path(gum_process_get_main_module());
+    char mainPath[1024]{};
+    if (DS_GUM_main_module_path(mainPath, sizeof(mainPath)) <= 0) {
+        spdlog::warn("[RenderHook] main module path unavailable");
+        return false;
+    }
     auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
 
     bool initOk = false;
     bool dtorOk = false;
 
-    if (HWBufferInit_sig.scan(mainPath)) {
-        auto r = gum_interceptor_replace(
+    HWBufferInit_addr = DS_SIG_scan_module(mainPath, kHWBufferInit, kHWBufferInitOff);
+    if (HWBufferInit_addr) {
+        auto r = DS_GUM_interceptor_replace(
             interceptor,
-            reinterpret_cast<void*>(HWBufferInit_sig.target_address),
-            reinterpret_cast<void*>(static_cast<void (*)(void*, const void*)>(&hooked_HWBufferInit)),
-            nullptr,
-            reinterpret_cast<void**>(&original_HWBufferInit));
-        if (r == GUM_REPLACE_OK) {
-            spdlog::info("[RenderHook] hooked HWBuffer::Init at {:#x}", HWBufferInit_sig.target_address);
+            reinterpret_cast<void *>(HWBufferInit_addr),
+            reinterpret_cast<void *>(static_cast<void (*)(void *, const void *)>(&hooked_HWBufferInit)),
+            reinterpret_cast<void **>(&original_HWBufferInit));
+        if (r == 0) {
+            spdlog::info("[RenderHook] hooked HWBuffer::Init at {:#x}", HWBufferInit_addr);
             initOk = true;
         } else {
-            spdlog::error("[RenderHook] failed to hook HWBuffer::Init: {}", static_cast<int>(r));
+            spdlog::error("[RenderHook] failed to hook HWBuffer::Init: {}", r);
         }
     } else {
         spdlog::warn("[RenderHook] HWBuffer::Init signature not found");
     }
 
-    if (HWBufferDtor_sig.scan(mainPath)) {
-        auto r = gum_interceptor_replace(
+    HWBufferDtor_addr = DS_SIG_scan_module(mainPath, kHWBufferDtor, kHWBufferDtorOff);
+    if (HWBufferDtor_addr) {
+        auto r = DS_GUM_interceptor_replace(
             interceptor,
-            reinterpret_cast<void*>(HWBufferDtor_sig.target_address),
-            reinterpret_cast<void*>(static_cast<void (*)(void*)>(&hooked_HWBufferDtor)),
-            nullptr,
-            reinterpret_cast<void**>(&original_HWBufferDtor));
-        if (r == GUM_REPLACE_OK) {
-            spdlog::info("[RenderHook] hooked HWBuffer::~HWBuffer at {:#x}", HWBufferDtor_sig.target_address);
+            reinterpret_cast<void *>(HWBufferDtor_addr),
+            reinterpret_cast<void *>(static_cast<void (*)(void *)>(&hooked_HWBufferDtor)),
+            reinterpret_cast<void **>(&original_HWBufferDtor));
+        if (r == 0) {
+            spdlog::info("[RenderHook] hooked HWBuffer::~HWBuffer at {:#x}", HWBufferDtor_addr);
             dtorOk = true;
         } else {
-            spdlog::error("[RenderHook] failed to hook HWBuffer::~HWBuffer: {}", static_cast<int>(r));
+            spdlog::error("[RenderHook] failed to hook HWBuffer::~HWBuffer: {}", r);
         }
     } else {
         spdlog::warn("[RenderHook] HWBuffer::~HWBuffer signature not found");
@@ -314,11 +301,14 @@ static bool installPoolHooks() {
 
     if (!initOk || !dtorOk) {
         spdlog::warn("[RenderHook] hook installation incomplete — pool disabled");
-        // Revert partially installed hook to avoid Init/dtor asymmetry
         if (initOk)
-            gum_interceptor_revert(interceptor, reinterpret_cast<void*>(HWBufferInit_sig.target_address));
+            DS_GUM_interceptor_revert(interceptor, reinterpret_cast<void *>(HWBufferInit_addr));
         if (dtorOk)
-            gum_interceptor_revert(interceptor, reinterpret_cast<void*>(HWBufferDtor_sig.target_address));
+            DS_GUM_interceptor_revert(interceptor, reinterpret_cast<void *>(HWBufferDtor_addr));
+        HWBufferInit_addr = 0;
+        HWBufferDtor_addr = 0;
+        original_HWBufferInit = nullptr;
+        original_HWBufferDtor = nullptr;
         return false;
     }
 
@@ -330,8 +320,12 @@ static void uninstallPoolHooks() {
     using namespace render_signatures;
     auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
 
-    gum_interceptor_revert(interceptor, reinterpret_cast<void*>(HWBufferInit_sig.target_address));
-    gum_interceptor_revert(interceptor, reinterpret_cast<void*>(HWBufferDtor_sig.target_address));
+    if (HWBufferInit_addr)
+        DS_GUM_interceptor_revert(interceptor, reinterpret_cast<void *>(HWBufferInit_addr));
+    if (HWBufferDtor_addr)
+        DS_GUM_interceptor_revert(interceptor, reinterpret_cast<void *>(HWBufferDtor_addr));
+    HWBufferInit_addr = 0;
+    HWBufferDtor_addr = 0;
     original_HWBufferInit = nullptr;
     original_HWBufferDtor = nullptr;
     spdlog::info("[RenderHook] HWBuffer pool hooks reverted");
@@ -355,19 +349,20 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable) {
             g_hooksInstalled = true;
             g_enableBufferPool = true;
 
-            auto mainPath    = gum_module_get_path(gum_process_get_main_module());
+            char mainPath[1024]{};
+            DS_GUM_main_module_path(mainPath, sizeof(mainPath));
             auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
-            if (BatcherFlush_sig.scan(mainPath)) {
-                auto r = gum_interceptor_replace(
+            BatcherFlush_addr = DS_SIG_scan_module(mainPath, kBatcherFlush, kBatcherFlushOff);
+            if (BatcherFlush_addr) {
+                auto r = DS_GUM_interceptor_replace(
                     interceptor,
-                    reinterpret_cast<void*>(BatcherFlush_sig.target_address),
-                    reinterpret_cast<void*>(&hooked_BatcherFlush),
-                    nullptr,
-                    reinterpret_cast<void**>(&original_BatcherFlush));
-                if (r == GUM_REPLACE_OK)
-                    spdlog::info("[RenderHook] hooked Batcher::Flush at {:#x}", BatcherFlush_sig.target_address);
+                    reinterpret_cast<void *>(BatcherFlush_addr),
+                    reinterpret_cast<void *>(&hooked_BatcherFlush),
+                    reinterpret_cast<void **>(&original_BatcherFlush));
+                if (r == 0)
+                    spdlog::info("[RenderHook] hooked Batcher::Flush at {:#x}", BatcherFlush_addr);
                 else
-                    spdlog::warn("[RenderHook] failed to hook Batcher::Flush: {}", static_cast<int>(r));
+                    spdlog::warn("[RenderHook] failed to hook Batcher::Flush: {}", r);
             }
             spdlog::info("[RenderHook] pool enabled");
         }
@@ -377,7 +372,9 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable) {
         uninstallPoolHooks();
         if (original_BatcherFlush) {
             auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
-            gum_interceptor_revert(interceptor, reinterpret_cast<void*>(BatcherFlush_sig.target_address));
+            if (BatcherFlush_addr)
+                DS_GUM_interceptor_revert(interceptor, reinterpret_cast<void *>(BatcherFlush_addr));
+            BatcherFlush_addr = 0;
             original_BatcherFlush = nullptr;
         }
         g_hooksInstalled = false;

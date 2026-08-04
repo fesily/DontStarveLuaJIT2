@@ -1,5 +1,4 @@
 #include "GameNetwork.hpp"
-#include "GameLua.hpp"
 #include "config.hpp"
 #include "gum_bridge.hpp"
 #include <spdlog/spdlog.h>

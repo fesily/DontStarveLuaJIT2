@@ -198,15 +198,10 @@ ds_add_dynamic_plugin(plugin_network_rpc
     GameNetwork.cpp)
 if (WIN32)
     # RPC4 / entity network extension (Path A M-N1).
-    # Gum + signature scanning go through Injector gum_bridge (single Gum instance).
-    # Injector.lib may carry /DEFAULTLIB:frida-gum.lib from Gum static usage;
-    # provide the library path so the linker can resolve that defaultlib without
-    # static-linking Gum objects into the plugin.
+    # Gum + signatures only via Injector gum_bridge — no frida-gum / function_relocation link.
     target_link_libraries(plugin_network_rpc PRIVATE
         spdlog::spdlog
-        SLikeNet
-        ${FRIDA_GUM_LIBRARIES})
-    target_link_directories(plugin_network_rpc PRIVATE ${FRIDA_GUM_LIBRARY_DIR})
+        SLikeNet)
     target_compile_definitions(plugin_network_rpc PRIVATE
         SPDLOG_COMPILED_LIB
         SPDLOG_FMT_EXTERNAL)
@@ -220,18 +215,15 @@ ds_add_dynamic_plugin(plugin_render_vbpool
 if (WIN32)
     # HWBuffer pool lives only here (Path A M-R2). GLES headers from ANGLE tree;
     # no ANGLE .lib — GL entry points via GetProcAddress(libGLESv2).
+    # No frida-gum / function_relocation — hooks via gum_bridge.
     target_link_libraries(plugin_render_vbpool PRIVATE
-        spdlog::spdlog
-        function_relocation)
+        spdlog::spdlog)
     target_compile_definitions(plugin_render_vbpool PRIVATE
-        GUM_STATIC=1
         SPDLOG_COMPILED_LIB
         SPDLOG_FMT_EXTERNAL)
     target_include_directories(plugin_render_vbpool PRIVATE
         ${PROJECT_SOURCE_DIR}/3rd
-        ${PROJECT_SOURCE_DIR}/3rd/angle/win64/include
-        ${PROJECT_SOURCE_DIR}/3rd/frida-gum/win64
-        ${FUNCTION_RELOCATION_INCLUDE_DIR})
+        ${PROJECT_SOURCE_DIR}/3rd/angle/win64/include)
 endif()
 ds_add_dynamic_plugin(plugin_render_angle
     plugins/plugin_render_angle/plugin_render_angle.cpp
@@ -241,16 +233,12 @@ if (WIN32)
     target_link_libraries(plugin_render_angle PRIVATE
         unofficial::angle::libGLESv2
         unofficial::angle::libEGL
-        spdlog::spdlog
-        function_relocation)
+        spdlog::spdlog)
     target_compile_definitions(plugin_render_angle PRIVATE
-        GUM_STATIC=1
         SPDLOG_COMPILED_LIB
         SPDLOG_FMT_EXTERNAL)
     target_include_directories(plugin_render_angle PRIVATE
-        ${PROJECT_SOURCE_DIR}/3rd
-        ${PROJECT_SOURCE_DIR}/3rd/frida-gum/win64
-        ${FUNCTION_RELOCATION_INCLUDE_DIR})
+        ${PROJECT_SOURCE_DIR}/3rd)
 endif()
 
 
