@@ -50,7 +50,7 @@ struct ResolvedConfig {
         }
         auto it = source_of.find("LuaVmType");
         if (it == source_of.end() || it->second == ConfigSource::None) {
-            // empty / never set → unknown (matches legacy GetLuaVmType)
+            // empty / never set → unknown (matches legacy bag GetLuaVmType)
             if (lua_vm_type().empty()) {
                 return GameLuaType::unknown;
             }

@@ -1,7 +1,7 @@
 # Config Source + Schema Unification (Approach B)
 
 **Date:** 2026-08-04  
-**Status:** Approved (user confirmed). Implementation plan: `docs/superpowers/plans/2026-08-04-config-source-schema-unification.md`  
+**Status:** Implemented (CF-S0…S6 complete; Tasks 1–7). Plan: `docs/superpowers/plans/2026-08-04-config-source-schema-unification.md`  
 **Scope:** Unify the four game-option config sources under one schema-driven cascade; each option declares **allowed sources** (whitelist); move all game-config read machinery into one directory.
 
 Related:

@@ -17,14 +17,4 @@ ConfigView BuildConfigView(const ConfigSchemaRegistry &schema,
     return view;
 }
 
-ConfigView FromGameJitModConfig(const GameJitModConfig &config) {
-    // Project legacy bag + core fields only (no schema defaults).
-    ConfigView view = config.business_options;
-    view["AlwaysEnableMod"] = ConfigValue::boolean(config.AlwaysEnableMod);
-    view["DisableJITWhenServer"] = ConfigValue::boolean(config.DisableJITWhenServer);
-    view["LuaVmType"] = ConfigValue::string(config.LuaVmType);
-    view["EnabledGenGC"] = ConfigValue::boolean(config.EnabledGenGC);
-    return view;
-}
-
 } // namespace ds::plugin

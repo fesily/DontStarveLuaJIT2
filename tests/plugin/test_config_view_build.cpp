@@ -502,29 +502,6 @@ static void test_render_angle_backend_reaches_plugin() {
 
     printf("PASS: render_angle_backend_reaches_plugin\n");
 }
-
-static void test_from_game_jit_mod_config_compat() {
-    // Compatibility wrapper: project bag + core only — no schema defaults.
-    // Does not invent NetworkOpt / EnableNetSim (schema owns those after plugins load).
-    GameJitModConfig cfg{};
-    cfg.business_options["EnableVBPool"] = ConfigValue::boolean(true);
-    cfg.business_options["AngleBackend"] = ConfigValue::string("auto");
-    ConfigView view = FromGameJitModConfig(cfg);
-    assert(view.at("EnableVBPool").b == true);
-    assert(view.find("NetworkOpt") == view.end());
-    assert(view.find("EnableNetSim") == view.end());
-    // Business map can still carry NetworkOpt when save-path filled it.
-    cfg.business_options["NetworkOpt"] = ConfigValue::boolean(false);
-    view = FromGameJitModConfig(cfg);
-    assert(view.at("NetworkOpt").b == false);
-
-    // Host path: project bag then fill late schema defaults (no dual bag on Host).
-    ConfigView host_view = BuildConfigView(make_production_schema(), view);
-    assert(host_view.at("NetworkOpt").b == false); // preserved from bag
-    assert(host_view.at("EnableNetSim").b == false); // late schema default
-    printf("PASS: from_game_jit_mod_config_compat\n");
-}
-
 int main() {
     test_vbpool_true_maps_to_config_key();
     test_vbpool_false_maps_to_config_key();
@@ -538,7 +515,6 @@ int main() {
     test_network_sim_enable_matrix();
     test_render_vbpool_from_bridge_enable_matrix();
     test_render_angle_backend_reaches_plugin();
-    test_from_game_jit_mod_config_compat();
     printf("All config view build tests passed!\n");
     return 0;
 }

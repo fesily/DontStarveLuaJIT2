@@ -7,15 +7,7 @@
 #include <string>
 #include <vector>
 
-enum class GameJitConfigSource {
-    none,
-    modinfo_default,
-    luajit_config,
-    save_file,
-    env_or_cmd,
-};
-
-// L0 core identity / VM config projection from ResolvedConfig (CF-S5).
+// L0 core identity / VM config projection from ResolvedConfig (CF-S5/S6).
 // Prefer ds::config::current() accessors for Inject / Host / plugin readers.
 // Typed fields remain for write-back and GAME_API fps paths.
 //
@@ -35,33 +27,10 @@ struct GameJitModConfig {
     // map_to_game_jit_mod_config for save write-back and a few legacy readers.
     ds::plugin::ConfigView business_options;
 
-
-    GameJitConfigSource modmain_path_source = GameJitConfigSource::none;
-    GameJitConfigSource modname_source = GameJitConfigSource::none;
-    GameJitConfigSource modid_source = GameJitConfigSource::none;
-    GameJitConfigSource LuaVmTypeSource = GameJitConfigSource::none;
-    GameJitConfigSource AlwaysEnableModSource = GameJitConfigSource::none;
-    GameJitConfigSource DisableJITWhenServerSource = GameJitConfigSource::none;
-    GameJitConfigSource EnabledGenGCSource = GameJitConfigSource::none;
-
-    GameLuaType GetLuaVmType() const {
-        if (EnabledGenGC) {
-            return GameLuaType::jit_gen;
-        }
-        if (LuaVmTypeSource == GameJitConfigSource::none) {
-            return GameLuaType::unknown;
-        }
-        return GameLuaTypeFromString(LuaVmType);
-    }
-
     static DS_INJECTOR_CXX_API std::optional<GameJitModConfig> instance();
 };
 
-GameJitModConfig make_default_game_mod_config();
-bool LoadGameJitModConfigFromSaveFile(const std::filesystem::path &path, GameJitModConfig &resolved);
-bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
-                                             const std::vector<std::string> &aliases,
-                                             GameJitModConfig &resolved);
+// Client save write-back only (load path is config/sources/*).
 bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const GameJitModConfig &config);
 
 DONTSTARVEINJECTOR_API int DS_LUAJIT_set_target_fps(int fps, int tt);

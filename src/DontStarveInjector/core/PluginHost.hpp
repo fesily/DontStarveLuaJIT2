@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 #include "PluginTypes.hpp"
 
 #include <string>

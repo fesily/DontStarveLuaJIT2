@@ -1,8 +1,7 @@
 #pragma once
 
-#include "ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 #include "PluginTypes.hpp"
-#include "gameModConfig.hpp"
 
 namespace ds::plugin {
 
@@ -16,10 +15,5 @@ namespace ds::plugin {
 // Prefer: BuildConfigView(host.option_schema(), resolved_config->view)
 ConfigView BuildConfigView(const ConfigSchemaRegistry &schema,
                            const ConfigView &resolved);
-
-// Compatibility: project GameJitModConfig core fields + business_options into a
-// ConfigView without schema defaults. Prefer ResolvedConfig.view for Host.
-// business_options is deprecated for Host; this remains for legacy unit paths.
-ConfigView FromGameJitModConfig(const GameJitModConfig &config);
 
 } // namespace ds::plugin
