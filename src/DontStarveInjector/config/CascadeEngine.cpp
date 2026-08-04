@@ -50,6 +50,8 @@ ApplyStats apply_partial(
         }
         if (!value_matches_schema(*entry, value)) {
             ++stats.rejected_value;
+            spdlog::error("[config] rejected value for key '{}' from source {} (type/allowed mismatch)",
+                          key, static_cast<unsigned>(source));
             continue;
         }
         view[key] = value;
