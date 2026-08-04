@@ -108,7 +108,7 @@ extern bool tracy_active;
 // Injector export — avoid importing mutable frame_time_s across DLL boundary.
 DONTSTARVEINJECTOR_API float DS_LUAJIT_get_frame_time_s(void);
 
-DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable) {
+DONTSTARVEINJECTOR_GAME_API inline bool DS_LUAJIT_enable_framegc(bool enable) {
     if (auto *ctx = ds::core_vm::TryGetGameLuaContext()) {
         if (ctx->luaType == GameLuaType::jit_gen) {
             frame_gc_time_ns = 0;
@@ -267,7 +267,7 @@ struct ProfilerHooker {
 };
 
 // core.vm still dllimports lua_event_notifyer from Injector; Injector forwards here.
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_profiler_lua_event_notifyer(int ev, lua_State *L) {
+DONTSTARVEINJECTOR_GAME_API inline void DS_LUAJIT_profiler_lua_event_notifyer(int ev, lua_State *L) {
     switch (static_cast<LUA_EVENT>(ev)) {
     case LUA_EVENT::new_state:
         profiler.L = nullptr;
@@ -280,3 +280,8 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_profiler_lua_event_notifyer(int ev, l
         break;
     }
 }
+
+// Defined in ProfilerApi.cpp
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api();
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_tracy(int en);
+

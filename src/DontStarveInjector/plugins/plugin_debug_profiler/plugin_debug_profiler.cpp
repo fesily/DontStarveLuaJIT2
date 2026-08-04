@@ -5,7 +5,11 @@
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
+#include "core/PluginServices.hpp"
+#include "core/LuaEvent.hpp"
 #include "core/ConfigSchema.hpp"
+#include "GameProfilerHook.hpp"
+#include "FullGcPolicy.hpp"
 
 #include <cstdio>
 
@@ -74,6 +78,11 @@ bool register_string_schema(PluginHost *host, const char *key, const char *defau
     return true;
 }
 
+// Bridge typed LUA_EVENT bus → existing profiler notifyer export.
+void profiler_lua_listener(LUA_EVENT ev, lua_State *L) {
+    DS_LUAJIT_profiler_lua_event_notifyer(static_cast<int>(ev), L);
+}
+
 } // namespace
 
 DS_PLUGIN_MODULE_EXPORT const char *ds_plugin_module_abi_version() {
@@ -97,6 +106,21 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     if (!register_bool_schema(host, "EnableFrameGC", true)) {
         return false;
     }
+
+    // Host service table + lua_event bus — no L0 hardcode of this DLL.
+    // Declarations come from FullGcPolicy.hpp / GameProfilerHook.hpp / ProfilerApi.cpp.
+    ds_host_register_service("lj_gc_fullgc_external",
+                             reinterpret_cast<void *>(&lj_gc_fullgc_external));
+    ds_host_register_service("DS_LUAJIT_disable_fullgc",
+                             reinterpret_cast<void *>(&DS_LUAJIT_disable_fullgc));
+    ds_host_register_service("DS_LUAJIT_replace_profiler_api",
+                             reinterpret_cast<void *>(&DS_LUAJIT_replace_profiler_api));
+    ds_host_register_service("DS_LUAJIT_enable_tracy",
+                             reinterpret_cast<void *>(&DS_LUAJIT_enable_tracy));
+    ds_host_register_service("DS_LUAJIT_enable_framegc",
+                             reinterpret_cast<void *>(&DS_LUAJIT_enable_framegc));
+    (void) ds_register_lua_event_listener(&profiler_lua_listener);
+
     host->register_plugin(&g_plugin);
     std::fprintf(stderr, "[plugin_debug_profiler] module init registered debug.profiler\n");
     return true;

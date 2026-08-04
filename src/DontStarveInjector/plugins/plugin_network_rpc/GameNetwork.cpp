@@ -1,3 +1,4 @@
+#include "core/PluginServices.hpp"
 #include "gum_plugin_export.hpp"
 #include "GameNetwork.hpp"
 #include "frida-gum.h"
@@ -314,4 +315,13 @@ mov dword ptr [rdi+134], 3  // pro->reliability = PacketReliability::RELIABLE_OR
             gum_interceptor_attach(interceptor, (uint8_t *) cNetWorkComponent_serialize.target_address, listener, nullptr, GUM_ATTACH_FLAGS_NONE);
         }
     }
+}
+
+void RegisterNetworkRpcHostServices() {
+    ds_host_register_service(
+        "DS_LUAJIT_EntityNetWorkExtension_Register",
+        reinterpret_cast<void *>(&DS_LUAJIT_EntityNetWorkExtension_Register));
+    ds_host_register_service(
+        "DS_LUAJIT_SetNextRpcInfo",
+        reinterpret_cast<void *>(&DS_LUAJIT_SetNextRpcInfo));
 }

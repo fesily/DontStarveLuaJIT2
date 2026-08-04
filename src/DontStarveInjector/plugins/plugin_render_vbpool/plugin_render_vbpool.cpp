@@ -3,6 +3,7 @@
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
+#include "core/PluginServices.hpp"
 #include "ctx.hpp"
 
 #include <cstdio>
@@ -71,6 +72,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         std::fprintf(stderr, "[plugin_render_vbpool] schema conflict EnableVBPool\n");
         return false;
     }
+    ds_host_register_service("DS_LUAJIT_set_vbpool_enabled",
+                             reinterpret_cast<void *>(&DS_LUAJIT_set_vbpool_enabled));
     host->register_plugin(&g_render_vbpool);
     std::fprintf(stderr, "[plugin_render_vbpool] module init registered render.vbpool\n");
     return true;

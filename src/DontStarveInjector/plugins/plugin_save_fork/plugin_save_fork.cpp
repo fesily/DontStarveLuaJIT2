@@ -4,6 +4,7 @@
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
+#include "core/PluginServices.hpp"
 
 #include <cstdio>
 
@@ -21,7 +22,7 @@ struct SaveForkPlugin final : IPlugin {
         man.support_reload = false;
         // Inventory priority 60 (with network.sim / lagcomp).
         // Host resolve skips load() when EnableForkSave is false; DLL stays mapped
-        // so GameInjector can GetProcAddress/dlsym the fork APIs when Lua enables.
+        // so GameInjector can resolve fork APIs via host service table when Lua enables.
         man.priority = 60;
         man.options.kind = OptionRuleKind::AllOf;
         man.options.keys = {"EnableForkSave"};
@@ -48,6 +49,12 @@ SaveForkPlugin g_save_fork;
 
 } // namespace
 
+extern "C" const char *DS_LUAJIT_fork_save();
+extern "C" void DS_LUAJIT_fork_save_exit();
+extern "C" void DS_LUAJIT_fork_save_cleanup();
+extern "C" void DS_LUAJIT_fork_save_wait();
+extern "C" const char *DS_LUAJIT_fork_save_poll();
+
 DS_PLUGIN_MODULE_EXPORT const char *ds_plugin_module_abi_version() {
     return DS_PLUGIN_ABI_VERSION;
 }
@@ -64,6 +71,11 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         std::fprintf(stderr, "[plugin_save_fork] schema conflict EnableForkSave\n");
         return false;
     }
+    ds_host_register_service("DS_LUAJIT_fork_save", reinterpret_cast<void *>(&DS_LUAJIT_fork_save));
+    ds_host_register_service("DS_LUAJIT_fork_save_exit", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_exit));
+    ds_host_register_service("DS_LUAJIT_fork_save_cleanup", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_cleanup));
+    ds_host_register_service("DS_LUAJIT_fork_save_wait", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_wait));
+    ds_host_register_service("DS_LUAJIT_fork_save_poll", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_poll));
     host->register_plugin(&g_save_fork);
     std::fprintf(stderr, "[plugin_save_fork] module init registered save.fork\n");
     return true;

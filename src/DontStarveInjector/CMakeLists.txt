@@ -18,6 +18,8 @@ set(SOURCES
         game_info.cpp
         config.cpp
         core/PluginHost.cpp
+        core/PluginServices.cpp
+        core/LuaEventBus.cpp
         core/PluginOptionRules.cpp
         core/ConfigSchema.cpp
         core/RegisterBuiltinPlugins.cpp

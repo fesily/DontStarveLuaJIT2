@@ -701,36 +701,10 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int 
     return 0;
 }
 
-#include "core/LuaEvent.hpp"
-
 // Frame budget for FrameGC lives in Injector; plugin reads via getter (no mutable global import).
+// lua_event_notifyer lives in core/LuaEventBus.cpp (listener bus; plugins register themselves).
 DONTSTARVEINJECTOR_GAME_API float DS_LUAJIT_get_frame_time_s(void) {
     return frame_time_s;
-}
-
-// core.vm dllimports this from Injector. Forward to plugin_debug_profiler when staged.
-DS_INJECTOR_CXX_API void lua_event_notifyer(LUA_EVENT ev, lua_State *L) {
-#ifdef _WIN32
-    using Fn = void (*)(int, lua_State *);
-    static Fn fn = []() -> Fn {
-        HMODULE m = GetModuleHandleA("plugin_debug_profiler.dll");
-        if (!m) {
-            return nullptr;
-        }
-        return reinterpret_cast<Fn>(GetProcAddress(m, "DS_LUAJIT_profiler_lua_event_notifyer"));
-    }();
-    if (fn) {
-        fn(static_cast<int>(ev), L);
-    }
-#else
-    using Fn = void (*)(int, lua_State *);
-    static Fn fn = []() -> Fn {
-        return reinterpret_cast<Fn>(dlsym(RTLD_DEFAULT, "DS_LUAJIT_profiler_lua_event_notifyer"));
-    }();
-    if (fn) {
-        fn(static_cast<int>(ev), L);
-    }
-#endif
 }
 
 // L0 process hygiene (thread naming). Was in GameProfilerHook; stays in Injector.

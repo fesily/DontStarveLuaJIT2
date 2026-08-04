@@ -62,6 +62,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         std::fprintf(stderr, "[plugin_network_rpc] schema conflict NetworkOpt\n");
         return false;
     }
+    RegisterNetworkRpcHostServices();
     host->register_plugin(&g_network_rpc);
     std::fprintf(stderr, "[plugin_network_rpc] module init registered network.rpc\n");
     return true;

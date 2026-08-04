@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "core/PluginServices.hpp"
 #include <cstdint>
 #include <string.h>
 #include <ctype.h>
@@ -1198,7 +1199,6 @@ using DsLuajitEntityNetWorkRegisterFn = void *(*)(void *, int64_t);
 using DsLuajitSetNextRpcInfoFn = void (*)(std::optional<PacketPriority>, std::optional<PacketReliability>, std::optional<char>);
 using DsLuajitEnableFramegcFn = bool (*)(bool);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_profiler(int en);
-#ifdef _WIN32
 using DsLuajitSetVbpoolEnabledFn = void (*)(bool);
 // Implemented in plugins/plugin_network_sim/GameNetworkSim.cpp. Resolved at runtime.
 using DsLuajitNetSimEnableFn = void (*)(bool);
@@ -1207,8 +1207,6 @@ using DsLuajitNetSimUpdateFn = void (*)();
 using DsLuajitNetSimGetStatsFn = const NetSimStats *(*)();
 // Implemented in plugins/plugin_sim_lagcomp/GameSimHook.cpp. Resolved at runtime.
 using DsLuajitEntityGetRawPtrFn = int (*)(lua_State *);
-#else
-#endif
 
 // Implemented in plugins/plugin_save_fork/GameForkSave.cpp. Resolved at runtime.
 using DsLuajitForkSaveFn = const char *(*)();
@@ -1234,6 +1232,14 @@ static std::optional<char> parse_lua_ordering_channel(const sol::optional<int>& 
 		return std::nullopt;
 	}
 	return static_cast<char>(*value);
+}
+
+
+// Resolve a C service registered by a peer plugin via Host service table.
+// No hardcoded peer DLL names — missing plugin => nullptr (Lua no-ops).
+template <class Fn>
+static Fn host_service(const char *name) {
+    return reinterpret_cast<Fn>(ds_host_lookup_service(name));
 }
 
 // export DONTSTARVEINJECTOR_GAME_API functions to lua module
@@ -1288,208 +1294,69 @@ int luaopen_GameInjector(lua_State* L) {
 
     module.set_function("DS_LUAJIT_get_workshop_dir", &DS_LUAJIT_get_workshop_dir);
     module.set_function("DS_LUAJIT_disable_fullgc", [](bool enable) {
-#if defined(_WIN32)
-        static DsLuajitDisableFullgcFn fn = []() -> DsLuajitDisableFullgcFn {
-            HMODULE mod = GetModuleHandleA("plugin_debug_profiler.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitDisableFullgcFn>(
-                GetProcAddress(mod, "DS_LUAJIT_disable_fullgc"));
-        }();
-#else
-        static DsLuajitDisableFullgcFn fn = []() -> DsLuajitDisableFullgcFn {
-            return reinterpret_cast<DsLuajitDisableFullgcFn>(
-                dlsym(RTLD_DEFAULT, "DS_LUAJIT_disable_fullgc"));
-        }();
-#endif
-        if (fn) {
+        if (auto *fn = host_service<DsLuajitDisableFullgcFn>("DS_LUAJIT_disable_fullgc")) {
             fn(enable);
         }
     });
     module.set_function("DS_LUAJIT_Fengxun_Decrypt", &DS_LUAJIT_Fengxun_Decrypt);
     module.set_function("DS_LUAJIT_set_vm_type", &DS_LUAJIT_set_vm_type);
-	module.set_function("DS_LUAJIT_get_vm_type_name", &DS_LUAJIT_get_vm_type_name);
+    module.set_function("DS_LUAJIT_get_vm_type_name", &DS_LUAJIT_get_vm_type_name);
     module.set_function("DS_LUAJIT_get_render_backend_name", []() -> const char * {
-#ifdef _WIN32
-        static DsLuajitGetRenderBackendNameFn fn = []() -> DsLuajitGetRenderBackendNameFn {
-            HMODULE mod = GetModuleHandleA("plugin_render_angle.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitGetRenderBackendNameFn>(
-                GetProcAddress(mod, "DS_LUAJIT_get_render_backend_name"));
-        }();
+        auto *fn = host_service<DsLuajitGetRenderBackendNameFn>("DS_LUAJIT_get_render_backend_name");
         return fn ? fn() : nullptr;
-#else
-        return nullptr;
-#endif
     });
     module.set_function("DS_LUAJIT_replace_network_tick", &DS_LUAJIT_replace_network_tick);
     module.set_function("DS_LUAJIT_set_target_fps", &DS_LUAJIT_set_target_fps);
     module.set_function("DS_LUAJIT_update", &DS_LUAJIT_update);
     module.set_function("DS_LUAJIT_replace_profiler_api", []() -> int {
-#if defined(_WIN32)
-        static DsLuajitReplaceProfilerApiFn fn = []() -> DsLuajitReplaceProfilerApiFn {
-            HMODULE mod = GetModuleHandleA("plugin_debug_profiler.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitReplaceProfilerApiFn>(
-                GetProcAddress(mod, "DS_LUAJIT_replace_profiler_api"));
-        }();
-#else
-        static DsLuajitReplaceProfilerApiFn fn = []() -> DsLuajitReplaceProfilerApiFn {
-            return reinterpret_cast<DsLuajitReplaceProfilerApiFn>(
-                dlsym(RTLD_DEFAULT, "DS_LUAJIT_replace_profiler_api"));
-        }();
-#endif
+        auto *fn = host_service<DsLuajitReplaceProfilerApiFn>("DS_LUAJIT_replace_profiler_api");
         return fn ? fn() : 0;
     });
     module.set_function("DS_LUAJIT_enable_tracy", [](int en) {
-#if defined(_WIN32)
-        static DsLuajitEnableTracyFn fn = []() -> DsLuajitEnableTracyFn {
-            HMODULE mod = GetModuleHandleA("plugin_debug_profiler.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitEnableTracyFn>(
-                GetProcAddress(mod, "DS_LUAJIT_enable_tracy"));
-        }();
-#else
-        static DsLuajitEnableTracyFn fn = []() -> DsLuajitEnableTracyFn {
-            return reinterpret_cast<DsLuajitEnableTracyFn>(
-                dlsym(RTLD_DEFAULT, "DS_LUAJIT_enable_tracy"));
-        }();
-#endif
-        if (fn) {
+        if (auto *fn = host_service<DsLuajitEnableTracyFn>("DS_LUAJIT_enable_tracy")) {
             fn(en);
         }
     });
     module.set_function("DS_LUAJIT_get_mod_version", &DS_LUAJIT_get_mod_version);
     module.set_function("DS_LUAJIT_EntityNetWorkExtension_Register",
                         [](void *networkComponentLuaProxyPtr, int64_t networkid) -> void * {
-#ifdef _WIN32
-                            static DsLuajitEntityNetWorkRegisterFn fn = []() -> DsLuajitEntityNetWorkRegisterFn {
-                                HMODULE mod = GetModuleHandleA("plugin_network_rpc.dll");
-                                if (!mod) {
-                                    return nullptr;
-                                }
-                                return reinterpret_cast<DsLuajitEntityNetWorkRegisterFn>(
-                                    GetProcAddress(mod, "DS_LUAJIT_EntityNetWorkExtension_Register"));
-                            }();
+                            auto *fn = host_service<DsLuajitEntityNetWorkRegisterFn>(
+                                "DS_LUAJIT_EntityNetWorkExtension_Register");
                             return fn ? fn(networkComponentLuaProxyPtr, networkid) : nullptr;
-#else
-                            (void) networkComponentLuaProxyPtr;
-                            (void) networkid;
-                            return nullptr;
-#endif
                         });
     module.set_function("DS_LUAJIT_SetNextRpcInfo", [](sol::optional<int> packetPriority, sol::optional<int> reliability, sol::optional<int> orderingChannel) {
-#ifdef _WIN32
-        static DsLuajitSetNextRpcInfoFn fn = []() -> DsLuajitSetNextRpcInfoFn {
-            HMODULE mod = GetModuleHandleA("plugin_network_rpc.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitSetNextRpcInfoFn>(
-                GetProcAddress(mod, "DS_LUAJIT_SetNextRpcInfo"));
-        }();
-        if (fn) {
+        if (auto *fn = host_service<DsLuajitSetNextRpcInfoFn>("DS_LUAJIT_SetNextRpcInfo")) {
             fn(parse_lua_packet_priority(packetPriority),
                parse_lua_packet_reliability(reliability),
                parse_lua_ordering_channel(orderingChannel));
         }
-#else
-        (void) packetPriority;
-        (void) reliability;
-        (void) orderingChannel;
-#endif
     });
     module.set_function("DS_LUAJIT_enable_framegc", [](bool enable) -> bool {
-#if defined(_WIN32)
-        static DsLuajitEnableFramegcFn fn = []() -> DsLuajitEnableFramegcFn {
-            HMODULE mod = GetModuleHandleA("plugin_debug_profiler.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitEnableFramegcFn>(
-                GetProcAddress(mod, "DS_LUAJIT_enable_framegc"));
-        }();
-#else
-        static DsLuajitEnableFramegcFn fn = []() -> DsLuajitEnableFramegcFn {
-            return reinterpret_cast<DsLuajitEnableFramegcFn>(
-                dlsym(RTLD_DEFAULT, "DS_LUAJIT_enable_framegc"));
-        }();
-#endif
+        auto *fn = host_service<DsLuajitEnableFramegcFn>("DS_LUAJIT_enable_framegc");
         return fn ? fn(enable) : false;
     });
     module.set_function("DS_LUAJIT_set_vbpool_enabled", [](bool enable) {
-#ifdef _WIN32
-        static DsLuajitSetVbpoolEnabledFn fn = []() -> DsLuajitSetVbpoolEnabledFn {
-            HMODULE mod = GetModuleHandleA("plugin_render_vbpool.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitSetVbpoolEnabledFn>(
-                GetProcAddress(mod, "DS_LUAJIT_set_vbpool_enabled"));
-        }();
-        if (fn) {
+        if (auto *fn = host_service<DsLuajitSetVbpoolEnabledFn>("DS_LUAJIT_set_vbpool_enabled")) {
             fn(enable);
         }
-#else
-        (void) enable;
-#endif
     });
-#ifdef _WIN32
     module.set_function("DS_LUAJIT_net_sim_enable", [](bool enable) {
-        static DsLuajitNetSimEnableFn fn = []() -> DsLuajitNetSimEnableFn {
-            HMODULE mod = GetModuleHandleA("plugin_network_sim.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitNetSimEnableFn>(
-                GetProcAddress(mod, "DS_LUAJIT_net_sim_enable"));
-        }();
-        if (fn) {
+        if (auto *fn = host_service<DsLuajitNetSimEnableFn>("DS_LUAJIT_net_sim_enable")) {
             fn(enable);
         }
     });
     module.set_function("DS_LUAJIT_net_sim_set", [](uint32_t delay_ms, uint32_t jitter_ms, uint32_t loss_pct) {
-        static DsLuajitNetSimSetFn fn = []() -> DsLuajitNetSimSetFn {
-            HMODULE mod = GetModuleHandleA("plugin_network_sim.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitNetSimSetFn>(
-                GetProcAddress(mod, "DS_LUAJIT_net_sim_set"));
-        }();
-        if (fn) {
+        if (auto *fn = host_service<DsLuajitNetSimSetFn>("DS_LUAJIT_net_sim_set")) {
             fn(delay_ms, jitter_ms, loss_pct);
         }
     });
     module.set_function("DS_LUAJIT_net_sim_update", []() {
-        static DsLuajitNetSimUpdateFn fn = []() -> DsLuajitNetSimUpdateFn {
-            HMODULE mod = GetModuleHandleA("plugin_network_sim.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitNetSimUpdateFn>(
-                GetProcAddress(mod, "DS_LUAJIT_net_sim_update"));
-        }();
-        if (fn) {
+        if (auto *fn = host_service<DsLuajitNetSimUpdateFn>("DS_LUAJIT_net_sim_update")) {
             fn();
         }
     });
     module.set_function("DS_LUAJIT_net_sim_get_stats", [L = lua.lua_state()]() -> sol::table {
-        static DsLuajitNetSimGetStatsFn fn = []() -> DsLuajitNetSimGetStatsFn {
-            HMODULE mod = GetModuleHandleA("plugin_network_sim.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitNetSimGetStatsFn>(
-                GetProcAddress(mod, "DS_LUAJIT_net_sim_get_stats"));
-        }();
+        auto *fn = host_service<DsLuajitNetSimGetStatsFn>("DS_LUAJIT_net_sim_get_stats");
         sol::state_view sv(L);
         sol::table t = sv.create_table();
         const NetSimStats *s = fn ? fn() : nullptr;
@@ -1507,17 +1374,8 @@ int luaopen_GameInjector(lua_State* L) {
         t["queue_depth"] = s->queue_depth;
         return t;
     });
-#endif
-#ifdef _WIN32
     {
-        static DsLuajitEntityGetRawPtrFn entity_get_raw_ptr_fn = []() -> DsLuajitEntityGetRawPtrFn {
-            HMODULE mod = GetModuleHandleA("plugin_sim_lagcomp.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitEntityGetRawPtrFn>(
-                GetProcAddress(mod, "DS_LUAJIT_entity_get_raw_ptr"));
-        }();
+        auto *entity_get_raw_ptr_fn = host_service<DsLuajitEntityGetRawPtrFn>("DS_LUAJIT_entity_get_raw_ptr");
         if (entity_get_raw_ptr_fn) {
             module.set_function("DS_LUAJIT_entity_get_raw_ptr", entity_get_raw_ptr_fn);
         } else {
@@ -1526,96 +1384,28 @@ int luaopen_GameInjector(lua_State* L) {
             });
         }
     }
-#else
-    module.set_function("DS_LUAJIT_entity_get_raw_ptr", [](sol::this_state) {
-        return sol::lua_nil;
-    });
-#endif
     //module.set_function("enable_profiler", &DS_LUAJIT_enable_profiler);
-        module.set_function("DS_LUAJIT_fork_save", []() -> const char * {
-#if defined(_WIN32)
-        static DsLuajitForkSaveFn fn = []() -> DsLuajitForkSaveFn {
-            HMODULE mod = GetModuleHandleA("plugin_save_fork.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitForkSaveFn>(GetProcAddress(mod, "DS_LUAJIT_fork_save"));
-        }();
-#else
-        static DsLuajitForkSaveFn fn = []() -> DsLuajitForkSaveFn {
-            return reinterpret_cast<DsLuajitForkSaveFn>(dlsym(RTLD_DEFAULT, "DS_LUAJIT_fork_save"));
-        }();
-#endif
+    module.set_function("DS_LUAJIT_fork_save", []() -> const char * {
+        auto *fn = host_service<DsLuajitForkSaveFn>("DS_LUAJIT_fork_save");
         return fn ? fn() : nullptr;
     });
     module.set_function("DS_LUAJIT_fork_save_exit", []() {
-#if defined(_WIN32)
-        static DsLuajitForkSaveVoidFn fn = []() -> DsLuajitForkSaveVoidFn {
-            HMODULE mod = GetModuleHandleA("plugin_save_fork.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitForkSaveVoidFn>(GetProcAddress(mod, "DS_LUAJIT_fork_save_exit"));
-        }();
-#else
-        static DsLuajitForkSaveVoidFn fn = []() -> DsLuajitForkSaveVoidFn {
-            return reinterpret_cast<DsLuajitForkSaveVoidFn>(dlsym(RTLD_DEFAULT, "DS_LUAJIT_fork_save_exit"));
-        }();
-#endif
-        if (fn) {
+        if (auto *fn = host_service<DsLuajitForkSaveVoidFn>("DS_LUAJIT_fork_save_exit")) {
             fn();
         }
     });
     module.set_function("DS_LUAJIT_fork_save_cleanup", []() {
-#if defined(_WIN32)
-        static DsLuajitForkSaveVoidFn fn = []() -> DsLuajitForkSaveVoidFn {
-            HMODULE mod = GetModuleHandleA("plugin_save_fork.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitForkSaveVoidFn>(GetProcAddress(mod, "DS_LUAJIT_fork_save_cleanup"));
-        }();
-#else
-        static DsLuajitForkSaveVoidFn fn = []() -> DsLuajitForkSaveVoidFn {
-            return reinterpret_cast<DsLuajitForkSaveVoidFn>(dlsym(RTLD_DEFAULT, "DS_LUAJIT_fork_save_cleanup"));
-        }();
-#endif
-        if (fn) {
+        if (auto *fn = host_service<DsLuajitForkSaveVoidFn>("DS_LUAJIT_fork_save_cleanup")) {
             fn();
         }
     });
     module.set_function("DS_LUAJIT_fork_save_wait", []() {
-#if defined(_WIN32)
-        static DsLuajitForkSaveVoidFn fn = []() -> DsLuajitForkSaveVoidFn {
-            HMODULE mod = GetModuleHandleA("plugin_save_fork.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitForkSaveVoidFn>(GetProcAddress(mod, "DS_LUAJIT_fork_save_wait"));
-        }();
-#else
-        static DsLuajitForkSaveVoidFn fn = []() -> DsLuajitForkSaveVoidFn {
-            return reinterpret_cast<DsLuajitForkSaveVoidFn>(dlsym(RTLD_DEFAULT, "DS_LUAJIT_fork_save_wait"));
-        }();
-#endif
-        if (fn) {
+        if (auto *fn = host_service<DsLuajitForkSaveVoidFn>("DS_LUAJIT_fork_save_wait")) {
             fn();
         }
     });
     module.set_function("DS_LUAJIT_fork_save_poll", []() -> const char * {
-#if defined(_WIN32)
-        static DsLuajitForkSavePollFn fn = []() -> DsLuajitForkSavePollFn {
-            HMODULE mod = GetModuleHandleA("plugin_save_fork.dll");
-            if (!mod) {
-                return nullptr;
-            }
-            return reinterpret_cast<DsLuajitForkSavePollFn>(GetProcAddress(mod, "DS_LUAJIT_fork_save_poll"));
-        }();
-#else
-        static DsLuajitForkSavePollFn fn = []() -> DsLuajitForkSavePollFn {
-            return reinterpret_cast<DsLuajitForkSavePollFn>(dlsym(RTLD_DEFAULT, "DS_LUAJIT_fork_save_poll"));
-        }();
-#endif
+        auto *fn = host_service<DsLuajitForkSavePollFn>("DS_LUAJIT_fork_save_poll");
         return fn ? fn() : "idle";
     });
 

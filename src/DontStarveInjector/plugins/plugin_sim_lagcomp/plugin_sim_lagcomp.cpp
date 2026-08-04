@@ -4,6 +4,7 @@
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
+#include "core/PluginServices.hpp"
 
 #include <cstdio>
 
@@ -52,6 +53,9 @@ SimLagcompPlugin g_sim_lagcomp;
 
 } // namespace
 
+struct lua_State;
+extern "C" int DS_LUAJIT_entity_get_raw_ptr(lua_State *L);
+
 DS_PLUGIN_MODULE_EXPORT const char *ds_plugin_module_abi_version() {
     return DS_PLUGIN_ABI_VERSION;
 }
@@ -68,6 +72,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         std::fprintf(stderr, "[plugin_sim_lagcomp] schema conflict EnableLagCompensation\n");
         return false;
     }
+    ds_host_register_service("DS_LUAJIT_entity_get_raw_ptr",
+                             reinterpret_cast<void *>(&DS_LUAJIT_entity_get_raw_ptr));
     host->register_plugin(&g_sim_lagcomp);
     std::fprintf(stderr, "[plugin_sim_lagcomp] module init registered sim.lagcomp\n");
     return true;

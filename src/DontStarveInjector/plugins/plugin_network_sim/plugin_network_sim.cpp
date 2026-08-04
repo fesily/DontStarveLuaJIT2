@@ -5,6 +5,7 @@
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
+#include "core/PluginServices.hpp"
 #include "ctx.hpp"
 
 #include <cstdio>
@@ -23,9 +24,9 @@ struct NetworkSimPlugin final : IPlugin {
         man.support_reload = false;
         // Inventory priority 60. Gated by EnableNetSim (schema default false).
         // DynamicPluginLoader still maps the DLL and registers the plugin; Host
-        // resolve skips load() when off. Exports remain available via GetProcAddress
-        // for Lua GameInjector.DS_LUAJIT_net_sim_* when the option is later enabled
-        // in Lua (lazy hook install on DS_LUAJIT_net_sim_enable).
+        // resolve skips load() when off. Exports remain available via host service
+        // table for Lua GameInjector.DS_LUAJIT_net_sim_* when the option is later
+        // enabled in Lua (lazy hook install on DS_LUAJIT_net_sim_enable).
         man.priority = 60;
         man.options.kind = OptionRuleKind::AllOf;
         man.options.keys = {"EnableNetSim"};
@@ -60,6 +61,11 @@ NetworkSimPlugin g_network_sim;
 
 } // namespace
 
+extern "C" void DS_LUAJIT_net_sim_enable(bool enable);
+extern "C" void DS_LUAJIT_net_sim_set(unsigned, unsigned, unsigned);
+extern "C" void DS_LUAJIT_net_sim_update();
+extern "C" const void *DS_LUAJIT_net_sim_get_stats();
+
 DS_PLUGIN_MODULE_EXPORT const char *ds_plugin_module_abi_version() {
     return DS_PLUGIN_ABI_VERSION;
 }
@@ -76,6 +82,14 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         std::fprintf(stderr, "[plugin_network_sim] schema conflict EnableNetSim\n");
         return false;
     }
+    ds_host_register_service("DS_LUAJIT_net_sim_enable",
+                             reinterpret_cast<void *>(&DS_LUAJIT_net_sim_enable));
+    ds_host_register_service("DS_LUAJIT_net_sim_set",
+                             reinterpret_cast<void *>(&DS_LUAJIT_net_sim_set));
+    ds_host_register_service("DS_LUAJIT_net_sim_update",
+                             reinterpret_cast<void *>(&DS_LUAJIT_net_sim_update));
+    ds_host_register_service("DS_LUAJIT_net_sim_get_stats",
+                             reinterpret_cast<void *>(&DS_LUAJIT_net_sim_get_stats));
     host->register_plugin(&g_network_sim);
     std::fprintf(stderr, "[plugin_network_sim] module init registered network.sim\n");
     return true;

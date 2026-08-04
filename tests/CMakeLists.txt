@@ -99,6 +99,26 @@ target_compile_features(test_dynamic_plugin_loader PRIVATE cxx_std_23)
 target_compile_definitions(test_dynamic_plugin_loader PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME plugin_dynamic_loader COMMAND test_dynamic_plugin_loader)
 
+# L0 lua_event bus — no hard-coded plugin DLL forwarder
+add_executable(test_lua_event_bus
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_lua_event_bus.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/LuaEventBus.cpp)
+target_include_directories(test_lua_event_bus PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_lua_event_bus PRIVATE cxx_std_23)
+target_compile_definitions(test_lua_event_bus PRIVATE DS_PLUGIN_HOST_STATIC)
+add_test(NAME lua_event_bus COMMAND test_lua_event_bus)
+
+# Process-wide named service table (plugin → host → core.vm)
+add_executable(test_plugin_services
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_services.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginServices.cpp)
+target_include_directories(test_plugin_services PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_plugin_services PRIVATE cxx_std_23)
+target_compile_definitions(test_plugin_services PRIVATE DS_PLUGIN_HOST_STATIC)
+add_test(NAME plugin_services COMMAND test_plugin_services)
+
 add_test(
     NAME plugin_host_lua
     COMMAND ${CMAKE_COMMAND} -E env

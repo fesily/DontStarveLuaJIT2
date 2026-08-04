@@ -2,6 +2,7 @@
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
+#include "core/PluginServices.hpp"
 #include "GameOpenGl.hpp"
 
 #include <cstdio>
@@ -51,6 +52,9 @@ RenderAnglePlugin g_render_angle;
 
 } // namespace
 
+// GAME_API defined in GameOpenGl.cpp
+extern "C" const char *DS_LUAJIT_get_render_backend_name();
+
 DS_PLUGIN_MODULE_EXPORT const char *ds_plugin_module_abi_version() {
     return DS_PLUGIN_ABI_VERSION;
 }
@@ -68,6 +72,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         std::fprintf(stderr, "[plugin_render_angle] schema conflict AngleBackend\n");
         return false;
     }
+    ds_host_register_service("DS_LUAJIT_get_render_backend_name",
+                             reinterpret_cast<void *>(&DS_LUAJIT_get_render_backend_name));
     host->register_plugin(&g_render_angle);
     std::fprintf(stderr, "[plugin_render_angle] module init registered render.angle\n");
     return true;

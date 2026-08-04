@@ -5,6 +5,7 @@
 #include "util/gum_platform.hpp"
 #include "util/platform.hpp"
 #include "util/zipfile.hpp"
+#include "core/PluginServices.hpp"
 #ifdef _WIN32
 #include "util/win_wfile.hpp"
 #define GAMEIO_FILE_INTERFACE wFile_interface
@@ -341,12 +342,8 @@ static int lj_need_transform_path() noexcept {
 // Do not reintroduce ds_core_vm_fullgc_* or ds_core_vm_lua_gc_func_ptr.
 static void ds_core_vm_lj_gc_fullgc_forward(void *L, void (*oldfn)(void *L)) {
     using Fn = void (*)(void *, void (*)(void *));
-#ifdef _WIN32
-    HMODULE m = GetModuleHandleA("plugin_debug_profiler.dll");
-    auto *fn = m ? reinterpret_cast<Fn>(GetProcAddress(m, "lj_gc_fullgc_external")) : nullptr;
-#else
-    auto *fn = reinterpret_cast<Fn>(dlsym(RTLD_DEFAULT, "lj_gc_fullgc_external"));
-#endif
+    // Host service table — debug.profiler registers lj_gc_fullgc_external at module_init.
+    auto *fn = reinterpret_cast<Fn>(ds_host_lookup_service("lj_gc_fullgc_external"));
     if (fn) {
         fn(L, oldfn);
         return;
