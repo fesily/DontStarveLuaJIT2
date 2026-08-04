@@ -1,6 +1,6 @@
 // test_config_view_build — ConfigView SSOT merge (BuildConfigView).
-// Formerly test_plugin_config_bridge; PluginConfigBridge now only builds
-// schema → business_options → core ConfigView (no field allowlist).
+// CF-S4: BuildConfigView(schema, resolved) fills late schema defaults only;
+// ResolvedConfig.view is Host SSOT (no GameJitModConfig dual bag for gates).
 #include "config/ConfigSchema.hpp"
 #include "core/PluginConfigBridge.hpp"
 #include "core/PluginHost.hpp"
@@ -52,21 +52,28 @@ static ConfigSchemaRegistry make_production_schema() {
     return schema;
 }
 
-static void set_business_bool(GameJitModConfig &cfg, const char *key, bool value) {
-    cfg.business_options[key] = ConfigValue::boolean(value);
-}
-
-static void set_business_string(GameJitModConfig &cfg, const char *key, std::string value) {
-    cfg.business_options[key] = ConfigValue::string(std::move(value));
+// Build a cascade-like resolved view (core + business keys).
+static ConfigView make_resolved(std::initializer_list<std::pair<const char *, ConfigValue>> entries = {}) {
+    ConfigView view;
+    // Core keys always present after cascade (modinfo defaults at minimum).
+    view["AlwaysEnableMod"] = ConfigValue::boolean(false);
+    view["DisableJITWhenServer"] = ConfigValue::boolean(false);
+    view["LuaVmType"] = ConfigValue::string("");
+    view["EnabledGenGC"] = ConfigValue::boolean(false);
+    for (const auto &p : entries) {
+        view[p.first] = p.second;
+    }
+    return view;
 }
 
 static void test_vbpool_true_maps_to_config_key() {
-    GameJitModConfig cfg{};
-    set_business_bool(cfg, "EnableVBPool", true);
-    set_business_string(cfg, "AngleBackend", "auto");
-    cfg.AlwaysEnableMod = true;
+    ConfigView resolved = make_resolved({
+        {"EnableVBPool", ConfigValue::boolean(true)},
+        {"AngleBackend", ConfigValue::string("auto")},
+        {"AlwaysEnableMod", ConfigValue::boolean(true)},
+    });
 
-    ConfigView view = BuildConfigView(make_production_schema(), cfg);
+    ConfigView view = BuildConfigView(make_production_schema(), resolved);
     auto it = view.find("EnableVBPool");
     assert(it != view.end());
     assert(it->second.type == ConfigValueType::Bool);
@@ -75,12 +82,13 @@ static void test_vbpool_true_maps_to_config_key() {
 }
 
 static void test_vbpool_false_maps_to_config_key() {
-    GameJitModConfig cfg{};
-    set_business_bool(cfg, "EnableVBPool", false);
-    set_business_string(cfg, "AngleBackend", "vulkan");
-    cfg.AlwaysEnableMod = false;
+    ConfigView resolved = make_resolved({
+        {"EnableVBPool", ConfigValue::boolean(false)},
+        {"AngleBackend", ConfigValue::string("vulkan")},
+        {"AlwaysEnableMod", ConfigValue::boolean(false)},
+    });
 
-    ConfigView view = BuildConfigView(make_production_schema(), cfg);
+    ConfigView view = BuildConfigView(make_production_schema(), resolved);
     auto it = view.find("EnableVBPool");
     assert(it != view.end());
     assert(it->second.type == ConfigValueType::Bool);
@@ -99,34 +107,34 @@ static void test_vbpool_false_maps_to_config_key() {
     auto net = view.find("NetworkOpt");
     assert(net != view.end());
     assert(net->second.type == ConfigValueType::Bool);
-    assert(net->second.b == true); // schema default
+    assert(net->second.b == true); // late schema default
     printf("PASS: vbpool_false_and_early_keys\n");
 }
 
 static void test_build_config_view_schema_defaults_and_overlay() {
     ConfigSchemaRegistry schema = make_production_schema();
-    GameJitModConfig cfg{};
-    // Business overlay over schema defaults via business_options (C-S3).
-    set_business_bool(cfg, "EnableVBPool", true); // overlay over schema default false
-    set_business_string(cfg, "AngleBackend", "d3d11");
-    cfg.AlwaysEnableMod = true;
-    cfg.DisableJITWhenServer = true;
-    cfg.LuaVmType = "jit";
-    cfg.EnabledGenGC = true;
+    ConfigView resolved = make_resolved({
+        {"EnableVBPool", ConfigValue::boolean(true)}, // overlay over schema default false
+        {"AngleBackend", ConfigValue::string("d3d11")},
+        {"AlwaysEnableMod", ConfigValue::boolean(true)},
+        {"DisableJITWhenServer", ConfigValue::boolean(true)},
+        {"LuaVmType", ConfigValue::string("jit")},
+        {"EnabledGenGC", ConfigValue::boolean(true)},
+    });
 
-    ConfigView view = BuildConfigView(schema, cfg);
+    ConfigView view = BuildConfigView(schema, resolved);
 
-    // Schema defaults that business does not override stay at schema defaults.
+    // Schema defaults for keys cascade did not set.
     assert(view.at("NetworkOpt").type == ConfigValueType::Bool);
     assert(view.at("NetworkOpt").b == true);
     assert(view.at("EnableNetSim").type == ConfigValueType::Bool);
     assert(view.at("EnableNetSim").b == false);
 
-    // Business overlays.
+    // Cascade-resolved overlays preserved.
     assert(view.at("EnableVBPool").b == true);
     assert(view.at("AngleBackend").s == "d3d11");
 
-    // Core always written.
+    // Core from resolved.
     assert(view.at("AlwaysEnableMod").b == true);
     assert(view.at("DisableJITWhenServer").b == true);
     assert(view.at("LuaVmType").s == "jit");
@@ -135,29 +143,29 @@ static void test_build_config_view_schema_defaults_and_overlay() {
     printf("PASS: build_config_view_schema_defaults_and_overlay\n");
 }
 
-static void test_business_arg_overlays_schema_and_core_map() {
+static void test_resolved_values_not_overwritten_by_schema_defaults() {
     ConfigSchemaRegistry schema = make_production_schema();
-    GameJitModConfig cfg{};
-    set_business_bool(cfg, "EnableVBPool", false);
-    set_business_string(cfg, "AngleBackend", "auto");
+    ConfigView resolved = make_resolved({
+        {"EnableVBPool", ConfigValue::boolean(false)},
+        {"AngleBackend", ConfigValue::string("auto")},
+        {"NetworkOpt", ConfigValue::boolean(false)},
+        {"EnableNetSim", ConfigValue::boolean(true)},
+    });
 
-    ConfigView extras;
-    extras["EnableVBPool"] = ConfigValue::boolean(true);
-    extras["NetworkOpt"] = ConfigValue::boolean(false);
-    extras["EnableNetSim"] = ConfigValue::boolean(true);
-
-    ConfigView view = BuildConfigView(schema, cfg, extras);
-    assert(view.at("EnableVBPool").b == true); // extras wins over core.business_options
-    assert(view.at("AngleBackend").s == "auto"); // from core.business_options
+    ConfigView view = BuildConfigView(schema, resolved);
+    // Cascade values win; schema defaults must not clobber.
+    assert(view.at("EnableVBPool").b == false);
+    assert(view.at("AngleBackend").s == "auto");
     assert(view.at("NetworkOpt").b == false);
     assert(view.at("EnableNetSim").b == true);
-    printf("PASS: business_arg_overlays_schema_and_core_map\n");
+    printf("PASS: resolved_values_not_overwritten_by_schema_defaults\n");
 }
 
-static void test_enable_net_sim_default_false_when_schema_registered() {
+static void test_late_schema_defaults_for_missing_keys() {
     ConfigSchemaRegistry schema = make_production_schema();
-    GameJitModConfig cfg{};
-    ConfigView view = BuildConfigView(schema, cfg);
+    ConfigView resolved = make_resolved(); // no business keys
+
+    ConfigView view = BuildConfigView(schema, resolved);
 
     auto it = view.find("EnableNetSim");
     assert(it != view.end());
@@ -166,11 +174,13 @@ static void test_enable_net_sim_default_false_when_schema_registered() {
 
     // Empty schema must not invent EnableNetSim or NetworkOpt.
     ConfigSchemaRegistry empty;
-    ConfigView legacy = BuildConfigView(empty, cfg);
+    ConfigView legacy = BuildConfigView(empty, resolved);
     assert(legacy.find("EnableNetSim") == legacy.end());
     assert(legacy.find("NetworkOpt") == legacy.end());
+    // Core keys from resolved still present.
+    assert(legacy.find("AlwaysEnableMod") != legacy.end());
 
-    printf("PASS: enable_net_sim_default_false_when_schema_registered\n");
+    printf("PASS: late_schema_defaults_for_missing_keys\n");
 }
 
 static void test_network_opt_not_forced_when_schema_has_false() {
@@ -182,8 +192,8 @@ static void test_network_opt_not_forced_when_schema_has_false() {
         e.default_value = ConfigValue::boolean(false);
         assert(schema.add(std::move(e)));
     }
-    GameJitModConfig cfg{};
-    ConfigView view = BuildConfigView(schema, cfg);
+    ConfigView resolved = make_resolved();
+    ConfigView view = BuildConfigView(schema, resolved);
     assert(view.at("NetworkOpt").b == false);
     printf("PASS: network_opt_not_forced_when_schema_has_false\n");
 }
@@ -271,12 +281,12 @@ struct RenderAngleStandIn final : IPlugin {
 };
 
 static void test_empty_registry_resolve_after_bridge_is_noop() {
-    GameJitModConfig cfg{};
-    set_business_bool(cfg, "EnableVBPool", true);
-    set_business_string(cfg, "AngleBackend", "d3d11");
-    cfg.AlwaysEnableMod = true;
-
-    ConfigView view = BuildConfigView(make_production_schema(), cfg);
+    ConfigView resolved = make_resolved({
+        {"EnableVBPool", ConfigValue::boolean(true)},
+        {"AngleBackend", ConfigValue::string("d3d11")},
+        {"AlwaysEnableMod", ConfigValue::boolean(true)},
+    });
+    ConfigView view = BuildConfigView(make_production_schema(), resolved);
 
     PluginHost host;
     PluginContext ctx;
@@ -294,8 +304,8 @@ static void test_empty_registry_resolve_after_bridge_is_noop() {
 }
 
 static void test_network_rpc_standin_from_bridge_default() {
-    GameJitModConfig cfg{};
-    ConfigView view = BuildConfigView(make_production_schema(), cfg);
+    ConfigView resolved = make_resolved();
+    ConfigView view = BuildConfigView(make_production_schema(), resolved);
     assert(view.at("NetworkOpt").type == ConfigValueType::Bool);
     assert(view.at("NetworkOpt").b == true);
 
@@ -339,8 +349,8 @@ static void test_network_rpc_standin_disabled_when_off() {
 static void test_network_sim_enable_matrix() {
     // EnableNetSim false (schema default) → network.sim disabled
     {
-        GameJitModConfig cfg{};
-        ConfigView view = BuildConfigView(make_production_schema(), cfg);
+        ConfigView resolved = make_resolved();
+        ConfigView view = BuildConfigView(make_production_schema(), resolved);
         assert(view.at("EnableNetSim").b == false);
 
         NetworkSimStandIn standin;
@@ -356,11 +366,12 @@ static void test_network_sim_enable_matrix() {
         assert(host.status("network.sim") == PluginStatus::Disabled);
     }
 
-    // EnableNetSim true (business overlay / save) → network.sim enabled + load
+    // EnableNetSim true (cascade overlay / save) → network.sim enabled + load
     {
-        GameJitModConfig cfg{};
-        set_business_bool(cfg, "EnableNetSim", true);
-        ConfigView view = BuildConfigView(make_production_schema(), cfg);
+        ConfigView resolved = make_resolved({
+            {"EnableNetSim", ConfigValue::boolean(true)},
+        });
+        ConfigView view = BuildConfigView(make_production_schema(), resolved);
         assert(view.at("EnableNetSim").b == true);
 
         NetworkSimStandIn standin;
@@ -379,9 +390,10 @@ static void test_network_sim_enable_matrix() {
 
     // NetworkOpt false → network.rpc disabled (paired gate matrix row)
     {
-        GameJitModConfig cfg{};
-        set_business_bool(cfg, "NetworkOpt", false);
-        ConfigView view = BuildConfigView(make_production_schema(), cfg);
+        ConfigView resolved = make_resolved({
+            {"NetworkOpt", ConfigValue::boolean(false)},
+        });
+        ConfigView view = BuildConfigView(make_production_schema(), resolved);
         assert(view.at("NetworkOpt").b == false);
 
         NetworkRpcStandIn rpc;
@@ -404,10 +416,11 @@ static void test_network_sim_enable_matrix() {
 static void test_render_vbpool_from_bridge_enable_matrix() {
     // EnableVBPool true → EarlyNative load
     {
-        GameJitModConfig cfg{};
-        set_business_bool(cfg, "EnableVBPool", true);
-        set_business_string(cfg, "AngleBackend", "auto");
-        ConfigView view = BuildConfigView(make_production_schema(), cfg);
+        ConfigView resolved = make_resolved({
+            {"EnableVBPool", ConfigValue::boolean(true)},
+            {"AngleBackend", ConfigValue::string("auto")},
+        });
+        ConfigView view = BuildConfigView(make_production_schema(), resolved);
         assert(view.at("EnableVBPool").b == true);
 
         RenderVbpoolStandIn standin;
@@ -425,10 +438,11 @@ static void test_render_vbpool_from_bridge_enable_matrix() {
 
     // EnableVBPool false → Disabled
     {
-        GameJitModConfig cfg{};
-        set_business_bool(cfg, "EnableVBPool", false);
-        set_business_string(cfg, "AngleBackend", "auto");
-        ConfigView view = BuildConfigView(make_production_schema(), cfg);
+        ConfigView resolved = make_resolved({
+            {"EnableVBPool", ConfigValue::boolean(false)},
+            {"AngleBackend", ConfigValue::string("auto")},
+        });
+        ConfigView view = BuildConfigView(make_production_schema(), resolved);
 
         RenderVbpoolStandIn standin;
         PluginHost host;
@@ -449,10 +463,11 @@ static void test_render_angle_backend_reaches_plugin() {
     // AngleBackend is a parameter: plugin AlwaysOn on client; backend string reaches load.
     const char *backends[] = {"auto", "vulkan", "d3d11", "d3d9"};
     for (const char *backend : backends) {
-        GameJitModConfig cfg{};
-        set_business_bool(cfg, "EnableVBPool", false);
-        set_business_string(cfg, "AngleBackend", backend);
-        ConfigView view = BuildConfigView(make_production_schema(), cfg);
+        ConfigView resolved = make_resolved({
+            {"EnableVBPool", ConfigValue::boolean(false)},
+            {"AngleBackend", ConfigValue::string(backend)},
+        });
+        ConfigView view = BuildConfigView(make_production_schema(), resolved);
         assert(view.at("AngleBackend").s == backend);
 
         RenderAngleStandIn standin;
@@ -470,9 +485,10 @@ static void test_render_angle_backend_reaches_plugin() {
 
     // Server/dedicated: can_load false → Disabled (no ANGLE init on dedicated)
     {
-        GameJitModConfig cfg{};
-        set_business_string(cfg, "AngleBackend", "vulkan");
-        ConfigView view = BuildConfigView(make_production_schema(), cfg);
+        ConfigView resolved = make_resolved({
+            {"AngleBackend", ConfigValue::string("vulkan")},
+        });
+        ConfigView view = BuildConfigView(make_production_schema(), resolved);
         RenderAngleStandIn standin;
         PluginHost host;
         host.register_plugin(&standin);
@@ -488,19 +504,24 @@ static void test_render_angle_backend_reaches_plugin() {
 }
 
 static void test_from_game_jit_mod_config_compat() {
-    // Compatibility wrapper: empty schema — only core + business_options.
+    // Compatibility wrapper: project bag + core only — no schema defaults.
     // Does not invent NetworkOpt / EnableNetSim (schema owns those after plugins load).
     GameJitModConfig cfg{};
-    set_business_bool(cfg, "EnableVBPool", true);
-    set_business_string(cfg, "AngleBackend", "auto");
+    cfg.business_options["EnableVBPool"] = ConfigValue::boolean(true);
+    cfg.business_options["AngleBackend"] = ConfigValue::string("auto");
     ConfigView view = FromGameJitModConfig(cfg);
     assert(view.at("EnableVBPool").b == true);
     assert(view.find("NetworkOpt") == view.end());
     assert(view.find("EnableNetSim") == view.end());
     // Business map can still carry NetworkOpt when save-path filled it.
-    set_business_bool(cfg, "NetworkOpt", false);
+    cfg.business_options["NetworkOpt"] = ConfigValue::boolean(false);
     view = FromGameJitModConfig(cfg);
     assert(view.at("NetworkOpt").b == false);
+
+    // Host path: project bag then fill late schema defaults (no dual bag on Host).
+    ConfigView host_view = BuildConfigView(make_production_schema(), view);
+    assert(host_view.at("NetworkOpt").b == false); // preserved from bag
+    assert(host_view.at("EnableNetSim").b == false); // late schema default
     printf("PASS: from_game_jit_mod_config_compat\n");
 }
 
@@ -508,8 +529,8 @@ int main() {
     test_vbpool_true_maps_to_config_key();
     test_vbpool_false_maps_to_config_key();
     test_build_config_view_schema_defaults_and_overlay();
-    test_business_arg_overlays_schema_and_core_map();
-    test_enable_net_sim_default_false_when_schema_registered();
+    test_resolved_values_not_overwritten_by_schema_defaults();
+    test_late_schema_defaults_for_missing_keys();
     test_network_opt_not_forced_when_schema_has_false();
     test_empty_registry_resolve_after_bridge_is_noop();
     test_network_rpc_standin_from_bridge_default();

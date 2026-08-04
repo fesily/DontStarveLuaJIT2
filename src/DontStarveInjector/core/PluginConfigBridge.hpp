@@ -7,18 +7,19 @@
 namespace ds::plugin {
 
 // ConfigView SSOT merge for PluginHost::resolve (EarlyNative).
-// Merge order:
-//   1. schema defaults for each registered entry
-//   2. business overlay (core.business_options, then optional extras arg)
-//   3. core GameJitModConfig fields always written last
-// Business keys (NetworkOpt, EnableNetSim, EnableVBPool, AngleBackend, …)
-// come only from schema defaults + business_options — never invented here.
+//
+// `resolved` is the cascade result (ResolvedConfig.view) or any pre-filled
+// ConfigView. For each key registered in `schema` that is missing from
+// `resolved`, fill the schema default (late plugin keys after DynamicPluginLoader).
+// Existing keys in `resolved` are never overwritten — cascade is SSOT.
+//
+// Prefer: BuildConfigView(host.option_schema(), resolved_config->view)
 ConfigView BuildConfigView(const ConfigSchemaRegistry &schema,
-                           const GameJitModConfig &core,
-                           const ConfigView &business = {});
+                           const ConfigView &resolved);
 
-// Compatibility helper: empty schema + core/business only.
-// Prefer BuildConfigView(host.option_schema(), …) after plugins load.
+// Compatibility: project GameJitModConfig core fields + business_options into a
+// ConfigView without schema defaults. Prefer ResolvedConfig.view for Host.
+// business_options is deprecated for Host; this remains for legacy unit paths.
 ConfigView FromGameJitModConfig(const GameJitModConfig &config);
 
 } // namespace ds::plugin

@@ -3,38 +3,28 @@
 namespace ds::plugin {
 
 ConfigView BuildConfigView(const ConfigSchemaRegistry &schema,
-                           const GameJitModConfig &core,
-                           const ConfigView &business) {
-    ConfigView view;
+                           const ConfigView &resolved) {
+    ConfigView view = resolved;
 
-    // 1. Schema defaults for each registered entry.
+    // Fill schema defaults only for keys not already present (late plugin keys).
+    // Cascade-resolved values always win — no second disk re-read.
     for (auto *e : schema.all()) {
-        view[e->key] = e->default_value;
+        if (view.find(e->key) == view.end()) {
+            view[e->key] = e->default_value;
+        }
     }
-
-    // 2. Business overlay: core.business_options first, then explicit business arg
-    // (later wins). Cascade load fills core.business_options; callers may also
-    // pass extras directly.
-    for (const auto &[key, value] : core.business_options) {
-        view[key] = value;
-    }
-    for (const auto &[key, value] : business) {
-        view[key] = value;
-    }
-
-    // 3. Core fields always written from GameJitModConfig.
-    view["AlwaysEnableMod"] = ConfigValue::boolean(core.AlwaysEnableMod);
-    view["DisableJITWhenServer"] = ConfigValue::boolean(core.DisableJITWhenServer);
-    view["LuaVmType"] = ConfigValue::string(core.LuaVmType);
-    view["EnabledGenGC"] = ConfigValue::boolean(core.EnabledGenGC);
 
     return view;
 }
 
 ConfigView FromGameJitModConfig(const GameJitModConfig &config) {
-    // Empty schema: only core fields + business_options (no invented NetworkOpt).
-    ConfigSchemaRegistry empty;
-    return BuildConfigView(empty, config);
+    // Project legacy bag + core fields only (no schema defaults).
+    ConfigView view = config.business_options;
+    view["AlwaysEnableMod"] = ConfigValue::boolean(config.AlwaysEnableMod);
+    view["DisableJITWhenServer"] = ConfigValue::boolean(config.DisableJITWhenServer);
+    view["LuaVmType"] = ConfigValue::string(config.LuaVmType);
+    view["EnabledGenGC"] = ConfigValue::boolean(config.EnabledGenGC);
+    return view;
 }
 
 } // namespace ds::plugin

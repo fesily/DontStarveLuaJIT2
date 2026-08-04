@@ -14,4 +14,8 @@ struct ResolvedConfig {
     CascadeContext ctx; // identity snapshot
 };
 
+// L0 cascade cache filled by GameJitModConfig::instance() load path.
+// Null before first resolve. Host consumes current()->view (CF-S4).
+const ResolvedConfig *current();
+
 } // namespace ds::config

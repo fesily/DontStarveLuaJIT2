@@ -42,6 +42,14 @@ const ds::plugin::ConfigSchemaRegistry &cascade_option_schema() {
     return schema;
 }
 
+} // namespace
+
+// Cascade SSOT for Host (CF-S4). Filled once on first GameJitModConfig::instance().
+// File-scope (not anonymous) so ds::config::current() can return a stable pointer.
+static std::optional<ds::config::ResolvedConfig> g_resolved_config;
+
+namespace {
+
 static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
     auto *ictx = InjectorCtx::instance();
     ds::config::CascadeContext ctx;
@@ -66,8 +74,8 @@ static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
         }
     }
 
-    auto resolved_view = ds::config::resolve(cascade_option_schema(), ctx);
-    auto resolved = ds::config::map_to_game_jit_mod_config(resolved_view);
+    g_resolved_config = ds::config::resolve(cascade_option_schema(), ctx);
+    auto resolved = ds::config::map_to_game_jit_mod_config(*g_resolved_config);
 
     // Client write-back of resolved config (legacy behavior).
     if (ctx.is_client && resolved.save_file && !resolved.save_file->empty()) {
@@ -78,6 +86,14 @@ static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
 }
 
 } // namespace
+
+namespace ds::config {
+
+const ResolvedConfig *current() {
+    return g_resolved_config ? &*g_resolved_config : nullptr;
+}
+
+} // namespace ds::config
 
 struct GameConfigs {
     std::optional<int> render_fps;

@@ -10,6 +10,7 @@
 #include "core/PluginHost.hpp"
 #include "core/PluginConfigBridge.hpp"
 #include "config/ConfigSchema.hpp"
+#include "config/ResolvedConfig.hpp"
 #include "core/RegisterBuiltinPlugins.hpp"
 #include "core/DynamicPluginLoader.hpp"
 #include "core/CoreVmBootstrap.hpp"
@@ -261,9 +262,13 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         }
 
 
+        // CF-S4: PluginHost gates from cascade ResolvedConfig.view SSOT.
+        // Ensure resolve has run (fills ds::config::current()); then fill only
+        // late schema defaults for keys registered after DynamicPluginLoader.
+        (void) GameJitModConfig::instance();
         ConfigView plugin_cfg;
-        if (auto modcfg = GameJitModConfig::instance()) {
-            plugin_cfg = BuildConfigView(g_plugin_host.option_schema(), *modcfg);
+        if (auto *rc = ds::config::current()) {
+            plugin_cfg = BuildConfigView(g_plugin_host.option_schema(), rc->view);
         }
         PluginContext gate_ctx;
         gate_ctx.injector = InjectorCtx::instance();
