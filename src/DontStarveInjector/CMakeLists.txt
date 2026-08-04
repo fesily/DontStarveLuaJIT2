@@ -206,8 +206,8 @@ set(PLUGIN_CORE_VM_SOURCES
     plugins/plugin_core_vm/GameLua.cpp
     plugins/plugin_core_vm/DontStarveSignature.cpp
     plugins/plugin_core_vm/SignatureJson.cpp
-    GameSignature.cpp
-    GameLuaModule.cpp
+    plugins/plugin_core_vm/GameSignature.cpp
+    plugins/plugin_core_vm/GameLuaModule.cpp
     plugins/plugin_core_vm/GameLuaInjectFramework.c
     plugins/plugin_core_vm/lua_debugger_helper.cpp
     ${DONTSTARVEINJECTOR_UTIL_DIR}/lua_io2.cpp
@@ -244,7 +244,7 @@ target_compile_definitions(plugin_core_vm PRIVATE
 if (MSVC)
     target_compile_definitions(plugin_core_vm PRIVATE SUPPORT_PROGRESS)
 endif()
-# Headers for moved TUs + L0 shared headers (config, GameLuaType, GameSignature, ...).
+# Headers for moved TUs + L0 shared headers (config, GameLuaType, ...).
 target_include_directories(plugin_core_vm PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${PLUGIN_CORE_VM_DIR}
