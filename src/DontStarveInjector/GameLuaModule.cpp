@@ -1767,6 +1767,10 @@ bool LoadGameJitModConfigFromSaveFile(const std::filesystem::path &path, GameJit
 			continue;
 		}
 		const auto saved_value = get_saved_value(option);
+		if (is_nil_object(saved_value)) {
+			// Absent/nil saved value: keep prior/default, do not error-log.
+			continue;
+		}
 		ds::plugin::ConfigValue v;
 		if (!try_coerce_saved_value(saved_value, *sch, v)) {
 			spdlog::error("invalid value for option {}", option_name);
@@ -1814,6 +1818,10 @@ bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
 		sol::object raw = value;
 		if (value.get_type() == sol::type::table) {
 			raw = get_saved_value(value.as<sol::table>());
+		}
+		if (is_nil_object(raw)) {
+			// Absent/nil saved value: keep prior/default, do not error-log.
+			continue;
 		}
 		ds::plugin::ConfigValue v;
 		if (!try_coerce_saved_value(raw, *sch, v)) {

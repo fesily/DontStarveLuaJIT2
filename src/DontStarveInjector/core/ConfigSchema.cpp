@@ -1,5 +1,5 @@
 #include "ConfigSchema.hpp"
-#include "../modinfo.hpp"
+#include "../../modinfo.hpp"
 
 
 #include <algorithm>
