@@ -1,6 +1,6 @@
 #include "ConfigSources.hpp"
-#include "config/ConfigPathAccess.hpp"
-#include "luajit_config.hpp"
+#include "config/path/ConfigPaths.hpp"
+#include "config/sources/LuajitConfigFile.hpp"
 
 namespace ds::config {
 

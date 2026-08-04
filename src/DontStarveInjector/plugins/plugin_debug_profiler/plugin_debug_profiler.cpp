@@ -7,7 +7,7 @@
 #include "core/PluginTypes.hpp"
 #include "core/PluginServices.hpp"
 #include "core/LuaEvent.hpp"
-#include "core/ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 #include "GameProfilerHook.hpp"
 #include "FullGcPolicy.hpp"
 

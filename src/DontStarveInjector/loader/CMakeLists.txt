@@ -1,4 +1,5 @@
 find_package(spdlog CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 
 set(Winmm_SOURCES
@@ -7,14 +8,14 @@ set(Winmm_SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
-        ../luajit_config.cpp
+        ../config/sources/LuajitConfigFile.cpp
 )
 
 add_library(Winmm SHARED ${Winmm_SOURCES})
 
-target_include_directories(Winmm PUBLIC ${DONTSTARVEINJECTOR_UTIL_DIR})
+target_include_directories(Winmm PUBLIC ${DONTSTARVEINJECTOR_UTIL_DIR} ${DONTSTARVEINJECTOR_ROOT})
 
-target_link_libraries(Winmm PRIVATE spdlog::spdlog)
+target_link_libraries(Winmm PRIVATE spdlog::spdlog nlohmann_json::nlohmann_json)
 add_compile_definitions(NO_FRIDA_GUM=1)
 
 target_include_directories(Winmm PUBLIC ${LUAJIT_INCLUDE_DIR})

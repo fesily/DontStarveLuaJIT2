@@ -1,4 +1,4 @@
-#include "core/ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 
 #include <algorithm>
 #include <cassert>

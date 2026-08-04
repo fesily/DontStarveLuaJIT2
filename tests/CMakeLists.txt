@@ -44,7 +44,7 @@ add_test(NAME BufferNamePool COMMAND test_buffer_name_pool)
 set(PLUGIN_HOST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginHost.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginOptionRules.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ConfigSchema.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/ConfigSchema.cpp
 )
 
 add_executable(test_plugin_host_graph
@@ -66,7 +66,7 @@ add_test(NAME plugin_option_rules COMMAND test_plugin_option_rules)
 
 add_executable(test_config_schema
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_config_schema.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ConfigSchema.cpp)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/ConfigSchema.cpp)
 target_include_directories(test_config_schema PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
 target_compile_features(test_config_schema PRIVATE cxx_std_23)
@@ -75,7 +75,7 @@ add_test(NAME config_schema COMMAND test_config_schema)
 add_executable(test_config_source_whitelist
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_config_source_whitelist.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/CascadeEngine.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ConfigSchema.cpp)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/ConfigSchema.cpp)
 target_include_directories(test_config_source_whitelist PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
 target_compile_features(test_config_source_whitelist PRIVATE cxx_std_23)
@@ -87,7 +87,7 @@ add_test(NAME config_source_whitelist COMMAND test_config_source_whitelist)
 add_executable(test_config_resolve
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_config_resolve.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/CascadeEngine.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ConfigSchema.cpp)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/ConfigSchema.cpp)
 target_include_directories(test_config_resolve PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
 target_compile_features(test_config_resolve PRIVATE cxx_std_23)

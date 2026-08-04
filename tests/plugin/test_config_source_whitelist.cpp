@@ -1,5 +1,5 @@
 #include "config/CascadeEngine.hpp"
-#include "core/ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 #include <cassert>
 #include <cstdio>
 

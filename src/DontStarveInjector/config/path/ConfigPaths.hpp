@@ -1,6 +1,6 @@
 #pragma once
-// Temporary internal path/identity helpers for config sources (CF-S2).
-// Physical move into config/path/ is Task 4.
+// Path candidates and env helpers for config cascade (CF-S3).
+#include "ModIdentity.hpp"
 #include "game_info.hpp"
 
 #include <cstdint>
@@ -11,15 +11,6 @@
 #include <vector>
 
 namespace ds::config::path {
-
-struct ResolvedModIdentity {
-    std::string canonical_modname;
-    std::string modname;
-    std::string modid;
-    std::vector<std::string> aliases;
-};
-
-ResolvedModIdentity build_mod_identity();
 
 std::filesystem::path GetModConfigDataDir(std::string_view ownid,
                                           std::string_view cluster_name = "client_save");

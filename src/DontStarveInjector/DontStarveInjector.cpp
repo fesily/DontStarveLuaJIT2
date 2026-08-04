@@ -9,7 +9,7 @@
 #include "gameModConfig.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginConfigBridge.hpp"
-#include "core/ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 #include "core/RegisterBuiltinPlugins.hpp"
 #include "core/DynamicPluginLoader.hpp"
 #include "core/CoreVmBootstrap.hpp"

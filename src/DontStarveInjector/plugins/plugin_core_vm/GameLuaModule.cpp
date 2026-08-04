@@ -1174,7 +1174,7 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 #ifndef _WIN32
 #include <dlfcn.h>
 #endif
-#include "core/ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 #include "util/PersistentString.hpp"
 #include "plugins/plugin_network_sim/NetSimStats.hpp"
 

@@ -14,17 +14,18 @@ set(SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/PersistentString.cpp
         gameModConfig.cpp
         GameJitModConfigCascade.cpp
-        luajit_config.cpp
+        config/sources/LuajitConfigFile.cpp
         game_info.cpp
         config.cpp
         core/PluginHost.cpp
         core/PluginServices.cpp
         core/LuaEventBus.cpp
         core/PluginOptionRules.cpp
-        core/ConfigSchema.cpp
+        config/ConfigSchema.cpp
         config/CascadeEngine.cpp
         config/ConfigResolve.cpp
-        config/ConfigPathAccess.cpp
+        config/path/ConfigPaths.cpp
+        config/path/ModIdentity.cpp
         config/sources/ModinfoDefaultSource.cpp
         config/sources/LuajitConfigSource.cpp
         config/sources/SaveFileSource.cpp
@@ -126,7 +127,7 @@ endif()
 target_link_libraries(Injector PRIVATE function_relocation)
 target_include_directories(Injector PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
-# L0 config cascade (GameJitModConfigCascade + stock sol2) uses a dedicated PUC
+# L0 config cascade (save write-back + stock sol2) uses a dedicated PUC
 # Lua 5.1 VM (src/lua51original → liblua_static). Do NOT link game LuaJIT here:
 # core.vm owns the game VM; sol in GameLuaModule is GameDbg-specialized and lives
 # only in plugin_core_vm.

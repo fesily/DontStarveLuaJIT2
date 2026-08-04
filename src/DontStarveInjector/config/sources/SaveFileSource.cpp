@@ -1,6 +1,6 @@
 #include "ConfigSources.hpp"
 #include "SaveParse.hpp"
-#include "config/ConfigPathAccess.hpp"
+#include "config/path/ConfigPaths.hpp"
 
 #include <spdlog/spdlog.h>
 

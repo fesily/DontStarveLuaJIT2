@@ -1,5 +1,5 @@
 #pragma once
-#include "core/ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 #include "core/PluginTypes.hpp"
 
 #include <filesystem>

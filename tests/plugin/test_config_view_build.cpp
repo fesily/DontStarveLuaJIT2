@@ -1,7 +1,7 @@
 // test_config_view_build — ConfigView SSOT merge (BuildConfigView).
 // Formerly test_plugin_config_bridge; PluginConfigBridge now only builds
 // schema → business_options → core ConfigView (no field allowlist).
-#include "core/ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 #include "core/PluginConfigBridge.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"

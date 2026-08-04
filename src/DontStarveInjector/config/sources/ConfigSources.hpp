@@ -1,6 +1,6 @@
 #pragma once
 #include "config/IConfigSource.hpp"
-#include "core/ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 
 namespace ds::config {
 

@@ -2,7 +2,7 @@
 #include "ConfigSource.hpp"
 #include "IConfigSource.hpp"
 #include "ResolvedConfig.hpp"
-#include "core/ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 #include "core/PluginTypes.hpp"
 #include <string>
 #include <unordered_map>

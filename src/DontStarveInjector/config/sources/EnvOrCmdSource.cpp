@@ -1,6 +1,6 @@
 #include "ConfigSources.hpp"
 #include "config.hpp"
-#include "config/ConfigPathAccess.hpp"
+#include "config/path/ConfigPaths.hpp"
 
 #include <cstdlib>
 #include <string>

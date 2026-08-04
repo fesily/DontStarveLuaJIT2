@@ -1,11 +1,11 @@
 // GameJitModConfig cascade loaders (L0). Split from GameLuaModule so core.vm can own luaopen.
 #include "gameModConfig.hpp"
 #include "config.hpp"
-#include "core/ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 #include "config/CascadeEngine.hpp"
 #include "core/PluginConfigBridge.hpp"
 #include "core/PluginTypes.hpp"
-#include "luajit_config.hpp"
+#include "config/sources/LuajitConfigFile.hpp"
 
 #include <cmath>
 #include <filesystem>

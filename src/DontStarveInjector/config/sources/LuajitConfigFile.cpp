@@ -1,4 +1,4 @@
-#include "luajit_config.hpp"
+#include "LuajitConfigFile.hpp"
 #include <nlohmann/json.hpp>
 #include <fstream>
 

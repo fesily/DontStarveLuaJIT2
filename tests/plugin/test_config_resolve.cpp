@@ -1,7 +1,7 @@
 #include "config/CascadeEngine.hpp"
 #include "config/IConfigSource.hpp"
 #include "config/ResolvedConfig.hpp"
-#include "core/ConfigSchema.hpp"
+#include "config/ConfigSchema.hpp"
 #include <cassert>
 #include <cstdio>
 #include <vector>
