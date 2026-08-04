@@ -1,7 +1,7 @@
 # Config Source + Schema Unification (Approach B)
 
 **Date:** 2026-08-04  
-**Status:** Draft for review (user chose **B: full ConfigView + SourceReader**)  
+**Status:** Approved (user confirmed). Implementation plan: `docs/superpowers/plans/2026-08-04-config-source-schema-unification.md`  
 **Scope:** Unify the four game-option config sources under one schema-driven cascade; each option declares **allowed sources** (whitelist); move all game-config read machinery into one directory.
 
 Related:
@@ -327,4 +327,4 @@ Each slice: RelWithDebInfo + unit tests + L-G present when touching runtime load
 
 ---
 
-**Next:** user reviews this file; on approval → `writing-plans` for CF-S0…CF-S6.
+**Next:** execute plan CF-S0…CF-S6 (Tasks 1–7).
