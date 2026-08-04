@@ -1171,7 +1171,7 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 
 #include "gameModConfig.hpp"
 #include "util/PersistentString.hpp"
-#include "NetSimStats.hpp"
+#include "plugins/plugin_network_sim/NetSimStats.hpp"
 
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_workshop_dir();

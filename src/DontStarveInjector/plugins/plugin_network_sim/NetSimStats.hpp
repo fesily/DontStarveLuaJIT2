@@ -2,8 +2,8 @@
 
 #include <cstdint>
 
-// Shared layout for plugin_network_sim exports and GameLuaModule Lua table mapping.
-// Implementation lives in plugins/plugin_network_sim/GameNetworkSim.cpp.
+// Owned by plugin_network_sim. Layout is the C ABI of DS_LUAJIT_net_sim_get_stats().
+// GameLuaModule includes this for the GetProcAddress return type only.
 struct NetSimStats {
     bool     enabled;
     uint32_t delay_ms;
