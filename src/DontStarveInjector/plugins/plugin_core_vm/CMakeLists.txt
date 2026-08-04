@@ -1,9 +1,10 @@
-# core.vm — optional Signature + GameLua (V-S2+V-S3). All platforms.
+# core.vm — optional Signature + GameLua + game I/O. All platforms.
 # Gum symbols come from Injector re-exports (FridaGum.def on MSVC).
 #
 # Layout:
 #   signature_load/  → STATIC ds_signature (scan/json/progress)
-#   this dir         → MODULE plugin_core_vm (VM replace, gameio, GameInjector)
+#   io/              → gameio + GameSteam (workshop path + lj_* I/O)
+#   this dir         → MODULE plugin_core_vm (VM replace, GameInjector open)
 
 set(PLUGIN_CORE_VM_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -18,20 +19,29 @@ add_custom_command(OUTPUT ${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.c
 )
 add_custom_target(GameLuaInjectFramework DEPENDS ${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.c)
 
-set(PLUGIN_CORE_VM_SOURCES
+# --- I/O face (same MODULE, grouped under io/) ---
+set(PLUGIN_CORE_VM_IO_SOURCES
+    io/gameio.cpp
+    io/GameSteam.cpp
+    ${DONTSTARVEINJECTOR_UTIL_DIR}/lua_io2.cpp
+    ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
+)
+
+# --- VM replace + GameInjector ---
+set(PLUGIN_CORE_VM_VM_SOURCES
     plugin_core_vm.cpp
     GameLua.cpp
     GameLuaModule.cpp
     GameLuaInjectFramework.c
     lua_debugger_helper.cpp
-    gameio.cpp
-    GameSteam.cpp
-    ${DONTSTARVEINJECTOR_UTIL_DIR}/lua_io2.cpp
-    ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
+)
+
+set(PLUGIN_CORE_VM_SOURCES
+    ${PLUGIN_CORE_VM_VM_SOURCES}
+    ${PLUGIN_CORE_VM_IO_SOURCES}
 )
 if (MSVC)
-    list(APPEND PLUGIN_CORE_VM_SOURCES
-        GameLua.def)
+    list(APPEND PLUGIN_CORE_VM_SOURCES GameLua.def)
 endif()
 
 ds_add_dynamic_plugin(plugin_core_vm ${PLUGIN_CORE_VM_SOURCES})
@@ -55,19 +65,17 @@ target_compile_definitions(plugin_core_vm PRIVATE
     GUM_STATIC=1
     SPDLOG_COMPILED_LIB
     SPDLOG_FMT_EXTERNAL
-    # Import Injector C++ APIs (Hook, loadlib, InjectorCtx, ...).
     DS_INJECTOR_CONSUMER=1
-    # Export GAME_API implemented in this module (GameDbg_*, DS_LUAJIT_set_vm_type, ...).
     DS_CORE_VM_BUILD=1
 )
 if (MSVC)
-    # Match pre-split behavior: ShowProgressWindow during signature update.
     target_compile_definitions(plugin_core_vm PRIVATE SUPPORT_PROGRESS)
 endif()
 
 target_include_directories(plugin_core_vm PRIVATE
     ${DONTSTARVEINJECTOR_ROOT}
     ${PLUGIN_CORE_VM_DIR}
+    ${PLUGIN_CORE_VM_DIR}/io
     ${FRIDA_GUM_INCLUDE_DIR}
     ${FUNCTION_RELOCATION_INCLUDE_DIR}
     ${SOL2_INCLUDE_DIRS}
@@ -80,12 +88,12 @@ if (ENABLE_STEAM_SUPPORT)
     target_compile_definitions(plugin_core_vm PRIVATE ENABLE_STEAM_SUPPORT)
     target_include_directories(plugin_core_vm PRIVATE ${STEAM_INCLUDE_DIR} ${STEAM_SDK_INCLUDE_DIR})
     target_link_libraries(plugin_core_vm PRIVATE ${STEAM_LIBRARIES})
+    # SteamUser() accessors for GameSteam account id (io/GameSteam.cpp).
     target_sources(plugin_core_vm PRIVATE ${DONTSTARVEINJECTOR_UTIL_DIR}/steam.cpp)
 endif()
 
-# lagcomp / remaining Injector TUs still include GameLua.hpp etc.
-# Also expose signature_load headers (DontStarveSignature.hpp) via PUBLIC on ds_signature;
-# keep plugin_core_vm dir PUBLIC for GameLua.hpp consumers.
+# Consumers (lagcomp, profiler, Injector) need GameLua.hpp + signature headers.
 target_include_directories(Injector PUBLIC
     ${PLUGIN_CORE_VM_DIR}
-    ${PLUGIN_CORE_VM_DIR}/signature_load)
+    ${PLUGIN_CORE_VM_DIR}/signature_load
+    ${PLUGIN_CORE_VM_DIR}/io)

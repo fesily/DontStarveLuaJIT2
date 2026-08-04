@@ -7,7 +7,7 @@
 #include "core/CoreVmBootstrap.hpp"
 
 #include "GameLua.hpp"
-#include "GameSteam.hpp"
+#include "io/GameSteam.hpp"
 #include "DontStarveSignature.hpp"
 #include "GameSignature.hpp"
 #include "ProcessMutex.hpp"

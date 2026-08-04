@@ -7,7 +7,7 @@
 #include "util/platform.hpp"
 #include "util/lua_io2.hpp"
 #include "util/lua51_object.hpp"
-#include "gameio.h"
+#include "io/gameio.h"
 #include "lua_debugger_helper.hpp"
 #include <string_view>
 #include <map>
