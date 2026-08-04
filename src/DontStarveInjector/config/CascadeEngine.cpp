@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <spdlog/spdlog.h>
 
-
 namespace ds::config {
 namespace {
 
@@ -58,6 +57,21 @@ ApplyStats apply_partial(
         ++stats.applied;
     }
     return stats;
+}
+
+ResolvedConfig resolve(const ds::plugin::ConfigSchemaRegistry &schema,
+                       CascadeContext ctx,
+                       const std::vector<const IConfigSource *> &sources) {
+    ResolvedConfig out;
+    out.ctx = std::move(ctx);
+    for (const IConfigSource *src : sources) {
+        if (src == nullptr) {
+            continue;
+        }
+        ConfigPartial partial = src->read(out.ctx);
+        (void)apply_partial(schema, src->id(), partial.values, out.view, out.source_of);
+    }
+    return out;
 }
 
 } // namespace ds::config

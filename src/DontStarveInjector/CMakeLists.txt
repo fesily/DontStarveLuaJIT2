@@ -23,6 +23,14 @@ set(SOURCES
         core/PluginOptionRules.cpp
         core/ConfigSchema.cpp
         config/CascadeEngine.cpp
+        config/ConfigResolve.cpp
+        config/ConfigPathAccess.cpp
+        config/sources/ModinfoDefaultSource.cpp
+        config/sources/LuajitConfigSource.cpp
+        config/sources/SaveFileSource.cpp
+        config/sources/ModOverridesSource.cpp
+        config/sources/EnvOrCmdSource.cpp
+        config/sources/SaveParse.cpp
         core/RegisterBuiltinPlugins.cpp
         core/PluginConfigBridge.cpp
         core/DynamicPluginLoader.cpp

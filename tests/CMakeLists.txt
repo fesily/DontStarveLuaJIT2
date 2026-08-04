@@ -84,6 +84,18 @@ find_package(spdlog CONFIG REQUIRED)
 target_link_libraries(test_config_source_whitelist PRIVATE spdlog::spdlog)
 add_test(NAME config_source_whitelist COMMAND test_config_source_whitelist)
 
+add_executable(test_config_resolve
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_config_resolve.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/CascadeEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ConfigSchema.cpp)
+target_include_directories(test_config_resolve PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_config_resolve PRIVATE cxx_std_23)
+target_compile_definitions(test_config_resolve PRIVATE DS_PLUGIN_HOST_STATIC)
+find_package(spdlog CONFIG REQUIRED)
+target_link_libraries(test_config_resolve PRIVATE spdlog::spdlog)
+add_test(NAME config_resolve COMMAND test_config_resolve)
+
 
 set(PLUGIN_CONFIG_VIEW_SOURCES
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginConfigBridge.cpp

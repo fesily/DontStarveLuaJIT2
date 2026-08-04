@@ -1,84 +1,103 @@
-# Task 3 Report — M1 migrate `save.fork` dual-face plugin
+# Task 3 Report: IConfigSource adapters + single resolve entry (CF-S2)
 
 **Status:** DONE  
-**Date:** 2026-08-03  
-**Commit:** `b0ebb63` — `feat(plugin): migrate save.fork Lua face to PluginHost (M1 Task 3)`
+**Commit:** `f896a32` — `feat(config): IConfigSource cascade resolve behind GameJitModConfig::instance`  
+**Base:** `2712b54` (Task 2 apply_partial)  
+**Date:** 2026-08-05
 
 ## Summary
 
-Migrated the Lua face of dual-face plugin `save.fork` onto the pure-Lua PluginHost. `Mod/plugins/save_fork.lua` is registered from `plugins/init.lua` with option `EnableForkSave`, priority 60, and `when` = dedicated + has_luajit. The hard-wired `modmain` `EnableForkSave` / `modimport("scripts/fork_save")` block is removed; host `load_phase(AfterModMain)` owns that path. Native `GameForkSave` already exports `DS_LUAJIT_fork_save*` — no EarlyNative plugin required. L-E enable-matrix rows green; `fork_save_lua` still green.
+Introduced `IConfigSource` / `ResolvedConfig` / `ds::config::resolve`, four production source adapters, and routed `GameJitModConfig::instance` through resolve + `map_to_game_jit_mod_config` for compatibility. Path discovery remains under temporary `config/ConfigPathAccess.*` (physical `config/path/` move is Task 4).
 
-## Changes
+## Files
 
-### Created
-| File | Role |
-|---|---|
-| `Mod/plugins/save_fork.lua` | Lua plugin: id `save.fork`, options `EnableForkSave`, priority 60, when dedicated+has_luajit, load → `AddGamePostInit` + `modimport("scripts/fork_save")` |
-| `.superpowers/sdd/task-3-report.md` | This report |
+| Path | Action |
+|------|--------|
+| `src/DontStarveInjector/config/IConfigSource.hpp` | Create — `CascadeContext`, `ConfigPartial`, `IConfigSource` |
+| `src/DontStarveInjector/config/ResolvedConfig.hpp` | Create — `view` + `source_of` + ctx snapshot |
+| `src/DontStarveInjector/config/CascadeEngine.hpp/.cpp` | Add injection `resolve(schema, ctx, sources)` |
+| `src/DontStarveInjector/config/ConfigResolve.cpp` | Production `resolve(schema, ctx)` builds fixed layers |
+| `src/DontStarveInjector/config/Compat.hpp` | `map_to_game_jit_mod_config` + `ToGameJitConfigSource` |
+| `src/DontStarveInjector/config/ConfigPathAccess.hpp/.cpp` | Path/identity helpers extracted for sources |
+| `src/DontStarveInjector/config/sources/ConfigSources.hpp` | Source class declarations |
+| `src/DontStarveInjector/config/sources/ModinfoDefaultSource.cpp` | Schema defaults layer |
+| `src/DontStarveInjector/config/sources/LuajitConfigSource.cpp` | `luajit_config.json` + identity |
+| `src/DontStarveInjector/config/sources/SaveFileSource.cpp` | Client save (id=SaveFile) |
+| `src/DontStarveInjector/config/sources/ModOverridesSource.cpp` | Server overrides (id=SaveFile) |
+| `src/DontStarveInjector/config/sources/EnvOrCmdSource.cpp` | LuaVmType + AngleBackend env |
+| `src/DontStarveInjector/config/sources/SaveParse.hpp/.cpp` | Shared sol2 coerce/read helpers |
+| `src/DontStarveInjector/gameModConfig.cpp` | `load_resolved_game_mod_config` → resolve + map + client write-back |
+| `src/DontStarveInjector/CMakeLists.txt` | Add new config sources |
+| `tests/plugin/test_config_resolve.cpp` | Fake-source order/whitelist unit test |
+| `tests/CMakeLists.txt` | `test_config_resolve` target |
 
-### Modified
-| File | Change |
-|---|---|
-| `Mod/plugins/init.lua` | Explicit registry returns `save_fork` (kleiloadlua under MODROOT; `require` in tests) |
-| `Mod/modmain.lua` | Removed hard-wired EnableForkSave block; host comment notes migrated features |
-| `tests/plugin/plugin_host_lua_spec.lua` | L-E matrix: EnableForkSave true/false + when gates (client / no luajit); replaces empty-registry assertion |
+## API
 
-## Behavior (production)
-
-```text
-HookGetModConfigData()
-→ PluginHost: register_all([save.fork]) → resolve(GetModConfigData, {has_luajit, is_client})
-→ load_phase(AfterModMain)
-   when EnableForkSave on + dedicated + has_luajit:
-     print + AddGamePostInit → modimport("scripts/fork_save")
-   else: Disabled, no load
-→ … remaining hard-wired features (lagcomp, netsim, HideGlobalJIT, …)
+```cpp
+namespace ds::config {
+struct CascadeContext { bool is_client; uint32_t steam_account_id;
+    std::string modname, modid, modmain_path; std::vector<std::string> aliases;
+    std::optional<std::string> ownerdir_hint; std::optional<std::string> save_file; };
+struct ConfigPartial { ds::plugin::ConfigView values; };
+struct IConfigSource {
+    virtual ~IConfigSource() = default;
+    virtual ConfigSource id() const = 0;
+    virtual ConfigPartial read(CascadeContext &ctx) const = 0;
+};
+struct ResolvedConfig {
+    ds::plugin::ConfigView view;
+    std::unordered_map<std::string, ConfigSource> source_of;
+    CascadeContext ctx;
+};
+ResolvedConfig resolve(const ConfigSchemaRegistry &schema, CascadeContext ctx,
+                       const std::vector<const IConfigSource *> &sources);
+ResolvedConfig resolve(const ConfigSchemaRegistry &schema, CascadeContext ctx);
+GameJitModConfig map_to_game_jit_mod_config(const ResolvedConfig &resolved);
+}
 ```
 
-Native face: APIs already registered on `GameInjector` by injector bridge (`GameForkSave.cpp`); Lua face only wraps `SaveGame` when native symbols exist (`scripts/fork_save.lua` early-returns if missing).
+**Layer order:** ModinfoDefault → LuajitConfig → SaveFile|ModOverrides → EnvOrCmd.  
+Each layer: `read` → `apply_partial`.
 
-## Verification
+## TDD evidence
 
+### RED
+- Added `test_config_resolve.cpp` + CMake target referencing missing `IConfigSource.hpp`.
+- Failure: `fatal error C1083: config/IConfigSource.hpp: No such file or directory`.
+
+### GREEN
 ```text
-python tests/plugin/run_lua_host.py
-→ PASS: empty_registry … sticky_and_reload, config_function_getmodconfigdata
-→ PASS: save_fork_enable_matrix
-→ PASS: option_rules_unit
-→ plugin_host_lua_spec: all tests passed
+PASS: resolve_respects_source_order_and_whitelist
+PASS: resolve_empty_sources_yields_empty_view
+ALL PASS: config_resolve
 
-# fork_save runner lacks project-build probe on PATH; direct project luajit:
-builds/.../luajit/Release/luajit.exe tests/fork_save/fork_save_spec.lua
-→ PASS: unsupported falls back
-→ PASS: parent postsaves after child idle
-→ PASS: parent truncates when empty
-→ PASS: child saves and exits
-→ PASS: other result falls back
-→ PASS: child save failure exits
-→ PASS: isshutdown uses main process
-→ PASS: isshutdown ignores child fork result
-→ fork_save_spec: all tests passed
+PASS: whitelist_blocks_env / priority_when_all_allowed / unknown_key_ignored
+All config schema tests passed!
 ```
 
-Runtime: project `builds/ninja-multi-vcpkg/luajit/Release/luajit.exe`.
+Injector + `plugin_core_vm` linked RelWithDebInfo.
 
-## L-E matrix rows covered
+## L-G present
 
-| Config / gate | Expected |
-|---|---|
-| EnableForkSave=true, has_luajit, dedicated (`is_client=false`) | Loaded, load_count=1, PostInit → `scripts/fork_save` |
-| EnableForkSave=false, same gates | Disabled, load_count=0, no modimport |
-| EnableForkSave=true, client | Disabled |
-| EnableForkSave=true, no luajit | Disabled |
+```bash
+cp Injector.dll + plugins/*.dll → DST/bin64/
+DST_GAME_DIR=... LG_T_HOLD=5 LG_REQUIRE_GAME=1 \
+  python tests/plugin_server/run_dedicated_sim_pause.py --scenario present
+```
 
-## Intentionally deferred
+Result: `[lg] PASS core profile scenario=present` (exit 0).
 
-- Native sticky no-op plugin for API documentation (optional per brief; APIs already exported).
-- `sim.lagcomp` / `network.sim` still hard-wired in modmain (Task 4).
-- Dual-face shared host state with C++ PluginHost (not required; Lua face independent).
+## Self-review
 
-## Acceptance checklist
+- Fake-source resolve overload used by unit test; production builds four sources.
+- Save and overrides share `id()==SaveFile`; only one applies per role.
+- Compat mapper copies core keys to struct fields, remainder to `business_options`, provenance via `source_of`.
+- Client write-back after resolve preserved.
+- Path discovery not moved to `config/path/` yet (Task 4).
 
-- [x] Step 1: L-E enable-matrix rows for save.fork (true/false + when)
-- [x] Step 2: Register plugin; remove hard-wired modmain path
-- [x] Step 3: fork_save_lua + lua host tests green
-- [x] Step 4: Commit + report at `.superpowers/sdd/task-3-report.md`
+## Concerns
+
+- Env LuaVmType aliases (`lua51`/`51`/…) normalize to `"game"` so `apply_partial` accepts them against schema.allowed; `jit_gen` leaves LuaVmType unchanged (EnabledGenGC is separate). Slightly different from legacy raw write of unsupported strings.
+- `IConfigSource::read` takes non-const `CascadeContext &` so layers can fill identity/save_file (deviation from brief `const` signature — necessary for path discovery without globals).
+- `LoadGameJitModConfigFromSaveFile` / overrides still exist for write-back path and legacy callers; cascade load now goes through sources.
+- Identity still uses `GameJitConfigSource::luajit_config` for modname/modid even when only static defaults apply.
