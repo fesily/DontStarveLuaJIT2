@@ -1471,6 +1471,16 @@ static bool is_supported_lua_vm_type(std::string_view value) {
 		   value == "jit_gen"sv || value == "_51"sv;
 }
 
+static bool is_supported_angle_backend(std::string_view value) {
+	for (const auto &opt : ModConfigurationOptions::AngleBackend.options) {
+		if (value == opt) {
+			return true;
+		}
+	}
+	return false;
+}
+
+
 static bool is_nil_object(const sol::object &object) {
 	return !object.valid() || object.get_type() == sol::type::lua_nil;
 }
@@ -1742,7 +1752,7 @@ bool LoadGameJitModConfigFromSaveFile(const std::filesystem::path &path, GameJit
 
 		if (option_name == ModConfigurationOptions::AngleBackend.name) {
 			std::string text{ModConfigurationOptions::AngleBackend.default_value};
-			if (try_get_string(saved_value, text) && from_string(text) != DstAngleBackend::Unknown) {
+			if (try_get_string(saved_value, text) && is_supported_angle_backend(text)) {
 				resolved.business_options["AngleBackend"] = ds::plugin::ConfigValue::string(text);
 			}
 		} else if (option_name == ModConfigurationOptions::LuaVmType.name) {
@@ -1814,7 +1824,7 @@ bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
 	std::string text{ModConfigurationOptions::AngleBackend.default_value};
 	if (try_get_option_string(options[ModConfigurationOptions::AngleBackend.name].get<sol::object>(),
 							 ModConfigurationOptions::AngleBackend.options,
-							 text) && from_string(text) != DstAngleBackend::Unknown) {
+							 text) && is_supported_angle_backend(text)) {
 		resolved.business_options["AngleBackend"] = ds::plugin::ConfigValue::string(text);
 	}
 

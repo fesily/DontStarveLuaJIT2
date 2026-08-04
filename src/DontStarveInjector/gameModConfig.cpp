@@ -434,18 +434,15 @@ static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
         }
     }
 
-    std::string angle_backend;
-    const auto configured_angle_backend = InjectorConfig::instance()->DST_ANGLE_BACKEND;
-    if (configured_angle_backend != DstAngleBackend::Unknown) {
-        angle_backend = std::string{to_string(configured_angle_backend)};
+    // C-S5: AngleBackend is a business string only — no Injector-side enum.
+    // Prefer DST_ANGLE_BACKEND (env/cmd), then ANGLE_DEFAULT_PLATFORM env.
+    if (auto value = read_env_or_cmd_value("DST_ANGLE_BACKEND"); !value.empty()) {
+        resolved.business_options["AngleBackend"] = ds::plugin::ConfigValue::string(std::move(value));
     } else if (const auto *platform = getenv("ANGLE_DEFAULT_PLATFORM");
-               platform != nullptr && from_string(platform) != DstAngleBackend::Unknown) {
-        angle_backend = platform;
+               platform != nullptr && platform[0] != '\0') {
+        resolved.business_options["AngleBackend"] = ds::plugin::ConfigValue::string(platform);
     }
-    if (!angle_backend.empty()) {
-        // C-S3: AngleBackend is a business key (Task 5 moves env fully off InjectorConfig).
-        resolved.business_options["AngleBackend"] = ds::plugin::ConfigValue::string(angle_backend);
-    }
+
 
     auto lua_vm_type = (const char*) InjectorConfig::instance()->lua_vm_type;
     if (lua_vm_type != nullptr && is_supported_lua_vm_type(lua_vm_type)) {

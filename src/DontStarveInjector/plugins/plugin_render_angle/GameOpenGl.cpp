@@ -2,6 +2,7 @@
 
 #ifdef _WIN32
 
+#include "DstAngleBackend.hpp"
 #include "config.hpp"
 #include "util/module.hpp"
 #include "angle_iat_generated.hpp"
@@ -98,15 +99,20 @@ namespace {
                     it != configs->business_options.end() &&
                     it->second.type == ds::plugin::ConfigValueType::String) {
                     backend = from_string(it->second.s);
+                    if (backend == DstAngleBackend::Unknown) {
+                        spdlog::warn("unknown AngleBackend '{}', defaulting to auto", it->second.s);
+                        backend = DstAngleBackend::Auto;
+                    }
                 }
             }
-            if (backend != DstAngleBackend::Auto && backend != DstAngleBackend::Unknown) {
+            if (backend != DstAngleBackend::Auto) {
                 SetEnvironmentVariableA("ANGLE_DEFAULT_PLATFORM", to_string(backend).data());
             }
             return backend == DstAngleBackend::Vulkan;
         }();
         return result;
     }
+
 
     static bool ContainsDisabledLayer(std::string_view disabled_layers, std::string_view layer_name) {
         std::size_t token_start = 0;
@@ -439,7 +445,13 @@ DONTSTARVEINJECTOR_GAME_API void InitGameOpenGl() {
             angle_backend = it->second.s;
         }
     }
-    if (!gameJitModConfig || from_string(angle_backend) == DstAngleBackend::Auto) {
+    const auto backend = from_string(angle_backend);
+    if (!gameJitModConfig || backend == DstAngleBackend::Auto) {
+        return;
+    }
+    if (backend == DstAngleBackend::Unknown) {
+        // Feature active path with unknown value: default to auto (no rebind).
+        spdlog::warn("unknown AngleBackend '{}', skipping ANGLE rebind", angle_backend);
         return;
     }
 
@@ -449,6 +461,7 @@ DONTSTARVEINJECTOR_GAME_API void InitGameOpenGl() {
     // hard-call into plugin_render_vbpool from angle (Path A M-R1 decouple).
     g_angle_egl_initialized = true;
 }
+
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_render_backend_name() {
     if (g_render_backend_captured.load(std::memory_order_acquire) && !g_render_backend_name.empty()) {
