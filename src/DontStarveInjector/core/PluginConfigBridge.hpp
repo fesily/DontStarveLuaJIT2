@@ -6,19 +6,19 @@
 
 namespace ds::plugin {
 
-// Merge order (C-S3 / C-S4):
+// ConfigView SSOT merge for PluginHost::resolve (EarlyNative).
+// Merge order:
 //   1. schema defaults for each registered entry
-//   2. business overlay (save/overrides/env extras; or core.business_options when
-//      the third argument is default-empty and core carries them)
-//   3. core GameJitModConfig fields always written
-// NetworkOpt / EnableNetSim come from schema defaults and business_options only —
-// no hardcoded NetworkOpt=true.
+//   2. business overlay (core.business_options, then optional extras arg)
+//   3. core GameJitModConfig fields always written last
+// Business keys (NetworkOpt, EnableNetSim, EnableVBPool, AngleBackend, …)
+// come only from schema defaults + business_options — never invented here.
 ConfigView BuildConfigView(const ConfigSchemaRegistry &schema,
                            const GameJitModConfig &core,
                            const ConfigView &business = {});
 
-// Compatibility: empty schema + core/business only (no invented NetworkOpt).
-// Prefer BuildConfigView with the host schema after plugins load.
+// Compatibility helper: empty schema + core/business only.
+// Prefer BuildConfigView(host.option_schema(), …) after plugins load.
 ConfigView FromGameJitModConfig(const GameJitModConfig &config);
 
 } // namespace ds::plugin

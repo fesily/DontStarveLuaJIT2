@@ -1,3 +1,6 @@
+// test_config_view_build — ConfigView SSOT merge (BuildConfigView).
+// Formerly test_plugin_config_bridge; PluginConfigBridge now only builds
+// schema → business_options → core ConfigView (no field allowlist).
 #include "core/ConfigSchema.hpp"
 #include "core/PluginConfigBridge.hpp"
 #include "core/PluginHost.hpp"
@@ -515,6 +518,6 @@ int main() {
     test_render_vbpool_from_bridge_enable_matrix();
     test_render_angle_backend_reaches_plugin();
     test_from_game_jit_mod_config_compat();
-    printf("All plugin config bridge tests passed!\n");
+    printf("All config view build tests passed!\n");
     return 0;
 }

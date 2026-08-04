@@ -159,9 +159,10 @@ DynamicPluginLoader::load_all  // plugin_*.dll
 resolve → load_phase(EarlyNative)
 ```
 
-### 3.3 Config bridge (EarlyNative options)
+### 3.3 ConfigView / option schema (SSOT)
 
-EarlyNative resolve uses `FromGameJitModConfig` (`PluginConfigBridge`). If your option is read from `GameJitModConfig` before Lua exists, add the key mapping there so `ConfigView` contains it.
+EarlyNative resolve uses a **schema-driven `ConfigView`**, not a hand-maintained
+field list on `GameJitModConfig`. See **§12 ConfigView SSOT** for the full model.
 
 User-facing config remains **`Mod/modinfo.lua` `configuration_options` only** (D5).
 
@@ -282,6 +283,7 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 | `render.vbpool` | `plugin_render_vbpool` | `all_of` `EnableVBPool` | EarlyNative | 20 | — | — | Win client |
 | `render.angle` | `plugin_render_angle` | `AlwaysOn` (`AngleBackend` is a parameter) | EarlyNative | 30 | — | — | Win client |
 | `network.rpc` | `plugin_network_rpc` | `all_of` `NetworkOpt` | EarlyNative | 40 | — | — | always |
+| `network.sim` | `plugin_network_sim` | `all_of` `EnableNetSim` | EarlyNative | 60 | — | — | Win (DLL always maps; load gated) |
 | `debug.dummy` | `plugin_dummy` | AlwaysOn | EarlyNative | 1000 | — | — | always |
 
 ### 6.2 Lua (`Mod/plugins/init.lua` order + manifests)
@@ -337,7 +339,7 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 ### `render.vbpool` / `render.angle` (EarlyNative only, dynamic)
 
 - VBPool: `plugin_render_vbpool` — `EnableVBPool` + Win client → `DS_LUAJIT_set_vbpool_enabled(true)`
-- Angle: `plugin_render_angle` — AlwaysOn + Win client → `InitGameOpenGl()` (backend string from config singleton)
+- Angle: `plugin_render_angle` — AlwaysOn + Win client → `InitGameOpenGl()` (backend string from ConfigView / `business_options`)
 
 ---
 
@@ -347,7 +349,7 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 |---|---|---|
 | **L-A** Host graph | topo, soft/hard deps, conflict, cycle, phase barrier, priority, sticky unload | `ctest -R plugin_host_graph --output-on-failure` |
 | **L-B** Option rules | all_of / any_of / shorthand / string eq·neq / when | `ctest -R plugin_option_rules --output-on-failure` |
-| **Config bridge** | `GameJitModConfig` → `ConfigView` keys | `ctest -R plugin_config_bridge --output-on-failure` |
+| **ConfigView build** | schema → business → core merge; Host enable matrix | `ctest -R "config_view_build|plugin_config_bridge|config_schema" --output-on-failure` |
 | **L-C / L-E** Lua host | registry, dual-face, enable matrix per plugin | `ctest -R plugin_host_lua --output-on-failure` (`tests/plugin/run_lua_host.py` + `plugin_host_lua_spec.lua`) |
 | **L-D** regressions | `fork_save_lua`, pool / VM name tests as applicable | `ctest -R fork_save_lua --output-on-failure` |
 | **L-D0** Dynamic loader | empty dir, noise file, bad library isolation | `ctest -R plugin_dynamic_loader --output-on-failure` |
@@ -368,7 +370,8 @@ When adding a plugin:
 ## 9. Checklist: new feature as plugin
 
 1. Add `modinfo` option(s) if user-facing.
-2. **Native hooks needed at inject time?** → dynamic module under `plugins/plugin_<name>/` + `ds_add_dynamic_plugin` + ConfigView bridge key if early. Export any Injector hooks the module calls.
+2. **Native hooks needed at inject time?** → dynamic module under `plugins/plugin_<name>/` + `ds_add_dynamic_plugin`.
+   Register option schema in `ds_plugin_module_init` **before** `register_plugin`. If cascade must parse the key before Host load, also add it to `RegisterBuiltinBusinessOptionSchema` (or the plugin's cascade seed). **Do not** add a new field on `GameJitModConfig`.
 3. **Lua / modimport / game API?** → `Mod/plugins/<name>.lua` + entry in `init.lua`.
 4. Set `id`, `options`, `depends` / `soft_depends` / `conflicts`, `priority`, `when`/`can_load`.
 5. Implement `load` only; leave `unload` empty unless `support_reload = true`.
@@ -381,22 +384,24 @@ When adding a plugin:
 
 | Path | Role |
 |---|---|
-| `src/DontStarveInjector/core/PluginHost.*` | Native host |
+| `src/DontStarveInjector/core/PluginHost.*` | Native host + option schema registry |
 | `src/DontStarveInjector/core/PluginOptionRules.*` | Option evaluation |
-| `src/DontStarveInjector/core/PluginTypes.hpp` | Phases, status, manifest, `IPlugin` |
+| `src/DontStarveInjector/core/PluginTypes.hpp` | Phases, status, manifest, `IPlugin`, `ConfigView` |
+| `src/DontStarveInjector/core/ConfigSchema.*` | `OptionSchemaEntry`, coerce, core/business schema seeds |
+| `src/DontStarveInjector/core/PluginConfigBridge.*` | `BuildConfigView` merge (schema → business → core) |
 | `src/DontStarveInjector/core/PluginModuleAbi.hpp` | Dynamic module C ABI (`ds_plugin_module_init`) |
 | `src/DontStarveInjector/core/DynamicPluginLoader.*` | Scan / load / isolate dynamic modules |
 | `src/DontStarveInjector/core/RegisterBuiltinPlugins.*` | Empty static extension point |
-| `src/DontStarveInjector/core/PluginConfigBridge.*` | Early ConfigView |
-| `src/DontStarveInjector/plugins/plugin_*/` | Dynamic native modules (rpc/vbpool/angle/dummy) |
-| `src/DontStarveInjector/DontStarveInjector.cpp` | EarlyNative host + dynamic loader call site |
+| `src/DontStarveInjector/plugins/plugin_*/` | Dynamic native modules (rpc/sim/vbpool/angle/dummy) |
+| `src/DontStarveInjector/DontStarveInjector.cpp` | Schema seed + EarlyNative host + dynamic loader |
 | `Mod/plugins/host.lua` | Lua host |
 | `Mod/plugins/init.lua` | Lua registry |
 | `Mod/plugins/*.lua` | Lua plugins |
 | `Mod/modmain.lua` | AfterModMain host call site |
-| `tests/plugin/*` | L-A/B/C/E/F |
+| `tests/plugin/*` | L-A/B/C/E/F + `test_config_view_build` / `test_config_schema` |
 | `tests/plugin_server/*` | L-G |
 | `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md` | Full architecture |
+| `docs/superpowers/specs/2026-08-04-gamejitmodconfig-pluginization-design.md` | ConfigView SSOT design |
 
 ## 11. Dynamic modules (Phase B)
 
@@ -410,3 +415,103 @@ When adding a plugin:
 EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`) already ship as dynamic modules. Keep `RegisterBuiltinPlugins` empty unless you need a true L0-only static plugin.
 
 Related design: `docs/superpowers/specs/2026-08-03-dynamic-plugin-skeleton-design.md`.
+
+## 12. ConfigView SSOT (schema-driven options)
+
+`ConfigView` (`unordered_map<string, ConfigValue>`) is the **only runtime truth**
+for `PluginHost::resolve` option gates. Business feature options are **not**
+typed fields on `GameJitModConfig`.
+
+Design: `docs/superpowers/specs/2026-08-04-gamejitmodconfig-pluginization-design.md`.
+
+### 12.1 Ownership split
+
+| Layer | Owns | Examples |
+|---|---|---|
+| **L0 core** (typed on `GameJitModConfig`) | Identity + VM / inject gates before plugins | `AlwaysEnableMod`, `DisableJITWhenServer`, `LuaVmType`, `EnabledGenGC`, paths |
+| **Schema registry** | Key, type, default, optional `allowed` strings | Registered by L0 seeds + each plugin |
+| **Business map** (`business_options`) | Cascade values for plugin keys | `NetworkOpt`, `EnableNetSim`, `EnableVBPool`, `AngleBackend` |
+| **ConfigView** | Merge result used by Host | schema defaults → business → core fields |
+
+### 12.2 Registering an option (native plugin)
+
+In `ds_plugin_module_init`, **before** `register_plugin`:
+
+```cpp
+OptionSchemaEntry e;
+e.key = "EnableMyFeature";
+e.type = ConfigValueType::Bool;
+e.default_value = ConfigValue::boolean(false);
+if (!host->register_option_schema(std::move(e))) {
+    std::fprintf(stderr, "[plugin_my] schema conflict EnableMyFeature\n");
+    return false;
+}
+host->register_plugin(&g_my_feature);
+```
+
+Gate the plugin with `man.options.kind = OptionRuleKind::AllOf` and
+`man.options.keys = {"EnableMyFeature"}` (or `AlwaysOn` when the option is only
+a parameter, e.g. `render.angle` + `AngleBackend`).
+
+If save/modoverrides must parse the key **before** Host plugins load, also seed
+the same entry via `RegisterBuiltinBusinessOptionSchema` (modinfo defaults).
+Plugins re-register the same keys on Host (idempotent when defaults match).
+
+### 12.3 BuildConfigView merge order
+
+```text
+schema defaults (ConfigSchemaRegistry)
+  → core.business_options  (save / overrides / env)
+  → optional extras arg
+  → core typed fields (AlwaysEnableMod, DisableJITWhenServer, LuaVmType, EnabledGenGC)
+```
+
+Call site after dynamic load:
+
+```cpp
+RegisterCoreOptionSchema(host.option_schema());
+RegisterBuiltinBusinessOptionSchema(host.option_schema());
+RegisterBuiltinPlugins(host);           // empty extension point
+DynamicPluginLoader::load_all(host);    // plugins register schema + IPlugin
+ConfigView cfg = BuildConfigView(host.option_schema(), *modcfg);
+host.resolve(cfg, gate_ctx);
+host.load_phase(PluginPhase::EarlyNative);
+```
+
+`FromGameJitModConfig(cfg)` is a **compat** wrapper: empty schema + core/business
+only (does **not** invent `NetworkOpt`). Prefer `BuildConfigView` with the host
+schema.
+
+### 12.4 Cascade parse (save / modoverrides)
+
+`LoadGameJitModConfigFromSaveFile` / `FromModOverridesFile` walk saved options
+against a cascade schema (`RegisterCoreOptionSchema` +
+`RegisterBuiltinBusinessOptionSchema`):
+
+- Known key → coerce (Bool / String / Number; String may use `allowed`)
+- Invalid present value → error log, keep prior/default
+- Nil/absent → skip silently
+- Unknown key → ignore (modinfo-only / Lua-only options still work in UI)
+
+Core keys write typed `GameJitModConfig` fields; business keys write
+`business_options[name]`.
+
+### 12.5 Plugin-owned types
+
+Enums and feature-local types live **with the plugin**. Example:
+`DstAngleBackend` is only under `plugins/plugin_render_angle/`. L0 stores the
+string key `AngleBackend`; `GameOpenGl.cpp` converts string → enum at use.
+
+Env/cmd angle overrides write **strings** into `business_options["AngleBackend"]`
+(`DST_ANGLE_BACKEND` / `ANGLE_DEFAULT_PLATFORM`), not a typed InjectorConfig enum.
+
+### 12.6 Shipped business schema (today)
+
+| Key | Type | Default | Owner plugin | Native gate |
+|---|---|---|---|---|
+| `NetworkOpt` | Bool | `true` | `network.rpc` | `AllOf` |
+| `EnableNetSim` | Bool | `false` | `network.sim` | `AllOf` |
+| `EnableVBPool` | Bool | `false` | `render.vbpool` | `AllOf` |
+| `AngleBackend` | String | `auto` (`auto,vulkan,d3d11,d3d9`) | `render.angle` | AlwaysOn (parameter) |
+
+`debug.dummy` is AlwaysOn with no option schema (load always when `can_load`).

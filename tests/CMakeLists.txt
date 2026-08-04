@@ -72,19 +72,22 @@ target_include_directories(test_config_schema PRIVATE
 target_compile_features(test_config_schema PRIVATE cxx_std_23)
 add_test(NAME config_schema COMMAND test_config_schema)
 
-set(PLUGIN_CONFIG_BRIDGE_SOURCES
+set(PLUGIN_CONFIG_VIEW_SOURCES
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginConfigBridge.cpp
 )
 
-add_executable(test_plugin_config_bridge
-    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_config_bridge.cpp
+# ConfigView SSOT merge (BuildConfigView). Historical ctest name plugin_config_bridge
+# remains as an alias so -R plugin_ still matches this gate.
+add_executable(test_config_view_build
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_config_view_build.cpp
     ${PLUGIN_HOST_SOURCES}
-    ${PLUGIN_CONFIG_BRIDGE_SOURCES})
-target_include_directories(test_plugin_config_bridge PRIVATE
+    ${PLUGIN_CONFIG_VIEW_SOURCES})
+target_include_directories(test_config_view_build PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
-target_compile_features(test_plugin_config_bridge PRIVATE cxx_std_23)
-target_compile_definitions(test_plugin_config_bridge PRIVATE DS_PLUGIN_HOST_STATIC)
-add_test(NAME plugin_config_bridge COMMAND test_plugin_config_bridge)
+target_compile_features(test_config_view_build PRIVATE cxx_std_23)
+target_compile_definitions(test_config_view_build PRIVATE DS_PLUGIN_HOST_STATIC)
+add_test(NAME config_view_build COMMAND test_config_view_build)
+add_test(NAME plugin_config_bridge COMMAND test_config_view_build)
 
 add_executable(test_dynamic_plugin_loader
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_dynamic_plugin_loader.cpp
