@@ -156,6 +156,10 @@ struct CoreVmPlugin final : IPlugin {
     bool can_load(const PluginContext &) const override { return true; }
 
     void load(PluginContext &) override {
+        // Per-DLL function_relocation static state (capstone handle). Signature path
+        // also inits/refcounts in ds_core_vm_run_signature_and_replace; load is a
+        // belt-and-suspenders for EarlyNative when VM path already ran.
+        (void) function_relocation::init_ctx();
         std::fprintf(stderr, "[plugin_core_vm] core.vm EarlyNative load\n");
     }
 
@@ -167,6 +171,14 @@ struct CoreVmPlugin final : IPlugin {
 CoreVmPlugin g_core_vm;
 
 bool run_signature_and_replace(const ds::core_vm::BootstrapArgs &args) {
+    // function_relocation is a static lib — each DLL needs its own capstone/ctx.
+    // Injector's init_ctx does not cover this module's copy.
+    if (!function_relocation::init_ctx()) {
+        showError("can't init signature");
+        return false;
+    }
+    auto defer_ctx = create_defer(&function_relocation::deinit_ctx);
+
     auto lua51 = loadlib(lua51_name);
     if (!lua51) {
         showError("can't load lua51");

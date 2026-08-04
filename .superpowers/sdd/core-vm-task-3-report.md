@@ -101,3 +101,52 @@ python tests/plugin_server/run_dedicated_sim_pause.py
 - [x] Build all plugins; dumpbin checks
 - [x] L-G PASS with core.vm staged
 - [x] Commit
+
+## Fix: Important review findings
+
+**Date:** 2026-08-04
+**Commit message:** `fix(core.vm): init function_relocation ctx and export GameDbg APIs`
+
+
+1. **`function_relocation::init_ctx` in plugin_core_vm**
+   - `run_signature_and_replace`: call `init_ctx()` before SignatureUpdater/disasm; pair with `deinit_ctx` via `create_defer`.
+   - `CoreVmPlugin::load`: also `init_ctx()` (matches network_rpc / network_sim / render_vbpool per-DLL static-lib pattern).
+   - `ctx.hpp` already included.
+
+2. **`EXPORT_GAME_LUA_API` non-Windows visibility**
+   - Was: `DONTSTARVEINJECTOR_API` which is empty under `DS_INJECTOR_CONSUMER` (not `DONTSTARVEINJECTOR_BUILD`), so GameDbg_* aliases would not get default visibility.
+   - Now: `extern "C" __attribute__((visibility("default")))` on GameDbg definitions; Linux `alias` also marked `visibility("default")`.
+   - Windows unchanged (GameLua.def).
+
+### Verification
+
+```text
+cmake --build builds/ninja-multi-vcpkg --config RelWithDebInfo \
+  --target Injector plugin_core_vm plugin_sim_lagcomp -j 16
+# Linking CXX shared module .../plugins/plugin_core_vm.dll — OK
+
+# Stage
+cp Injector.dll + plugins/plugin_core_vm.dll (+ lagcomp) → DST bin64
+
+DST_GAME_DIR=…/Don't Starve Together LG_T_HOLD=5 LG_REQUIRE_GAME=1 \
+  python tests/plugin_server/run_dedicated_sim_pause.py
+```
+
+L-G output (abridged):
+
+```text
+[core.vm] module mapped: plugin_core_vm.dll
+[plugin_core_vm] running signature + ReplaceLuaModule
+… Applied Lua VM type: jit …
+lua_newstate created lua state=… vm=jit
+[lg] log-token LG_MOD_LOADED
+[lg] log-token LG_INJECT_OK
+[lg] log-token LG_PLUGINS_OK
+[lg] log-token LG_WORLD_READY
+[lg] log-token LG_SIM_PAUSED
+[lg] LG_STABLE written
+[lg] server exit code=0
+[lg] PASS core profile
+```
+
+**Result: L-G PASS** (vm=jit path active with init_ctx fix).

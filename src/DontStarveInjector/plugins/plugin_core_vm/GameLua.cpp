@@ -1480,6 +1480,10 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
 
 /*
 ----------------------------------------------EXPORT_GAME_LUA_API
+Windows: GameLua.def renames exports (lua_* = GameDbg_lua_*).
+Non-Windows: export GameDbg_* with default visibility; on Linux also alias
+lua_* → GameDbg_*. Do NOT use DONTSTARVEINJECTOR_API here — plugin_core_vm is
+DS_INJECTOR_CONSUMER (dllimport path), not DONTSTARVEINJECTOR_BUILD.
 */
 
 #ifdef _WIN32
@@ -1489,10 +1493,10 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
 #define EXPORT_GAME_LUA_API_NAME_CONCAT(a) #a
 #define EXPORT_GAME_LUA_API_NAME(name) EXPORT_GAME_LUA_API_NAME_CONCAT(GameDbg_##name)
 #define EXPORT_GAME_LUA_API(name) \
-    decltype(name) name __attribute__((alias(EXPORT_GAME_LUA_API_NAME(name)))); \
-    DONTSTARVEINJECTOR_API
+    decltype(name) name __attribute__((alias(EXPORT_GAME_LUA_API_NAME(name)), visibility("default"))); \
+    extern "C" __attribute__((visibility("default")))
 #else
-#define EXPORT_GAME_LUA_API(name) DONTSTARVEINJECTOR_API 
+#define EXPORT_GAME_LUA_API(name) extern "C" __attribute__((visibility("default")))
 #endif
 #endif
 EXPORT_GAME_LUA_API(lua_getinfo)
