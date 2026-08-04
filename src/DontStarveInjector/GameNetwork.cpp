@@ -1,15 +1,14 @@
 #include "GameNetwork.hpp"
+#include "frida-gum.h"
 #include "config.hpp"
-#include "gum_bridge.hpp"
+#include "MemorySignature.hpp"
+#include <disasm.h>
 #include <spdlog/spdlog.h>
 #include <plf_hive.h>
 #include <slikenet/RPC4Plugin.h>
 #include <slikenet/ReplicaManager3.h>
 #include <optional>
 #include <memory_resource>
-#include <cassert>
-#include <cstdint>
-#include <cstddef>
 struct EntityNetWorkExtension {
     static constexpr auto vtb_length = 41;
     static constexpr auto vtb_guard = 8;
@@ -58,18 +57,19 @@ struct EntityNetWorkExtension {
     static void *original_network_vtb_ptr;
 
     static bool initialize_virtual_table(void *rip_insn_address) {
-        auto vtb_ptr = reinterpret_cast<void *>(
-            DS_DISASM_read_operand_rip_mem(rip_insn_address, 32, 1));
-        if (!vtb_ptr || !DS_GUM_memory_is_readable(vtb_ptr, vtb_length * sizeof(int64_t))) {
+        auto insn = function_relocation::disasm::get_insn((void *) rip_insn_address, 32);
+
+        auto vtb_ptr = (void *) function_relocation::read_operand_rip_mem(*insn, insn->detail->x86.operands[1]);
+        if (!gum_memory_is_readable(vtb_ptr, vtb_length * sizeof(int64_t))) {
             spdlog::error("EntityNetWorkExtension: initialize_virtual_table failed, cNetworkVtb_ptr is not readable");
             return false;
         }
 
         auto ptr = (int64_t *) vtb_ptr;
         while (*ptr != 0) {
-            // GUM_PAGE_RX == 5 on Frida Gum (read|execute). Bridge stores GumPageProtection.
-            uint32_t prot = 0;
-            if (!DS_GUM_memory_query_protection(reinterpret_cast<void *>(*ptr), &prot) || prot != 5) {
+            GumPageProtection prot;
+            gum_memory_query_protection((void *) *ptr, &prot);
+            if (prot != GUM_PAGE_RX) {
                 spdlog::error("EntityNetWorkExtension: initialize_virtual_table failed, function memory is not RX");
                 return false;
             }
@@ -202,16 +202,15 @@ static void ResetNextRpcInfo(GumInvocationContext *context) {
     next_orderingChannel.reset();
 
     if (packetPriority) {
-        DS_GUM_invocation_replace_nth_argument(context, 3, (void *) (size_t) *packetPriority);
+        gum_invocation_context_replace_nth_argument(context, 3, (gpointer) (size_t) *packetPriority);
     }
     if (reliability) {
-        DS_GUM_invocation_replace_nth_argument(context, 4, (void *) (size_t) *reliability);
+        gum_invocation_context_replace_nth_argument(context, 4, (gpointer) (size_t) *reliability);
     }
     if (orderingChannel) {
-        DS_GUM_invocation_replace_nth_argument(context, 5, (void *) (size_t) *orderingChannel);
+        gum_invocation_context_replace_nth_argument(context, 5, (gpointer) (size_t) *orderingChannel);
     }
 }
-
 
 
 static void GameWatcherEntityNetwork(GumInterceptor *interceptor) {
@@ -268,42 +267,50 @@ DONTSTARVEINJECTOR_GAME_API void GameNetWorkHookRpc4() {
     return;
 #endif
     auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
-    const auto rpc4 = DS_SIG_scan("48 81 EC 30 03 00 00 48 8B 05", -0x7);
-    const auto serialize = DS_SIG_scan("C7 87 34 01 00 00 03 00 00 00", 0);
-    const auto streams = DS_SIG_scan("48 8D 8B 68 12 00 00 33 D2 41 B8 80", 0);
-    const auto cNetwork = DS_SIG_scan("48 8D 8B E8 01 00 00 48 89 43 20", -7);
+    function_relocation::MemorySignature RakNet__RPC4__Signal{"48 81 EC 30 03 00 00 48 8B 05", -0x7};
+    function_relocation::MemorySignature RakNet_Plugin2_SendUnified{"48 89 84 24 90 00 00 00 48 83 79 08 00", -0x18};
+    // function_relocation::MemorySignature RakNet_ReplicaManager3_defaultparams{"C7 43 1C 03 00 00 00", 0x3};
+    /*
+C7 87 34 01 00 00 03 00 00 00
+mov dword ptr [rdi+134], 3  // pro->reliability = PacketReliability::RELIABLE_ORDERED;
+*/
+    function_relocation::MemorySignature cNetWorkComponent_serialize{"C7 87 34 01 00 00 03 00 00 00"};
+    // check channel size = 0x80/4 = 32
+    function_relocation::MemorySignature RakNet_ReliabilityLayer_InitializeVariables_NUMBER_OF_ORDERED_STREAMS{"48 8D 8B 68 12 00 00 33 D2 41 B8 80"};
+    // lea     rax, NetworkComponentReplica3_vtb
+    function_relocation::MemorySignature cNetWorkComponent_cNetworkComponent{"48 8D 8B E8 01 00 00 48 89 43 20", -7};
 
-    if (rpc4) {
-        auto listener = DS_GUM_make_probe_listener(
-            +[](GumInvocationContext *context, void *) { ResetNextRpcInfo(context); }, nullptr);
-        DS_GUM_interceptor_attach(interceptor, reinterpret_cast<void *>(rpc4), listener);
+    if (RakNet__RPC4__Signal.scan(nullptr)) {
+        auto listener = gum_make_probe_listener(+[](GumInvocationContext *context, gpointer user_data) { ResetNextRpcInfo(context); }, nullptr, nullptr);
+        gum_interceptor_attach(interceptor, (uint8_t *) RakNet__RPC4__Signal.target_address, listener, nullptr, GUM_ATTACH_FLAGS_NONE);
     }
 
-    if (serialize && streams && cNetwork) {
-        if (EntityNetWorkExtension::initialize_virtual_table(reinterpret_cast<void *>(cNetwork))) {
-            auto listener = DS_GUM_make_probe_listener(
-                +[](GumInvocationContext *context, void *) {
-                    auto *sp = reinterpret_cast<SLNet::SerializeParameters1 *>(
-                        DS_GUM_invocation_get_rdi(context));
-                    auto *replica3 = reinterpret_cast<SLNet::Replica3 *>(
-                        DS_GUM_invocation_get_rsi(context));
-                    if (!sp || !replica3) {
-                        return;
-                    }
-                    auto extension = EntityNetWorkExtension::getExtensionFromReplica3(replica3);
-                    EntityNetWorkExtension::EntityNetWorkExtensionVal *entityNetworkExtensionVal;
-                    if (!extension) {
-                        entityNetworkExtensionVal = EntityNetWorkExtension::registerReplica3(replica3);
-                    } else {
-                        entityNetworkExtensionVal = &extension->extension_val;
-                    }
-                    if (entityNetworkExtensionVal) {
-                        assert(sp->pro->sendReceipt == 0);
-                        sp->pro->orderingChannel = entityNetworkExtensionVal->channel;
-                    }
-                },
-                nullptr);
-            DS_GUM_interceptor_attach(interceptor, reinterpret_cast<void *>(serialize), listener);
+    // if (RakNet_Plugin2_SendUnified.scan(nullptr)) {
+    //     gum_interceptor_replace_fast(interceptor, (uint8_t *) RakNet_Plugin2_SendUnified.target_address, (uint8_t *) SendUnified, (gpointer *) &original_SendUnified);
+    // }
+
+    if (cNetWorkComponent_serialize.scan(nullptr) && RakNet_ReliabilityLayer_InitializeVariables_NUMBER_OF_ORDERED_STREAMS.scan(nullptr) && cNetWorkComponent_cNetworkComponent.scan(nullptr)) {
+        if (EntityNetWorkExtension::initialize_virtual_table((void *) cNetWorkComponent_cNetworkComponent.target_address)) {
+            auto listener = gum_make_probe_listener(+[](GumInvocationContext *context, gpointer user_data) {
+            // TODO: check this entity is player entity 
+            // rdi + 134 reliability
+            // rdi + 135 channel
+            auto sp = (SLNet::SerializeParameters1 *) context->cpu_context->rdi;
+
+            // rsi -> cNetWorkComponent
+            auto replica3 = (SLNet::Replica3 *) context->cpu_context->rsi;
+            auto extension = EntityNetWorkExtension::getExtensionFromReplica3((void*)replica3);
+            EntityNetWorkExtension::EntityNetWorkExtensionVal *entityNetworkExtensionVal;
+            if (!extension) {
+                entityNetworkExtensionVal = EntityNetWorkExtension::registerReplica3(replica3);
+            } else {
+                entityNetworkExtensionVal = &extension->extension_val;
+            }
+            if (entityNetworkExtensionVal) {
+                assert(sp->pro->sendReceipt == 0);
+                sp->pro->orderingChannel = entityNetworkExtensionVal->channel;
+            } }, nullptr, nullptr);
+            gum_interceptor_attach(interceptor, (uint8_t *) cNetWorkComponent_serialize.target_address, listener, nullptr, GUM_ATTACH_FLAGS_NONE);
         }
     }
 }

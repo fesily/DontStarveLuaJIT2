@@ -32,7 +32,6 @@ set(SOURCES
         core/RegisterBuiltinPlugins.cpp
         core/PluginConfigBridge.cpp
         core/DynamicPluginLoader.cpp
-        gum_bridge.cpp
 )
 
 
@@ -51,6 +50,9 @@ else()
         Progress.cpp
         #profiler.cpp
         GameLua.def
+        # Re-export static frida-gum symbols from Injector.dll so plugins can
+        # call gum_* without linking a second Gum copy (official devkit is static-only).
+        FridaGum.def
         GameNetworkSim.cpp
         GameSimHook.cpp
     )
@@ -198,16 +200,24 @@ ds_add_dynamic_plugin(plugin_network_rpc
     GameNetwork.cpp)
 if (WIN32)
     # RPC4 / entity network extension (Path A M-N1).
-    # Gum + signatures only via Injector gum_bridge — no frida-gum / function_relocation link.
+    # Gum APIs come from Injector re-exports (FridaGum.def). Do NOT link frida-gum.lib
+    # (static, second Gum instance) or function_relocation (also pulls Gum).
+    # frida-gum.h has #pragma comment(lib, "frida-gum.lib") — kill it with NODEFAULTLIB.
     target_link_libraries(plugin_network_rpc PRIVATE
         spdlog::spdlog
-        SLikeNet)
+        SLikeNet
+        function_relocation)
+    target_link_options(plugin_network_rpc PRIVATE
+        "/NODEFAULTLIB:frida-gum.lib")
     target_compile_definitions(plugin_network_rpc PRIVATE
+        GUM_STATIC=1
         SPDLOG_COMPILED_LIB
         SPDLOG_FMT_EXTERNAL)
     target_include_directories(plugin_network_rpc PRIVATE
         ${PROJECT_SOURCE_DIR}/3rd
-        ${PLF_HIVE_INCLUDE_DIRS})
+        ${PLF_HIVE_INCLUDE_DIRS}
+        ${FRIDA_GUM_INCLUDE_DIR}
+        ${FUNCTION_RELOCATION_INCLUDE_DIR})
 endif()
 ds_add_dynamic_plugin(plugin_render_vbpool
     plugins/plugin_render_vbpool/plugin_render_vbpool.cpp
@@ -215,15 +225,21 @@ ds_add_dynamic_plugin(plugin_render_vbpool
 if (WIN32)
     # HWBuffer pool lives only here (Path A M-R2). GLES headers from ANGLE tree;
     # no ANGLE .lib — GL entry points via GetProcAddress(libGLESv2).
-    # No frida-gum / function_relocation — hooks via gum_bridge.
+    # Gum via Injector re-exports; signatures via function_relocation (Gum resolved from Injector).
     target_link_libraries(plugin_render_vbpool PRIVATE
-        spdlog::spdlog)
+        spdlog::spdlog
+        function_relocation)
+    target_link_options(plugin_render_vbpool PRIVATE
+        "/NODEFAULTLIB:frida-gum.lib")
     target_compile_definitions(plugin_render_vbpool PRIVATE
+        GUM_STATIC=1
         SPDLOG_COMPILED_LIB
         SPDLOG_FMT_EXTERNAL)
     target_include_directories(plugin_render_vbpool PRIVATE
         ${PROJECT_SOURCE_DIR}/3rd
-        ${PROJECT_SOURCE_DIR}/3rd/angle/win64/include)
+        ${PROJECT_SOURCE_DIR}/3rd/angle/win64/include
+        ${FRIDA_GUM_INCLUDE_DIR}
+        ${FUNCTION_RELOCATION_INCLUDE_DIR})
 endif()
 ds_add_dynamic_plugin(plugin_render_angle
     plugins/plugin_render_angle/plugin_render_angle.cpp
@@ -234,11 +250,15 @@ if (WIN32)
         unofficial::angle::libGLESv2
         unofficial::angle::libEGL
         spdlog::spdlog)
+    target_link_options(plugin_render_angle PRIVATE
+        "/NODEFAULTLIB:frida-gum.lib")
     target_compile_definitions(plugin_render_angle PRIVATE
+        GUM_STATIC=1
         SPDLOG_COMPILED_LIB
         SPDLOG_FMT_EXTERNAL)
     target_include_directories(plugin_render_angle PRIVATE
-        ${PROJECT_SOURCE_DIR}/3rd)
+        ${PROJECT_SOURCE_DIR}/3rd
+        ${FRIDA_GUM_INCLUDE_DIR})
 endif()
 
 

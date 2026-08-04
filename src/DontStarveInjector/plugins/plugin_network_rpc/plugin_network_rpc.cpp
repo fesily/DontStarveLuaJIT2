@@ -4,6 +4,7 @@
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
 #include "GameNetwork.hpp"
+#include "ctx.hpp"
 
 #include <cstdio>
 
@@ -28,7 +29,9 @@ struct NetworkRpcPlugin final : IPlugin {
     bool can_load(const PluginContext &) const override { return true; }
 
     void load(PluginContext &) override {
-        // Installs RPC4 SetNextRpcInfo probe + entity serialize channel hooks.
+        // function_relocation is a static lib — each plugin DLL has its own copy of
+        // capstone/ctx state. Gum itself is process-global via Injector re-exports.
+        (void) function_relocation::init_ctx();
         GameNetWorkHookRpc4();
         std::fprintf(stderr, "[plugin_network_rpc] GameNetWorkHookRpc4 installed\n");
     }

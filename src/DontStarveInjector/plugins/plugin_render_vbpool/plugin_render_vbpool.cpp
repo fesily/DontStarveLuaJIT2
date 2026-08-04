@@ -2,10 +2,11 @@
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
+#include "ctx.hpp"
 
 #include <cstdio>
 
-// Declared/exported by GameRenderHook (Win) / stub (non-Win) in Injector.
+// Declared/exported by GameRenderHook (Win) / stub (non-Win).
 extern "C" void DS_LUAJIT_set_vbpool_enabled(bool enable);
 
 namespace {
@@ -38,6 +39,8 @@ struct RenderVbpoolPlugin final : IPlugin {
     }
 
     void load(PluginContext &) override {
+        // Static-lib copy of function_relocation needs per-DLL capstone/ctx init.
+        (void) function_relocation::init_ctx();
         DS_LUAJIT_set_vbpool_enabled(true);
         std::fprintf(stderr, "[plugin_render_vbpool] VBPool enabled\n");
     }
