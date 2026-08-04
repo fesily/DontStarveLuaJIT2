@@ -3,6 +3,8 @@
 #include <cassert>
 #include <cstdio>
 #include <string>
+#include "config/ConfigSource.hpp"
+
 
 using namespace ds::plugin;
 
@@ -178,6 +180,36 @@ static void test_unknown_key_ignored_pattern() {
     printf("PASS: unknown_key_ignored_pattern\n");
 }
 
+static void test_effective_sources_zero_means_all() {
+    using namespace ds::config;
+    assert(effective_sources(0) == kConfigSourceAll);
+    assert(source_allowed(0, ConfigSource::EnvOrCmd));
+    assert(source_allowed(kConfigSourceAll, ConfigSource::SaveFile));
+    ConfigSourceMask save_only = static_cast<ConfigSourceMask>(ConfigSource::SaveFile);
+    assert(source_allowed(save_only, ConfigSource::SaveFile));
+    assert(!source_allowed(save_only, ConfigSource::EnvOrCmd));
+    printf("PASS: effective_sources_zero_means_all\n");
+}
+
+static void test_add_same_key_different_allowed_sources_conflicts() {
+    ConfigSchemaRegistry reg;
+    OptionSchemaEntry e1;
+    e1.key = "AngleBackend";
+    e1.type = ConfigValueType::String;
+    e1.default_value = ConfigValue::string("auto");
+    e1.allowed_sources = ds::config::kConfigSourceAll;
+    assert(reg.add(e1));
+
+    OptionSchemaEntry e2 = e1;
+    e2.allowed_sources = static_cast<ds::config::ConfigSourceMask>(
+        ds::config::ConfigSource::SaveFile) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault);
+    // excludes LuajitConfig
+    assert(!reg.add(std::move(e2)));
+    printf("PASS: add_same_key_different_allowed_sources_conflicts\n");
+}
+
 int main() {
     test_add_bool_find();
     test_add_same_key_same_default();
@@ -189,6 +221,9 @@ int main() {
     test_try_coerce_string_allowed();
     test_try_coerce_number();
     test_unknown_key_ignored_pattern();
+    test_effective_sources_zero_means_all();
+    test_add_same_key_different_allowed_sources_conflicts();
+
     printf("All config schema tests passed!\n");
     return 0;
 }

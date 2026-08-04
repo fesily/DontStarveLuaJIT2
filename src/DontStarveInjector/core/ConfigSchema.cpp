@@ -36,7 +36,9 @@ bool allowed_equal(std::vector<std::string> a, std::vector<std::string> b) {
 
 bool entry_equal(const OptionSchemaEntry &a, const OptionSchemaEntry &b) {
     return a.type == b.type && config_value_equal(a.default_value, b.default_value) &&
-           allowed_equal(a.allowed, b.allowed);
+           allowed_equal(a.allowed, b.allowed) &&
+           ds::config::effective_sources(a.allowed_sources) ==
+               ds::config::effective_sources(b.allowed_sources);
 }
 
 } // namespace

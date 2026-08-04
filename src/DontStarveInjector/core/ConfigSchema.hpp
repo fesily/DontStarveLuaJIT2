@@ -1,5 +1,7 @@
 #pragma once
 #include "PluginTypes.hpp"
+#include "config/ConfigSource.hpp"
+
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -12,6 +14,7 @@ struct OptionSchemaEntry {
     ConfigValueType type = ConfigValueType::None;
     ConfigValue default_value{};
     std::vector<std::string> allowed; // empty = any
+    ds::config::ConfigSourceMask allowed_sources = ds::config::kConfigSourceAll;
 };
 
 // Forward-declared; defined below.
