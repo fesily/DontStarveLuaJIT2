@@ -1179,7 +1179,8 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_workshop_dir();
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_disable_fullgc(bool enable);
+// Implemented in plugins/plugin_debug_profiler. Resolved at runtime (Task 3).
+using DsLuajitDisableFullgcFn = void (*)(bool);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept;
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(const char *type, const char *moduleName);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_vm_type_name(int next);
@@ -1286,7 +1287,26 @@ int luaopen_GameInjector(lua_State* L) {
     sol::table module = lua.create_table();
 
     module.set_function("DS_LUAJIT_get_workshop_dir", &DS_LUAJIT_get_workshop_dir);
-    module.set_function("DS_LUAJIT_disable_fullgc", &DS_LUAJIT_disable_fullgc);
+    module.set_function("DS_LUAJIT_disable_fullgc", [](bool enable) {
+#if defined(_WIN32)
+        static DsLuajitDisableFullgcFn fn = []() -> DsLuajitDisableFullgcFn {
+            HMODULE mod = GetModuleHandleA("plugin_debug_profiler.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitDisableFullgcFn>(
+                GetProcAddress(mod, "DS_LUAJIT_disable_fullgc"));
+        }();
+#else
+        static DsLuajitDisableFullgcFn fn = []() -> DsLuajitDisableFullgcFn {
+            return reinterpret_cast<DsLuajitDisableFullgcFn>(
+                dlsym(RTLD_DEFAULT, "DS_LUAJIT_disable_fullgc"));
+        }();
+#endif
+        if (fn) {
+            fn(enable);
+        }
+    });
     module.set_function("DS_LUAJIT_Fengxun_Decrypt", &DS_LUAJIT_Fengxun_Decrypt);
     module.set_function("DS_LUAJIT_set_vm_type", &DS_LUAJIT_set_vm_type);
 	module.set_function("DS_LUAJIT_get_vm_type_name", &DS_LUAJIT_get_vm_type_name);

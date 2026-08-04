@@ -12,6 +12,17 @@
 #include "util/nfile.hpp"
 #define GAMEIO_FILE_INTERFACE normal_file_interface
 #endif
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <Windows.h>
+#else
+#include <dlfcn.h>
+#endif
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
@@ -325,41 +336,26 @@ static int lj_need_transform_path() noexcept {
     return has_lua_debug_flag;
 }
 
-static bool fullgc_deferred_enabled = false;
-// Exported for L0 GameProfilerHook dynamic resolve (same-process, optional core.vm).
-extern "C" {
-#if defined(_WIN32)
-__declspec(dllexport)
+// core.vm only installs a soft forwarding stub for lj_gc_fullgc_external.
+// FullGC deferred state + policy live in plugin_debug_profiler (Task 3).
+// Do not reintroduce ds_core_vm_fullgc_* or ds_core_vm_lua_gc_func_ptr.
+static void ds_core_vm_lj_gc_fullgc_forward(void *L, void (*oldfn)(void *L)) {
+    using Fn = void (*)(void *, void (*)(void *));
+#ifdef _WIN32
+    HMODULE m = GetModuleHandleA("plugin_debug_profiler.dll");
+    auto *fn = m ? reinterpret_cast<Fn>(GetProcAddress(m, "lj_gc_fullgc_external")) : nullptr;
+#else
+    auto *fn = reinterpret_cast<Fn>(dlsym(RTLD_DEFAULT, "lj_gc_fullgc_external"));
 #endif
-int fullgc_deferred = 0; /* 0=idle, 1=phase1, 2=phase2 */
-#if defined(_WIN32)
-__declspec(dllexport)
-#endif
-int (*lua_gc_func)(void *L, int, int) = nullptr;
-}
-
-extern "C" {
-#if defined(_WIN32)
-__declspec(dllexport)
-#endif
-int *ds_core_vm_fullgc_deferred_ptr() { return &fullgc_deferred; }
-#if defined(_WIN32)
-__declspec(dllexport)
-#endif
-int (**ds_core_vm_lua_gc_func_ptr())(void *L, int, int) { return &lua_gc_func; }
-}
-void lj_gc_fullgc_external(void *L, void (*oldfn)(void *L)) {
-
-    if (!fullgc_deferred_enabled) {
-        ZoneScopedN("lua_full_gc");
+    if (fn) {
+        fn(L, oldfn);
+        return;
+    }
+    if (oldfn) {
         oldfn(L);
-    } else {
-        fullgc_deferred = 1;
     }
 }
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_disable_fullgc(bool enable) {
-    fullgc_deferred_enabled = enable;
-}
+
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept {
     try {
@@ -456,8 +452,13 @@ extern "C" void init_luajit_io(GumModule *luaModule) {
     SET_LUAJIT_API_FUNC(lj_fwrite);
     SET_LUAJIT_API_FUNC(lj_clearerr);
     SET_LUAJIT_API_FUNC(lj_need_transform_path);
-    SET_LUAJIT_API_FUNC(lj_gc_fullgc_external);
-    lua_gc_func = (decltype(lua_gc_func)) gum_module_find_export_by_name(luaModule, "lua_gc");
+    // Install forwarder (different C++ name) into lua51 export slot "lj_gc_fullgc_external".
+    {
+        auto ptr = (void **) gum_module_find_export_by_name(luaModule, "lj_gc_fullgc_external");
+        if (ptr) {
+            *ptr = (void *) &ds_core_vm_lj_gc_fullgc_forward;
+        }
+    }
 #ifdef _WIN32
     gum_process_enumerate_modules([](GumModule * module, gpointer user_data)->gboolean {
         auto module_name = std::string{gum_module_get_name(module)};

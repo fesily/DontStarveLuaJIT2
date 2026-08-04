@@ -1,6 +1,6 @@
 #pragma once
-// plugin_debug_profiler — Tracy / FrameGC / profiler push-pop hooks (Task 2).
-// FullGcPolicy ownership lands in Task 3; local fullgc statics are temporary.
+// plugin_debug_profiler — Tracy / FrameGC / profiler push-pop hooks + FullGC policy (Task 3).
+#include "FullGcPolicy.hpp"
 #include "config.hpp"
 #include "MemorySignature.hpp"
 #include "util/inlinehook.hpp"
@@ -57,31 +57,47 @@ struct Profiler {
 };
 static thread_local Profiler profiler;
 
-// Temporary until Task 3 merges FullGcPolicy — same-DLL statics OK.
-// Do not call core.vm for fullgc in Task 2.
-static int fullgc_deferred = 0;
-static int fullgc_deferred_get() { return fullgc_deferred; }
-static void fullgc_deferred_set(int v) { fullgc_deferred = v; }
-static int fullgc_deferred_inc() { return ++fullgc_deferred; }
-
-// Optional lua_gc entry from core.vm (soft). Used by FrameGC TryDoGC only.
+// FullGC deferred counters live in FullGcPolicy (same DLL).
+// Resolve lua_gc once from the active lua51 module — no core.vm ptr exports.
 static int (*ResolveLuaGcFunc())(void *L, int, int) {
     using LuaGc = int (*)(void *, int, int);
-    using Getter = LuaGc *(*)();
-#ifdef _WIN32
-    HMODULE m = GetModuleHandleA("plugin_core_vm.dll");
-    if (!m) {
-        return nullptr;
+    static LuaGc cached = nullptr;
+    static bool resolved = false;
+    if (resolved) {
+        return cached;
     }
-    auto g = reinterpret_cast<Getter>(GetProcAddress(m, "ds_core_vm_lua_gc_func_ptr"));
-#else
-    auto g = reinterpret_cast<Getter>(dlsym(RTLD_DEFAULT, "ds_core_vm_lua_gc_func_ptr"));
-#endif
-    if (!g) {
-        return nullptr;
+    resolved = true;
+
+    GumModule *mod = nullptr;
+    if (auto *ctx = ds::core_vm::TryGetGameLuaContext()) {
+        auto name = ctx->GetLibraryName();
+        if (!name.empty() && name != "<Game>") {
+            mod = gum_process_find_module_by_name(name.c_str());
+        }
     }
-    LuaGc *pp = g();
-    return pp ? *pp : nullptr;
+    if (!mod) {
+        // Fallbacks: common LuaJIT / lua51 module basenames used by core.vm.
+        static const char *const kCandidates[] = {
+            "lua51DS",
+            "lua51DS_gengc",
+            "lua51Original",
+            "lua51",
+            "liblua51DS.so",
+            "liblua51DS_gengc.so",
+            "liblua51Original.so",
+            "liblua51.so",
+        };
+        for (const char *cand : kCandidates) {
+            mod = gum_process_find_module_by_name(cand);
+            if (mod) {
+                break;
+            }
+        }
+    }
+    if (mod) {
+        cached = reinterpret_cast<LuaGc>(gum_module_find_export_by_name(mod, "lua_gc"));
+    }
+    return cached;
 }
 
 static int frame_gc_time_ns = 0;
@@ -121,7 +137,7 @@ static int64_t hook_profiler_push(void * /*self*/, const char *zone, const char 
     bool is_connected = tracy_active;
     auto &p = profiler;
     if ("Update"sv == zone) {
-        if (frame_gc_time_ns || fullgc_deferred_get()) {
+        if (frame_gc_time_ns || ds::profiler::fullgc_deferred_get()) {
             static struct {
                 std::atomic_bool vaild;
                 std::mutex mtx;
@@ -183,7 +199,7 @@ struct ProfilerHooker {
                 int left_time_ns = frame_gc_time_ns - used_time;
                 if (used_time > frame_max_time_ns) {
                     left_time_ns = 0;
-                } else if (left_time_ns > frame_good_max_time_ns && fullgc_deferred_get() == 0) {
+                } else if (left_time_ns > frame_good_max_time_ns && ds::profiler::fullgc_deferred_get() == 0) {
                     left_time_ns = 0;
                 }
                 p.start_time_ns = 0;
@@ -228,9 +244,9 @@ struct ProfilerHooker {
             auto lua_gccycle = gc ? gc(L, LUA_GCCYCLE, 0) : 0;
             if (lua_gccycle_count != lua_gccycle) {
                 lua_gccycle_count = lua_gccycle;
-                fullgc_deferred_inc();
-                if (fullgc_deferred_get() > 2) {
-                    fullgc_deferred_set(0); /* 两个周期完成，退出延迟模式 */
+                ds::profiler::fullgc_deferred_inc();
+                if (ds::profiler::fullgc_deferred_get() > 2) {
+                    ds::profiler::fullgc_deferred_set(0); /* 两个周期完成，退出延迟模式 */
                 }
             }
             break;

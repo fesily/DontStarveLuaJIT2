@@ -373,7 +373,8 @@ if (WIN32)
     # AlwaysOn native face; Lua AfterModMain gates business work (later tasks).
     ds_add_dynamic_plugin(plugin_debug_profiler
         plugins/plugin_debug_profiler/plugin_debug_profiler.cpp
-        plugins/plugin_debug_profiler/ProfilerApi.cpp)
+        plugins/plugin_debug_profiler/ProfilerApi.cpp
+        plugins/plugin_debug_profiler/FullGcPolicy.cpp)
     target_link_libraries(plugin_debug_profiler PRIVATE
         spdlog::spdlog
         function_relocation
