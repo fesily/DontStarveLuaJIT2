@@ -1,4 +1,5 @@
 #pragma once
+#include "config.hpp"
 #include "LuaApi.hpp"
 #include "DontStarveSignature.hpp"
 #include <string>
@@ -124,7 +125,7 @@ protected:
     virtual ~GameLuaContext() = default;
 };
 
-GameLuaContext &GetGameLuaContext();
+DS_INJECTOR_CXX_API GameLuaContext &GetGameLuaContext();
 
 void ReplaceLuaApi(GameLuaType type, const char *shared_library_name);
 void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures, const ListExports_t &exports);

@@ -9,7 +9,12 @@ local load_library_ex = require("luavm.ffi_load")
 local GameInjector = _G.rawget(_G, "GameInjector")
 if not GameInjector then return end
 
-local lib = load_library_ex("Injector")
+local lib = load_library_ex("plugin_sim_lagcomp")
+if not lib then
+    -- Backward-compatible fallback if plugin DLL not staged
+    lib = load_library_ex("Injector")
+end
+if not lib then return end
 
 ffi.cdef[[
 void DS_LUAJIT_lag_comp_init(int max_slots);

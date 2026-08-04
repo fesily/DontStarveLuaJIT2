@@ -1203,9 +1203,9 @@ using DsLuajitNetSimEnableFn = void (*)(bool);
 using DsLuajitNetSimSetFn = void (*)(uint32_t, uint32_t, uint32_t);
 using DsLuajitNetSimUpdateFn = void (*)();
 using DsLuajitNetSimGetStatsFn = const NetSimStats *(*)();
-DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_entity_get_raw_ptr(lua_State* L);
+// Implemented in plugins/plugin_sim_lagcomp/GameSimHook.cpp. Resolved at runtime.
+using DsLuajitEntityGetRawPtrFn = int (*)(lua_State *);
 #else
-static int DS_LUAJIT_entity_get_raw_ptr(lua_State* L) { return 0; };
 #endif
 
 // Implemented in plugins/plugin_save_fork/GameForkSave.cpp. Resolved at runtime.
@@ -1434,7 +1434,29 @@ int luaopen_GameInjector(lua_State* L) {
         return t;
     });
 #endif
-    module.set_function("DS_LUAJIT_entity_get_raw_ptr", &DS_LUAJIT_entity_get_raw_ptr);
+#ifdef _WIN32
+    {
+        static DsLuajitEntityGetRawPtrFn entity_get_raw_ptr_fn = []() -> DsLuajitEntityGetRawPtrFn {
+            HMODULE mod = GetModuleHandleA("plugin_sim_lagcomp.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitEntityGetRawPtrFn>(
+                GetProcAddress(mod, "DS_LUAJIT_entity_get_raw_ptr"));
+        }();
+        if (entity_get_raw_ptr_fn) {
+            module.set_function("DS_LUAJIT_entity_get_raw_ptr", entity_get_raw_ptr_fn);
+        } else {
+            module.set_function("DS_LUAJIT_entity_get_raw_ptr", [](sol::this_state) {
+                return sol::lua_nil;
+            });
+        }
+    }
+#else
+    module.set_function("DS_LUAJIT_entity_get_raw_ptr", [](sol::this_state) {
+        return sol::lua_nil;
+    });
+#endif
     //module.set_function("enable_profiler", &DS_LUAJIT_enable_profiler);
         module.set_function("DS_LUAJIT_fork_save", []() -> const char * {
 #if defined(_WIN32)

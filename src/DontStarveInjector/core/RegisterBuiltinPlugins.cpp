@@ -8,6 +8,7 @@ namespace ds::plugin {
 //   plugin_network_rpc  → network.rpc
 //   plugin_network_sim  → network.sim
 //   plugin_save_fork    → save.fork
+//   plugin_sim_lagcomp  → sim.lagcomp
 //   plugin_render_vbpool → render.vbpool
 //   plugin_render_angle  → render.angle
 // Config options are schema-driven (ConfigView SSOT): plugins register option

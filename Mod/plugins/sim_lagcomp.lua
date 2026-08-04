@@ -1,4 +1,5 @@
--- Lua face of dual-face plugin sim.lagcomp (native APIs already exported by GameSimHook).
+-- Lua face of dual-face plugin sim.lagcomp
+-- (native: plugin_sim_lagcomp / GameSimHook; lag_comp_* via FFI on plugin DLL).
 -- Mirrors former modmain hard-wire: has_luajit + windows + mastersim + EnableLagCompensation
 -- → scripts/lag_compensation.
 

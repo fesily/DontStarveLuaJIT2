@@ -195,6 +195,13 @@ void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r) {
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnableForkSave.default_value);
         (void) r.add(std::move(e));
     }
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ModConfigurationOptions::EnableLagCompensation.name};
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnableLagCompensation.default_value);
+        (void) r.add(std::move(e));
+    }
 }
 
 } // namespace ds::plugin
