@@ -21,11 +21,14 @@ struct NetworkSimPlugin final : IPlugin {
         man.version = "1.0.0";
         man.phases = PluginPhase::EarlyNative;
         man.support_reload = false;
-        // Inventory priority 60. EnableNetSim is Lua-gated (AfterModMain); native
-        // hooks install lazily on DS_LUAJIT_net_sim_enable. Always load the DLL on
-        // Windows so GameInjector can resolve exports when Lua enables sim.
+        // Inventory priority 60. Gated by EnableNetSim (schema default false).
+        // DynamicPluginLoader still maps the DLL and registers the plugin; Host
+        // resolve skips load() when off. Exports remain available via GetProcAddress
+        // for Lua GameInjector.DS_LUAJIT_net_sim_* when the option is later enabled
+        // in Lua (lazy hook install on DS_LUAJIT_net_sim_enable).
         man.priority = 60;
-        man.options.kind = OptionRuleKind::AlwaysOn;
+        man.options.kind = OptionRuleKind::AllOf;
+        man.options.keys = {"EnableNetSim"};
     }
 
     const PluginManifest &manifest() const override { return man; }

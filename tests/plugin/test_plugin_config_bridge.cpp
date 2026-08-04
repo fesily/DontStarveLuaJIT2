@@ -161,12 +161,11 @@ static void test_enable_net_sim_default_false_when_schema_registered() {
     assert(it->second.type == ConfigValueType::Bool);
     assert(it->second.b == false);
 
-    // Empty schema must not invent EnableNetSim.
+    // Empty schema must not invent EnableNetSim or NetworkOpt.
     ConfigSchemaRegistry empty;
     ConfigView legacy = BuildConfigView(empty, cfg);
     assert(legacy.find("EnableNetSim") == legacy.end());
-    // Legacy NetworkOpt fallback still true when schema omitted.
-    assert(legacy.at("NetworkOpt").b == true);
+    assert(legacy.find("NetworkOpt") == legacy.end());
 
     printf("PASS: enable_net_sim_default_false_when_schema_registered\n");
 }
@@ -196,6 +195,23 @@ struct NetworkRpcStandIn final : IPlugin {
         man.priority = 40;
         man.options.kind = OptionRuleKind::AllOf;
         man.options.keys = {"NetworkOpt"};
+    }
+    const PluginManifest &manifest() const override { return man; }
+    bool can_load(const PluginContext &) const override { return true; }
+    void load(PluginContext &) override { ++load_count; }
+    void unload(PluginContext &) override {}
+};
+
+struct NetworkSimStandIn final : IPlugin {
+    PluginManifest man{};
+    int load_count = 0;
+    NetworkSimStandIn() {
+        man.id = "network.sim";
+        man.version = "1.0.0";
+        man.phases = PluginPhase::EarlyNative;
+        man.priority = 60;
+        man.options.kind = OptionRuleKind::AllOf;
+        man.options.keys = {"EnableNetSim"};
     }
     const PluginManifest &manifest() const override { return man; }
     bool can_load(const PluginContext &) const override { return true; }
@@ -317,6 +333,71 @@ static void test_network_rpc_standin_disabled_when_off() {
     printf("PASS: network_rpc_standin_disabled_when_off\n");
 }
 
+static void test_network_sim_enable_matrix() {
+    // EnableNetSim false (schema default) → network.sim disabled
+    {
+        GameJitModConfig cfg{};
+        ConfigView view = BuildConfigView(make_production_schema(), cfg);
+        assert(view.at("EnableNetSim").b == false);
+
+        NetworkSimStandIn standin;
+        PluginHost host;
+        host.register_plugin(&standin);
+        PluginContext ctx;
+        auto rr = host.resolve(view, ctx);
+        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "network.sim") != rr.disabled.end());
+        auto lr = host.load_phase(PluginPhase::EarlyNative);
+        assert(lr.ok);
+        assert(lr.loaded_order.empty());
+        assert(standin.load_count == 0);
+        assert(host.status("network.sim") == PluginStatus::Disabled);
+    }
+
+    // EnableNetSim true (business overlay / save) → network.sim enabled + load
+    {
+        GameJitModConfig cfg{};
+        set_business_bool(cfg, "EnableNetSim", true);
+        ConfigView view = BuildConfigView(make_production_schema(), cfg);
+        assert(view.at("EnableNetSim").b == true);
+
+        NetworkSimStandIn standin;
+        PluginHost host;
+        host.register_plugin(&standin);
+        PluginContext ctx;
+        auto rr = host.resolve(view, ctx);
+        assert(std::find(rr.enabled.begin(), rr.enabled.end(), "network.sim") != rr.enabled.end());
+        auto lr = host.load_phase(PluginPhase::EarlyNative);
+        assert(lr.ok);
+        assert(lr.loaded_order.size() == 1);
+        assert(lr.loaded_order[0] == "network.sim");
+        assert(standin.load_count == 1);
+        assert(host.status("network.sim") == PluginStatus::Loaded);
+    }
+
+    // NetworkOpt false → network.rpc disabled (paired gate matrix row)
+    {
+        GameJitModConfig cfg{};
+        set_business_bool(cfg, "NetworkOpt", false);
+        ConfigView view = BuildConfigView(make_production_schema(), cfg);
+        assert(view.at("NetworkOpt").b == false);
+
+        NetworkRpcStandIn rpc;
+        NetworkSimStandIn sim;
+        PluginHost host;
+        host.register_plugin(&rpc);
+        host.register_plugin(&sim);
+        PluginContext ctx;
+        auto rr = host.resolve(view, ctx);
+        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "network.rpc") != rr.disabled.end());
+        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "network.sim") != rr.disabled.end());
+        host.load_phase(PluginPhase::EarlyNative);
+        assert(rpc.load_count == 0);
+        assert(sim.load_count == 0);
+    }
+
+    printf("PASS: network_sim_enable_matrix\n");
+}
+
 static void test_render_vbpool_from_bridge_enable_matrix() {
     // EnableVBPool true → EarlyNative load
     {
@@ -404,15 +485,19 @@ static void test_render_angle_backend_reaches_plugin() {
 }
 
 static void test_from_game_jit_mod_config_compat() {
-    // Compatibility wrapper: empty schema + legacy NetworkOpt=true.
-    // Business keys still flow from business_options.
+    // Compatibility wrapper: empty schema — only core + business_options.
+    // Does not invent NetworkOpt / EnableNetSim (schema owns those after plugins load).
     GameJitModConfig cfg{};
     set_business_bool(cfg, "EnableVBPool", true);
     set_business_string(cfg, "AngleBackend", "auto");
     ConfigView view = FromGameJitModConfig(cfg);
     assert(view.at("EnableVBPool").b == true);
-    assert(view.at("NetworkOpt").b == true);
+    assert(view.find("NetworkOpt") == view.end());
     assert(view.find("EnableNetSim") == view.end());
+    // Business map can still carry NetworkOpt when save-path filled it.
+    set_business_bool(cfg, "NetworkOpt", false);
+    view = FromGameJitModConfig(cfg);
+    assert(view.at("NetworkOpt").b == false);
     printf("PASS: from_game_jit_mod_config_compat\n");
 }
 
@@ -426,6 +511,7 @@ int main() {
     test_empty_registry_resolve_after_bridge_is_noop();
     test_network_rpc_standin_from_bridge_default();
     test_network_rpc_standin_disabled_when_off();
+    test_network_sim_enable_matrix();
     test_render_vbpool_from_bridge_enable_matrix();
     test_render_angle_backend_reaches_plugin();
     test_from_game_jit_mod_config_compat();

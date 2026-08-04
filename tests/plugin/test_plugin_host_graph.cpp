@@ -468,6 +468,48 @@ static void test_network_rpc_option_matrix() {
     printf("PASS: network_rpc_option_matrix\n");
 }
 
+static void test_network_sim_option_matrix() {
+    // C-S4: EnableNetSim true/false gates EarlyNative network.sim.
+    FakePlugin sim;
+    sim.man.id = "network.sim";
+    sim.man.phases = PluginPhase::EarlyNative;
+    sim.man.priority = 60;
+    sim.man.options = opt_all({"EnableNetSim"});
+
+    // EnableNetSim false → disabled (no load)
+    {
+        PluginHost host;
+        host.register_plugin(&sim);
+        PluginContext ctx;
+        ConfigView cfg;
+        cfg["EnableNetSim"] = ConfigValue::boolean(false);
+        auto rr = host.resolve(cfg, ctx);
+        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "network.sim") != rr.disabled.end());
+        auto lr = host.load_phase(PluginPhase::EarlyNative);
+        assert(lr.ok);
+        assert(lr.loaded_order.empty());
+        assert(sim.load_count == 0);
+        assert(host.status("network.sim") == PluginStatus::Disabled);
+    }
+    sim.load_count = 0;
+    // EnableNetSim true → enabled + load
+    {
+        PluginHost host;
+        host.register_plugin(&sim);
+        PluginContext ctx;
+        ConfigView cfg = cfg_true({"EnableNetSim"});
+        auto rr = host.resolve(cfg, ctx);
+        assert(std::find(rr.enabled.begin(), rr.enabled.end(), "network.sim") != rr.enabled.end());
+        auto lr = host.load_phase(PluginPhase::EarlyNative);
+        assert(lr.ok);
+        assert(lr.loaded_order.size() == 1);
+        assert(lr.loaded_order[0] == "network.sim");
+        assert(sim.load_count == 1);
+        assert(host.status("network.sim") == PluginStatus::Loaded);
+    }
+    printf("PASS: network_sim_option_matrix\n");
+}
+
 static void test_network_entity_hard_dep_on_rpc() {
     // L-E / S9: network.entity cannot enable alone; MissingHardDep when rpc off.
     FakePlugin rpc, entity;
@@ -714,6 +756,7 @@ int main() {
     test_sticky_no_unload();
     test_reload_unload();
     test_network_rpc_option_matrix();
+    test_network_sim_option_matrix();
     test_network_entity_hard_dep_on_rpc();
     test_render_vbpool_option_matrix();
     test_render_angle_backend_parameter_matrix();

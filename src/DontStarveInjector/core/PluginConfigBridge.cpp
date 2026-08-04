@@ -28,18 +28,11 @@ ConfigView BuildConfigView(const ConfigSchemaRegistry &schema,
     view["LuaVmType"] = ConfigValue::string(core.LuaVmType);
     view["EnabledGenGC"] = ConfigValue::boolean(core.EnabledGenGC);
 
-    // 4. Temporary NetworkOpt=true only when schema did not register it.
-    // After S1 plugins register NetworkOpt; do not force true over schema default.
-    if (view.find("NetworkOpt") == view.end()) {
-        view["NetworkOpt"] = ConfigValue::boolean(true);
-    }
-
     return view;
 }
 
 ConfigView FromGameJitModConfig(const GameJitModConfig &config) {
-    // Empty schema → BuildConfigView falls back to legacy NetworkOpt=true.
-    // Business keys flow from config.business_options.
+    // Empty schema: only core fields + business_options (no invented NetworkOpt).
     ConfigSchemaRegistry empty;
     return BuildConfigView(empty, config);
 }
