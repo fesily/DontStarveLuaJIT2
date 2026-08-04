@@ -44,6 +44,7 @@ add_test(NAME BufferNamePool COMMAND test_buffer_name_pool)
 set(PLUGIN_HOST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginHost.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginOptionRules.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ConfigSchema.cpp
 )
 
 add_executable(test_plugin_host_graph

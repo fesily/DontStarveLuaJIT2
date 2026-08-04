@@ -348,7 +348,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 
         ConfigView plugin_cfg;
         if (auto modcfg = GameJitModConfig::instance()) {
-            plugin_cfg = FromGameJitModConfig(*modcfg);
+            plugin_cfg = BuildConfigView(g_plugin_host.option_schema(), *modcfg);
         }
         PluginContext gate_ctx;
         gate_ctx.injector = InjectorCtx::instance();

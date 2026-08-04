@@ -1,3 +1,4 @@
+#include "core/ConfigSchema.hpp"
 #include "core/PluginConfigBridge.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
@@ -13,13 +14,48 @@ using namespace ds::plugin;
 // the real NetworkRpcPlugin calls GameNetWorkHookRpc4 (GameNetwork / Frida).
 // Manifest-compatible stand-ins cover the same resolve/load contracts.
 
+// Production-like schema defaults (matches plugins after C-S1).
+static ConfigSchemaRegistry make_production_schema() {
+    ConfigSchemaRegistry schema;
+    {
+        OptionSchemaEntry e;
+        e.key = "NetworkOpt";
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(true);
+        assert(schema.add(std::move(e)));
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = "EnableNetSim";
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(false);
+        assert(schema.add(std::move(e)));
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = "EnableVBPool";
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(false);
+        assert(schema.add(std::move(e)));
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = "AngleBackend";
+        e.type = ConfigValueType::String;
+        e.default_value = ConfigValue::string("auto");
+        e.allowed = {"auto", "vulkan", "d3d11", "d3d9"};
+        assert(schema.add(std::move(e)));
+    }
+    return schema;
+}
+
 static void test_vbpool_true_maps_to_config_key() {
     GameJitModConfig cfg{};
     cfg.EnableVBPool = true;
     cfg.AngleBackend = "auto";
     cfg.AlwaysEnableMod = true;
 
-    ConfigView view = FromGameJitModConfig(cfg);
+    ConfigView view = BuildConfigView(make_production_schema(), cfg);
     auto it = view.find("EnableVBPool");
     assert(it != view.end());
     assert(it->second.type == ConfigValueType::Bool);
@@ -33,7 +69,7 @@ static void test_vbpool_false_maps_to_config_key() {
     cfg.AngleBackend = "vulkan";
     cfg.AlwaysEnableMod = false;
 
-    ConfigView view = FromGameJitModConfig(cfg);
+    ConfigView view = BuildConfigView(make_production_schema(), cfg);
     auto it = view.find("EnableVBPool");
     assert(it != view.end());
     assert(it->second.type == ConfigValueType::Bool);
@@ -52,8 +88,75 @@ static void test_vbpool_false_maps_to_config_key() {
     auto net = view.find("NetworkOpt");
     assert(net != view.end());
     assert(net->second.type == ConfigValueType::Bool);
-    assert(net->second.b == true); // modinfo default until native cascade owns it
+    assert(net->second.b == true); // schema default
     printf("PASS: vbpool_false_and_early_keys\n");
+}
+
+static void test_build_config_view_schema_defaults_and_overlay() {
+    ConfigSchemaRegistry schema = make_production_schema();
+    GameJitModConfig cfg{};
+    // Leave EnableVBPool at default false; set AngleBackend + core overlays.
+    cfg.EnableVBPool = true; // overlay over schema default false
+    cfg.AngleBackend = "d3d11";
+    cfg.AlwaysEnableMod = true;
+    cfg.DisableJITWhenServer = true;
+    cfg.LuaVmType = "jit";
+    cfg.EnabledGenGC = true;
+
+    ConfigView view = BuildConfigView(schema, cfg);
+
+    // Schema defaults that config does not own stay at schema defaults.
+    assert(view.at("NetworkOpt").type == ConfigValueType::Bool);
+    assert(view.at("NetworkOpt").b == true);
+    assert(view.at("EnableNetSim").type == ConfigValueType::Bool);
+    assert(view.at("EnableNetSim").b == false);
+
+    // Dual-write overlays.
+    assert(view.at("EnableVBPool").b == true);
+    assert(view.at("AngleBackend").s == "d3d11");
+
+    // Core always written.
+    assert(view.at("AlwaysEnableMod").b == true);
+    assert(view.at("DisableJITWhenServer").b == true);
+    assert(view.at("LuaVmType").s == "jit");
+    assert(view.at("EnabledGenGC").b == true);
+
+    printf("PASS: build_config_view_schema_defaults_and_overlay\n");
+}
+
+static void test_enable_net_sim_default_false_when_schema_registered() {
+    ConfigSchemaRegistry schema = make_production_schema();
+    GameJitModConfig cfg{};
+    ConfigView view = BuildConfigView(schema, cfg);
+
+    auto it = view.find("EnableNetSim");
+    assert(it != view.end());
+    assert(it->second.type == ConfigValueType::Bool);
+    assert(it->second.b == false);
+
+    // Empty schema must not invent EnableNetSim.
+    ConfigSchemaRegistry empty;
+    ConfigView legacy = BuildConfigView(empty, cfg);
+    assert(legacy.find("EnableNetSim") == legacy.end());
+    // Legacy NetworkOpt fallback still true when schema omitted.
+    assert(legacy.at("NetworkOpt").b == true);
+
+    printf("PASS: enable_net_sim_default_false_when_schema_registered\n");
+}
+
+static void test_network_opt_not_forced_when_schema_has_false() {
+    ConfigSchemaRegistry schema;
+    {
+        OptionSchemaEntry e;
+        e.key = "NetworkOpt";
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(false);
+        assert(schema.add(std::move(e)));
+    }
+    GameJitModConfig cfg{};
+    ConfigView view = BuildConfigView(schema, cfg);
+    assert(view.at("NetworkOpt").b == false);
+    printf("PASS: network_opt_not_forced_when_schema_has_false\n");
 }
 
 struct NetworkRpcStandIn final : IPlugin {
@@ -127,7 +230,7 @@ static void test_empty_registry_resolve_after_bridge_is_noop() {
     cfg.AngleBackend = "d3d11";
     cfg.AlwaysEnableMod = true;
 
-    ConfigView view = FromGameJitModConfig(cfg);
+    ConfigView view = BuildConfigView(make_production_schema(), cfg);
 
     PluginHost host;
     PluginContext ctx;
@@ -146,7 +249,7 @@ static void test_empty_registry_resolve_after_bridge_is_noop() {
 
 static void test_network_rpc_standin_from_bridge_default() {
     GameJitModConfig cfg{};
-    ConfigView view = FromGameJitModConfig(cfg);
+    ConfigView view = BuildConfigView(make_production_schema(), cfg);
     assert(view.at("NetworkOpt").type == ConfigValueType::Bool);
     assert(view.at("NetworkOpt").b == true);
 
@@ -193,7 +296,7 @@ static void test_render_vbpool_from_bridge_enable_matrix() {
         GameJitModConfig cfg{};
         cfg.EnableVBPool = true;
         cfg.AngleBackend = "auto";
-        ConfigView view = FromGameJitModConfig(cfg);
+        ConfigView view = BuildConfigView(make_production_schema(), cfg);
         assert(view.at("EnableVBPool").b == true);
 
         RenderVbpoolStandIn standin;
@@ -214,7 +317,7 @@ static void test_render_vbpool_from_bridge_enable_matrix() {
         GameJitModConfig cfg{};
         cfg.EnableVBPool = false;
         cfg.AngleBackend = "auto";
-        ConfigView view = FromGameJitModConfig(cfg);
+        ConfigView view = BuildConfigView(make_production_schema(), cfg);
 
         RenderVbpoolStandIn standin;
         PluginHost host;
@@ -238,7 +341,7 @@ static void test_render_angle_backend_reaches_plugin() {
         GameJitModConfig cfg{};
         cfg.EnableVBPool = false;
         cfg.AngleBackend = backend;
-        ConfigView view = FromGameJitModConfig(cfg);
+        ConfigView view = BuildConfigView(make_production_schema(), cfg);
         assert(view.at("AngleBackend").s == backend);
 
         RenderAngleStandIn standin;
@@ -258,7 +361,7 @@ static void test_render_angle_backend_reaches_plugin() {
     {
         GameJitModConfig cfg{};
         cfg.AngleBackend = "vulkan";
-        ConfigView view = FromGameJitModConfig(cfg);
+        ConfigView view = BuildConfigView(make_production_schema(), cfg);
         RenderAngleStandIn standin;
         PluginHost host;
         host.register_plugin(&standin);
@@ -273,14 +376,30 @@ static void test_render_angle_backend_reaches_plugin() {
     printf("PASS: render_angle_backend_reaches_plugin\n");
 }
 
+static void test_from_game_jit_mod_config_compat() {
+    // Compatibility wrapper: empty schema + legacy NetworkOpt=true.
+    GameJitModConfig cfg{};
+    cfg.EnableVBPool = true;
+    cfg.AngleBackend = "auto";
+    ConfigView view = FromGameJitModConfig(cfg);
+    assert(view.at("EnableVBPool").b == true);
+    assert(view.at("NetworkOpt").b == true);
+    assert(view.find("EnableNetSim") == view.end());
+    printf("PASS: from_game_jit_mod_config_compat\n");
+}
+
 int main() {
     test_vbpool_true_maps_to_config_key();
     test_vbpool_false_maps_to_config_key();
+    test_build_config_view_schema_defaults_and_overlay();
+    test_enable_net_sim_default_false_when_schema_registered();
+    test_network_opt_not_forced_when_schema_has_false();
     test_empty_registry_resolve_after_bridge_is_noop();
     test_network_rpc_standin_from_bridge_default();
     test_network_rpc_standin_disabled_when_off();
     test_render_vbpool_from_bridge_enable_matrix();
     test_render_angle_backend_reaches_plugin();
+    test_from_game_jit_mod_config_compat();
     printf("All plugin config bridge tests passed!\n");
     return 0;
 }
