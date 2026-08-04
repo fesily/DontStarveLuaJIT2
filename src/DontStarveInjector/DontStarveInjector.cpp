@@ -16,6 +16,7 @@
 #include "GameSteam.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginConfigBridge.hpp"
+#include "core/ConfigSchema.hpp"
 #include "core/RegisterBuiltinPlugins.hpp"
 #include "core/DynamicPluginLoader.hpp"
 
@@ -313,6 +314,11 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     {
         using namespace ds::plugin;
         static PluginHost g_plugin_host;
+        // L0 core schema must exist even with zero plugins (C-S6).
+        RegisterCoreOptionSchema(g_plugin_host.option_schema());
+        // Also seed builtin business keys so cascade defaults are present when
+        // plugins fail to load; plugins re-register the same entries.
+        RegisterBuiltinBusinessOptionSchema(g_plugin_host.option_schema());
         RegisterBuiltinPlugins(g_plugin_host);
         {
             static DynamicPluginLoader g_dyn_loader;

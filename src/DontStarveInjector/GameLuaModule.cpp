@@ -1170,6 +1170,7 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 #include <sstream>
 
 #include "gameModConfig.hpp"
+#include "core/ConfigSchema.hpp"
 #include "util/PersistentString.hpp"
 #include "plugins/plugin_network_sim/NetSimStats.hpp"
 
@@ -1445,6 +1446,85 @@ int luaopen_GameInjector(lua_State* L) {
 
 #include "../modinfo.hpp"
 
+namespace {
+
+// Schema used by cascade save/overrides parse (core + builtin business keys).
+// Host plugins re-register the business keys later for BuildConfigView.
+const ds::plugin::ConfigSchemaRegistry &cascade_option_schema() {
+	static const ds::plugin::ConfigSchemaRegistry schema = [] {
+		ds::plugin::ConfigSchemaRegistry r;
+		ds::plugin::RegisterCoreOptionSchema(r);
+		ds::plugin::RegisterBuiltinBusinessOptionSchema(r);
+		return r;
+	}();
+	return schema;
+}
+
+// Apply a coerced schema value into GameJitModConfig (core fields or business map).
+void apply_schema_value_to_config(const std::string &name, const ds::plugin::ConfigValue &v,
+								  GameJitModConfig &resolved, GameJitConfigSource source) {
+	if (name == ModConfigurationOptions::AlwaysEnableMod.name) {
+		if (v.type == ds::plugin::ConfigValueType::Bool) {
+			resolved.AlwaysEnableMod = v.b;
+			resolved.AlwaysEnableModSource = source;
+		}
+		return;
+	}
+	if (name == ModConfigurationOptions::DisableJITWhenServer.name) {
+		if (v.type == ds::plugin::ConfigValueType::Bool) {
+			resolved.DisableJITWhenServer = v.b;
+			resolved.DisableJITWhenServerSource = source;
+		}
+		return;
+	}
+	if (name == ModConfigurationOptions::LuaVmType.name) {
+		if (v.type == ds::plugin::ConfigValueType::String) {
+			resolved.LuaVmType = v.s;
+			resolved.LuaVmTypeSource = source;
+		}
+		return;
+	}
+	if (name == ModConfigurationOptions::EnabledGenGC.name) {
+		if (v.type == ds::plugin::ConfigValueType::Bool) {
+			resolved.EnabledGenGC = v.b;
+			resolved.EnabledGenGCSource = source;
+		}
+		return;
+	}
+	// Business / plugin-owned keys live only in the map.
+	resolved.business_options[name] = v;
+}
+
+// sol::object → ConfigValue via pure schema coerce helpers (C-S6).
+bool try_coerce_saved_value(const sol::object &raw, const ds::plugin::OptionSchemaEntry &schema,
+							ds::plugin::ConfigValue &out) {
+	if (!raw.valid() || raw.get_type() == sol::type::lua_nil) {
+		return false;
+	}
+	switch (raw.get_type()) {
+	case sol::type::boolean:
+		return ds::plugin::TryCoerceSavedBool(raw.as<bool>(), schema, out);
+	case sol::type::number: {
+		const double numeric = raw.as<double>();
+		// String options in modoverrides may store the 0-based index into allowed.
+		if (schema.type == ds::plugin::ConfigValueType::String && !schema.allowed.empty() &&
+			std::floor(numeric) == numeric) {
+			const auto index = static_cast<long long>(numeric);
+			if (index >= 0 && index < static_cast<long long>(schema.allowed.size())) {
+				return ds::plugin::TryCoerceSavedString(schema.allowed[static_cast<size_t>(index)], schema, out);
+			}
+			return false;
+		}
+		return ds::plugin::TryCoerceSavedNumber(numeric, schema, out);
+	}
+	case sol::type::string:
+		return ds::plugin::TryCoerceSavedString(raw.as<std::string>(), schema, out);
+	default:
+		return false;
+	}
+}
+} // namespace
+
 GameJitModConfig make_default_game_mod_config() {
     GameJitModConfig resolved;
     resolved.LuaVmType = std::string{ModConfigurationOptions::LuaVmType.default_value};
@@ -1471,84 +1551,13 @@ static bool is_supported_lua_vm_type(std::string_view value) {
 		   value == "jit_gen"sv || value == "_51"sv;
 }
 
-static bool is_supported_angle_backend(std::string_view value) {
-	for (const auto &opt : ModConfigurationOptions::AngleBackend.options) {
-		if (value == opt) {
-			return true;
-		}
-	}
-	return false;
-}
-
 
 static bool is_nil_object(const sol::object &object) {
 	return !object.valid() || object.get_type() == sol::type::lua_nil;
 }
 
-static bool try_get_string(const sol::object &object, std::string &value) {
-	if (is_nil_object(object)) {
-		return false;
-	}
-	if (object.get_type() == sol::type::string) {
-		value = object.as<std::string>();
-		return true;
-	}
-	return false;
-}
+// try_get_string/bool/option_string removed: save/overrides use try_coerce_saved_value.
 
-static bool try_get_bool(const sol::object &object, bool &value) {
-	if (is_nil_object(object)) {
-		return false;
-	}
-	switch (object.get_type()) {
-	case sol::type::boolean:
-		value = object.as<bool>();
-		return true;
-	case sol::type::number: {
-		const auto numeric = object.as<double>();
-		value = std::fabs(numeric) > 0.5;
-		return true;
-	}
-	case sol::type::string: {
-		const auto text = object.as<std::string>();
-		if (text == "true" || text == "1") {
-			value = true;
-			return true;
-		}
-		if (text == "false" || text == "0") {
-			value = false;
-			return true;
-		}
-		return false;
-	}
-	default:
-		return false;
-	}
-}
-
-template <size_t N>
-static bool try_get_option_string(const sol::object &object,
-									  const std::string_view (&options)[N],
-									  std::string &value) {
-	if (try_get_string(object, value)) {
-		return true;
-	}
-	if (is_nil_object(object) || object.get_type() != sol::type::number) {
-		return false;
-	}
-
-	const auto numeric = object.as<double>();
-	if (std::floor(numeric) != numeric) {
-		return false;
-	}
-
-	const auto index = static_cast<long long>(numeric);
-	if (index < 0 || index >= static_cast<long long>(N)) {
-		return false;
-	}
-	value = std::string{options[index]};
-	return true;
-}
 
 static sol::object get_saved_value(const sol::table &option) {
 	auto saved_client = option["saved_client"].get<sol::object>();
@@ -1742,59 +1751,28 @@ bool LoadGameJitModConfigFromSaveFile(const std::filesystem::path &path, GameJit
 		return false;
 	}
 
+	const auto &schema = cascade_option_schema();
 	for (const auto &[key, value]: root) {
 		if (value.get_type() != sol::type::table) {
 			continue;
 		}
 		auto option = value.as<sol::table>();
 		const auto option_name = option["name"].get_or<std::string>("");
-		const auto saved_value = get_saved_value(option);
-
-		if (option_name == ModConfigurationOptions::AngleBackend.name) {
-			std::string text{ModConfigurationOptions::AngleBackend.default_value};
-			if (try_get_string(saved_value, text) && is_supported_angle_backend(text)) {
-				resolved.business_options["AngleBackend"] = ds::plugin::ConfigValue::string(text);
-			}
-		} else if (option_name == ModConfigurationOptions::LuaVmType.name) {
-			std::string text{ModConfigurationOptions::LuaVmType.default_value};
-			if (try_get_string(saved_value, text) && is_supported_lua_vm_type(text)) {
-				resolved.LuaVmType = text;
-				resolved.LuaVmTypeSource = GameJitConfigSource::save_file;
-			}
-		} else if (option_name == ModConfigurationOptions::AlwaysEnableMod.name) {
-			bool enabled = ModConfigurationOptions::AlwaysEnableMod.default_value;
-			if (try_get_bool(saved_value, enabled)) {
-				resolved.AlwaysEnableMod = enabled;
-				resolved.AlwaysEnableModSource = GameJitConfigSource::save_file;
-			}
-		} else if (option_name == ModConfigurationOptions::DisableJITWhenServer.name) {
-			bool disabled = ModConfigurationOptions::DisableJITWhenServer.default_value;
-			if (try_get_bool(saved_value, disabled)) {
-				resolved.DisableJITWhenServer = disabled;
-				resolved.DisableJITWhenServerSource = GameJitConfigSource::save_file;
-			}
-		} else if (option_name == ModConfigurationOptions::EnabledGenGC.name) {
-			bool enabled = ModConfigurationOptions::EnabledGenGC.default_value;
-			if (try_get_bool(saved_value, enabled)) {
-				resolved.EnabledGenGC = enabled;
-				resolved.EnabledGenGCSource = GameJitConfigSource::save_file;
-			}
-		} else if (option_name == ModConfigurationOptions::EnableVBPool.name) {
-			bool enabled = ModConfigurationOptions::EnableVBPool.default_value;
-			if (try_get_bool(saved_value, enabled)) {
-				resolved.business_options["EnableVBPool"] = ds::plugin::ConfigValue::boolean(enabled);
-			}
-		} else if (option_name == ModConfigurationOptions::NetworkOpt.name) {
-			bool enabled = ModConfigurationOptions::NetworkOpt.default_value;
-			if (try_get_bool(saved_value, enabled)) {
-				resolved.business_options["NetworkOpt"] = ds::plugin::ConfigValue::boolean(enabled);
-			}
-		} else if (option_name == ModConfigurationOptions::EnableNetSim.name) {
-			bool enabled = ModConfigurationOptions::EnableNetSim.default_value;
-			if (try_get_bool(saved_value, enabled)) {
-				resolved.business_options["EnableNetSim"] = ds::plugin::ConfigValue::boolean(enabled);
-			}
+		if (option_name.empty()) {
+			continue;
 		}
+		const auto *sch = schema.find(option_name);
+		if (!sch) {
+			// Unknown keys ignored (C-S6).
+			continue;
+		}
+		const auto saved_value = get_saved_value(option);
+		ds::plugin::ConfigValue v;
+		if (!try_coerce_saved_value(saved_value, *sch, v)) {
+			spdlog::error("invalid value for option {}", option_name);
+			continue; // keep prior/default
+		}
+		apply_schema_value_to_config(option_name, v, resolved, GameJitConfigSource::save_file);
 	}
 	return true;
 }
@@ -1821,54 +1799,30 @@ bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
 	}
 
 	auto options = options_object.as<sol::table>();
-	std::string text{ModConfigurationOptions::AngleBackend.default_value};
-	if (try_get_option_string(options[ModConfigurationOptions::AngleBackend.name].get<sol::object>(),
-							 ModConfigurationOptions::AngleBackend.options,
-							 text) && is_supported_angle_backend(text)) {
-		resolved.business_options["AngleBackend"] = ds::plugin::ConfigValue::string(text);
+	const auto &schema = cascade_option_schema();
+	for (const auto &[key, value]: options) {
+		if (key.get_type() != sol::type::string) {
+			continue;
+		}
+		const auto option_name = key.as<std::string>();
+		const auto *sch = schema.find(option_name);
+		if (!sch) {
+			// Unknown keys ignored (C-S6).
+			continue;
+		}
+		// configuration_options values may be scalars or {saved=...} tables.
+		sol::object raw = value;
+		if (value.get_type() == sol::type::table) {
+			raw = get_saved_value(value.as<sol::table>());
+		}
+		ds::plugin::ConfigValue v;
+		if (!try_coerce_saved_value(raw, *sch, v)) {
+			spdlog::error("invalid value for option {}", option_name);
+			continue; // keep prior/default
+		}
+		apply_schema_value_to_config(option_name, v, resolved, GameJitConfigSource::save_file);
 	}
-
-	if (try_get_option_string(options[ModConfigurationOptions::LuaVmType.name].get<sol::object>(),
-							 ModConfigurationOptions::LuaVmType.options,
-							 text) && is_supported_lua_vm_type(text)) {
-		resolved.LuaVmType = text;
-		resolved.LuaVmTypeSource = GameJitConfigSource::save_file;
-	}
-
-	bool enabled = ModConfigurationOptions::AlwaysEnableMod.default_value;
-	if (try_get_bool(options[ModConfigurationOptions::AlwaysEnableMod.name].get<sol::object>(), enabled)) {
-		resolved.AlwaysEnableMod = enabled;
-		resolved.AlwaysEnableModSource = GameJitConfigSource::save_file;
-	}
-
-	bool disabled = ModConfigurationOptions::DisableJITWhenServer.default_value;
-	if (try_get_bool(options[ModConfigurationOptions::DisableJITWhenServer.name].get<sol::object>(), disabled)) {
-		resolved.DisableJITWhenServer = disabled;
-		resolved.DisableJITWhenServerSource = GameJitConfigSource::save_file;
-	}
-
-	bool vbpool_enabled = ModConfigurationOptions::EnableVBPool.default_value;
-	if (try_get_bool(options[ModConfigurationOptions::EnableVBPool.name].get<sol::object>(), vbpool_enabled)) {
-		resolved.business_options["EnableVBPool"] = ds::plugin::ConfigValue::boolean(vbpool_enabled);
-	}
-
-	bool gen_gc_enabled = ModConfigurationOptions::EnabledGenGC.default_value;
-	if (try_get_bool(options[ModConfigurationOptions::EnabledGenGC.name].get<sol::object>(), gen_gc_enabled)) {
-		resolved.EnabledGenGC = gen_gc_enabled;
-		resolved.EnabledGenGCSource = GameJitConfigSource::save_file;
-	}
-
-	bool network_opt = ModConfigurationOptions::NetworkOpt.default_value;
-	if (try_get_bool(options[ModConfigurationOptions::NetworkOpt.name].get<sol::object>(), network_opt)) {
-		resolved.business_options["NetworkOpt"] = ds::plugin::ConfigValue::boolean(network_opt);
-	}
-
-	bool net_sim = ModConfigurationOptions::EnableNetSim.default_value;
-	if (try_get_bool(options[ModConfigurationOptions::EnableNetSim.name].get<sol::object>(), net_sim)) {
-		resolved.business_options["EnableNetSim"] = ds::plugin::ConfigValue::boolean(net_sim);
-	}
-
-    return true;
+	return true;
 }
 
 bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const GameJitModConfig &config) {

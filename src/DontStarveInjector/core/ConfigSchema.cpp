@@ -1,6 +1,9 @@
 #include "ConfigSchema.hpp"
+#include "../modinfo.hpp"
+
 
 #include <algorithm>
+#include <cmath>
 
 namespace ds::plugin {
 namespace {
@@ -62,6 +65,129 @@ std::vector<const OptionSchemaEntry *> ConfigSchemaRegistry::all() const {
         out.push_back(&kv.second);
     }
     return out;
+}
+
+bool TryCoerceSavedBool(bool raw, const OptionSchemaEntry &schema, ConfigValue &out) {
+    if (schema.type != ConfigValueType::Bool) {
+        return false;
+    }
+    out = ConfigValue::boolean(raw);
+    return true;
+}
+
+bool TryCoerceSavedNumber(double raw, const OptionSchemaEntry &schema, ConfigValue &out) {
+    if (schema.type == ConfigValueType::Number) {
+        out = ConfigValue::number(raw);
+        return true;
+    }
+    // Bool: accept 0/1-ish numeric (save files sometimes store 0/1).
+    if (schema.type == ConfigValueType::Bool) {
+        out = ConfigValue::boolean(std::fabs(raw) > 0.5);
+        return true;
+    }
+    return false;
+}
+
+bool TryCoerceSavedString(std::string_view raw, const OptionSchemaEntry &schema, ConfigValue &out) {
+    if (schema.type == ConfigValueType::String) {
+        if (!schema.allowed.empty()) {
+            bool ok = false;
+            for (const auto &a : schema.allowed) {
+                if (a == raw) {
+                    ok = true;
+                    break;
+                }
+            }
+            if (!ok) {
+                return false;
+            }
+        }
+        out = ConfigValue::string(std::string{raw});
+        return true;
+    }
+    // Bool: accept "true"/"false"/"0"/"1" from save/overrides.
+    if (schema.type == ConfigValueType::Bool) {
+        if (raw == "true" || raw == "1") {
+            out = ConfigValue::boolean(true);
+            return true;
+        }
+        if (raw == "false" || raw == "0") {
+            out = ConfigValue::boolean(false);
+            return true;
+        }
+        return false;
+    }
+    return false;
+}
+
+void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ModConfigurationOptions::AlwaysEnableMod.name};
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(ModConfigurationOptions::AlwaysEnableMod.default_value);
+        (void) r.add(std::move(e));
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ModConfigurationOptions::DisableJITWhenServer.name};
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(ModConfigurationOptions::DisableJITWhenServer.default_value);
+        (void) r.add(std::move(e));
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ModConfigurationOptions::LuaVmType.name};
+        e.type = ConfigValueType::String;
+        e.default_value = ConfigValue::string(std::string{ModConfigurationOptions::LuaVmType.default_value});
+        // modinfo options are jit/game; env/cmd still accepts extra aliases via
+        // is_supported_lua_vm_type outside schema.allowed.
+        for (const auto &opt : ModConfigurationOptions::LuaVmType.options) {
+            e.allowed.emplace_back(opt);
+        }
+        (void) r.add(std::move(e));
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ModConfigurationOptions::EnabledGenGC.name};
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnabledGenGC.default_value);
+        (void) r.add(std::move(e));
+    }
+}
+
+void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r) {
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ModConfigurationOptions::AngleBackend.name};
+        e.type = ConfigValueType::String;
+        e.default_value = ConfigValue::string(std::string{ModConfigurationOptions::AngleBackend.default_value});
+        for (const auto &opt : ModConfigurationOptions::AngleBackend.options) {
+            e.allowed.emplace_back(opt);
+        }
+        (void) r.add(std::move(e));
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ModConfigurationOptions::EnableVBPool.name};
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnableVBPool.default_value);
+        (void) r.add(std::move(e));
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ModConfigurationOptions::NetworkOpt.name};
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(ModConfigurationOptions::NetworkOpt.default_value);
+        (void) r.add(std::move(e));
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ModConfigurationOptions::EnableNetSim.name};
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnableNetSim.default_value);
+        (void) r.add(std::move(e));
+    }
 }
 
 } // namespace ds::plugin

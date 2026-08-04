@@ -46,6 +46,10 @@ bool PluginHost::register_option_schema(OptionSchemaEntry e) {
     return option_schema_.add(std::move(e));
 }
 
+ConfigSchemaRegistry &PluginHost::option_schema() {
+    return option_schema_;
+}
+
 const ConfigSchemaRegistry &PluginHost::option_schema() const {
     return option_schema_;
 }

@@ -40,6 +40,7 @@ class PluginHost {
 public:
     DS_PLUGIN_HOST_API void register_plugin(IPlugin *plugin); // non-owning; caller keeps lifetime
     DS_PLUGIN_HOST_API bool register_option_schema(OptionSchemaEntry e);
+    DS_PLUGIN_HOST_API ConfigSchemaRegistry &option_schema();
     DS_PLUGIN_HOST_API const ConfigSchemaRegistry &option_schema() const;
 
 
