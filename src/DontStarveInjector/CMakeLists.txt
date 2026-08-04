@@ -16,7 +16,6 @@ set(SOURCES
         GameJitModConfigCascade.cpp
         luajit_config.cpp
         game_info.cpp
-        GameSteam.cpp
         config.cpp
         core/PluginHost.cpp
         core/PluginOptionRules.cpp
@@ -209,6 +208,7 @@ set(PLUGIN_CORE_VM_SOURCES
     plugins/plugin_core_vm/GameLuaInjectFramework.c
     plugins/plugin_core_vm/lua_debugger_helper.cpp
     plugins/plugin_core_vm/gameio.cpp
+    plugins/plugin_core_vm/GameSteam.cpp
     ${DONTSTARVEINJECTOR_UTIL_DIR}/lua_io2.cpp
     ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
 )
@@ -258,6 +258,15 @@ target_include_directories(plugin_core_vm PRIVATE
     ${PROJECT_SOURCE_DIR}/3rd
 )
 # GameProfilerHook / lagcomp / remaining Injector TUs still include GameLua.hpp etc.
+
+if (ENABLE_STEAM_SUPPORT)
+    target_compile_definitions(plugin_core_vm PRIVATE ENABLE_STEAM_SUPPORT)
+    target_include_directories(plugin_core_vm PRIVATE ${STEAM_INCLUDE_DIR} ${STEAM_SDK_INCLUDE_DIR})
+    target_link_libraries(plugin_core_vm PRIVATE ${STEAM_LIBRARIES})
+    # SteamUser() / interface accessors for GameSteam account id + UGC path.
+    target_sources(plugin_core_vm PRIVATE ${DONTSTARVEINJECTOR_UTIL_DIR}/steam.cpp)
+endif()
+
 target_include_directories(Injector PUBLIC ${PLUGIN_CORE_VM_DIR})
 
 # Gum-using dynamic plugins need Injector to re-export static frida-gum symbols.

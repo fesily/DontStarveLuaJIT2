@@ -7,7 +7,6 @@
 #include "ctx.hpp"
 #include "MemorySignature.hpp"
 #include "gameModConfig.hpp"
-#include "GameSteam.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginConfigBridge.hpp"
 #include "core/ConfigSchema.hpp"
@@ -198,7 +197,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         return;
     }
 
-    HookSteamGameServerInterface();
+    // Steam UGC workshop path hook lives in plugin_core_vm (with gameio).
 
     if (VmPathEnabled(isClient)) {
         ds::core_vm::BootstrapArgs args{};

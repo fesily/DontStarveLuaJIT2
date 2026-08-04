@@ -7,6 +7,7 @@
 #include "core/CoreVmBootstrap.hpp"
 
 #include "GameLua.hpp"
+#include "GameSteam.hpp"
 #include "DontStarveSignature.hpp"
 #include "GameSignature.hpp"
 #include "ProcessMutex.hpp"
@@ -243,5 +244,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_core_vm_run_signature_and_replace(const ds::core
         return false;
     }
     std::fprintf(stderr, "[plugin_core_vm] running signature + ReplaceLuaModule\n");
+    HookSteamGameServerInterface();
+
     return run_signature_and_replace(*args);
 }

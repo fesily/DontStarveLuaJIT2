@@ -1,15 +1,9 @@
 
 #include "util/steam_sdk.hpp"
+#include "util/steam.hpp"
 #include "util/gum_platform.hpp"
 #include "config.hpp"
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <Windows.h>
-#else
-#include <dlfcn.h>
-#endif
+#include "gameio.h"
 #include <bit>
 #include <cstdint>
 #include <string_view>
@@ -77,20 +71,9 @@ bool replace_vtable_function(void *obj, size_t index, Fn replacement) {
 
 
 bool (*BInitWorkshopForGameServer)(void *self, DepotId_t unWorkshopDepotID, const char *pszFolder);
-using BInitWorkshopHookFn = void (*)(uint32_t, const char *);
-static BInitWorkshopHookFn ResolveBInitWorkshopHook() {
-#ifdef _WIN32
-    HMODULE mod = GetModuleHandleA("plugin_core_vm.dll");
-    if (!mod) return nullptr;
-    return reinterpret_cast<BInitWorkshopHookFn>(GetProcAddress(mod, "BInitWorkshopForGameServerHook"));
-#else
-    return reinterpret_cast<BInitWorkshopHookFn>(dlsym(RTLD_DEFAULT, "BInitWorkshopForGameServerHook"));
-#endif
-}
 static bool BInitWorkshopForGameServer_hook(void *self, DepotId_t unWorkshopDepotID, const char *pszFolder) {
-    if (auto *fn = ResolveBInitWorkshopHook()) {
-        fn(unWorkshopDepotID, pszFolder);
-    }
+    // Same DLL as gameio: update workshop path cache used by lj_fopen path rewrite.
+    BInitWorkshopForGameServerHook(unWorkshopDepotID, pszFolder);
     return BInitWorkshopForGameServer(self, unWorkshopDepotID, pszFolder);
 }
 
