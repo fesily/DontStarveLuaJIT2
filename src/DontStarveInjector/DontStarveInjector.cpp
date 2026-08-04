@@ -19,6 +19,8 @@
 #include "core/ConfigSchema.hpp"
 #include "core/RegisterBuiltinPlugins.hpp"
 #include "core/DynamicPluginLoader.hpp"
+#include "core/CoreVmBootstrap.hpp"
+
 
 
 #include <spdlog/spdlog.h>
@@ -238,6 +240,50 @@ static bool VmPathEnabled(bool isClient) {
     return true;
 }
 
+// Full VM path still owned by Injector (V-S1). Hard failures call showError (exit).
+// Soft misses (e.g. no luamodule base) log and return false so inject can continue.
+bool ds::core_vm::LegacySignatureAndReplaceInInjector(const BootstrapArgs &args) {
+    auto lua51 = loadlib(lua51_name);
+    if (!lua51) {
+        showError("can't load lua51");
+        return false;
+    }
+    auto defer1 = create_defer([&lua51]() {
+        if (lua51)
+            unloadlib(lua51);
+    });
+
+    spdlog::info("main module base address:{}", (void *) gum_module_get_range(gum_process_get_main_module())->base_address);
+    std::string mainPathOwned;
+    const char *mainPathC = args.main_path;
+    if (!mainPathC || !*mainPathC) {
+        mainPathOwned = getExePath().string();
+        mainPathC = mainPathOwned.c_str();
+    }
+    const std::string mainPath{mainPathC};
+
+    if (luaModuleSignature.scan(mainPath.c_str()) == 0) {
+        spdlog::error("can't find luamodule base address");
+        return false;
+    }
+    ProcessMutex mtx("DontStarveInjectorSignature");
+    std::lock_guard guard{mtx};
+    const uintptr_t lua_base =
+        args.lua_module_base != 0 ? args.lua_module_base : luaModuleSignature.target_address;
+    auto res = SignatureUpdater::create_or_update(args.is_client, lua_base);
+    if (!res) {
+        showError(res.error());
+        return false;
+    }
+    unloadlib(lua51);
+    lua51 = nullptr;
+    auto &val = res.value();
+    ReplaceLuaModule(mainPath, val.signatures, val.exports);
+    replace_game_branch_flag_to_dev(mainPath);
+    return true;
+}
+
+
 extern "C" void LoadGameModConfig();
 DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     auto ictx = InjectorCtx::instance();
@@ -285,34 +331,16 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     HookSteamGameServerInterface();
 
     if (VmPathEnabled(isClient)) {
-        auto lua51 = loadlib(lua51_name);
-        if (!lua51) {
-            showError("can't load lua51");
-            return;
+        ds::core_vm::BootstrapArgs args{};
+        args.is_client = isClient;
+        // lua_module_base filled inside legacy after signature scan; pass 0 here.
+        args.lua_module_base = 0;
+        args.main_path = nullptr;
+        if (!ds::core_vm::TryRunSignatureAndReplace(args)) {
+            // Hard failures already called showError inside legacy; soft skip only
+            // when legacy itself returned false without aborting inject further.
+            spdlog::warn("core.vm signature/replace path failed — continuing inject");
         }
-        auto defer1 = create_defer([&lua51]() {
-            if (lua51)
-                unloadlib(lua51);
-        });
-
-        spdlog::info("main module base address:{}", (void *) gum_module_get_range(gum_process_get_main_module())->base_address);
-        auto mainPath = getExePath().string();
-        if (luaModuleSignature.scan(mainPath.c_str()) == 0) {
-            spdlog::error("can't find luamodule base address");
-            return;
-        }
-        ProcessMutex mtx("DontStarveInjectorSignature");
-        std::lock_guard guard{mtx};
-        auto res = SignatureUpdater::create_or_update(isClient, luaModuleSignature.target_address);
-        if (!res) {
-            showError(res.error());
-            return;
-        }
-        unloadlib(lua51);
-        lua51 = nullptr;
-        auto &val = res.value();
-        ReplaceLuaModule(mainPath, val.signatures, val.exports);
-        replace_game_branch_flag_to_dev(mainPath);
     } else {
         spdlog::info("Lua VM path disabled — skipping signature/replace; native plugins continue");
     }

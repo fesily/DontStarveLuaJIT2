@@ -33,6 +33,7 @@ set(SOURCES
         core/RegisterBuiltinPlugins.cpp
         core/PluginConfigBridge.cpp
         core/DynamicPluginLoader.cpp
+        core/CoreVmBootstrap.cpp
 )
 
 
@@ -203,6 +204,15 @@ target_compile_definitions(plugin_save_fork PRIVATE
     SPDLOG_FMT_EXTERNAL)
 target_include_directories(plugin_save_fork PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/plugins/plugin_save_fork)
+
+# core.vm — optional VM/signature module (V-S1 stub; all platforms, no Gum/ANGLE).
+ds_add_dynamic_plugin(plugin_core_vm
+    plugins/plugin_core_vm/plugin_core_vm.cpp)
+target_link_libraries(plugin_core_vm PRIVATE
+    spdlog::spdlog)
+target_compile_definitions(plugin_core_vm PRIVATE
+    SPDLOG_COMPILED_LIB
+    SPDLOG_FMT_EXTERNAL)
 
 # Gum-using dynamic plugins need Injector to re-export static frida-gum symbols.
 # Windows: FridaGum.def. Linux/macOS: not implemented — skip targets (source also
