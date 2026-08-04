@@ -28,6 +28,9 @@ L0 boots the host and always runs DynamicPluginLoader for feature modules. **Alw
 > **Architecture note (D3 supersession for VM *implementation*):**  
 > Spec D3 in `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md` still treats **AlwaysEnableMod** and the **decision to run a VM path** as L0 concerns. The **implementation** of signature scan + `ReplaceLuaModule` + `GameLua` + `luaopen_GameInjector` is **no longer L0-linked**: it lives in optional `plugins/plugin_core_vm` (id `core.vm`). See `docs/superpowers/specs/2026-08-04-core-vm-plugin-design.md` (V1–V9). Deploy `plugins/plugin_core_vm.dll` next to Injector when you want JIT.
 
+> **Architecture note (`debug.profiler` owns GC policy):**  
+> Spec inventory rows that still list a separate Lua `gc.policy` are superseded. Tracy / replace-profiler / FullGC / FrameGC live in dual-face `debug.profiler` (`plugin_debug_profiler` + `Mod/plugins/debug_profiler.lua`). See `docs/superpowers/specs/2026-08-04-debug-profiler-plugin-design.md`. L0 has **no** fullgc reverse dep on core.vm; `core.vm` only installs a soft `lj_gc_fullgc_external` forwarder. Profiler and core.vm are optional independently.
+
 ### Plugins (feature modules)
 
 Features that used to be hard-wired in `Inject()`, `LoadGameModConfig`, or `modmain._M:Main` are plugins. With **all feature plugins disabled**, inject still works. With **core.vm omitted**, the selected stock Lua VM runs (no JIT replace) and native feature plugins still load.
@@ -35,8 +38,8 @@ Features that used to be hard-wired in `Inject()`, `LoadGameModConfig`, or `modm
 | Layer | Phase | Examples (current) |
 |---|---|---|
 | Optional core | `EarlyNative` (bootstrap export + Host face) | `core.vm` — Signature + ReplaceLuaModule + GameInjector open |
-| Native | `EarlyNative` | `network.rpc`, `render.vbpool`, `render.angle`, `save.fork`, … |
-| Lua | `AfterModMain` | `jit.*`, `gc.policy`, `network.*`, `save.fork`, … |
+| Native | `EarlyNative` | `network.rpc`, `render.vbpool`, `render.angle`, `save.fork`, `debug.profiler`, … |
+| Lua | `AfterModMain` | `jit.*`, `debug.profiler` (incl. former `gc.policy`), `network.*`, `save.fork`, … |
 
 Dual-face plugins share **one id**. Example: `network.rpc` has a native EarlyNative face (`GameNetWorkHookRpc4`) and a Lua AfterModMain face (`Mod/plugins/network_rpc.lua`).
 
@@ -97,6 +100,7 @@ Shipped modules today:
 | `plugin_sim_lagcomp` | `sim.lagcomp` | lagcomp entity snapshot (needs GameLua context from core.vm when available) |
 | `plugin_render_vbpool` | `render.vbpool` | `DS_LUAJIT_set_vbpool_enabled` |
 | `plugin_render_angle` | `render.angle` | `InitGameOpenGl` |
+| `plugin_debug_profiler` | `debug.profiler` | **Optional.** Tracy / replace-profiler / FullGC / FrameGC. Soft no-op when missing; independent of `core.vm`. |
 | `plugin_dummy` | `debug.dummy` | log only |
 
 ### 3.1 Implement `IPlugin` in a module
@@ -299,6 +303,7 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 | `network.sim` | `plugin_network_sim` | `all_of` `EnableNetSim` | EarlyNative | 60 | — | — | Win (DLL always maps; load gated) |
 | `save.fork` | `plugin_save_fork` | `all_of` `EnableForkSave` | EarlyNative | 60 | — | — | always (platform-native) |
 | `sim.lagcomp` | `plugin_sim_lagcomp` | `all_of` `EnableLagCompensation` | EarlyNative | 60 | — | — | Win; degrades without core.vm context |
+| `debug.profiler` | `plugin_debug_profiler` | AlwaysOn (native face) | EarlyNative | 20 | — | — | always (optional DLL; missing ⇒ soft no-op for Tracy/FullGC/FrameGC) |
 | `debug.dummy` | `plugin_dummy` | AlwaysOn | EarlyNative | 1000 | — | — | always |
 
 ### 6.2 Lua (`Mod/plugins/init.lua` order + manifests)
@@ -306,8 +311,7 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 | id | Options | priority | depends | soft_depends | conflicts | `when` (summary) |
 |---|---|---:|---|---|---|---|
 | `jit.tailcall` | `any_of` SlowTailCall, ForceDisableTailCall, AutoDetectEncryptedMod | 10 | — | — | — | `has_luajit` |
-| `debug.profiler` | `any_of` EnableProfiler, EnableTracy | 20 | — | — | — | `has_luajit` |
-| `gc.policy` | `always` | 30 | — | — | — | — |
+| `debug.profiler` | `any_of` EnableProfiler, EnableTracy, DisableForceFullGC, EnableFrameGC | 20 | — | — | — | `has_luajit` |
 | `network.rpc` | `all_of` NetworkOpt | 40 | — | — | — | — |
 | `network.entity` | `all_of` NetworkOptEntity | 40 | **`network.rpc`** | — | — | — |
 | `fps.render` | `option` TargetRenderFPS | 50 | — | — | — | not non-Windows |
@@ -323,8 +327,7 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 | priority | plugins |
 |---:|---|
 | 10 | `jit.tailcall` (compat.frostxx folded in) |
-| 20 | `debug.profiler` |
-| 30 | `gc.policy` |
+| 20 | `debug.profiler` (owns former `gc.policy` FullGC/FrameGC) |
 | 40 | `network.rpc` (Lua), `network.entity` |
 | 50 | `fps.render` |
 | 60 | `sim.lagcomp`, `network.sim`, `save.fork` |
@@ -355,6 +358,17 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 
 - VBPool: `plugin_render_vbpool` — `EnableVBPool` + Win client → `DS_LUAJIT_set_vbpool_enabled(true)`
 - Angle: `plugin_render_angle` — AlwaysOn + Win client → `InitGameOpenGl()` (backend string from ConfigView / `business_options`)
+
+### `debug.profiler` (dual-face: Tracy + FullGC + FrameGC)
+
+- Native: `plugins/plugin_debug_profiler/` → AlwaysOn EarlyNative so exports stay mapped when staged
+- Lua: `Mod/plugins/debug_profiler.lua` — AfterModMain priority 20 (before `jit.runtime` HideGlobalJIT)
+- Owns: `DS_LUAJIT_replace_profiler_api`, `DS_LUAJIT_enable_tracy`, `DS_LUAJIT_enable_framegc`, `DS_LUAJIT_disable_fullgc`, `lj_gc_fullgc_external`
+- Options: `EnableProfiler`, `EnableTracy`, `DisableForceFullGC`, `EnableFrameGC` (modinfo keys unchanged; GenGC still disables FullGC/FrameGC via `disabled_by`)
+- Former separate `gc.policy` Lua plugin is merged here (`gc_policy.lua` is a nil-registration shim only)
+- Soft peers: missing `plugin_debug_profiler.dll` → inject continues; GameInjector trampolines no-op; `core.vm` fullgc forwarder calls `oldfn`
+- Soft peers: missing `plugin_core_vm` → FrameGC / lua_gc path degrades; profiler DLL still loads
+- **L0 has no fullgc reverse dep** (`ds_core_vm_fullgc_*` removed)
 
 ---
 
@@ -408,8 +422,9 @@ When adding a plugin:
 | `src/DontStarveInjector/core/DynamicPluginLoader.*` | Scan / load / isolate dynamic modules |
 | `src/DontStarveInjector/core/RegisterBuiltinPlugins.*` | Empty static extension point |
 | `src/DontStarveInjector/core/CoreVmBootstrap.*` | Optional load of `plugin_core_vm` + `ds_core_vm_run_signature_and_replace` |
-| `src/DontStarveInjector/plugins/plugin_core_vm/` | Optional `core.vm` (Signature + GameLua + GameInjector open) |
-| `src/DontStarveInjector/plugins/plugin_*/` | Dynamic native feature modules (rpc/sim/vbpool/angle/fork/lagcomp/dummy) |
+| `src/DontStarveInjector/plugins/plugin_core_vm/` | Optional `core.vm` (Signature + GameLua + GameInjector open; fullgc forwarder only) |
+| `src/DontStarveInjector/plugins/plugin_debug_profiler/` | Optional `debug.profiler` (Tracy / FullGC / FrameGC) |
+| `src/DontStarveInjector/plugins/plugin_*/` | Dynamic native feature modules (rpc/sim/vbpool/angle/fork/lagcomp/dummy/…) |
 | `src/DontStarveInjector/DontStarveInjector.cpp` | Schema seed + optional VM path + EarlyNative host + dynamic loader |
 | `Mod/plugins/host.lua` | Lua host |
 | `Mod/plugins/init.lua` | Lua registry |
@@ -419,6 +434,7 @@ When adding a plugin:
 | `tests/plugin_server/*` | L-G (+ `--scenario present\|absent\|vm_disabled`) |
 | `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md` | Full architecture (D3: AlwaysEnableMod + VM path *gate* remain L0) |
 | `docs/superpowers/specs/2026-08-04-core-vm-plugin-design.md` | Optional core.vm (VM **implementation** ownership) |
+| `docs/superpowers/specs/2026-08-04-debug-profiler-plugin-design.md` | `debug.profiler` owns Tracy + FullGC + FrameGC |
 | `docs/superpowers/specs/2026-08-04-gamejitmodconfig-pluginization-design.md` | ConfigView SSOT design |
 
 ## 11. Dynamic modules (Phase B)
@@ -438,6 +454,7 @@ EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`, �
 |---|---|---|
 | `bin64/Injector.dll` (+ loader e.g. `Winmm.dll`) | **Yes** | L0 inject + PluginHost + DynamicPluginLoader |
 | `bin64/plugins/plugin_core_vm.dll` | **Recommended for JIT** | Optional. Missing ⇒ no Signature/ReplaceLuaModule/`GameInjector`; feature plugins still load |
+| `bin64/plugins/plugin_debug_profiler.dll` | **Optional (Tracy/FullGC/FrameGC)** | Independent of core.vm. Missing ⇒ soft no-op for profiler/GC policy APIs; inject + JIT still work |
 | `bin64/plugins/plugin_*.dll` | Per feature | `network_*`, `render_*`, `save_fork`, `sim_lagcomp`, `dummy`, … |
 
 `DisableJITWhenServer` (or harness `DS_LUAJIT_FORCE_DISABLE_VM=1`) only skips the VM path; it does **not** skip DynamicPluginLoader. Harness negative path: rename `plugin_core_vm.dll` or set `DS_LUAJIT_FORCE_NO_CORE_VM=1`.
@@ -541,5 +558,9 @@ Env/cmd angle overrides write **strings** into `business_options["AngleBackend"]
 | `EnableNetSim` | Bool | `false` | `network.sim` | `AllOf` |
 | `EnableVBPool` | Bool | `false` | `render.vbpool` | `AllOf` |
 | `AngleBackend` | String | `auto` (`auto,vulkan,d3d11,d3d9`) | `render.angle` | AlwaysOn (parameter) |
+| `EnableProfiler` | String | `off` (`off,fzvp,Gz`) | `debug.profiler` | AlwaysOn native; Lua `any_of` |
+| `EnableTracy` | String | `off` (`off,on`) | `debug.profiler` | AlwaysOn native; Lua `any_of` |
+| `DisableForceFullGC` | Bool | `true` | `debug.profiler` | AlwaysOn native; Lua `any_of` |
+| `EnableFrameGC` | Bool | `true` | `debug.profiler` | AlwaysOn native; Lua `any_of` |
 
 `debug.dummy` is AlwaysOn with no option schema (load always when `can_load`).

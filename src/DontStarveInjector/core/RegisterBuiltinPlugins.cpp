@@ -12,15 +12,15 @@ namespace ds::plugin {
 //   plugin_sim_lagcomp   → sim.lagcomp
 //   plugin_render_vbpool → render.vbpool
 //   plugin_render_angle  → render.angle
-//   plugin_debug_profiler → debug.profiler
+//   plugin_debug_profiler → debug.profiler (Tracy / FullGC / FrameGC; optional)
 //   plugin_dummy         → debug.dummy
 // Config options are schema-driven (ConfigView SSOT): plugins register option
 // schema in ds_plugin_module_init; L0 also seeds core + builtin business schema
 // before load_all so cascade parse and BuildConfigView share the same keys.
 // Host still calls RegisterBuiltinPlugins before DynamicPluginLoader so the
 // extension point remains for true L0-only static plugins if ever needed.
-// Do not register core.vm here — it is optional and loaded via CoreVmBootstrap
-// + DynamicPluginLoader (missing DLL soft-skips VM; inject continues).
+// Do not register core.vm or debug.profiler here — both are optional dynamic
+// modules (missing DLL soft-skips that feature; inject continues).
 void RegisterBuiltinPlugins(PluginHost &host) {
     (void) host;
 }

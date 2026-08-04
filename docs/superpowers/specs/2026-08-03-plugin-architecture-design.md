@@ -19,6 +19,8 @@
 | D7 | Success requires tests | Architecture is **not done** without automated gates in §12. Narrative goals without a §13 mapping are non-blocking. |
 | D8 | Final game proof | **Automated dedicated-server harness (L-G)**. Must prove injector + plugin modules load successfully and the sim reaches a **stable paused** state. **Implementation is the next step after Host unit gates (M0+)** — specified now, built as its own deliverable (`M-G`), not left as permanent manual-only. |
 
+> **Supersession (2026-08-04):** separate Lua `gc.policy` is folded into dual-face `debug.profiler` (`plugin_debug_profiler` owns Tracy + FullGC + FrameGC). See `docs/superpowers/specs/2026-08-04-debug-profiler-plugin-design.md`. Inventory rows below that still list `gc.policy` alone are historical.
+
 ---
 
 ## 2. Problem statement
