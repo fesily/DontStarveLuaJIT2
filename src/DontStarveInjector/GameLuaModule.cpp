@@ -1447,17 +1447,20 @@ int luaopen_GameInjector(lua_State* L) {
 
 GameJitModConfig make_default_game_mod_config() {
     GameJitModConfig resolved;
-    resolved.AngleBackend = std::string{ModConfigurationOptions::AngleBackend.default_value};
     resolved.LuaVmType = std::string{ModConfigurationOptions::LuaVmType.default_value};
     resolved.AlwaysEnableMod = ModConfigurationOptions::AlwaysEnableMod.default_value;
     resolved.DisableJITWhenServer = ModConfigurationOptions::DisableJITWhenServer.default_value;
-    resolved.EnableVBPool = ModConfigurationOptions::EnableVBPool.default_value;
 
-    resolved.AngleBackendSource = GameJitConfigSource::modinfo_default;
+    // Business defaults live in plugin schema / ConfigView, not core struct.
+    // Seed known business keys so write-back and early consumers have a value.
+    resolved.business_options["AngleBackend"] =
+            ds::plugin::ConfigValue::string(std::string{ModConfigurationOptions::AngleBackend.default_value});
+    resolved.business_options["EnableVBPool"] =
+            ds::plugin::ConfigValue::boolean(ModConfigurationOptions::EnableVBPool.default_value);
+
     resolved.LuaVmTypeSource = GameJitConfigSource::modinfo_default;
     resolved.AlwaysEnableModSource = GameJitConfigSource::modinfo_default;
     resolved.DisableJITWhenServerSource = GameJitConfigSource::modinfo_default;
-    resolved.EnableVBPoolSource = GameJitConfigSource::modinfo_default;
     return resolved;
 }
 
@@ -1740,8 +1743,7 @@ bool LoadGameJitModConfigFromSaveFile(const std::filesystem::path &path, GameJit
 		if (option_name == ModConfigurationOptions::AngleBackend.name) {
 			std::string text{ModConfigurationOptions::AngleBackend.default_value};
 			if (try_get_string(saved_value, text) && from_string(text) != DstAngleBackend::Unknown) {
-				resolved.AngleBackend = text;
-				resolved.AngleBackendSource = GameJitConfigSource::save_file;
+				resolved.business_options["AngleBackend"] = ds::plugin::ConfigValue::string(text);
 			}
 		} else if (option_name == ModConfigurationOptions::LuaVmType.name) {
 			std::string text{ModConfigurationOptions::LuaVmType.default_value};
@@ -1770,10 +1772,19 @@ bool LoadGameJitModConfigFromSaveFile(const std::filesystem::path &path, GameJit
 		} else if (option_name == ModConfigurationOptions::EnableVBPool.name) {
 			bool enabled = ModConfigurationOptions::EnableVBPool.default_value;
 			if (try_get_bool(saved_value, enabled)) {
-				resolved.EnableVBPool = enabled;
-				resolved.EnableVBPoolSource = GameJitConfigSource::save_file;
+				resolved.business_options["EnableVBPool"] = ds::plugin::ConfigValue::boolean(enabled);
 			}
-        }
+		} else if (option_name == ModConfigurationOptions::NetworkOpt.name) {
+			bool enabled = ModConfigurationOptions::NetworkOpt.default_value;
+			if (try_get_bool(saved_value, enabled)) {
+				resolved.business_options["NetworkOpt"] = ds::plugin::ConfigValue::boolean(enabled);
+			}
+		} else if (option_name == ModConfigurationOptions::EnableNetSim.name) {
+			bool enabled = ModConfigurationOptions::EnableNetSim.default_value;
+			if (try_get_bool(saved_value, enabled)) {
+				resolved.business_options["EnableNetSim"] = ds::plugin::ConfigValue::boolean(enabled);
+			}
+		}
 	}
 	return true;
 }
@@ -1804,8 +1815,7 @@ bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
 	if (try_get_option_string(options[ModConfigurationOptions::AngleBackend.name].get<sol::object>(),
 							 ModConfigurationOptions::AngleBackend.options,
 							 text) && from_string(text) != DstAngleBackend::Unknown) {
-		resolved.AngleBackend = text;
-		resolved.AngleBackendSource = GameJitConfigSource::save_file;
+		resolved.business_options["AngleBackend"] = ds::plugin::ConfigValue::string(text);
 	}
 
 	if (try_get_option_string(options[ModConfigurationOptions::LuaVmType.name].get<sol::object>(),
@@ -1829,14 +1839,23 @@ bool LoadGameJitModConfigFromModOverridesFile(const std::filesystem::path &path,
 
 	bool vbpool_enabled = ModConfigurationOptions::EnableVBPool.default_value;
 	if (try_get_bool(options[ModConfigurationOptions::EnableVBPool.name].get<sol::object>(), vbpool_enabled)) {
-		resolved.EnableVBPool = vbpool_enabled;
-		resolved.EnableVBPoolSource = GameJitConfigSource::save_file;
+		resolved.business_options["EnableVBPool"] = ds::plugin::ConfigValue::boolean(vbpool_enabled);
 	}
 
 	bool gen_gc_enabled = ModConfigurationOptions::EnabledGenGC.default_value;
 	if (try_get_bool(options[ModConfigurationOptions::EnabledGenGC.name].get<sol::object>(), gen_gc_enabled)) {
 		resolved.EnabledGenGC = gen_gc_enabled;
 		resolved.EnabledGenGCSource = GameJitConfigSource::save_file;
+	}
+
+	bool network_opt = ModConfigurationOptions::NetworkOpt.default_value;
+	if (try_get_bool(options[ModConfigurationOptions::NetworkOpt.name].get<sol::object>(), network_opt)) {
+		resolved.business_options["NetworkOpt"] = ds::plugin::ConfigValue::boolean(network_opt);
+	}
+
+	bool net_sim = ModConfigurationOptions::EnableNetSim.default_value;
+	if (try_get_bool(options[ModConfigurationOptions::EnableNetSim.name].get<sol::object>(), net_sim)) {
+		resolved.business_options["EnableNetSim"] = ds::plugin::ConfigValue::boolean(net_sim);
 	}
 
     return true;
@@ -1853,9 +1872,14 @@ bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const Ga
 		serialized_before = serialize_lua_chunk(sol::make_object(lua, root));
 	}
 
-	auto angle_backend = find_or_create_option(lua, root, ModConfigurationOptions::AngleBackend.name);
-	angle_backend["saved"] = config.AngleBackend;
-	angle_backend["saved_client"] = config.AngleBackend;
+	std::string angle_backend{ModConfigurationOptions::AngleBackend.default_value};
+	if (auto it = config.business_options.find("AngleBackend");
+	    it != config.business_options.end() && it->second.type == ds::plugin::ConfigValueType::String) {
+		angle_backend = it->second.s;
+	}
+	auto angle_backend_opt = find_or_create_option(lua, root, ModConfigurationOptions::AngleBackend.name);
+	angle_backend_opt["saved"] = angle_backend;
+	angle_backend_opt["saved_client"] = angle_backend;
 
 	auto lua_vm_type = find_or_create_option(lua, root, ModConfigurationOptions::LuaVmType.name);
 	lua_vm_type["saved"] = config.LuaVmType;
@@ -1873,9 +1897,14 @@ bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const Ga
 	enabled_gen_gc["saved"] = config.EnabledGenGC;
 	enabled_gen_gc["saved_client"] = config.EnabledGenGC;
 
-	auto enable_vbpool = find_or_create_option(lua, root, ModConfigurationOptions::EnableVBPool.name);
-	enable_vbpool["saved"] = config.EnableVBPool;
-	enable_vbpool["saved_client"] = config.EnableVBPool;
+	bool enable_vbpool = ModConfigurationOptions::EnableVBPool.default_value;
+	if (auto it = config.business_options.find("EnableVBPool");
+	    it != config.business_options.end() && it->second.type == ds::plugin::ConfigValueType::Bool) {
+		enable_vbpool = it->second.b;
+	}
+	auto enable_vbpool_opt = find_or_create_option(lua, root, ModConfigurationOptions::EnableVBPool.name);
+	enable_vbpool_opt["saved"] = enable_vbpool;
+	enable_vbpool_opt["saved_client"] = enable_vbpool;
 
 	const auto serialized_after = serialize_lua_chunk(sol::make_object(lua, root));
 	if (serialized_before == serialized_after) {

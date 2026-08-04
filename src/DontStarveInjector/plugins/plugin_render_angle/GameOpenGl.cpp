@@ -94,7 +94,11 @@ namespace {
         static bool result = []() {
             DstAngleBackend backend = DstAngleBackend::Auto;
             if (auto configs = GameJitModConfig::instance(); configs) {
-                backend = from_string(configs->AngleBackend);
+                if (auto it = configs->business_options.find("AngleBackend");
+                    it != configs->business_options.end() &&
+                    it->second.type == ds::plugin::ConfigValueType::String) {
+                    backend = from_string(it->second.s);
+                }
             }
             if (backend != DstAngleBackend::Auto && backend != DstAngleBackend::Unknown) {
                 SetEnvironmentVariableA("ANGLE_DEFAULT_PLATFORM", to_string(backend).data());
@@ -427,7 +431,15 @@ DONTSTARVEINJECTOR_GAME_API void InitGameOpenGl() {
         return;
     }
     auto gameJitModConfig = GameJitModConfig::instance();
-    if (!gameJitModConfig || from_string(gameJitModConfig->AngleBackend) == DstAngleBackend::Auto) {
+    std::string_view angle_backend = "auto";
+    if (gameJitModConfig) {
+        if (auto it = gameJitModConfig->business_options.find("AngleBackend");
+            it != gameJitModConfig->business_options.end() &&
+            it->second.type == ds::plugin::ConfigValueType::String) {
+            angle_backend = it->second.s;
+        }
+    }
+    if (!gameJitModConfig || from_string(angle_backend) == DstAngleBackend::Auto) {
         return;
     }
 

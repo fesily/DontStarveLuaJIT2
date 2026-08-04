@@ -49,10 +49,18 @@ static ConfigSchemaRegistry make_production_schema() {
     return schema;
 }
 
+static void set_business_bool(GameJitModConfig &cfg, const char *key, bool value) {
+    cfg.business_options[key] = ConfigValue::boolean(value);
+}
+
+static void set_business_string(GameJitModConfig &cfg, const char *key, std::string value) {
+    cfg.business_options[key] = ConfigValue::string(std::move(value));
+}
+
 static void test_vbpool_true_maps_to_config_key() {
     GameJitModConfig cfg{};
-    cfg.EnableVBPool = true;
-    cfg.AngleBackend = "auto";
+    set_business_bool(cfg, "EnableVBPool", true);
+    set_business_string(cfg, "AngleBackend", "auto");
     cfg.AlwaysEnableMod = true;
 
     ConfigView view = BuildConfigView(make_production_schema(), cfg);
@@ -65,8 +73,8 @@ static void test_vbpool_true_maps_to_config_key() {
 
 static void test_vbpool_false_maps_to_config_key() {
     GameJitModConfig cfg{};
-    cfg.EnableVBPool = false;
-    cfg.AngleBackend = "vulkan";
+    set_business_bool(cfg, "EnableVBPool", false);
+    set_business_string(cfg, "AngleBackend", "vulkan");
     cfg.AlwaysEnableMod = false;
 
     ConfigView view = BuildConfigView(make_production_schema(), cfg);
@@ -95,9 +103,9 @@ static void test_vbpool_false_maps_to_config_key() {
 static void test_build_config_view_schema_defaults_and_overlay() {
     ConfigSchemaRegistry schema = make_production_schema();
     GameJitModConfig cfg{};
-    // Leave EnableVBPool at default false; set AngleBackend + core overlays.
-    cfg.EnableVBPool = true; // overlay over schema default false
-    cfg.AngleBackend = "d3d11";
+    // Business overlay over schema defaults via business_options (C-S3).
+    set_business_bool(cfg, "EnableVBPool", true); // overlay over schema default false
+    set_business_string(cfg, "AngleBackend", "d3d11");
     cfg.AlwaysEnableMod = true;
     cfg.DisableJITWhenServer = true;
     cfg.LuaVmType = "jit";
@@ -105,13 +113,13 @@ static void test_build_config_view_schema_defaults_and_overlay() {
 
     ConfigView view = BuildConfigView(schema, cfg);
 
-    // Schema defaults that config does not own stay at schema defaults.
+    // Schema defaults that business does not override stay at schema defaults.
     assert(view.at("NetworkOpt").type == ConfigValueType::Bool);
     assert(view.at("NetworkOpt").b == true);
     assert(view.at("EnableNetSim").type == ConfigValueType::Bool);
     assert(view.at("EnableNetSim").b == false);
 
-    // Dual-write overlays.
+    // Business overlays.
     assert(view.at("EnableVBPool").b == true);
     assert(view.at("AngleBackend").s == "d3d11");
 
@@ -122,6 +130,25 @@ static void test_build_config_view_schema_defaults_and_overlay() {
     assert(view.at("EnabledGenGC").b == true);
 
     printf("PASS: build_config_view_schema_defaults_and_overlay\n");
+}
+
+static void test_business_arg_overlays_schema_and_core_map() {
+    ConfigSchemaRegistry schema = make_production_schema();
+    GameJitModConfig cfg{};
+    set_business_bool(cfg, "EnableVBPool", false);
+    set_business_string(cfg, "AngleBackend", "auto");
+
+    ConfigView extras;
+    extras["EnableVBPool"] = ConfigValue::boolean(true);
+    extras["NetworkOpt"] = ConfigValue::boolean(false);
+    extras["EnableNetSim"] = ConfigValue::boolean(true);
+
+    ConfigView view = BuildConfigView(schema, cfg, extras);
+    assert(view.at("EnableVBPool").b == true); // extras wins over core.business_options
+    assert(view.at("AngleBackend").s == "auto"); // from core.business_options
+    assert(view.at("NetworkOpt").b == false);
+    assert(view.at("EnableNetSim").b == true);
+    printf("PASS: business_arg_overlays_schema_and_core_map\n");
 }
 
 static void test_enable_net_sim_default_false_when_schema_registered() {
@@ -226,8 +253,8 @@ struct RenderAngleStandIn final : IPlugin {
 
 static void test_empty_registry_resolve_after_bridge_is_noop() {
     GameJitModConfig cfg{};
-    cfg.EnableVBPool = true;
-    cfg.AngleBackend = "d3d11";
+    set_business_bool(cfg, "EnableVBPool", true);
+    set_business_string(cfg, "AngleBackend", "d3d11");
     cfg.AlwaysEnableMod = true;
 
     ConfigView view = BuildConfigView(make_production_schema(), cfg);
@@ -294,8 +321,8 @@ static void test_render_vbpool_from_bridge_enable_matrix() {
     // EnableVBPool true → EarlyNative load
     {
         GameJitModConfig cfg{};
-        cfg.EnableVBPool = true;
-        cfg.AngleBackend = "auto";
+        set_business_bool(cfg, "EnableVBPool", true);
+        set_business_string(cfg, "AngleBackend", "auto");
         ConfigView view = BuildConfigView(make_production_schema(), cfg);
         assert(view.at("EnableVBPool").b == true);
 
@@ -315,8 +342,8 @@ static void test_render_vbpool_from_bridge_enable_matrix() {
     // EnableVBPool false → Disabled
     {
         GameJitModConfig cfg{};
-        cfg.EnableVBPool = false;
-        cfg.AngleBackend = "auto";
+        set_business_bool(cfg, "EnableVBPool", false);
+        set_business_string(cfg, "AngleBackend", "auto");
         ConfigView view = BuildConfigView(make_production_schema(), cfg);
 
         RenderVbpoolStandIn standin;
@@ -339,8 +366,8 @@ static void test_render_angle_backend_reaches_plugin() {
     const char *backends[] = {"auto", "vulkan", "d3d11", "d3d9"};
     for (const char *backend : backends) {
         GameJitModConfig cfg{};
-        cfg.EnableVBPool = false;
-        cfg.AngleBackend = backend;
+        set_business_bool(cfg, "EnableVBPool", false);
+        set_business_string(cfg, "AngleBackend", backend);
         ConfigView view = BuildConfigView(make_production_schema(), cfg);
         assert(view.at("AngleBackend").s == backend);
 
@@ -360,7 +387,7 @@ static void test_render_angle_backend_reaches_plugin() {
     // Server/dedicated: can_load false → Disabled (no ANGLE init on dedicated)
     {
         GameJitModConfig cfg{};
-        cfg.AngleBackend = "vulkan";
+        set_business_string(cfg, "AngleBackend", "vulkan");
         ConfigView view = BuildConfigView(make_production_schema(), cfg);
         RenderAngleStandIn standin;
         PluginHost host;
@@ -378,9 +405,10 @@ static void test_render_angle_backend_reaches_plugin() {
 
 static void test_from_game_jit_mod_config_compat() {
     // Compatibility wrapper: empty schema + legacy NetworkOpt=true.
+    // Business keys still flow from business_options.
     GameJitModConfig cfg{};
-    cfg.EnableVBPool = true;
-    cfg.AngleBackend = "auto";
+    set_business_bool(cfg, "EnableVBPool", true);
+    set_business_string(cfg, "AngleBackend", "auto");
     ConfigView view = FromGameJitModConfig(cfg);
     assert(view.at("EnableVBPool").b == true);
     assert(view.at("NetworkOpt").b == true);
@@ -392,6 +420,7 @@ int main() {
     test_vbpool_true_maps_to_config_key();
     test_vbpool_false_maps_to_config_key();
     test_build_config_view_schema_defaults_and_overlay();
+    test_business_arg_overlays_schema_and_core_map();
     test_enable_net_sim_default_false_when_schema_registered();
     test_network_opt_not_forced_when_schema_has_false();
     test_empty_registry_resolve_after_bridge_is_noop();

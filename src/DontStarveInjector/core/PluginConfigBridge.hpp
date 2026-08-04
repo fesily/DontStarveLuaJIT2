@@ -6,11 +6,15 @@
 
 namespace ds::plugin {
 
-// Dual-write ConfigView: schema defaults first, then overlay fields still present
-// on GameJitModConfig (core + EnableVBPool / AngleBackend). Temporary NetworkOpt=true
-// is applied only when the schema did not register that key.
+// Merge order (C-S3):
+//   1. schema defaults for each registered entry
+//   2. business overlay (save/overrides/env extras; or core.business_options when
+//      the third argument is default-empty and core carries them)
+//   3. core GameJitModConfig fields always written
+// Temporary NetworkOpt=true only when schema did not register that key.
 ConfigView BuildConfigView(const ConfigSchemaRegistry &schema,
-                           const GameJitModConfig &config);
+                           const GameJitModConfig &core,
+                           const ConfigView &business = {});
 
 // Compatibility: empty schema + legacy NetworkOpt=true (via BuildConfigView fallback).
 // Prefer BuildConfigView with the host schema after plugins load.
