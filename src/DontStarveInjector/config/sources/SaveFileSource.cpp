@@ -37,6 +37,8 @@ ConfigPartial SaveFileSource::read(CascadeContext &ctx) const {
     spdlog::info("resolved client mod config data dir to {}", mod_config_data.string());
     spdlog::info("resolved canonical mod config save path to {}", canonical_save_path.string());
     ctx.save_file = canonical_save_path.string();
+    partial.values["save_file"] =
+        ds::plugin::ConfigValue::string(canonical_save_path.string());
 
     for (const auto &alias : ctx.aliases) {
         auto candidate = mod_config_data / path::GetModConfigDataFileName(alias);
@@ -47,11 +49,15 @@ ConfigPartial SaveFileSource::read(CascadeContext &ctx) const {
         spdlog::info("try load mod configuration from {}", candidate.string());
         ds::plugin::ConfigView values;
         if (save_parse::read_save_file(candidate, schema_, values)) {
+            // Preserve discovered path; merge save contents on top without dropping it.
             partial.values = std::move(values);
+            partial.values["save_file"] =
+                ds::plugin::ConfigValue::string(canonical_save_path.string());
             break;
         }
     }
     return partial;
 }
+
 
 } // namespace ds::config

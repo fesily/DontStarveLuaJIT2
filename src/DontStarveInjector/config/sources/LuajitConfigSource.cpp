@@ -24,6 +24,17 @@ ConfigPartial LuajitConfigSource::read(CascadeContext &ctx) const {
 
     const auto config = luajit_config::read_from_file();
     if (!config) {
+        // Still publish identity derived from defaults / pre-pass so view has keys
+        // when schema allows LuajitConfig (empty file → no override of defaults).
+        if (!ctx.modname.empty()) {
+            partial.values["modname"] = ds::plugin::ConfigValue::string(ctx.modname);
+        }
+        if (!ctx.modid.empty()) {
+            partial.values["modid"] = ds::plugin::ConfigValue::string(ctx.modid);
+        }
+        if (!ctx.modmain_path.empty()) {
+            partial.values["modmain_path"] = ds::plugin::ConfigValue::string(ctx.modmain_path);
+        }
         return partial;
     }
 
@@ -35,6 +46,14 @@ ConfigPartial LuajitConfigSource::read(CascadeContext &ctx) const {
         if (ctx.aliases.empty()) {
             ctx.aliases = identity.aliases;
         }
+        partial.values["modmain_path"] =
+            ds::plugin::ConfigValue::string(config->modmain_path);
+    }
+    if (!ctx.modname.empty()) {
+        partial.values["modname"] = ds::plugin::ConfigValue::string(ctx.modname);
+    }
+    if (!ctx.modid.empty()) {
+        partial.values["modid"] = ds::plugin::ConfigValue::string(ctx.modid);
     }
 
     partial.values["AlwaysEnableMod"] =
@@ -43,5 +62,6 @@ ConfigPartial LuajitConfigSource::read(CascadeContext &ctx) const {
         ds::plugin::ConfigValue::boolean(config->server_disable_luajit);
     return partial;
 }
+
 
 } // namespace ds::config

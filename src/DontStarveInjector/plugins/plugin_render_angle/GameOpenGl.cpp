@@ -6,7 +6,10 @@
 #include "config.hpp"
 #include "util/module.hpp"
 #include "angle_iat_generated.hpp"
+#include "config/ResolvedConfig.hpp"
 #include "gameModConfig.hpp"
+
+
 
 #include <Windows.h>
 #include <spdlog/spdlog.h>
@@ -94,15 +97,13 @@ namespace {
     static bool IsVulkanPlatformRequested() {
         static bool result = []() {
             DstAngleBackend backend = DstAngleBackend::Auto;
-            if (auto configs = GameJitModConfig::instance(); configs) {
-                if (auto it = configs->business_options.find("AngleBackend");
-                    it != configs->business_options.end() &&
-                    it->second.type == ds::plugin::ConfigValueType::String) {
-                    backend = from_string(it->second.s);
-                    if (backend == DstAngleBackend::Unknown) {
-                        spdlog::warn("unknown AngleBackend '{}', defaulting to auto", it->second.s);
-                        backend = DstAngleBackend::Auto;
-                    }
+            (void) GameJitModConfig::instance();
+            if (auto *rc = ds::config::current()) {
+                backend = from_string(rc->angle_backend());
+                if (backend == DstAngleBackend::Unknown) {
+                    spdlog::warn("unknown AngleBackend '{}', defaulting to auto",
+                                 rc->angle_backend());
+                    backend = DstAngleBackend::Auto;
                 }
             }
             if (backend != DstAngleBackend::Auto) {
@@ -112,6 +113,7 @@ namespace {
         }();
         return result;
     }
+
 
 
     static bool ContainsDisabledLayer(std::string_view disabled_layers, std::string_view layer_name) {
@@ -436,17 +438,14 @@ DONTSTARVEINJECTOR_GAME_API void InitGameOpenGl() {
     if (!InjectorCtx::instance()->DontStarveInjectorIsClient) {
         return;
     }
-    auto gameJitModConfig = GameJitModConfig::instance();
+    (void) GameJitModConfig::instance();
     std::string_view angle_backend = "auto";
-    if (gameJitModConfig) {
-        if (auto it = gameJitModConfig->business_options.find("AngleBackend");
-            it != gameJitModConfig->business_options.end() &&
-            it->second.type == ds::plugin::ConfigValueType::String) {
-            angle_backend = it->second.s;
-        }
+    const bool has_rc = ds::config::current() != nullptr;
+    if (auto *rc = ds::config::current()) {
+        angle_backend = rc->angle_backend();
     }
     const auto backend = from_string(angle_backend);
-    if (!gameJitModConfig || backend == DstAngleBackend::Auto) {
+    if (!has_rc || backend == DstAngleBackend::Auto) {
         return;
     }
     if (backend == DstAngleBackend::Unknown) {
@@ -461,6 +460,7 @@ DONTSTARVEINJECTOR_GAME_API void InitGameOpenGl() {
     // hard-call into plugin_render_vbpool from angle (Path A M-R1 decouple).
     g_angle_egl_initialized = true;
 }
+
 
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_render_backend_name() {

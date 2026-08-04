@@ -28,14 +28,15 @@ bool TryCoerceSavedNumber(double raw, const OptionSchemaEntry &schema, ConfigVal
 bool TryCoerceSavedString(std::string_view raw, const OptionSchemaEntry &schema, ConfigValue &out);
 
 // Register L0 core option schema (AlwaysEnableMod, DisableJITWhenServer,
-// LuaVmType, EnabledGenGC) with modinfo-matching defaults. Idempotent on
+// LuaVmType, EnabledGenGC) plus identity string keys (modmain_path, modname,
+// modid, save_file) with normative allowed_sources. Idempotent on
 // conflict-free re-add.
 void RegisterCoreOptionSchema(ConfigSchemaRegistry &r);
 
 // Business keys owned by plugins (AngleBackend, EnableVBPool, NetworkOpt,
-// EnableNetSim, EnableForkSave, EnableLagCompensation) with modinfo defaults — used by cascade
-// save/overrides parse before Host plugins load. Plugins re-register the same
-// entries on Host.
+// EnableNetSim, EnableForkSave, EnableLagCompensation) with modinfo defaults —
+// used by cascade save/overrides parse before Host plugins load. Masks exclude
+// LuajitConfig. Plugins re-register the same entries on Host.
 void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r);
 
 class ConfigSchemaRegistry {

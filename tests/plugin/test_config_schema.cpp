@@ -74,11 +74,16 @@ static void test_find_missing() {
 static void test_register_core_option_schema() {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
-    assert(reg.size() == 4);
+    // 4 core options + 4 identity keys
+    assert(reg.size() == 8);
     assert(reg.find("AlwaysEnableMod") != nullptr);
     assert(reg.find("DisableJITWhenServer") != nullptr);
     assert(reg.find("LuaVmType") != nullptr);
     assert(reg.find("EnabledGenGC") != nullptr);
+    assert(reg.find("modmain_path") != nullptr);
+    assert(reg.find("modname") != nullptr);
+    assert(reg.find("modid") != nullptr);
+    assert(reg.find("save_file") != nullptr);
 
     const auto *lua_vm = reg.find("LuaVmType");
     assert(lua_vm->type == ConfigValueType::String);
@@ -97,11 +102,41 @@ static void test_register_core_option_schema() {
     assert(has_allowed("_51"));
     assert(has_allowed("jit_gen"));
 
+    // Normative masks (CF-S5 / spec §2.2)
+    constexpr auto kDefaultSaveEnv =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
+    constexpr auto kLuajitOnly =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::LuajitConfig);
+    constexpr auto kSaveOnly =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile);
+
+    assert(ds::config::effective_sources(reg.find("AlwaysEnableMod")->allowed_sources) ==
+           ds::config::kConfigSourceAll);
+    assert(ds::config::effective_sources(reg.find("DisableJITWhenServer")->allowed_sources) ==
+           ds::config::kConfigSourceAll);
+    assert(ds::config::effective_sources(reg.find("LuaVmType")->allowed_sources) ==
+           ds::config::kConfigSourceAll);
+    assert(ds::config::effective_sources(reg.find("EnabledGenGC")->allowed_sources) ==
+           kDefaultSaveEnv);
+    assert(ds::config::effective_sources(reg.find("modmain_path")->allowed_sources) == kLuajitOnly);
+    assert(ds::config::effective_sources(reg.find("modname")->allowed_sources) == kLuajitOnly);
+    assert(ds::config::effective_sources(reg.find("modid")->allowed_sources) == kLuajitOnly);
+    assert(ds::config::effective_sources(reg.find("save_file")->allowed_sources) == kSaveOnly);
+
+    // Identity key types
+    assert(reg.find("modmain_path")->type == ConfigValueType::String);
+    assert(reg.find("modname")->type == ConfigValueType::String);
+    assert(reg.find("modid")->type == ConfigValueType::String);
+    assert(reg.find("save_file")->type == ConfigValueType::String);
+
     // Idempotent re-register.
     RegisterCoreOptionSchema(reg);
-    assert(reg.size() == 4);
+    assert(reg.size() == 8);
     printf("PASS: register_core_option_schema\n");
 }
+
 
 static void test_register_builtin_business_schema() {
     ConfigSchemaRegistry reg;
@@ -110,16 +145,35 @@ static void test_register_builtin_business_schema() {
     assert(reg.find("EnableVBPool") != nullptr);
     assert(reg.find("NetworkOpt") != nullptr);
     assert(reg.find("EnableNetSim") != nullptr);
+    assert(reg.find("EnableForkSave") != nullptr);
+    assert(reg.find("EnableLagCompensation") != nullptr);
 
     const auto *angle = reg.find("AngleBackend");
     assert(angle->type == ConfigValueType::String);
     assert(angle->default_value.s == "auto");
     assert(angle->allowed.size() == 4);
 
+    constexpr auto kDefaultSaveEnv =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
+    assert(ds::config::effective_sources(angle->allowed_sources) == kDefaultSaveEnv);
+    assert(ds::config::effective_sources(reg.find("EnableVBPool")->allowed_sources) ==
+           kDefaultSaveEnv);
+    assert(ds::config::effective_sources(reg.find("NetworkOpt")->allowed_sources) ==
+           kDefaultSaveEnv);
+    assert(ds::config::effective_sources(reg.find("EnableNetSim")->allowed_sources) ==
+           kDefaultSaveEnv);
+    assert(ds::config::effective_sources(reg.find("EnableForkSave")->allowed_sources) ==
+           kDefaultSaveEnv);
+    assert(ds::config::effective_sources(reg.find("EnableLagCompensation")->allowed_sources) ==
+           kDefaultSaveEnv);
+
     // Unknown key still missing — parse loop ignores unknowns.
     assert(reg.find("TotallyUnknownOption") == nullptr);
     printf("PASS: register_builtin_business_schema\n");
 }
+
 
 static void test_try_coerce_bool() {
     OptionSchemaEntry e;

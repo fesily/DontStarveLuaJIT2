@@ -31,30 +31,40 @@ inline GameJitConfigSource source_of_key(const ResolvedConfig &resolved, std::st
     return ToGameJitConfigSource(it->second);
 }
 
-// Core keys owned by GameJitModConfig fields (not business_options).
+// Core + identity keys owned by GameJitModConfig fields (not business_options).
 inline bool is_core_option_key(std::string_view key) {
     return key == "AlwaysEnableMod" || key == "DisableJITWhenServer" || key == "LuaVmType" ||
-           key == "EnabledGenGC";
+           key == "EnabledGenGC" || key == "modmain_path" || key == "modname" || key == "modid" ||
+           key == "save_file";
 }
 
 inline GameJitModConfig map_to_game_jit_mod_config(const ResolvedConfig &resolved) {
     GameJitModConfig out;
 
-    // Identity snapshot
-    if (!resolved.ctx.modname.empty()) {
-        out.modname = resolved.ctx.modname;
-        out.modname_source = GameJitConfigSource::luajit_config;
+    // Identity: prefer view keys (schema SSOT), fall back to CascadeContext.
+    if (auto p = resolved.modmain_path(); !p.empty()) {
+        out.modmain_path = std::string{p};
+        out.modmain_path_source = source_of_key(resolved, "modmain_path");
+        if (out.modmain_path_source == GameJitConfigSource::none) {
+            out.modmain_path_source = GameJitConfigSource::luajit_config;
+        }
     }
-    if (!resolved.ctx.modid.empty()) {
-        out.modid = resolved.ctx.modid;
-        out.modid_source = GameJitConfigSource::luajit_config;
+    if (auto n = resolved.modname(); !n.empty()) {
+        out.modname = std::string{n};
+        out.modname_source = source_of_key(resolved, "modname");
+        if (out.modname_source == GameJitConfigSource::none) {
+            out.modname_source = GameJitConfigSource::luajit_config;
+        }
     }
-    if (!resolved.ctx.modmain_path.empty()) {
-        out.modmain_path = resolved.ctx.modmain_path;
-        out.modmain_path_source = GameJitConfigSource::luajit_config;
+    if (auto id = resolved.modid(); !id.empty()) {
+        out.modid = std::string{id};
+        out.modid_source = source_of_key(resolved, "modid");
+        if (out.modid_source == GameJitConfigSource::none) {
+            out.modid_source = GameJitConfigSource::luajit_config;
+        }
     }
-    if (resolved.ctx.save_file) {
-        out.save_file = *resolved.ctx.save_file;
+    if (auto sf = resolved.save_file()) {
+        out.save_file = std::string{*sf};
     }
 
     for (const auto &[key, value] : resolved.view) {

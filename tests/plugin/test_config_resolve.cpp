@@ -122,6 +122,113 @@ void test_resolve_env_lua_vm_type_aliases() {
     printf("PASS: resolve_env_lua_vm_type_aliases\n");
 }
 
+void test_identity_keys_luajit_only() {
+    ConfigSchemaRegistry reg;
+    RegisterCoreOptionSchema(reg);
+
+    ConfigView luajit;
+    luajit["modmain_path"] = ConfigValue::string("mods/workshop-123/modmain.lua");
+    luajit["modname"] = ConfigValue::string("workshop-123");
+    luajit["modid"] = ConfigValue::string("123");
+    FakeSource lj(ConfigSource::LuajitConfig, luajit);
+
+    ConfigView save_try;
+    save_try["modmain_path"] = ConfigValue::string("should_not_apply");
+    save_try["modname"] = ConfigValue::string("evil");
+    FakeSource save(ConfigSource::SaveFile, save_try);
+
+    ConfigView env_try;
+    env_try["modid"] = ConfigValue::string("env-id");
+    FakeSource env(ConfigSource::EnvOrCmd, env_try);
+
+    CascadeContext ctx;
+    const std::vector<const IConfigSource *> sources = {&lj, &save, &env};
+    auto resolved = resolve(reg, ctx, sources);
+
+    assert(resolved.view.at("modmain_path").s == "mods/workshop-123/modmain.lua");
+    assert(resolved.view.at("modname").s == "workshop-123");
+    assert(resolved.view.at("modid").s == "123");
+    assert(resolved.source_of.at("modmain_path") == ConfigSource::LuajitConfig);
+    assert(resolved.source_of.at("modname") == ConfigSource::LuajitConfig);
+    assert(resolved.source_of.at("modid") == ConfigSource::LuajitConfig);
+
+    // Accessors fall back to view
+    assert(resolved.modmain_path() == "mods/workshop-123/modmain.lua");
+    assert(resolved.modname() == "workshop-123");
+    assert(resolved.modid() == "123");
+
+    printf("PASS: identity_keys_luajit_only\n");
+}
+
+void test_enabled_gen_gc_excludes_luajit() {
+    ConfigSchemaRegistry reg;
+    RegisterCoreOptionSchema(reg);
+
+    ConfigView defaults;
+    defaults["EnabledGenGC"] = ConfigValue::boolean(false);
+    FakeSource def(ConfigSource::ModinfoDefault, defaults);
+
+    ConfigView lj;
+    lj["EnabledGenGC"] = ConfigValue::boolean(true);
+    FakeSource luajit(ConfigSource::LuajitConfig, lj);
+
+    ConfigView save;
+    save["EnabledGenGC"] = ConfigValue::boolean(true);
+    FakeSource save_src(ConfigSource::SaveFile, save);
+
+    CascadeContext ctx;
+    // Luajit alone must not set EnabledGenGC (mask excludes it).
+    {
+        const std::vector<const IConfigSource *> sources = {&def, &luajit};
+        auto resolved = resolve(reg, ctx, sources);
+        assert(resolved.view.at("EnabledGenGC").b == false);
+        assert(resolved.source_of.at("EnabledGenGC") == ConfigSource::ModinfoDefault);
+        assert(!resolved.enabled_gen_gc());
+    }
+    // SaveFile may set it.
+    {
+        const std::vector<const IConfigSource *> sources = {&def, &luajit, &save_src};
+        auto resolved = resolve(reg, ctx, sources);
+        assert(resolved.view.at("EnabledGenGC").b == true);
+        assert(resolved.source_of.at("EnabledGenGC") == ConfigSource::SaveFile);
+        assert(resolved.enabled_gen_gc());
+    }
+    printf("PASS: enabled_gen_gc_excludes_luajit\n");
+}
+
+void test_resolved_config_accessors() {
+    ConfigSchemaRegistry reg;
+    RegisterCoreOptionSchema(reg);
+    RegisterBuiltinBusinessOptionSchema(reg);
+
+    ConfigView values;
+    values["AlwaysEnableMod"] = ConfigValue::boolean(true);
+    values["DisableJITWhenServer"] = ConfigValue::boolean(true);
+    values["LuaVmType"] = ConfigValue::string("jit");
+    values["EnabledGenGC"] = ConfigValue::boolean(true);
+    values["AngleBackend"] = ConfigValue::string("vulkan");
+    values["modname"] = ConfigValue::string("workshop-9");
+    FakeSource env(ConfigSource::EnvOrCmd, values);
+    FakeSource lj(ConfigSource::LuajitConfig, values);
+
+    CascadeContext ctx;
+    ctx.modname = "ctx-fallback";
+    // AlwaysEnableMod etc. All sources; identity only Luajit.
+    const std::vector<const IConfigSource *> sources = {&lj, &env};
+    auto resolved = resolve(reg, ctx, sources);
+
+    assert(resolved.always_enable_mod());
+    assert(resolved.disable_jit_when_server());
+    assert(resolved.enabled_gen_gc());
+    assert(resolved.lua_vm_type() == "jit");
+    assert(resolved.get_lua_vm_type() == GameLuaType::jit_gen); // EnabledGenGC wins
+    assert(resolved.angle_backend() == "vulkan");
+    assert(resolved.modname() == "workshop-9");
+
+    printf("PASS: resolved_config_accessors\n");
+}
+
+
 
 } // namespace
 
@@ -129,6 +236,10 @@ int main() {
     test_resolve_respects_source_order_and_whitelist();
     test_resolve_empty_sources_yields_empty_view();
     test_resolve_env_lua_vm_type_aliases();
+    test_identity_keys_luajit_only();
+    test_enabled_gen_gc_excludes_luajit();
+    test_resolved_config_accessors();
     printf("ALL PASS: config_resolve\n");
     return 0;
 }
+

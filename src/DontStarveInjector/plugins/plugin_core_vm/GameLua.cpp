@@ -1,6 +1,8 @@
 #include "GameLua.hpp"
 #include "LuajitVariantNames.hpp"
 #include "gameModConfig.hpp"
+#include "config/ResolvedConfig.hpp"
+
 #include "DontStarveSignature.hpp"
 #include "GameSignature.hpp"
 #include "util/inlinehook.hpp"
@@ -286,14 +288,15 @@ struct GameLuaContextImpl : GameLuaContext {
         }
 
         if (!InjectorConfig::instance()->DisableForceLoadLuaJITMod) {
-            auto config = GameJitModConfig::instance();
-            if (config && config->AlwaysEnableMod) {
+            (void) GameJitModConfig::instance();
+            if (auto *rc = ds::config::current(); rc && rc->always_enable_mod()) {
                 do {
-                    if (!config->modname || config->modname->empty()) {
+                    auto modname = rc->modname();
+                    if (modname.empty()) {
                         break;
                     }
-                    gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, *config->modname);
-                } while(0);
+                    gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, std::string{modname});
+                } while (0);
             }
         }
 
@@ -1471,9 +1474,11 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
 #endif
     CacheRuntimeSetup(mainPath, signatures, exports);
     auto luaType = GameLuaType::jit;
-    if (auto config = GameJitModConfig::instance(); config) {
-        luaType = config->GetLuaVmType();
+    (void) GameJitModConfig::instance();
+    if (auto *rc = ds::config::current()) {
+        luaType = rc->get_lua_vm_type();
     }
+
     RequestVmType(luaType, nullptr, "Default VM type setup");
     ReinitializeCurrentVm("ReplaceLuaModule startup");
 }

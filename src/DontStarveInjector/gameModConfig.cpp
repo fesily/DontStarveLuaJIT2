@@ -89,7 +89,7 @@ static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
 
 namespace ds::config {
 
-const ResolvedConfig *current() {
+DS_INJECTOR_CXX_API const ResolvedConfig *current() {
     return g_resolved_config ? &*g_resolved_config : nullptr;
 }
 

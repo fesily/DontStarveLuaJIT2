@@ -5,6 +5,8 @@
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
+#include "config/ConfigSource.hpp"
+
 #include "core/PluginServices.hpp"
 #include "ctx.hpp"
 
@@ -78,10 +80,15 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     e.key = "EnableNetSim";
     e.type = ConfigValueType::Bool;
     e.default_value = ConfigValue::boolean(false);
+    e.allowed_sources =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
     if (!host->register_option_schema(std::move(e))) {
         std::fprintf(stderr, "[plugin_network_sim] schema conflict EnableNetSim\n");
         return false;
     }
+
     ds_host_register_service("DS_LUAJIT_net_sim_enable",
                              reinterpret_cast<void *>(&DS_LUAJIT_net_sim_enable));
     ds_host_register_service("DS_LUAJIT_net_sim_set",

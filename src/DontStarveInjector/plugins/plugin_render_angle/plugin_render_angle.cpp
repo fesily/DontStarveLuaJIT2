@@ -2,6 +2,8 @@
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
+#include "config/ConfigSource.hpp"
+
 #include "core/PluginServices.hpp"
 #include "GameOpenGl.hpp"
 

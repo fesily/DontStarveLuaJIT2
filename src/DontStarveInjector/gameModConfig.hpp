@@ -15,12 +15,12 @@ enum class GameJitConfigSource {
     env_or_cmd,
 };
 
-// L0 core identity / VM config only. Business option gates (EnableVBPool,
-// AngleBackend, NetworkOpt, EnableNetSim, …) are cascade-resolved into
-// ResolvedConfig.view (Host SSOT via BuildConfigView late defaults).
+// L0 core identity / VM config projection from ResolvedConfig (CF-S5).
+// Prefer ds::config::current() accessors for Inject / Host / plugin readers.
+// Typed fields remain for write-back and GAME_API fps paths.
 //
 // business_options remains a legacy projection from map_to_game_jit_mod_config
-// for write-back / a few plugin readers until CF-S5 — do not use for Host gates.
+// for save write-back — do not use for Host gates or L0 hot path.
 struct GameJitModConfig {
     std::optional<std::string> save_file;
     std::optional<std::string> modmain_path;
@@ -31,9 +31,10 @@ struct GameJitModConfig {
     bool DisableJITWhenServer = false;
     bool EnabledGenGC = false;
 
-    // Deprecated for Host (CF-S4): cascade ConfigView is SSOT. Still filled by
-    // map_to_game_jit_mod_config for save write-back and legacy field readers.
+    // Deprecated for Host (CF-S4/S5): cascade ConfigView is SSOT. Still filled by
+    // map_to_game_jit_mod_config for save write-back and a few legacy readers.
     ds::plugin::ConfigView business_options;
+
 
     GameJitConfigSource modmain_path_source = GameJitConfigSource::none;
     GameJitConfigSource modname_source = GameJitConfigSource::none;

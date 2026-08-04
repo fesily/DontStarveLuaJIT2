@@ -123,11 +123,18 @@ bool TryCoerceSavedString(std::string_view raw, const OptionSchemaEntry &schema,
 }
 
 void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
+    constexpr auto kDefaultSaveEnv =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
+    constexpr auto kLuajitOnly =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::LuajitConfig);
     {
         OptionSchemaEntry e;
         e.key = std::string{ModConfigurationOptions::AlwaysEnableMod.name};
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::AlwaysEnableMod.default_value);
+        e.allowed_sources = ds::config::kConfigSourceAll;
         (void) r.add(std::move(e));
     }
     {
@@ -135,6 +142,7 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
         e.key = std::string{ModConfigurationOptions::DisableJITWhenServer.name};
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::DisableJITWhenServer.default_value);
+        e.allowed_sources = ds::config::kConfigSourceAll;
         (void) r.add(std::move(e));
     }
     {
@@ -150,6 +158,7 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
         for (const char *alias : {"lua51", "51", "5.1", "_51", "jit_gen"}) {
             e.allowed.emplace_back(alias);
         }
+        e.allowed_sources = ds::config::kConfigSourceAll;
         (void) r.add(std::move(e));
     }
     {
@@ -157,11 +166,53 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
         e.key = std::string{ModConfigurationOptions::EnabledGenGC.name};
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnabledGenGC.default_value);
+        // Spec §2.2 / CF-S5: not from LuajitConfig file.
+        e.allowed_sources = kDefaultSaveEnv;
+        (void) r.add(std::move(e));
+    }
+    // D7 identity keys — path/name identity owned by L0, tight sources.
+    {
+        OptionSchemaEntry e;
+        e.key = "modmain_path";
+        e.type = ConfigValueType::String;
+        e.default_value = ConfigValue::string("");
+        e.allowed_sources = kLuajitOnly;
+        (void) r.add(std::move(e));
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = "modname";
+        e.type = ConfigValueType::String;
+        e.default_value = ConfigValue::string("");
+        e.allowed_sources = kLuajitOnly;
+        (void) r.add(std::move(e));
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = "modid";
+        e.type = ConfigValueType::String;
+        e.default_value = ConfigValue::string("");
+        e.allowed_sources = kLuajitOnly;
+        (void) r.add(std::move(e));
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = "save_file";
+        e.type = ConfigValueType::String;
+        e.default_value = ConfigValue::string("");
+        // Save path is discovered by the SaveFile layer (client) after identity.
+        e.allowed_sources =
+            static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile);
         (void) r.add(std::move(e));
     }
 }
 
+
 void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r) {
+    constexpr auto kDefaultSaveEnv =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
     {
         OptionSchemaEntry e;
         e.key = std::string{ModConfigurationOptions::AngleBackend.name};
@@ -170,10 +221,7 @@ void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r) {
         for (const auto &opt : ModConfigurationOptions::AngleBackend.options) {
             e.allowed.emplace_back(opt);
         }
-        e.allowed_sources =
-            static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
-            static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
-            static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
+        e.allowed_sources = kDefaultSaveEnv;
         (void) r.add(std::move(e));
     }
     {
@@ -181,6 +229,7 @@ void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r) {
         e.key = std::string{ModConfigurationOptions::EnableVBPool.name};
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnableVBPool.default_value);
+        e.allowed_sources = kDefaultSaveEnv;
         (void) r.add(std::move(e));
     }
     {
@@ -188,6 +237,7 @@ void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r) {
         e.key = std::string{ModConfigurationOptions::NetworkOpt.name};
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::NetworkOpt.default_value);
+        e.allowed_sources = kDefaultSaveEnv;
         (void) r.add(std::move(e));
     }
     {
@@ -195,6 +245,7 @@ void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r) {
         e.key = std::string{ModConfigurationOptions::EnableNetSim.name};
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnableNetSim.default_value);
+        e.allowed_sources = kDefaultSaveEnv;
         (void) r.add(std::move(e));
     }
     {
@@ -202,6 +253,7 @@ void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r) {
         e.key = std::string{ModConfigurationOptions::EnableForkSave.name};
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnableForkSave.default_value);
+        e.allowed_sources = kDefaultSaveEnv;
         (void) r.add(std::move(e));
     }
     {
@@ -209,8 +261,10 @@ void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r) {
         e.key = std::string{ModConfigurationOptions::EnableLagCompensation.name};
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnableLagCompensation.default_value);
+        e.allowed_sources = kDefaultSaveEnv;
         (void) r.add(std::move(e));
     }
 }
+
 
 } // namespace ds::plugin

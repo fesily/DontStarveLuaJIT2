@@ -144,12 +144,14 @@ static bool VmPathEnabled(bool isClient) {
     if (const char *env = std::getenv("DS_LUAJIT_FORCE_DISABLE_VM"); env && env[0] == '1') {
         return false;
     }
-    auto config = GameJitModConfig::instance();
-    if (config && config->DisableJITWhenServer) {
+    // Ensure cascade has run; prefer ResolvedConfig accessors (CF-S5).
+    (void) GameJitModConfig::instance();
+    if (auto *rc = ds::config::current(); rc && rc->disable_jit_when_server()) {
         return false;
     }
     return true;
 }
+
 
 // VM signature/replace is owned by plugin_core_vm (ds_core_vm_run_signature_and_replace).
 // No in-process legacy fallback after Task 3.

@@ -4,6 +4,8 @@
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
+#include "config/ConfigSource.hpp"
+
 #include "GameNetwork.hpp"
 #include "ctx.hpp"
 
@@ -58,10 +60,15 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     e.key = "NetworkOpt";
     e.type = ConfigValueType::Bool;
     e.default_value = ConfigValue::boolean(true);
+    e.allowed_sources =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
     if (!host->register_option_schema(std::move(e))) {
         std::fprintf(stderr, "[plugin_network_rpc] schema conflict NetworkOpt\n");
         return false;
     }
+
     RegisterNetworkRpcHostServices();
     host->register_plugin(&g_network_rpc);
     std::fprintf(stderr, "[plugin_network_rpc] module init registered network.rpc\n");
