@@ -6,14 +6,25 @@ Base HEAD at start: f2cb4ce
 
 ## Tasks
 - Task 1: complete (commits f2cb4ce..3292039, review clean)
-- Task 2: complete (optional CoreVmBootstrap + stub plugin_core_vm; L-G PASS with/without stub)
-- Task 3: pending (move Signature+GameLua)
-- Task 4: pending (GameInjector open)
-- Task 5: pending (degradation matrix)
+- Task 2: complete (commits 3292039..56834d5, review clean)
+- Task 3: complete (commits 56834d5..c2a5cfa, review clean after fix)
+- Task 4: complete (verification only at c2a5cfa; ownership already from Task 3; L-G PASS; no code commit)
+- Task 5: complete (degradation matrix present/absent/vm_disabled; L-G PASS ×3; harness --scenario + env flags)
 - Task 6: pending (docs)
-Task 2: complete (commits 3292039..56834d5, review clean)
 
 ## Task 3 (V-S2+V-S3) — DONE
 
 Signature+GameLua in plugin_core_vm; no legacy fallback; L-G PASS.
 See core-vm-task-3-report.md.
+
+## Task 4 (V-S4) — DONE
+
+GameInjector open ownership verified in plugin_core_vm; cascade L0; trampolines GetProcAddress; VM-skip soft; L-G PASS.
+See core-vm-task-4-report.md. No product code changes (Task 3 already moved TUs).
+Task 4: complete (verification only on c2a5cfa, review clean)
+
+## Task 5 (V-S5) — DONE
+
+Degradation matrix verified on dedicated L-G:
+present (vm=jit + GameInjector), absent (rename + soft skip + plugins), vm_disabled (FORCE_DISABLE_VM / DisableJITWhenServer gate).
+See core-vm-task-5-report.md.

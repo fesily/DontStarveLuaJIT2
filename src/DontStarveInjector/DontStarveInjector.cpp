@@ -140,6 +140,10 @@ static bool VmPathEnabled(bool isClient) {
     if (isClient) {
         return true;
     }
+    // CI / harness: force DisableJITWhenServer-equivalent without mutating config.
+    if (const char *env = std::getenv("DS_LUAJIT_FORCE_DISABLE_VM"); env && env[0] == '1') {
+        return false;
+    }
     auto config = GameJitModConfig::instance();
     if (config && config->DisableJITWhenServer) {
         return false;
@@ -206,9 +210,11 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
             // Hard failures call showError inside plugin_core_vm; soft skip when
             // module/export missing or soft miss (no luamodule base).
             spdlog::warn("core.vm signature/replace path skipped — continuing inject");
+            std::fprintf(stderr, "[core.vm] signature/replace path skipped — continuing inject\n");
         }
     } else {
         spdlog::info("Lua VM path disabled — skipping signature/replace; native plugins continue");
+        std::fprintf(stderr, "[core.vm] Lua VM path disabled — skipping signature/replace; native plugins continue\n");
     }
 
     LoadGameModConfig();

@@ -1,6 +1,7 @@
 #include "CoreVmBootstrap.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <mutex>
 #include <string>
@@ -123,6 +124,13 @@ bool EnsureCoreVmModuleLoaded() {
     static std::once_flag once;
     static bool loaded = false;
     std::call_once(once, [] {
+        // CI / harness: pretend core.vm is absent without renaming the DLL.
+        if (const char *env = std::getenv("DS_LUAJIT_FORCE_NO_CORE_VM"); env && env[0] == '1') {
+            loaded = false;
+            std::fprintf(stderr, "[core.vm] module not found (optional): %s (DS_LUAJIT_FORCE_NO_CORE_VM=1)\n",
+                         kCoreVmModuleName);
+            return;
+        }
         void *h = ensure_handle_locked();
         loaded = h != nullptr;
         if (loaded) {

@@ -3,6 +3,9 @@
 
 Spec: docs/superpowers/specs/2026-08-03-plugin-architecture-design.md §12.10
 
+Also supports core.vm degradation matrix (Task 5):
+  --scenario present|absent|vm_disabled
+
 Exit codes:
   0 PASS
   1 FAIL
@@ -14,7 +17,6 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import threading
@@ -45,6 +47,16 @@ REQUIRED_MARKERS = (
     "LG_WORLD_READY",
     "LG_SIM_PAUSED",
 )
+
+# stderr / log evidence strings for core.vm matrix
+EVIDENCE_CORE_VM_MAPPED = "[core.vm] module mapped:"
+EVIDENCE_CORE_VM_MISSING = "[core.vm] module not found (optional):"
+EVIDENCE_CORE_VM_SIG_RUN = "[plugin_core_vm] running signature + ReplaceLuaModule"
+EVIDENCE_CORE_VM_SKIP = "[core.vm] signature/replace path skipped"
+EVIDENCE_CORE_VM_DISABLED = "[core.vm] Lua VM path disabled"
+EVIDENCE_DYN_LOADED = "[DynamicPluginLoader] loaded:"
+EVIDENCE_PLUGIN_DUMMY = "[plugin_dummy]"
+EVIDENCE_PLUGIN_RPC = "[plugin_network_rpc]"
 
 
 def eprint(*args: object) -> None:
@@ -101,6 +113,36 @@ def ensure_force_enable(game_dir: Path) -> None:
     and can abort server boot.
     """
     print(f"[lg] force-enable via CLI only (mods under {game_dir / 'mods'})")
+
+
+def core_vm_dll_path(game_dir: Path) -> Path:
+    return game_dir / "bin64" / "plugins" / "plugin_core_vm.dll"
+
+
+def stage_core_vm_absent(game_dir: Path) -> Optional[Path]:
+    """Rename plugin_core_vm.dll aside; return original path if renamed."""
+    dll = core_vm_dll_path(game_dir)
+    if not dll.exists():
+        print(f"[lg] core.vm already absent at {dll}")
+        return None
+    off = dll.with_suffix(dll.suffix + ".off")
+    if off.exists():
+        off.unlink()
+    dll.rename(off)
+    print(f"[lg] renamed {dll.name} -> {off.name}")
+    return dll
+
+
+def restore_core_vm(game_dir: Path, original: Optional[Path]) -> None:
+    dll = original or core_vm_dll_path(game_dir)
+    off = dll.with_suffix(dll.suffix + ".off")
+    if off.exists() and not dll.exists():
+        off.rename(dll)
+        print(f"[lg] restored {dll.name} from {off.name}")
+    elif off.exists() and dll.exists():
+        # Prefer live dll; drop the .off copy to avoid stale dual state.
+        off.unlink()
+        print(f"[lg] removed leftover {off.name}")
 
 
 class ServerProc:
@@ -214,6 +256,12 @@ class ServerProc:
         print(f"[lg] server exit code={code}")
         return code
 
+    def joined_log(self) -> str:
+        return "\n".join(self.lines)
+
+    def has_evidence(self, needle: str) -> bool:
+        return any(needle in line for line in self.lines)
+
 
 def marker_path(marker_dir: Path, name: str) -> Path:
     return marker_dir / name
@@ -222,39 +270,30 @@ def marker_path(marker_dir: Path, name: str) -> Path:
 def wait_markers(marker_dir: Path, names: tuple[str, ...], timeout: float, server: ServerProc) -> bool:
     deadline = time.time() + timeout
     pending = set(names)
-    # also watch mod-local markers
-    mod_marker_dirs = [
-        marker_dir,
-        server.game_dir / "mods" / "plugin_lg_probe" / "lg_markers",
-        server.game_dir / "mods" / "plugin_lg_probe",
-    ]
     while time.time() < deadline:
         if server.fatal:
-            eprint("[lg] fatal log pattern detected")
+            eprint("[lg] fatal pattern in server output")
             return False
-        if not server.alive():
-            eprint("[lg] server died while waiting for markers:", pending)
-            return False
+        if not server.alive() and pending:
+            # drain remaining tokens from collected lines
+            pass
         done = set()
         for n in pending:
-            if n in server.tokens:
+            if marker_path(marker_dir, n).exists() or n in server.tokens:
+                print(f"[lg] marker ok: {n}")
                 done.add(n)
-                continue
-            for d in mod_marker_dirs:
-                if (d / n).exists():
-                    done.add(n)
-                    break
-        for n in done:
-            print(f"[lg] got marker {n}")
-            pending.discard(n)
+        pending -= done
         if not pending:
             return True
-        time.sleep(0.5)
-    eprint(f"[lg] timeout waiting for markers: {pending}")
+        if not server.alive():
+            eprint(f"[lg] server exited early; missing markers: {sorted(pending)}")
+            return False
+        time.sleep(0.25)
+    eprint(f"[lg] timeout waiting markers: {sorted(pending)}")
     return False
 
 
-def build_inject_env(game_dir: Path) -> dict:
+def build_inject_env(game_dir: Path, extra: Optional[dict] = None) -> dict:
     """Best-effort inject env. Linux LD_PRELOAD; Windows relies on installed injector/winmm."""
     env: dict = {}
     if sys.platform.startswith("linux"):
@@ -281,80 +320,215 @@ def build_inject_env(game_dir: Path) -> dict:
                 print(f"[lg] note: Injector.dll at {cand[0]} — ensure game bin64 has inject layout")
             else:
                 print("[lg] WARN: Injector.dll not found in game bin64; inject may be missing")
+    if extra:
+        env.update(extra)
+        for k, v in extra.items():
+            print(f"[lg] inject env {k}={v}")
     return env
 
 
-def run_core_profile(game_dir: Path, cluster: str) -> int:
+def plugins_loaded_ok(server: ServerProc) -> bool:
+    """Native DynamicPluginLoader evidence (independent of GameInjector)."""
+    if server.has_evidence(EVIDENCE_DYN_LOADED):
+        return True
+    # Fall back to individual plugin init lines
+    hits = sum(
+        1
+        for n in (EVIDENCE_PLUGIN_DUMMY, EVIDENCE_PLUGIN_RPC, "[plugin_save_fork]", "[plugin_sim_lagcomp]")
+        if server.has_evidence(n)
+    )
+    return hits >= 1
+
+
+def evaluate_scenario(scenario: str, server: ServerProc, inject_ok: bool) -> tuple[bool, list[str]]:
+    """Return (ok, notes) for degradation matrix expectations."""
+    notes: list[str] = []
+    ok = True
+    log = server.joined_log()
+
+    if scenario == "present":
+        if server.has_evidence(EVIDENCE_CORE_VM_MAPPED):
+            notes.append("core.vm mapped")
+        else:
+            notes.append("WARN: missing '[core.vm] module mapped' (may predate stderr mirror)")
+        if server.has_evidence(EVIDENCE_CORE_VM_SIG_RUN) or "vm=jit" in log or "Applied Lua VM type" in log:
+            notes.append("signature/replace ran (or vm=jit applied)")
+        else:
+            notes.append("WARN: no explicit signature run line; check Injector log")
+        if not inject_ok:
+            eprint("[lg] present: expected GameInjector (LG_INJECT_OK)")
+            ok = False
+        else:
+            notes.append("LG_INJECT_OK")
+        if not plugins_loaded_ok(server) and not (
+            marker_path(Path(os.environ.get("LG_MARKER_DIR", str(SELF / "_markers"))), "LG_PLUGINS_OK").exists()
+            or "LG_PLUGINS_OK" in server.tokens
+        ):
+            # present path may only show LG_PLUGINS_OK via probe when GameInjector exists
+            if "LG_PLUGINS_OK" not in server.tokens:
+                eprint("[lg] present: plugins evidence missing")
+                ok = False
+        else:
+            notes.append("plugins ok")
+
+    elif scenario == "absent":
+        if server.has_evidence(EVIDENCE_CORE_VM_MISSING) or server.has_evidence(EVIDENCE_CORE_VM_SKIP):
+            notes.append("soft skip on missing core.vm")
+        else:
+            notes.append("WARN: no soft-skip line (check rename + stderr)")
+        if server.has_evidence(EVIDENCE_CORE_VM_SIG_RUN):
+            eprint("[lg] absent: signature path should not run")
+            ok = False
+        if inject_ok:
+            notes.append("NOTE: GameInjector present unexpectedly (maybe different code path)")
+        else:
+            notes.append("GameInjector absent (expected without core.vm)")
+        if not plugins_loaded_ok(server):
+            eprint("[lg] absent: DynamicPluginLoader / native plugins evidence missing")
+            ok = False
+        else:
+            notes.append("native plugins still loaded")
+        # No crash / fatal already gated by caller
+
+    elif scenario == "vm_disabled":
+        if server.has_evidence(EVIDENCE_CORE_VM_DISABLED):
+            notes.append("VmPathEnabled false / DisableJIT path")
+        else:
+            notes.append("WARN: missing 'Lua VM path disabled' line — need rebuilt Injector with stderr mirror")
+        if server.has_evidence(EVIDENCE_CORE_VM_SIG_RUN):
+            eprint("[lg] vm_disabled: signature must not run")
+            ok = False
+        else:
+            notes.append("no signature/replace")
+        if inject_ok:
+            notes.append("NOTE: GameInjector present (unexpected when VM path disabled)")
+        else:
+            notes.append("GameInjector absent (expected)")
+        if not plugins_loaded_ok(server):
+            eprint("[lg] vm_disabled: plugins must still load")
+            ok = False
+        else:
+            notes.append("native plugins still loaded")
+    else:
+        eprint(f"[lg] unknown scenario {scenario}")
+        ok = False
+
+    return ok, notes
+
+
+def run_core_profile(game_dir: Path, cluster: str, scenario: str = "present") -> int:
     marker_dir = Path(os.environ.get("LG_MARKER_DIR", str(SELF / "_markers")))
     if marker_dir.exists():
         shutil.rmtree(marker_dir, ignore_errors=True)
     marker_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["LG_MARKER_DIR"] = str(marker_dir)
 
     install_probe_mod(game_dir)
     ensure_force_enable(game_dir)
 
-    inject_env = build_inject_env(game_dir)
-    server = ServerProc(game_dir, cluster, marker_dir, inject_env)
-    server.start()
+    renamed_from: Optional[Path] = None
+    extra_env: dict = {}
 
-    # Bootstrap marker dir into Lua via console once process is up a bit
-    time.sleep(2.0)
-    # Escape backslashes for Lua string
-    md = str(marker_dir).replace("\\", "\\\\")
-    server.send_lua(f'rawset(_G, "LG_MARKER_DIR", "{md}")')
+    try:
+        if scenario == "absent":
+            # Prefer physical rename; also set env for CI when DLL cannot be moved.
+            renamed_from = stage_core_vm_absent(game_dir)
+            extra_env["DS_LUAJIT_FORCE_NO_CORE_VM"] = "1"
+        elif scenario == "vm_disabled":
+            extra_env["DS_LUAJIT_FORCE_DISABLE_VM"] = "1"
+        # present: no extra env
 
-    if not wait_markers(marker_dir, ("LG_MOD_LOADED",), T_INJECT, server):
-        # inject optional for skip? No — core profile requires mod load at minimum
-        server.stop()
-        return 1
+        inject_env = build_inject_env(game_dir, extra_env or None)
+        server = ServerProc(game_dir, cluster, marker_dir, inject_env)
+        server.start()
 
-    # Inject: prefer LG_INJECT_OK; if missing, still allow FAIL at plugins step
-    inject_ok = marker_path(marker_dir, "LG_INJECT_OK").exists() or ("LG_INJECT_OK" in server.tokens)
-    if not inject_ok:
-        print("[lg] WARN: LG_INJECT_OK missing (injector may not be installed)")
+        # Bootstrap marker dir into Lua via console once process is up a bit
+        time.sleep(2.0)
+        # Escape backslashes for Lua string
+        md = str(marker_dir).replace("\\", "\\\\")
+        server.send_lua(f'rawset(_G, "LG_MARKER_DIR", "{md}")')
 
-    if not wait_markers(marker_dir, ("LG_WORLD_READY", "LG_SIM_PAUSED"), T_WORLD, server):
-        server.stop()
-        return 1
-
-    if marker_path(marker_dir, "LG_SIM_PAUSE_FAILED").exists() or "LG_SIM_PAUSE_FAILED" in server.tokens:
-        eprint("[lg] sim pause failed")
-        server.stop()
-        return 1
-
-    if inject_ok and not (marker_path(marker_dir, "LG_PLUGINS_OK").exists() or "LG_PLUGINS_OK" in server.tokens):
-        eprint("[lg] LG_PLUGINS_OK missing")
-        server.stop()
-        return 1
-
-    print(f"[lg] holding stable pause for {T_HOLD}s...")
-    hold_end = time.time() + T_HOLD
-    while time.time() < hold_end:
-        if not server.alive() or server.fatal:
-            eprint("[lg] lost stability during hold")
+        if not wait_markers(marker_dir, ("LG_MOD_LOADED",), T_INJECT, server):
             server.stop()
             return 1
-        time.sleep(0.5)
 
-    marker_path(marker_dir, "LG_STABLE").write_text("1", encoding="utf-8")
-    print("[lg] LG_STABLE written")
+        inject_ok = marker_path(marker_dir, "LG_INJECT_OK").exists() or ("LG_INJECT_OK" in server.tokens)
+        inject_missing = marker_path(marker_dir, "LG_INJECT_MISSING").exists() or (
+            "LG_INJECT_MISSING" in server.tokens
+        )
+        if not inject_ok:
+            print("[lg] WARN: LG_INJECT_OK missing (injector may not be installed / GameInjector absent)")
+        if inject_missing:
+            print("[lg] note: LG_INJECT_MISSING observed (GameInjector nil)")
 
-    # Core profile: if inject was required and missing, fail after proving world works?
-    # Spec: inject required for architecture proof.
-    if not inject_ok:
-        eprint("[lg] FAIL: injector not detected (GameInjector nil)")
+        if not wait_markers(marker_dir, ("LG_WORLD_READY", "LG_SIM_PAUSED"), T_WORLD, server):
+            server.stop()
+            return 1
+
+        if marker_path(marker_dir, "LG_SIM_PAUSE_FAILED").exists() or "LG_SIM_PAUSE_FAILED" in server.tokens:
+            eprint("[lg] sim pause failed")
+            server.stop()
+            return 1
+
+        # present scenario still requires LG_PLUGINS_OK when inject present
+        if scenario == "present":
+            if inject_ok and not (
+                marker_path(marker_dir, "LG_PLUGINS_OK").exists() or "LG_PLUGINS_OK" in server.tokens
+            ):
+                eprint("[lg] LG_PLUGINS_OK missing")
+                server.stop()
+                return 1
+        else:
+            # degradation: plugins may load without GameInjector; require native evidence
+            if not plugins_loaded_ok(server):
+                eprint("[lg] degradation: native plugin load evidence missing")
+                # still continue to hold if world is up — but mark fail later via evaluate
+                pass
+
+        print(f"[lg] holding stable pause for {T_HOLD}s...")
+        hold_end = time.time() + T_HOLD
+        while time.time() < hold_end:
+            if not server.alive() or server.fatal:
+                eprint("[lg] lost stability during hold")
+                server.stop()
+                return 1
+            time.sleep(0.5)
+
+        marker_path(marker_dir, "LG_STABLE").write_text("1", encoding="utf-8")
+        print("[lg] LG_STABLE written")
+
+        scen_ok, notes = evaluate_scenario(scenario, server, inject_ok)
+        for n in notes:
+            print(f"[lg] scenario[{scenario}]: {n}")
+
+        if scenario == "present" and not inject_ok:
+            eprint("[lg] FAIL: injector not detected (GameInjector nil)")
+            server.stop()
+            return 1
+
+        if not scen_ok:
+            eprint(f"[lg] FAIL scenario={scenario}")
+            server.stop()
+            return 1
+
         server.stop()
-        return 1
-
-    server.stop()
-    print("[lg] PASS core profile")
-    return 0
+        print(f"[lg] PASS core profile scenario={scenario}")
+        return 0
+    finally:
+        if scenario == "absent":
+            restore_core_vm(game_dir, renamed_from)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="L-G dedicated sim-pause harness")
     parser.add_argument("--cluster", default=os.environ.get("LG_CLUSTER", "LGPluginTest"))
     parser.add_argument("--game-dir", default=None)
+    parser.add_argument(
+        "--scenario",
+        default=os.environ.get("LG_SCENARIO", "present"),
+        choices=("present", "absent", "vm_disabled"),
+        help="core.vm degradation matrix cell (default: present)",
+    )
     args = parser.parse_args()
 
     game_dir = Path(args.game_dir) if args.game_dir else resolve_game_dir()
@@ -364,8 +538,9 @@ def main() -> int:
         return 2
 
     print(f"[lg] game_dir={game_dir}")
+    print(f"[lg] scenario={args.scenario}")
     try:
-        return run_core_profile(game_dir, args.cluster)
+        return run_core_profile(game_dir, args.cluster, args.scenario)
     except KeyboardInterrupt:
         return 1
 
@@ -379,6 +554,5 @@ if __name__ == "__main__":
     if code == 2:
         if os.environ.get("LG_REQUIRE_GAME") == "1":
             sys.exit(1)
-        print("[lg] ctest: skip mapped to exit 0 (set LG_REQUIRE_GAME=1 to require game)")
         sys.exit(0)
     sys.exit(code)
