@@ -128,8 +128,14 @@ target_include_directories(Injector PRIVATE
 )
 # Prefer build-tree include for configured luaconf.h
 if (TARGET liblua_static)
+    # PRIVATE static embed: cascade-only VM. Symbols must not export from Injector
+    # (liblua_static is built with hidden visibility on ELF).
     target_link_libraries(Injector PRIVATE liblua_static)
     add_dependencies(Injector liblua_static)
+    if (NOT MSVC)
+        # Defense in depth: do not re-export static lib symbols from Injector.so
+        target_link_options(Injector PRIVATE "-Wl,--exclude-libs,ALL")
+    endif()
 else()
     message(FATAL_ERROR "liblua_static (src/lua51original) required for L0 GameJitModConfig cascade")
 endif()
