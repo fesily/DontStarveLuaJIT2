@@ -167,6 +167,10 @@ void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r) {
         for (const auto &opt : ModConfigurationOptions::AngleBackend.options) {
             e.allowed.emplace_back(opt);
         }
+        e.allowed_sources =
+            static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
+            static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
+            static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
         (void) r.add(std::move(e));
     }
     {

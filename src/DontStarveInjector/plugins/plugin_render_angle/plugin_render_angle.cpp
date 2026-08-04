@@ -68,6 +68,10 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     e.type = ConfigValueType::String;
     e.default_value = ConfigValue::string("auto");
     e.allowed = {"auto", "vulkan", "d3d11", "d3d9"};
+    e.allowed_sources =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
     if (!host->register_option_schema(std::move(e))) {
         std::fprintf(stderr, "[plugin_render_angle] schema conflict AngleBackend\n");
         return false;

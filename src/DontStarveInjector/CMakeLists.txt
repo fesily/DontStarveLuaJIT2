@@ -22,6 +22,7 @@ set(SOURCES
         core/LuaEventBus.cpp
         core/PluginOptionRules.cpp
         core/ConfigSchema.cpp
+        config/CascadeEngine.cpp
         core/RegisterBuiltinPlugins.cpp
         core/PluginConfigBridge.cpp
         core/DynamicPluginLoader.cpp

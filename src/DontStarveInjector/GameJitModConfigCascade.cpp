@@ -2,6 +2,7 @@
 #include "gameModConfig.hpp"
 #include "config.hpp"
 #include "core/ConfigSchema.hpp"
+#include "config/CascadeEngine.hpp"
 #include "core/PluginConfigBridge.hpp"
 #include "core/PluginTypes.hpp"
 #include "luajit_config.hpp"
@@ -11,6 +12,7 @@
 #include <fstream>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <spdlog/spdlog.h>
@@ -64,8 +66,13 @@ void apply_schema_value_to_config(const std::string &name, const ds::plugin::Con
 		}
 		return;
 	}
-	// Business / plugin-owned keys live only in the map.
-	resolved.business_options[name] = v;
+	// Business / plugin-owned keys: whitelist via shared apply_partial (CF-S1).
+	ds::plugin::ConfigView partial;
+	partial[name] = v;
+	std::unordered_map<std::string, ds::config::ConfigSource> prov;
+	(void)ds::config::apply_partial(cascade_option_schema(),
+									ds::config::ConfigSource::SaveFile, partial,
+									resolved.business_options, prov);
 }
 
 // sol::object → ConfigValue via pure schema coerce helpers (C-S6).
