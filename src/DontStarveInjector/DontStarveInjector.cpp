@@ -227,6 +227,17 @@ void DisableScriptZip() {
     }
 }
 
+static bool VmPathEnabled(bool isClient) {
+    if (isClient) {
+        return true;
+    }
+    auto config = GameJitModConfig::instance();
+    if (config && config->DisableJITWhenServer) {
+        return false;
+    }
+    return true;
+}
+
 extern "C" void LoadGameModConfig();
 DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     auto ictx = InjectorCtx::instance();
@@ -240,12 +251,6 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     }
     auto defer = create_defer(&function_relocation::deinit_ctx);
 
-    if (!isClient) {
-        auto config = GameJitModConfig::instance();
-        if (config && config->DisableJITWhenServer) {
-            return;
-        }
-    }
 
     ictx->DontStarveInjectorIsClient = isClient;
 #ifdef _WIN32
@@ -279,33 +284,38 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 
     HookSteamGameServerInterface();
 
-    auto lua51 = loadlib(lua51_name);
-    if (!lua51) {
-        showError("can't load lua51");
-        return;
-    }
-    auto defer1 = create_defer([&lua51]() {
-        if (lua51)
-            unloadlib(lua51);
-    });
+    if (VmPathEnabled(isClient)) {
+        auto lua51 = loadlib(lua51_name);
+        if (!lua51) {
+            showError("can't load lua51");
+            return;
+        }
+        auto defer1 = create_defer([&lua51]() {
+            if (lua51)
+                unloadlib(lua51);
+        });
 
-    spdlog::info("main module base address:{}", (void *) gum_module_get_range(gum_process_get_main_module())->base_address);
-    auto mainPath = getExePath().string();
-    if (luaModuleSignature.scan(mainPath.c_str()) == 0) {
-        spdlog::error("can't find luamodule base address");
-        return;
+        spdlog::info("main module base address:{}", (void *) gum_module_get_range(gum_process_get_main_module())->base_address);
+        auto mainPath = getExePath().string();
+        if (luaModuleSignature.scan(mainPath.c_str()) == 0) {
+            spdlog::error("can't find luamodule base address");
+            return;
+        }
+        ProcessMutex mtx("DontStarveInjectorSignature");
+        std::lock_guard guard{mtx};
+        auto res = SignatureUpdater::create_or_update(isClient, luaModuleSignature.target_address);
+        if (!res) {
+            showError(res.error());
+            return;
+        }
+        unloadlib(lua51);
+        lua51 = nullptr;
+        auto &val = res.value();
+        ReplaceLuaModule(mainPath, val.signatures, val.exports);
+        replace_game_branch_flag_to_dev(mainPath);
+    } else {
+        spdlog::info("Lua VM path disabled — skipping signature/replace; native plugins continue");
     }
-    ProcessMutex mtx("DontStarveInjectorSignature");
-    std::lock_guard guard{mtx};
-    auto res = SignatureUpdater::create_or_update(isClient, luaModuleSignature.target_address);
-    if (!res) {
-        showError(res.error());
-        return;
-    }
-    unloadlib(lua51);
-    auto &val = res.value();
-    ReplaceLuaModule(mainPath, val.signatures, val.exports);
-    replace_game_branch_flag_to_dev(mainPath);
 
     LoadGameModConfig();
 
