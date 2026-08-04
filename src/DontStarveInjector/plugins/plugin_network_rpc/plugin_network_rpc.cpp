@@ -1,5 +1,6 @@
 // plugin_network_rpc — dynamic EarlyNative face of network.rpc
 // Lua face remains Mod/plugins/network_rpc.lua (same id).
+#include "gum_plugin_export.hpp"
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"

@@ -1,4 +1,5 @@
 // plugin_render_vbpool — dynamic EarlyNative face of render.vbpool
+#include "gum_plugin_export.hpp"
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"

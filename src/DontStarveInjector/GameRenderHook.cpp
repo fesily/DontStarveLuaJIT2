@@ -1,3 +1,4 @@
+#include "gum_plugin_export.hpp"
 #include "GameRenderHook.hpp"
 #include "BufferNamePool.hpp"
 

@@ -195,14 +195,17 @@ endfunction()
 
 ds_add_dynamic_plugin(plugin_dummy
     plugins/plugin_dummy/plugin_dummy.cpp)
-ds_add_dynamic_plugin(plugin_network_rpc
-    plugins/plugin_network_rpc/plugin_network_rpc.cpp
-    GameNetwork.cpp)
+
+# Gum-using dynamic plugins need Injector to re-export static frida-gum symbols.
+# Windows: FridaGum.def. Linux/macOS: not implemented — skip targets (source also
+# #errors via gum_plugin_export.hpp if pulled in by mistake).
 if (WIN32)
+    ds_add_dynamic_plugin(plugin_network_rpc
+        plugins/plugin_network_rpc/plugin_network_rpc.cpp
+        GameNetwork.cpp)
     # RPC4 / entity network extension (Path A M-N1).
-    # Gum APIs come from Injector re-exports (FridaGum.def). Do NOT link frida-gum.lib
-    # (static, second Gum instance) or function_relocation (also pulls Gum).
-    # frida-gum.h has #pragma comment(lib, "frida-gum.lib") — kill it with NODEFAULTLIB.
+    # Gum APIs from Injector re-exports. Do NOT link frida-gum.lib (second Gum).
+    # frida-gum.h #pragma comment → NODEFAULTLIB.
     target_link_libraries(plugin_network_rpc PRIVATE
         spdlog::spdlog
         SLikeNet
@@ -218,14 +221,11 @@ if (WIN32)
         ${PLF_HIVE_INCLUDE_DIRS}
         ${FRIDA_GUM_INCLUDE_DIR}
         ${FUNCTION_RELOCATION_INCLUDE_DIR})
-endif()
-ds_add_dynamic_plugin(plugin_render_vbpool
-    plugins/plugin_render_vbpool/plugin_render_vbpool.cpp
-    GameRenderHook.cpp)
-if (WIN32)
-    # HWBuffer pool lives only here (Path A M-R2). GLES headers from ANGLE tree;
-    # no ANGLE .lib — GL entry points via GetProcAddress(libGLESv2).
-    # Gum via Injector re-exports; signatures via function_relocation (Gum resolved from Injector).
+
+    ds_add_dynamic_plugin(plugin_render_vbpool
+        plugins/plugin_render_vbpool/plugin_render_vbpool.cpp
+        GameRenderHook.cpp)
+    # HWBuffer pool (Path A M-R2). GLES headers from ANGLE tree; GL via GetProcAddress.
     target_link_libraries(plugin_render_vbpool PRIVATE
         spdlog::spdlog
         function_relocation)
@@ -240,12 +240,11 @@ if (WIN32)
         ${PROJECT_SOURCE_DIR}/3rd/angle/win64/include
         ${FRIDA_GUM_INCLUDE_DIR}
         ${FUNCTION_RELOCATION_INCLUDE_DIR})
-endif()
-ds_add_dynamic_plugin(plugin_render_angle
-    plugins/plugin_render_angle/plugin_render_angle.cpp
-    GameOpenGl.cpp)
-if (WIN32)
-    # ANGLE + OpenGL implementation live only in this module (Path A M-R1).
+
+    ds_add_dynamic_plugin(plugin_render_angle
+        plugins/plugin_render_angle/plugin_render_angle.cpp
+        GameOpenGl.cpp)
+    # ANGLE + OpenGL (Path A M-R1).
     target_link_libraries(plugin_render_angle PRIVATE
         unofficial::angle::libGLESv2
         unofficial::angle::libEGL
@@ -259,6 +258,11 @@ if (WIN32)
     target_include_directories(plugin_render_angle PRIVATE
         ${PROJECT_SOURCE_DIR}/3rd
         ${FRIDA_GUM_INCLUDE_DIR})
+else()
+    message(WARNING
+        "Skipping gum-using dynamic plugins (network.rpc / render.vbpool / render.angle): "
+        "Injector Frida Gum re-export is unimplemented on Linux/macOS (Windows uses FridaGum.def). "
+        "Wait for ELF/Mach-O export-list fix; do not static-link a second frida-gum into plugins.")
 endif()
 
 

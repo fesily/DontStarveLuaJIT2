@@ -1,3 +1,4 @@
+#include "gum_plugin_export.hpp"
 #include "GameNetwork.hpp"
 #include "frida-gum.h"
 #include "config.hpp"
