@@ -9,7 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include "SignatureJson.hpp"
-#include "GameVersionFile.hpp"
+#include "util/GameVersionFile.hpp"
 #include "frida-gum.h"
 #include "disasm.h"
 #include "MemorySignature.hpp"
