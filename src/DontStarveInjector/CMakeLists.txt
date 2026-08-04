@@ -24,7 +24,6 @@ set(SOURCES
         GameLuaModule.cpp
         GameSteam.cpp
         GameSignature.cpp
-        GameNetwork.cpp
         config.cpp
         GameLuaInjectFramework.c
         lua_debugger_helper.cpp
@@ -33,6 +32,7 @@ set(SOURCES
         core/RegisterBuiltinPlugins.cpp
         core/PluginConfigBridge.cpp
         core/DynamicPluginLoader.cpp
+        gum_bridge.cpp
 )
 
 
@@ -194,7 +194,26 @@ endfunction()
 ds_add_dynamic_plugin(plugin_dummy
     plugins/plugin_dummy/plugin_dummy.cpp)
 ds_add_dynamic_plugin(plugin_network_rpc
-    plugins/plugin_network_rpc/plugin_network_rpc.cpp)
+    plugins/plugin_network_rpc/plugin_network_rpc.cpp
+    GameNetwork.cpp)
+if (WIN32)
+    # RPC4 / entity network extension (Path A M-N1).
+    # Gum + signature scanning go through Injector gum_bridge (single Gum instance).
+    # Injector.lib may carry /DEFAULTLIB:frida-gum.lib from Gum static usage;
+    # provide the library path so the linker can resolve that defaultlib without
+    # static-linking Gum objects into the plugin.
+    target_link_libraries(plugin_network_rpc PRIVATE
+        spdlog::spdlog
+        SLikeNet
+        ${FRIDA_GUM_LIBRARIES})
+    target_link_directories(plugin_network_rpc PRIVATE ${FRIDA_GUM_LIBRARY_DIR})
+    target_compile_definitions(plugin_network_rpc PRIVATE
+        SPDLOG_COMPILED_LIB
+        SPDLOG_FMT_EXTERNAL)
+    target_include_directories(plugin_network_rpc PRIVATE
+        ${PROJECT_SOURCE_DIR}/3rd
+        ${PLF_HIVE_INCLUDE_DIRS})
+endif()
 ds_add_dynamic_plugin(plugin_render_vbpool
     plugins/plugin_render_vbpool/plugin_render_vbpool.cpp
     GameRenderHook.cpp)

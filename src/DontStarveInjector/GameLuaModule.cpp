@@ -1187,8 +1187,9 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int 
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api();
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_tracy(int en);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version();
-DONTSTARVEINJECTOR_GAME_API void *DS_LUAJIT_EntityNetWorkExtension_Register(void *networkComponentLuaProxyPtr, int64_t networkid);
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_SetNextRpcInfo(std::optional<PacketPriority> packetPriority, std::optional<PacketReliability> reliability, std::optional<char> orderingChannel);
+// Implemented in plugin_network_rpc (GameNetwork.cpp). Resolved at runtime.
+using DsLuajitEntityNetWorkRegisterFn = void *(*)(void *, int64_t);
+using DsLuajitSetNextRpcInfoFn = void (*)(std::optional<PacketPriority>, std::optional<PacketReliability>, std::optional<char>);
 DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_profiler(int en);
 #ifdef _WIN32
@@ -1305,13 +1306,45 @@ int luaopen_GameInjector(lua_State* L) {
     module.set_function("DS_LUAJIT_replace_profiler_api", &DS_LUAJIT_replace_profiler_api);
     module.set_function("DS_LUAJIT_enable_tracy", &DS_LUAJIT_enable_tracy);
     module.set_function("DS_LUAJIT_get_mod_version", &DS_LUAJIT_get_mod_version);
-    module.set_function("DS_LUAJIT_EntityNetWorkExtension_Register", &DS_LUAJIT_EntityNetWorkExtension_Register);
-	module.set_function("DS_LUAJIT_SetNextRpcInfo", [](sol::optional<int> packetPriority, sol::optional<int> reliability, sol::optional<int> orderingChannel) {
-		DS_LUAJIT_SetNextRpcInfo(
-				parse_lua_packet_priority(packetPriority),
-				parse_lua_packet_reliability(reliability),
-				parse_lua_ordering_channel(orderingChannel));
-	});
+    module.set_function("DS_LUAJIT_EntityNetWorkExtension_Register",
+                        [](void *networkComponentLuaProxyPtr, int64_t networkid) -> void * {
+#ifdef _WIN32
+                            static DsLuajitEntityNetWorkRegisterFn fn = []() -> DsLuajitEntityNetWorkRegisterFn {
+                                HMODULE mod = GetModuleHandleA("plugin_network_rpc.dll");
+                                if (!mod) {
+                                    return nullptr;
+                                }
+                                return reinterpret_cast<DsLuajitEntityNetWorkRegisterFn>(
+                                    GetProcAddress(mod, "DS_LUAJIT_EntityNetWorkExtension_Register"));
+                            }();
+                            return fn ? fn(networkComponentLuaProxyPtr, networkid) : nullptr;
+#else
+                            (void) networkComponentLuaProxyPtr;
+                            (void) networkid;
+                            return nullptr;
+#endif
+                        });
+    module.set_function("DS_LUAJIT_SetNextRpcInfo", [](sol::optional<int> packetPriority, sol::optional<int> reliability, sol::optional<int> orderingChannel) {
+#ifdef _WIN32
+        static DsLuajitSetNextRpcInfoFn fn = []() -> DsLuajitSetNextRpcInfoFn {
+            HMODULE mod = GetModuleHandleA("plugin_network_rpc.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitSetNextRpcInfoFn>(
+                GetProcAddress(mod, "DS_LUAJIT_SetNextRpcInfo"));
+        }();
+        if (fn) {
+            fn(parse_lua_packet_priority(packetPriority),
+               parse_lua_packet_reliability(reliability),
+               parse_lua_ordering_channel(orderingChannel));
+        }
+#else
+        (void) packetPriority;
+        (void) reliability;
+        (void) orderingChannel;
+#endif
+    });
     module.set_function("DS_LUAJIT_enable_framegc", &DS_LUAJIT_enable_framegc);
     module.set_function("DS_LUAJIT_set_vbpool_enabled", [](bool enable) {
 #ifdef _WIN32
