@@ -243,8 +243,8 @@ if (WIN32)
 
     ds_add_dynamic_plugin(plugin_render_angle
         plugins/plugin_render_angle/plugin_render_angle.cpp
-        GameOpenGl.cpp)
-    # ANGLE + OpenGL (Path A M-R1).
+        plugins/plugin_render_angle/GameOpenGl.cpp)
+    # ANGLE + OpenGL (Path A M-R1). Sources live under plugins/plugin_render_angle/.
     target_link_libraries(plugin_render_angle PRIVATE
         unofficial::angle::libGLESv2
         unofficial::angle::libEGL
@@ -257,7 +257,8 @@ if (WIN32)
         SPDLOG_FMT_EXTERNAL)
     target_include_directories(plugin_render_angle PRIVATE
         ${PROJECT_SOURCE_DIR}/3rd
-        ${FRIDA_GUM_INCLUDE_DIR})
+        ${FRIDA_GUM_INCLUDE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugins/plugin_render_angle)
 else()
     message(WARNING
         "Skipping gum-using dynamic plugins (network.rpc / render.vbpool / render.angle): "
