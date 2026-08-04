@@ -53,7 +53,6 @@ else()
         # Re-export static frida-gum symbols from Injector.dll so plugins can
         # call gum_* without linking a second Gum copy (official devkit is static-only).
         FridaGum.def
-        GameNetworkSim.cpp
         GameSimHook.cpp
     )
 endif()
@@ -222,6 +221,25 @@ if (WIN32)
         ${FUNCTION_RELOCATION_INCLUDE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/plugins/plugin_network_rpc)
 
+    ds_add_dynamic_plugin(plugin_network_sim
+        plugins/plugin_network_sim/plugin_network_sim.cpp
+        plugins/plugin_network_sim/GameNetworkSim.cpp)
+    # Outbound net simulation (Path A network.sim). Lazy hook on enable.
+    target_link_libraries(plugin_network_sim PRIVATE
+        spdlog::spdlog
+        function_relocation)
+    target_link_options(plugin_network_sim PRIVATE
+        "/NODEFAULTLIB:frida-gum.lib")
+    target_compile_definitions(plugin_network_sim PRIVATE
+        GUM_STATIC=1
+        SPDLOG_COMPILED_LIB
+        SPDLOG_FMT_EXTERNAL)
+    target_include_directories(plugin_network_sim PRIVATE
+        ${PROJECT_SOURCE_DIR}/3rd
+        ${FRIDA_GUM_INCLUDE_DIR}
+        ${FUNCTION_RELOCATION_INCLUDE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugins/plugin_network_sim)
+
     ds_add_dynamic_plugin(plugin_render_vbpool
         plugins/plugin_render_vbpool/plugin_render_vbpool.cpp
         plugins/plugin_render_vbpool/GameRenderHook.cpp)
@@ -262,7 +280,7 @@ if (WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/plugins/plugin_render_angle)
 else()
     message(WARNING
-        "Skipping gum-using dynamic plugins (network.rpc / render.vbpool / render.angle): "
+        "Skipping gum-using dynamic plugins (network.rpc / network.sim / render.vbpool / render.angle): "
         "Injector Frida Gum re-export is unimplemented on Linux/macOS (Windows uses FridaGum.def). "
         "Wait for ELF/Mach-O export-list fix; do not static-link a second frida-gum into plugins.")
 endif()

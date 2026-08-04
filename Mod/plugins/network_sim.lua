@@ -1,6 +1,6 @@
--- Lua face of dual-face plugin network.sim (native APIs already exported by GameNetworkSim).
+-- Lua face of dual-face plugin network.sim
+-- (native: plugin_network_sim.dll / GameNetworkSim; APIs resolved via GameInjector).
 -- Mirrors former modmain hard-wire: has_luajit + windows + not mastersim + EnableNetSim
--- → scripts/netsim.
 
 return {
     id = "network.sim",

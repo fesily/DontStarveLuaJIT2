@@ -2,8 +2,8 @@
 
 #include <cstdint>
 
-// Shared by GameNetworkSim (Injector) and Lua bindings (GameLuaModule).
-// network.rpc plugin implementation does not own this type.
+// Shared layout for plugin_network_sim exports and GameLuaModule Lua table mapping.
+// Implementation lives in plugins/plugin_network_sim/GameNetworkSim.cpp.
 struct NetSimStats {
     bool     enabled;
     uint32_t delay_ms;

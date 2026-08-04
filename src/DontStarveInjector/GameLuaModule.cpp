@@ -1194,10 +1194,11 @@ DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_profiler(int en);
 #ifdef _WIN32
 using DsLuajitSetVbpoolEnabledFn = void (*)(bool);
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_net_sim_enable(bool enable);
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_net_sim_set(uint32_t delay_ms, uint32_t jitter_ms, uint32_t loss_pct);
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_net_sim_update();
-DONTSTARVEINJECTOR_GAME_API const NetSimStats* DS_LUAJIT_net_sim_get_stats();
+// Implemented in plugins/plugin_network_sim/GameNetworkSim.cpp. Resolved at runtime.
+using DsLuajitNetSimEnableFn = void (*)(bool);
+using DsLuajitNetSimSetFn = void (*)(uint32_t, uint32_t, uint32_t);
+using DsLuajitNetSimUpdateFn = void (*)();
+using DsLuajitNetSimGetStatsFn = const NetSimStats *(*)();
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_entity_get_raw_ptr(lua_State* L);
 #else
 static int DS_LUAJIT_entity_get_raw_ptr(lua_State* L) { return 0; };
@@ -1364,13 +1365,57 @@ int luaopen_GameInjector(lua_State* L) {
 #endif
     });
 #ifdef _WIN32
-    module.set_function("DS_LUAJIT_net_sim_enable", &DS_LUAJIT_net_sim_enable);
-    module.set_function("DS_LUAJIT_net_sim_set", &DS_LUAJIT_net_sim_set);
-    module.set_function("DS_LUAJIT_net_sim_update", &DS_LUAJIT_net_sim_update);
+    module.set_function("DS_LUAJIT_net_sim_enable", [](bool enable) {
+        static DsLuajitNetSimEnableFn fn = []() -> DsLuajitNetSimEnableFn {
+            HMODULE mod = GetModuleHandleA("plugin_network_sim.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitNetSimEnableFn>(
+                GetProcAddress(mod, "DS_LUAJIT_net_sim_enable"));
+        }();
+        if (fn) {
+            fn(enable);
+        }
+    });
+    module.set_function("DS_LUAJIT_net_sim_set", [](uint32_t delay_ms, uint32_t jitter_ms, uint32_t loss_pct) {
+        static DsLuajitNetSimSetFn fn = []() -> DsLuajitNetSimSetFn {
+            HMODULE mod = GetModuleHandleA("plugin_network_sim.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitNetSimSetFn>(
+                GetProcAddress(mod, "DS_LUAJIT_net_sim_set"));
+        }();
+        if (fn) {
+            fn(delay_ms, jitter_ms, loss_pct);
+        }
+    });
+    module.set_function("DS_LUAJIT_net_sim_update", []() {
+        static DsLuajitNetSimUpdateFn fn = []() -> DsLuajitNetSimUpdateFn {
+            HMODULE mod = GetModuleHandleA("plugin_network_sim.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitNetSimUpdateFn>(
+                GetProcAddress(mod, "DS_LUAJIT_net_sim_update"));
+        }();
+        if (fn) {
+            fn();
+        }
+    });
     module.set_function("DS_LUAJIT_net_sim_get_stats", [L = lua.lua_state()]() -> sol::table {
-        const NetSimStats* s = DS_LUAJIT_net_sim_get_stats();
+        static DsLuajitNetSimGetStatsFn fn = []() -> DsLuajitNetSimGetStatsFn {
+            HMODULE mod = GetModuleHandleA("plugin_network_sim.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitNetSimGetStatsFn>(
+                GetProcAddress(mod, "DS_LUAJIT_net_sim_get_stats"));
+        }();
         sol::state_view sv(L);
         sol::table t = sv.create_table();
+        const NetSimStats *s = fn ? fn() : nullptr;
         if (s == nullptr) {
             return t;
         }

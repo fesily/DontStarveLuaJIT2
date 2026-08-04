@@ -1,3 +1,4 @@
+#include "gum_plugin_export.hpp"
 // GameNetworkSim.cpp
 // Outbound network simulation (delay / jitter / loss) via hooking
 // ReliabilityLayer::SendBitStream.
@@ -18,7 +19,6 @@
 //                         matching macOS reference at 0x001e30e0.
 
 #include "config.hpp"
-#include "GameLua.hpp"
 #include "MemorySignature.hpp"
 #include "NetSimStats.hpp"
 

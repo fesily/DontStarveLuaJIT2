@@ -6,6 +6,7 @@ namespace ds::plugin {
 // Path A static registry is intentionally empty after Phase B migration.
 // EarlyNative business plugins ship as dynamic modules under plugins/:
 //   plugin_network_rpc  → network.rpc
+//   plugin_network_sim  → network.sim
 //   plugin_render_vbpool → render.vbpool
 //   plugin_render_angle  → render.angle
 // Host still calls RegisterBuiltinPlugins before DynamicPluginLoader so the
