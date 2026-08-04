@@ -6,9 +6,7 @@ option(ENABLE_STEAM_SUPPORT "Enable Steam support" ON)
 set(SOURCES
         DontStarveInjector.cpp
         lua_fake.cpp
-        gameio.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
-        ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
@@ -210,7 +208,9 @@ set(PLUGIN_CORE_VM_SOURCES
     plugins/plugin_core_vm/GameLuaModule.cpp
     plugins/plugin_core_vm/GameLuaInjectFramework.c
     plugins/plugin_core_vm/lua_debugger_helper.cpp
+    plugins/plugin_core_vm/gameio.cpp
     ${DONTSTARVEINJECTOR_UTIL_DIR}/lua_io2.cpp
+    ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
 )
 if (MSVC)
     list(APPEND PLUGIN_CORE_VM_SOURCES
@@ -220,12 +220,14 @@ endif()
 
 ds_add_dynamic_plugin(plugin_core_vm ${PLUGIN_CORE_VM_SOURCES})
 add_dependencies(plugin_core_vm GameLuaInjectFramework create_missfuncs)
+
 target_link_libraries(plugin_core_vm PRIVATE
     spdlog::spdlog
     nlohmann_json::nlohmann_json
     function_relocation
     range-v3::meta range-v3::concepts range-v3::range-v3
     ZLIB::ZLIB
+    libzip::zip
     SLikeNet
 )
 if (MSVC)

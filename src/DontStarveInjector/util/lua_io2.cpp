@@ -11,7 +11,7 @@
 #include <string.h>
 
 #include "GameLua.hpp"
-#include "../gameio.h"
+#include "gameio.h"  // plugins/plugin_core_vm (via Injector PUBLIC include)
 
 #undef LUA_FILEHANDLE
 #define LUA_FILEHANDLE "IO2FILE*"

@@ -3,6 +3,14 @@
 #include "util/inlinehook.hpp"
 #include "GameLua.hpp"
 #include "core/GameLuaContextResolve.hpp"
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#else
+#include <dlfcn.h>
+#endif
 #include <frida-gum.h>
 #include <list>
 #include <string>
@@ -45,8 +53,43 @@ struct Profiler {
     lua_State *L;
 };
 static thread_local Profiler profiler;
-extern int (*lua_gc_func)(void *L, int, int);
-extern int fullgc_deferred; /* from gameio.cpp */
+// fullgc state lives in plugin_core_vm (gameio). Resolve dynamically; no-op when VM absent.
+static void *CoreVmGetProc(const char *name) {
+#ifdef _WIN32
+    HMODULE m = GetModuleHandleA("plugin_core_vm.dll");
+    if (!m) return nullptr;
+    return reinterpret_cast<void *>(GetProcAddress(m, name));
+#else
+    return dlsym(RTLD_DEFAULT, name);
+#endif
+}
+static int *ResolveFullgcDeferred() {
+    using Getter = int *(*)();
+    static int *cached = []() -> int * {
+        auto g = reinterpret_cast<Getter>(CoreVmGetProc("ds_core_vm_fullgc_deferred_ptr"));
+        return g ? g() : nullptr;
+    }();
+    return cached;
+}
+static int (*ResolveLuaGcFunc())(void *L, int, int) {
+    using LuaGc = int (*)(void *, int, int);
+    using Getter = LuaGc *(*)();
+    auto g = reinterpret_cast<Getter>(CoreVmGetProc("ds_core_vm_lua_gc_func_ptr"));
+    if (!g) return nullptr;
+    LuaGc *pp = g();
+    return pp ? *pp : nullptr;
+}
+static int fullgc_deferred_get() {
+    if (auto *p = ResolveFullgcDeferred()) return *p;
+    return 0;
+}
+static void fullgc_deferred_set(int v) {
+    if (auto *p = ResolveFullgcDeferred()) *p = v;
+}
+static int fullgc_deferred_inc() {
+    if (auto *p = ResolveFullgcDeferred()) return ++(*p);
+    return 0;
+}
 int frame_gc_time_ns = 0;
 static bool enable_frame_gc = false; 
 static bool tracy_active = 0;
@@ -89,7 +132,7 @@ static int64_t hook_profiler_push(void *self, const char *zone, const char *sour
     bool is_connected = tracy_active;
     auto &p = profiler;
     if ("Update"sv == zone) {
-        if (frame_gc_time_ns || fullgc_deferred) {
+        if (frame_gc_time_ns || fullgc_deferred_get()) {
             static struct {
                 std::atomic_bool vaild;
                 std::mutex mtx;
@@ -147,7 +190,7 @@ struct ProfilerHooker {
                 int left_time_ns = frame_gc_time_ns - used_time;
                 if (used_time > frame_max_time_ns) {
                     left_time_ns = 0;
-                } else if (left_time_ns > frame_good_max_time_ns && fullgc_deferred == 0) {
+                } else if (left_time_ns > frame_good_max_time_ns && fullgc_deferred_get() == 0) {
                     left_time_ns = 0;
                 }
                 p.start_time_ns = 0;
@@ -180,15 +223,16 @@ struct ProfilerHooker {
         switch (luatype)
         {
         case GameLuaType::jit: {
-            lua_gc_func(L, LUA_GCSTEPTIME, int(left_time * 0.8f));
-            lua_gc_func(L, LUA_GCSTEP2, 0);
+            if (auto *gc = ResolveLuaGcFunc()) gc(L, LUA_GCSTEPTIME, int(left_time * 0.8f));
+            if (auto *gc = ResolveLuaGcFunc()) gc(L, LUA_GCSTEP2, 0);
             static int lua_gccycle_count = 0;
-            auto lua_gccycle = lua_gc_func(L, LUA_GCCYCLE, 0);
+            auto *gc = ResolveLuaGcFunc();
+            auto lua_gccycle = gc ? gc(L, LUA_GCCYCLE, 0) : 0;
             if (lua_gccycle_count != lua_gccycle) {
                 lua_gccycle_count = lua_gccycle;
-                fullgc_deferred++;
-                if (fullgc_deferred > 2) {
-                    fullgc_deferred = 0; /* 两个周期完成，退出延迟模式 */
+                fullgc_deferred_inc();
+                if (fullgc_deferred_get() > 2) {
+                    fullgc_deferred_set(0); /* 两个周期完成，退出延迟模式 */
                 }
             }
             break;
@@ -199,7 +243,7 @@ struct ProfilerHooker {
         default:
             now += left_time;
             do {
-                lua_gc_func(L, LUA_GCSTEP, 0);
+                if (auto *gc = ResolveLuaGcFunc()) gc(L, LUA_GCSTEP, 0);
             } while (get_time_ns() < now);
             break;
         }
