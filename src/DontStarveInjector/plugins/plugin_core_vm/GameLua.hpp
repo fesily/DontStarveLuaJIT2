@@ -8,15 +8,7 @@
 #include <lua.hpp>
 #include <lj_arch.h>
 #include "GameLuaType.hpp"
-
-enum class LUA_EVENT {
-    new_state,
-    close_state,
-    call_lua_gc,
-};
-
-// Defined in Injector (forwards to plugin_debug_profiler when staged).
-DS_INJECTOR_CXX_API void lua_event_notifyer(LUA_EVENT ev, lua_State *L);
+#include "core/LuaEvent.hpp"
 
 /*
     this is a struct to hold all lua export functions

@@ -12,4 +12,5 @@ target_compile_definitions(plugin_sim_lagcomp PRIVATE
     SPDLOG_COMPILED_LIB
     SPDLOG_FMT_EXTERNAL)
 target_include_directories(plugin_sim_lagcomp PRIVATE
+    ${LUAJIT_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR})

@@ -43,7 +43,7 @@
 
 
 #if !ONLY_LUA51
-#include <lua.hpp>
+#include <lua.h>
 #else
 extern "C" {
 #include <lua.h>

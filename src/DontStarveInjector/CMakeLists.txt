@@ -115,37 +115,39 @@ endif()
 target_link_libraries(Injector PRIVATE function_relocation)
 target_include_directories(Injector PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
-if (NOT ENABLE_ONLY_LUA51)
-    target_include_directories(Injector PUBLIC ${LUAJIT_INCLUDE_DIR})
-    add_dependencies(Injector ${LUAJIT_LIBRARIES})
-    # Config cascade (GameJitModConfigCascade) uses sol → needs a real Lua C API.
-    # GameDbg_* lua_* re-exports moved to plugin_core_vm; link LuaJIT into Injector for cascade.
-    target_link_libraries(Injector PRIVATE ${LUAJIT_LIBRARIES})
-elseif (ENABLE_FAKE_API)
-    target_include_directories(Injector PUBLIC ${LUA_INCLUDE_DIR})
-    target_link_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/lua51/$<IF:$<CONFIG:Debug>,Debug,Release>)
-    add_dependencies(Injector ${LUA_LIBRARIES})
-    #target_link_libraries(Injector PRIVATE ${LUA_LIBRARIES})
-else ()
-    target_include_directories(Injector PUBLIC ${LUA_INCLUDE_DIR})
-    add_dependencies(Injector liblua)
-    #target_link_libraries(Injector PRIVATE liblua)
-endif ()
+# L0 config cascade (GameJitModConfigCascade + stock sol2) uses a dedicated PUC
+# Lua 5.1 VM (src/lua51original → liblua_static). Do NOT link game LuaJIT here:
+# core.vm owns the game VM; sol in GameLuaModule is GameDbg-specialized and lives
+# only in plugin_core_vm.
+#
+# Headers: PRIVATE lua51original so Injector TUs (sol cascade, lua_event_notifyer
+# incomplete type) see stock lua.h — not LUAJIT_INCLUDE_DIR (that stays on core.vm).
+target_include_directories(Injector PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/lua51original/src
+    ${CMAKE_BINARY_DIR}/src/lua51original  # generated luaconf.h if needed
+)
+# Prefer build-tree include for configured luaconf.h
+if (TARGET liblua_static)
+    target_link_libraries(Injector PRIVATE liblua_static)
+    add_dependencies(Injector liblua_static)
+else()
+    message(FATAL_ERROR "liblua_static (src/lua51original) required for L0 GameJitModConfig cascade")
+endif()
 
-if (MSVC)
-    target_link_options(Injector PUBLIC "/NODEFAULTLIB:LIBCMT")
+# Optional legacy switches: macros only — do not re-link game JIT into L0.
+if (ENABLE_ONLY_LUA51)
+    target_compile_definitions(Injector PUBLIC ENABLE_ONLY_LUA51)
 endif ()
-
 if (ENABLE_FAKE_API)
     target_compile_definitions(Injector PUBLIC ENABLE_FAKE_API)
+    target_include_directories(Injector PRIVATE ${LUA_INCLUDE_DIR})
 endif ()
-
 if (ENABLE_USE_LISTENER)
     target_compile_definitions(Injector PUBLIC ENABLE_USE_LISTENER)
 endif ()
 
-if (ENABLE_ONLY_LUA51)
-    target_compile_definitions(Injector PUBLIC ENABLE_ONLY_LUA51)
+if (MSVC)
+    target_link_options(Injector PUBLIC "/NODEFAULTLIB:LIBCMT")
 endif ()
 
 install(TARGETS Injector RUNTIME DESTINATION .)

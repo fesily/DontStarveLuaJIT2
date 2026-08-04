@@ -701,7 +701,7 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int 
     return 0;
 }
 
-#include "GameLua.hpp"
+#include "core/LuaEvent.hpp"
 
 // Frame budget for FrameGC lives in Injector; plugin reads via getter (no mutable global import).
 DONTSTARVEINJECTOR_GAME_API float DS_LUAJIT_get_frame_time_s(void) {
