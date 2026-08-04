@@ -124,3 +124,5 @@ EXPORTS
     luaopen_table=GameDbg_luaopen_table
     lua_pushfstring=GameDbg_lua_pushfstring
     luaL_error=GameDbg_luaL_error
+    ds_core_vm_get_game_lua_context
+    ds_core_vm_run_signature_and_replace

@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include "GameLua.hpp"
+#include "core/GameLuaContextResolve.hpp"
 
 #include <cstdint>
 #include <cmath>
@@ -59,7 +60,12 @@ static char* UnwrapEntity(void* ud) {
 }
 
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_entity_get_raw_ptr(lua_State* L) {
-    auto& api = GetGameLuaContext().api;
+    auto *ctx = ds::core_vm::TryGetGameLuaContext();
+    if (!ctx) {
+        // core.vm not loaded — no-op (cannot push via Lua API without context).
+        return 0;
+    }
+    auto& api = ctx->api;
     if (api._lua_type(L, 1) != LUA_TUSERDATA) {
         api._lua_pushnil(L);
         return 1;

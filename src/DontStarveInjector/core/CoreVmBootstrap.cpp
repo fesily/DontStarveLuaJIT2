@@ -150,16 +150,20 @@ RunSigReplaceFn GetRunSignatureAndReplaceFn() {
 }
 
 bool TryRunSignatureAndReplace(const BootstrapArgs &args) {
-    if (auto *fn = GetRunSignatureAndReplaceFn()) {
-        if (fn(&args)) {
-            return true;
-        }
-        // V-S1 stub returns false intentionally; fall back while impl still in Injector.
+    auto *fn = GetRunSignatureAndReplaceFn();
+    if (!fn) {
         std::fprintf(stderr,
-                     "[core.vm] ds_core_vm_run_signature_and_replace returned false — "
-                     "using legacy Injector signature/replace\n");
+                     "[core.vm] ds_core_vm_run_signature_and_replace missing — "
+                     "skipping VM signature/replace\n");
+        return false;
     }
-    return LegacySignatureAndReplaceInInjector(args);
+    if (fn(&args)) {
+        return true;
+    }
+    std::fprintf(stderr,
+                 "[core.vm] ds_core_vm_run_signature_and_replace returned false — "
+                 "skipping VM signature/replace\n");
+    return false;
 }
 
 } // namespace ds::core_vm

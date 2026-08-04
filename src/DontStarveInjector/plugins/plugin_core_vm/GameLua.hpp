@@ -15,6 +15,9 @@ enum class LUA_EVENT {
     call_lua_gc,
 };
 
+// Defined in Injector (GameProfilerHook) when profiler is linked; core.vm imports it.
+DS_INJECTOR_CXX_API void lua_event_notifyer(LUA_EVENT ev, lua_State *L);
+
 /*
     this is a struct to hold all lua export functions
     so we can replace them with our own implementation
@@ -125,7 +128,12 @@ protected:
     virtual ~GameLuaContext() = default;
 };
 
-DS_INJECTOR_CXX_API GameLuaContext &GetGameLuaContext();
+// Implemented/exported by plugin_core_vm only (optional module). Prefer ds_core_vm_get_game_lua_context C ABI.
+GameLuaContext &GetGameLuaContext();
+
+// Stable C ABI — resolve via GetProcAddress("ds_core_vm_get_game_lua_context") from plugin_core_vm.
+// Definition lives in plugin_core_vm; do not hard-link from L0/feature plugins.
+extern "C" GameLuaContext &ds_core_vm_get_game_lua_context();
 
 void ReplaceLuaApi(GameLuaType type, const char *shared_library_name);
 void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures, const ListExports_t &exports);

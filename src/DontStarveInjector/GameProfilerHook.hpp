@@ -2,6 +2,7 @@
 #include "MemorySignature.hpp"
 #include "util/inlinehook.hpp"
 #include "GameLua.hpp"
+#include "core/GameLuaContextResolve.hpp"
 #include <frida-gum.h>
 #include <list>
 #include <string>
@@ -52,9 +53,11 @@ static bool tracy_active = 0;
 extern float frame_time_s;
 constexpr auto frame_gc_time_default_ns = 10 * 1e3;
 DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable) {
-    if (GetGameLuaContext().luaType == GameLuaType::jit_gen) {
-        frame_gc_time_ns = 0;
-        return false;
+    if (auto *ctx = ds::core_vm::TryGetGameLuaContext()) {
+        if (ctx->luaType == GameLuaType::jit_gen) {
+            frame_gc_time_ns = 0;
+            return false;
+        }
     }
     enable_frame_gc = enable;
     frame_gc_time_ns = frame_time_s * 1e9;
@@ -165,7 +168,11 @@ struct ProfilerHooker {
         return 0;
     }
     static void TryDoGC(void *L, int left_time, uint64_t now) {
-        auto luatype = GetGameLuaContext().luaType;
+        auto *gctx = ds::core_vm::TryGetGameLuaContext();
+        if (!gctx) {
+            return;
+        }
+        auto luatype = gctx->luaType;
         ZoneScopedN("frame gc");
         if (luatype == GameLuaType::jit_gen) {
             return;
@@ -200,7 +207,7 @@ struct ProfilerHooker {
 };
 
 extern void gum_luajit_profiler_update_thread_id(lua_State *target_L, GumThreadId id);
-void lua_event_notifyer(LUA_EVENT ev, lua_State *L) {
+DS_INJECTOR_CXX_API void lua_event_notifyer(LUA_EVENT ev, lua_State *L) {
     switch (ev) {
         case LUA_EVENT::new_state:
             profiler.L = 0;

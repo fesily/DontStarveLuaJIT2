@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.15)
 
 set(SOURCES
         main.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/DontStarveSignature.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/SignatureJson.cpp
+        ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/DontStarveSignature.cpp
+        ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/SignatureJson.cpp
         ${DONTSTARVEINJECTOR_ROOT}/GameSignature.cpp
         ${DONTSTARVEINJECTOR_ROOT}/config.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp

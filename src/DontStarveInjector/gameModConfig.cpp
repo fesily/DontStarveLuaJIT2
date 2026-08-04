@@ -670,7 +670,7 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_network_tick(char upload_tick,
     }
     return 0;
 }
-#include "GameProfilerHook.hpp"
+
 
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int tt) {
     if (!mod_directory) return 0;
@@ -697,6 +697,8 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int 
 #endif
     return 0;
 }
+
+#include "GameProfilerHook.hpp"
 
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
     static std::atomic_char replaced;

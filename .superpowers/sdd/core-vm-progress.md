@@ -11,3 +11,9 @@ Base HEAD at start: f2cb4ce
 - Task 4: pending (GameInjector open)
 - Task 5: pending (degradation matrix)
 - Task 6: pending (docs)
+Task 2: complete (commits 3292039..56834d5, review clean)
+
+## Task 3 (V-S2+V-S3) — DONE
+
+Signature+GameLua in plugin_core_vm; no legacy fallback; L-G PASS.
+See core-vm-task-3-report.md.

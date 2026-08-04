@@ -18,13 +18,10 @@ bool EnsureCoreVmModuleLoaded();
 using RunSigReplaceFn = bool (*)(const BootstrapArgs *args);
 RunSigReplaceFn GetRunSignatureAndReplaceFn();
 
-// Full signature + ReplaceLuaModule path still owned by Injector until Task 3.
-// Returns false only on hard failures (showError already called where appropriate).
-bool LegacySignatureAndReplaceInInjector(const BootstrapArgs &args);
-
-// Ensure module (optional), call export when present; false from stub falls back
-// to LegacySignatureAndReplaceInInjector while implementation remains in Injector.
-// Returns false only when the effective path hard-fails.
+// Ensure module (optional), call export when present.
+// If export is null → log skip, return false (NO in-process legacy fallback).
+// If export returns false → log soft skip, return false.
+// Hard failures inside the plugin call showError (exit) themselves.
 bool TryRunSignatureAndReplace(const BootstrapArgs &args);
 
 } // namespace ds::core_vm

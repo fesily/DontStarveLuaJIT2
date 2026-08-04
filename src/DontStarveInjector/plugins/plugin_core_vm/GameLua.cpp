@@ -208,7 +208,6 @@ struct GameLuaInjectorFramework {
 };
 static GameLuaInjectorFramework gameLuaInjectorFramework;
 
-void lua_event_notifyer(LUA_EVENT, lua_State *);
 static std::string wrapper_game_main_buffer(lua_State *L, std::string_view buffer);
 struct GameLuaContextImpl : GameLuaContext {
     GameLuaContextImpl(const char *sharedLibraryName, GameLuaType type)
@@ -984,6 +983,18 @@ GameLuaContext &GetGameLuaContext() {
     }
     return *GameLuaContextImpl::currentCtx;
 }
+
+// Stable C export for plugins / L0 that cannot hard-link C++ mangled GetGameLuaContext.
+// Windows: exported via GameLua.def; non-Windows: visibility default.
+extern "C" {
+#if !defined(_WIN32)
+__attribute__((visibility("default")))
+#endif
+GameLuaContext &ds_core_vm_get_game_lua_context() {
+    return GetGameLuaContext();
+}
+}
+
 
 namespace {
 struct VmSwitchCoordinator {

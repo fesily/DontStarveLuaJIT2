@@ -5,28 +5,21 @@ option(ENABLE_STEAM_SUPPORT "Enable Steam support" ON)
 
 set(SOURCES
         DontStarveInjector.cpp
-        DontStarveSignature.cpp
         lua_fake.cpp
         gameio.cpp
-        SignatureJson.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
-        ${DONTSTARVEINJECTOR_UTIL_DIR}/lua_io2.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/lua51_object.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/PersistentString.cpp
         gameModConfig.cpp
+        GameJitModConfigCascade.cpp
         luajit_config.cpp
         game_info.cpp
-        GameLua.cpp
-        GameLuaModule.cpp
         GameSteam.cpp
-        GameSignature.cpp
         config.cpp
-        GameLuaInjectFramework.c
-        lua_debugger_helper.cpp
         core/PluginHost.cpp
         core/PluginOptionRules.cpp
         core/ConfigSchema.cpp
@@ -46,9 +39,7 @@ if (NOT MSVC)
     # GameForkSave lives in plugin_save_fork (all platforms).
 else()
     list(APPEND SOURCES
-        Progress.cpp
         #profiler.cpp
-        GameLua.def
         # Re-export static frida-gum symbols from Injector.dll so plugins can
         # call gum_* without linking a second Gum copy (official devkit is static-only).
         FridaGum.def
@@ -106,15 +97,6 @@ endif()
 add_dependencies(Injector create_missfuncs)
 add_dependencies(Injector create_modinfo_hpp)
 
-add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.c
-        COMMAND ${PYTHON_EXECUTABLE_NAME} "../../tools/lua2c.py" "${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.lua" "${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.c"
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.lua
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-add_custom_target(GameLuaInjectFramework DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/GameLuaInjectFramework.c)
-add_dependencies(Injector GameLuaInjectFramework)
-
 target_include_directories(Injector PRIVATE ${SOL2_INCLUDE_DIRS})
 target_include_directories(Injector PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
 target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})
@@ -139,7 +121,9 @@ target_include_directories(Injector PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 if (NOT ENABLE_ONLY_LUA51)
     target_include_directories(Injector PUBLIC ${LUAJIT_INCLUDE_DIR})
     add_dependencies(Injector ${LUAJIT_LIBRARIES})
-    #target_link_libraries(Injector PRIVATE ${LUAJIT_LIBRARIES})
+    # Config cascade (GameJitModConfigCascade) uses sol → needs a real Lua C API.
+    # GameDbg_* lua_* re-exports moved to plugin_core_vm; link LuaJIT into Injector for cascade.
+    target_link_libraries(Injector PRIVATE ${LUAJIT_LIBRARIES})
 elseif (ENABLE_FAKE_API)
     target_include_directories(Injector PUBLIC ${LUA_INCLUDE_DIR})
     target_link_directories(Injector PUBLIC ${PROJECT_SOURCE_DIR}/src/lua51/$<IF:$<CONFIG:Debug>,Debug,Release>)
@@ -205,14 +189,74 @@ target_compile_definitions(plugin_save_fork PRIVATE
 target_include_directories(plugin_save_fork PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/plugins/plugin_save_fork)
 
-# core.vm — optional VM/signature module (V-S1 stub; all platforms, no Gum/ANGLE).
-ds_add_dynamic_plugin(plugin_core_vm
-    plugins/plugin_core_vm/plugin_core_vm.cpp)
+# core.vm — optional Signature + GameLua (V-S2+V-S3). All platforms.
+# Gum symbols come from Injector re-exports (FridaGum.def on MSVC).
+set(PLUGIN_CORE_VM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/plugins/plugin_core_vm)
+add_custom_command(OUTPUT ${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.c
+        COMMAND ${PYTHON_EXECUTABLE_NAME} "${PROJECT_SOURCE_DIR}/tools/lua2c.py"
+                "${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.lua"
+                "${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.c"
+        DEPENDS ${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.lua
+        WORKING_DIRECTORY ${PLUGIN_CORE_VM_DIR}
+)
+add_custom_target(GameLuaInjectFramework DEPENDS ${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.c)
+
+set(PLUGIN_CORE_VM_SOURCES
+    plugins/plugin_core_vm/plugin_core_vm.cpp
+    plugins/plugin_core_vm/GameLua.cpp
+    plugins/plugin_core_vm/DontStarveSignature.cpp
+    plugins/plugin_core_vm/SignatureJson.cpp
+    GameSignature.cpp
+    GameLuaModule.cpp
+    plugins/plugin_core_vm/GameLuaInjectFramework.c
+    plugins/plugin_core_vm/lua_debugger_helper.cpp
+    ${DONTSTARVEINJECTOR_UTIL_DIR}/lua_io2.cpp
+)
+if (MSVC)
+    list(APPEND PLUGIN_CORE_VM_SOURCES
+        plugins/plugin_core_vm/GameLua.def
+        Progress.cpp)
+endif()
+
+ds_add_dynamic_plugin(plugin_core_vm ${PLUGIN_CORE_VM_SOURCES})
+add_dependencies(plugin_core_vm GameLuaInjectFramework create_missfuncs)
 target_link_libraries(plugin_core_vm PRIVATE
-    spdlog::spdlog)
+    spdlog::spdlog
+    nlohmann_json::nlohmann_json
+    function_relocation
+    range-v3::meta range-v3::concepts range-v3::range-v3
+    ZLIB::ZLIB
+    SLikeNet
+)
+if (MSVC)
+    target_link_options(plugin_core_vm PRIVATE
+        "/NODEFAULTLIB:frida-gum.lib")
+endif()
 target_compile_definitions(plugin_core_vm PRIVATE
+    GUM_STATIC=1
     SPDLOG_COMPILED_LIB
-    SPDLOG_FMT_EXTERNAL)
+    SPDLOG_FMT_EXTERNAL
+    # Import Injector C++ APIs (Hook, loadlib, InjectorCtx, ...).
+    DS_INJECTOR_CONSUMER=1
+    # Export GAME_API implemented in this module (GameDbg_*, DS_LUAJIT_set_vm_type, ...).
+    DS_CORE_VM_BUILD=1
+)
+if (MSVC)
+    target_compile_definitions(plugin_core_vm PRIVATE SUPPORT_PROGRESS)
+endif()
+# Headers for moved TUs + L0 shared headers (config, GameLuaType, GameSignature, ...).
+target_include_directories(plugin_core_vm PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PLUGIN_CORE_VM_DIR}
+    ${FRIDA_GUM_INCLUDE_DIR}
+    ${FUNCTION_RELOCATION_INCLUDE_DIR}
+    ${SOL2_INCLUDE_DIRS}
+    ${LUAJIT_INCLUDE_DIR}
+    ${PLF_HIVE_INCLUDE_DIRS}
+    ${PROJECT_SOURCE_DIR}/3rd
+)
+# GameProfilerHook / lagcomp / remaining Injector TUs still include GameLua.hpp etc.
+target_include_directories(Injector PUBLIC ${PLUGIN_CORE_VM_DIR})
 
 # Gum-using dynamic plugins need Injector to re-export static frida-gum symbols.
 # Windows: FridaGum.def. Linux/macOS: not implemented — skip targets (source also

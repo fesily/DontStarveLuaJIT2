@@ -42,20 +42,34 @@ constexpr auto lua51_name = "liblua51."
 constexpr auto game_name = "dontstarve_";
 
 #ifdef _WIN32
-#define DONTSTARVEINJECTOR_API extern "C" __declspec(dllexport)
 #  if defined(DONTSTARVEINJECTOR_BUILD)
+#    define DONTSTARVEINJECTOR_API extern "C" __declspec(dllexport)
 #    define DS_INJECTOR_CXX_API __declspec(dllexport)
 #  elif defined(DS_PLUGIN_HOST_STATIC)
+#    define DONTSTARVEINJECTOR_API extern "C"
 #    define DS_INJECTOR_CXX_API
 #  else
+#    define DONTSTARVEINJECTOR_API extern "C" __declspec(dllimport)
 #    define DS_INJECTOR_CXX_API __declspec(dllimport)
 #  endif
 #else
-#define DONTSTARVEINJECTOR_API extern "C" __attribute__((visibility("default")))
-#define DS_INJECTOR_CXX_API __attribute__((visibility("default")))
+#  if defined(DONTSTARVEINJECTOR_BUILD)
+#    define DONTSTARVEINJECTOR_API extern "C" __attribute__((visibility("default")))
+#    define DS_INJECTOR_CXX_API __attribute__((visibility("default")))
+#  else
+#    define DONTSTARVEINJECTOR_API extern "C"
+#    define DS_INJECTOR_CXX_API
+#  endif
 #endif
 
-#define DONTSTARVEINJECTOR_GAME_API DONTSTARVEINJECTOR_API
+// GAME_API: feature exports may live in Injector or any plugin DLL.
+// Always export when compiling a DLL that defines these entry points (historical).
+// Callers resolve via GetProcAddress / delay-load rather than hard dllimport.
+#if defined(_WIN32)
+#  define DONTSTARVEINJECTOR_GAME_API extern "C" __declspec(dllexport)
+#else
+#  define DONTSTARVEINJECTOR_GAME_API extern "C" __attribute__((visibility("default")))
+#endif
 
 #if __linux__
 
@@ -69,18 +83,18 @@ constexpr auto game_name = "dontstarve_";
 #define LUA_DEBUG_CORE_DEBUGGER "LUA_DEBUG_CORE_DEBUGGER"
 
 struct InjectorConfig {
-    static const char * getEnvOrCmdValue(const char *key, char *value, size_t value_size);
+    static DS_INJECTOR_CXX_API const char * getEnvOrCmdValue(const char *key, char *value, size_t value_size);
     struct EnvOrCmdOptFlag {
         const char *key;
         mutable bool has_cached = false;
         mutable bool flag = false;
-        operator bool() const;
+        DS_INJECTOR_CXX_API operator bool() const;
     };
     struct EnvOrCmdOptValue {
         const char *key;
         mutable bool has_cached = false;
         mutable char value[256] = {};
-        operator const char*() const;
+        DS_INJECTOR_CXX_API operator const char*() const;
     };
     template<typename T, T default_value = 0>
     struct EnvOrCmdOptIntValue {
@@ -115,7 +129,7 @@ struct InjectorConfig {
 #undef ENV_OR_CMD_OPT_VALUE
 #undef ENV_OR_CMD_OPT_FLAG
 
-    static InjectorConfig *instance();
+    static DS_INJECTOR_CXX_API InjectorConfig *instance();
 };
 
 template<typename T, T default_value>

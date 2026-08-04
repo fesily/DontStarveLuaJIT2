@@ -3,16 +3,10 @@
 
 #include "config.hpp"
 #include "util/inlinehook.hpp"
-#include "GameSignature.hpp"
-#include "DontStarveSignature.hpp"
 #include "util/platform.hpp"
 #include "ctx.hpp"
-#include "ModuleSections.hpp"
-#include "disasm.h"
-#include "ScanCtx.hpp"
-#include "ProcessMutex.hpp"
+#include "MemorySignature.hpp"
 #include "gameModConfig.hpp"
-#include "GameLua.hpp"
 #include "GameSteam.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginConfigBridge.hpp"
@@ -45,9 +39,7 @@
 #include <cstdio>
 
 
-#if USE_LISTENER
 #include <frida-gum.h>
-#endif
 #include <spdlog/sinks/basic_file_sink.h>
 
 
@@ -76,51 +68,6 @@ void wait_for_debugger_before_inject() {
 #endif
 }
 
-#ifdef _WIN32
-namespace {
-using GetBuildTypeFn = const char *(*)(void *self);
-GetBuildTypeFn original_get_build_type = nullptr;
-
-const char *forced_get_build_type(void *self) {
-    (void) self;
-    return "dev";
-}
-
-uintptr_t find_build_type_function(const function_relocation::ModuleSections &module_main) {
-    function_relocation::MemorySignature build_type_signature{"48 8B 05 ?? ?? ?? ?? C3", 0};
-    build_type_signature.only_one = false;
-    build_type_signature.log = false;
-    build_type_signature.prot_flag = GUM_PAGE_EXECUTE;
-    if (!build_type_signature.scan(module_main.text.base_address, module_main.text.size)) {
-        return 0;
-    }
-
-    for (const auto candidate : build_type_signature.targets) {
-        auto insn = function_relocation::disasm::get_insn(reinterpret_cast<void *>(candidate), 8);
-        if (!insn || insn->detail->x86.op_count != 2) {
-            continue;
-        }
-
-        const auto &x86 = insn->detail->x86;
-        if (x86.operands[0].type != X86_OP_REG || x86.operands[1].type != X86_OP_MEM) {
-            continue;
-        }
-
-        const auto string_ptr_address = function_relocation::read_operand_rip_mem(*insn, x86.operands[1]);
-        if (!string_ptr_address || !module_main.in_rodata(*reinterpret_cast<uintptr_t *>(string_ptr_address))) {
-            continue;
-        }
-
-        const auto build_type = reinterpret_cast<const char *>(*reinterpret_cast<uintptr_t *>(string_ptr_address));
-        if (build_type && std::string_view{build_type} == "release") {
-            return candidate;
-        }
-    }
-
-    return 0;
-}
-} // namespace
-#endif
 
 G_NORETURN void showError(const std::string_view &msg) {
 #ifdef _WIN32
@@ -131,46 +78,6 @@ G_NORETURN void showError(const std::string_view &msg) {
     std::exit(1);
 }
 
-
-void replace_game_branch_flag_to_dev(const std::string &mainPath) {
-#ifdef _WIN32
-    if (!InjectorConfig::instance()->AppVersionDevPatch) {
-        return;
-    }
-
-    static bool patched = false;
-    if (patched) {
-        return;
-    }
-
-    function_relocation::ModuleSections moduleMain{};
-    if (!function_relocation::get_module_sections(mainPath.c_str(), moduleMain)) {
-        spdlog::error("failed to get module sections for {}", mainPath);
-        return;
-    }
-
-    const auto target = find_build_type_function(moduleMain);
-    if (!target) {
-        spdlog::error("failed to locate GetBuildType function by binary signature");
-        return;
-    }
-
-    auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
-    auto replace_result = gum_interceptor_replace(
-        interceptor,
-        reinterpret_cast<void *>(target),
-        reinterpret_cast<void *>(&forced_get_build_type),
-        nullptr,
-        reinterpret_cast<void **>(&original_get_build_type));
-    if (replace_result != GUM_REPLACE_OK) {
-        spdlog::error("failed to replace GetBuildType at {}: {}", reinterpret_cast<void *>(target), static_cast<int>(replace_result));
-        return;
-    }
-
-    patched = true;
-    spdlog::info("patched GetBuildType at {} to force dev build type", reinterpret_cast<void *>(target));
-#endif
-}
 
 static bool server_is_master() {
     return std::string_view{get_cmd()}.contains("DST_Master");
@@ -240,49 +147,8 @@ static bool VmPathEnabled(bool isClient) {
     return true;
 }
 
-// Full VM path still owned by Injector (V-S1). Hard failures call showError (exit).
-// Soft misses (e.g. no luamodule base) log and return false so inject can continue.
-bool ds::core_vm::LegacySignatureAndReplaceInInjector(const BootstrapArgs &args) {
-    auto lua51 = loadlib(lua51_name);
-    if (!lua51) {
-        showError("can't load lua51");
-        return false;
-    }
-    auto defer1 = create_defer([&lua51]() {
-        if (lua51)
-            unloadlib(lua51);
-    });
-
-    spdlog::info("main module base address:{}", (void *) gum_module_get_range(gum_process_get_main_module())->base_address);
-    std::string mainPathOwned;
-    const char *mainPathC = args.main_path;
-    if (!mainPathC || !*mainPathC) {
-        mainPathOwned = getExePath().string();
-        mainPathC = mainPathOwned.c_str();
-    }
-    const std::string mainPath{mainPathC};
-
-    if (luaModuleSignature.scan(mainPath.c_str()) == 0) {
-        spdlog::error("can't find luamodule base address");
-        return false;
-    }
-    ProcessMutex mtx("DontStarveInjectorSignature");
-    std::lock_guard guard{mtx};
-    const uintptr_t lua_base =
-        args.lua_module_base != 0 ? args.lua_module_base : luaModuleSignature.target_address;
-    auto res = SignatureUpdater::create_or_update(args.is_client, lua_base);
-    if (!res) {
-        showError(res.error());
-        return false;
-    }
-    unloadlib(lua51);
-    lua51 = nullptr;
-    auto &val = res.value();
-    ReplaceLuaModule(mainPath, val.signatures, val.exports);
-    replace_game_branch_flag_to_dev(mainPath);
-    return true;
-}
-
+// VM signature/replace is owned by plugin_core_vm (ds_core_vm_run_signature_and_replace).
+// No in-process legacy fallback after Task 3.
 
 extern "C" void LoadGameModConfig();
 DONTSTARVEINJECTOR_API void Inject(bool isClient) {
@@ -333,13 +199,13 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     if (VmPathEnabled(isClient)) {
         ds::core_vm::BootstrapArgs args{};
         args.is_client = isClient;
-        // lua_module_base filled inside legacy after signature scan; pass 0 here.
+        // lua_module_base / main_path resolved inside plugin when zero/null.
         args.lua_module_base = 0;
         args.main_path = nullptr;
         if (!ds::core_vm::TryRunSignatureAndReplace(args)) {
-            // Hard failures already called showError inside legacy; soft skip only
-            // when legacy itself returned false without aborting inject further.
-            spdlog::warn("core.vm signature/replace path failed — continuing inject");
+            // Hard failures call showError inside plugin_core_vm; soft skip when
+            // module/export missing or soft miss (no luamodule base).
+            spdlog::warn("core.vm signature/replace path skipped — continuing inject");
         }
     } else {
         spdlog::info("Lua VM path disabled — skipping signature/replace; native plugins continue");

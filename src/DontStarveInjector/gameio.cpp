@@ -1,4 +1,5 @@
 ﻿#include "config.hpp"
+#include "gameio.h"
 #include "frida-gum.h"
 
 #include "util/gum_platform.hpp"

@@ -1057,3 +1057,4 @@ EXPORTS
     gum_x86_writer_set_target_abi
     gum_x86_writer_set_target_cpu
     gum_x86_writer_unref
+    g_error_free

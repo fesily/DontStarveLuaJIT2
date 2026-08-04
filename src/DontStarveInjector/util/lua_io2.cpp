@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../GameLua.hpp"
+#include "GameLua.hpp"
 #include "../gameio.h"
 
 #undef LUA_FILEHANDLE
