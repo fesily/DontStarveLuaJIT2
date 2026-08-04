@@ -73,7 +73,7 @@ std::filesystem::path injector_module_dir() {
 }
 #else
 void *load_library(const std::filesystem::path &path) {
-    return dlopen(path.c_str(), RTLD_NOW);
+    return dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
 }
 
 void *lookup_symbol(void *handle, const char *name) {

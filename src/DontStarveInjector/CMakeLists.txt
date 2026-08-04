@@ -42,12 +42,9 @@ if (ENABLE_STEAM_SUPPORT)
 endif ()
 
 if (NOT MSVC)
-    list(APPEND SOURCES
-        GameForkSave.cpp
-    )
+    # GameForkSave lives in plugin_save_fork (all platforms).
 else()
     list(APPEND SOURCES
-        GameForkSave.cpp
         Progress.cpp
         #profiler.cpp
         GameLua.def
@@ -195,6 +192,18 @@ endfunction()
 
 ds_add_dynamic_plugin(plugin_dummy
     plugins/plugin_dummy/plugin_dummy.cpp)
+
+# save.fork — no Frida Gum; builds on all platforms (Win clone + Linux fork).
+ds_add_dynamic_plugin(plugin_save_fork
+    plugins/plugin_save_fork/plugin_save_fork.cpp
+    plugins/plugin_save_fork/GameForkSave.cpp)
+target_link_libraries(plugin_save_fork PRIVATE
+    spdlog::spdlog)
+target_compile_definitions(plugin_save_fork PRIVATE
+    SPDLOG_COMPILED_LIB
+    SPDLOG_FMT_EXTERNAL)
+target_include_directories(plugin_save_fork PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugins/plugin_save_fork)
 
 # Gum-using dynamic plugins need Injector to re-export static frida-gum symbols.
 # Windows: FridaGum.def. Linux/macOS: not implemented — skip targets (source also

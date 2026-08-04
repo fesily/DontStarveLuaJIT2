@@ -1170,6 +1170,9 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 #include <sstream>
 
 #include "gameModConfig.hpp"
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
 #include "core/ConfigSchema.hpp"
 #include "util/PersistentString.hpp"
 #include "plugins/plugin_network_sim/NetSimStats.hpp"
@@ -1205,11 +1208,10 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_entity_get_raw_ptr(lua_State* L);
 static int DS_LUAJIT_entity_get_raw_ptr(lua_State* L) { return 0; };
 #endif
 
-DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_fork_save();
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_exit();
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_cleanup();
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_fork_save_wait();
-DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_fork_save_poll();
+// Implemented in plugins/plugin_save_fork/GameForkSave.cpp. Resolved at runtime.
+using DsLuajitForkSaveFn = const char *(*)();
+using DsLuajitForkSaveVoidFn = void (*)();
+using DsLuajitForkSavePollFn = const char *(*)();
 
 static std::optional<PacketPriority> parse_lua_packet_priority(const sol::optional<int>& value) {
 	if (!value) {
@@ -1434,13 +1436,94 @@ int luaopen_GameInjector(lua_State* L) {
 #endif
     module.set_function("DS_LUAJIT_entity_get_raw_ptr", &DS_LUAJIT_entity_get_raw_ptr);
     //module.set_function("enable_profiler", &DS_LUAJIT_enable_profiler);
-    module.set_function("DS_LUAJIT_fork_save", &DS_LUAJIT_fork_save);
-    module.set_function("DS_LUAJIT_fork_save_exit", &DS_LUAJIT_fork_save_exit);
-    module.set_function("DS_LUAJIT_fork_save_cleanup", &DS_LUAJIT_fork_save_cleanup);
-    module.set_function("DS_LUAJIT_fork_save_wait", &DS_LUAJIT_fork_save_wait);
-    module.set_function("DS_LUAJIT_fork_save_poll", &DS_LUAJIT_fork_save_poll);
+        module.set_function("DS_LUAJIT_fork_save", []() -> const char * {
+#if defined(_WIN32)
+        static DsLuajitForkSaveFn fn = []() -> DsLuajitForkSaveFn {
+            HMODULE mod = GetModuleHandleA("plugin_save_fork.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitForkSaveFn>(GetProcAddress(mod, "DS_LUAJIT_fork_save"));
+        }();
+#else
+        static DsLuajitForkSaveFn fn = []() -> DsLuajitForkSaveFn {
+            return reinterpret_cast<DsLuajitForkSaveFn>(dlsym(RTLD_DEFAULT, "DS_LUAJIT_fork_save"));
+        }();
+#endif
+        return fn ? fn() : nullptr;
+    });
+    module.set_function("DS_LUAJIT_fork_save_exit", []() {
+#if defined(_WIN32)
+        static DsLuajitForkSaveVoidFn fn = []() -> DsLuajitForkSaveVoidFn {
+            HMODULE mod = GetModuleHandleA("plugin_save_fork.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitForkSaveVoidFn>(GetProcAddress(mod, "DS_LUAJIT_fork_save_exit"));
+        }();
+#else
+        static DsLuajitForkSaveVoidFn fn = []() -> DsLuajitForkSaveVoidFn {
+            return reinterpret_cast<DsLuajitForkSaveVoidFn>(dlsym(RTLD_DEFAULT, "DS_LUAJIT_fork_save_exit"));
+        }();
+#endif
+        if (fn) {
+            fn();
+        }
+    });
+    module.set_function("DS_LUAJIT_fork_save_cleanup", []() {
+#if defined(_WIN32)
+        static DsLuajitForkSaveVoidFn fn = []() -> DsLuajitForkSaveVoidFn {
+            HMODULE mod = GetModuleHandleA("plugin_save_fork.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitForkSaveVoidFn>(GetProcAddress(mod, "DS_LUAJIT_fork_save_cleanup"));
+        }();
+#else
+        static DsLuajitForkSaveVoidFn fn = []() -> DsLuajitForkSaveVoidFn {
+            return reinterpret_cast<DsLuajitForkSaveVoidFn>(dlsym(RTLD_DEFAULT, "DS_LUAJIT_fork_save_cleanup"));
+        }();
+#endif
+        if (fn) {
+            fn();
+        }
+    });
+    module.set_function("DS_LUAJIT_fork_save_wait", []() {
+#if defined(_WIN32)
+        static DsLuajitForkSaveVoidFn fn = []() -> DsLuajitForkSaveVoidFn {
+            HMODULE mod = GetModuleHandleA("plugin_save_fork.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitForkSaveVoidFn>(GetProcAddress(mod, "DS_LUAJIT_fork_save_wait"));
+        }();
+#else
+        static DsLuajitForkSaveVoidFn fn = []() -> DsLuajitForkSaveVoidFn {
+            return reinterpret_cast<DsLuajitForkSaveVoidFn>(dlsym(RTLD_DEFAULT, "DS_LUAJIT_fork_save_wait"));
+        }();
+#endif
+        if (fn) {
+            fn();
+        }
+    });
+    module.set_function("DS_LUAJIT_fork_save_poll", []() -> const char * {
+#if defined(_WIN32)
+        static DsLuajitForkSavePollFn fn = []() -> DsLuajitForkSavePollFn {
+            HMODULE mod = GetModuleHandleA("plugin_save_fork.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitForkSavePollFn>(GetProcAddress(mod, "DS_LUAJIT_fork_save_poll"));
+        }();
+#else
+        static DsLuajitForkSavePollFn fn = []() -> DsLuajitForkSavePollFn {
+            return reinterpret_cast<DsLuajitForkSavePollFn>(dlsym(RTLD_DEFAULT, "DS_LUAJIT_fork_save_poll"));
+        }();
+#endif
+        return fn ? fn() : "idle";
+    });
 
-    lua["GameInjector"] = module;
+lua["GameInjector"] = module;
     return 1;
 }
 

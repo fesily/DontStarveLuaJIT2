@@ -30,8 +30,9 @@ bool TryCoerceSavedString(std::string_view raw, const OptionSchemaEntry &schema,
 void RegisterCoreOptionSchema(ConfigSchemaRegistry &r);
 
 // Business keys owned by plugins (AngleBackend, EnableVBPool, NetworkOpt,
-// EnableNetSim) with modinfo defaults — used by cascade save/overrides parse
-// before Host plugins load. Plugins re-register the same entries on Host.
+// EnableNetSim, EnableForkSave) with modinfo defaults — used by cascade
+// save/overrides parse before Host plugins load. Plugins re-register the same
+// entries on Host.
 void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r);
 
 class ConfigSchemaRegistry {

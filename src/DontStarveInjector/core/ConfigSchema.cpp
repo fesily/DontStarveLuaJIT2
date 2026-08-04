@@ -188,6 +188,13 @@ void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r) {
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnableNetSim.default_value);
         (void) r.add(std::move(e));
     }
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ModConfigurationOptions::EnableForkSave.name};
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnableForkSave.default_value);
+        (void) r.add(std::move(e));
+    }
 }
 
 } // namespace ds::plugin

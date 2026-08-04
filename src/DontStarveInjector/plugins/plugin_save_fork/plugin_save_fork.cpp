@@ -1,0 +1,70 @@
+// plugin_save_fork — dynamic EarlyNative face of save.fork
+// Lua face: Mod/plugins/save_fork.lua (AfterModMain, EnableForkSave).
+// Native APIs: DS_LUAJIT_fork_save / exit / cleanup / wait / poll.
+#include "core/PluginModuleAbi.hpp"
+#include "core/PluginHost.hpp"
+#include "core/PluginTypes.hpp"
+
+#include <cstdio>
+
+namespace {
+
+using namespace ds::plugin;
+
+struct SaveForkPlugin final : IPlugin {
+    PluginManifest man{};
+
+    SaveForkPlugin() {
+        man.id = "save.fork";
+        man.version = "1.0.0";
+        man.phases = PluginPhase::EarlyNative;
+        man.support_reload = false;
+        // Inventory priority 60 (with network.sim / lagcomp).
+        // Host resolve skips load() when EnableForkSave is false; DLL stays mapped
+        // so GameInjector can GetProcAddress/dlsym the fork APIs when Lua enables.
+        man.priority = 60;
+        man.options.kind = OptionRuleKind::AllOf;
+        man.options.keys = {"EnableForkSave"};
+    }
+
+    const PluginManifest &manifest() const override { return man; }
+
+    bool can_load(const PluginContext &) const override {
+        // Native fork/clone is implemented for Win x64 + Linux (+ mac stubs in TU).
+        return true;
+    }
+
+    void load(PluginContext &) override {
+        // No eager hooks — APIs are called from Lua scripts/fork_save.lua.
+        std::fprintf(stderr, "[plugin_save_fork] native fork_save APIs ready\n");
+    }
+
+    void unload(PluginContext &) override {
+        // Sticky for process lifetime.
+    }
+};
+
+SaveForkPlugin g_save_fork;
+
+} // namespace
+
+DS_PLUGIN_MODULE_EXPORT const char *ds_plugin_module_abi_version() {
+    return DS_PLUGIN_ABI_VERSION;
+}
+
+DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host) {
+    if (!host) {
+        return false;
+    }
+    OptionSchemaEntry e;
+    e.key = "EnableForkSave";
+    e.type = ConfigValueType::Bool;
+    e.default_value = ConfigValue::boolean(true);
+    if (!host->register_option_schema(std::move(e))) {
+        std::fprintf(stderr, "[plugin_save_fork] schema conflict EnableForkSave\n");
+        return false;
+    }
+    host->register_plugin(&g_save_fork);
+    std::fprintf(stderr, "[plugin_save_fork] module init registered save.fork\n");
+    return true;
+}

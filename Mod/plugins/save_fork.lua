@@ -1,4 +1,5 @@
--- Lua face of dual-face plugin save.fork (native APIs already exported by GameForkSave).
+-- Lua face of dual-face plugin save.fork
+-- (native: plugin_save_fork / GameForkSave; APIs resolved via GameInjector).
 -- Mirrors former modmain hard-wire: dedicated + has_luajit + EnableForkSave → scripts/fork_save.
 
 return {
