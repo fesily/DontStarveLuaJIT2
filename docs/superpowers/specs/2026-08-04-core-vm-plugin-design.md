@@ -1,259 +1,202 @@
-# Core VM Forced Plugin Design (`plugin_core_vm`)
+# Core VM Plugin Design (`plugin_core_vm`) — Revised
 
 **Date:** 2026-08-04  
-**Status:** Approved approach (user: 整块 core.vm 强制插件 + **Signature 并进 core.vm**)  
-**Scope:** Move Lua VM selection, export remap, InjectFramework, GameInjector min open, **and** signature scan/update into a single **mandatory** dynamic module `plugin_core_vm` (id `core.vm`). L0 retains gum lifecycle, inject orchestration, config cascade, and PluginHost.
+**Status:** Revised after design correction (user: **Lua VM 可以不加载**；仅部分功能不可用，**大部分插件仍可用**)  
+**Supersedes:** Earlier draft in same file that treated core.vm as **fail-fast mandatory bootstrap**. That draft is **wrong for product semantics**.
 
 Related:
 
-- Plugin architecture: `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md` (D3 previously said VM stays L0 — **this design supersedes D3 for VM/signature ownership**)
+- Plugin architecture: `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md`
 - Dynamic impl migration: `docs/superpowers/specs/2026-08-04-dynamic-plugin-impl-migration-design.md`
-- ConfigView SSOT: `docs/superpowers/specs/2026-08-04-gamejitmodconfig-pluginization-design.md` (core keys `LuaVmType` / `EnabledGenGC` / `DisableJITWhenServer` still L0-resolved **before** bootstrap)
-- Current inject path: `src/DontStarveInjector/DontStarveInjector.cpp` → `SignatureUpdater` → `ReplaceLuaModule`
-- Current size: `GameLua.cpp` ~1.8k, `GameLuaModule.cpp` ~2k, `DontStarveSignature.cpp` ~300, `GameLua.def` export table
+- ConfigView SSOT: `docs/superpowers/specs/2026-08-04-gamejitmodconfig-pluginization-design.md`
+- Inject path today: `DontStarveInjector.cpp` (Signature → ReplaceLuaModule → plugins)
+
+---
+
+## 0. Design correction (blind spots)
+
+### What the first draft got wrong
+
+| Blind spot | Wrong assumption | Reality (user + code) |
+|---|---|---|
+| B1 | No VM ⇒ inject must abort | **VM optional**: skip ReplaceLuaModule / skip core.vm ⇒ game runs; JIT/mod Lua inject features off |
+| B2 | Signature+VM are one **forced** bootstrap before any plugin value | **Most feature plugins do not need GameLua** (network, angle, vbpool, save.fork, network.sim). Only lagcomp’s `entity_get_raw_ptr` needs `GetGameLuaContext` |
+| B3 | “L0 must own VM forever because inject order” | Order constraint is real **when VM is enabled**, not a reason to fail the whole inject when VM is disabled/missing |
+| B4 | Mirror of current early-return `DisableJITWhenServer` as “no plugins” | Today that path returns **before** `DynamicPluginLoader` — that is **L0 coupling debt**, not desired product. Target: **plugins still load** when VM is skipped |
+| B5 | Signature must always run | Signature exists to **feed ReplaceLuaModule**. If VM replace is skipped, full signature update can be skipped (or degraded) with the VM path |
+
+### Correct product model
+
+```
+Inject always: gum, config, plugin host, feature plugins (as gated)
+Optional:     lua51 probe + signature + ReplaceLuaModule (core.vm)
+If optional path skipped/fails:
+  → log; continue
+  → feature plugins that need VM degrade (no GameInjector / no lagcomp raw ptr)
+  → native hooks (ANGLE, RPC, netsim, fork, …) still OK
+```
 
 ---
 
 ## 1. Problem
 
-Business features are already dynamic plugins. **Lua VM + signature** remain the largest hard-wired L0 block:
+VM + signature is still the largest hard-wired L0 block, but it is **not** the process’s sole purpose. Coupling it as “must load or die” would:
 
-| Concern | Today | Pain |
-|---|---|---|
-| VM selection / export remap | `GameLua.cpp` `ReplaceLuaModule` | Coupled to Injector link of whole GameLua stack |
-| Signature scan / JSON update | `DontStarveSignature.cpp` + `SignatureUpdater` | Same TU tree, only used for VM replace |
-| GameInjector exports | `GameLuaModule.cpp` god-file | Mixes VM helpers + business trampolines |
-| Inject order | Signature → Replace **before** DynamicPluginLoader | Normal EarlyNative plugins load too late for VM |
+- Break intentional server mode `DisableJITWhenServer` if we ever load plugins after that gate  
+- Over-rank core.vm above ANGLE/network/save plugins that users still want without JIT  
+- Fight the dual-face model where Lua faces already no-op when `GameInjector` APIs are missing  
 
-User direction: **whole core.vm as a forced plugin**, and **include Signature in the same module** so L0 is thinner orchestration only.
+Goal: **move VM+signature implementation into `plugin_core_vm`**, load it **when the VM path is enabled**, **without** making it a hard dependency of inject or of most plugins.
 
 ---
 
-## 2. Decisions
+## 2. Decisions (revised)
 
 | # | Choice |
 |---|---|
-| V1 | **One mandatory module** `plugin_core_vm` / id `core.vm` owns VM **and** Signature |
-| V2 | **Bootstrap phase** loads `plugin_core_vm` **before** any game Lua remap; missing/failed init → **fail-fast abort inject** |
-| V3 | L0 keeps: gum_init, InjectorCtx, crash guard, config cascade, PluginHost, DynamicPluginLoader shell, AlwaysEnableMod / DisableJITWhenServer early exits |
-| V4 | `GameLuaModule.cpp` is **not** moved wholesale; split: min `luaopen_GameInjector` + VM-related binds in core.vm; business APIs stay runtime-resolve trampolines (as today) or later feature plugins |
-| V5 | `GameLua.def` moves with core.vm (lua_* re-exports for debugger / game linkage as today) |
-| V6 | Config keys `LuaVmType`, `EnabledGenGC` remain **core schema** (resolved before bootstrap); core.vm **consumes** them, does not own cascade |
-| V7 | Incremental slices; each slice build + L-G (and client smoke when client path changes) |
-| V8 | YAGNI: no optional multi-VM market; no hot-swap VM mid-session; no second Gum |
-
-**Supersedes:** Architecture design D3 (“VM selection is L0 core, not plugins”) for **ownership of implementation**. L0 still **orchestrates** bootstrap; implementation lives in `plugin_core_vm`.
+| V1 | **`plugin_core_vm` (id `core.vm`)** owns VM replace + Signature implementation |
+| V2 | **Optional module**: missing/failed core.vm ⇒ **log + skip VM path**, inject continues |
+| V3 | **Feature plugins load independently** of core.vm success (fix L0 order vs today’s `DisableJITWhenServer` early return) |
+| V4 | When VM path **enabled**, order remains: (optional) load core.vm → signature → ReplaceLuaModule → then or around other plugins; when **disabled**, skip that chain |
+| V5 | Signature **travels with VM** (same plugin): only needed for replace; not a separate mandatory service |
+| V6 | L0 keeps gum, InjectorCtx, config cascade, PluginHost, DynamicPluginLoader, crash guard |
+| V7 | `GameLuaModule` not moved wholesale; GameInjector open lives with core.vm when loaded; business trampolines stay resolve-based |
+| V8 | Plugins that need Lua context (**sim.lagcomp**) must **tolerate missing VM** (no symbol / null context → no-op or skip load) |
+| V9 | Incremental slices; no fail-fast on missing core.vm |
 
 ---
 
-## 3. Target architecture
+## 3. Target inject flow
 
 ```
 Inject(isClient)
-  gum already inited (HookStartupEntry)
-  LoadGameModConfig / core ConfigView keys
-  if DisableJITWhenServer && !client → return
-  ── Bootstrap ──────────────────────────────────────
-  LoadLibrary(plugin_core_vm)  // fail-fast if missing
-  ds_plugin_module_init(host)  // register core.vm + schema if any
-  core_vm_prepare(...)         // optional explicit C entry
-  SignatureUpdater::create_or_update  // code now in plugin DLL
-  ReplaceLuaModule(...)               // code now in plugin DLL
-  ── Normal dynamic plugins ─────────────────────────
-  DynamicPluginLoader::load_all (network, render, save, …)
-  PluginHost::resolve + EarlyNative
-  DisableScriptZip / rest
+  init gum ctx / logging / crash check
+  LoadGameModConfig / ConfigView core keys
+  DynamicPluginLoader::load_all   // feature plugins + optional core.vm if present
+  PluginHost::resolve + EarlyNative  // angle, network, fork, … regardless of VM
+
+  if vm_path_enabled(isClient, config):   // e.g. not DisableJITWhenServer
+      if core.vm module available:
+          run signature + ReplaceLuaModule via core.vm exports
+      else:
+          spdlog::warn("core.vm missing/unavailable — Lua VM replace skipped")
+  else:
+      spdlog::info("Lua VM path disabled — plugins may still run")
 ```
 
-### 3.1 What moves into `plugin_core_vm`
+**Note:** Exact interleaving (load_all before vs after signature) is an implementation detail. Invariant:
+
+- **Feature plugins must not be gated on VM success**  
+- **VM work only runs when vm_path_enabled && core.vm usable**
+
+### 3.1 `vm_path_enabled`
+
+True when all hold:
+
+- Not `DontStarveInjectorDisable`  
+- Not (`!isClient && DisableJITWhenServer`)  
+- Optional future: explicit config “enable lua inject” if introduced  
+
+False ⇒ do not require core.vm; do not run SignatureUpdater/ReplaceLuaModule.
+
+### 3.2 What moves into `plugin_core_vm`
+
+Same technical ownership as before, **without mandatory semantics**:
 
 | Artifact | Notes |
 |---|---|
-| `GameLua.cpp` / `GameLua.hpp` / `GameLuaType.hpp` | Contexts, ReplaceLuaModule, RequestVmType, GetGameLuaContext |
-| `GameLuaInjectFramework.lua` + generated `.c` | Embedded framework |
-| `GameLua.def` | lua_* export forwarding table (MSVC) |
-| `LuajitVariantNames.hpp` | JIT variant names |
-| `lua_fake.cpp` | If only used by VM path — verify at plan time; move if exclusive |
-| `DontStarveSignature.cpp` / `.hpp` | SignatureUpdater, export list, disasm update path |
-| Related signature JSON I/O used only by SignatureUpdater | e.g. pieces of `SignatureJson.cpp` if solely signature — audit at plan time |
-| Min GameInjector open | `luaopen_GameInjector` shell that registers **VM-owned** functions + re-exports trampoline table for already-moved feature APIs |
+| `GameLua.cpp` / `.hpp` / `GameLuaType.hpp` | ReplaceLuaModule, RequestVmType, contexts |
+| `GameLuaInjectFramework.*` | Embedded framework |
+| `GameLua.def` | lua_* re-exports when VM active (MSVC) |
+| `LuajitVariantNames.hpp` | JIT variants |
+| `DontStarveSignature.*` + signature-only helpers | Feeds replace |
+| Min `luaopen_GameInjector` | VM binds + trampoline table for feature APIs |
 
-### 3.2 What stays L0
+### 3.3 What stays L0
 
-| Artifact | Why |
+Orchestration, gum single-instance, config, host/loader, feature-plugin loading, early process hooks.
+
+### 3.4 Degradation matrix
+
+| Consumer | Without core.vm / without ReplaceLuaModule |
 |---|---|
-| `DontStarveInjector.cpp` | Orchestration, bootstrap call order, fail-fast |
-| `config.hpp` / gum_bridge re-exports / FridaGum.def | Single Gum instance |
-| `core/*` PluginHost, DynamicPluginLoader, ConfigSchema | Plugin system |
-| `gameModConfig` cascade | Config before bootstrap |
-| Crash guard, steam hooks, Progress | Process shell |
-| Feature plugins | Already migrated |
+| `plugin_render_angle` | Works (native IAT) |
+| `plugin_render_vbpool` | Works (GL hooks; no Lua) |
+| `plugin_network_rpc` | Works (Gum hooks) |
+| `plugin_network_sim` | Works (Gum hooks; Lua enable optional) |
+| `plugin_save_fork` | Works (clone/fork APIs) |
+| `plugin_sim_lagcomp` | DLL may load; **entity_get_raw_ptr / GameLua** unusable → Lua face should no-op if API missing |
+| Mod Lua `GameInjector.*` | Absent or nil → scripts already often early-return |
+| JIT / luajit swap | Off |
 
-### 3.3 GameLuaModule split policy
-
-`GameLuaModule.cpp` today mixes:
-
-- Config load helpers (stay L0 or shared)
-- `luaopen_GameInjector` + many `module.set_function`
-- Business trampolines (fork, net_sim, vbpool, entity, …) — **already** partly GetProcAddress
-
-**Target:**
-
-1. **core.vm** owns `luaopen_GameInjector` and binds:
-   - `DS_LUAJIT_set_vm_type` / `get_vm_type_name`
-   - workshop / mod version / update / other VM-adjacent APIs that live in GameLua.cpp
-2. **Trampolines** for feature plugins remain in core.vm’s GameInjector open **or** a tiny L0 stub file — prefer **one open site in core.vm** so game only loads one GameInjector module.
-3. Config cascade functions currently in GameLuaModule stay in L0 (or a `gameModConfig` TU), **not** forced into core.vm.
-
-Exact function ownership table is an implementation-plan deliverable (grep-driven).
-
-### 3.4 Bootstrap ABI
-
-Prefer **minimal new C ABI** on the module (same style as other plugins):
+### 3.5 ABI (optional module)
 
 ```cpp
-// Required (existing):
-bool ds_plugin_module_init(PluginHost* host);
-// Optional:
-const char* ds_plugin_module_abi_version();
+// Existing module ABI
+bool ds_plugin_module_init(PluginHost*);
+const char* ds_plugin_module_abi_version(); // optional
 
-// Required for bootstrap (new, fail-fast if missing):
-// Called by L0 after successful init, before/with signature+replace.
-// May be thin wrappers exporting existing C++ entry points.
-extern "C" bool ds_core_vm_run_signature_and_replace(
-    bool is_client,
-    uintptr_t lua_module_base,   // or main module path + scan inside
-    const char* main_path);
+// VM path entry (only called if vm_path_enabled && module loaded)
+bool ds_core_vm_run_signature_and_replace(/* args: is_client, main_path, ... */);
+// false → L0 logs and continues without VM (does not abort inject)
 ```
 
-Alternatively export existing symbols:
+L0 **never** static-links core.vm; only `LoadLibrary`/`dlopen` when enabled.
 
-- `SignatureUpdater_create_or_update` (C wrapper)
-- `ReplaceLuaModule` (already free function)
+### 3.6 Config
 
-**Decision for plan:** one orchestrating C entry `ds_core_vm_bootstrap(const DsCoreVmBootstrapArgs*)` that:
-
-1. Runs signature create_or_update  
-2. Calls ReplaceLuaModule  
-3. Returns error string / bool  
-
-L0 must not call deep C++ methods across DLL without stable ABI.
-
-### 3.5 Load discovery
-
-`plugin_core_vm` lives next to other plugins (`bin64/plugins/plugin_core_vm.dll`) **or** beside Injector. Bootstrap uses **fixed name** first:
-
-```
-<injector_dir>/plugins/plugin_core_vm.dll
-<injector_dir>/plugin_core_vm.dll  // optional fallback
-```
-
-Not dependent on directory scan order. Normal `DynamicPluginLoader` **skips** already-loaded module (same path) or treats core.vm as sticky registered.
-
-**Idempotency:** `ds_plugin_module_init` may run once; second load_all must not double-register.
-
-### 3.6 Dependencies of core.vm DLL
-
-Likely links:
-
-- Injector (Gum re-exports, InjectorCtx, spdlog, config)
-- function_relocation (signature / disasm) — **same rule as other plugins**: no second Gum; `/NODEFAULTLIB:frida-gum.lib`
-- lua headers / luajit include for types
-- nlohmann_json if SignatureJson needs it
-- pe-parse / etc. only if signature path needs them in the plugin (today on function_relocation)
-
-**Must not** pull ANGLE or SLikeNet.
-
-### 3.7 GetGameLuaContext and cross-plugin use
-
-Already exported from Injector for `plugin_sim_lagcomp`. After move, **GetGameLuaContext lives in core.vm** (or thin re-export from Injector forwarding to core.vm).
-
-**Preferred:** export from **plugin_core_vm**; Injector provides optional trampoline only if other TUs still need a stable import at Injector link time. Feature plugins that need context: `GetProcAddress(plugin_core_vm, …)` or import from core.vm.
-
-### 3.8 DisableJITWhenServer
-
-Remains L0 early return **before** bootstrap (no need to load core.vm if server disables JIT entirely). Document: when this gate fires, core.vm is not loaded.
+`LuaVmType` / `EnabledGenGC` remain core schema keys (ConfigView SSOT). Used **only if** VM path runs. Missing core.vm does not remove keys from ConfigView.
 
 ---
 
 ## 4. Non-goals
 
-- Moving feature plugins (network/render/save/lagcomp) again  
-- Making core.vm optional or hot-reloadable  
-- Full rewrite of signature algorithm  
-- Merging luajit build system into the plugin  
-- Changing modinfo option names  
+- Making inject fail when core.vm is absent  
+- Blocking feature plugins on VM  
+- Full GameLuaModule god-file move in one shot  
+- Hot-swap VM mid-session  
 
 ---
 
-## 5. Migration slices
+## 5. Migration slices (revised)
 
 | Slice | Work | Exit |
 |---|---|---|
-| **V-S0** | Bootstrap loader API in L0: `LoadCoreVmModule()` find/load/init; skip duplicate in DynamicPluginLoader; unit test “missing DLL → fail” | Inject still uses L0 GameLua; no move yet |
-| **V-S1** | Move Signature TUs into `plugin_core_vm`; export C bootstrap half or full; L0 calls into plugin for signature only | Signature not linked into Injector; L-G PASS |
-| **V-S2** | Move GameLua + InjectFramework + GameLua.def + ReplaceLuaModule into plugin; L0 calls full `ds_core_vm_bootstrap` | Injector free of GameLua.cpp; L-G + client smoke |
-| **V-S3** | Split GameLuaModule: open in core.vm; L0 retains config cascade TUs; fix all GetGameLuaContext callsites | Clean link graph |
-| **V-S4** | lua_fake / debugger helper ownership audit; move or keep with evidence | No dead links in Injector |
-| **V-S5** | Docs (`plugin-system.md`), trunk surface, deployment note (must ship `plugin_core_vm.dll`) | Done |
-
-Suggested order: S0 → S1 → S2 → S3 → S4 → S5.  
-Signature first (S1) proves bootstrap + function_relocation in plugin before the larger GameLua move.
+| **V-S0** | Refactor L0 inject: **always** run plugin load after config; apply `DisableJITWhenServer` only to **VM path**, not entire inject | With JIT disabled on server, feature plugins still load (L-G / dedicated) |
+| **V-S1** | Add optional `LoadCoreVmModule()`; if missing, skip VM; no fail-fast | Behavior parity when DLL present |
+| **V-S2** | Move Signature into plugin; L0 calls export only if module loaded | Injector not linking DontStarveSignature |
+| **V-S3** | Move GameLua + framework + def; same optional call | Injector not linking GameLua.cpp |
+| **V-S4** | GameInjector open split / trampolines; lagcomp degrades cleanly without context | Client/server smoke |
+| **V-S5** | Docs + deploy note: core.vm **recommended for JIT**, not required for all plugins | Done |
 
 ---
 
-## 6. Failure modes
+## 6. Testing
 
-| Case | Behavior |
+| Gate | Expectation |
 |---|---|
-| `plugin_core_vm` missing | Fail-fast: showError + abort inject |
-| `ds_plugin_module_init` false | Fail-fast abort |
-| Signature update error | Same as today (showError / return) but error surfaces from plugin |
-| DisableJITWhenServer | L0 returns before bootstrap — core.vm not loaded |
-| Double init via load_all | No-op / skip already-loaded path |
-| Linux/macOS | Same bootstrap; gum re-export still Win-only for other plugins; core.vm itself uses Injector gum |
+| L-G with core.vm present | PASS (JIT path if enabled) |
+| L-G / dedicated with VM path disabled | Feature plugins still register; no crash |
+| Negative: delete core.vm.dll, VM path enabled | Warn + skip replace; plugins still load |
+| lagcomp without VM | No crash; Lua face no-op if symbols missing |
+| Trunk | Injector may lack lua_* def exports when moved; document debugger attach via core.vm |
 
 ---
 
-## 7. Testing
+## 7. Success criteria
 
-| Gate | What |
-|---|---|
-| Unit | Bootstrap missing module fails; skip-already-loaded |
-| Unit | Signature create_or_update still produces expected structure (if existing tests) |
-| L-G | Dedicated server profile PASS with core.vm staged |
-| Client smoke | Inject + mod load with core.vm |
-| Trunk | Injector exports no ReplaceLuaModule / no lua_* def table if fully moved; core.vm exports them |
-| Negative | Delete plugin_core_vm.dll → inject aborts with clear log |
+1. core.vm **can** be omitted without killing inject.  
+2. Most native plugins work without core.vm.  
+3. When core.vm present and VM path enabled, behavior matches today’s ReplaceLuaModule path.  
+4. L0 no longer links GameLua/Signature implementation TUs after migration.  
+5. `DisableJITWhenServer` does **not** imply “no dynamic plugins.”
 
 ---
 
-## 8. Success criteria
+## 8. Approval trail
 
-1. Injector binary does **not** link `GameLua.cpp` or `DontStarveSignature.cpp`.  
-2. Deploy **must** include `plugins/plugin_core_vm.dll` (or so) next to other plugins.  
-3. Missing core.vm → **no silent vanilla fallback**.  
-4. VM selection still honors `LuaVmType` / `EnabledGenGC` / env `lua_vm_type`.  
-5. Feature plugins continue to work via existing runtime resolve / FFI.  
-6. L-G + client inject smoke green.
+- User initially chose “整块 core.vm 强制插件” and “Signature 并进”.  
+- User correction: **VM 可以不加载**；强制 fail-fast 是设计盲点.  
+- This revision: **optional core.vm + Signature co-located + plugins independent of VM**.
 
----
-
-## 9. Risks
-
-| Risk | Mitigation |
-|---|---|
-| GameLua.def / lua_* export consumer expects symbols on Injector | Re-export from core.vm; document; debugger attach path test |
-| Circular link Injector ↔ core.vm | core.vm imports Injector only; Injector loads core.vm dynamically (no static link to core.vm) |
-| Signature needs large function_relocation surface | Same as network plugins: link function_relocation + NODEFAULTLIB frida |
-| GameLuaModule still huge after split | Accept; further export splits are follow-ups |
-| Bootstrap vs ConfigView order | Config core keys **before** bootstrap; business plugins after Replace |
-
----
-
-## 10. Approval
-
-- User selected: **整块 core.vm 强制插件**  
-- Then selected: **Signature 也并进 core.vm**
-
-Next: user reviews this file; on approval → `writing-plans` for V-S0…V-S5.
+Next: user confirms this revised model → `writing-plans` for V-S0…V-S5 under **optional** semantics.
