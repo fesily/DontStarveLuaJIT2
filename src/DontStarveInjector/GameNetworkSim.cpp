@@ -20,7 +20,7 @@
 #include "config.hpp"
 #include "GameLua.hpp"
 #include "MemorySignature.hpp"
-#include "GameNetwork.hpp"
+#include "NetSimStats.hpp"
 
 #include <cstddef>
 #include <cstdint>

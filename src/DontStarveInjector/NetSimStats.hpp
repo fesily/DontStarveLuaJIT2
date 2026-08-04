@@ -1,9 +1,9 @@
 #pragma once
 
-#include "config.hpp"
-
 #include <cstdint>
 
+// Shared by GameNetworkSim (Injector) and Lua bindings (GameLuaModule).
+// network.rpc plugin implementation does not own this type.
 struct NetSimStats {
     bool     enabled;
     uint32_t delay_ms;
@@ -15,6 +15,3 @@ struct NetSimStats {
     uint64_t packets_released;
     uint32_t queue_depth;
 };
-
-// Exported for dynamic plugin modules (plugin_network_rpc).
-DONTSTARVEINJECTOR_GAME_API void GameNetWorkHookRpc4();

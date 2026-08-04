@@ -1171,7 +1171,7 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 
 #include "gameModConfig.hpp"
 #include "util/PersistentString.hpp"
-#include "GameNetwork.hpp"
+#include "NetSimStats.hpp"
 
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_workshop_dir();
@@ -1179,7 +1179,7 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_disable_fullgc(bool enable);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept;
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(const char *type, const char *moduleName);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_vm_type_name(int next);
-// Implemented in plugin_render_angle (GameOpenGl.cpp). Injector resolves at runtime.
+// Implemented in plugins/plugin_render_angle/GameOpenGl.cpp. Injector resolves at runtime.
 using DsLuajitGetRenderBackendNameFn = const char *(*)();
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_network_tick(char upload_tick, char download_tick, bool isclient);
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_set_target_fps(int fps, int tt);
@@ -1187,7 +1187,7 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int 
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api();
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_tracy(int en);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version();
-// Implemented in plugin_network_rpc (GameNetwork.cpp). Resolved at runtime.
+// Implemented in plugins/plugin_network_rpc/GameNetwork.cpp. Resolved at runtime.
 using DsLuajitEntityNetWorkRegisterFn = void *(*)(void *, int64_t);
 using DsLuajitSetNextRpcInfoFn = void (*)(std::optional<PacketPriority>, std::optional<PacketReliability>, std::optional<char>);
 DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable);

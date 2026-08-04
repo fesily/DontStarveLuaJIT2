@@ -202,10 +202,9 @@ ds_add_dynamic_plugin(plugin_dummy
 if (WIN32)
     ds_add_dynamic_plugin(plugin_network_rpc
         plugins/plugin_network_rpc/plugin_network_rpc.cpp
-        GameNetwork.cpp)
+        plugins/plugin_network_rpc/GameNetwork.cpp)
     # RPC4 / entity network extension (Path A M-N1).
-    # Gum APIs from Injector re-exports. Do NOT link frida-gum.lib (second Gum).
-    # frida-gum.h #pragma comment → NODEFAULTLIB.
+    # Sources under plugins/plugin_network_rpc/. Gum from Injector re-exports.
     target_link_libraries(plugin_network_rpc PRIVATE
         spdlog::spdlog
         SLikeNet
@@ -220,12 +219,13 @@ if (WIN32)
         ${PROJECT_SOURCE_DIR}/3rd
         ${PLF_HIVE_INCLUDE_DIRS}
         ${FRIDA_GUM_INCLUDE_DIR}
-        ${FUNCTION_RELOCATION_INCLUDE_DIR})
+        ${FUNCTION_RELOCATION_INCLUDE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugins/plugin_network_rpc)
 
     ds_add_dynamic_plugin(plugin_render_vbpool
         plugins/plugin_render_vbpool/plugin_render_vbpool.cpp
-        GameRenderHook.cpp)
-    # HWBuffer pool (Path A M-R2). GLES headers from ANGLE tree; GL via GetProcAddress.
+        plugins/plugin_render_vbpool/GameRenderHook.cpp)
+    # HWBuffer pool (Path A M-R2). Sources under plugins/plugin_render_vbpool/.
     target_link_libraries(plugin_render_vbpool PRIVATE
         spdlog::spdlog
         function_relocation)
@@ -239,7 +239,8 @@ if (WIN32)
         ${PROJECT_SOURCE_DIR}/3rd
         ${PROJECT_SOURCE_DIR}/3rd/angle/win64/include
         ${FRIDA_GUM_INCLUDE_DIR}
-        ${FUNCTION_RELOCATION_INCLUDE_DIR})
+        ${FUNCTION_RELOCATION_INCLUDE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugins/plugin_render_vbpool)
 
     ds_add_dynamic_plugin(plugin_render_angle
         plugins/plugin_render_angle/plugin_render_angle.cpp
