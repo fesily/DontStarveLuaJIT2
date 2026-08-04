@@ -368,11 +368,11 @@ When adding a plugin:
 ## 9. Checklist: new feature as plugin
 
 1. Add `modinfo` option(s) if user-facing.
-2. **Native hooks needed at inject time?** → `IPlugin` in `RegisterBuiltinPlugins.cpp` + ConfigView bridge key if early.
+2. **Native hooks needed at inject time?** → dynamic module under `plugins/plugin_<name>/` + `ds_add_dynamic_plugin` + ConfigView bridge key if early. Export any Injector hooks the module calls.
 3. **Lua / modimport / game API?** → `Mod/plugins/<name>.lua` + entry in `init.lua`.
 4. Set `id`, `options`, `depends` / `soft_depends` / `conflicts`, `priority`, `when`/`can_load`.
 5. Implement `load` only; leave `unload` empty unless `support_reload = true`.
-6. Do not edit `Inject()` / `LoadGameModConfig` / `_M:Main` feature lists beyond host calls already present.
+6. Do not edit `Inject()` / `LoadGameModConfig` / `_M:Main` feature lists beyond host calls already present. Keep `RegisterBuiltinPlugins` empty for business features.
 7. Extend L-A/L-B/L-C/L-E as appropriate; run L-F; L-G when game binary available.
 
 ---
