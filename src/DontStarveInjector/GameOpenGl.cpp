@@ -6,7 +6,6 @@
 #include "util/module.hpp"
 #include "angle_iat_generated.hpp"
 #include "gameModConfig.hpp"
-#include "GameRenderHook.hpp"
 
 #include <Windows.h>
 #include <spdlog/spdlog.h>

@@ -168,7 +168,7 @@ public:
     InjectorConfig &config;
     bool DontStarveInjectorIsClient{false};
     uint32_t steam_account_id{0};
-    GumInterceptor *GetGumInterceptor();
+    DS_INJECTOR_CXX_API GumInterceptor *GetGumInterceptor();
     InjectorCtx();
     static DS_INJECTOR_CXX_API InjectorCtx *instance();
 private:

@@ -51,7 +51,6 @@ else()
         Progress.cpp
         #profiler.cpp
         GameLua.def
-        GameRenderHook.cpp
         GameNetworkSim.cpp
         GameSimHook.cpp
     )
@@ -128,10 +127,6 @@ target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(Injector PRIVATE spdlog::spdlog)
 target_link_libraries(Injector PRIVATE range-v3::meta range-v3::concepts range-v3::range-v3)
 target_link_libraries(Injector PRIVATE SLikeNet)
-# GameRenderHook (still in Injector until M-R2) needs GLES headers only — no ANGLE .lib.
-if (WIN32)
-    target_include_directories(Injector PRIVATE "${PROJECT_SOURCE_DIR}/3rd/angle/win64/include")
-endif()
 target_include_directories(Injector PRIVATE ${PLF_HIVE_INCLUDE_DIRS})
 #target_link_libraries(Injector PRIVATE $<IF:$<TARGET_EXISTS:mimalloc-static>,mimalloc-static,mimalloc>)
 if (NOT DISABLE_TRACY_FUTURE)
@@ -201,7 +196,24 @@ ds_add_dynamic_plugin(plugin_dummy
 ds_add_dynamic_plugin(plugin_network_rpc
     plugins/plugin_network_rpc/plugin_network_rpc.cpp)
 ds_add_dynamic_plugin(plugin_render_vbpool
-    plugins/plugin_render_vbpool/plugin_render_vbpool.cpp)
+    plugins/plugin_render_vbpool/plugin_render_vbpool.cpp
+    GameRenderHook.cpp)
+if (WIN32)
+    # HWBuffer pool lives only here (Path A M-R2). GLES headers from ANGLE tree;
+    # no ANGLE .lib — GL entry points via GetProcAddress(libGLESv2).
+    target_link_libraries(plugin_render_vbpool PRIVATE
+        spdlog::spdlog
+        function_relocation)
+    target_compile_definitions(plugin_render_vbpool PRIVATE
+        GUM_STATIC=1
+        SPDLOG_COMPILED_LIB
+        SPDLOG_FMT_EXTERNAL)
+    target_include_directories(plugin_render_vbpool PRIVATE
+        ${PROJECT_SOURCE_DIR}/3rd
+        ${PROJECT_SOURCE_DIR}/3rd/angle/win64/include
+        ${PROJECT_SOURCE_DIR}/3rd/frida-gum/win64
+        ${FUNCTION_RELOCATION_INCLUDE_DIR})
+endif()
 ds_add_dynamic_plugin(plugin_render_angle
     plugins/plugin_render_angle/plugin_render_angle.cpp
     GameOpenGl.cpp)

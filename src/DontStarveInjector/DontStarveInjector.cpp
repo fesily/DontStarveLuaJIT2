@@ -15,7 +15,6 @@
 #include "GameLua.hpp"
 #include "GameSteam.hpp"
 #include "GameNetwork.hpp"
-#include "GameRenderHook.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginConfigBridge.hpp"
 #include "core/RegisterBuiltinPlugins.hpp"

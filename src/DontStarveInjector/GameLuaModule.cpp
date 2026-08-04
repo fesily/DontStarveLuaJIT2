@@ -1192,14 +1192,13 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_SetNextRpcInfo(std::optional<PacketPr
 DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_profiler(int en);
 #ifdef _WIN32
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable);
+using DsLuajitSetVbpoolEnabledFn = void (*)(bool);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_net_sim_enable(bool enable);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_net_sim_set(uint32_t delay_ms, uint32_t jitter_ms, uint32_t loss_pct);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_net_sim_update();
 DONTSTARVEINJECTOR_GAME_API const NetSimStats* DS_LUAJIT_net_sim_get_stats();
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_entity_get_raw_ptr(lua_State* L);
 #else
-static void DS_LUAJIT_set_vbpool_enabled(bool enable) {};
 static int DS_LUAJIT_entity_get_raw_ptr(lua_State* L) { return 0; };
 #endif
 
@@ -1314,7 +1313,23 @@ int luaopen_GameInjector(lua_State* L) {
 				parse_lua_ordering_channel(orderingChannel));
 	});
     module.set_function("DS_LUAJIT_enable_framegc", &DS_LUAJIT_enable_framegc);
-    module.set_function("DS_LUAJIT_set_vbpool_enabled", &DS_LUAJIT_set_vbpool_enabled);
+    module.set_function("DS_LUAJIT_set_vbpool_enabled", [](bool enable) {
+#ifdef _WIN32
+        static DsLuajitSetVbpoolEnabledFn fn = []() -> DsLuajitSetVbpoolEnabledFn {
+            HMODULE mod = GetModuleHandleA("plugin_render_vbpool.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitSetVbpoolEnabledFn>(
+                GetProcAddress(mod, "DS_LUAJIT_set_vbpool_enabled"));
+        }();
+        if (fn) {
+            fn(enable);
+        }
+#else
+        (void) enable;
+#endif
+    });
 #ifdef _WIN32
     module.set_function("DS_LUAJIT_net_sim_enable", &DS_LUAJIT_net_sim_enable);
     module.set_function("DS_LUAJIT_net_sim_set", &DS_LUAJIT_net_sim_set);
