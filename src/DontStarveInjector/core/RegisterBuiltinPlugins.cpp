@@ -12,6 +12,7 @@ namespace ds::plugin {
 //   plugin_sim_lagcomp   → sim.lagcomp
 //   plugin_render_vbpool → render.vbpool
 //   plugin_render_angle  → render.angle
+//   plugin_debug_profiler → debug.profiler
 //   plugin_dummy         → debug.dummy
 // Config options are schema-driven (ConfigView SSOT): plugins register option
 // schema in ds_plugin_module_init; L0 also seeds core + builtin business schema

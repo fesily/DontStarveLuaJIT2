@@ -368,9 +368,32 @@ if (WIN32)
         ${PROJECT_SOURCE_DIR}/3rd
         ${FRIDA_GUM_INCLUDE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/plugins/plugin_render_angle)
+
+    # debug.profiler — Tracy / FullGC / FrameGC (Path A). Win gum plugins section.
+    # AlwaysOn native face; Lua AfterModMain gates business work (later tasks).
+    ds_add_dynamic_plugin(plugin_debug_profiler
+        plugins/plugin_debug_profiler/plugin_debug_profiler.cpp)
+    target_link_libraries(plugin_debug_profiler PRIVATE
+        spdlog::spdlog
+        function_relocation
+        Tracy::TracyClient)
+    if (MSVC)
+        target_link_options(plugin_debug_profiler PRIVATE "/NODEFAULTLIB:frida-gum.lib")
+    endif()
+    target_compile_definitions(plugin_debug_profiler PRIVATE
+        GUM_STATIC=1
+        SPDLOG_COMPILED_LIB
+        SPDLOG_FMT_EXTERNAL
+        DS_INJECTOR_CONSUMER=1)
+    target_include_directories(plugin_debug_profiler PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PLUGIN_CORE_VM_DIR}
+        ${FRIDA_GUM_INCLUDE_DIR}
+        ${FUNCTION_RELOCATION_INCLUDE_DIR}
+        ${LUAJIT_INCLUDE_DIR})
 else()
     message(WARNING
-        "Skipping gum-using dynamic plugins (network.rpc / network.sim / sim.lagcomp / render.vbpool / render.angle): "
+        "Skipping gum-using dynamic plugins (network.rpc / network.sim / sim.lagcomp / render.vbpool / render.angle / debug.profiler): "
         "Injector Frida Gum re-export is unimplemented on Linux/macOS (Windows uses FridaGum.def). "
         "Wait for ELF/Mach-O export-list fix; do not static-link a second frida-gum into plugins.")
 endif()
