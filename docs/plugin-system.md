@@ -16,40 +16,47 @@ This guide maps **what is in code today** and how to extend it.
 | Capability | Config / trigger | Where |
 |---|---|---|
 | Process inject / Gum interceptor | — | `Inject()`, `InjectorCtx` |
-| Signature scan + Lua export remap | — | `ReplaceLuaModule` |
-| **VM selection** | `LuaVmType`, `EnabledGenGC` | `GameLua.cpp` |
-| Server inject gate | `DisableJITWhenServer` | early return in `Inject()` |
+| Server VM-path gate | `DisableJITWhenServer` | **only** skips signature/ReplaceLuaModule; does **not** abort inject or plugin load |
 | Force-enable this mod | `AlwaysEnableMod` | force-enable path / `luajit_config` |
 | Config cascade | modinfo → json → save → env | `LoadGameModConfig` / `GameJitModConfig` |
 | Crash guard | internal | `check_crash` / modmain clear |
 | **PluginHost** | — | native: `core/PluginHost.*`; Lua: `Mod/plugins/host.lua` |
+| Core.vm bootstrap (optional load) | `VmPathEnabled` | `core/CoreVmBootstrap.*` — LoadLibrary/`GetProcAddress` only; never static-links the DLL |
 
-L0 boots the host. Without VM replace + AlwaysEnableMod, plugins cannot run.
+L0 boots the host and always runs DynamicPluginLoader for feature modules. **AlwaysEnableMod** remains L0 so this mod can force-load. Without optional `plugin_core_vm` (or when the VM path is disabled), inject still works and most native feature plugins still load; JIT / `GameInjector` / Lua-facing inject APIs are unavailable.
+
+> **Architecture note (D3 supersession for VM *implementation*):**  
+> Spec D3 in `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md` still treats **AlwaysEnableMod** and the **decision to run a VM path** as L0 concerns. The **implementation** of signature scan + `ReplaceLuaModule` + `GameLua` + `luaopen_GameInjector` is **no longer L0-linked**: it lives in optional `plugins/plugin_core_vm` (id `core.vm`). See `docs/superpowers/specs/2026-08-04-core-vm-plugin-design.md` (V1–V9). Deploy `plugins/plugin_core_vm.dll` next to Injector when you want JIT.
 
 ### Plugins (feature modules)
 
-Features that used to be hard-wired in `Inject()`, `LoadGameModConfig`, or `modmain._M:Main` are plugins. With **all plugins disabled**, inject still works and the selected VM still runs.
+Features that used to be hard-wired in `Inject()`, `LoadGameModConfig`, or `modmain._M:Main` are plugins. With **all feature plugins disabled**, inject still works. With **core.vm omitted**, the selected stock Lua VM runs (no JIT replace) and native feature plugins still load.
 
 | Layer | Phase | Examples (current) |
 |---|---|---|
-| Native | `EarlyNative` | `network.rpc`, `render.vbpool`, `render.angle` |
+| Optional core | `EarlyNative` (bootstrap export + Host face) | `core.vm` — Signature + ReplaceLuaModule + GameInjector open |
+| Native | `EarlyNative` | `network.rpc`, `render.vbpool`, `render.angle`, `save.fork`, … |
 | Lua | `AfterModMain` | `jit.*`, `gc.policy`, `network.*`, `save.fork`, … |
 
 Dual-face plugins share **one id**. Example: `network.rpc` has a native EarlyNative face (`GameNetWorkHookRpc4`) and a Lua AfterModMain face (`Mod/plugins/network_rpc.lua`).
 
----
 
 ## 2. Load phases
 
 ```text
 [Inject]
-  → L0: gum, signature, crash guard, VM replace
-  → LoadGameModConfig()                 // resolve only; no feature side effects
-  → RegisterBuiltinPlugins(host)
+  → L0: gum, crash guard, Steam interface
+  → if VmPathEnabled:                // not DisableJITWhenServer / not FORCE_DISABLE_VM
+        CoreVmBootstrap::TryRun…     // optional plugins/plugin_core_vm.dll
+          → signature + ReplaceLuaModule   // soft-skip if DLL missing
+     else: skip VM path; plugins continue
+  → LoadGameModConfig()              // resolve only; no feature side effects
+  → RegisterBuiltinPlugins(host)     // empty extension point
+  → DynamicPluginLoader::load_all    // plugin_*.dll including core.vm if present
   → resolve(ConfigView, gate_ctx)
   → load_phase(EarlyNative)
 
-[openlibs / GameLuaInjectFramework]     // AfterLuaBridge reserved
+[openlibs / GameLuaInjectFramework]  // AfterLuaBridge reserved; GameInjector open is inside core.vm
   → (phase defined; no plugins use it yet in Path A)
 
 [modmain _M:Main]
@@ -60,14 +67,14 @@ Dual-face plugins share **one id**. Example: `network.rpc` has a native EarlyNat
 
 | Phase | When | Typical work |
 |---|---|---|
-| **EarlyNative** | End of `Inject()`, before game Lua opens | Gum hooks, GL pool, ANGLE rebind, RPC4 |
+| **EarlyNative** | End of `Inject()`, before game Lua opens | Gum hooks, GL pool, ANGLE rebind, RPC4; `core.vm` Host face is no-op after bootstrap |
 | **AfterLuaBridge** | After `GameInjector` / inject framework | Reserved for API export registration |
 | **AfterModMain** | `modmain` after host is available | Game-facing wraps, `modimport`, JIT/GC policy |
 | **OnDemand** | Explicit host call | Optional; sticky unload default |
 
 Within a phase: topological order on hard/soft depends, then **priority ascending** for ties (lower runs first).
 
-**Fail-fast:** missing hard dep, conflict, or cycle → `Failed` + structured `PluginEvent`; that plugin's `load` is not called. Independent plugins continue. L0 failure still aborts inject.
+**Fail-fast:** missing hard dep, conflict, or cycle → `Failed` + structured `PluginEvent`; that plugin's `load` is not called. Independent plugins continue. L0 failure still aborts inject. **Missing `plugin_core_vm` is not fail-fast** — log + continue without JIT.
 
 **Unload:** sticky by default (`support_reload = false`). Native gum probes and Lua metatable wraps are not torn down unless a plugin opts in.
 
@@ -81,9 +88,13 @@ Native EarlyNative business plugins are **dynamic modules** under
 
 Shipped modules today:
 
-| Module DLL | Plugin id | Hook |
+| Module DLL | Plugin id | Hook / role |
 |---|---|---|
+| `plugin_core_vm` | `core.vm` | **Optional.** Signature + `ReplaceLuaModule` + `luaopen_GameInjector`. **Recommended for JIT.** Feature plugins work without it. |
 | `plugin_network_rpc` | `network.rpc` | `GameNetWorkHookRpc4` |
+| `plugin_network_sim` | `network.sim` | outbound net simulation |
+| `plugin_save_fork` | `save.fork` | clone/fork save path |
+| `plugin_sim_lagcomp` | `sim.lagcomp` | lagcomp entity snapshot (needs GameLua context from core.vm when available) |
 | `plugin_render_vbpool` | `render.vbpool` | `DS_LUAJIT_set_vbpool_enabled` |
 | `plugin_render_angle` | `render.angle` | `InitGameOpenGl` |
 | `plugin_dummy` | `debug.dummy` | log only |
@@ -150,12 +161,13 @@ Hook entrypoints called from modules must be exported from Injector
 ### 3.3 Static registry
 
 `RegisterBuiltinPlugins` is intentionally **empty** (extension point only).
-Do not re-add business plugins there unless they are true L0-only and cannot
-be a module. Inject order:
+Do not re-add business plugins — or `core.vm` — there. `plugin_core_vm` is a
+dynamic module (optional JIT path via `CoreVmBootstrap` + `DynamicPluginLoader`).
+Inject order:
 
 ```text
 RegisterBuiltinPlugins(host)   // empty
-DynamicPluginLoader::load_all  // plugin_*.dll
+DynamicPluginLoader::load_all  // plugin_*.dll (incl. plugin_core_vm if staged)
 resolve → load_phase(EarlyNative)
 ```
 
@@ -280,10 +292,13 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 
 | id | Module | Options | Phase | priority | depends | conflicts | `can_load` |
 |---|---|---|---|---:|---|---|---|
+| `core.vm` | `plugin_core_vm` | AlwaysOn | EarlyNative | 10 | — | — | always (optional DLL; missing ⇒ soft skip VM) |
 | `render.vbpool` | `plugin_render_vbpool` | `all_of` `EnableVBPool` | EarlyNative | 20 | — | — | Win client |
 | `render.angle` | `plugin_render_angle` | `AlwaysOn` (`AngleBackend` is a parameter) | EarlyNative | 30 | — | — | Win client |
 | `network.rpc` | `plugin_network_rpc` | `all_of` `NetworkOpt` | EarlyNative | 40 | — | — | always |
 | `network.sim` | `plugin_network_sim` | `all_of` `EnableNetSim` | EarlyNative | 60 | — | — | Win (DLL always maps; load gated) |
+| `save.fork` | `plugin_save_fork` | `all_of` `EnableForkSave` | EarlyNative | 60 | — | — | always (platform-native) |
+| `sim.lagcomp` | `plugin_sim_lagcomp` | `all_of` `EnableLagCompensation` | EarlyNative | 60 | — | — | Win; degrades without core.vm context |
 | `debug.dummy` | `plugin_dummy` | AlwaysOn | EarlyNative | 1000 | — | — | always |
 
 ### 6.2 Lua (`Mod/plugins/init.lua` order + manifests)
@@ -392,15 +407,18 @@ When adding a plugin:
 | `src/DontStarveInjector/core/PluginModuleAbi.hpp` | Dynamic module C ABI (`ds_plugin_module_init`) |
 | `src/DontStarveInjector/core/DynamicPluginLoader.*` | Scan / load / isolate dynamic modules |
 | `src/DontStarveInjector/core/RegisterBuiltinPlugins.*` | Empty static extension point |
-| `src/DontStarveInjector/plugins/plugin_*/` | Dynamic native modules (rpc/sim/vbpool/angle/dummy) |
-| `src/DontStarveInjector/DontStarveInjector.cpp` | Schema seed + EarlyNative host + dynamic loader |
+| `src/DontStarveInjector/core/CoreVmBootstrap.*` | Optional load of `plugin_core_vm` + `ds_core_vm_run_signature_and_replace` |
+| `src/DontStarveInjector/plugins/plugin_core_vm/` | Optional `core.vm` (Signature + GameLua + GameInjector open) |
+| `src/DontStarveInjector/plugins/plugin_*/` | Dynamic native feature modules (rpc/sim/vbpool/angle/fork/lagcomp/dummy) |
+| `src/DontStarveInjector/DontStarveInjector.cpp` | Schema seed + optional VM path + EarlyNative host + dynamic loader |
 | `Mod/plugins/host.lua` | Lua host |
 | `Mod/plugins/init.lua` | Lua registry |
 | `Mod/plugins/*.lua` | Lua plugins |
 | `Mod/modmain.lua` | AfterModMain host call site |
 | `tests/plugin/*` | L-A/B/C/E/F + `test_config_view_build` / `test_config_schema` |
-| `tests/plugin_server/*` | L-G |
-| `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md` | Full architecture |
+| `tests/plugin_server/*` | L-G (+ `--scenario present\|absent\|vm_disabled`) |
+| `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md` | Full architecture (D3: AlwaysEnableMod + VM path *gate* remain L0) |
+| `docs/superpowers/specs/2026-08-04-core-vm-plugin-design.md` | Optional core.vm (VM **implementation** ownership) |
 | `docs/superpowers/specs/2026-08-04-gamejitmodconfig-pluginization-design.md` | ConfigView SSOT design |
 
 ## 11. Dynamic modules (Phase B)
@@ -412,9 +430,19 @@ When adding a plugin:
 5. Deploy next to game Injector under `bin64/plugins/`
 6. Override search with `DS_LUAJIT_PLUGIN_DIR`
 
-EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`) already ship as dynamic modules. Keep `RegisterBuiltinPlugins` empty unless you need a true L0-only static plugin.
+EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`, …) already ship as dynamic modules. Keep `RegisterBuiltinPlugins` empty unless you need a true L0-only static plugin.
 
-Related design: `docs/superpowers/specs/2026-08-03-dynamic-plugin-skeleton-design.md`.
+### 11.1 Deploy list (JIT recommended)
+
+| Artifact | Required? | Notes |
+|---|---|---|
+| `bin64/Injector.dll` (+ loader e.g. `Winmm.dll`) | **Yes** | L0 inject + PluginHost + DynamicPluginLoader |
+| `bin64/plugins/plugin_core_vm.dll` | **Recommended for JIT** | Optional. Missing ⇒ no Signature/ReplaceLuaModule/`GameInjector`; feature plugins still load |
+| `bin64/plugins/plugin_*.dll` | Per feature | `network_*`, `render_*`, `save_fork`, `sim_lagcomp`, `dummy`, … |
+
+`DisableJITWhenServer` (or harness `DS_LUAJIT_FORCE_DISABLE_VM=1`) only skips the VM path; it does **not** skip DynamicPluginLoader. Harness negative path: rename `plugin_core_vm.dll` or set `DS_LUAJIT_FORCE_NO_CORE_VM=1`.
+
+Related designs: `docs/superpowers/specs/2026-08-03-dynamic-plugin-skeleton-design.md`, `docs/superpowers/specs/2026-08-04-core-vm-plugin-design.md`.
 
 ## 12. ConfigView SSOT (schema-driven options)
 

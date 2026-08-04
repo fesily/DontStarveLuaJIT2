@@ -10,7 +10,7 @@ Base HEAD at start: f2cb4ce
 - Task 3: complete (commits 56834d5..c2a5cfa, review clean after fix)
 - Task 4: complete (verification only at c2a5cfa; ownership already from Task 3; L-G PASS; no code commit)
 - Task 5: complete (degradation matrix present/absent/vm_disabled; L-G PASS ×3; harness --scenario + env flags)
-- Task 6: pending (docs)
+- Task 6: complete (docs + deploy notes; greps clean; unit ctest + L-G present PASS)
 
 ## Task 3 (V-S2+V-S3) — DONE
 
@@ -28,3 +28,10 @@ Task 4: complete (verification only on c2a5cfa, review clean)
 Degradation matrix verified on dedicated L-G:
 present (vm=jit + GameInjector), absent (rename + soft skip + plugins), vm_disabled (FORCE_DISABLE_VM / DisableJITWhenServer gate).
 See core-vm-task-5-report.md.
+Task 5: complete (commits c2a5cfa..120e339, review clean)
+
+## Task 6 (V-S5 docs) — DONE
+
+Optional core.vm documented in `docs/plugin-system.md` + D3 supersession note; deploy list recommends `plugin_core_vm.dll` for JIT.
+See core-vm-task-6-report.md.
+Task 6: complete (commit docs(plugin): core.vm optional deployment and plugin-system notes)

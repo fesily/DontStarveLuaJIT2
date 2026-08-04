@@ -12,7 +12,7 @@
 |---|---|---|
 | D1 | First-phase delivery | **Path A**: in-process static plugin registry, single `Injector` shared library. Dynamic per-plugin DLLs/SOs are a **later phase**, not in this design's implementation scope. |
 | D2 | Dependency / conflict failure | **Fail-fast**: missing hard dependency, cycle, or conflict aborts that plugin's load with a hard error log; Host does not silently skip hard deps. Host itself stays up so other independent plugins can still load unless the failure is in L0. |
-| D3 | VM selection / AlwaysEnableMod | **L0 core**, not plugins. Without them the plugin system cannot boot or force-load this mod. |
+| D3 | VM selection / AlwaysEnableMod | **L0 core** for the *gate* and AlwaysEnableMod (without force-enable, plugins cannot boot this mod). **Superseded for VM *implementation* ownership:** Signature + `ReplaceLuaModule` + `GameLua` live in optional `plugin_core_vm` (id `core.vm`) — see `docs/superpowers/specs/2026-08-04-core-vm-plugin-design.md`. Missing core.vm soft-skips JIT; feature plugins still load. |
 | D4 | Unload policy | **Sticky by default**. Only plugins that set `support_reload = true` (and Lua plugins that implement `unload`) may be unloaded. Most native hooks remain sticky for process lifetime. |
 | D5 | Config surface | `Mod/modinfo.lua` `configuration_options` remains the **only** user-facing config. Multiple options may map to one plugin. |
 | D6 | Fail-fast style | No defensive “if API missing then no-op”. Missing required APIs/symbols error immediately (project convention). |
