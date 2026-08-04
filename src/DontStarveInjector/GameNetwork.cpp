@@ -271,7 +271,7 @@ namespace SLNet {
     };
 }// namespace SLNet
 
-void GameNetWorkHookRpc4() {
+DONTSTARVEINJECTOR_GAME_API void GameNetWorkHookRpc4() {
 #ifndef _WIN32
     return;
 #endif

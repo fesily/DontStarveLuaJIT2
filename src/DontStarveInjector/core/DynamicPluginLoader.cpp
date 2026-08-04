@@ -26,10 +26,23 @@ using ModuleInitFn = bool (*)(PluginHost *);
 #if defined(_WIN32)
 using ModuleHandle = HMODULE;
 
-void *load_library(const std::filesystem::path &path) {
+void *load_library(const std::filesystem::path &path, DWORD *out_err = nullptr) {
     // Avoid modal "Bad Image" / critical-error UI when probing non-PE files under CTest.
     const UINT prev = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
-    void *handle = static_cast<void *>(LoadLibraryW(path.wstring().c_str()));
+    SetLastError(0);
+    // Prefer LoadLibraryEx so dependencies resolve from the DLL's directory and
+    // the already-mapped Injector module (same basename) without PATH games.
+    void *handle = static_cast<void *>(LoadLibraryExW(
+        path.wstring().c_str(), nullptr,
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS));
+    if (!handle) {
+        // Fallback for older search-path combinations / non-standard layouts.
+        SetLastError(0);
+        handle = static_cast<void *>(LoadLibraryW(path.wstring().c_str()));
+    }
+    if (out_err) {
+        *out_err = handle ? 0 : GetLastError();
+    }
     SetErrorMode(prev);
     return handle;
 }
@@ -179,10 +192,14 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
         const auto path = path_ec ? entry.path() : abs;
         const auto path_str = path.string();
 
-        void *handle = load_library(path);
+        DWORD load_err = 0;
+        void *handle = load_library(path, &load_err);
         if (!handle) {
-            report.skipped.push_back(skip_reason(path, "load_failed"));
-            std::fprintf(stderr, "[DynamicPluginLoader] load_failed: %s\n", path_str.c_str());
+            char reason[64];
+            std::snprintf(reason, sizeof(reason), "load_failed(err=%lu)", static_cast<unsigned long>(load_err));
+            report.skipped.push_back(skip_reason(path, reason));
+            std::fprintf(stderr, "[DynamicPluginLoader] load_failed: %s err=%lu\n", path_str.c_str(),
+                         static_cast<unsigned long>(load_err));
             continue;
         }
 

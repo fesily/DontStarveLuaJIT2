@@ -183,21 +183,28 @@ endif ()
 
 add_subdirectory(util)
 
-# Dynamic plugin skeleton: log-only MODULE used to exercise DynamicPluginLoader.
-# Prefer MODULE; fall back to SHARED if MSVC refuses MODULE->SHARED Injector link.
-add_library(plugin_dummy MODULE
+# Dynamic plugin modules (Phase B). Output next to Injector under plugins/.
+function(ds_add_dynamic_plugin name)
+    add_library(${name} MODULE ${ARGN})
+    target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_features(${name} PRIVATE cxx_std_23)
+    target_link_libraries(${name} PRIVATE Injector)
+    set_target_properties(${name} PROPERTIES
+        PREFIX ""
+        OUTPUT_NAME "${name}"
+        RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
+        LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
+        ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
+    )
+endfunction()
+
+ds_add_dynamic_plugin(plugin_dummy
     plugins/plugin_dummy/plugin_dummy.cpp)
-target_include_directories(plugin_dummy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_compile_features(plugin_dummy PRIVATE cxx_std_23)
-# Link Injector for PluginHost::register_plugin import
-target_link_libraries(plugin_dummy PRIVATE Injector)
-# Drop lib prefix; emit next to Injector under plugins/
-set_target_properties(plugin_dummy PROPERTIES
-    PREFIX ""
-    OUTPUT_NAME "plugin_dummy"
-    RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
-    LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
-    ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
-)
+ds_add_dynamic_plugin(plugin_network_rpc
+    plugins/plugin_network_rpc/plugin_network_rpc.cpp)
+ds_add_dynamic_plugin(plugin_render_vbpool
+    plugins/plugin_render_vbpool/plugin_render_vbpool.cpp)
+ds_add_dynamic_plugin(plugin_render_angle
+    plugins/plugin_render_angle/plugin_render_angle.cpp)
 
 

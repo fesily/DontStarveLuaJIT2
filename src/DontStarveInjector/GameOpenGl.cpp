@@ -420,7 +420,7 @@ namespace {
 
 }// namespace
 
-void InitGameOpenGl() {
+DONTSTARVEINJECTOR_GAME_API void InitGameOpenGl() {
     if (g_angle_egl_initialized) {
         return;
     }
@@ -450,7 +450,7 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_render_backend_name() {
 
 #else
 
-void InitGameOpenGl() {
+DONTSTARVEINJECTOR_GAME_API void InitGameOpenGl() {
 }
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_render_backend_name() {

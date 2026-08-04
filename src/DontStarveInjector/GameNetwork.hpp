@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.hpp"
+
 #include <cstdint>
 
 struct NetSimStats {
@@ -14,4 +16,5 @@ struct NetSimStats {
     uint32_t queue_depth;
 };
 
-void GameNetWorkHookRpc4();
+// Exported for dynamic plugin modules (plugin_network_rpc).
+DONTSTARVEINJECTOR_GAME_API void GameNetWorkHookRpc4();

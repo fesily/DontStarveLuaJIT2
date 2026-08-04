@@ -309,8 +309,8 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 
     LoadGameModConfig();
 
-    // Path A PluginHost: register builtins, resolve from GameJitModConfig, EarlyNative.
-    // network.rpc / render.vbpool / render.angle own their former Inject-side side effects.
+    // PluginHost: static RegisterBuiltinPlugins (empty extension point) then
+    // DynamicPluginLoader (network.rpc / render.vbpool / render.angle / dummy).
     {
         using namespace ds::plugin;
         static PluginHost g_plugin_host;

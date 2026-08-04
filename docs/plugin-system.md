@@ -75,60 +75,89 @@ Within a phase: topological order on hard/soft depends, then **priority ascendin
 
 ## 3. How to add a native plugin
 
-### 3.1 Implement `IPlugin`
+Native EarlyNative business plugins are **dynamic modules** under
+`src/DontStarveInjector/plugins/plugin_<name>/` (Phase B). They are loaded by
+`DynamicPluginLoader` after the empty `RegisterBuiltinPlugins` extension point.
 
-File: `src/DontStarveInjector/core/RegisterBuiltinPlugins.cpp` (Path A: static objects in this TU).
+Shipped modules today:
+
+| Module DLL | Plugin id | Hook |
+|---|---|---|
+| `plugin_network_rpc` | `network.rpc` | `GameNetWorkHookRpc4` |
+| `plugin_render_vbpool` | `render.vbpool` | `DS_LUAJIT_set_vbpool_enabled` |
+| `plugin_render_angle` | `render.angle` | `InitGameOpenGl` |
+| `plugin_dummy` | `debug.dummy` | log only |
+
+### 3.1 Implement `IPlugin` in a module
+
+File pattern: `src/DontStarveInjector/plugins/plugin_my_feature/plugin_my_feature.cpp`
 
 ```cpp
+#include "core/PluginModuleAbi.hpp"
+#include "core/PluginHost.hpp"
+#include "core/PluginTypes.hpp"
+// + headers for any Injector-exported hook you call
+
+namespace {
+using namespace ds::plugin;
+
 struct MyFeaturePlugin final : IPlugin {
     PluginManifest man{};
-
     MyFeaturePlugin() {
-        man.id = "my.feature";           // dotted stable id
+        man.id = "my.feature";
         man.version = "1.0.0";
         man.phases = PluginPhase::EarlyNative;
         man.support_reload = false;
-        man.priority = 50;               // lower first within phase when topo-tied
+        man.priority = 50;
         man.options.kind = OptionRuleKind::AllOf;
         man.options.keys = {"EnableMyFeature"};
-        // man.depends = {"other.id"};
-        // man.soft_depends = {};
-        // man.conflicts = {};
     }
-
     const PluginManifest &manifest() const override { return man; }
-
-    bool can_load(const PluginContext &ctx) const override {
-        // Platform / client-server gate. false → Disabled (not Failed).
-        return ctx.is_client;
-    }
-
-    void load(PluginContext &ctx) override {
-        // Install hooks / side effects. No defensive “if missing then skip”.
-        (void) ctx;
-        MyFeatureInstall();
-    }
-
-    void unload(PluginContext &) override {
-        // Sticky default: leave empty.
-    }
+    bool can_load(const PluginContext &ctx) const override { return ctx.is_client; }
+    void load(PluginContext &) override { MyFeatureInstall(); /* fail-fast */ }
+    void unload(PluginContext &) override {}
 };
 
 MyFeaturePlugin g_my_feature;
-```
+} // namespace
 
-### 3.2 Register
+DS_PLUGIN_MODULE_EXPORT const char *ds_plugin_module_abi_version() {
+    return DS_PLUGIN_ABI_VERSION; // "1"
+}
 
-```cpp
-void RegisterBuiltinPlugins(PluginHost &host) {
-    host.register_plugin(&g_network_rpc);
-    host.register_plugin(&g_render_vbpool);
-    host.register_plugin(&g_render_angle);
-    host.register_plugin(&g_my_feature);  // add here
+DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host) {
+    if (!host) return false;
+    host->register_plugin(&g_my_feature);
+    return true;
 }
 ```
 
-`RegisterBuiltinPlugins` is called once from `Inject()` after `LoadGameModConfig()`, before `load_phase(EarlyNative)`.
+### 3.2 CMake
+
+Use `ds_add_dynamic_plugin` in `src/DontStarveInjector/CMakeLists.txt`:
+
+```cmake
+ds_add_dynamic_plugin(plugin_my_feature
+    plugins/plugin_my_feature/plugin_my_feature.cpp)
+```
+
+Output lands in `$<TARGET_FILE_DIR:Injector>/plugins/plugin_my_feature.dll`.
+Deploy that folder next to the game Injector (`bin64/plugins/`).
+
+Hook entrypoints called from modules must be exported from Injector
+(`DONTSTARVEINJECTOR_GAME_API` / `DS_PLUGIN_HOST_API`).
+
+### 3.3 Static registry
+
+`RegisterBuiltinPlugins` is intentionally **empty** (extension point only).
+Do not re-add business plugins there unless they are true L0-only and cannot
+be a module. Inject order:
+
+```text
+RegisterBuiltinPlugins(host)   // empty
+DynamicPluginLoader::load_all  // plugin_*.dll
+resolve → load_phase(EarlyNative)
+```
 
 ### 3.3 Config bridge (EarlyNative options)
 
@@ -246,13 +275,14 @@ String enums (profiler/tracy) should use explicit predicates or `any_of` with `i
 
 Current registration (code). Spec inventory may list future rows (e.g. `steam.workshop`); only rows below are live.
 
-### 6.1 Native (`RegisterBuiltinPlugins`)
+### 6.1 Native (dynamic modules under `plugins/`)
 
-| id | Options | Phase | priority | depends | conflicts | `can_load` |
-|---|---|---|---:|---|---|---|
-| `render.vbpool` | `all_of` `EnableVBPool` | EarlyNative | 20 | — | — | Win client |
-| `render.angle` | `AlwaysOn` (`AngleBackend` is a parameter) | EarlyNative | 30 | — | — | Win client |
-| `network.rpc` | `all_of` `NetworkOpt` | EarlyNative | 40 | — | — | always |
+| id | Module | Options | Phase | priority | depends | conflicts | `can_load` |
+|---|---|---|---|---:|---|---|---|
+| `render.vbpool` | `plugin_render_vbpool` | `all_of` `EnableVBPool` | EarlyNative | 20 | — | — | Win client |
+| `render.angle` | `plugin_render_angle` | `AlwaysOn` (`AngleBackend` is a parameter) | EarlyNative | 30 | — | — | Win client |
+| `network.rpc` | `plugin_network_rpc` | `all_of` `NetworkOpt` | EarlyNative | 40 | — | — | always |
+| `debug.dummy` | `plugin_dummy` | AlwaysOn | EarlyNative | 1000 | — | — | always |
 
 ### 6.2 Lua (`Mod/plugins/init.lua` order + manifests)
 
@@ -299,15 +329,15 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 
 ### `network.rpc` + `network.entity` (dual-face + hard dep)
 
-- Native: `NetworkRpcPlugin` in `RegisterBuiltinPlugins.cpp` → `GameNetWorkHookRpc4()` on EarlyNative when `NetworkOpt`
+- Native: `plugins/plugin_network_rpc/` → `GameNetWorkHookRpc4()` on EarlyNative when `NetworkOpt`
 - Lua rpc: `Mod/plugins/network_rpc.lua` — channel wraps, priority 40
 - Lua entity: `Mod/plugins/network_entity.lua` — `depends = { "network.rpc" }`, option `NetworkOptEntity`
 - Entity on + rpc off → `MissingHardDep`, entity `load` not called
 
-### `render.vbpool` / `render.angle` (EarlyNative only)
+### `render.vbpool` / `render.angle` (EarlyNative only, dynamic)
 
-- VBPool: `EnableVBPool` + Win client → `DS_LUAJIT_set_vbpool_enabled(true)`
-- Angle: AlwaysOn + Win client → `InitGameOpenGl()` (backend string from config singleton)
+- VBPool: `plugin_render_vbpool` — `EnableVBPool` + Win client → `DS_LUAJIT_set_vbpool_enabled(true)`
+- Angle: `plugin_render_angle` — AlwaysOn + Win client → `InitGameOpenGl()` (backend string from config singleton)
 
 ---
 
@@ -356,9 +386,9 @@ When adding a plugin:
 | `src/DontStarveInjector/core/PluginTypes.hpp` | Phases, status, manifest, `IPlugin` |
 | `src/DontStarveInjector/core/PluginModuleAbi.hpp` | Dynamic module C ABI (`ds_plugin_module_init`) |
 | `src/DontStarveInjector/core/DynamicPluginLoader.*` | Scan / load / isolate dynamic modules |
-| `src/DontStarveInjector/core/RegisterBuiltinPlugins.*` | Native static registry |
+| `src/DontStarveInjector/core/RegisterBuiltinPlugins.*` | Empty static extension point |
 | `src/DontStarveInjector/core/PluginConfigBridge.*` | Early ConfigView |
-| `src/DontStarveInjector/plugins/plugin_dummy/` | Phase B proof MODULE |
+| `src/DontStarveInjector/plugins/plugin_*/` | Dynamic native modules (rpc/vbpool/angle/dummy) |
 | `src/DontStarveInjector/DontStarveInjector.cpp` | EarlyNative host + dynamic loader call site |
 | `Mod/plugins/host.lua` | Lua host |
 | `Mod/plugins/init.lua` | Lua registry |
@@ -368,15 +398,15 @@ When adding a plugin:
 | `tests/plugin_server/*` | L-G |
 | `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md` | Full architecture |
 
-## 11. Dynamic modules (Phase B skeleton)
+## 11. Dynamic modules (Phase B)
 
 1. Create `src/DontStarveInjector/plugins/plugin_<name>/plugin_<name>.cpp`
 2. Export `ds_plugin_module_init` / optional `ds_plugin_module_abi_version` (see `PluginModuleAbi.hpp`)
 3. Register `IPlugin*` with static storage duration
-4. Add CMake `MODULE` target like `plugin_dummy`, output to `Injector/plugins/`
+4. Add via `ds_add_dynamic_plugin(...)` in Injector CMake (output `Injector/plugins/`)
 5. Deploy next to game Injector under `bin64/plugins/`
 6. Override search with `DS_LUAJIT_PLUGIN_DIR`
 
-Business features remain in `RegisterBuiltinPlugins` until a later migration plan.
+EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`) already ship as dynamic modules. Keep `RegisterBuiltinPlugins` empty unless you need a true L0-only static plugin.
 
 Related design: `docs/superpowers/specs/2026-08-03-dynamic-plugin-skeleton-design.md`.
