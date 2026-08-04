@@ -1066,7 +1066,6 @@ local function test_m4_plugin_priorities_and_order()
     local expected = {
         ["jit.tailcall"] = 10,
         ["debug.profiler"] = 20,
-        ["gc.policy"] = 30,
         ["fps.render"] = 50,
         ["jit.runtime"] = 70,
     }
@@ -1112,17 +1111,17 @@ local function test_m4_plugin_priorities_and_order()
         local p_prof = pos(lr.loaded_order, "debug.profiler")
         local p_jit = pos(lr.loaded_order, "jit.runtime")
         local p_tail = pos(lr.loaded_order, "jit.tailcall")
-        local p_gc = pos(lr.loaded_order, "gc.policy")
         local p_fps = pos(lr.loaded_order, "fps.render")
+        local p_gc = pos(lr.loaded_order, "gc.policy")
         assert_true(p_tail ~= nil and p_prof ~= nil and p_jit ~= nil, "m4 plugins loaded")
         assert_true(p_tail < p_prof, "tailcall before profiler")
         assert_true(p_prof < p_jit, "profiler before jit.runtime")
-        assert_true(p_gc ~= nil and p_gc < p_jit, "gc before jit.runtime")
+        assert_true(p_gc == nil, "gc.policy no longer a separate plugin")
         assert_true(p_fps ~= nil and p_fps < p_jit, "fps before jit.runtime")
         assert_eq(host:status("debug.profiler"), STATUS.Loaded, "profiler Loaded")
         assert_eq(host:status("jit.runtime"), STATUS.Loaded, "jit.runtime Loaded")
         assert_eq(injector.target_fps, 120, "fps set")
-        assert_eq(injector.fullgc, true, "fullgc enabled")
+        assert_eq(injector.fullgc, true, "fullgc enabled via debug.profiler")
     end)
     restore_m4_game_stubs(prev)
     if not ok then
@@ -1213,12 +1212,14 @@ local function test_debug_profiler_enable_matrix()
 end
 
 local function test_gc_policy_enable_matrix()
-    -- L-E: DisableForceFullGC / EnableFrameGC combos (+ EnabledGenGC short-circuit)
+    -- L-E: DisableForceFullGC / EnableFrameGC now owned by debug.profiler (+ EnabledGenGC short-circuit)
     clear_plugin_modules()
     local list = require("plugins.init")
-    local plugin = plugin_by_id(list, "gc.policy")
-    assert_true(plugin ~= nil, "gc.policy registered")
-    assert_eq(plugin.priority, 30, "gc.policy priority")
+    assert_true(plugin_by_id(list, "gc.policy") == nil, "gc.policy removed from registry")
+    local plugin = plugin_by_id(list, "debug.profiler")
+    assert_true(plugin ~= nil, "debug.profiler registered")
+    assert_eq(plugin.priority, 20, "debug.profiler priority")
+    assert_true(plugin.options and plugin.options.any_of, "debug.profiler any_of options")
 
     local prev = install_m4_game_stubs()
     local ok, err = pcall(function()
@@ -1250,7 +1251,7 @@ local function test_gc_policy_enable_matrix()
         cfg.EnabledGenGC = false
         host:resolve(cfg, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
         host:load_phase(PHASE.AfterModMain)
-        assert_eq(host:status("gc.policy"), STATUS.Loaded, "gc Loaded")
+        assert_eq(host:status("debug.profiler"), STATUS.Loaded, "profiler Loaded for GC flags")
         assert_eq(inj.fullgc, true, "fullgc on")
         assert_eq(inj.framegc, true, "framegc on")
 
@@ -1266,7 +1267,7 @@ local function test_gc_policy_enable_matrix()
         cfg2.EnabledGenGC = true
         host2:resolve(cfg2, { injector = inj2, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
         host2:load_phase(PHASE.AfterModMain)
-        assert_eq(host2:status("gc.policy"), STATUS.Loaded, "gc still Loaded under GenGC")
+        assert_eq(host2:status("debug.profiler"), STATUS.Loaded, "profiler still Loaded under GenGC")
         assert_eq(inj2.fullgc, false, "fullgc reset under GenGC")
         assert_eq(inj2.framegc, false, "framegc reset under GenGC")
     end)

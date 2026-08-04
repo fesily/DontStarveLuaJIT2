@@ -1,7 +1,8 @@
--- debug.profiler — EnableProfiler (string enum) + EnableTracy.
+-- debug.profiler — EnableProfiler / EnableTracy + GC policy (FullGC / FrameGC).
 -- Priority 20: must load before jit.runtime (70) HideGlobalJIT so jit.zone / jit.p remain requireable.
+-- Absorbs former gc.policy (priority 30): always reset fullgc/framegc when load runs, then apply flags.
 --
--- Option predicates: EnableProfiler != "off" OR EnableTracy == "on".
+-- Option predicates: any of EnableProfiler / EnableTracy / DisableForceFullGC / EnableFrameGC.
 -- is_bool_on treats string "off" as off and non-empty modes ("fzvp","Gz","on") as on.
 
 local function get_config(ctx, key)
@@ -62,6 +63,40 @@ local function EnableTracy(injector)
     injector.DS_LUAJIT_enable_tracy(1)
 end
 
+local function ApplyGcPolicy(injector, ctx)
+    -- Match former gc.policy / modmain: always clear, then re-enable when not GenGC.
+    injector.DS_LUAJIT_disable_fullgc(false)
+    injector.DS_LUAJIT_enable_framegc(false)
+
+    if get_config(ctx, "EnabledGenGC") then
+        return
+    end
+
+    if get_config(ctx, "DisableForceFullGC") then
+        injector.DS_LUAJIT_replace_profiler_api()
+        injector.DS_LUAJIT_disable_fullgc(true)
+    end
+
+    if get_config(ctx, "EnableFrameGC") then
+        injector.DS_LUAJIT_replace_profiler_api()
+        injector.DS_LUAJIT_enable_framegc(true)
+
+        local old_OnSimPaused = _G.OnSimPaused
+        local old_OnSimUnpaused = _G.OnSimUnpaused
+        if old_OnSimPaused and old_OnSimUnpaused then
+            _G.OnSimPaused = function(...)
+                injector.DS_LUAJIT_enable_framegc(false)
+                old_OnSimPaused(...)
+            end
+
+            _G.OnSimUnpaused = function(...)
+                injector.DS_LUAJIT_enable_framegc(true)
+                old_OnSimUnpaused(...)
+            end
+        end
+    end
+end
+
 return {
     id = "debug.profiler",
     version = "1.0.0",
@@ -69,8 +104,15 @@ return {
     soft_depends = {},
     conflicts = {},
     phases = "AfterModMain",
-    -- String feature switches: is_bool_on treats "off" as off and "fzvp"/"Gz"/"on" as on.
-    options = { any_of = { "EnableProfiler", "EnableTracy" } },
+    -- String feature switches + GC flags; is_bool_on treats "off" as off and "fzvp"/"Gz"/"on" as on.
+    options = {
+        any_of = {
+            "EnableProfiler",
+            "EnableTracy",
+            "DisableForceFullGC",
+            "EnableFrameGC",
+        },
+    },
     support_reload = false,
     priority = 20,
     when = function(ctx)
@@ -85,6 +127,10 @@ return {
             return
         end
 
+        -- 1) GC reset + DisableForceFullGC / EnableFrameGC (former gc.policy)
+        ApplyGcPolicy(injector, ctx)
+
+        -- 2) EnableProfiler mode / EnableTracy
         local mode = get_config(ctx, "EnableProfiler")
         if mode ~= nil and tostring(mode) ~= "off" and tostring(mode) ~= "" then
             EnableProfiler(injector, mode)
@@ -95,6 +141,6 @@ return {
         end
     end,
     unload = function(ctx)
-        -- Sticky by default; ProfilerPush wraps / tracy hooks are not torn down.
+        -- Sticky by default; ProfilerPush wraps / tracy / GC hooks are not torn down.
     end,
 }
