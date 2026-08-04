@@ -39,6 +39,7 @@
 #include <cstdint>
 #include <list>
 #include <atomic>
+#include <cstdio>
 
 
 #if USE_LISTENER
@@ -321,6 +322,26 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
             }
             for (auto &s : report.skipped) {
                 spdlog::warn("dynamic plugin module skipped: {}", s);
+            }
+            for (auto *e : g_plugin_host.option_schema().all()) {
+                const char *type_name = "None";
+                switch (e->type) {
+                case ConfigValueType::Bool:
+                    type_name = "Bool";
+                    break;
+                case ConfigValueType::String:
+                    type_name = "String";
+                    break;
+                case ConfigValueType::Number:
+                    type_name = "Number";
+                    break;
+                case ConfigValueType::None:
+                default:
+                    break;
+                }
+                spdlog::info("option schema: {} type={}", e->key, type_name);
+                // Default Injector log level is err; mirror to stderr so L-G/server capture sees keys.
+                std::fprintf(stderr, "option schema: %s type=%s\n", e->key.c_str(), type_name);
             }
         }
 

@@ -42,6 +42,14 @@ void PluginHost::register_plugin(IPlugin *plugin) {
     entries_.push_back(std::move(e));
 }
 
+bool PluginHost::register_option_schema(OptionSchemaEntry e) {
+    return option_schema_.add(std::move(e));
+}
+
+const ConfigSchemaRegistry &PluginHost::option_schema() const {
+    return option_schema_;
+}
+
 PluginHost::Entry *PluginHost::find(std::string_view id) {
     auto it = index_.find(std::string(id));
     if (it == index_.end()) {

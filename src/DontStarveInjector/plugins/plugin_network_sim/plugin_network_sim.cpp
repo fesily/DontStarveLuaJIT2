@@ -65,6 +65,14 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     if (!host) {
         return false;
     }
+    OptionSchemaEntry e;
+    e.key = "EnableNetSim";
+    e.type = ConfigValueType::Bool;
+    e.default_value = ConfigValue::boolean(false);
+    if (!host->register_option_schema(std::move(e))) {
+        std::fprintf(stderr, "[plugin_network_sim] schema conflict EnableNetSim\n");
+        return false;
+    }
     host->register_plugin(&g_network_sim);
     std::fprintf(stderr, "[plugin_network_sim] module init registered network.sim\n");
     return true;

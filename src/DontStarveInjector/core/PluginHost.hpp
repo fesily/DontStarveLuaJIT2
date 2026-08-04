@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ConfigSchema.hpp"
 #include "PluginTypes.hpp"
 
 #include <string>
@@ -38,6 +39,9 @@ struct LoadResult {
 class PluginHost {
 public:
     DS_PLUGIN_HOST_API void register_plugin(IPlugin *plugin); // non-owning; caller keeps lifetime
+    DS_PLUGIN_HOST_API bool register_option_schema(OptionSchemaEntry e);
+    DS_PLUGIN_HOST_API const ConfigSchemaRegistry &option_schema() const;
+
 
     ResolveResult resolve(const ConfigView &config, const PluginContext &gate_ctx);
     LoadResult load_phase(PluginPhase phase);
@@ -75,6 +79,7 @@ private:
     ConfigView last_config_;
     PluginContext last_ctx_{};
     bool resolved_ = false;
+    ConfigSchemaRegistry option_schema_;
 };
 
 } // namespace ds::plugin

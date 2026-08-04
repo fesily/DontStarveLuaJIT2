@@ -54,6 +54,14 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     if (!host) {
         return false;
     }
+    OptionSchemaEntry e;
+    e.key = "NetworkOpt";
+    e.type = ConfigValueType::Bool;
+    e.default_value = ConfigValue::boolean(true);
+    if (!host->register_option_schema(std::move(e))) {
+        std::fprintf(stderr, "[plugin_network_rpc] schema conflict NetworkOpt\n");
+        return false;
+    }
     host->register_plugin(&g_network_rpc);
     std::fprintf(stderr, "[plugin_network_rpc] module init registered network.rpc\n");
     return true;

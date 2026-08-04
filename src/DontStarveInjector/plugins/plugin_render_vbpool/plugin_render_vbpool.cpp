@@ -63,6 +63,14 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     if (!host) {
         return false;
     }
+    OptionSchemaEntry e;
+    e.key = "EnableVBPool";
+    e.type = ConfigValueType::Bool;
+    e.default_value = ConfigValue::boolean(false);
+    if (!host->register_option_schema(std::move(e))) {
+        std::fprintf(stderr, "[plugin_render_vbpool] schema conflict EnableVBPool\n");
+        return false;
+    }
     host->register_plugin(&g_render_vbpool);
     std::fprintf(stderr, "[plugin_render_vbpool] module init registered render.vbpool\n");
     return true;

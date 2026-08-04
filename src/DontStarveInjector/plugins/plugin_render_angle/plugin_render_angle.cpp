@@ -59,6 +59,15 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     if (!host) {
         return false;
     }
+    OptionSchemaEntry e;
+    e.key = "AngleBackend";
+    e.type = ConfigValueType::String;
+    e.default_value = ConfigValue::string("auto");
+    e.allowed = {"auto", "vulkan", "d3d11", "d3d9"};
+    if (!host->register_option_schema(std::move(e))) {
+        std::fprintf(stderr, "[plugin_render_angle] schema conflict AngleBackend\n");
+        return false;
+    }
     host->register_plugin(&g_render_angle);
     std::fprintf(stderr, "[plugin_render_angle] module init registered render.angle\n");
     return true;
