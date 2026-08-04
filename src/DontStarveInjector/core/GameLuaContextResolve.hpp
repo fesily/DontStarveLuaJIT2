@@ -1,6 +1,6 @@
 #pragma once
 // Resolve GetGameLuaContext from optional plugin_core_vm without hard-linking the symbol.
-// Used by L0 (GameProfilerHook) and feature plugins (sim.lagcomp) when core.vm is optional.
+// Used by feature plugins (debug.profiler, sim.lagcomp) when core.vm is optional.
 #include "config.hpp"
 #include <atomic>
 #include <cstdio>

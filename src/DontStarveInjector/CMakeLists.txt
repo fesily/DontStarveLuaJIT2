@@ -257,7 +257,7 @@ target_include_directories(plugin_core_vm PRIVATE
     ${PLF_HIVE_INCLUDE_DIRS}
     ${PROJECT_SOURCE_DIR}/3rd
 )
-# GameProfilerHook / lagcomp / remaining Injector TUs still include GameLua.hpp etc.
+# lagcomp / remaining Injector TUs still include GameLua.hpp etc.
 
 if (ENABLE_STEAM_SUPPORT)
     target_compile_definitions(plugin_core_vm PRIVATE ENABLE_STEAM_SUPPORT)
@@ -372,7 +372,8 @@ if (WIN32)
     # debug.profiler — Tracy / FullGC / FrameGC (Path A). Win gum plugins section.
     # AlwaysOn native face; Lua AfterModMain gates business work (later tasks).
     ds_add_dynamic_plugin(plugin_debug_profiler
-        plugins/plugin_debug_profiler/plugin_debug_profiler.cpp)
+        plugins/plugin_debug_profiler/plugin_debug_profiler.cpp
+        plugins/plugin_debug_profiler/ProfilerApi.cpp)
     target_link_libraries(plugin_debug_profiler PRIVATE
         spdlog::spdlog
         function_relocation

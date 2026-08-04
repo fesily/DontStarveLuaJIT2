@@ -1,3 +1,6 @@
+#pragma once
+// plugin_debug_profiler — Tracy / FrameGC / profiler push-pop hooks (Task 2).
+// FullGcPolicy ownership lands in Task 3; local fullgc statics are temporary.
 #include "config.hpp"
 #include "MemorySignature.hpp"
 #include "util/inlinehook.hpp"
@@ -19,6 +22,8 @@
 #include <unordered_map>
 #include <mutex>
 #include <thread>
+#include <chrono>
+#include <cstring>
 #include <lua.hpp>
 #ifndef DISABLE_TRACY_FUTURE
 #include <tracy/TracyC.h>
@@ -31,70 +36,62 @@
 typedef uint32_t TracyCZoneCtx;
 #define ZoneScopedN(...) 0
 #endif
-#if defined(_WIN32)
-#define NOMINMAX
-#include <windows.h>
-#elif defined(__APPLE__)
+#if defined(__APPLE__)
 #include <mach/mach_time.h>
 #include <sys/sysctl.h>
 #elif defined(__linux__)
 #include <unistd.h>
-#include <fstream>
+#include <pthread.h>
 #endif
 
 static uint64_t get_time_ns() {
     auto now = std::chrono::high_resolution_clock::now();
     return std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
 }
+
 struct Profiler {
     std::list<TracyCZoneCtx> ctx;
-    uint64_t start_time_ns;
-    int stack;
-    lua_State *L;
+    uint64_t start_time_ns = 0;
+    int stack = 0;
+    lua_State *L = nullptr;
 };
 static thread_local Profiler profiler;
-// fullgc state lives in plugin_core_vm (gameio). Resolve dynamically; no-op when VM absent.
-static void *CoreVmGetProc(const char *name) {
-#ifdef _WIN32
-    HMODULE m = GetModuleHandleA("plugin_core_vm.dll");
-    if (!m) return nullptr;
-    return reinterpret_cast<void *>(GetProcAddress(m, name));
-#else
-    return dlsym(RTLD_DEFAULT, name);
-#endif
-}
-static int *ResolveFullgcDeferred() {
-    using Getter = int *(*)();
-    static int *cached = []() -> int * {
-        auto g = reinterpret_cast<Getter>(CoreVmGetProc("ds_core_vm_fullgc_deferred_ptr"));
-        return g ? g() : nullptr;
-    }();
-    return cached;
-}
+
+// Temporary until Task 3 merges FullGcPolicy — same-DLL statics OK.
+// Do not call core.vm for fullgc in Task 2.
+static int fullgc_deferred = 0;
+static int fullgc_deferred_get() { return fullgc_deferred; }
+static void fullgc_deferred_set(int v) { fullgc_deferred = v; }
+static int fullgc_deferred_inc() { return ++fullgc_deferred; }
+
+// Optional lua_gc entry from core.vm (soft). Used by FrameGC TryDoGC only.
 static int (*ResolveLuaGcFunc())(void *L, int, int) {
     using LuaGc = int (*)(void *, int, int);
     using Getter = LuaGc *(*)();
-    auto g = reinterpret_cast<Getter>(CoreVmGetProc("ds_core_vm_lua_gc_func_ptr"));
-    if (!g) return nullptr;
+#ifdef _WIN32
+    HMODULE m = GetModuleHandleA("plugin_core_vm.dll");
+    if (!m) {
+        return nullptr;
+    }
+    auto g = reinterpret_cast<Getter>(GetProcAddress(m, "ds_core_vm_lua_gc_func_ptr"));
+#else
+    auto g = reinterpret_cast<Getter>(dlsym(RTLD_DEFAULT, "ds_core_vm_lua_gc_func_ptr"));
+#endif
+    if (!g) {
+        return nullptr;
+    }
     LuaGc *pp = g();
     return pp ? *pp : nullptr;
 }
-static int fullgc_deferred_get() {
-    if (auto *p = ResolveFullgcDeferred()) return *p;
-    return 0;
-}
-static void fullgc_deferred_set(int v) {
-    if (auto *p = ResolveFullgcDeferred()) *p = v;
-}
-static int fullgc_deferred_inc() {
-    if (auto *p = ResolveFullgcDeferred()) return ++(*p);
-    return 0;
-}
-int frame_gc_time_ns = 0;
-static bool enable_frame_gc = false; 
-static bool tracy_active = 0;
-extern float frame_time_s;
-constexpr auto frame_gc_time_default_ns = 10 * 1e3;
+
+static int frame_gc_time_ns = 0;
+static bool enable_frame_gc = false;
+// Defined in ProfilerApi.cpp (non-static so enable_tracy can set it).
+extern bool tracy_active;
+
+// Injector export — avoid importing mutable frame_time_s across DLL boundary.
+DONTSTARVEINJECTOR_API float DS_LUAJIT_get_frame_time_s(void);
+
 DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable) {
     if (auto *ctx = ds::core_vm::TryGetGameLuaContext()) {
         if (ctx->luaType == GameLuaType::jit_gen) {
@@ -103,11 +100,12 @@ DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable) {
         }
     }
     enable_frame_gc = enable;
-    frame_gc_time_ns = frame_time_s * 1e9;
+    frame_gc_time_ns = static_cast<int>(DS_LUAJIT_get_frame_time_s() * 1e9f);
     return enable_frame_gc;
 }
+
 static thread_local std::string thread_name;
-static void set_thread_name(uint32_t thread_id, const char *name) {
+static void set_thread_name(uint32_t /*thread_id*/, const char *name) {
     thread_name = name;
 #ifdef _WIN32
     SetThreadDescription(GetCurrentThread(), std::filesystem::path{thread_name}.c_str());
@@ -118,16 +116,7 @@ static void set_thread_name(uint32_t thread_id, const char *name) {
 #endif
 }
 
-static void repalce_set_thread_name() {
-#ifdef _WIN32
-    function_relocation::MemorySignature set_thread_name_func{"B9 88 13 6D 40", -0x24};
-    if (set_thread_name_func.scan(gum_module_get_path(gum_process_get_main_module()))) {
-        Hook((uint8_t *) set_thread_name_func.target_address, (uint8_t *) &set_thread_name);
-    }
-#endif
-}
-
-static int64_t hook_profiler_push(void *self, const char *zone, const char *source, int line) {
+static int64_t hook_profiler_push(void * /*self*/, const char *zone, const char *source, int line) {
     using namespace std::literals;
     bool is_connected = tracy_active;
     auto &p = profiler;
@@ -145,21 +134,25 @@ static int64_t hook_profiler_push(void *self, const char *zone, const char *sour
                 lock.unlock();
                 count++;
                 bool except = false;
-                if (count >= 600 && thread_id_count.vaild.compare_exchange_strong(except, true, std::memory_order_relaxed)) {
+                if (count >= 600 &&
+                    thread_id_count.vaild.compare_exchange_strong(except, true, std::memory_order_relaxed)) {
                     set_thread_name(0, "SimUpdateThread");
                     thread_id_count.vaild.store(true, std::memory_order_relaxed);
                 }
             }
 
-            if (thread_name == "SimUpdateThread"sv)
+            if (thread_name == "SimUpdateThread"sv) {
                 p.start_time_ns = get_time_ns();
+            }
         }
-        if (is_connected)
+        if (is_connected) {
             ___tracy_emit_frame_mark(0);
+        }
     }
     p.stack++;
-    if (!is_connected)
+    if (!is_connected) {
         return 0;
+    }
     auto v = ___tracy_alloc_srcloc_name(line, source, strlen(source), 0, 0, zone, strlen(zone), 0);
     if (v) {
         auto k = ___tracy_emit_zone_begin_alloc(v, tracy_active);
@@ -167,9 +160,10 @@ static int64_t hook_profiler_push(void *self, const char *zone, const char *sour
     }
     return 0;
 }
+
 struct ProfilerHooker {
 
-    static int64_t hook_profiler_pop(void *self) {
+    static int64_t hook_profiler_pop(void * /*self*/) {
         auto &p = profiler;
         --p.stack;
         if (p.stack < 0) {
@@ -184,7 +178,6 @@ struct ProfilerHooker {
                 */
                 constexpr int frame_max_time_ns = 33 * 1e6;
                 constexpr int frame_good_max_time_ns = 20 * 1e6;
-                auto &p = profiler;
                 auto now = get_time_ns();
                 auto used_time = int(now - p.start_time_ns);
                 int left_time_ns = frame_gc_time_ns - used_time;
@@ -201,8 +194,9 @@ struct ProfilerHooker {
                 p.start_time_ns = 0;
             }
         }
-        if (!tracy_active)
+        if (!tracy_active) {
             return 0;
+        }
         if (!profiler.ctx.empty()) {
             auto k = p.ctx.back();
             p.ctx.pop_back();
@@ -210,6 +204,7 @@ struct ProfilerHooker {
         }
         return 0;
     }
+
     static void TryDoGC(void *L, int left_time, uint64_t now) {
         auto *gctx = ds::core_vm::TryGetGameLuaContext();
         if (!gctx) {
@@ -220,11 +215,14 @@ struct ProfilerHooker {
         if (luatype == GameLuaType::jit_gen) {
             return;
         }
-        switch (luatype)
-        {
+        switch (luatype) {
         case GameLuaType::jit: {
-            if (auto *gc = ResolveLuaGcFunc()) gc(L, LUA_GCSTEPTIME, int(left_time * 0.8f));
-            if (auto *gc = ResolveLuaGcFunc()) gc(L, LUA_GCSTEP2, 0);
+            if (auto *gc = ResolveLuaGcFunc()) {
+                gc(L, LUA_GCSTEPTIME, int(left_time * 0.8f));
+            }
+            if (auto *gc = ResolveLuaGcFunc()) {
+                gc(L, LUA_GCSTEP2, 0);
+            }
             static int lua_gccycle_count = 0;
             auto *gc = ResolveLuaGcFunc();
             auto lua_gccycle = gc ? gc(L, LUA_GCCYCLE, 0) : 0;
@@ -238,45 +236,31 @@ struct ProfilerHooker {
             break;
         }
         case GameLuaType::game:
-             // nothing to do
-             break;
+            // nothing to do
+            break;
         default:
             now += left_time;
             do {
-                if (auto *gc = ResolveLuaGcFunc()) gc(L, LUA_GCSTEP, 0);
+                if (auto *gc = ResolveLuaGcFunc()) {
+                    gc(L, LUA_GCSTEP, 0);
+                }
             } while (get_time_ns() < now);
             break;
         }
     }
 };
 
-extern void gum_luajit_profiler_update_thread_id(lua_State *target_L, GumThreadId id);
-DS_INJECTOR_CXX_API void lua_event_notifyer(LUA_EVENT ev, lua_State *L) {
-    switch (ev) {
-        case LUA_EVENT::new_state:
-            profiler.L = 0;
-            break;
-        case LUA_EVENT::close_state:
-            profiler.L = 0;
-            //gum_luajit_profiler_update_thread_id(nullptr, gum_process_get_current_thread_id());
-            return;
-        case LUA_EVENT::call_lua_gc:
-            profiler.L = profiler.start_time_ns ? L : 0;
-            break;
+// core.vm still dllimports lua_event_notifyer from Injector; Injector forwards here.
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_profiler_lua_event_notifyer(int ev, lua_State *L) {
+    switch (static_cast<LUA_EVENT>(ev)) {
+    case LUA_EVENT::new_state:
+        profiler.L = nullptr;
+        break;
+    case LUA_EVENT::close_state:
+        profiler.L = nullptr;
+        return;
+    case LUA_EVENT::call_lua_gc:
+        profiler.L = profiler.start_time_ns ? L : nullptr;
+        break;
     }
-    //gum_luajit_profiler_update_thread_id(L, gum_process_get_current_thread_id());
 }
-//#define profiler_lua_gc 0
-#ifdef profiler_lua_gc
-#include "util/InvocationListener.hpp"
-struct InvocationListenerProfiler : InvocationListener {
-    virtual ~InvocationListenerProfiler() {}
-
-    virtual void on_enter(GumInvocationContext *context) {
-        hook_profiler_push(0, (const char *) gum_invocation_context_get_listener_function_data(context), "", 0);
-    };
-    virtual void on_leave(GumInvocationContext *context) {
-        hook_profiler_pop(0);
-    };
-};
-#endif

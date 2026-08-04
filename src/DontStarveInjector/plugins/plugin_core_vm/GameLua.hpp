@@ -15,7 +15,7 @@ enum class LUA_EVENT {
     call_lua_gc,
 };
 
-// Defined in Injector (GameProfilerHook) when profiler is linked; core.vm imports it.
+// Defined in Injector (forwards to plugin_debug_profiler when staged).
 DS_INJECTOR_CXX_API void lua_event_notifyer(LUA_EVENT ev, lua_State *L);
 
 /*

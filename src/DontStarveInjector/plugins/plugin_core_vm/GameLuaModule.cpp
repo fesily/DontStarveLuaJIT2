@@ -1188,13 +1188,14 @@ using DsLuajitGetRenderBackendNameFn = const char *(*)();
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_network_tick(char upload_tick, char download_tick, bool isclient);
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_set_target_fps(int fps, int tt);
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int tt);
-DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api();
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_tracy(int en);
+// Implemented in plugins/plugin_debug_profiler. Resolved at runtime (Task 2).
+using DsLuajitReplaceProfilerApiFn = int (*)();
+using DsLuajitEnableTracyFn = void (*)(int);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version();
 // Implemented in plugins/plugin_network_rpc/GameNetwork.cpp. Resolved at runtime.
 using DsLuajitEntityNetWorkRegisterFn = void *(*)(void *, int64_t);
 using DsLuajitSetNextRpcInfoFn = void (*)(std::optional<PacketPriority>, std::optional<PacketReliability>, std::optional<char>);
-DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_enable_framegc(bool enable);
+using DsLuajitEnableFramegcFn = bool (*)(bool);
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_profiler(int en);
 #ifdef _WIN32
 using DsLuajitSetVbpoolEnabledFn = void (*)(bool);
@@ -1307,8 +1308,44 @@ int luaopen_GameInjector(lua_State* L) {
     module.set_function("DS_LUAJIT_replace_network_tick", &DS_LUAJIT_replace_network_tick);
     module.set_function("DS_LUAJIT_set_target_fps", &DS_LUAJIT_set_target_fps);
     module.set_function("DS_LUAJIT_update", &DS_LUAJIT_update);
-    module.set_function("DS_LUAJIT_replace_profiler_api", &DS_LUAJIT_replace_profiler_api);
-    module.set_function("DS_LUAJIT_enable_tracy", &DS_LUAJIT_enable_tracy);
+    module.set_function("DS_LUAJIT_replace_profiler_api", []() -> int {
+#if defined(_WIN32)
+        static DsLuajitReplaceProfilerApiFn fn = []() -> DsLuajitReplaceProfilerApiFn {
+            HMODULE mod = GetModuleHandleA("plugin_debug_profiler.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitReplaceProfilerApiFn>(
+                GetProcAddress(mod, "DS_LUAJIT_replace_profiler_api"));
+        }();
+#else
+        static DsLuajitReplaceProfilerApiFn fn = []() -> DsLuajitReplaceProfilerApiFn {
+            return reinterpret_cast<DsLuajitReplaceProfilerApiFn>(
+                dlsym(RTLD_DEFAULT, "DS_LUAJIT_replace_profiler_api"));
+        }();
+#endif
+        return fn ? fn() : 0;
+    });
+    module.set_function("DS_LUAJIT_enable_tracy", [](int en) {
+#if defined(_WIN32)
+        static DsLuajitEnableTracyFn fn = []() -> DsLuajitEnableTracyFn {
+            HMODULE mod = GetModuleHandleA("plugin_debug_profiler.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitEnableTracyFn>(
+                GetProcAddress(mod, "DS_LUAJIT_enable_tracy"));
+        }();
+#else
+        static DsLuajitEnableTracyFn fn = []() -> DsLuajitEnableTracyFn {
+            return reinterpret_cast<DsLuajitEnableTracyFn>(
+                dlsym(RTLD_DEFAULT, "DS_LUAJIT_enable_tracy"));
+        }();
+#endif
+        if (fn) {
+            fn(en);
+        }
+    });
     module.set_function("DS_LUAJIT_get_mod_version", &DS_LUAJIT_get_mod_version);
     module.set_function("DS_LUAJIT_EntityNetWorkExtension_Register",
                         [](void *networkComponentLuaProxyPtr, int64_t networkid) -> void * {
@@ -1349,7 +1386,24 @@ int luaopen_GameInjector(lua_State* L) {
         (void) orderingChannel;
 #endif
     });
-    module.set_function("DS_LUAJIT_enable_framegc", &DS_LUAJIT_enable_framegc);
+    module.set_function("DS_LUAJIT_enable_framegc", [](bool enable) -> bool {
+#if defined(_WIN32)
+        static DsLuajitEnableFramegcFn fn = []() -> DsLuajitEnableFramegcFn {
+            HMODULE mod = GetModuleHandleA("plugin_debug_profiler.dll");
+            if (!mod) {
+                return nullptr;
+            }
+            return reinterpret_cast<DsLuajitEnableFramegcFn>(
+                GetProcAddress(mod, "DS_LUAJIT_enable_framegc"));
+        }();
+#else
+        static DsLuajitEnableFramegcFn fn = []() -> DsLuajitEnableFramegcFn {
+            return reinterpret_cast<DsLuajitEnableFramegcFn>(
+                dlsym(RTLD_DEFAULT, "DS_LUAJIT_enable_framegc"));
+        }();
+#endif
+        return fn ? fn(enable) : false;
+    });
     module.set_function("DS_LUAJIT_set_vbpool_enabled", [](bool enable) {
 #ifdef _WIN32
         static DsLuajitSetVbpoolEnabledFn fn = []() -> DsLuajitSetVbpoolEnabledFn {

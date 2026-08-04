@@ -22,6 +22,9 @@
 #include <ShlObj.h>
 #pragma comment(lib, "Shell32.lib")
 #endif
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
 
 namespace {
 
@@ -698,42 +701,54 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int 
     return 0;
 }
 
-#include "GameProfilerHook.hpp"
+#include "GameLua.hpp"
 
-DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
-    static std::atomic_char replaced;
-    if (replaced) return 1;
-#ifdef __linux__
-    // profiler_push: compiler now emits `add dword [rbx+0x180],1` (was r12-based 41 83 84 24 ...).
-    // Anchor on the surrounding `mov [rbp+0x18],0x42 ; mov [rbp+0x28],r14d ; add [rbx+0x180],1`
-    // tail to stay unique (the bare increment matches twice), func entry is -0xEE from match start.
-    function_relocation::MemorySignature profiler_push{"C6 45 18 42 44 89 75 28 83 83 80 01 00 00 01", -0xEE};
-    function_relocation::MemorySignature profiler_pop{"64 48 8B 1C 25 F8 FF FF FF", -0x15};
-#elif defined(__APPLE__)
-    function_relocation::MemorySignature profiler_push{"41 83 84 24 80 01 00 00 01", -0xF6};
-    function_relocation::MemorySignature profiler_pop{"64 48 8B 1C 25 F8 FF FF FF", -0x15};
-    return 0;//TODO
-#elif defined(_WIN32)
-    function_relocation::MemorySignature profiler_push{"44 8B 9B 88 02 00 00", -0x175};
-    function_relocation::MemorySignature profiler_pop{"81 7F 1C 00 3C 00 00", -0x7D};
-#endif
-
-    auto path = gum_module_get_path(gum_process_get_main_module());
-    if (profiler_pop.scan(path) && profiler_push.scan(path)) {
-        Hook((uint8_t *) profiler_push.target_address, (uint8_t *) hook_profiler_push);
-        Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHooker::hook_profiler_pop);
-#ifdef profiler_lua_gc
-        auto interceptor = InjectorCtx::instance().GetGumInterceptor();
-        static Gum::InvocationListenerProxy linstener{new Gum::InvocationListenerProfiler()};
-        gum_interceptor_attach(interceptor, (void *) get_luajit_address("lua_gc"), GUM_INVOCATION_LISTENER(linstener.cproxy), (void *) "lua_gc");
-#endif
-        replaced = 1;
-    }
-    return replaced;
+// Frame budget for FrameGC lives in Injector; plugin reads via getter (no mutable global import).
+DONTSTARVEINJECTOR_GAME_API float DS_LUAJIT_get_frame_time_s(void) {
+    return frame_time_s;
 }
 
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_tracy(int en) {
-    tracy_active = en;
+// core.vm dllimports this from Injector. Forward to plugin_debug_profiler when staged.
+DS_INJECTOR_CXX_API void lua_event_notifyer(LUA_EVENT ev, lua_State *L) {
+#ifdef _WIN32
+    using Fn = void (*)(int, lua_State *);
+    static Fn fn = []() -> Fn {
+        HMODULE m = GetModuleHandleA("plugin_debug_profiler.dll");
+        if (!m) {
+            return nullptr;
+        }
+        return reinterpret_cast<Fn>(GetProcAddress(m, "DS_LUAJIT_profiler_lua_event_notifyer"));
+    }();
+    if (fn) {
+        fn(static_cast<int>(ev), L);
+    }
+#else
+    using Fn = void (*)(int, lua_State *);
+    static Fn fn = []() -> Fn {
+        return reinterpret_cast<Fn>(dlsym(RTLD_DEFAULT, "DS_LUAJIT_profiler_lua_event_notifyer"));
+    }();
+    if (fn) {
+        fn(static_cast<int>(ev), L);
+    }
+#endif
+}
+
+// L0 process hygiene (thread naming). Was in GameProfilerHook; stays in Injector.
+static void repalce_set_thread_name() {
+#ifdef _WIN32
+    function_relocation::MemorySignature set_thread_name_func{"B9 88 13 6D 40", -0x24};
+    if (set_thread_name_func.scan(gum_module_get_path(gum_process_get_main_module()))) {
+        static auto set_thread_name = +[](uint32_t /*thread_id*/, const char *name) {
+            // Best-effort: name current thread for Tracy/debuggers.
+#if defined(_WIN32)
+            if (name) {
+                SetThreadDescription(GetCurrentThread(), std::filesystem::path{name}.c_str());
+            }
+#endif
+        };
+        Hook((uint8_t *) set_thread_name_func.target_address, (uint8_t *) set_thread_name);
+    }
+#endif
 }
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version() {
     return MOD_VERSION;
