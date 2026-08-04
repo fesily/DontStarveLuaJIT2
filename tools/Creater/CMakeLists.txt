@@ -2,9 +2,6 @@ cmake_minimum_required(VERSION 3.15)
 
 set(SOURCES
         main.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/DontStarveSignature.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/SignatureJson.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/GameSignature.cpp
         ${DONTSTARVEINJECTOR_ROOT}/config.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
@@ -68,6 +65,8 @@ target_link_libraries(signature_updater PRIVATE ${FRIDA_GUM_LIBRARIES})
 
 target_link_libraries(signature_updater PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(signature_updater PRIVATE function_relocation)
+target_link_libraries(signature_updater PRIVATE ds_signature)
+target_include_directories(signature_updater PRIVATE ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/signature_load)
 target_include_directories(signature_updater PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
 target_compile_definitions(signature_updater PUBLIC

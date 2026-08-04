@@ -1,6 +1,14 @@
 # core.vm — optional Signature + GameLua (V-S2+V-S3). All platforms.
 # Gum symbols come from Injector re-exports (FridaGum.def on MSVC).
+#
+# Layout:
+#   signature_load/  → STATIC ds_signature (scan/json/progress)
+#   this dir         → MODULE plugin_core_vm (VM replace, gameio, GameInjector)
+
 set(PLUGIN_CORE_VM_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_subdirectory(signature_load)
+
 add_custom_command(OUTPUT ${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.c
         COMMAND ${PYTHON_EXECUTABLE_NAME} "${PROJECT_SOURCE_DIR}/tools/lua2c.py"
                 "${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.lua"
@@ -13,9 +21,6 @@ add_custom_target(GameLuaInjectFramework DEPENDS ${PLUGIN_CORE_VM_DIR}/GameLuaIn
 set(PLUGIN_CORE_VM_SOURCES
     plugin_core_vm.cpp
     GameLua.cpp
-    DontStarveSignature.cpp
-    SignatureJson.cpp
-    GameSignature.cpp
     GameLuaModule.cpp
     GameLuaInjectFramework.c
     lua_debugger_helper.cpp
@@ -26,14 +31,14 @@ set(PLUGIN_CORE_VM_SOURCES
 )
 if (MSVC)
     list(APPEND PLUGIN_CORE_VM_SOURCES
-        GameLua.def
-        ${DONTSTARVEINJECTOR_ROOT}/Progress.cpp)
+        GameLua.def)
 endif()
 
 ds_add_dynamic_plugin(plugin_core_vm ${PLUGIN_CORE_VM_SOURCES})
 add_dependencies(plugin_core_vm GameLuaInjectFramework create_missfuncs)
 
 target_link_libraries(plugin_core_vm PRIVATE
+    ds_signature
     spdlog::spdlog
     nlohmann_json::nlohmann_json
     function_relocation
@@ -56,9 +61,10 @@ target_compile_definitions(plugin_core_vm PRIVATE
     DS_CORE_VM_BUILD=1
 )
 if (MSVC)
+    # Match pre-split behavior: ShowProgressWindow during signature update.
     target_compile_definitions(plugin_core_vm PRIVATE SUPPORT_PROGRESS)
 endif()
-# Headers for moved TUs + L0 shared headers (config, GameLuaType, ...).
+
 target_include_directories(plugin_core_vm PRIVATE
     ${DONTSTARVEINJECTOR_ROOT}
     ${PLUGIN_CORE_VM_DIR}
@@ -74,9 +80,12 @@ if (ENABLE_STEAM_SUPPORT)
     target_compile_definitions(plugin_core_vm PRIVATE ENABLE_STEAM_SUPPORT)
     target_include_directories(plugin_core_vm PRIVATE ${STEAM_INCLUDE_DIR} ${STEAM_SDK_INCLUDE_DIR})
     target_link_libraries(plugin_core_vm PRIVATE ${STEAM_LIBRARIES})
-    # SteamUser() / interface accessors for GameSteam account id + UGC path.
     target_sources(plugin_core_vm PRIVATE ${DONTSTARVEINJECTOR_UTIL_DIR}/steam.cpp)
 endif()
 
 # lagcomp / remaining Injector TUs still include GameLua.hpp etc.
-target_include_directories(Injector PUBLIC ${PLUGIN_CORE_VM_DIR})
+# Also expose signature_load headers (DontStarveSignature.hpp) via PUBLIC on ds_signature;
+# keep plugin_core_vm dir PUBLIC for GameLua.hpp consumers.
+target_include_directories(Injector PUBLIC
+    ${PLUGIN_CORE_VM_DIR}
+    ${PLUGIN_CORE_VM_DIR}/signature_load)

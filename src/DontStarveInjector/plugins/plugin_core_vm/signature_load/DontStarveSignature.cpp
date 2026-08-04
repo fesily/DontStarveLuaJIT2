@@ -16,7 +16,7 @@
 #include "ModuleSections.hpp"
 #include "Signature.hpp"
 #include "SignatureJson.hpp"
-#include "../../missfunc.h"
+#include "missfunc.h"
 #include "range/v3/range/conversion.hpp"
 #include "ExectuableSignature.hpp"
 #include "util/gum_platform.hpp"
