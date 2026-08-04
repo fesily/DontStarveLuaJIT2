@@ -1,7 +1,7 @@
 # Task 3 Report: IConfigSource adapters + single resolve entry (CF-S2)
 
 **Status:** DONE  
-**Commit:** `f896a32` — `feat(config): IConfigSource cascade resolve behind GameJitModConfig::instance`  
+**Commit:** `67cd2e8` — `feat(config): IConfigSource cascade resolve behind GameJitModConfig::instance`  
 **Base:** `2712b54` (Task 2 apply_partial)  
 **Date:** 2026-08-05
 
@@ -95,9 +95,55 @@ Result: `[lg] PASS core profile scenario=present` (exit 0).
 - Client write-back after resolve preserved.
 - Path discovery not moved to `config/path/` yet (Task 4).
 
-## Concerns
+## Concerns (pre-fix)
 
-- Env LuaVmType aliases (`lua51`/`51`/…) normalize to `"game"` so `apply_partial` accepts them against schema.allowed; `jit_gen` leaves LuaVmType unchanged (EnabledGenGC is separate). Slightly different from legacy raw write of unsupported strings.
+- ~~Env LuaVmType aliases (`lua51`/`51`/…) normalize to `"game"` so `apply_partial` accepts them against schema.allowed; `jit_gen` leaves LuaVmType unchanged (EnabledGenGC is separate). Slightly different from legacy raw write of unsupported strings.~~ **Fixed** — see Review fix below.
 - `IConfigSource::read` takes non-const `CascadeContext &` so layers can fill identity/save_file (deviation from brief `const` signature — necessary for path discovery without globals).
 - `LoadGameJitModConfigFromSaveFile` / overrides still exist for write-back path and legacy callers; cascade load now goes through sources.
 - Identity still uses `GameJitConfigSource::luajit_config` for modname/modid even when only static defaults apply.
+
+## Review fix: EnvOrCmdSource VM aliases (Important)
+
+**Commit:** `fix(config): preserve env lua_vm_type aliases (jit_gen, lua51)`
+
+### Changes
+
+1. **`EnvOrCmdSource.cpp`**
+   - `jit_gen` → emit `LuaVmType="jit"` **and** `EnabledGenGC=true` (matches `GetLuaVmType()` which checks `EnabledGenGC` first).
+   - `lua51` / `51` / `5.1` / `_51` / `jit` / `game` → store **raw** supported alias in `LuaVmType` (legacy `update_string_field` + `GameLuaTypeFromString` behavior). No more remap to `"game"`.
+
+2. **`ConfigSchema.cpp` `RegisterCoreOptionSchema`**
+   - Extend `LuaVmType.allowed` beyond modinfo `{jit, game}` with env aliases: `lua51`, `51`, `5.1`, `_51`, `jit_gen` so `apply_partial` does not reject them.
+
+3. **Tests**
+   - `test_config_resolve`: `resolve_env_lua_vm_type_aliases` covers raw `lua51`, jit_gen→jit+EnabledGenGC, and `_51` via fake EnvOrCmd source.
+   - `test_config_schema`: asserts core schema allowed set includes all env aliases.
+
+### Verification
+
+```text
+$ cmake --build builds/ninja-multi-vcpkg --config RelWithDebInfo --target test_config_resolve test_config_schema test_config_source_whitelist Injector
+[12/12] Linking CXX shared library .../Injector.dll
+
+$ ./builds/ninja-multi-vcpkg/tests/RelWithDebInfo/test_config_resolve.exe
+PASS: resolve_respects_source_order_and_whitelist
+PASS: resolve_empty_sources_yields_empty_view
+PASS: resolve_env_lua_vm_type_aliases
+ALL PASS: config_resolve
+
+$ ./builds/ninja-multi-vcpkg/tests/RelWithDebInfo/test_config_schema.exe
+...
+PASS: register_core_option_schema
+...
+All config schema tests passed!
+
+$ ./builds/ninja-multi-vcpkg/tests/RelWithDebInfo/test_config_source_whitelist.exe
+PASS: whitelist_blocks_env
+PASS: priority_when_all_allowed
+PASS: unknown_key_ignored
+ALL PASS: config_source_whitelist
+
+Injector.dll linked (RelWithDebInfo).
+```
+
+L-G present not re-run (unit + Injector link sufficient for this review fix).

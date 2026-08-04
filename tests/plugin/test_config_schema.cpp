@@ -1,5 +1,6 @@
 #include "core/ConfigSchema.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <string>
@@ -83,6 +84,18 @@ static void test_register_core_option_schema() {
     assert(lua_vm->type == ConfigValueType::String);
     assert(lua_vm->default_value.s == "jit");
     assert(!lua_vm->allowed.empty());
+    // Env/cmd historical aliases must be schema-allowed so apply_partial accepts them.
+    auto has_allowed = [&](const char *v) {
+        return std::find(lua_vm->allowed.begin(), lua_vm->allowed.end(), v) !=
+               lua_vm->allowed.end();
+    };
+    assert(has_allowed("jit"));
+    assert(has_allowed("game"));
+    assert(has_allowed("lua51"));
+    assert(has_allowed("51"));
+    assert(has_allowed("5.1"));
+    assert(has_allowed("_51"));
+    assert(has_allowed("jit_gen"));
 
     // Idempotent re-register.
     RegisterCoreOptionSchema(reg);

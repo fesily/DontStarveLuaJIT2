@@ -142,10 +142,13 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
         e.key = std::string{ModConfigurationOptions::LuaVmType.name};
         e.type = ConfigValueType::String;
         e.default_value = ConfigValue::string(std::string{ModConfigurationOptions::LuaVmType.default_value});
-        // modinfo options are jit/game; env/cmd still accepts extra aliases via
-        // is_supported_lua_vm_type outside schema.allowed.
+        // modinfo UI options are jit/game; env/cmd also accepts historical aliases
+        // that GameLuaTypeFromString understands (lua51/51/5.1/_51/jit_gen).
         for (const auto &opt : ModConfigurationOptions::LuaVmType.options) {
             e.allowed.emplace_back(opt);
+        }
+        for (const char *alias : {"lua51", "51", "5.1", "_51", "jit_gen"}) {
+            e.allowed.emplace_back(alias);
         }
         (void) r.add(std::move(e));
     }

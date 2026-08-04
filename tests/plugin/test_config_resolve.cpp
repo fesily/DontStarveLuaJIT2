@@ -78,11 +78,57 @@ void test_resolve_empty_sources_yields_empty_view() {
     printf("PASS: resolve_empty_sources_yields_empty_view\n");
 }
 
+void test_resolve_env_lua_vm_type_aliases() {
+    ConfigSchemaRegistry reg;
+    RegisterCoreOptionSchema(reg);
+
+    // Emulate EnvOrCmdSource::read output for lua51 aliases — raw string preserved.
+    ConfigView env_lua51;
+    env_lua51["LuaVmType"] = ConfigValue::string("lua51");
+    FakeSource env_src(ConfigSource::EnvOrCmd, env_lua51);
+
+    CascadeContext ctx;
+    const std::vector<const IConfigSource *> sources = {&env_src};
+    auto resolved = resolve(reg, ctx, sources);
+
+    assert(resolved.view.count("LuaVmType") == 1);
+    assert(resolved.view.at("LuaVmType").type == ConfigValueType::String);
+    assert(resolved.view.at("LuaVmType").s == "lua51");
+    assert(resolved.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
+    assert(resolved.view.count("EnabledGenGC") == 0);
+
+    // Emulate EnvOrCmdSource::read for jit_gen → LuaVmType=jit + EnabledGenGC=true.
+    ConfigView env_jit_gen;
+    env_jit_gen["LuaVmType"] = ConfigValue::string("jit");
+    env_jit_gen["EnabledGenGC"] = ConfigValue::boolean(true);
+    FakeSource env_gen(ConfigSource::EnvOrCmd, env_jit_gen);
+    const std::vector<const IConfigSource *> sources_gen = {&env_gen};
+    auto resolved_gen = resolve(reg, ctx, sources_gen);
+
+    assert(resolved_gen.view.at("LuaVmType").s == "jit");
+    assert(resolved_gen.view.at("EnabledGenGC").type == ConfigValueType::Bool);
+    assert(resolved_gen.view.at("EnabledGenGC").b == true);
+    assert(resolved_gen.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
+    assert(resolved_gen.source_of.at("EnabledGenGC") == ConfigSource::EnvOrCmd);
+
+    // _51 alias accepted by schema.allowed.
+    ConfigView env_51;
+    env_51["LuaVmType"] = ConfigValue::string("_51");
+    FakeSource env_u51(ConfigSource::EnvOrCmd, env_51);
+    const std::vector<const IConfigSource *> sources_51 = {&env_u51};
+    auto resolved_51 = resolve(reg, ctx, sources_51);
+    assert(resolved_51.view.at("LuaVmType").s == "_51");
+
+    printf("PASS: resolve_env_lua_vm_type_aliases\n");
+}
+
+
 } // namespace
 
 int main() {
     test_resolve_respects_source_order_and_whitelist();
     test_resolve_empty_sources_yields_empty_view();
+    test_resolve_env_lua_vm_type_aliases();
     printf("ALL PASS: config_resolve\n");
     return 0;
 }
