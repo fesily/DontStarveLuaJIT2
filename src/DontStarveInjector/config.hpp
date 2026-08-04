@@ -44,8 +44,16 @@ constexpr auto game_name = "dontstarve_";
 
 #ifdef _WIN32
 #define DONTSTARVEINJECTOR_API extern "C" __declspec(dllexport)
+#  if defined(DONTSTARVEINJECTOR_BUILD)
+#    define DS_INJECTOR_CXX_API __declspec(dllexport)
+#  elif defined(DS_PLUGIN_HOST_STATIC)
+#    define DS_INJECTOR_CXX_API
+#  else
+#    define DS_INJECTOR_CXX_API __declspec(dllimport)
+#  endif
 #else
 #define DONTSTARVEINJECTOR_API extern "C" __attribute__((visibility("default")))
+#define DS_INJECTOR_CXX_API __attribute__((visibility("default")))
 #endif
 
 #define DONTSTARVEINJECTOR_GAME_API DONTSTARVEINJECTOR_API
@@ -162,7 +170,7 @@ public:
     uint32_t steam_account_id{0};
     GumInterceptor *GetGumInterceptor();
     InjectorCtx();
-    static InjectorCtx *instance();
+    static DS_INJECTOR_CXX_API InjectorCtx *instance();
 private:
     GumInterceptor *interceptor{nullptr};
 };

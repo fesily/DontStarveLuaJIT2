@@ -46,7 +46,7 @@ struct GameJitModConfig {
         return GameLuaTypeFromString(LuaVmType);
     }
 
-    static std::optional<GameJitModConfig> instance();
+    static DS_INJECTOR_CXX_API std::optional<GameJitModConfig> instance();
 };
 
 GameJitModConfig make_default_game_mod_config();

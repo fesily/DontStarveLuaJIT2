@@ -123,15 +123,6 @@ inline bool g_enableBufferPool = false;
 inline BufferNamePool g_bufferNamePool;
 
 #ifdef _WIN32
-void SetRenderHookGlFunctionsWithNew() {
-    g_glGenBuffers    = &glGenBuffers;
-    g_glDeleteBuffers = &glDeleteBuffers;
-    g_glBindBuffer    = &glBindBuffer;
-    g_glBufferData    = &glBufferData;
-    g_glFunctionsResolved = true;
-    spdlog::info("[RenderHook] GL functions set by ANGLE hijack (static link)");
-}
-
 inline bool ensureGlFunctions() {
     if (g_glFunctionsResolved) {
         return g_glGenBuffers && g_glDeleteBuffers && g_glBindBuffer && g_glBufferData;
@@ -151,6 +142,11 @@ inline bool ensureGlFunctions() {
     }
     spdlog::info("[RenderHook] GL functions resolved from libGLESv2.dll");
     return true;
+}
+
+void SetRenderHookGlFunctionsWithNew() {
+    // Path A M-R1: Injector no longer links ANGLE. Resolve from loaded libGLESv2.
+    (void) ensureGlFunctions();
 }
 #endif
 

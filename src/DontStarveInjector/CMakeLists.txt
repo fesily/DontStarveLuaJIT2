@@ -25,7 +25,6 @@ set(SOURCES
         GameSteam.cpp
         GameSignature.cpp
         GameNetwork.cpp
-        GameOpenGl.cpp
         config.cpp
         GameLuaInjectFramework.c
         lua_debugger_helper.cpp
@@ -129,10 +128,9 @@ target_link_libraries(Injector PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(Injector PRIVATE spdlog::spdlog)
 target_link_libraries(Injector PRIVATE range-v3::meta range-v3::concepts range-v3::range-v3)
 target_link_libraries(Injector PRIVATE SLikeNet)
+# GameRenderHook (still in Injector until M-R2) needs GLES headers only — no ANGLE .lib.
 if (WIN32)
-    target_link_libraries(Injector PRIVATE
-        unofficial::angle::libGLESv2
-        unofficial::angle::libEGL)
+    target_include_directories(Injector PRIVATE "${PROJECT_SOURCE_DIR}/3rd/angle/win64/include")
 endif()
 target_include_directories(Injector PRIVATE ${PLF_HIVE_INCLUDE_DIRS})
 #target_link_libraries(Injector PRIVATE $<IF:$<TARGET_EXISTS:mimalloc-static>,mimalloc-static,mimalloc>)
@@ -205,6 +203,23 @@ ds_add_dynamic_plugin(plugin_network_rpc
 ds_add_dynamic_plugin(plugin_render_vbpool
     plugins/plugin_render_vbpool/plugin_render_vbpool.cpp)
 ds_add_dynamic_plugin(plugin_render_angle
-    plugins/plugin_render_angle/plugin_render_angle.cpp)
+    plugins/plugin_render_angle/plugin_render_angle.cpp
+    GameOpenGl.cpp)
+if (WIN32)
+    # ANGLE + OpenGL implementation live only in this module (Path A M-R1).
+    target_link_libraries(plugin_render_angle PRIVATE
+        unofficial::angle::libGLESv2
+        unofficial::angle::libEGL
+        spdlog::spdlog
+        function_relocation)
+    target_compile_definitions(plugin_render_angle PRIVATE
+        GUM_STATIC=1
+        SPDLOG_COMPILED_LIB
+        SPDLOG_FMT_EXTERNAL)
+    target_include_directories(plugin_render_angle PRIVATE
+        ${PROJECT_SOURCE_DIR}/3rd
+        ${PROJECT_SOURCE_DIR}/3rd/frida-gum/win64
+        ${FUNCTION_RELOCATION_INCLUDE_DIR})
+endif()
 
 

@@ -434,8 +434,8 @@ DONTSTARVEINJECTOR_GAME_API void InitGameOpenGl() {
 
     EnsureVulkanLayerDisableEnvironment();
     RebindMainModuleAngleImports();
-    render_hook::SetRenderHookGlFunctionsWithNew();
-
+    // VBPool resolves GL entry points via GetProcAddress(libGLESv2); do not
+    // hard-call into plugin_render_vbpool from angle (Path A M-R1 decouple).
     g_angle_egl_initialized = true;
 }
 
