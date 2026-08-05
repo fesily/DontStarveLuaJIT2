@@ -29,8 +29,9 @@ std::optional<nlohmann::json> fetch_plugins_manifest(const ds::plugin::PluginPin
 // Fill channel_cache from manifest plugins[].id → version.
 ds::plugin::ChannelVersionCache channel_cache_from_manifest(const nlohmann::json &manifest);
 
-// Platform slot for plugin id from manifest (platforms[current] or first available).
+// Platform slot for plugin id from manifest (platforms[current] only; no foreign fallback).
 // Returns {asset, sha256, module, files, version} or nullopt.
+
 struct ManifestPluginAsset {
     std::string id;
     std::string version;

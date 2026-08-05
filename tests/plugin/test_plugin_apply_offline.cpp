@@ -259,10 +259,154 @@ static void test_install_pending_fallback() {
     assert(install_extracted_files(staging, plugins, {"plugin_x.dll"}, &pending, &err));
     assert(!pending);
     assert(read_bytes(plugins / "plugin_x.dll") == "DATA");
+
+    // Safe replace: existing live content is not wiped before new bytes land.
+    {
+        std::ofstream out(staging / "plugin_x.dll", std::ios::binary | std::ios::trunc);
+        out << "NEWDATA";
+    }
+    assert(install_extracted_files(staging, plugins, {"plugin_x.dll"}, &pending, &err));
+    assert(read_bytes(plugins / "plugin_x.dll") == "NEWDATA");
+
+    // Path-like basenames rejected at install.
+    assert(!install_extracted_files(staging, plugins, {"../evil.dll"}, &pending, &err));
+    assert(err.find("unsafe") != std::string::npos);
+    assert(!install_extracted_files(staging, plugins, {"nested/plugin_x.dll"}, &pending, &err));
+
     std::error_code ec;
     fs::remove_all(staging, ec);
     fs::remove_all(plugins, ec);
     printf("PASS: install_pending_fallback\n");
+}
+
+static void test_reject_pathlike_module_and_files() {
+    const nlohmann::json manifest = nlohmann::json::parse(R"({
+      "schema_version": 1,
+      "plugins": [
+        {
+          "id": "evil.path",
+          "version": "1.0.0",
+          "platforms": {
+            "windows": {
+              "available": true,
+              "asset": "x.zip",
+              "sha256": "00",
+              "module": "../evil.dll",
+              "files": ["plugin_ok.dll"]
+            },
+            "linux": {
+              "available": true,
+              "asset": "x.zip",
+              "sha256": "00",
+              "module": "../evil.so",
+              "files": ["plugin_ok.so"]
+            },
+            "macos": {
+              "available": true,
+              "asset": "x.zip",
+              "sha256": "00",
+              "module": "../evil.dylib",
+              "files": ["plugin_ok.dylib"]
+            }
+          }
+        }
+      ]
+    })");
+    std::string err;
+    auto asset = lookup_manifest_asset(manifest, "evil.path", current_platform_key(), &err);
+    assert(!asset.has_value());
+    assert(err.find("unsafe module") != std::string::npos);
+
+    // Absolute / nested files[] rejected.
+    nlohmann::json man2 = nlohmann::json::parse(R"({
+      "plugins": [{
+        "id": "evil.files",
+        "version": "1.0.0",
+        "platforms": {
+          "windows": {
+            "available": true,
+            "asset": "x.zip",
+            "sha256": "00",
+            "module": "plugin_ok.dll",
+            "files": ["plugin_ok.dll", "subdir/nested.dll"]
+          },
+          "linux": {
+            "available": true,
+            "asset": "x.zip",
+            "sha256": "00",
+            "module": "plugin_ok.so",
+            "files": ["plugin_ok.so", "subdir/nested.so"]
+          },
+          "macos": {
+            "available": true,
+            "asset": "x.zip",
+            "sha256": "00",
+            "module": "plugin_ok.dylib",
+            "files": ["plugin_ok.dylib", "subdir/nested.dylib"]
+          }
+        }
+      }]
+    })");
+    err.clear();
+    asset = lookup_manifest_asset(man2, "evil.files", current_platform_key(), &err);
+    assert(!asset.has_value());
+    assert(err.find("unsafe files") != std::string::npos);
+    printf("PASS: reject_pathlike_module_and_files\n");
+}
+
+static void test_reject_foreign_platform() {
+    // Manifest only has a different platform than current → fail, no fallback.
+    const std::string foreign =
+#if defined(_WIN32)
+        "linux";
+#elif defined(__APPLE__)
+        "windows";
+#else
+        "windows";
+#endif
+    nlohmann::json manifest;
+    manifest["plugins"] = nlohmann::json::array();
+    nlohmann::json plug;
+    plug["id"] = "only.foreign";
+    plug["version"] = "1.0.0";
+    plug["platforms"] = nlohmann::json::object();
+    nlohmann::json slot;
+    slot["available"] = true;
+    slot["asset"] = "plugin_x.zip";
+    slot["sha256"] = "00";
+    slot["module"] = "plugin_x.so";
+    slot["files"] = nlohmann::json::array({"plugin_x.so"});
+    plug["platforms"][foreign] = slot;
+    manifest["plugins"].push_back(plug);
+
+    std::string err;
+    auto asset = lookup_manifest_asset(manifest, "only.foreign", current_platform_key(), &err);
+    assert(!asset.has_value());
+    assert(err.find("platform") != std::string::npos);
+    assert(err.find("missing") != std::string::npos);
+
+    // available:false for current platform also fails.
+    plug["platforms"] = nlohmann::json::object();
+    slot["module"] = "plugin_x.dll";
+    slot["files"] = nlohmann::json::array({"plugin_x.dll"});
+    slot["available"] = false;
+    plug["platforms"][current_platform_key()] = slot;
+    manifest["plugins"] = nlohmann::json::array({plug});
+    err.clear();
+    asset = lookup_manifest_asset(manifest, "only.foreign", current_platform_key(), &err);
+    assert(!asset.has_value());
+    assert(err.find("unavailable") != std::string::npos);
+    printf("PASS: reject_foreign_platform\n");
+}
+
+static void test_http_body_size_cap_constant() {
+    // Cap is exposed for transport paths; mock override bypasses platform GET.
+    assert(kMaxHttpBodyBytes == 64ull * 1024ull * 1024ull);
+    // Document expected error substring used by WinHTTP/curl bound paths.
+    const std::string sample_err =
+        "http_get: response exceeds " + std::to_string(kMaxHttpBodyBytes) + " bytes";
+    assert(sample_err.find("exceeds") != std::string::npos);
+    printf("PASS: http_body_size_cap_constant\n");
 }
 
 int main() {
@@ -270,6 +414,10 @@ int main() {
     test_fetch_manifest_mock();
     test_apply_plan_with_mock_http();
     test_install_pending_fallback();
+    test_reject_pathlike_module_and_files();
+    test_reject_foreign_platform();
+    test_http_body_size_cap_constant();
     printf("ALL PASS plugin_apply_offline\n");
     return 0;
 }
+

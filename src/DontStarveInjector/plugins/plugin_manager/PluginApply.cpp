@@ -39,6 +39,23 @@ std::string github_api_base_from_github_base(std::string_view github_base) {
     return out;
 }
 
+// Single-segment basename only: reject absolute, drive, `..`, separators, empty.
+bool is_flat_safe_basename(std::string_view name) {
+    if (name.empty() || name == "." || name == "..") {
+        return false;
+    }
+    for (unsigned char c : name) {
+        if (c == '/' || c == '\\' || c == '\0') {
+            return false;
+        }
+    }
+    if (zip_entry_is_unsafe(name)) {
+        return false;
+    }
+    // Must already be a pure basename (no nested components).
+    return zip_entry_safe_basename(name) == std::string(name);
+}
+
 bool file_looks_locked_or_unwritable(const std::filesystem::path &path) {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
@@ -75,22 +92,48 @@ bool try_write_bytes(const std::filesystem::path &path, const std::string &bytes
     return true;
 }
 
+// Write sibling temp first; only replace dest after new bytes are durable.
+// Never remove a live module before the replacement content exists.
 bool copy_file_overwrite(const std::filesystem::path &from, const std::filesystem::path &to,
                          std::string *err) {
     std::error_code ec;
     if (!to.parent_path().empty()) {
         std::filesystem::create_directories(to.parent_path(), ec);
     }
-    // Prefer remove + rename for atomic-ish replace when possible.
-    if (std::filesystem::exists(to, ec)) {
-        std::filesystem::remove(to, ec);
+
+    const auto parent = to.parent_path().empty() ? std::filesystem::path(".") : to.parent_path();
+#if defined(_WIN32)
+    const auto tmp =
+        parent / (to.filename().string() + ".ds_tmp_" + std::to_string(GetCurrentProcessId()));
+#else
+    const auto tmp =
+        parent / (to.filename().string() + ".ds_tmp_" + std::to_string(static_cast<unsigned>(::getpid())));
+#endif
+
+    std::filesystem::remove(tmp, ec);
+    ec.clear();
+    // Prefer copy so `from` remains available for pending fallback.
+    std::filesystem::copy_file(from, tmp, std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+        if (err) {
+            *err = "temp write failed: " + from.generic_string() + " -> " + tmp.generic_string() +
+                   " (" + ec.message() + ")";
+        }
+        return false;
     }
-    std::filesystem::rename(from, to, ec);
+
+    // Atomic-ish replace when the platform allows rename-over.
+    ec.clear();
+    std::filesystem::rename(tmp, to, ec);
     if (!ec) {
         return true;
     }
+
+    // Fallback: overwrite dest in place from the completed temp (no pre-delete of dest).
     ec.clear();
-    std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
+    std::filesystem::copy_file(tmp, to, std::filesystem::copy_options::overwrite_existing, ec);
+    std::error_code rm_ec;
+    std::filesystem::remove(tmp, rm_ec);
     if (ec) {
         if (err) {
             *err = "copy failed: " + from.generic_string() + " -> " + to.generic_string() + " (" +
@@ -98,9 +141,9 @@ bool copy_file_overwrite(const std::filesystem::path &from, const std::filesyste
         }
         return false;
     }
-    std::filesystem::remove(from, ec);
     return true;
 }
+
 
 } // namespace
 
@@ -255,24 +298,15 @@ std::optional<ManifestPluginAsset> lookup_manifest_asset(const nlohmann::json &m
         return std::nullopt;
     }
     const auto &plats = (*entry)["platforms"];
-    const nlohmann::json *slot = nullptr;
-    if (plats.contains(std::string(platform_key)) && plats[std::string(platform_key)].is_object()) {
-        slot = &plats[std::string(platform_key)];
-    } else {
-        // Fallback: first available platform entry.
-        for (auto it = plats.begin(); it != plats.end(); ++it) {
-            if (it.value().is_object()) {
-                slot = &it.value();
-                break;
-            }
-        }
-    }
-    if (!slot) {
+    const std::string plat_key(platform_key);
+    if (!plats.contains(plat_key) || !plats[plat_key].is_object()) {
         if (err) {
-            *err = "manifest: no platform slot for " + out.id;
+            *err = "manifest: platform '" + plat_key + "' missing for " + out.id;
         }
         return std::nullopt;
     }
+    const nlohmann::json *slot = &plats[plat_key];
+
     if (slot->contains("available") && (*slot)["available"].is_boolean() &&
         !(*slot)["available"].get<bool>()) {
         if (err) {
@@ -294,11 +328,25 @@ std::optional<ManifestPluginAsset> lookup_manifest_asset(const nlohmann::json &m
         !req_str("module", out.module)) {
         return std::nullopt;
     }
+    if (!is_flat_safe_basename(out.module)) {
+        if (err) {
+            *err = "manifest: unsafe module path for " + out.id + ": " + out.module;
+        }
+        return std::nullopt;
+    }
     if (slot->contains("files") && (*slot)["files"].is_array()) {
         for (const auto &f : (*slot)["files"]) {
-            if (f.is_string()) {
-                out.files.push_back(f.get<std::string>());
+            if (!f.is_string()) {
+                continue;
             }
+            const std::string name = f.get<std::string>();
+            if (!is_flat_safe_basename(name)) {
+                if (err) {
+                    *err = "manifest: unsafe files[] entry for " + out.id + ": " + name;
+                }
+                return std::nullopt;
+            }
+            out.files.push_back(name);
         }
     }
     return out;
@@ -316,10 +364,17 @@ bool install_extracted_files(const std::filesystem::path &staging_dir,
     const auto pending_dir = plugins_dir / "update_pending";
 
     for (const auto &name : basenames) {
+        if (!is_flat_safe_basename(name)) {
+            if (err) {
+                *err = "install: unsafe basename: " + name;
+            }
+            return false;
+        }
         const auto src = staging_dir / name;
         if (!std::filesystem::is_regular_file(src, ec)) {
             continue; // optional meta may be absent
         }
+
         const auto dest = plugins_dir / name;
         bool go_pending = false;
         if (std::filesystem::exists(dest, ec) && file_looks_locked_or_unwritable(dest)) {
@@ -434,12 +489,20 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
         return false;
     }
 
-    // Verify module sha256 against manifest (module file hash, not zip hash).
-    const auto module_path = staging / asset.module;
+    // Module must be a single safe basename under staging and among extracted members.
+    if (!is_flat_safe_basename(asset.module)) {
+        std::filesystem::remove_all(staging, ec);
+        if (err) {
+            *err = "apply: unsafe module path: " + asset.module;
+        }
+        return false;
+    }
+    const std::string module_base = asset.module;
+    const auto module_path = staging / module_base;
     if (!std::filesystem::is_regular_file(module_path, ec)) {
         std::filesystem::remove_all(staging, ec);
         if (err) {
-            *err = "apply: module missing after extract: " + asset.module;
+            *err = "apply: module missing after extract: " + module_base;
         }
         return false;
     }
@@ -447,23 +510,64 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
     if (!digest.has_value() || !sha256_hex_equal(*digest, asset.sha256)) {
         std::filesystem::remove_all(staging, ec);
         if (err) {
-            *err = "apply: sha256 mismatch for " + asset.module +
+            *err = "apply: sha256 mismatch for " + module_base +
                    " (got " + digest.value_or("<read-error>") + ", expected " + asset.sha256 + ")";
         }
         return false;
     }
 
     // Collect basenames actually present in staging (allowlist ∩ extracted).
+    // Re-validate files[] as single safe basenames before install.
     std::vector<std::string> basenames;
     if (!asset.files.empty()) {
-        basenames = asset.files;
-    } else {
-        for (const auto &entry : std::filesystem::directory_iterator(staging, ec)) {
-            if (entry.is_regular_file(ec)) {
-                basenames.push_back(entry.path().filename().string());
+        bool module_listed = false;
+        for (const auto &f : asset.files) {
+            if (!is_flat_safe_basename(f)) {
+                std::filesystem::remove_all(staging, ec);
+                if (err) {
+                    *err = "apply: unsafe files[] entry: " + f;
+                }
+                return false;
+            }
+            basenames.push_back(f);
+            if (f == module_base) {
+                module_listed = true;
             }
         }
+        if (!module_listed) {
+            std::filesystem::remove_all(staging, ec);
+            if (err) {
+                *err = "apply: module not listed in files[]: " + module_base;
+            }
+            return false;
+        }
+    } else {
+        for (const auto &entry : std::filesystem::directory_iterator(staging, ec)) {
+            if (!entry.is_regular_file(ec)) {
+                continue;
+            }
+            const std::string name = entry.path().filename().string();
+            if (!is_flat_safe_basename(name)) {
+                continue;
+            }
+            basenames.push_back(name);
+        }
+        bool module_found = false;
+        for (const auto &b : basenames) {
+            if (b == module_base) {
+                module_found = true;
+                break;
+            }
+        }
+        if (!module_found) {
+            std::filesystem::remove_all(staging, ec);
+            if (err) {
+                *err = "apply: module not among extracted files: " + module_base;
+            }
+            return false;
+        }
     }
+
 
     bool used_pending = false;
     std::string ierr;

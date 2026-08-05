@@ -18,6 +18,9 @@
 namespace ds::plugin_manager {
 namespace {
 
+// Response body cap: kMaxHttpBodyBytes (declared in PluginHttp.hpp).
+
+
 HttpGetFn g_http_override = nullptr;
 
 #if defined(_WIN32)
@@ -156,6 +159,14 @@ bool http_get_winhttp(std::string_view url, int timeout_ms, std::string *body, s
                 ok = true;
                 break;
             }
+            if (data.size() + static_cast<size_t>(avail) > kMaxHttpBodyBytes) {
+                if (err) {
+                    *err = "http_get: response exceeds " + std::to_string(kMaxHttpBodyBytes) +
+                           " bytes";
+                }
+                data.clear();
+                break;
+            }
             const size_t off = data.size();
             data.resize(off + avail);
             DWORD read = 0;
@@ -172,6 +183,7 @@ bool http_get_winhttp(std::string_view url, int timeout_ms, std::string *body, s
                 break;
             }
         }
+
         if (ok && body) {
             *body = std::move(data);
         }
@@ -192,9 +204,13 @@ bool http_get_winhttp(std::string_view url, int timeout_ms, std::string *body, s
 size_t curl_write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
     auto *out = static_cast<std::string *>(userdata);
     const size_t n = size * nmemb;
+    if (out->size() + n > kMaxHttpBodyBytes) {
+        return 0; // abort transfer; curl reports write error
+    }
     out->append(ptr, n);
     return n;
 }
+
 
 bool http_get_curl(std::string_view url, int timeout_ms, std::string *body, std::string *err) {
     if (timeout_ms <= 0) {

@@ -92,3 +92,38 @@ Skipped — worktree not configured in main `builds/ninja-multi-vcpkg` (same as 
 - [x] Offline mock-HTTP apply tests PASS
 - [x] CMake libzip + winhttp
 - [x] Commit `feat(plugin-manager): GitHub download, gh-proxy, verify, and apply`
+
+
+## Fix: Critical/Important review findings
+
+**Date:** 2026-08-05  
+**Commit message:** `fix(plugin-manager): harden apply path and HTTP bounds`
+
+
+
+
+### Findings fixed
+
+| Pri | Issue | Fix |
+|-----|-------|-----|
+| P0 | Raw `module` path used for sha256 under staging | `is_flat_safe_basename`; reject abs/`..`/separators; hash only staging basename among extracted members |
+| P1 | Foreign platform fallback when current missing | Fail with `platform '…' missing`; no first-available OS |
+| P1 | Path-like `files[]` installed unchecked | Sanitize each `files[]` at lookup + re-validate before install; module must be listed |
+| P1 | `remove(dest)` before replace | Write sibling `.ds_tmp_*` first; rename/copy over live dest; staging kept for pending |
+| P2 | Unbounded HTTP body | Cap `kMaxHttpBodyBytes` (64 MiB) in WinHTTP and curl write paths |
+
+### Tests
+
+```
+PASS: sha256_known_vectors … zip_memory_extract
+ALL PASS plugin_hash_zip
+
+PASS: channel_cache_and_lookup
+PASS: fetch_manifest_mock
+PASS: apply_plan_with_mock_http
+PASS: install_pending_fallback
+PASS: reject_pathlike_module_and_files
+PASS: reject_foreign_platform
+PASS: http_body_size_cap_constant
+ALL PASS plugin_apply_offline
+```

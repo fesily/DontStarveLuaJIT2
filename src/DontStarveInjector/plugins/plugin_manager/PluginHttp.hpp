@@ -8,10 +8,14 @@
 
 namespace ds::plugin_manager {
 
+// Maximum accepted HTTP response body size (64 MiB). Exceeding fails soft with an error.
+inline constexpr size_t kMaxHttpBodyBytes = 64ull * 1024ull * 1024ull;
+
 // GET `url` into *body (if non-null). timeout_ms bounds the whole request.
 // Returns true only on HTTP 2xx with body captured (empty body is still success).
 // On failure: returns false and writes a short message to *err when non-null.
 bool http_get(std::string_view url, int timeout_ms, std::string *body, std::string *err);
+
 
 // Injectable transport for offline unit tests. nullptr restores the platform default.
 using HttpGetFn = bool (*)(std::string_view url, int timeout_ms, std::string *body, std::string *err);
