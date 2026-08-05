@@ -120,11 +120,11 @@ protected:
     virtual ~GameLuaContext() = default;
 };
 
-// Implemented/exported by plugin_core_vm only (optional module). Prefer ds_core_vm_get_game_lua_context C ABI.
+// Implemented by plugin_core_vm only (optional module).
 GameLuaContext &GetGameLuaContext();
 
-// Stable C ABI — resolve via GetProcAddress("ds_core_vm_get_game_lua_context") from plugin_core_vm.
-// Definition lives in plugin_core_vm; do not hard-link from L0/feature plugins.
+// Stable C ABI published as host service "ds_core_vm_get_game_lua_context"
+// (see VmServices.hpp / ds_host_lookup_service). Do not hard-link or GetProcAddress peer DLL.
 extern "C" GameLuaContext &ds_core_vm_get_game_lua_context();
 
 void ReplaceLuaApi(GameLuaType type, const char *shared_library_name);

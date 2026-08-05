@@ -1,7 +1,8 @@
 #pragma once
-// Process-wide named C-function service table.
-// Plugins register exports by stable name; core.vm / other plugins look up
-// without hardcoding peer DLL names.
+// Process-wide named C-function service table (plugin service discovery).
+// Providers: ds_host_register_service(name, fn) in ds_plugin_module_init.
+// Consumers: ds_host_lookup_service(name) -- never hardcode peer DLL names or
+// GetProcAddress("plugin_*.dll"). Missing service returns nullptr (optional deps).
 
 #include "config/InjectorHostConfig.hpp"
 

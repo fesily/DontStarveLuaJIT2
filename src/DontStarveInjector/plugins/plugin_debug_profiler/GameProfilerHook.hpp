@@ -6,7 +6,7 @@
 #include "MemorySignature.hpp"
 #include "util/inlinehook.hpp"
 #include "GameLua.hpp"
-#include "core/GameLuaContextResolve.hpp"
+#include "plugins/plugin_core_vm/VmServices.hpp"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX

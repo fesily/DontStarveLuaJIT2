@@ -4,6 +4,7 @@
 // Also owns VM option schema (LuaVmType / EnabledGenGC / DisableJITWhenServer).
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
+#include "core/PluginServices.hpp"
 #include "core/PluginTypes.hpp"
 #include "core/CoreVmBootstrap.hpp"
 #include "config/ConfigSource.hpp"
@@ -284,6 +285,12 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
                          std::string{ds::config::keys::kEnabledGenGC}.c_str());
             return false;
         }
+    }
+    // Publish GameLuaContext via host service table (no peer DLL name coupling).
+    if (!ds_host_register_service("ds_core_vm_get_game_lua_context",
+                                  reinterpret_cast<void *>(&ds_core_vm_get_game_lua_context))) {
+        std::fprintf(stderr, "[plugin_core_vm] service conflict ds_core_vm_get_game_lua_context\n");
+        return false;
     }
     host->register_plugin(&g_core_vm);
     std::fprintf(stderr,

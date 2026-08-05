@@ -1,6 +1,6 @@
 #include "config/InjectorHostConfig.hpp"
 #include "GameLua.hpp"
-#include "core/GameLuaContextResolve.hpp"
+#include "plugins/plugin_core_vm/VmServices.hpp"
 
 #include <cstdint>
 #include <cmath>
