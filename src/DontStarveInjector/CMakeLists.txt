@@ -206,6 +206,7 @@ endfunction()
 add_subdirectory(plugins/plugin_dummy)
 add_subdirectory(plugins/plugin_save_fork)
 add_subdirectory(plugins/plugin_core_vm)
+add_subdirectory(plugins/plugin_manager)
 
 # Gum-using dynamic plugins need Injector to re-export static frida-gum symbols.
 # Windows: FridaGum.def. Linux/macOS: not implemented — skip targets (source also

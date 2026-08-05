@@ -1,75 +1,105 @@
-# Task 6 Report — M3 `render.angle` + `render.vbpool` EarlyNative
+# Task 6 Report — Optional `plugin.manager` skeleton + soft Lua bindings
 
 **Status:** DONE  
-**Date:** 2026-08-03  
-**Commit:** `664f7d2` — `feat(plugin): migrate render.vbpool + render.angle EarlyNative (M3 Task 6)`
+**Date:** 2026-08-05  
+**Base:** `e8fe133`  
+**Commit:** (see git log) `feat(plugin-manager): optional plugin.manager skeleton and soft Lua bindings`
 
 ## Summary
 
-Migrated EarlyNative render features onto PluginHost:
+Added optional dynamic plugin module `plugin_manager` (logical id `plugin.manager`) with:
 
-- **`render.vbpool`**: EarlyNative, option `EnableVBPool`, priority 20, Win client `can_load`. `load()` → `DS_LUAJIT_set_vbpool_enabled(true)`.
-- **`render.angle`**: EarlyNative, `AlwaysOn` options (backend is a **parameter**), priority 30, Win client `can_load`. `load()` → `InitGameOpenGl()` (no-ops when `AngleBackend == auto`).
-- **`LoadGameModConfig`**: config resolve stays L0 via `GameJitModConfig::instance()`; hard VBPool / OpenGL side effects removed. Win still runs `repalce_set_thread_name()` (L0 hygiene).
-- **`modmain.lua`**: removed late `EnableVBPool == false` → `DS_LUAJIT_set_vbpool_enabled(false)`. Disable is host/config only (plugin simply does not load when option off).
+- IPlugin skeleton (EarlyNative, AlwaysOn, priority 50, no reload)
+- C API surface for pin config + stubbed fetch/apply
+- Soft GameInjector exports via `register_game_injector_export` (GiType auto)
+- CMake always-built `add_subdirectory` (still **runtime-optional** if DLL deleted)
 
-## Changes
+## Architecture adaptation (vs plan wording)
 
-### Modified
+Plan / brief still said:
 
-| File | Change |
+> Modify `GameLuaModule.cpp` — bind all `DS_LUAJIT_plugin_*` via `host_service` only  
+> module_init: `register_service` for each API
+
+**Current repo pattern (supersedes that wording):**
+
+| Concern | Implementation |
 |---|---|
-| `src/DontStarveInjector/core/RegisterBuiltinPlugins.cpp` | Register `RenderVbpoolPlugin` + `RenderAnglePlugin` beside `network.rpc` |
-| `src/DontStarveInjector/core/RegisterBuiltinPlugins.hpp` | Comment lists render plugins |
-| `src/DontStarveInjector/gameModConfig.cpp` | Strip VBPool/OpenGL side effects; keep thread-name L0 call; drop unused `GameOpenGl.hpp` |
-| `src/DontStarveInjector/DontStarveInjector.cpp` | Comment: EarlyNative owns network + render side effects |
-| `Mod/modmain.lua` | Remove late VBPool disable block |
-| `tests/plugin/test_plugin_host_graph.cpp` | L-E matrices: EnableVBPool true/false/gate; AngleBackend auto/vulkan/d3d11/d3d9 parameter |
-| `tests/plugin/test_plugin_config_bridge.cpp` | Bridge enable matrix for vbpool + angle backend reaches plugin |
+| Lua soft bindings | `host->register_game_injector_export("DS_LUAJIT_plugin_*", &fn)` in `module_init` |
+| `luaopen_GameInjector` | core.vm binds owned symbols then `apply_game_injector_exports(L, -1)` |
+| Soft absence | If `plugin_manager.dll` missing → no exports registered → Lua sees **nil** |
+| `GameLuaModule.cpp` | **Not modified** — no host_service wrappers |
+| Optional C services | Also `register_service` same names for native callers (not required by any plugin) |
 
-## Behavior (production)
+## Files
+
+| Path | Action |
+|---|---|
+| `src/DontStarveInjector/plugins/plugin_manager/CMakeLists.txt` | Create — `ds_add_dynamic_plugin` + nlohmann_json |
+| `src/DontStarveInjector/plugins/plugin_manager/plugin_manager.cpp` | Create — IPlugin + module_init exports |
+| `src/DontStarveInjector/plugins/plugin_manager/PluginManagerApi.hpp` | Create — C API decls |
+| `src/DontStarveInjector/plugins/plugin_manager/PluginManagerApi.cpp` | Create — pin ops real; HTTP/apply stubs |
+| `src/DontStarveInjector/CMakeLists.txt` | Modify — `add_subdirectory(plugins/plugin_manager)` in always-built list |
+
+Existing (linked, unchanged this task): `PluginPinConfig.*`, `PluginDownloadUrl.hpp`.
+
+## IPlugin
+
+- id: `plugin.manager`
+- version: `1.0.0`
+- phases: `EarlyNative`
+- AlwaysOn, priority 50, `support_reload = false`
+- `load()`: `reload_pin_config()` only (no network)
+
+## C API
+
+| Export | Behavior (Task 6) |
+|---|---|
+| `DS_LUAJIT_plugin_config_path` | `resolve_config_path()` static string buffer |
+| `DS_LUAJIT_plugin_manager_status_json` | Minimal stub JSON (`plugins:[]`, last_error, needs_restart, …) |
+| `DS_LUAJIT_plugin_config_reload` | Reload pin file |
+| `DS_LUAJIT_plugin_config_set_json` | Write + reload |
+| `DS_LUAJIT_plugin_pin_set` / `pin_clear` | Mutate pins + save |
+| `DS_LUAJIT_plugin_fetch_manifest` | **stub false** (Task 8) |
+| `DS_LUAJIT_plugin_manifest_json` | `"{}"` |
+| `DS_LUAJIT_plugin_plan_apply_json` | `"[]"` |
+| `DS_LUAJIT_plugin_apply` | **stub false** (Task 8) |
+| `DS_LUAJIT_plugin_needs_restart` | false |
+
+HTTP/curl/vcpkg intentionally skipped (Task 8).
+
+## Soft absence
 
 ```text
-Inject:
-  LoadGameModConfig
-    // resolve cascade only (+ Win thread name)
-  → RegisterBuiltinPlugins (network.rpc, render.vbpool, render.angle)
-  → FromGameJitModConfig (EnableVBPool, AngleBackend, NetworkOpt default, …)
-  → resolve → load_phase(EarlyNative)
-       EnableVBPool + client → DS_LUAJIT_set_vbpool_enabled(true)
-       client → InitGameOpenGl()  // auto backend returns early inside
-       NetworkOpt → GameNetWorkHookRpc4()
-  → DisableScriptZip
+plugins/ without plugin_manager.dll
+  → DynamicPluginLoader skips missing module
+  → no DS_LUAJIT_plugin_* registered
+  → apply_game_injector_exports has nothing to bind
+  → GameInjector.DS_LUAJIT_plugin_* is nil in Lua
+  → other plugins unaffected (no requires_services / depends)
 ```
-
-| Plugin | Gate | EarlyNative result |
-|---|---|---|
-| `render.vbpool` | EnableVBPool=true, is_client, Win | Loaded → pool hooks |
-| `render.vbpool` | EnableVBPool=false | Disabled, no API call |
-| `render.vbpool` | option true, dedicated | can_load false → Disabled |
-| `render.angle` | is_client, Win (AlwaysOn) | Loaded → InitGameOpenGl |
-| `render.angle` | dedicated | Disabled |
-| `render.angle` | AngleBackend=auto/vulkan/… | Backend from GameJitModConfig; auto no-ops init |
 
 ## Verification
 
-| Suite | Result |
+| Check | Result |
 |---|---|
-| `test_plugin_host_graph` (incl. render L-E) | PASS (clang++ unit binary) |
-| `test_plugin_config_bridge` (vbpool/angle rows) | PASS |
-| `test_plugin_option_rules` | PASS |
-| `test_buffer_name_pool` | Pre-existing fail: test assumes per-bucket cap 32; header `MAX_POOL_SIZE_PER_BUCKET=128`. **Not introduced by Task 6** (header-only, untouched). |
+| `add_subdirectory(plugins/plugin_manager)` in always-built list | Yes (next to dummy/save_fork/core_vm) |
+| No other plugin `requires_services` / depends on manager | Grep: only profiler soft-requires core.vm; lagcomp requires core.vm context — **no** manager refs |
+| GameLuaModule host_service not reintroduced | Confirmed: only `apply_game_injector_exports` |
+| clang++ -std=c++23 -c PluginManagerApi.cpp | PASS (syntax/includes) |
+| clang++ -std=c++23 -c plugin_manager.cpp | PASS (syntax/includes) |
+| Full `plugin_manager` MODULE link | Skipped — main `builds/ninja-multi-vcpkg` is master tree (`CMAKE_HOME_DIRECTORY` main repo); worktree not configured there. Sources complete for next configure. |
 
 ## Acceptance checklist
 
-- [x] Step 1: Config bridge EnableVBPool true/false already green; BufferNamePool unit is pre-existing mismatch (not Task 6)
-- [x] Step 2: Plugins implemented; LoadGameModConfig side effects stripped; modmain late disable removed
-- [x] Step 3: Host graph + bridge unit tests compile and pass
-- [x] Step 4: Commit + this report
+- [x] Build files produce `plugin_manager` MODULE target when Injector CMake configures this worktree
+- [x] Module optional at runtime (no hard deps from other plugins)
+- [x] Soft Lua path via GameInjector exports (not GameLuaModule host_service)
+- [x] HTTP stubs only (Task 8)
+- [x] Commit + this report
 
-## Notes / concerns
+## Notes
 
-1. **Disable path**: former modmain could force-disable after EarlyNative enable. With host ownership, disable = option false → plugin never loads. If save config flips mid-session without restart, behavior already required restart (`require_restart = true` on EnableVBPool).
-2. **RegisterBuiltinPlugins** still pulls `GameNetwork` + `GameOpenGl` + `DS_LUAJIT_set_vbpool_enabled` — unit binaries continue to use stand-ins (do not link RegisterBuiltinPlugins).
-3. Full Injector SHARED not rebuilt this task (prefer clang++ unit tests per plan).
-4. `BufferNamePool` ctest may still red until test limits match `MAX_POOL_SIZE_PER_BUCKET` (out of scope).
+1. `register_service` duplicates export names for C DI; **no** other plugin lists them in `requires_services`.
+2. Status JSON is intentionally minimal until Task 7 inventory.
+3. Pin config write path uses existing `PluginPinConfig` load/save helpers.
