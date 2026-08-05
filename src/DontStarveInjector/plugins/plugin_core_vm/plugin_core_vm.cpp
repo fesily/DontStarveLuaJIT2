@@ -1,10 +1,14 @@
 // plugin_core_vm — optional core.vm module (V-S2+V-S3).
 // Owns Signature + ReplaceLuaModule. L0 calls ds_core_vm_run_signature_and_replace
 // when the module is present; missing module is a soft skip (no legacy fallback).
+// Also owns VM option schema (LuaVmType / EnabledGenGC / DisableJITWhenServer).
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
 #include "core/CoreVmBootstrap.hpp"
+#include "config/ConfigSource.hpp"
+#include "plugins/plugin_core_vm/VmOptionKeys.hpp"
+#include "../../modinfo.hpp"
 
 #include "GameLua.hpp"
 #include "io/GameSteam.hpp"
@@ -21,12 +25,12 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <mutex>
 #include <string>
 #include <string_view>
 
 #include <spdlog/spdlog.h>
 #include <frida-gum.h>
-
 #ifdef _WIN32
 #  ifndef NOMINMAX
 #    define NOMINMAX
@@ -231,12 +235,65 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     if (!host) {
         return false;
     }
+    // OB-S2: VM option schema owned here (modinfo defaults + allowed_sources).
+    // Inline entries match former RegisterCoreOptionSchema VM trio; use Host
+    // API (exported) rather than linking RegisterCoreVmOptionSchema from Injector.
+    using namespace ds::plugin;
+    constexpr auto kDefaultSaveEnv =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ds::config::keys::kDisableJITWhenServer};
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(ModConfigurationOptions::DisableJITWhenServer.default_value);
+        e.allowed_sources = ds::config::kConfigSourceAll;
+        if (!host->register_option_schema(std::move(e))) {
+            std::fprintf(stderr, "[plugin_core_vm] schema conflict %s\n",
+                         std::string{ds::config::keys::kDisableJITWhenServer}.c_str());
+            return false;
+        }
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ds::config::keys::kLuaVmType};
+        e.type = ConfigValueType::String;
+        e.default_value = ConfigValue::string(std::string{ModConfigurationOptions::LuaVmType.default_value});
+        for (const auto &opt : ModConfigurationOptions::LuaVmType.options) {
+            e.allowed.emplace_back(opt);
+        }
+        for (const char *alias : {"lua51", "51", "5.1", "_51", "jit_gen"}) {
+            e.allowed.emplace_back(alias);
+        }
+        e.allowed_sources = ds::config::kConfigSourceAll;
+        if (!host->register_option_schema(std::move(e))) {
+            std::fprintf(stderr, "[plugin_core_vm] schema conflict %s\n",
+                         std::string{ds::config::keys::kLuaVmType}.c_str());
+            return false;
+        }
+    }
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ds::config::keys::kEnabledGenGC};
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnabledGenGC.default_value);
+        e.allowed_sources = kDefaultSaveEnv;
+        if (!host->register_option_schema(std::move(e))) {
+            std::fprintf(stderr, "[plugin_core_vm] schema conflict %s\n",
+                         std::string{ds::config::keys::kEnabledGenGC}.c_str());
+            return false;
+        }
+    }
     host->register_plugin(&g_core_vm);
-    std::fprintf(stderr, "[plugin_core_vm] module init registered core.vm\n");
+    std::fprintf(stderr,
+                 "[plugin_core_vm] module init registered core.vm + VM schema "
+                 "(%s, %s, %s)\n",
+                 std::string{ds::config::keys::kLuaVmType}.c_str(),
+                 std::string{ds::config::keys::kEnabledGenGC}.c_str(),
+                 std::string{ds::config::keys::kDisableJITWhenServer}.c_str());
     return true;
 }
-
-// Full signature + ReplaceLuaModule path (moved from Injector LegacySignatureAndReplaceInInjector).
 // Hard failures call showError (exit). Soft miss (no luamodule base) returns false.
 DS_PLUGIN_MODULE_EXPORT bool ds_core_vm_run_signature_and_replace(const ds::core_vm::BootstrapArgs *args) {
     if (!args) {

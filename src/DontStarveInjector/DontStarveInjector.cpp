@@ -190,29 +190,16 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 
     // Steam UGC workshop path hook lives in plugin_core_vm (with gameio).
 
-    {
-        ds::core_vm::BootstrapArgs args{};
-        args.is_client = isClient;
-        // lua_module_base / main_path resolved inside plugin when zero/null.
-        args.lua_module_base = 0;
-        args.main_path = nullptr;
-        if (!ds::core_vm::TryRunSignatureAndReplace(args)) {
-            // Hard failures call showError inside plugin_core_vm; soft skip when
-            // disabled, module/export missing, or soft miss (no luamodule base).
-            // Disable path logs "[core.vm] Lua VM path disabled …" inside bootstrap.
-            spdlog::warn("core.vm signature/replace path skipped — continuing inject");
-            std::fprintf(stderr, "[core.vm] signature/replace path skipped — continuing inject\n");
-        }
-    }
-
     LoadGameModConfig();
 
     // PluginHost: static RegisterBuiltinPlugins (empty extension point) then
-    // DynamicPluginLoader (network.rpc / render.vbpool / render.angle / dummy).
+    // DynamicPluginLoader (network.rpc / render.vbpool / render.angle / core.vm).
+    // OB-S2: load modules (schema register) BEFORE full cascade resolve / VM path
+    // so save/env can apply LuaVmType / DisableJITWhenServer / EnabledGenGC.
     {
         using namespace ds::plugin;
         static PluginHost g_plugin_host;
-        // L0 core schema must exist even with zero plugins (C-S6).
+        // L0 base schema must exist even with zero plugins (C-S6 / OB-S2).
         RegisterCoreOptionSchema(g_plugin_host.option_schema());
         // Also seed builtin business keys so cascade defaults are present when
         // plugins fail to load; plugins re-register the same entries.
@@ -249,11 +236,24 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
             }
         }
 
+        // Merge late keys (VM from core.vm, business from plugins) and re-resolve.
+        ds::config::refresh_cascade_after_plugins(g_plugin_host.option_schema());
+
+        // VM signature/replace after cascade has VM keys (DisableJITWhenServer / LuaVmType).
+        {
+            ds::core_vm::BootstrapArgs args{};
+            args.is_client = isClient;
+            args.lua_module_base = 0;
+            args.main_path = nullptr;
+            if (!ds::core_vm::TryRunSignatureAndReplace(args)) {
+                // Hard failures call showError inside plugin_core_vm; soft skip when
+                // disabled, module/export missing, or soft miss (no luamodule base).
+                spdlog::warn("core.vm signature/replace path skipped — continuing inject");
+                std::fprintf(stderr, "[core.vm] signature/replace path skipped — continuing inject\n");
+            }
+        }
 
         // CF-S4: PluginHost gates from cascade ResolvedConfig.view SSOT.
-        // Ensure resolve has run (fills ds::config::current()); then fill only
-        // late schema defaults for keys registered after DynamicPluginLoader.
-        (void) GameJitModConfig::instance();
         ConfigView plugin_cfg;
         if (auto *rc = ds::config::current()) {
             plugin_cfg = BuildConfigView(g_plugin_host.option_schema(), rc->view);

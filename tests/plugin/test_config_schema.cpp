@@ -84,42 +84,21 @@ static void test_find_missing() {
 static void test_register_core_option_schema() {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
-    // Current L0 core seed (OB-S0 / RegisterCore): 4 core options + 4 identity keys.
-    // Core: AlwaysEnableMod, DisableJITWhenServer, LuaVmType, EnabledGenGC
-    // Identity: modmain_path, modname, modid, save_file
-    // VM keys remain registered here until Task 3 ownership move.
-    assert(reg.size() == 8);
+    // L0 base seed (OB-S2): AlwaysEnableMod + 4 identity keys only.
+    // VM keys (LuaVmType, EnabledGenGC, DisableJITWhenServer) are owned by
+    // plugin_core_vm via RegisterCoreVmOptionSchema.
+    assert(reg.size() == 5);
     assert(reg.find(std::string{kAlwaysEnableMod}) != nullptr);
-    assert(reg.find(std::string{kDisableJITWhenServer}) != nullptr);
-    assert(reg.find(std::string{kLuaVmType}) != nullptr);
-    assert(reg.find(std::string{kEnabledGenGC}) != nullptr);
     assert(reg.find(std::string{kModmainPath}) != nullptr);
     assert(reg.find(std::string{kModname}) != nullptr);
     assert(reg.find(std::string{kModid}) != nullptr);
     assert(reg.find(std::string{kSaveFile}) != nullptr);
 
-    const auto *lua_vm = reg.find(std::string{kLuaVmType});
-    assert(lua_vm->type == ConfigValueType::String);
-    assert(lua_vm->default_value.s == "jit");
-    assert(!lua_vm->allowed.empty());
-    // Env/cmd historical aliases must be schema-allowed so apply_partial accepts them.
-    auto has_allowed = [&](const char *v) {
-        return std::find(lua_vm->allowed.begin(), lua_vm->allowed.end(), v) !=
-               lua_vm->allowed.end();
-    };
-    assert(has_allowed("jit"));
-    assert(has_allowed("game"));
-    assert(has_allowed("lua51"));
-    assert(has_allowed("51"));
-    assert(has_allowed("5.1"));
-    assert(has_allowed("_51"));
-    assert(has_allowed("jit_gen"));
+    // Step 1 acceptance: RegisterCore alone has no VM keys.
+    assert(reg.find(std::string{kLuaVmType}) == nullptr);
+    assert(reg.find(std::string{kEnabledGenGC}) == nullptr);
+    assert(reg.find(std::string{kDisableJITWhenServer}) == nullptr);
 
-    // Normative masks (CF-S5 / spec §2.2)
-    constexpr auto kDefaultSaveEnv =
-        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
-        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
-        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
     constexpr auto kLuajitOnly =
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::LuajitConfig);
     constexpr auto kSaveOnly =
@@ -127,12 +106,6 @@ static void test_register_core_option_schema() {
 
     assert(ds::config::effective_sources(reg.find(std::string{kAlwaysEnableMod})->allowed_sources) ==
            ds::config::kConfigSourceAll);
-    assert(ds::config::effective_sources(reg.find(std::string{kDisableJITWhenServer})->allowed_sources) ==
-           ds::config::kConfigSourceAll);
-    assert(ds::config::effective_sources(reg.find(std::string{kLuaVmType})->allowed_sources) ==
-           ds::config::kConfigSourceAll);
-    assert(ds::config::effective_sources(reg.find(std::string{kEnabledGenGC})->allowed_sources) ==
-           kDefaultSaveEnv);
     assert(ds::config::effective_sources(reg.find(std::string{kModmainPath})->allowed_sources) ==
            kLuajitOnly);
     assert(ds::config::effective_sources(reg.find(std::string{kModname})->allowed_sources) ==
@@ -160,8 +133,55 @@ static void test_register_core_option_schema() {
 
     // Idempotent re-register.
     RegisterCoreOptionSchema(reg);
-    assert(reg.size() == 8);
+    assert(reg.size() == 5);
     printf("PASS: register_core_option_schema\n");
+}
+
+static void test_register_core_vm_option_schema() {
+    ConfigSchemaRegistry reg;
+    RegisterCoreVmOptionSchema(reg);
+    assert(reg.size() == 3);
+    assert(reg.find(std::string{kLuaVmType}) != nullptr);
+    assert(reg.find(std::string{kEnabledGenGC}) != nullptr);
+    assert(reg.find(std::string{kDisableJITWhenServer}) != nullptr);
+
+    const auto *lua_vm = reg.find(std::string{kLuaVmType});
+    assert(lua_vm->type == ConfigValueType::String);
+    assert(lua_vm->default_value.s == "jit");
+    assert(!lua_vm->allowed.empty());
+    auto has_allowed = [&](const char *v) {
+        return std::find(lua_vm->allowed.begin(), lua_vm->allowed.end(), v) !=
+               lua_vm->allowed.end();
+    };
+    assert(has_allowed("jit"));
+    assert(has_allowed("game"));
+    assert(has_allowed("lua51"));
+    assert(has_allowed("51"));
+    assert(has_allowed("5.1"));
+    assert(has_allowed("_51"));
+    assert(has_allowed("jit_gen"));
+
+    constexpr auto kDefaultSaveEnv =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
+
+    assert(ds::config::effective_sources(reg.find(std::string{kDisableJITWhenServer})->allowed_sources) ==
+           ds::config::kConfigSourceAll);
+    assert(ds::config::effective_sources(reg.find(std::string{kLuaVmType})->allowed_sources) ==
+           ds::config::kConfigSourceAll);
+    assert(ds::config::effective_sources(reg.find(std::string{kEnabledGenGC})->allowed_sources) ==
+           kDefaultSaveEnv);
+
+    // Combined L0 + VM matches former 8-key surface.
+    RegisterCoreOptionSchema(reg);
+    assert(reg.size() == 8);
+    assert(reg.find(std::string{kAlwaysEnableMod}) != nullptr);
+
+    // Idempotent re-register of VM keys.
+    RegisterCoreVmOptionSchema(reg);
+    assert(reg.size() == 8);
+    printf("PASS: register_core_vm_option_schema\n");
 }
 
 
@@ -310,6 +330,7 @@ int main() {
     test_add_same_key_different_default();
     test_find_missing();
     test_register_core_option_schema();
+    test_register_core_vm_option_schema();
     test_register_builtin_business_schema();
     test_try_coerce_bool();
     test_try_coerce_string_allowed();

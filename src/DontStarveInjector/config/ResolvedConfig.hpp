@@ -1,11 +1,11 @@
 #pragma once
 #include "ConfigSource.hpp"
 #include "IConfigSource.hpp"
+#include "ConfigSchema.hpp"
 #include "BaseOptionKeys.hpp"
 #include "plugins/plugin_core_vm/VmOptionKeys.hpp"
 #include "core/PluginTypes.hpp"
 #include "GameLuaType.hpp"
-
 #include <optional>
 #include <string>
 #include <string_view>
@@ -128,11 +128,15 @@ struct ResolvedConfig {
         return std::string_view{it->second.s};
     }
 };
-// L0 cascade cache filled by GameJitModConfig::instance() load path.
+// L0 cascade cache filled by GameJitModConfig::instance() / refresh path.
 // Null before first resolve. Host / L0 hot path consume current() (CF-S4/S5).
 // Exported so plugins can import from Injector.dll.
 #include "config.hpp"
 DS_INJECTOR_CXX_API const ResolvedConfig *current();
 
-
+// After DynamicPluginLoader module_init has registered late keys (VM/business),
+// merge host schema into cascade schema and re-resolve so save/env apply to them.
+// Overwrites g_resolved_config / GameJitModConfig cache (OB-S2).
+DS_INJECTOR_CXX_API void refresh_cascade_after_plugins(
+    const ds::plugin::ConfigSchemaRegistry &host_schema);
 } // namespace ds::config

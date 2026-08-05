@@ -32,8 +32,12 @@
 
 namespace {
 
-const ds::plugin::ConfigSchemaRegistry &cascade_option_schema() {
-    static const ds::plugin::ConfigSchemaRegistry schema = [] {
+// Mutable production cascade schema: L0 core + business seed first; plugins
+// (plugin_core_vm) append VM keys via RegisterCoreVmOptionSchema during
+// DynamicPluginLoader module_init. Full resolve must run after that merge so
+// save/env VM values are not dropped as unknown (OB-S2).
+ds::plugin::ConfigSchemaRegistry &cascade_option_schema() {
+    static ds::plugin::ConfigSchemaRegistry schema = [] {
         ds::plugin::ConfigSchemaRegistry r;
         ds::plugin::RegisterCoreOptionSchema(r);
         ds::plugin::RegisterBuiltinBusinessOptionSchema(r);
@@ -44,13 +48,15 @@ const ds::plugin::ConfigSchemaRegistry &cascade_option_schema() {
 
 } // namespace
 
-// Cascade SSOT for Host (CF-S4). Filled once on first GameJitModConfig::instance().
-// File-scope (not anonymous) so ds::config::current() can return a stable pointer.
+// Cascade SSOT for Host (CF-S4). Filled once on first GameJitModConfig::instance()
+// after schema is complete (plugins registered). File-scope so ds::config::current()
+// can return a stable pointer.
 static std::optional<ds::config::ResolvedConfig> g_resolved_config;
+static std::optional<GameJitModConfig> g_game_jit_mod_config;
 
 namespace {
 
-static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
+static ds::config::CascadeContext build_cascade_context() {
     auto *ictx = InjectorCtx::instance();
     ds::config::CascadeContext ctx;
     ctx.is_client = ictx->DontStarveInjectorIsClient;
@@ -73,7 +79,11 @@ static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
             ctx.ownerdir_hint = std::to_string(ictx->steam_account_id);
         }
     }
+    return ctx;
+}
 
+static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
+    auto ctx = build_cascade_context();
     g_resolved_config = ds::config::resolve(cascade_option_schema(), ctx);
     auto resolved = ds::config::map_to_game_jit_mod_config(*g_resolved_config);
 
@@ -91,6 +101,29 @@ namespace ds::config {
 
 DS_INJECTOR_CXX_API const ResolvedConfig *current() {
     return g_resolved_config ? &*g_resolved_config : nullptr;
+}
+
+// Merge Host-registered schema (after DynamicPluginLoader) into cascade schema
+// and re-run full resolve so late VM/business keys receive save/env values.
+// Safe to call multiple times; first successful resolve wins for instance cache.
+DS_INJECTOR_CXX_API void refresh_cascade_after_plugins(
+    const ds::plugin::ConfigSchemaRegistry &host_schema) {
+    auto &cascade = cascade_option_schema();
+    for (const auto *e : host_schema.all()) {
+        if (e == nullptr) {
+            continue;
+        }
+        // Conflict-free re-add is a no-op; conflict logs via add() false — keep
+        // existing entry (fail-soft for optional module ownership).
+        (void) cascade.add(*e);
+    }
+    auto ctx = build_cascade_context();
+    g_resolved_config = ds::config::resolve(cascade, ctx);
+    auto mapped = map_to_game_jit_mod_config(*g_resolved_config);
+    if (ctx.is_client && mapped.save_file && !mapped.save_file->empty()) {
+        WriteGameJitModConfigToSaveFile(*mapped.save_file, mapped);
+    }
+    g_game_jit_mod_config = std::move(mapped);
 }
 
 } // namespace ds::config
@@ -363,8 +396,18 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version() {
 }
 
 std::optional<GameJitModConfig> GameJitModConfig::instance() {
-    static std::optional<GameJitModConfig> mod_config_options = load_resolved_game_mod_config();
-    return mod_config_options;
+    // Prefer post-plugin refresh (full schema incl. VM keys). Fall back to a
+    // first resolve against the L0+business seed for early bootstrap callers.
+    if (g_game_jit_mod_config) {
+        return g_game_jit_mod_config;
+    }
+    static std::optional<GameJitModConfig> early =
+        load_resolved_game_mod_config();
+    // Mirror into g_game_jit_mod_config so refresh can overwrite cleanly.
+    if (!g_game_jit_mod_config && early) {
+        g_game_jit_mod_config = early;
+    }
+    return g_game_jit_mod_config;
 }
 
 // Config resolution is L0 (GameJitModConfig cascade via instance()).

@@ -81,6 +81,7 @@ void test_resolve_empty_sources_yields_empty_view() {
 void test_resolve_env_lua_vm_type_aliases() {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
+    RegisterCoreVmOptionSchema(reg);
 
     // Emulate EnvOrCmdSource::read output for lua51 aliases — raw string preserved.
     ConfigView env_lua51;
@@ -118,6 +119,15 @@ void test_resolve_env_lua_vm_type_aliases() {
     const std::vector<const IConfigSource *> sources_51 = {&env_u51};
     auto resolved_51 = resolve(reg, ctx, sources_51);
     assert(resolved_51.view.at("LuaVmType").s == "_51");
+
+    // Without VM schema, LuaVmType is unknown and ignored (soft optional).
+    ConfigSchemaRegistry base_only;
+    RegisterCoreOptionSchema(base_only);
+    assert(base_only.find("LuaVmType") == nullptr);
+    FakeSource env_no_schema(ConfigSource::EnvOrCmd, env_lua51);
+    const std::vector<const IConfigSource *> sources_no = {&env_no_schema};
+    auto resolved_no = resolve(base_only, ctx, sources_no);
+    assert(resolved_no.view.count("LuaVmType") == 0);
 
     printf("PASS: resolve_env_lua_vm_type_aliases\n");
 }
@@ -163,6 +173,7 @@ void test_identity_keys_luajit_only() {
 void test_enabled_gen_gc_excludes_luajit() {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
+    RegisterCoreVmOptionSchema(reg);
 
     ConfigView defaults;
     defaults["EnabledGenGC"] = ConfigValue::boolean(false);
@@ -199,6 +210,7 @@ void test_enabled_gen_gc_excludes_luajit() {
 void test_resolved_config_accessors() {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
+    RegisterCoreVmOptionSchema(reg);
     RegisterBuiltinBusinessOptionSchema(reg);
 
     ConfigView values;
