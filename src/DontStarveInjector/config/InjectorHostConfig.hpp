@@ -1,7 +1,7 @@
 #pragma once
 // L0 injector host process config (env/cmd flags, export macros, InjectorCtx).
 // NOT game-option cascade — base does not register these as plugin options.
-// Prefer #include "config/InjectorHostConfig.hpp" (re-export) or "config/InjectorHostConfig.hpp".
+// Include this header for process flags / InjectorCtx / export macros.
 
 #include <stdint.h>
 #include <cstring>

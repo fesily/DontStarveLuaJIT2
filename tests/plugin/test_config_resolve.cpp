@@ -2,7 +2,6 @@
 #include "config/IConfigSource.hpp"
 #include "config/ResolvedConfig.hpp"
 #include "config/ConfigSchema.hpp"
-#include "config/Compat.hpp"
 #include "plugins/plugin_core_vm/VmConfig.hpp"
 #include "plugins/plugin_core_vm/GameLuaType.hpp"
 #include <cassert>
@@ -250,18 +249,19 @@ void test_resolved_config_accessors() {
     assert(ds::core_vm::enabled_gen_gc(resolved));
     assert(ds::core_vm::lua_vm_type_string(resolved) == "jit");
     assert(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit_gen); // EnabledGenGC wins
-    assert(resolved.angle_backend() == "vulkan");
+    assert(resolved.string_opt("AngleBackend") == std::optional<std::string_view>{"vulkan"});
     assert(resolved.modname() == "workshop-9");
 
     printf("PASS: resolved_config_accessors\n");
 }
 
-// OB-S2: resolve without VM schema must not project bag VM fields as "present"
-// for client save write-back (empty/false defaults would wipe user save).
-void test_map_without_vm_schema_skips_vm_write_back_flag() {
+// write-back removed: no map_to_game_jit_mod_config / has_vm_options.
+
+
+// OB-S2: without VM schema registration, cascade never carries VM keys.
+void test_resolve_without_vm_schema_omits_vm_keys() {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
-    // No RegisterCoreVmOptionSchema — plugin_core_vm absent.
 
     ConfigView defaults;
     defaults["AlwaysEnableMod"] = ConfigValue::boolean(true);
@@ -276,31 +276,7 @@ void test_map_without_vm_schema_skips_vm_write_back_flag() {
     assert(resolved.view.count("DisableJITWhenServer") == 0);
     assert(resolved.view.count("AlwaysEnableMod") == 1);
 
-    auto bag = map_to_game_jit_mod_config(resolved);
-    assert(!bag.has_vm_options);
-    assert(bag.LuaVmType.empty());
-    assert(!bag.EnabledGenGC);
-    assert(!bag.DisableJITWhenServer);
-    assert(bag.AlwaysEnableMod);
-
-    // With VM schema + defaults, flag is set and values project.
-    RegisterCoreVmOptionSchema(reg);
-    ConfigView vm_defaults;
-    vm_defaults["AlwaysEnableMod"] = ConfigValue::boolean(false);
-    vm_defaults["LuaVmType"] = ConfigValue::string("jit");
-    vm_defaults["EnabledGenGC"] = ConfigValue::boolean(false);
-    vm_defaults["DisableJITWhenServer"] = ConfigValue::boolean(true);
-    FakeSource modinfo_vm(ConfigSource::ModinfoDefault, vm_defaults);
-    const std::vector<const IConfigSource *> sources_vm = {&modinfo_vm};
-    auto resolved_vm = resolve(reg, ctx, sources_vm);
-    assert(resolved_vm.view.count("LuaVmType") == 1);
-
-    auto bag_vm = map_to_game_jit_mod_config(resolved_vm);
-    assert(bag_vm.has_vm_options);
-    assert(bag_vm.LuaVmType == "jit");
-    assert(bag_vm.DisableJITWhenServer);
-
-    printf("PASS: map_without_vm_schema_skips_vm_write_back_flag\n");
+    printf("PASS: resolve_without_vm_schema_omits_vm_keys\n");
 }
 
 } // namespace
@@ -312,7 +288,7 @@ int main() {
     test_identity_keys_luajit_only();
     test_enabled_gen_gc_excludes_luajit();
     test_resolved_config_accessors();
-    test_map_without_vm_schema_skips_vm_write_back_flag();
+    test_resolve_without_vm_schema_omits_vm_keys();
     printf("ALL PASS: config_resolve\n");
     return 0;
 }

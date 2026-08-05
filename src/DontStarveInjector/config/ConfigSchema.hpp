@@ -29,13 +29,12 @@ bool TryCoerceSavedString(std::string_view raw, const OptionSchemaEntry &schema,
 
 // Register L0 base option schema: AlwaysEnableMod + identity string keys
 // (modmain_path, modname, modid, save_file) with normative allowed_sources.
-// VM keys are owned by plugin_core_vm (RegisterCoreVmOptionSchema). Idempotent
-// on conflict-free re-add.
+// L0 identity + AlwaysEnableMod only. Idempotent on conflict-free re-add.
 void RegisterCoreOptionSchema(ConfigSchemaRegistry &r);
 
-// VM domain keys owned by plugin_core_vm (LuaVmType, EnabledGenGC,
-// DisableJITWhenServer). Production registrar is ds_plugin_module_init; tests
-// and cascade helpers may call directly. Missing module ⇒ keys absent (soft).
+// Test/helper seed of VM domain keys (LuaVmType, EnabledGenGC, DisableJITWhenServer).
+// Production registers the same entries in plugin_core_vm::ds_plugin_module_init.
+// Missing module ⇒ keys absent from cascade (soft).
 void RegisterCoreVmOptionSchema(ConfigSchemaRegistry &r);
 
 // Business keys (AngleBackend, EnableVBPool, NetworkOpt, EnableNetSim,

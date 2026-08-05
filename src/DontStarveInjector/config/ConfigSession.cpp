@@ -1,11 +1,8 @@
 #include "config/InjectorHostConfig.hpp"
 #include "config/ConfigSession.hpp"
-#include "config/write/SaveConfigWriter.hpp"
-#include "config/write/WriteBackBag.hpp"
 #include "game_info.hpp"
 #include "config/sources/LuajitConfigFile.hpp"
 #include "config/CascadeEngine.hpp"
-#include "config/Compat.hpp"
 #include "config/path/ConfigPaths.hpp"
 #include "config/ConfigSchema.hpp"
 
@@ -51,13 +48,9 @@ static ds::config::CascadeContext build_cascade_context() {
     return ctx;
 }
 
-static void resolve_and_maybe_write_back() {
+static void resolve_session() {
     auto ctx = build_cascade_context();
     g_resolved_config = ds::config::resolve(cascade_option_schema(), ctx);
-    auto bag = ds::config::map_to_write_back_bag(*g_resolved_config);
-    if (ctx.is_client && bag.save_file && !bag.save_file->empty()) {
-        ds::config::WriteGameJitModConfigToSaveFile(*bag.save_file, bag);
-    }
 }
 
 } // namespace
@@ -71,7 +64,7 @@ DS_INJECTOR_CXX_API const ResolvedConfig *current() {
 // Ensure cascade has run at least once (early bootstrap). Prefer refresh after plugins.
 DS_INJECTOR_CXX_API const ResolvedConfig *ensure_resolved() {
     if (!g_resolved_config) {
-        resolve_and_maybe_write_back();
+        resolve_session();
     }
     return current();
 }
@@ -87,10 +80,6 @@ DS_INJECTOR_CXX_API void refresh_cascade_after_plugins(
     }
     auto ctx = build_cascade_context();
     g_resolved_config = ds::config::resolve(cascade, ctx);
-    auto bag = map_to_write_back_bag(*g_resolved_config);
-    if (ctx.is_client && bag.save_file && !bag.save_file->empty()) {
-        WriteGameJitModConfigToSaveFile(*bag.save_file, bag);
-    }
 }
 
 } // namespace ds::config

@@ -1,4 +1,5 @@
 #include "GameOpenGl.hpp"
+#include "AngleConfig.hpp"
 
 #ifdef _WIN32
 
@@ -98,10 +99,10 @@ namespace {
             DstAngleBackend backend = DstAngleBackend::Auto;
             (void) ds::config::ensure_resolved();
             if (auto *rc = ds::config::current()) {
-                backend = from_string(rc->angle_backend());
+                backend = from_string(ds::render_angle::angle_backend(*rc));
                 if (backend == DstAngleBackend::Unknown) {
                     spdlog::warn("unknown AngleBackend '{}', defaulting to auto",
-                                 rc->angle_backend());
+                                 ds::render_angle::angle_backend(*rc));
                     backend = DstAngleBackend::Auto;
                 }
             }
@@ -441,7 +442,7 @@ DONTSTARVEINJECTOR_GAME_API void InitGameOpenGl() {
     std::string_view angle_backend = "auto";
     const bool has_rc = ds::config::current() != nullptr;
     if (auto *rc = ds::config::current()) {
-        angle_backend = rc->angle_backend();
+        angle_backend = ds::render_angle::angle_backend(*rc);
     }
     const auto backend = from_string(angle_backend);
     if (!has_rc || backend == DstAngleBackend::Auto) {

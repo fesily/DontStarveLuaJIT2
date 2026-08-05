@@ -4,7 +4,6 @@
 #include "IConfigSource.hpp"
 #include "ConfigSchema.hpp"
 #include "BaseOptionKeys.hpp"
-#include "plugins/plugin_render_angle/AngleOptionKeys.hpp"
 #include "core/PluginTypes.hpp"
 #include <optional>
 #include <string>
@@ -63,14 +62,6 @@ struct ResolvedConfig {
             return std::string_view{*ctx.save_file};
         }
         return std::nullopt;
-    }
-    // Business convenience (render.angle owns the key; keep thin until Host API).
-    std::string_view angle_backend() const {
-        auto it = view.find(std::string{keys::kAngleBackend});
-        if (it != view.end() && it->second.type == ds::plugin::ConfigValueType::String) {
-            return it->second.s;
-        }
-        return "auto";
     }
 
     // Generic typed lookup for remaining business keys.
