@@ -195,6 +195,10 @@ function(ds_add_dynamic_plugin name)
         LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
         ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
     )
+    install(TARGETS ${name}
+        RUNTIME DESTINATION plugins
+        LIBRARY DESTINATION plugins
+        ARCHIVE DESTINATION plugins)
 endfunction()
 
 # Always-on / cross-platform plugins (no second Frida Gum).
