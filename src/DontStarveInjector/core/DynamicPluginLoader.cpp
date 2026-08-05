@@ -223,8 +223,11 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
 
         bool ok = false;
         try {
+            host.begin_module_registration();
             ok = init(&host);
+            host.end_module_registration();
         } catch (...) {
+            host.end_module_registration();
             ok = false;
         }
         if (!ok) {

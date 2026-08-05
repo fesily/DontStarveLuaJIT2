@@ -317,11 +317,14 @@ mov dword ptr [rdi+134], 3  // pro->reliability = PacketReliability::RELIABLE_OR
     }
 }
 
-void RegisterNetworkRpcHostServices() {
-    ds_host_register_service(
+void RegisterNetworkRpcHostServices(ds::plugin::PluginHost *host) {
+    if (!host) {
+        return;
+    }
+    host->register_service(
         "DS_LUAJIT_EntityNetWorkExtension_Register",
         reinterpret_cast<void *>(&DS_LUAJIT_EntityNetWorkExtension_Register));
-    ds_host_register_service(
+    host->register_service(
         "DS_LUAJIT_SetNextRpcInfo",
         reinterpret_cast<void *>(&DS_LUAJIT_SetNextRpcInfo));
 }

@@ -80,11 +80,11 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
 
-    ds_host_register_service("DS_LUAJIT_fork_save", reinterpret_cast<void *>(&DS_LUAJIT_fork_save));
-    ds_host_register_service("DS_LUAJIT_fork_save_exit", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_exit));
-    ds_host_register_service("DS_LUAJIT_fork_save_cleanup", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_cleanup));
-    ds_host_register_service("DS_LUAJIT_fork_save_wait", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_wait));
-    ds_host_register_service("DS_LUAJIT_fork_save_poll", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_poll));
+    host->register_service("DS_LUAJIT_fork_save", reinterpret_cast<void *>(&DS_LUAJIT_fork_save));
+    host->register_service("DS_LUAJIT_fork_save_exit", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_exit));
+    host->register_service("DS_LUAJIT_fork_save_cleanup", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_cleanup));
+    host->register_service("DS_LUAJIT_fork_save_wait", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_wait));
+    host->register_service("DS_LUAJIT_fork_save_poll", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_poll));
     host->register_plugin(&g_save_fork);
     std::fprintf(stderr, "[plugin_save_fork] module init registered save.fork\n");
     return true;

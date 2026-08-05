@@ -37,6 +37,7 @@ enum class PluginStatus : uint8_t {
 enum class PluginFailReason : uint8_t {
     None = 0,
     MissingHardDep,
+    MissingService,
     Conflict,
     Cycle,
     LoadThrew,
@@ -104,6 +105,8 @@ struct PluginContext {
     void *injector = nullptr;
     bool is_client = true;
     const ConfigView *config = nullptr;
+    // Host-filled before load(): requires_services (hard) + soft_requires present only.
+    std::unordered_map<std::string, void *> services;
 };
 
 struct PluginManifest {
@@ -112,6 +115,9 @@ struct PluginManifest {
     std::vector<std::string> depends;
     std::vector<std::string> soft_depends;
     std::vector<std::string> conflicts;
+    // Service deps (names registered via PluginHost::register_service in module_init).
+    std::vector<std::string> requires_services;       // hard — missing => MissingService
+    std::vector<std::string> soft_requires_services;  // soft — inject if present
     PluginPhase phases = PluginPhase::AfterModMain;
     bool support_reload = false;
     int priority = 100; // lower first within phase when topo-tied

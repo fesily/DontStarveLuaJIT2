@@ -37,13 +37,6 @@ void *lookup_service(std::string_view name) {
 
 } // namespace ds::plugin
 
-DONTSTARVEINJECTOR_API bool ds_host_register_service(const char *name, void *fn) {
-    if (!name) {
-        return false;
-    }
-    return ds::plugin::register_service(name, fn);
-}
-
 DONTSTARVEINJECTOR_API void *ds_host_lookup_service(const char *name) {
     if (!name) {
         return nullptr;

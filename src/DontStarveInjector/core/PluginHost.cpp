@@ -1,5 +1,6 @@
 #include "PluginHost.hpp"
 #include "PluginOptionRules.hpp"
+#include "PluginServices.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -28,6 +29,9 @@ std::string join_cycle(const std::vector<std::string> &nodes) {
 } // namespace
 
 void PluginHost::register_plugin(IPlugin *plugin) {
+    if (!registration_open_) {
+        return;
+    }
     if (!plugin) {
         return;
     }
@@ -43,7 +47,25 @@ void PluginHost::register_plugin(IPlugin *plugin) {
 }
 
 bool PluginHost::register_option_schema(OptionSchemaEntry e) {
+    if (!registration_open_) {
+        return false;
+    }
     return option_schema_.add(std::move(e));
+}
+
+bool PluginHost::register_service(std::string_view name, void *fn) {
+    if (!registration_open_) {
+        return false;
+    }
+    return ds::plugin::register_service(name, fn);
+}
+
+void PluginHost::begin_module_registration() {
+    registration_open_ = true;
+}
+
+void PluginHost::end_module_registration() {
+    registration_open_ = false;
 }
 
 ConfigSchemaRegistry &PluginHost::option_schema() {
@@ -208,6 +230,27 @@ ResolveResult PluginHost::resolve(const ConfigView &config, const PluginContext 
                     changed = true;
                     break;
                 }
+            }
+        }
+    }
+
+    // Phase 3b: hard service requirements (registered during module_init)
+    candidates.clear();
+    for (const auto &e : entries_) {
+        if (e.status == PluginStatus::Registered) {
+            candidates.insert(e.plugin->manifest().id);
+        }
+    }
+    for (const auto &id : std::vector<std::string>(candidates.begin(), candidates.end())) {
+        Entry *e = find(id);
+        if (!e || e->status != PluginStatus::Registered) {
+            continue;
+        }
+        for (const auto &svc : e->plugin->manifest().requires_services) {
+            if (lookup_service(svc) == nullptr) {
+                mark_failed(*e, PluginFailReason::MissingService, svc);
+                candidates.erase(id);
+                break;
             }
         }
     }
@@ -451,7 +494,21 @@ LoadResult PluginHost::load_phase(PluginPhase phase) {
         }
 
         try {
-            e->plugin->load(last_ctx_);
+            PluginContext load_ctx = last_ctx_;
+            load_ctx.config = &last_config_;
+            load_ctx.services.clear();
+            const auto &man = e->plugin->manifest();
+            for (const auto &svc : man.requires_services) {
+                if (void *fn = lookup_service(svc)) {
+                    load_ctx.services.emplace(svc, fn);
+                }
+            }
+            for (const auto &svc : man.soft_requires_services) {
+                if (void *fn = lookup_service(svc)) {
+                    load_ctx.services.emplace(svc, fn);
+                }
+            }
+            e->plugin->load(load_ctx);
             e->status = PluginStatus::Loaded;
             e->loaded_phases.push_back(phase);
             result.loaded_order.push_back(id);

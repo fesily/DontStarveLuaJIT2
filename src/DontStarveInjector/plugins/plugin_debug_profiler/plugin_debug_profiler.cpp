@@ -26,6 +26,7 @@ struct DebugProfilerPlugin final : IPlugin {
         // Native EarlyNative registration (sticky); Lua drives AfterModMain APIs.
         man.phases = PluginPhase::EarlyNative;
         man.support_reload = false;
+        man.soft_requires_services = {"ds_core_vm_get_game_lua_context"};
         man.priority = 20;
         // Prefer AlwaysOn native so replace_profiler / Tracy / GC exports stay
         // available whenever the DLL is staged; policy no-ops until Lua enables.
@@ -109,15 +110,15 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
 
     // Host service table + lua_event bus — no L0 hardcode of this DLL.
     // Declarations come from FullGcPolicy.hpp / GameProfilerHook.hpp / ProfilerApi.cpp.
-    ds_host_register_service("lj_gc_fullgc_external",
+    host->register_service("lj_gc_fullgc_external",
                              reinterpret_cast<void *>(&lj_gc_fullgc_external));
-    ds_host_register_service("DS_LUAJIT_disable_fullgc",
+    host->register_service("DS_LUAJIT_disable_fullgc",
                              reinterpret_cast<void *>(&DS_LUAJIT_disable_fullgc));
-    ds_host_register_service("DS_LUAJIT_replace_profiler_api",
+    host->register_service("DS_LUAJIT_replace_profiler_api",
                              reinterpret_cast<void *>(&DS_LUAJIT_replace_profiler_api));
-    ds_host_register_service("DS_LUAJIT_enable_tracy",
+    host->register_service("DS_LUAJIT_enable_tracy",
                              reinterpret_cast<void *>(&DS_LUAJIT_enable_tracy));
-    ds_host_register_service("DS_LUAJIT_enable_framegc",
+    host->register_service("DS_LUAJIT_enable_framegc",
                              reinterpret_cast<void *>(&DS_LUAJIT_enable_framegc));
     (void) ds_register_lua_event_listener(&profiler_lua_listener);
 

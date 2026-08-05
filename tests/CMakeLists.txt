@@ -44,6 +44,7 @@ add_test(NAME BufferNamePool COMMAND test_buffer_name_pool)
 set(PLUGIN_HOST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginHost.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginOptionRules.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginServices.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/ConfigSchema.cpp
 )
 
@@ -137,7 +138,10 @@ add_test(NAME lua_event_bus COMMAND test_lua_event_bus)
 # Process-wide named service table (plugin → host → core.vm)
 add_executable(test_plugin_services
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_services.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginServices.cpp)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginServices.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginHost.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginOptionRules.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/ConfigSchema.cpp)
 target_include_directories(test_plugin_services PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
 target_compile_features(test_plugin_services PRIVATE cxx_std_23)

@@ -40,9 +40,12 @@ class PluginHost {
 public:
     DS_PLUGIN_HOST_API void register_plugin(IPlugin *plugin); // non-owning; caller keeps lifetime
     DS_PLUGIN_HOST_API bool register_option_schema(OptionSchemaEntry e);
+    // Service registration — only while registration window is open (module_init).
+    DS_PLUGIN_HOST_API bool register_service(std::string_view name, void *fn);
+    DS_PLUGIN_HOST_API void begin_module_registration();
+    DS_PLUGIN_HOST_API void end_module_registration();
     DS_PLUGIN_HOST_API ConfigSchemaRegistry &option_schema();
     DS_PLUGIN_HOST_API const ConfigSchemaRegistry &option_schema() const;
-
 
     ResolveResult resolve(const ConfigView &config, const PluginContext &gate_ctx);
     LoadResult load_phase(PluginPhase phase);
@@ -81,6 +84,13 @@ private:
     PluginContext last_ctx_{};
     bool resolved_ = false;
     ConfigSchemaRegistry option_schema_;
+    // Production: closed until DynamicPluginLoader opens around module_init.
+    // DS_PLUGIN_HOST_STATIC tests: open by default so graph tests stay simple.
+#if defined(DS_PLUGIN_HOST_STATIC)
+    bool registration_open_ = true;
+#else
+    bool registration_open_ = false;
+#endif
 };
 
 } // namespace ds::plugin

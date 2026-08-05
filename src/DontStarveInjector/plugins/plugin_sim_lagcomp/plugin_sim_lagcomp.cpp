@@ -24,6 +24,7 @@ struct SimLagcompPlugin final : IPlugin {
         man.phases = PluginPhase::EarlyNative;
         man.support_reload = false;
         // Inventory priority 60 (with network.sim / save.fork).
+        man.requires_services = {"ds_core_vm_get_game_lua_context"};
         man.priority = 60;
         man.options.kind = OptionRuleKind::AllOf;
         man.options.keys = {std::string{ds::config::keys::kEnableLagCompensation}};
@@ -81,7 +82,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
 
-    ds_host_register_service("DS_LUAJIT_entity_get_raw_ptr",
+    host->register_service("DS_LUAJIT_entity_get_raw_ptr",
                              reinterpret_cast<void *>(&DS_LUAJIT_entity_get_raw_ptr));
     host->register_plugin(&g_sim_lagcomp);
     std::fprintf(stderr, "[plugin_sim_lagcomp] module init registered sim.lagcomp\n");

@@ -64,9 +64,9 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         std::fprintf(stderr, "[plugin_fps_render] schema conflict TargetRenderFPS\n");
         return false;
     }
-    ds_host_register_service("DS_LUAJIT_set_target_fps",
+    host->register_service("DS_LUAJIT_set_target_fps",
                              reinterpret_cast<void *>(&DS_LUAJIT_set_target_fps));
-    ds_host_register_service("DS_LUAJIT_get_frame_time_s",
+    host->register_service("DS_LUAJIT_get_frame_time_s",
                              reinterpret_cast<void *>(&DS_LUAJIT_get_frame_time_s));
     host->register_plugin(&g_plugin);
     std::fprintf(stderr, "[plugin_fps_render] module init registered fps.render\n");

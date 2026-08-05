@@ -81,7 +81,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
 
-    ds_host_register_service("DS_LUAJIT_set_vbpool_enabled",
+    host->register_service("DS_LUAJIT_set_vbpool_enabled",
                              reinterpret_cast<void *>(&DS_LUAJIT_set_vbpool_enabled));
     host->register_plugin(&g_render_vbpool);
     std::fprintf(stderr, "[plugin_render_vbpool] module init registered render.vbpool\n");

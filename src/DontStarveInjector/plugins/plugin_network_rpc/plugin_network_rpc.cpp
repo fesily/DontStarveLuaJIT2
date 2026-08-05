@@ -71,7 +71,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
 
-    RegisterNetworkRpcHostServices();
+    RegisterNetworkRpcHostServices(host);
     host->register_plugin(&g_network_rpc);
     std::fprintf(stderr, "[plugin_network_rpc] module init registered network.rpc\n");
     return true;

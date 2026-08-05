@@ -1,4 +1,5 @@
 #include "core/PluginHost.hpp"
+#include "core/PluginServices.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -10,7 +11,7 @@ using namespace ds::plugin;
 
 namespace {
 
-struct FakePlugin final : IPlugin {
+struct FakePlugin : IPlugin {
     PluginManifest man{};
     bool allow = true;
     int load_count = 0;
@@ -738,6 +739,53 @@ static void test_render_angle_backend_parameter_matrix() {
     printf("PASS: render_angle_backend_parameter_matrix\n");
 }
 
+
+static int dummy_svc() { return 7; }
+
+static void test_requires_services_missing_fails() {
+    PluginHost host;
+    FakePlugin a;
+    a.man.id = "need.svc";
+    a.man.phases = PluginPhase::EarlyNative;
+    a.man.options = always();
+    a.man.requires_services = {"svc.missing.xyz"};
+    host.register_plugin(&a);
+    PluginContext ctx;
+    ConfigView cfg;
+    auto r = host.resolve(cfg, ctx);
+    assert(std::find(r.failed.begin(), r.failed.end(), "need.svc") != r.failed.end());
+    assert(host.fail_reason("need.svc") == PluginFailReason::MissingService);
+    printf("PASS: requires_services_missing_fails\n");
+}
+
+static void test_requires_services_present_injects() {
+    PluginHost host;
+    assert(host.register_service("svc.dummy", reinterpret_cast<void *>(&dummy_svc)));
+    struct CapturePlugin : FakePlugin {
+        void *seen = nullptr;
+        void load(PluginContext &c) override {
+            auto it = c.services.find("svc.dummy");
+            seen = (it == c.services.end()) ? nullptr : it->second;
+            FakePlugin::load(c);
+        }
+    } a;
+    a.man.id = "has.svc";
+    a.man.phases = PluginPhase::EarlyNative;
+    a.man.options = always();
+    a.man.requires_services = {"svc.dummy"};
+    host.register_plugin(&a);
+    PluginContext ctx;
+    ConfigView cfg;
+    auto r = host.resolve(cfg, ctx);
+    assert(std::find(r.failed.begin(), r.failed.end(), "has.svc") == r.failed.end());
+    assert(std::find(r.enabled.begin(), r.enabled.end(), "has.svc") != r.enabled.end());
+    auto lr = host.load_phase(PluginPhase::EarlyNative);
+    assert(lr.ok);
+    assert(a.seen == reinterpret_cast<void *>(&dummy_svc));
+    printf("PASS: requires_services_present_injects\n");
+}
+
+
 int main() {
     test_empty_registry();
     test_topo_linear();
@@ -760,6 +808,8 @@ int main() {
     test_network_entity_hard_dep_on_rpc();
     test_render_vbpool_option_matrix();
     test_render_angle_backend_parameter_matrix();
+    test_requires_services_missing_fails();
+    test_requires_services_present_injects();
     printf("All host graph tests passed!\n");
     return 0;
 }

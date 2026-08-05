@@ -50,7 +50,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     if (!host) {
         return false;
     }
-    ds_host_register_service("DS_LUAJIT_replace_network_tick",
+    host->register_service("DS_LUAJIT_replace_network_tick",
                              reinterpret_cast<void *>(&DS_LUAJIT_replace_network_tick));
     host->register_plugin(&g_plugin);
     std::fprintf(stderr, "[plugin_network_tick] module init registered network.tick\n");

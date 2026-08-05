@@ -80,7 +80,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
                      std::string{ds::config::keys::kAngleBackend}.c_str());
         return false;
     }
-    ds_host_register_service("DS_LUAJIT_get_render_backend_name",
+    host->register_service("DS_LUAJIT_get_render_backend_name",
                              reinterpret_cast<void *>(&DS_LUAJIT_get_render_backend_name));
     host->register_plugin(&g_render_angle);
     std::fprintf(stderr, "[plugin_render_angle] module init registered render.angle\n");

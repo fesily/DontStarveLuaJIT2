@@ -287,7 +287,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         }
     }
     // Publish GameLuaContext via host service table (no peer DLL name coupling).
-    if (!ds_host_register_service("ds_core_vm_get_game_lua_context",
+    if (!host->register_service("ds_core_vm_get_game_lua_context",
                                   reinterpret_cast<void *>(&ds_core_vm_get_game_lua_context))) {
         std::fprintf(stderr, "[plugin_core_vm] service conflict ds_core_vm_get_game_lua_context\n");
         return false;
