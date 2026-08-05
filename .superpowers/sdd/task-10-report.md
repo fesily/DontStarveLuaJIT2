@@ -2,7 +2,7 @@
 
 **Status:** DONE  
 **Branch:** feature/plugin-manager  
-**Commit:** `7a6a541f7f339fba91eb48cbb2e273f889b055b0`
+**Commit:** `267f726ff359b4a4309594372358d2142fdad1ea`
 
 ## Summary
 
