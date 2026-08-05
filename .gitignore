@@ -57,3 +57,4 @@ dst-scripts/tests/plugin_server/_markers/
 
 __pycache__/
 *.py[cod]
+.worktrees/
