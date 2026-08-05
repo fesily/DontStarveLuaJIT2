@@ -34,6 +34,7 @@ set(SOURCES
         core/RegisterBuiltinPlugins.cpp
         core/PluginConfigBridge.cpp
         core/DynamicPluginLoader.cpp
+        core/PluginPendingUpdates.cpp
         core/CoreVmBootstrap.cpp
 )
 

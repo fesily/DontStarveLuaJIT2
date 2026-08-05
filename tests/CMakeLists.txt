@@ -119,12 +119,21 @@ add_test(NAME plugin_config_bridge COMMAND test_config_view_build)
 add_executable(test_dynamic_plugin_loader
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_dynamic_plugin_loader.cpp
     ${PLUGIN_HOST_SOURCES}
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/DynamicPluginLoader.cpp)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/DynamicPluginLoader.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPendingUpdates.cpp)
 target_include_directories(test_dynamic_plugin_loader PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
 target_compile_features(test_dynamic_plugin_loader PRIVATE cxx_std_23)
 target_compile_definitions(test_dynamic_plugin_loader PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME plugin_dynamic_loader COMMAND test_dynamic_plugin_loader)
+
+add_executable(test_plugin_pending_updates
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_pending_updates.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPendingUpdates.cpp)
+target_include_directories(test_plugin_pending_updates PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_plugin_pending_updates PRIVATE cxx_std_23)
+add_test(NAME plugin_pending_updates COMMAND test_plugin_pending_updates)
 
 # L0 lua_event bus — no hard-coded plugin DLL forwarder
 add_executable(test_lua_event_bus

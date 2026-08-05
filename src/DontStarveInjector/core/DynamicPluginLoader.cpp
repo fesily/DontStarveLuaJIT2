@@ -1,5 +1,6 @@
 #include "DynamicPluginLoader.hpp"
 #include "PluginModuleAbi.hpp"
+#include "PluginPendingUpdates.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -176,6 +177,9 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
     if (!std::filesystem::is_directory(dir, ec)) {
         return report;
     }
+
+    // Apply manager/manual drops from update_pending/ before any LoadLibrary.
+    (void)apply_pending_plugin_updates(dir);
 
     for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
         if (ec) {
