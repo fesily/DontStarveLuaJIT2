@@ -1,4 +1,4 @@
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include <spdlog/spdlog.h>
 #include <atomic>
 

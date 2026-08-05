@@ -1,5 +1,5 @@
 #pragma once
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "GameLua.hpp"
 namespace dontstarveinjector::lua_debugger_helper
 {

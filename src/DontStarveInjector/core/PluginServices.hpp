@@ -3,7 +3,7 @@
 // Plugins register exports by stable name; core.vm / other plugins look up
 // without hardcoding peer DLL names.
 
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 
 #include <string_view>
 

@@ -5,7 +5,7 @@
 #include "core/PluginServices.hpp"
 #include "config/ConfigSchema.hpp"
 #include "FpsOptionKeys.hpp"
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 
 #include <cstdio>
 

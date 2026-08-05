@@ -1,5 +1,5 @@
 #pragma once
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "LuaApi.hpp"
 #include "DontStarveSignature.hpp"
 #include <string>

@@ -1,4 +1,4 @@
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 extern "C" {
 #include "../../lua51/src/lstate.h"
 #include "../../lua51/src/ldebug.h"

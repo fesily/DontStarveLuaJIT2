@@ -1,4 +1,4 @@
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "GameSignature.hpp"
 #include <frida-gum.h>
 

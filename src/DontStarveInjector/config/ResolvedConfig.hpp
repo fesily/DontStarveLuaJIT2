@@ -1,5 +1,5 @@
 #pragma once
-#include "config.hpp" // DS_INJECTOR_CXX_API (must be outside ds::config)
+#include "config/InjectorHostConfig.hpp" // DS_INJECTOR_CXX_API (must be outside ds::config)
 #include "ConfigSource.hpp"
 #include "IConfigSource.hpp"
 #include "ConfigSchema.hpp"

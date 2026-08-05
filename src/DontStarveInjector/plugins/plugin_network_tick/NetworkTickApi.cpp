@@ -1,5 +1,5 @@
 // plugin_network_tick — DS_LUAJIT_replace_network_tick
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "MemorySignature.hpp"
 #include "disasm.h"
 #include "ScanCtx.hpp"

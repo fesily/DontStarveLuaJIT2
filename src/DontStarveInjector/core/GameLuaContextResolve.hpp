@@ -1,7 +1,7 @@
 #pragma once
 // Resolve GetGameLuaContext from optional plugin_core_vm without hard-linking the symbol.
 // Used by feature plugins (debug.profiler, sim.lagcomp) when core.vm is optional.
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include <atomic>
 #include <cstdio>
 

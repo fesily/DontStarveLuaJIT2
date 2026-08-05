@@ -1,5 +1,5 @@
 #pragma once
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include <string>
 #include <cstdint>
 #include <frida-gum.h>

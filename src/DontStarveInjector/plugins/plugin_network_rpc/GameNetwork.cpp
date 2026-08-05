@@ -2,7 +2,7 @@
 #include "gum_plugin_export.hpp"
 #include "GameNetwork.hpp"
 #include "frida-gum.h"
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "MemorySignature.hpp"
 #include <disasm.h>
 #include <spdlog/spdlog.h>

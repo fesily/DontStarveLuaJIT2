@@ -1,5 +1,5 @@
 #pragma once
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include <lua.h>
 
 DS_INJECTOR_CXX_API void lua51_setallocf(lua_State *L, lua_Alloc f, void *ud);

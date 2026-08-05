@@ -8,7 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include "util/platform.hpp"
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "DontStarveSignature.hpp"
 
 #include "MemorySignature.hpp"

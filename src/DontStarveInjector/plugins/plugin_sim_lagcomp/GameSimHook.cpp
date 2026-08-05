@@ -1,4 +1,4 @@
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "GameLua.hpp"
 #include "core/GameLuaContextResolve.hpp"
 

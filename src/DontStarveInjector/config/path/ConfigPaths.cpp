@@ -1,6 +1,6 @@
 #include "ConfigPaths.hpp"
 
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "game_info.hpp"
 
 #include <algorithm>

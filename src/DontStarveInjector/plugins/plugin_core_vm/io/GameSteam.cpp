@@ -2,7 +2,7 @@
 #include "util/steam_sdk.hpp"
 #include "util/steam.hpp"
 #include "util/gum_platform.hpp"
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "gameio.h"
 #include <bit>
 #include <cstdint>

@@ -1,3 +1,4 @@
+#include "config/InjectorHostConfig.hpp"
 #include "LuaEvent.hpp"
 
 #include <mutex>

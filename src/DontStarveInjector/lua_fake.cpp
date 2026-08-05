@@ -4,7 +4,7 @@
 ** Lua.org, PUC-Rio, Brazil (http://www.lua.org)
 ** See Copyright Notice at the end of this file
 */
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 
 #if USE_FAKE_API
 #include <stddef.h>

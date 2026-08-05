@@ -1,7 +1,7 @@
 // DontStarveInjector.cpp : Defines the exported functions for the DLL application.
 //
 
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "util/inlinehook.hpp"
 #include "util/platform.hpp"
 #include "ctx.hpp"

@@ -1,7 +1,7 @@
 // plugin_debug_profiler — replace_profiler / tracy / framegc API bodies (Task 2).
 #include "GameProfilerHook.hpp"
 
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 
 #include <atomic>
 #include <frida-gum.h>

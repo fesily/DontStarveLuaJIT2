@@ -183,7 +183,7 @@ add_subdirectory(util)
 function(ds_add_dynamic_plugin name)
     add_library(${name} MODULE ${ARGN})
     # Plugin dir (CMAKE_CURRENT_SOURCE_DIR when called from plugins/<name>/)
-    # plus Injector root so "config.hpp", "util/...", "core/..." resolve.
+    # plus Injector root so "config/InjectorHostConfig.hpp", "util/...", "core/..." resolve.
     target_include_directories(${name} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${DONTSTARVEINJECTOR_ROOT}

@@ -18,7 +18,7 @@
 //                         xrefs, vtable reassignment, and MemoryPool::Clear pattern
 //                         matching macOS reference at 0x001e30e0.
 
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "MemorySignature.hpp"
 #include "NetSimStats.hpp"
 

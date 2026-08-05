@@ -30,7 +30,7 @@ extern "C" {
 #ifndef DISABLE_TRACY_FUTURE
 #include <tracy/TracyLua.hpp>
 #endif
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "profiler.hpp"
 #include <list>
 #include <mimalloc-new-delete.h>

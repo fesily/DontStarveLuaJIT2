@@ -11,9 +11,7 @@ enum class LUA_EVENT {
     call_lua_gc,
 };
 
-#ifndef DS_INJECTOR_CXX_API
-#  include "config.hpp"
-#endif
+#include "config/InjectorHostConfig.hpp"
 
 // Fan-out to all registered listeners (defined in LuaEventBus.cpp / Injector).
 DS_INJECTOR_CXX_API void lua_event_notifyer(LUA_EVENT ev, lua_State *L);

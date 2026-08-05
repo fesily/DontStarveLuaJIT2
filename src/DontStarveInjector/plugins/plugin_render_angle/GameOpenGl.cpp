@@ -3,7 +3,7 @@
 #ifdef _WIN32
 
 #include "DstAngleBackend.hpp"
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "util/module.hpp"
 #include "angle_iat_generated.hpp"
 #include "config/ResolvedConfig.hpp"

@@ -1,4 +1,4 @@
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "config/ConfigSession.hpp"
 #include "config/write/SaveConfigWriter.hpp"
 #include "config/write/WriteBackBag.hpp"

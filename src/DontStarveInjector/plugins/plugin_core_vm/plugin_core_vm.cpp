@@ -15,7 +15,7 @@
 #include "DontStarveSignature.hpp"
 #include "GameSignature.hpp"
 #include "ProcessMutex.hpp"
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "util/platform.hpp"
 #include "util/tools.hpp"
 #include "ctx.hpp"

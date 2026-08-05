@@ -1,6 +1,6 @@
 #pragma once
 // plugin_debug_profiler — FullGC deferral policy ownership (Task 3).
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 
 namespace ds::profiler {
 

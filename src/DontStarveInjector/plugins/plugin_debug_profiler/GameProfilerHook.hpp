@@ -1,7 +1,7 @@
 #pragma once
 // plugin_debug_profiler — Tracy / FrameGC / profiler push-pop hooks + FullGC policy (Task 3).
 #include "FullGcPolicy.hpp"
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "core/PluginServices.hpp"
 #include "MemorySignature.hpp"
 #include "util/inlinehook.hpp"

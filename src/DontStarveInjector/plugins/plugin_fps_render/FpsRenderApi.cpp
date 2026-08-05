@@ -1,5 +1,5 @@
 // plugin_fps_render — DS_LUAJIT_set_target_fps / get_frame_time_s
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "MemorySignature.hpp"
 #include "util/inlinehook.hpp"
 #include "disasm.h"

@@ -1,6 +1,6 @@
 // L0 residual GAME_API: installer update + mod version + process hygiene.
 // fps.render → plugin_fps_render; network.tick → plugin_network_tick.
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "MemorySignature.hpp"
 #include "util/inlinehook.hpp"
 

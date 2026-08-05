@@ -2,7 +2,7 @@
 #include "GameRenderHook.hpp"
 #include "BufferNamePool.hpp"
 
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "MemorySignature.hpp"
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>

@@ -1,5 +1,5 @@
 #pragma once
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include <cstdio>
 #include <stdint.h>
 typedef struct _GumModule GumModule;
