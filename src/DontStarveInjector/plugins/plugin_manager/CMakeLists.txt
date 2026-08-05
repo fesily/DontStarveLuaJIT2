@@ -3,7 +3,8 @@
 ds_add_dynamic_plugin(plugin_manager
     plugin_manager.cpp
     PluginManagerApi.cpp
-    PluginPinConfig.cpp)
+    PluginPinConfig.cpp
+    PluginLocalInventory.cpp)
 target_link_libraries(plugin_manager PRIVATE
     nlohmann_json::nlohmann_json)
 target_include_directories(plugin_manager PRIVATE

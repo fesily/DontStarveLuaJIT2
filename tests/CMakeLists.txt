@@ -152,6 +152,17 @@ target_include_directories(test_plugin_proxy_url PRIVATE
 target_compile_features(test_plugin_proxy_url PRIVATE cxx_std_23)
 add_test(NAME plugin_proxy_url COMMAND test_plugin_proxy_url)
 
+add_executable(test_plugin_local_inventory
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_local_inventory.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginLocalInventory.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginPinConfig.cpp)
+target_include_directories(test_plugin_local_inventory PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_plugin_local_inventory PRIVATE cxx_std_23)
+find_package(nlohmann_json CONFIG REQUIRED)
+target_link_libraries(test_plugin_local_inventory PRIVATE nlohmann_json::nlohmann_json)
+add_test(NAME plugin_local_inventory COMMAND test_plugin_local_inventory)
+
 # L0 lua_event bus — no hard-coded plugin DLL forwarder
 add_executable(test_lua_event_bus
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_lua_event_bus.cpp

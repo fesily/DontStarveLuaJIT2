@@ -1,5 +1,6 @@
-// plugin.manager — API stubs + pin-config operations (no network in Task 6).
+// plugin.manager — pin config + local inventory/status/plan (no network in Task 7).
 #include "PluginManagerApi.hpp"
+#include "PluginLocalInventory.hpp"
 #include "PluginPinConfig.hpp"
 
 #include <nlohmann/json.hpp>
@@ -8,6 +9,7 @@
 
 #include <mutex>
 #include <string>
+#include <unordered_map>
 
 namespace {
 
@@ -19,18 +21,71 @@ std::string g_manifest_json_buf = "{}";
 std::string g_plan_json_buf = "[]";
 std::string g_last_error; // empty => null in status
 bool g_needs_restart = false;
+// Optional channel version cache (filled by Task 8 fetch_manifest). Empty offline.
+ds::plugin::ChannelVersionCache g_channel_cache;
+
+nlohmann::json status_plugins_json(const std::vector<ds::plugin::PluginStatusEntry> &rows) {
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto &r : rows) {
+        nlohmann::json item;
+        item["id"] = r.id;
+        item["local_version"] =
+            r.local_version.has_value() ? nlohmann::json(*r.local_version) : nlohmann::json(nullptr);
+        item["desired_version"] = r.desired_version.has_value() ? nlohmann::json(*r.desired_version)
+                                                                : nlohmann::json(nullptr);
+        item["channel_version"] = r.channel_version.has_value() ? nlohmann::json(*r.channel_version)
+                                                                : nlohmann::json(nullptr);
+        item["pin_source"] =
+            r.pin_source.has_value() ? nlohmann::json(*r.pin_source) : nlohmann::json(nullptr);
+        item["state"] = r.state;
+        item["module"] = r.module;
+        item["sha256"] = r.sha256.has_value() ? nlohmann::json(*r.sha256) : nlohmann::json(nullptr);
+        arr.push_back(std::move(item));
+    }
+    return arr;
+}
+
+nlohmann::json plan_actions_json(const std::vector<ds::plugin::PlanAction> &actions) {
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto &a : actions) {
+        nlohmann::json item;
+        item["id"] = a.id;
+        item["from"] = a.from.has_value() ? nlohmann::json(*a.from) : nlohmann::json(nullptr);
+        item["to"] = a.to;
+        item["reason"] = a.reason;
+        arr.push_back(std::move(item));
+    }
+    return arr;
+}
+
+void refresh_plan_locked() {
+    const auto plugins_dir = ds::plugin::resolve_plugins_dir();
+    const auto inv = ds::plugin::scan_local_inventory(plugins_dir);
+    const auto actions = ds::plugin::build_plan_actions(g_cfg, inv, g_channel_cache);
+    g_plan_json_buf = plan_actions_json(actions).dump();
+}
 
 void refresh_status_locked() {
+    const auto plugins_dir = ds::plugin::resolve_plugins_dir();
+    const auto inv = ds::plugin::scan_local_inventory(plugins_dir);
+    const auto rows = ds::plugin::build_plugin_status(g_cfg, inv, g_channel_cache);
+
     nlohmann::json j;
-    j["plugins"] = nlohmann::json::array();
+    j["plugins"] = status_plugins_json(rows);
     j["last_error"] = g_last_error.empty() ? nlohmann::json(nullptr) : nlohmann::json(g_last_error);
     j["needs_restart"] = g_needs_restart;
     j["config_path"] = g_config_path_buf;
+    j["plugins_dir"] = plugins_dir.empty() ? nlohmann::json(nullptr)
+                                           : nlohmann::json(plugins_dir.generic_string());
     j["schema_version"] = g_cfg.schema_version;
     j["channel_name"] = g_cfg.channel_name;
     j["repo"] = g_cfg.repo;
+    j["release_tag"] = g_cfg.release_tag;
+    j["follow_latest"] = g_cfg.follow_latest;
+    j["prefer_proxy"] = g_cfg.prefer_proxy;
     j["auto_apply_on_boot"] = g_cfg.auto_apply_on_boot;
     g_status_json_buf = j.dump();
+    refresh_plan_locked();
 }
 
 void set_error_locked(std::string msg) {
@@ -64,7 +119,8 @@ bool save_locked(const ds::plugin::PluginPinConfig &cfg) {
         set_error_locked("failed to save pin config");
         return false;
     }
-    clear_error_locked();
+    // Caller commits g_cfg then refresh_status_locked() — avoid stale pins in status.
+    g_last_error.clear();
     return true;
 }
 
@@ -89,12 +145,11 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_config_path() {
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_manager_status_json() {
     std::lock_guard lock(g_mu);
-    if (g_status_json_buf.empty()) {
-        if (g_config_path_buf.empty()) {
-            g_config_path_buf = ds::plugin::resolve_config_path().generic_string();
-        }
-        refresh_status_locked();
+    if (g_config_path_buf.empty()) {
+        g_config_path_buf = ds::plugin::resolve_config_path().generic_string();
     }
+    // Always recompute: inventory + pins may change on disk without API calls.
+    refresh_status_locked();
     return g_status_json_buf.c_str();
 }
 
@@ -161,6 +216,7 @@ DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_plugin_pin_set(const char *id, const 
         return false;
     }
     g_cfg = std::move(next);
+    refresh_status_locked();
     return true;
 }
 
@@ -178,6 +234,7 @@ DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_plugin_pin_clear(const char *id) {
         return false;
     }
     g_cfg = std::move(next);
+    refresh_status_locked();
     return true;
 }
 
@@ -195,9 +252,13 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_manifest_json() {
     return g_manifest_json_buf.c_str();
 }
 
-// Task 7/8: plan/apply — stubs.
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_plan_apply_json() {
     std::lock_guard lock(g_mu);
+    // Always recompute plan from current inventory + pins (no network).
+    if (g_config_path_buf.empty()) {
+        g_config_path_buf = ds::plugin::resolve_config_path().generic_string();
+    }
+    refresh_plan_locked();
     return g_plan_json_buf.c_str();
 }
 
