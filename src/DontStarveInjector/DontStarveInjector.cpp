@@ -193,17 +193,15 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     LoadGameModConfig();
 
     // PluginHost: static RegisterBuiltinPlugins (empty extension point) then
-    // DynamicPluginLoader (network.rpc / render.vbpool / render.angle / core.vm).
-    // OB-S2: load modules (schema register) BEFORE full cascade resolve / VM path
-    // so save/env can apply LuaVmType / DisableJITWhenServer / EnabledGenGC.
+    // DynamicPluginLoader (network.rpc / render.vbpool / render.angle / core.vm / …).
+    // OB-S2/S4: load modules (schema register) BEFORE full cascade resolve so
+    // save/env can apply VM + business keys registered in module_init.
     {
         using namespace ds::plugin;
         static PluginHost g_plugin_host;
         // L0 base schema must exist even with zero plugins (C-S6 / OB-S2).
+        // Business keys come only from plugins (OB-S4).
         RegisterCoreOptionSchema(g_plugin_host.option_schema());
-        // Also seed builtin business keys so cascade defaults are present when
-        // plugins fail to load; plugins re-register the same entries.
-        RegisterBuiltinBusinessOptionSchema(g_plugin_host.option_schema());
         RegisterBuiltinPlugins(g_plugin_host);
         {
             static DynamicPluginLoader g_dyn_loader;

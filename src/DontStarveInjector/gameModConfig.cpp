@@ -32,15 +32,13 @@
 
 namespace {
 
-// Mutable production cascade schema: L0 core + business seed first; plugins
-// (plugin_core_vm) append VM keys via RegisterCoreVmOptionSchema during
-// DynamicPluginLoader module_init. Full resolve must run after that merge so
-// save/env VM values are not dropped as unknown (OB-S2).
+// Mutable production cascade schema: L0 core first; plugins append VM/business
+// keys during DynamicPluginLoader module_init. Full resolve must run after that
+// merge so save/env values are not dropped as unknown (OB-S2 / OB-S4).
 ds::plugin::ConfigSchemaRegistry &cascade_option_schema() {
     static ds::plugin::ConfigSchemaRegistry schema = [] {
         ds::plugin::ConfigSchemaRegistry r;
         ds::plugin::RegisterCoreOptionSchema(r);
-        ds::plugin::RegisterBuiltinBusinessOptionSchema(r);
         return r;
     }();
     return schema;
@@ -396,8 +394,8 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version() {
 }
 
 std::optional<GameJitModConfig> GameJitModConfig::instance() {
-    // Prefer post-plugin refresh (full schema incl. VM keys). Fall back to a
-    // first resolve against the L0+business seed for early bootstrap callers.
+    // Prefer post-plugin refresh (full schema incl. VM + business keys). Fall
+    // back to a first resolve against L0 core-only for early bootstrap callers.
     if (g_game_jit_mod_config) {
         return g_game_jit_mod_config;
     }

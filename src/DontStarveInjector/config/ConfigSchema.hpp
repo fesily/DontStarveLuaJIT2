@@ -38,11 +38,10 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r);
 // and cascade helpers may call directly. Missing module ⇒ keys absent (soft).
 void RegisterCoreVmOptionSchema(ConfigSchemaRegistry &r);
 
-// Business keys owned by plugins (AngleBackend, EnableVBPool, NetworkOpt,
-// EnableNetSim, EnableForkSave, EnableLagCompensation) with modinfo defaults —
-// used by cascade save/overrides parse before Host plugins load. Masks exclude
-// LuajitConfig. Plugins re-register the same entries on Host.
-void RegisterBuiltinBusinessOptionSchema(ConfigSchemaRegistry &r);
+// Business keys (AngleBackend, EnableVBPool, NetworkOpt, EnableNetSim,
+// EnableForkSave, EnableLagCompensation) are owned by their plugins'
+// ds_plugin_module_init. Cascade merges them via refresh_cascade_after_plugins
+// after DynamicPluginLoader; L0 does not seed business schema (OB-S4).
 
 class ConfigSchemaRegistry {
 public:

@@ -212,7 +212,20 @@ void test_resolved_config_accessors() {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
     RegisterCoreVmOptionSchema(reg);
-    RegisterBuiltinBusinessOptionSchema(reg);
+    // Business keys owned by plugins in production; seed AngleBackend here for
+    // accessor coverage (OB-S4 — no L0 RegisterBuiltinBusinessOptionSchema).
+    {
+        OptionSchemaEntry e;
+        e.key = "AngleBackend";
+        e.type = ConfigValueType::String;
+        e.default_value = ConfigValue::string("auto");
+        e.allowed = {"auto", "vulkan", "d3d11", "d3d9"};
+        e.allowed_sources =
+            static_cast<ConfigSourceMask>(ConfigSource::ModinfoDefault) |
+            static_cast<ConfigSourceMask>(ConfigSource::SaveFile) |
+            static_cast<ConfigSourceMask>(ConfigSource::EnvOrCmd);
+        assert(reg.add(std::move(e)));
+    }
 
     ConfigView values;
     values["AlwaysEnableMod"] = ConfigValue::boolean(true);

@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstdio>
 #include <string>
+#include <utility>
 #include "config/ConfigSource.hpp"
 
 
@@ -185,9 +186,54 @@ static void test_register_core_vm_option_schema() {
 }
 
 
-static void test_register_builtin_business_schema() {
+// Local stand-in for former L0 RegisterBuiltinBusinessOptionSchema — production
+// ownership is plugin module_init (OB-S4). Keeps coerce/mask coverage green.
+static void register_business_schema_for_tests(ConfigSchemaRegistry &r) {
+    constexpr auto kDefaultSaveEnv =
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
+        static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
+    {
+        OptionSchemaEntry e;
+        e.key = "AngleBackend";
+        e.type = ConfigValueType::String;
+        e.default_value = ConfigValue::string("auto");
+        e.allowed = {"auto", "vulkan", "d3d11", "d3d9"};
+        e.allowed_sources = kDefaultSaveEnv;
+        (void) r.add(std::move(e));
+    }
+    for (const auto &[key, def] :
+         std::initializer_list<std::pair<const char *, bool>>{
+             {"EnableVBPool", false},
+             {"NetworkOpt", true},
+             {"EnableNetSim", false},
+             {"EnableForkSave", true},
+             {"EnableLagCompensation", false},
+         }) {
+        OptionSchemaEntry e;
+        e.key = key;
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(def);
+        e.allowed_sources = kDefaultSaveEnv;
+        (void) r.add(std::move(e));
+    }
+}
+
+static void test_l0_core_has_no_business_keys() {
     ConfigSchemaRegistry reg;
-    RegisterBuiltinBusinessOptionSchema(reg);
+    RegisterCoreOptionSchema(reg);
+    assert(reg.find("AngleBackend") == nullptr);
+    assert(reg.find("EnableVBPool") == nullptr);
+    assert(reg.find("NetworkOpt") == nullptr);
+    assert(reg.find("EnableNetSim") == nullptr);
+    assert(reg.find("EnableForkSave") == nullptr);
+    assert(reg.find("EnableLagCompensation") == nullptr);
+    printf("PASS: l0_core_has_no_business_keys\n");
+}
+
+static void test_business_schema_masks_match_plugins() {
+    ConfigSchemaRegistry reg;
+    register_business_schema_for_tests(reg);
     assert(reg.find("AngleBackend") != nullptr);
     assert(reg.find("EnableVBPool") != nullptr);
     assert(reg.find("NetworkOpt") != nullptr);
@@ -216,9 +262,8 @@ static void test_register_builtin_business_schema() {
     assert(ds::config::effective_sources(reg.find("EnableLagCompensation")->allowed_sources) ==
            kDefaultSaveEnv);
 
-    // Unknown key still missing — parse loop ignores unknowns.
     assert(reg.find("TotallyUnknownOption") == nullptr);
-    printf("PASS: register_builtin_business_schema\n");
+    printf("PASS: business_schema_masks_match_plugins\n");
 }
 
 
@@ -281,7 +326,7 @@ static void test_unknown_key_ignored_pattern() {
     // Mirrors save-loop: find returns nullptr → skip without error.
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
-    RegisterBuiltinBusinessOptionSchema(reg);
+    register_business_schema_for_tests(reg);
 
     assert(reg.find("NetworkOpt") != nullptr);
     assert(reg.find("NotARealOption") == nullptr);
@@ -331,7 +376,8 @@ int main() {
     test_find_missing();
     test_register_core_option_schema();
     test_register_core_vm_option_schema();
-    test_register_builtin_business_schema();
+    test_l0_core_has_no_business_keys();
+    test_business_schema_masks_match_plugins();
     test_try_coerce_bool();
     test_try_coerce_string_allowed();
     test_try_coerce_number();
