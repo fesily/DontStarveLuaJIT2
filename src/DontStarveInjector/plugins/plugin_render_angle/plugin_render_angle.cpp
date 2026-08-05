@@ -81,8 +81,6 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
                      std::string{ds::config::keys::kAngleBackend}.c_str());
         return false;
     }
-    host->register_service("DS_LUAJIT_get_render_backend_name",
-                             reinterpret_cast<void *>(&DS_LUAJIT_get_render_backend_name));
         (void) host->register_game_injector_export(
         "DS_LUAJIT_get_render_backend_name",
         {ds::plugin::GiType::CString},

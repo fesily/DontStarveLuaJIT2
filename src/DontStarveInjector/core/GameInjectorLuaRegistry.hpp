@@ -21,6 +21,7 @@ enum class GiType : uint8_t {
     I32,
     U32,
     I64,
+    F32,
     F64,
     CString,       // const char*
     LightUserdata, // void*

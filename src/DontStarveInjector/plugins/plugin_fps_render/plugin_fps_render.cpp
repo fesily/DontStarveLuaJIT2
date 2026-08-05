@@ -65,11 +65,12 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         std::fprintf(stderr, "[plugin_fps_render] schema conflict TargetRenderFPS\n");
         return false;
     }
-    host->register_service("DS_LUAJIT_set_target_fps",
-                             reinterpret_cast<void *>(&DS_LUAJIT_set_target_fps));
-    host->register_service("DS_LUAJIT_get_frame_time_s",
-                             reinterpret_cast<void *>(&DS_LUAJIT_get_frame_time_s));
-        (void) host->register_game_injector_export(
+        // Cross-plugin: debug.profiler requests frame time (typed service).
+    (void) host->register_service(
+        "DS_LUAJIT_get_frame_time_s",
+        {ds::plugin::GiType::F32},
+        reinterpret_cast<void *>(&DS_LUAJIT_get_frame_time_s));
+    (void) host->register_game_injector_export(
         "DS_LUAJIT_set_target_fps",
         {ds::plugin::GiType::I32, ds::plugin::GiType::I32, ds::plugin::GiType::I32},
         reinterpret_cast<void *>(&DS_LUAJIT_set_target_fps));

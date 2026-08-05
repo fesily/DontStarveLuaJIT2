@@ -45,6 +45,7 @@ set(PLUGIN_HOST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginHost.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginOptionRules.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginServices.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/GameInjectorLuaRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/ConfigSchema.cpp
 )
 
@@ -141,6 +142,7 @@ add_executable(test_plugin_services
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginServices.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginHost.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginOptionRules.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/GameInjectorLuaRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/ConfigSchema.cpp)
 target_include_directories(test_plugin_services PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)

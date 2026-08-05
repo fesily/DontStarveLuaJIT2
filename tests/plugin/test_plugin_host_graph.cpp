@@ -740,7 +740,7 @@ static void test_render_angle_backend_parameter_matrix() {
 }
 
 
-static int dummy_svc() { return 7; }
+static int dummy_svc() { return 7; } // GiType::I32
 
 static void test_requires_services_missing_fails() {
     PluginHost host;
@@ -760,7 +760,7 @@ static void test_requires_services_missing_fails() {
 
 static void test_requires_services_present_injects() {
     PluginHost host;
-    assert(host.register_service("svc.dummy", reinterpret_cast<void *>(&dummy_svc)));
+    assert(host.register_service("svc.dummy", {ds::plugin::GiType::I32}, reinterpret_cast<void *>(&dummy_svc)));
     struct CapturePlugin : FakePlugin {
         void *seen = nullptr;
         void load(PluginContext &c) override {

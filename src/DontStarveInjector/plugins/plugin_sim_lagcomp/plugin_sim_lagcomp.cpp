@@ -91,8 +91,6 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
 
-    host->register_service("DS_LUAJIT_entity_get_raw_ptr",
-                             reinterpret_cast<void *>(&DS_LUAJIT_entity_get_raw_ptr));
         (void) host->register_game_injector_export(
         "DS_LUAJIT_entity_get_raw_ptr",
         {ds::plugin::GiType::LuaCFunction},

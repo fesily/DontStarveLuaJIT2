@@ -81,11 +81,6 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
 
-    host->register_service("DS_LUAJIT_fork_save", reinterpret_cast<void *>(&DS_LUAJIT_fork_save));
-    host->register_service("DS_LUAJIT_fork_save_exit", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_exit));
-    host->register_service("DS_LUAJIT_fork_save_cleanup", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_cleanup));
-    host->register_service("DS_LUAJIT_fork_save_wait", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_wait));
-    host->register_service("DS_LUAJIT_fork_save_poll", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_poll));
         (void) host->register_game_injector_export(
         "DS_LUAJIT_fork_save",
         {ds::plugin::GiType::CString},

@@ -64,6 +64,12 @@ static U64 read_arg(lua_State *L, int idx, GiType t, int *opt_storage) {
         return static_cast<U64>(static_cast<uint32_t>(A()._luaL_checkinteger(L, idx)));
     case GiType::I64:
         return static_cast<U64>(static_cast<int64_t>(A()._luaL_checknumber(L, idx)));
+    case GiType::F32: {
+        float f = static_cast<float>(A()._luaL_checknumber(L, idx));
+        U64 bits = 0;
+        std::memcpy(&bits, &f, sizeof(f));
+        return bits;
+    }
     case GiType::F64: {
         double d = A()._luaL_checknumber(L, idx);
         U64 bits = 0;
@@ -132,6 +138,12 @@ static int push_ret(lua_State *L, GiType ret, U64 r, void *fn) {
     case GiType::I64:
         A()._lua_pushnumber(L, static_cast<double>(static_cast<int64_t>(r)));
         return 1;
+    case GiType::F32: {
+        float f = 0;
+        std::memcpy(&f, &r, sizeof(f));
+        A()._lua_pushnumber(L, static_cast<double>(f));
+        return 1;
+    }
     case GiType::F64: {
         double d = 0;
         std::memcpy(&d, &r, sizeof(d));

@@ -92,14 +92,6 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
 
-    host->register_service("DS_LUAJIT_net_sim_enable",
-                             reinterpret_cast<void *>(&DS_LUAJIT_net_sim_enable));
-    host->register_service("DS_LUAJIT_net_sim_set",
-                             reinterpret_cast<void *>(&DS_LUAJIT_net_sim_set));
-    host->register_service("DS_LUAJIT_net_sim_update",
-                             reinterpret_cast<void *>(&DS_LUAJIT_net_sim_update));
-    host->register_service("DS_LUAJIT_net_sim_get_stats",
-                             reinterpret_cast<void *>(&DS_LUAJIT_net_sim_get_stats));
         (void) host->register_game_injector_export(
         "DS_LUAJIT_net_sim_enable",
         {ds::plugin::GiType::Void, ds::plugin::GiType::Bool},

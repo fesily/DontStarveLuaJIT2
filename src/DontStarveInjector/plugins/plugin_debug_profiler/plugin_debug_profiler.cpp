@@ -128,17 +128,12 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
 
     // Host service table + lua_event bus — no L0 hardcode of this DLL.
     // Declarations come from FullGcPolicy.hpp / GameProfilerHook.hpp / ProfilerApi.cpp.
-    host->register_service("lj_gc_fullgc_external",
-                             reinterpret_cast<void *>(&lj_gc_fullgc_external));
-    host->register_service("DS_LUAJIT_disable_fullgc",
-                             reinterpret_cast<void *>(&DS_LUAJIT_disable_fullgc));
-    host->register_service("DS_LUAJIT_replace_profiler_api",
-                             reinterpret_cast<void *>(&DS_LUAJIT_replace_profiler_api));
-    host->register_service("DS_LUAJIT_enable_tracy",
-                             reinterpret_cast<void *>(&DS_LUAJIT_enable_tracy));
-    host->register_service("DS_LUAJIT_enable_framegc",
-                             reinterpret_cast<void *>(&DS_LUAJIT_enable_framegc));
-        (void) host->register_game_injector_export(
+        // core.vm gameio forwards fullgc here (typed service).
+    (void) host->register_service(
+        "lj_gc_fullgc_external",
+        {ds::plugin::GiType::Void, ds::plugin::GiType::LightUserdata, ds::plugin::GiType::LightUserdata},
+        reinterpret_cast<void *>(&lj_gc_fullgc_external));
+    (void) host->register_game_injector_export(
         "DS_LUAJIT_disable_fullgc",
         {ds::plugin::GiType::Void, ds::plugin::GiType::Bool},
         reinterpret_cast<void *>(&DS_LUAJIT_disable_fullgc));

@@ -1,7 +1,7 @@
 #pragma once
 // core.vm service discovery helpers for peer plugins.
 // Prefer PluginContext.services (Host DI at load). Hot paths may cache that
-// pointer or fall back to ds_host_lookup_service — never hardcode DLL names.
+// pointer or fall back to typed request_service — never hardcode DLL names.
 #include "GameLua.hpp"
 #include "core/PluginServices.hpp"
 #include "core/PluginTypes.hpp"
@@ -10,19 +10,19 @@
 
 namespace ds::core_vm {
 
-// Stable service name registered by plugin_core_vm in ds_plugin_module_init.
 inline constexpr const char *kGetGameLuaContextService = "ds_core_vm_get_game_lua_context";
+
+// Schema must match plugin_core_vm registration (LightUserdata = pointer-sized return).
+inline constexpr ds::plugin::ServiceDesc<GameLuaContext &(*)(), ds::plugin::GiType::LightUserdata>
+    kGetGameLuaContext{kGetGameLuaContextService};
 
 using GetGameLuaContextFn = GameLuaContext &(*)();
 
-// Process-wide cache filled by BindGameLuaContextService (typically plugin load()).
 inline std::atomic<GetGameLuaContextFn> &game_lua_context_fn_cache() {
     static std::atomic<GetGameLuaContextFn> cached{nullptr};
     return cached;
 }
 
-// Prefer injected ctx.services; else lookup. Stores into process cache when found.
-// Returns false if service unavailable.
 inline bool BindGameLuaContextService(const ds::plugin::PluginContext *ctx = nullptr) {
     if (auto *fn = game_lua_context_fn_cache().load(std::memory_order_acquire)) {
         (void) fn;
@@ -36,7 +36,7 @@ inline bool BindGameLuaContextService(const ds::plugin::PluginContext *ctx = nul
         }
     }
     if (!raw) {
-        raw = ds_host_lookup_service(kGetGameLuaContextService);
+        raw = reinterpret_cast<void *>(kGetGameLuaContext.request());
     }
     if (!raw) {
         return false;
@@ -46,7 +46,6 @@ inline bool BindGameLuaContextService(const ds::plugin::PluginContext *ctx = nul
     return true;
 }
 
-// nullptr when core.vm is missing / not registered (optional module).
 inline GameLuaContext *TryGetGameLuaContext() {
     auto *fn = game_lua_context_fn_cache().load(std::memory_order_acquire);
     if (!fn) {
