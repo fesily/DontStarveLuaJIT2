@@ -151,7 +151,7 @@ jobs:
           if [[ "${GITHUB_REF:-}" == refs/heads/master ]]; then
             TAG="preview-${{ github.run_id }}"
           fi
-          mkdir -p dist/plugin_zips
+          mkdir -p dist
           python tools/gen_plugins_manifest.py \
             --plugins-dir "$PDIR" \
             --platform "$PLATFORM" \
@@ -160,7 +160,7 @@ jobs:
             --mod-version "$VERSION" \
             --source-root . \
             --out-manifest "dist/plugins-manifest.${PLATFORM}.json" \
-            --out-zips-dir dist/plugin_zips \
+            --out-zips-dir dist \
             --write-meta
 
       - name: Upload plugin zips and partial manifest
@@ -168,7 +168,7 @@ jobs:
         with:
           name: ${{ matrix.target }}-plugins
           path: |
-            ${{ github.workspace }}/dist/plugin_zips/*
+            ${{ github.workspace }}/dist/plugin_*.zip
             ${{ github.workspace }}/dist/plugins-manifest.${{ matrix.target }}.json
           if-no-files-found: error
 
