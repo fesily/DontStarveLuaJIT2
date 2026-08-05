@@ -10,6 +10,10 @@
 namespace ds::plugin_manager {
 namespace {
 
+// Hard caps against zip bombs / unexpected payloads (uncompressed).
+// Values: kMaxZipEntryUncompressedBytes / kMaxZipTotalUncompressedBytes (header).
+
+
 bool iequals_ascii(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) {
         return false;
@@ -91,12 +95,26 @@ bool allow_basename(const ExtractCtx &ctx, const std::string &base) {
 }
 
 bool write_entry_to_disk(zip_t *za, zip_int64_t index, const std::filesystem::path &out_path,
-                         std::string *err) {
+                         zip_uint64_t *total_written, std::string *err) {
     zip_stat_t st{};
     zip_stat_init(&st);
     if (zip_stat_index(za, index, 0, &st) != 0 || (st.valid & ZIP_STAT_SIZE) == 0) {
         if (err) {
             *err = "zip: stat failed";
+        }
+        return false;
+    }
+    if (st.size > kMaxZipEntryUncompressedBytes) {
+        if (err) {
+            *err = "zip: entry exceeds " + std::to_string(kMaxZipEntryUncompressedBytes) +
+                   " uncompressed bytes";
+        }
+        return false;
+    }
+    if (total_written && *total_written > kMaxZipTotalUncompressedBytes - st.size) {
+        if (err) {
+            *err = "zip: total extracted exceeds " + std::to_string(kMaxZipTotalUncompressedBytes) +
+                   " bytes";
         }
         return false;
     }
@@ -123,6 +141,7 @@ bool write_entry_to_disk(zip_t *za, zip_int64_t index, const std::filesystem::pa
 
     std::vector<char> buf(1 << 15);
     zip_uint64_t remaining = st.size;
+    zip_uint64_t wrote = 0;
     while (remaining > 0) {
         const zip_uint64_t chunk =
             remaining < buf.size() ? remaining : static_cast<zip_uint64_t>(buf.size());
@@ -146,10 +165,30 @@ bool write_entry_to_disk(zip_t *za, zip_int64_t index, const std::filesystem::pa
             return false;
         }
         remaining -= static_cast<zip_uint64_t>(n);
+        wrote += static_cast<zip_uint64_t>(n);
+        if (wrote > kMaxZipEntryUncompressedBytes) {
+            zip_fclose(zf);
+            if (err) {
+                *err = "zip: entry exceeds " + std::to_string(kMaxZipEntryUncompressedBytes) +
+                       " uncompressed bytes";
+            }
+            return false;
+        }
     }
     zip_fclose(zf);
+    if (total_written) {
+        *total_written += wrote;
+        if (*total_written > kMaxZipTotalUncompressedBytes) {
+            if (err) {
+                *err = "zip: total extracted exceeds " +
+                       std::to_string(kMaxZipTotalUncompressedBytes) + " bytes";
+            }
+            return false;
+        }
+    }
     return true;
 }
+
 
 std::optional<size_t> extract_archive(zip_t *za, const std::filesystem::path &dest_dir,
                                       const std::vector<std::string> &allow_files,
@@ -177,7 +216,7 @@ std::optional<size_t> extract_archive(zip_t *za, const std::filesystem::path &de
         }
         return std::nullopt;
     }
-
+    zip_uint64_t total_written = 0;
     for (zip_int64_t i = 0; i < n; ++i) {
         const char *raw = zip_get_name(za, i, ZIP_FL_ENC_GUESS);
         if (!raw) {
@@ -216,7 +255,7 @@ std::optional<size_t> extract_archive(zip_t *za, const std::filesystem::path &de
             continue; // skip non-allowlisted silently
         }
         const auto out_path = dest_dir / base;
-        if (!write_entry_to_disk(za, i, out_path, err)) {
+        if (!write_entry_to_disk(za, i, out_path, &total_written, err)) {
             return std::nullopt;
         }
         ++ctx.written;

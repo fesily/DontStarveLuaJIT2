@@ -10,6 +10,10 @@
 
 namespace ds::plugin_manager {
 
+// Uncompressed size caps for extract (zip-bomb guard).
+inline constexpr size_t kMaxZipEntryUncompressedBytes = 64ull * 1024ull * 1024ull;  // 64 MiB
+inline constexpr size_t kMaxZipTotalUncompressedBytes = 128ull * 1024ull * 1024ull; // 128 MiB
+
 // True if zip entry name is unsafe (absolute, drive, or contains `..` segment).
 bool zip_entry_is_unsafe(std::string_view name);
 
@@ -23,8 +27,10 @@ bool zip_entry_matches_default_allowlist(std::string_view basename);
 // - Rejects unsafe names (`..`, absolute, nested path escapes).
 // - If `allow_files` is non-empty: only those basenames (exact).
 // - Else: only top-level plugin_* modules (.dll/.so/.dylib) and plugin_*.meta.json.
+// - Caps: per-entry uncompressed 64 MiB; total extracted 128 MiB (hard fail).
 // Returns number of files written, or nullopt with *err on hard failure.
 // Partial writes may exist on failure; caller may clean temp dirs.
+
 std::optional<size_t> extract_plugin_zip(const std::filesystem::path &zip_path,
                                          const std::filesystem::path &dest_dir,
                                          const std::vector<std::string> &allow_files,

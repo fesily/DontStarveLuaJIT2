@@ -516,57 +516,41 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
         return false;
     }
 
+    // Production apply requires explicit files[] (CI always emits it). Default
+    // extract allowlist remains for fixtures/tests only via extract_* helpers.
+    if (asset.files.empty()) {
+        std::filesystem::remove_all(staging, ec);
+        if (err) {
+            *err = "apply: files[] is required and must be non-empty for " + asset.id;
+        }
+        return false;
+    }
+
     // Collect basenames actually present in staging (allowlist ∩ extracted).
     // Re-validate files[] as single safe basenames before install.
     std::vector<std::string> basenames;
-    if (!asset.files.empty()) {
-        bool module_listed = false;
-        for (const auto &f : asset.files) {
-            if (!is_flat_safe_basename(f)) {
-                std::filesystem::remove_all(staging, ec);
-                if (err) {
-                    *err = "apply: unsafe files[] entry: " + f;
-                }
-                return false;
-            }
-            basenames.push_back(f);
-            if (f == module_base) {
-                module_listed = true;
-            }
-        }
-        if (!module_listed) {
+    bool module_listed = false;
+    for (const auto &f : asset.files) {
+        if (!is_flat_safe_basename(f)) {
             std::filesystem::remove_all(staging, ec);
             if (err) {
-                *err = "apply: module not listed in files[]: " + module_base;
+                *err = "apply: unsafe files[] entry: " + f;
             }
             return false;
         }
-    } else {
-        for (const auto &entry : std::filesystem::directory_iterator(staging, ec)) {
-            if (!entry.is_regular_file(ec)) {
-                continue;
-            }
-            const std::string name = entry.path().filename().string();
-            if (!is_flat_safe_basename(name)) {
-                continue;
-            }
-            basenames.push_back(name);
-        }
-        bool module_found = false;
-        for (const auto &b : basenames) {
-            if (b == module_base) {
-                module_found = true;
-                break;
-            }
-        }
-        if (!module_found) {
-            std::filesystem::remove_all(staging, ec);
-            if (err) {
-                *err = "apply: module not among extracted files: " + module_base;
-            }
-            return false;
+        basenames.push_back(f);
+        if (f == module_base) {
+            module_listed = true;
         }
     }
+    if (!module_listed) {
+        std::filesystem::remove_all(staging, ec);
+        if (err) {
+            *err = "apply: module not listed in files[]: " + module_base;
+        }
+        return false;
+    }
+
 
 
     bool used_pending = false;

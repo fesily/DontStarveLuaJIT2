@@ -57,9 +57,44 @@ static void test_apply_overwrites_and_clears_pending() {
     printf("PASS: apply_overwrites_and_clears_pending\n");
 }
 
+static void test_apply_fresh_install_from_pending() {
+    // No existing dest: rename/copy still succeeds without pre-delete.
+    auto plugins = temp_dir("ds_plugin_pending_fresh");
+#if defined(_WIN32)
+    const char *name = "plugin_y.dll";
+#else
+    const char *name = "plugin_y.so";
+#endif
+    write_file(plugins / "update_pending" / name, "FRESH");
+    const size_t n = apply_pending_plugin_updates(plugins);
+    assert(n >= 1);
+    assert(read_all(plugins / name) == "FRESH");
+    assert(!fs::exists(plugins / "update_pending" / name));
+    printf("PASS: apply_fresh_install_from_pending\n");
+}
+
+static void test_ignores_staging_temps() {
+    auto plugins = temp_dir("ds_plugin_pending_tmp_ignore");
+#if defined(_WIN32)
+    const char *name = "plugin_z.dll";
+#else
+    const char *name = "plugin_z.so";
+#endif
+    write_file(plugins / "update_pending" / (std::string(name) + ".ds_pending_tmp_999"), "TEMP");
+    write_file(plugins / "update_pending" / name, "REAL");
+    const size_t n = apply_pending_plugin_updates(plugins);
+    assert(n >= 1);
+    assert(read_all(plugins / name) == "REAL");
+    // Staging leftover may remain; only the real pending should apply.
+    printf("PASS: ignores_staging_temps\n");
+}
+
 int main() {
     test_empty_or_missing_pending();
     test_apply_overwrites_and_clears_pending();
+    test_apply_fresh_install_from_pending();
+    test_ignores_staging_temps();
     printf("ALL PASS plugin_pending_updates\n");
     return 0;
 }
+

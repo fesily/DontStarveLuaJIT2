@@ -409,6 +409,69 @@ static void test_http_body_size_cap_constant() {
     printf("PASS: http_body_size_cap_constant\n");
 }
 
+static void test_apply_requires_nonempty_files() {
+    set_http_get_override(&mock_http_get);
+    g_http_map.clear();
+    g_http_hits = 0;
+
+    const std::string module_name =
+#if defined(_WIN32)
+        "plugin_dummy.dll";
+#else
+        "plugin_dummy.so";
+#endif
+    const std::string module_bytes = "MZ-PLUGIN-BYTES-nofiles";
+    const std::string digest = sha256_hex(module_bytes);
+    const std::string zip_bytes = build_zip_bytes({{module_name, module_bytes}});
+
+    const std::string platform = current_platform_key();
+    const std::string asset_name = "plugin_dummy-9.0.0-" + platform + ".zip";
+    const std::string tag = "v9.0.0";
+    const std::string direct_asset =
+        "https://github.com/fesily/DontStarveLuaJIT2/releases/download/" + tag + "/" + asset_name;
+    g_http_map[direct_asset] = zip_bytes;
+
+    nlohmann::json manifest;
+    manifest["schema_version"] = 1;
+    manifest["repo"] = "fesily/DontStarveLuaJIT2";
+    manifest["release_tag"] = tag;
+    nlohmann::json plug;
+    plug["id"] = "debug.dummy";
+    plug["version"] = "9.0.0";
+    nlohmann::json slot;
+    slot["available"] = true;
+    slot["asset"] = asset_name;
+    slot["sha256"] = digest;
+    slot["module"] = module_name;
+    // Intentionally omit files[] — production apply must refuse.
+    plug["platforms"] = nlohmann::json::object();
+    plug["platforms"][platform] = slot;
+    manifest["plugins"] = nlohmann::json::array({plug});
+
+    PluginPinConfig cfg = defaults();
+    cfg.release_tag = tag;
+    cfg.prefer_proxy = "never";
+
+    const auto plugins_dir = make_temp_dir("plugins_nofiles");
+    PlanAction action;
+    action.id = "debug.dummy";
+    action.from = "1.0.0";
+    action.to = "9.0.0";
+    action.reason = "version_mismatch";
+
+    auto result = apply_plan(cfg, manifest, {action}, plugins_dir, "");
+    assert(result.succeeded == 0);
+    assert(result.attempted == 1);
+    assert(!result.last_error.empty());
+    assert(result.last_error.find("files[]") != std::string::npos);
+    assert(!fs::exists(plugins_dir / module_name));
+
+    set_http_get_override(nullptr);
+    std::error_code ec;
+    fs::remove_all(plugins_dir, ec);
+    printf("PASS: apply_requires_nonempty_files\n");
+}
+
 int main() {
     test_channel_cache_and_lookup();
     test_fetch_manifest_mock();
@@ -417,7 +480,9 @@ int main() {
     test_reject_pathlike_module_and_files();
     test_reject_foreign_platform();
     test_http_body_size_cap_constant();
+    test_apply_requires_nonempty_files();
     printf("ALL PASS plugin_apply_offline\n");
     return 0;
 }
+
 

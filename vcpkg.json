@@ -3,6 +3,12 @@
   "dependencies": [
     "keystone",
     {
+      "name": "curl",
+      "default-features": false,
+      "features": ["ssl"],
+      "platform": "!windows"
+    },
+    {
       "name": "libzip",
       "version>=": "1.9.2#1"
     },

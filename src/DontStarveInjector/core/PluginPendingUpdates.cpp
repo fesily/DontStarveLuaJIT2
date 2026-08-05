@@ -3,47 +3,85 @@
 #include <cstdio>
 #include <system_error>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace ds::plugin {
 namespace {
 
-bool try_rename(const std::filesystem::path &from, const std::filesystem::path &to, std::error_code &ec) {
-    ec.clear();
-    std::filesystem::rename(from, to, ec);
-    return !ec;
+std::filesystem::path sibling_temp_path(const std::filesystem::path &dest) {
+    const auto parent = dest.parent_path().empty() ? std::filesystem::path(".") : dest.parent_path();
+#if defined(_WIN32)
+    const auto tag = std::to_string(GetCurrentProcessId());
+#else
+    const auto tag = std::to_string(static_cast<unsigned>(::getpid()));
+#endif
+    return parent / (dest.filename().string() + ".ds_pending_tmp_" + tag);
 }
 
-bool try_copy_remove(const std::filesystem::path &from, const std::filesystem::path &to, std::error_code &ec) {
-    ec.clear();
-    std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
-    if (ec) {
-        return false;
-    }
-    std::error_code remove_ec;
-    std::filesystem::remove(from, remove_ec);
-    if (remove_ec) {
-        // Destination is already updated; pending residue is best-effort cleanup.
-        std::fprintf(stderr, "[PluginPendingUpdates] remove_pending_failed: %s (%s)\n", from.string().c_str(),
-                     remove_ec.message().c_str());
-    }
-    return true;
-}
-
+// Prefer rename-over-existing when the OS supports it. Otherwise stage a sibling
+// temp next to dest and only then replace. Never delete a live module first.
 bool apply_one(const std::filesystem::path &from, const std::filesystem::path &to) {
     std::error_code ec;
-    // Prefer atomic replace when the OS allows overwrite-on-rename.
-    if (std::filesystem::exists(to, ec)) {
-        std::filesystem::remove(to, ec);
-        // Fall through either way: rename or copy+remove will report failure.
-    }
-    if (try_rename(from, to, ec)) {
+
+    // Fast path: rename pending onto dest (atomic replace on POSIX; may fail on Windows if dest exists).
+    std::filesystem::rename(from, to, ec);
+    if (!ec) {
         return true;
     }
-    if (try_copy_remove(from, to, ec)) {
+
+    // Stage durable content beside dest, then replace. Keep `from` until success.
+    const auto tmp = sibling_temp_path(to);
+    std::filesystem::remove(tmp, ec);
+    ec.clear();
+    std::filesystem::copy_file(from, tmp, std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+        std::fprintf(stderr, "[PluginPendingUpdates] stage_failed: %s -> %s (%s)\n", from.string().c_str(),
+                     tmp.string().c_str(), ec.message().c_str());
+        return false;
+    }
+
+    // Prefer rename temp over dest (no pre-delete).
+    ec.clear();
+    std::filesystem::rename(tmp, to, ec);
+    if (!ec) {
+        std::error_code rm_ec;
+        std::filesystem::remove(from, rm_ec);
+        if (rm_ec) {
+            std::fprintf(stderr, "[PluginPendingUpdates] remove_pending_failed: %s (%s)\n",
+                         from.string().c_str(), rm_ec.message().c_str());
+        }
         return true;
     }
-    std::fprintf(stderr, "[PluginPendingUpdates] apply_failed: %s -> %s (%s)\n", from.string().c_str(),
-                 to.string().c_str(), ec.message().c_str());
-    return false;
+
+    // Last resort: overwrite dest in place from the completed temp (dest stays intact on failure).
+    ec.clear();
+    std::filesystem::copy_file(tmp, to, std::filesystem::copy_options::overwrite_existing, ec);
+    std::error_code rm_tmp;
+    std::filesystem::remove(tmp, rm_tmp);
+    if (ec) {
+        std::fprintf(stderr, "[PluginPendingUpdates] apply_failed: %s -> %s (%s)\n", from.string().c_str(),
+                     to.string().c_str(), ec.message().c_str());
+        // Leave pending file for retry; do not delete working module.
+        return false;
+    }
+
+    std::error_code rm_from;
+    std::filesystem::remove(from, rm_from);
+    if (rm_from) {
+        std::fprintf(stderr, "[PluginPendingUpdates] remove_pending_failed: %s (%s)\n", from.string().c_str(),
+                     rm_from.message().c_str());
+    }
+    return true;
 }
 
 } // namespace
@@ -65,6 +103,11 @@ size_t apply_pending_plugin_updates(const std::filesystem::path &plugins_dir) {
         }
 
         const auto &from = entry.path();
+        // Ignore our own staging temps if a prior attempt left one behind.
+        const auto name = from.filename().string();
+        if (name.find(".ds_pending_tmp_") != std::string::npos) {
+            continue;
+        }
         const auto to = plugins_dir / from.filename();
         if (apply_one(from, to)) {
             ++applied;

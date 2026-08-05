@@ -15,13 +15,17 @@ target_link_libraries(plugin_manager PRIVATE
 if (WIN32)
     target_link_libraries(plugin_manager PRIVATE winhttp)
 else()
-    # Optional curl when available via vcpkg; otherwise http_get returns "http unsupported".
-    find_package(CURL QUIET)
-    if (CURL_FOUND)
-        target_link_libraries(plugin_manager PRIVATE CURL::libcurl)
-        target_compile_definitions(plugin_manager PRIVATE DS_PLUGIN_MANAGER_HAS_CURL=1)
+    # Non-Windows HTTP transport requires libcurl (vcpkg dependency).
+    find_package(CURL REQUIRED)
+    if (NOT CURL_FOUND)
+        message(FATAL_ERROR
+            "plugin_manager: CURL is required on non-Windows platforms. "
+            "Install via vcpkg (dependency 'curl') and reconfigure.")
     endif()
+    target_link_libraries(plugin_manager PRIVATE CURL::libcurl)
+    target_compile_definitions(plugin_manager PRIVATE DS_PLUGIN_MANAGER_HAS_CURL=1)
 endif()
+
 target_include_directories(plugin_manager PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${DONTSTARVEINJECTOR_ROOT}

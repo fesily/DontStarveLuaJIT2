@@ -3,11 +3,14 @@
 #include "plugins/plugin_manager/PluginZipExtract.hpp"
 
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
+
 
 #include <zip.h>
 
@@ -190,6 +193,98 @@ static void test_zip_memory_extract() {
     printf("PASS: zip_memory_extract\n");
 }
 
+// Minimal stored zip with forged uncompressed size in local + central headers.
+// Used to exercise extract caps without allocating 64 MiB of payload.
+static std::string craft_zip_forged_uncompressed(const std::string &name,
+                                                 std::uint32_t declared_uncomp,
+                                                 const std::string &payload) {
+    auto put_u16 = [](std::string &o, std::uint16_t v) {
+        o.push_back(static_cast<char>(v & 0xff));
+        o.push_back(static_cast<char>((v >> 8) & 0xff));
+    };
+    auto put_u32 = [](std::string &o, std::uint32_t v) {
+        o.push_back(static_cast<char>(v & 0xff));
+        o.push_back(static_cast<char>((v >> 8) & 0xff));
+        o.push_back(static_cast<char>((v >> 16) & 0xff));
+        o.push_back(static_cast<char>((v >> 24) & 0xff));
+    };
+
+    const std::uint32_t comp = static_cast<std::uint32_t>(payload.size());
+    const std::uint16_t nlen = static_cast<std::uint16_t>(name.size());
+
+    std::string local;
+    put_u32(local, 0x04034b50u); // local header sig
+    put_u16(local, 20);          // version needed
+    put_u16(local, 0);           // flags
+    put_u16(local, 0);           // method store
+    put_u16(local, 0);           // time
+    put_u16(local, 0);           // date
+    put_u32(local, 0);           // crc (ignore; we fail before full validate)
+    put_u32(local, comp);        // compressed size
+    put_u32(local, declared_uncomp);
+    put_u16(local, nlen);
+    put_u16(local, 0); // extra
+    local.append(name);
+    local.append(payload);
+
+    std::string central;
+    put_u32(central, 0x02014b50u);
+    put_u16(central, 20); // version made by
+    put_u16(central, 20); // version needed
+    put_u16(central, 0);
+    put_u16(central, 0);
+    put_u16(central, 0);
+    put_u16(central, 0);
+    put_u32(central, 0);
+    put_u32(central, comp);
+    put_u32(central, declared_uncomp);
+    put_u16(central, nlen);
+    put_u16(central, 0);
+    put_u16(central, 0);
+    put_u16(central, 0);
+    put_u16(central, 0);
+    put_u32(central, 0);
+    put_u32(central, 0); // relative offset of local header
+    central.append(name);
+
+    std::string eocd;
+    put_u32(eocd, 0x06054b50u);
+    put_u16(eocd, 0);
+    put_u16(eocd, 0);
+    put_u16(eocd, 1);
+    put_u16(eocd, 1);
+    put_u32(eocd, static_cast<std::uint32_t>(central.size()));
+    put_u32(eocd, static_cast<std::uint32_t>(local.size()));
+    put_u16(eocd, 0);
+
+    return local + central + eocd;
+}
+
+static void test_zip_reject_oversized_entry() {
+    assert(kMaxZipEntryUncompressedBytes == 64ull * 1024ull * 1024ull);
+    assert(kMaxZipTotalUncompressedBytes == 128ull * 1024ull * 1024ull);
+
+    const auto dir = make_temp_dir("zip_over");
+    const auto zip = dir / "huge.zip";
+    const std::uint32_t over =
+        static_cast<std::uint32_t>(kMaxZipEntryUncompressedBytes) + 1u;
+    const std::string bytes =
+        craft_zip_forged_uncompressed("plugin_huge.dll", over, "Z");
+    write_bytes(zip, bytes);
+
+    const auto out = dir / "out";
+    std::string err;
+    auto n = extract_plugin_zip(zip, out, {"plugin_huge.dll"}, &err);
+    assert(!n.has_value());
+    assert(err.find("exceeds") != std::string::npos);
+    assert(!fs::exists(out / "plugin_huge.dll"));
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    printf("PASS: zip_reject_oversized_entry\n");
+}
+
+
+
 int main() {
     test_sha256_known_vectors();
     test_sha256_file();
@@ -199,6 +294,8 @@ int main() {
     test_zip_reject_dotdot();
     test_zip_reject_nested();
     test_zip_memory_extract();
+    test_zip_reject_oversized_entry();
     printf("ALL PASS plugin_hash_zip\n");
     return 0;
 }
+
