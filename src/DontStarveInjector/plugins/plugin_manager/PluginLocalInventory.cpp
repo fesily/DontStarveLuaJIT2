@@ -248,15 +248,36 @@ std::vector<LocalPluginEntry> scan_local_inventory(const std::filesystem::path &
     return out;
 }
 
+std::filesystem::path plugins_dir_from_module_dir(const std::filesystem::path &module_dir) {
+    if (module_dir.empty()) {
+        return {};
+    }
+    // Prefer the path as-is when this module already lives under plugins/
+    // (plugin_manager.dll is deployed to <InjectorDir>/plugins/).
+    const auto leaf = module_dir.filename();
+    if (!leaf.empty() && iequals_ascii(leaf.string(), "plugins")) {
+        return module_dir;
+    }
+    // Also accept paths whose string form ends with /plugins (defensive for
+    // root-edge cases where filename() may be empty on some platforms).
+    const auto s = module_dir.generic_string();
+    if (s.size() >= 8) {
+        const auto tail = std::string_view(s).substr(s.size() - 8);
+        if (iequals_ascii(tail, "/plugins") || iequals_ascii(tail, "\\plugins")) {
+            return module_dir;
+        }
+    }
+    if (iequals_ascii(s, "plugins")) {
+        return module_dir;
+    }
+    return module_dir / "plugins";
+}
+
 std::filesystem::path resolve_plugins_dir() {
     if (const char *env = std::getenv("DS_LUAJIT_PLUGIN_DIR"); env && *env) {
         return std::filesystem::path(env);
     }
-    const auto mod_dir = injector_module_dir();
-    if (!mod_dir.empty()) {
-        return mod_dir / "plugins";
-    }
-    return {};
+    return plugins_dir_from_module_dir(injector_module_dir());
 }
 
 std::vector<PluginStatusEntry> build_plugin_status(const PluginPinConfig &cfg,

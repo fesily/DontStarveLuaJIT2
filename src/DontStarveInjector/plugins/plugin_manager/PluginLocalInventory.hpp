@@ -26,7 +26,13 @@ struct LocalPluginEntry {
 // Pure filesystem — takes an explicit path so unit tests can use a temp dir.
 std::vector<LocalPluginEntry> scan_local_inventory(const std::filesystem::path &plugins_dir);
 
-// DS_LUAJIT_PLUGIN_DIR env, else <injector_module_dir>/plugins (may be empty).
+// Pure path helper: if module_dir's last component is "plugins", use it as-is
+// (plugin_manager lives under <InjectorDir>/plugins/); otherwise append "plugins"
+// (Injector-style layout). Empty input → empty.
+std::filesystem::path plugins_dir_from_module_dir(const std::filesystem::path &module_dir);
+
+// DS_LUAJIT_PLUGIN_DIR env first; else plugins_dir_from_module_dir(this module's dir).
+// May be empty if both env and module path are unavailable.
 std::filesystem::path resolve_plugins_dir();
 
 // Channel cache: plugin id → version from last fetched remote manifest (empty offline).

@@ -173,6 +173,44 @@ static void test_status_with_channel_cache() {
     printf("PASS: status_with_channel_cache\n");
 }
 
+static void test_plugins_dir_from_module_dir() {
+    // Already inside plugins/ → do not append again.
+    {
+        const fs::path mod = fs::path("C:/game/bin64/plugins");
+        const auto out = plugins_dir_from_module_dir(mod);
+        assert(out == mod);
+        assert(out.filename() == "plugins" || out.filename() == "Plugins");
+    }
+    // Injector-style dir → append plugins.
+    {
+        const fs::path mod = fs::path("C:/game/bin64");
+        const auto out = plugins_dir_from_module_dir(mod);
+        assert(out == mod / "plugins");
+    }
+    // Case-insensitive leaf match (Windows).
+    {
+        const fs::path mod = fs::path("D:/Install/Plugins");
+        const auto out = plugins_dir_from_module_dir(mod);
+        assert(out == mod);
+    }
+    // Empty → empty.
+    {
+        assert(plugins_dir_from_module_dir({}).empty());
+    }
+    // Relative plugins leaf.
+    {
+        const fs::path mod = fs::path("plugins");
+        assert(plugins_dir_from_module_dir(mod) == mod);
+    }
+    // Nested plugins/plugins still ends with plugins → leave as-is (caller already there).
+    {
+        const fs::path mod = fs::path("/opt/app/plugins");
+        assert(plugins_dir_from_module_dir(mod) == mod);
+    }
+    printf("PASS: plugins_dir_from_module_dir\n");
+}
+
+
 int main() {
     test_scan_meta_and_module();
     test_module_without_meta_version_unknown();
@@ -182,6 +220,7 @@ int main() {
     test_plan_mismatch_and_prefer_present();
     test_plan_missing_override();
     test_status_with_channel_cache();
+    test_plugins_dir_from_module_dir();
     printf("ALL PASS plugin_local_inventory\n");
     return 0;
 }
