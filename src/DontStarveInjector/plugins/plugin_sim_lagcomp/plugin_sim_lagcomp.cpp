@@ -5,6 +5,7 @@
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
 #include "config/ConfigSource.hpp"
+#include "LagCompOptionKeys.hpp"
 
 #include "core/PluginServices.hpp"
 
@@ -25,7 +26,7 @@ struct SimLagcompPlugin final : IPlugin {
         // Inventory priority 60 (with network.sim / save.fork).
         man.priority = 60;
         man.options.kind = OptionRuleKind::AllOf;
-        man.options.keys = {"EnableLagCompensation"};
+        man.options.keys = {std::string{ds::config::keys::kEnableLagCompensation}};
     }
 
     const PluginManifest &manifest() const override { return man; }
@@ -67,7 +68,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
     OptionSchemaEntry e;
-    e.key = "EnableLagCompensation";
+    e.key = std::string{ds::config::keys::kEnableLagCompensation};
     e.type = ConfigValueType::Bool;
     e.default_value = ConfigValue::boolean(false);
     e.allowed_sources =
@@ -75,7 +76,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
     if (!host->register_option_schema(std::move(e))) {
-        std::fprintf(stderr, "[plugin_sim_lagcomp] schema conflict EnableLagCompensation\n");
+        std::fprintf(stderr, "[plugin_sim_lagcomp] schema conflict %s\n",
+                     std::string{ds::config::keys::kEnableLagCompensation}.c_str());
         return false;
     }
 

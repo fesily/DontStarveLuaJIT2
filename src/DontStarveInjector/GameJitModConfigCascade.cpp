@@ -2,6 +2,8 @@
 // Cascade load path lives under config/sources (SaveFile / ModOverrides).
 #include "gameModConfig.hpp"
 #include "../modinfo.hpp"
+#include "plugins/plugin_render_angle/AngleOptionKeys.hpp"
+#include "plugins/plugin_render_vbpool/VbpoolOptionKeys.hpp"
 #include "util/PersistentString.hpp"
 
 #include <cmath>
@@ -172,7 +174,7 @@ bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const Ga
 	}
 
 	std::string angle_backend{ModConfigurationOptions::AngleBackend.default_value};
-	if (auto it = config.business_options.find("AngleBackend");
+	if (auto it = config.business_options.find(std::string{ds::config::keys::kAngleBackend});
 		it != config.business_options.end() && it->second.type == ds::plugin::ConfigValueType::String) {
 		angle_backend = it->second.s;
 	}
@@ -203,7 +205,7 @@ bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const Ga
 	always_enable_mod["saved_client"] = config.AlwaysEnableMod;
 
 	bool enable_vbpool = ModConfigurationOptions::EnableVBPool.default_value;
-	if (auto it = config.business_options.find("EnableVBPool");
+	if (auto it = config.business_options.find(std::string{ds::config::keys::kEnableVBPool});
 		it != config.business_options.end() && it->second.type == ds::plugin::ConfigValueType::Bool) {
 		enable_vbpool = it->second.b;
 	}

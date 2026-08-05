@@ -6,6 +6,7 @@
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
 #include "config/ConfigSource.hpp"
+#include "NetSimOptionKeys.hpp"
 
 #include "core/PluginServices.hpp"
 #include "ctx.hpp"
@@ -31,7 +32,7 @@ struct NetworkSimPlugin final : IPlugin {
         // enabled in Lua (lazy hook install on DS_LUAJIT_net_sim_enable).
         man.priority = 60;
         man.options.kind = OptionRuleKind::AllOf;
-        man.options.keys = {"EnableNetSim"};
+        man.options.keys = {std::string{ds::config::keys::kEnableNetSim}};
     }
 
     const PluginManifest &manifest() const override { return man; }
@@ -77,7 +78,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
     OptionSchemaEntry e;
-    e.key = "EnableNetSim";
+    e.key = std::string{ds::config::keys::kEnableNetSim};
     e.type = ConfigValueType::Bool;
     e.default_value = ConfigValue::boolean(false);
     e.allowed_sources =
@@ -85,7 +86,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
     if (!host->register_option_schema(std::move(e))) {
-        std::fprintf(stderr, "[plugin_network_sim] schema conflict EnableNetSim\n");
+        std::fprintf(stderr, "[plugin_network_sim] schema conflict %s\n",
+                     std::string{ds::config::keys::kEnableNetSim}.c_str());
         return false;
     }
 

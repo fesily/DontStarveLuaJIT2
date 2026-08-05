@@ -3,6 +3,7 @@
 #include "config/BaseOptionKeys.hpp"
 #include "config/path/ConfigPaths.hpp"
 #include "plugins/plugin_core_vm/VmOptionKeys.hpp"
+#include "plugins/plugin_render_angle/AngleOptionKeys.hpp"
 
 #include <cstdlib>
 #include <string>
@@ -38,10 +39,12 @@ ConfigPartial EnvOrCmdSource::read(CascadeContext &) const {
     }
 
     if (auto value = path::read_env_or_cmd_value("DST_ANGLE_BACKEND"); !value.empty()) {
-        partial.values["AngleBackend"] = ds::plugin::ConfigValue::string(std::move(value));
+        partial.values[std::string{keys::kAngleBackend}] =
+            ds::plugin::ConfigValue::string(std::move(value));
     } else if (const auto *platform = std::getenv("ANGLE_DEFAULT_PLATFORM");
                platform != nullptr && platform[0] != '\0') {
-        partial.values["AngleBackend"] = ds::plugin::ConfigValue::string(platform);
+        partial.values[std::string{keys::kAngleBackend}] =
+            ds::plugin::ConfigValue::string(platform);
     }
 
     return partial;

@@ -4,6 +4,7 @@
 #include "ConfigSchema.hpp"
 #include "BaseOptionKeys.hpp"
 #include "plugins/plugin_core_vm/VmOptionKeys.hpp"
+#include "plugins/plugin_render_angle/AngleOptionKeys.hpp"
 #include "core/PluginTypes.hpp"
 #include "GameLuaType.hpp"
 #include <optional>
@@ -18,14 +19,15 @@ struct ResolvedConfig {
     std::unordered_map<std::string, ConfigSource> source_of;
     CascadeContext ctx; // identity snapshot
 
-    // L0 hot-path accessors over view + identity (CF-S5). Prefer these over the
-    // legacy GameJitModConfig bag for inject / core.vm / render readers.
+    // L0 base accessors (identity + AlwaysEnableMod). Prefer these over the
+    // legacy GameJitModConfig bag for inject / Host readers.
     bool always_enable_mod() const {
         auto it = view.find(std::string{keys::kAlwaysEnableMod});
         return it != view.end() && it->second.type == ds::plugin::ConfigValueType::Bool &&
                it->second.b;
     }
-
+    // VM-domain accessors (core.vm). Prefer core.vm bootstrap / GameLua only.
+    // Injector L0 must not use these as kill-switches (OB-S1 / OB-S5).
     bool disable_jit_when_server() const {
         auto it = view.find(std::string{keys::kDisableJITWhenServer});
         return it != view.end() && it->second.type == ds::plugin::ConfigValueType::Bool &&
@@ -102,9 +104,9 @@ struct ResolvedConfig {
         }
         return std::nullopt;
     }
-
+    // Business convenience (render.angle owns the key; keep thin until Host API).
     std::string_view angle_backend() const {
-        auto it = view.find("AngleBackend");
+        auto it = view.find(std::string{keys::kAngleBackend});
         if (it != view.end() && it->second.type == ds::plugin::ConfigValueType::String) {
             return it->second.s;
         }

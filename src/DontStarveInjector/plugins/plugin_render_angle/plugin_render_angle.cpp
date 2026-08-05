@@ -3,6 +3,7 @@
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
 #include "config/ConfigSource.hpp"
+#include "AngleOptionKeys.hpp"
 
 #include "core/PluginServices.hpp"
 #include "GameOpenGl.hpp"
@@ -66,7 +67,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
     OptionSchemaEntry e;
-    e.key = "AngleBackend";
+    e.key = std::string{ds::config::keys::kAngleBackend};
     e.type = ConfigValueType::String;
     e.default_value = ConfigValue::string("auto");
     e.allowed = {"auto", "vulkan", "d3d11", "d3d9"};
@@ -75,7 +76,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
     if (!host->register_option_schema(std::move(e))) {
-        std::fprintf(stderr, "[plugin_render_angle] schema conflict AngleBackend\n");
+        std::fprintf(stderr, "[plugin_render_angle] schema conflict %s\n",
+                     std::string{ds::config::keys::kAngleBackend}.c_str());
         return false;
     }
     ds_host_register_service("DS_LUAJIT_get_render_backend_name",

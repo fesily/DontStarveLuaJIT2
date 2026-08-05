@@ -5,6 +5,7 @@
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
 #include "config/ConfigSource.hpp"
+#include "ForkSaveOptionKeys.hpp"
 
 #include "core/PluginServices.hpp"
 
@@ -27,7 +28,7 @@ struct SaveForkPlugin final : IPlugin {
         // so GameInjector can resolve fork APIs via host service table when Lua enables.
         man.priority = 60;
         man.options.kind = OptionRuleKind::AllOf;
-        man.options.keys = {"EnableForkSave"};
+        man.options.keys = {std::string{ds::config::keys::kEnableForkSave}};
     }
 
     const PluginManifest &manifest() const override { return man; }
@@ -66,7 +67,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
     OptionSchemaEntry e;
-    e.key = "EnableForkSave";
+    e.key = std::string{ds::config::keys::kEnableForkSave};
     e.type = ConfigValueType::Bool;
     e.default_value = ConfigValue::boolean(true);
     e.allowed_sources =
@@ -74,7 +75,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
     if (!host->register_option_schema(std::move(e))) {
-        std::fprintf(stderr, "[plugin_save_fork] schema conflict EnableForkSave\n");
+        std::fprintf(stderr, "[plugin_save_fork] schema conflict %s\n",
+                     std::string{ds::config::keys::kEnableForkSave}.c_str());
         return false;
     }
 

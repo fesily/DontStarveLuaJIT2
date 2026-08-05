@@ -4,6 +4,7 @@
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
 #include "config/ConfigSource.hpp"
+#include "VbpoolOptionKeys.hpp"
 
 #include "core/PluginServices.hpp"
 #include "ctx.hpp"
@@ -28,7 +29,7 @@ struct RenderVbpoolPlugin final : IPlugin {
         // Before network.rpc; matches former LoadGameModConfig order (vbpool then angle).
         man.priority = 20;
         man.options.kind = OptionRuleKind::AllOf;
-        man.options.keys = {"EnableVBPool"};
+        man.options.keys = {std::string{ds::config::keys::kEnableVBPool}};
     }
 
     const PluginManifest &manifest() const override { return man; }
@@ -67,7 +68,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
     OptionSchemaEntry e;
-    e.key = "EnableVBPool";
+    e.key = std::string{ds::config::keys::kEnableVBPool};
     e.type = ConfigValueType::Bool;
     e.default_value = ConfigValue::boolean(false);
     e.allowed_sources =
@@ -75,7 +76,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
     if (!host->register_option_schema(std::move(e))) {
-        std::fprintf(stderr, "[plugin_render_vbpool] schema conflict EnableVBPool\n");
+        std::fprintf(stderr, "[plugin_render_vbpool] schema conflict %s\n",
+                     std::string{ds::config::keys::kEnableVBPool}.c_str());
         return false;
     }
 

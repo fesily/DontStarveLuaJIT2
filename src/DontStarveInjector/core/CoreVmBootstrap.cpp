@@ -174,9 +174,8 @@ bool TryRunSignatureAndReplace(const BootstrapArgs &args) {
         (void) GameJitModConfig::instance();
         bool disable_on_server = false;
         if (auto *rc = ds::config::current()) {
-            auto it = rc->view.find(std::string{ds::config::keys::kDisableJITWhenServer});
-            disable_on_server = it != rc->view.end() &&
-                                it->second.type == ds::plugin::ConfigValueType::Bool && it->second.b;
+            // VM-domain accessor only — L0 Inject never calls this (OB-S1/S5).
+            disable_on_server = rc->disable_jit_when_server();
         }
         if (disable_on_server) {
             std::fprintf(stderr,

@@ -1,7 +1,7 @@
 # Config Ownership Boundaries (L0 / core.vm / business)
 
 **Date:** 2026-08-05  
-**Status:** Approved direction (user: 好)  
+**Status:** Implemented  
 **Depends on:** `docs/superpowers/specs/2026-08-04-config-source-schema-unification-design.md` (cascade + `allowed_sources` + `config/`)
 
 ## 1. Problem
