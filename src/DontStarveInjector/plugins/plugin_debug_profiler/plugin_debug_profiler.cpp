@@ -7,7 +7,7 @@
 #include "core/PluginTypes.hpp"
 #include "core/PluginServices.hpp"
 #include "plugins/plugin_core_vm/VmServices.hpp"
-#include "core/LuaEvent.hpp"
+#include "plugins/plugin_core_vm/LuaEvent.hpp"
 #include "config/ConfigSchema.hpp"
 #include "GameProfilerHook.hpp"
 #include "FullGcPolicy.hpp"
@@ -17,6 +17,8 @@
 namespace {
 
 using namespace ds::plugin;
+
+void profiler_lua_listener(LUA_EVENT ev, lua_State *L);
 
 struct DebugProfilerPlugin final : IPlugin {
     PluginManifest man{};
@@ -28,7 +30,7 @@ struct DebugProfilerPlugin final : IPlugin {
         man.phases = PluginPhase::EarlyNative;
         man.support_reload = false;
         man.soft_depends = {"core.vm"};
-        man.soft_requires_services = {"ds_core_vm_get_game_lua_context"};
+        man.soft_requires_services = {"ds_core_vm_get_game_lua_context", "ds_register_lua_event_listener"};
         man.priority = 20;
         // Prefer AlwaysOn native so replace_profiler / Tracy / GC exports stay
         // available whenever the DLL is staged; policy no-ops until Lua enables.
@@ -48,6 +50,14 @@ struct DebugProfilerPlugin final : IPlugin {
             std::fprintf(stderr, "[plugin_debug_profiler] load debug.profiler (GameLuaContext bound)\n");
         } else {
             std::fprintf(stderr, "[plugin_debug_profiler] load debug.profiler (no core.vm service)\n");
+        }
+        using RegFn = bool (*)(void (*)(LUA_EVENT, lua_State *));
+        auto it = ctx.services.find("ds_register_lua_event_listener");
+        if (it != ctx.services.end() && it->second) {
+            auto *reg = reinterpret_cast<RegFn>(it->second);
+            if (reg(&profiler_lua_listener)) {
+                std::fprintf(stderr, "[plugin_debug_profiler] lua_event listener registered\n");
+            }
         }
     }
 
@@ -127,8 +137,6 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
                              reinterpret_cast<void *>(&DS_LUAJIT_enable_tracy));
     host->register_service("DS_LUAJIT_enable_framegc",
                              reinterpret_cast<void *>(&DS_LUAJIT_enable_framegc));
-    (void) ds_register_lua_event_listener(&profiler_lua_listener);
-
     host->register_plugin(&g_plugin);
     std::fprintf(stderr, "[plugin_debug_profiler] module init registered debug.profiler\n");
     return true;

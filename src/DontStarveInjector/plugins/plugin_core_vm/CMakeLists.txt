@@ -34,6 +34,7 @@ set(PLUGIN_CORE_VM_VM_SOURCES
     GameLuaModule.cpp
     GameLuaInjectFramework.c
     lua_debugger_helper.cpp
+    LuaEventBus.cpp
     lua_fake.cpp
 )
 

@@ -18,7 +18,6 @@ set(SOURCES
         config/InjectorHostConfig.cpp
         core/PluginHost.cpp
         core/PluginServices.cpp
-        core/LuaEventBus.cpp
         core/PluginOptionRules.cpp
         config/ConfigSchema.cpp
         config/CascadeEngine.cpp
@@ -131,7 +130,7 @@ target_include_directories(Injector PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 # core.vm owns the game VM; sol in GameLuaModule is GameDbg-specialized and lives
 # only in plugin_core_vm.
 #
-# Headers: PRIVATE lua51original so Injector TUs (sol cascade, lua_event_notifyer
+# Headers: PRIVATE lua51original so Injector TUs (sol cascade
 # incomplete type) see stock lua.h — not LUAJIT_INCLUDE_DIR (that stays on core.vm).
 target_include_directories(Injector PRIVATE
     ${PROJECT_SOURCE_DIR}/src/lua51original/src

@@ -8,7 +8,7 @@
 #include <lua.hpp>
 #include <lj_arch.h>
 #include "GameLuaType.hpp"
-#include "core/LuaEvent.hpp"
+#include "LuaEvent.hpp"
 
 /*
     this is a struct to hold all lua export functions

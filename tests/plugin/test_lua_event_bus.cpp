@@ -1,5 +1,5 @@
 // L0 lua_event bus: plugins register listeners; notifyer does not hardcode DLL names.
-#include "core/LuaEvent.hpp"
+#include "plugins/plugin_core_vm/LuaEvent.hpp"
 
 #include <cassert>
 #include <cstdio>

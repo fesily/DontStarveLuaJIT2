@@ -6,6 +6,7 @@
 #include "MemorySignature.hpp"
 #include "util/inlinehook.hpp"
 #include "GameLua.hpp"
+#include "plugins/plugin_core_vm/LuaEvent.hpp"
 #include "plugins/plugin_core_vm/VmServices.hpp"
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -271,7 +272,7 @@ struct ProfilerHooker {
     }
 };
 
-// core.vm still dllimports lua_event_notifyer from Injector; Injector forwards here.
+// LUA_EVENT fan-out lives in plugin_core_vm; this is the profiler listener body.
 DONTSTARVEINJECTOR_GAME_API inline void DS_LUAJIT_profiler_lua_event_notifyer(int ev, lua_State *L) {
     switch (static_cast<LUA_EVENT>(ev)) {
     case LUA_EVENT::new_state:

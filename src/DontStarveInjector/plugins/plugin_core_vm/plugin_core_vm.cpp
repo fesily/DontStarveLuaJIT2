@@ -12,6 +12,7 @@
 #include "../../modinfo.hpp"
 
 #include "GameLua.hpp"
+#include "LuaEvent.hpp"
 #include "io/GameSteam.hpp"
 #include "DontStarveSignature.hpp"
 #include "GameSignature.hpp"
@@ -290,6 +291,11 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     if (!host->register_service("ds_core_vm_get_game_lua_context",
                                   reinterpret_cast<void *>(&ds_core_vm_get_game_lua_context))) {
         std::fprintf(stderr, "[plugin_core_vm] service conflict ds_core_vm_get_game_lua_context\n");
+        return false;
+    }
+    if (!host->register_service("ds_register_lua_event_listener",
+                                  reinterpret_cast<void *>(&ds_register_lua_event_listener))) {
+        std::fprintf(stderr, "[plugin_core_vm] service conflict ds_register_lua_event_listener\n");
         return false;
     }
     host->register_plugin(&g_core_vm);
