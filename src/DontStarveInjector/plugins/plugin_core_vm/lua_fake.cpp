@@ -1,3 +1,5 @@
+// Owned by plugin_core_vm — optional FAKE_API trampolines for hook checking.
+// Built into plugin_core_vm when ENABLE_FAKE_API (via Injector PUBLIC defs).
 /*
 ** $Id: lua.h,v 1.218.1.5 2008/08/06 13:30:12 roberto Exp $
 ** Lua - An Extensible Extension Language

@@ -34,6 +34,7 @@ set(PLUGIN_CORE_VM_VM_SOURCES
     GameLuaModule.cpp
     GameLuaInjectFramework.c
     lua_debugger_helper.cpp
+    lua_fake.cpp
 )
 
 set(PLUGIN_CORE_VM_SOURCES
@@ -97,3 +98,11 @@ target_include_directories(Injector PUBLIC
     ${PLUGIN_CORE_VM_DIR}
     ${PLUGIN_CORE_VM_DIR}/signature_load
     ${PLUGIN_CORE_VM_DIR}/io)
+
+# Optional fake-API trampolines (lua_fake.cpp) — parent option ENABLE_FAKE_API.
+if (ENABLE_FAKE_API)
+    target_compile_definitions(plugin_core_vm PRIVATE ENABLE_FAKE_API)
+endif()
+if (ENABLE_ONLY_LUA51)
+    target_compile_definitions(plugin_core_vm PRIVATE ENABLE_ONLY_LUA51)
+endif()

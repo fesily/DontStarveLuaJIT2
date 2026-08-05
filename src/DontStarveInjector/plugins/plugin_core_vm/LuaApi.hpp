@@ -1,4 +1,5 @@
 #pragma once
+// Owned by plugin_core_vm — Lua C API name tables for GameLua remapping.
 
 #define LUA_API_DEFINES(_)   \
     _(lua_newstate)          \

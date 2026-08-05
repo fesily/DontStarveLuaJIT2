@@ -5,7 +5,6 @@ option(ENABLE_STEAM_SUPPORT "Enable Steam support" ON)
 
 set(SOURCES
         DontStarveInjector.cpp
-        lua_fake.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
