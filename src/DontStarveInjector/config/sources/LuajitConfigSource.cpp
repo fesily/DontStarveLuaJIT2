@@ -1,6 +1,8 @@
 #include "ConfigSources.hpp"
+#include "config/BaseOptionKeys.hpp"
 #include "config/path/ConfigPaths.hpp"
 #include "config/sources/LuajitConfigFile.hpp"
+#include "plugins/plugin_core_vm/VmOptionKeys.hpp"
 
 namespace ds::config {
 
@@ -27,13 +29,16 @@ ConfigPartial LuajitConfigSource::read(CascadeContext &ctx) const {
         // Still publish identity derived from defaults / pre-pass so view has keys
         // when schema allows LuajitConfig (empty file → no override of defaults).
         if (!ctx.modname.empty()) {
-            partial.values["modname"] = ds::plugin::ConfigValue::string(ctx.modname);
+            partial.values[std::string{keys::kModname}] =
+                ds::plugin::ConfigValue::string(ctx.modname);
         }
         if (!ctx.modid.empty()) {
-            partial.values["modid"] = ds::plugin::ConfigValue::string(ctx.modid);
+            partial.values[std::string{keys::kModid}] =
+                ds::plugin::ConfigValue::string(ctx.modid);
         }
         if (!ctx.modmain_path.empty()) {
-            partial.values["modmain_path"] = ds::plugin::ConfigValue::string(ctx.modmain_path);
+            partial.values[std::string{keys::kModmainPath}] =
+                ds::plugin::ConfigValue::string(ctx.modmain_path);
         }
         return partial;
     }
@@ -46,19 +51,21 @@ ConfigPartial LuajitConfigSource::read(CascadeContext &ctx) const {
         if (ctx.aliases.empty()) {
             ctx.aliases = identity.aliases;
         }
-        partial.values["modmain_path"] =
+        partial.values[std::string{keys::kModmainPath}] =
             ds::plugin::ConfigValue::string(config->modmain_path);
     }
     if (!ctx.modname.empty()) {
-        partial.values["modname"] = ds::plugin::ConfigValue::string(ctx.modname);
+        partial.values[std::string{keys::kModname}] =
+            ds::plugin::ConfigValue::string(ctx.modname);
     }
     if (!ctx.modid.empty()) {
-        partial.values["modid"] = ds::plugin::ConfigValue::string(ctx.modid);
+        partial.values[std::string{keys::kModid}] =
+            ds::plugin::ConfigValue::string(ctx.modid);
     }
 
-    partial.values["AlwaysEnableMod"] =
+    partial.values[std::string{keys::kAlwaysEnableMod}] =
         ds::plugin::ConfigValue::boolean(config->always_enable_mod);
-    partial.values["DisableJITWhenServer"] =
+    partial.values[std::string{keys::kDisableJITWhenServer}] =
         ds::plugin::ConfigValue::boolean(config->server_disable_luajit);
     return partial;
 }

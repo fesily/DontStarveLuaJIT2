@@ -1,4 +1,6 @@
 #include "ConfigSchema.hpp"
+#include "BaseOptionKeys.hpp"
+#include "plugins/plugin_core_vm/VmOptionKeys.hpp"
 #include "../../modinfo.hpp"
 
 
@@ -131,7 +133,7 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::LuajitConfig);
     {
         OptionSchemaEntry e;
-        e.key = std::string{ModConfigurationOptions::AlwaysEnableMod.name};
+        e.key = std::string{ds::config::keys::kAlwaysEnableMod};
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::AlwaysEnableMod.default_value);
         e.allowed_sources = ds::config::kConfigSourceAll;
@@ -139,7 +141,7 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
     }
     {
         OptionSchemaEntry e;
-        e.key = std::string{ModConfigurationOptions::DisableJITWhenServer.name};
+        e.key = std::string{ds::config::keys::kDisableJITWhenServer};
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::DisableJITWhenServer.default_value);
         e.allowed_sources = ds::config::kConfigSourceAll;
@@ -147,7 +149,7 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
     }
     {
         OptionSchemaEntry e;
-        e.key = std::string{ModConfigurationOptions::LuaVmType.name};
+        e.key = std::string{ds::config::keys::kLuaVmType};
         e.type = ConfigValueType::String;
         e.default_value = ConfigValue::string(std::string{ModConfigurationOptions::LuaVmType.default_value});
         // modinfo UI options are jit/game; env/cmd also accepts historical aliases
@@ -163,7 +165,7 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
     }
     {
         OptionSchemaEntry e;
-        e.key = std::string{ModConfigurationOptions::EnabledGenGC.name};
+        e.key = std::string{ds::config::keys::kEnabledGenGC};
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(ModConfigurationOptions::EnabledGenGC.default_value);
         // Spec §2.2 / CF-S5: not from LuajitConfig file.
@@ -173,7 +175,7 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
     // D7 identity keys — path/name identity owned by L0, tight sources.
     {
         OptionSchemaEntry e;
-        e.key = "modmain_path";
+        e.key = std::string{ds::config::keys::kModmainPath};
         e.type = ConfigValueType::String;
         e.default_value = ConfigValue::string("");
         e.allowed_sources = kLuajitOnly;
@@ -181,7 +183,7 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
     }
     {
         OptionSchemaEntry e;
-        e.key = "modname";
+        e.key = std::string{ds::config::keys::kModname};
         e.type = ConfigValueType::String;
         e.default_value = ConfigValue::string("");
         e.allowed_sources = kLuajitOnly;
@@ -189,7 +191,7 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
     }
     {
         OptionSchemaEntry e;
-        e.key = "modid";
+        e.key = std::string{ds::config::keys::kModid};
         e.type = ConfigValueType::String;
         e.default_value = ConfigValue::string("");
         e.allowed_sources = kLuajitOnly;
@@ -197,7 +199,7 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
     }
     {
         OptionSchemaEntry e;
-        e.key = "save_file";
+        e.key = std::string{ds::config::keys::kSaveFile};
         e.type = ConfigValueType::String;
         e.default_value = ConfigValue::string("");
         // Save path is discovered by the SaveFile layer (client) after identity.

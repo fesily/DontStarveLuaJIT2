@@ -1,6 +1,8 @@
 #include "ConfigSources.hpp"
 #include "config.hpp"
+#include "config/BaseOptionKeys.hpp"
 #include "config/path/ConfigPaths.hpp"
+#include "plugins/plugin_core_vm/VmOptionKeys.hpp"
 
 #include <cstdlib>
 #include <string>
@@ -24,11 +26,14 @@ ConfigPartial EnvOrCmdSource::read(CascadeContext &) const {
         //   (ResolvedConfig::get_lua_vm_type checks EnabledGenGC first)
         std::string_view raw{lua_vm_type};
         if (raw == "jit_gen") {
-            partial.values["LuaVmType"] = ds::plugin::ConfigValue::string("jit");
-            partial.values["EnabledGenGC"] = ds::plugin::ConfigValue::boolean(true);
+            partial.values[std::string{keys::kLuaVmType}] =
+                ds::plugin::ConfigValue::string("jit");
+            partial.values[std::string{keys::kEnabledGenGC}] =
+                ds::plugin::ConfigValue::boolean(true);
         } else {
             // jit/game/_51/lua51/51/5.1 — store raw supported alias.
-            partial.values["LuaVmType"] = ds::plugin::ConfigValue::string(std::string{raw});
+            partial.values[std::string{keys::kLuaVmType}] =
+                ds::plugin::ConfigValue::string(std::string{raw});
         }
     }
 

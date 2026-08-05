@@ -1,6 +1,8 @@
 #pragma once
 #include "ConfigSource.hpp"
 #include "IConfigSource.hpp"
+#include "BaseOptionKeys.hpp"
+#include "plugins/plugin_core_vm/VmOptionKeys.hpp"
 #include "core/PluginTypes.hpp"
 #include "GameLuaType.hpp"
 
@@ -19,25 +21,25 @@ struct ResolvedConfig {
     // L0 hot-path accessors over view + identity (CF-S5). Prefer these over the
     // legacy GameJitModConfig bag for inject / core.vm / render readers.
     bool always_enable_mod() const {
-        auto it = view.find("AlwaysEnableMod");
+        auto it = view.find(std::string{keys::kAlwaysEnableMod});
         return it != view.end() && it->second.type == ds::plugin::ConfigValueType::Bool &&
                it->second.b;
     }
 
     bool disable_jit_when_server() const {
-        auto it = view.find("DisableJITWhenServer");
+        auto it = view.find(std::string{keys::kDisableJITWhenServer});
         return it != view.end() && it->second.type == ds::plugin::ConfigValueType::Bool &&
                it->second.b;
     }
 
     bool enabled_gen_gc() const {
-        auto it = view.find("EnabledGenGC");
+        auto it = view.find(std::string{keys::kEnabledGenGC});
         return it != view.end() && it->second.type == ds::plugin::ConfigValueType::Bool &&
                it->second.b;
     }
 
     std::string_view lua_vm_type() const {
-        auto it = view.find("LuaVmType");
+        auto it = view.find(std::string{keys::kLuaVmType});
         if (it != view.end() && it->second.type == ds::plugin::ConfigValueType::String) {
             return it->second.s;
         }
@@ -48,7 +50,7 @@ struct ResolvedConfig {
         if (enabled_gen_gc()) {
             return GameLuaType::jit_gen;
         }
-        auto it = source_of.find("LuaVmType");
+        auto it = source_of.find(std::string{keys::kLuaVmType});
         if (it == source_of.end() || it->second == ConfigSource::None) {
             // empty / never set → unknown (matches legacy bag GetLuaVmType)
             if (lua_vm_type().empty()) {
@@ -63,7 +65,7 @@ struct ResolvedConfig {
     }
 
     std::string_view modmain_path() const {
-        auto it = view.find("modmain_path");
+        auto it = view.find(std::string{keys::kModmainPath});
         if (it != view.end() && it->second.type == ds::plugin::ConfigValueType::String &&
             !it->second.s.empty()) {
             return it->second.s;
@@ -72,7 +74,7 @@ struct ResolvedConfig {
     }
 
     std::string_view modname() const {
-        auto it = view.find("modname");
+        auto it = view.find(std::string{keys::kModname});
         if (it != view.end() && it->second.type == ds::plugin::ConfigValueType::String &&
             !it->second.s.empty()) {
             return it->second.s;
@@ -81,7 +83,7 @@ struct ResolvedConfig {
     }
 
     std::string_view modid() const {
-        auto it = view.find("modid");
+        auto it = view.find(std::string{keys::kModid});
         if (it != view.end() && it->second.type == ds::plugin::ConfigValueType::String &&
             !it->second.s.empty()) {
             return it->second.s;
@@ -90,7 +92,7 @@ struct ResolvedConfig {
     }
 
     std::optional<std::string_view> save_file() const {
-        auto it = view.find("save_file");
+        auto it = view.find(std::string{keys::kSaveFile});
         if (it != view.end() && it->second.type == ds::plugin::ConfigValueType::String &&
             !it->second.s.empty()) {
             return std::string_view{it->second.s};

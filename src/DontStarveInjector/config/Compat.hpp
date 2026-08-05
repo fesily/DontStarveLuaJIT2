@@ -1,5 +1,7 @@
 #pragma once
 #include "ResolvedConfig.hpp"
+#include "BaseOptionKeys.hpp"
+#include "plugins/plugin_core_vm/VmOptionKeys.hpp"
 #include "gameModConfig.hpp"
 
 #include <string>
@@ -9,9 +11,9 @@ namespace ds::config {
 
 // Core + identity keys owned by GameJitModConfig fields (not business_options).
 inline bool is_core_option_key(std::string_view key) {
-    return key == "AlwaysEnableMod" || key == "DisableJITWhenServer" || key == "LuaVmType" ||
-           key == "EnabledGenGC" || key == "modmain_path" || key == "modname" || key == "modid" ||
-           key == "save_file";
+    return key == keys::kAlwaysEnableMod || key == keys::kDisableJITWhenServer ||
+           key == keys::kLuaVmType || key == keys::kEnabledGenGC || key == keys::kModmainPath ||
+           key == keys::kModname || key == keys::kModid || key == keys::kSaveFile;
 }
 
 // Project ResolvedConfig into the write-back bag (typed core + business_options).
@@ -34,19 +36,19 @@ inline GameJitModConfig map_to_game_jit_mod_config(const ResolvedConfig &resolve
     }
 
     for (const auto &[key, value] : resolved.view) {
-        if (key == "AlwaysEnableMod" && value.type == ds::plugin::ConfigValueType::Bool) {
+        if (key == keys::kAlwaysEnableMod && value.type == ds::plugin::ConfigValueType::Bool) {
             out.AlwaysEnableMod = value.b;
             continue;
         }
-        if (key == "DisableJITWhenServer" && value.type == ds::plugin::ConfigValueType::Bool) {
+        if (key == keys::kDisableJITWhenServer && value.type == ds::plugin::ConfigValueType::Bool) {
             out.DisableJITWhenServer = value.b;
             continue;
         }
-        if (key == "LuaVmType" && value.type == ds::plugin::ConfigValueType::String) {
+        if (key == keys::kLuaVmType && value.type == ds::plugin::ConfigValueType::String) {
             out.LuaVmType = value.s;
             continue;
         }
-        if (key == "EnabledGenGC" && value.type == ds::plugin::ConfigValueType::Bool) {
+        if (key == keys::kEnabledGenGC && value.type == ds::plugin::ConfigValueType::Bool) {
             out.EnabledGenGC = value.b;
             continue;
         }

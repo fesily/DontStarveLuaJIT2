@@ -1,5 +1,6 @@
 #include "ConfigSources.hpp"
 #include "SaveParse.hpp"
+#include "config/BaseOptionKeys.hpp"
 #include "config/path/ConfigPaths.hpp"
 
 #include <spdlog/spdlog.h>
@@ -37,7 +38,7 @@ ConfigPartial SaveFileSource::read(CascadeContext &ctx) const {
     spdlog::info("resolved client mod config data dir to {}", mod_config_data.string());
     spdlog::info("resolved canonical mod config save path to {}", canonical_save_path.string());
     ctx.save_file = canonical_save_path.string();
-    partial.values["save_file"] =
+    partial.values[std::string{keys::kSaveFile}] =
         ds::plugin::ConfigValue::string(canonical_save_path.string());
 
     for (const auto &alias : ctx.aliases) {
@@ -51,7 +52,7 @@ ConfigPartial SaveFileSource::read(CascadeContext &ctx) const {
         if (save_parse::read_save_file(candidate, schema_, values)) {
             // Preserve discovered path; merge save contents on top without dropping it.
             partial.values = std::move(values);
-            partial.values["save_file"] =
+            partial.values[std::string{keys::kSaveFile}] =
                 ds::plugin::ConfigValue::string(canonical_save_path.string());
             break;
         }

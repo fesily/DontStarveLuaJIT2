@@ -1,4 +1,6 @@
 #include "config/ConfigSchema.hpp"
+#include "config/BaseOptionKeys.hpp"
+#include "plugins/plugin_core_vm/VmOptionKeys.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -8,6 +10,14 @@
 
 
 using namespace ds::plugin;
+using ds::config::keys::kAlwaysEnableMod;
+using ds::config::keys::kDisableJITWhenServer;
+using ds::config::keys::kEnabledGenGC;
+using ds::config::keys::kLuaVmType;
+using ds::config::keys::kModid;
+using ds::config::keys::kModmainPath;
+using ds::config::keys::kModname;
+using ds::config::keys::kSaveFile;
 
 static void test_add_bool_find() {
     ConfigSchemaRegistry reg;
@@ -74,18 +84,21 @@ static void test_find_missing() {
 static void test_register_core_option_schema() {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
-    // 4 core options + 4 identity keys
+    // Current L0 core seed (OB-S0 / RegisterCore): 4 core options + 4 identity keys.
+    // Core: AlwaysEnableMod, DisableJITWhenServer, LuaVmType, EnabledGenGC
+    // Identity: modmain_path, modname, modid, save_file
+    // VM keys remain registered here until Task 3 ownership move.
     assert(reg.size() == 8);
-    assert(reg.find("AlwaysEnableMod") != nullptr);
-    assert(reg.find("DisableJITWhenServer") != nullptr);
-    assert(reg.find("LuaVmType") != nullptr);
-    assert(reg.find("EnabledGenGC") != nullptr);
-    assert(reg.find("modmain_path") != nullptr);
-    assert(reg.find("modname") != nullptr);
-    assert(reg.find("modid") != nullptr);
-    assert(reg.find("save_file") != nullptr);
+    assert(reg.find(std::string{kAlwaysEnableMod}) != nullptr);
+    assert(reg.find(std::string{kDisableJITWhenServer}) != nullptr);
+    assert(reg.find(std::string{kLuaVmType}) != nullptr);
+    assert(reg.find(std::string{kEnabledGenGC}) != nullptr);
+    assert(reg.find(std::string{kModmainPath}) != nullptr);
+    assert(reg.find(std::string{kModname}) != nullptr);
+    assert(reg.find(std::string{kModid}) != nullptr);
+    assert(reg.find(std::string{kSaveFile}) != nullptr);
 
-    const auto *lua_vm = reg.find("LuaVmType");
+    const auto *lua_vm = reg.find(std::string{kLuaVmType});
     assert(lua_vm->type == ConfigValueType::String);
     assert(lua_vm->default_value.s == "jit");
     assert(!lua_vm->allowed.empty());
@@ -112,24 +125,38 @@ static void test_register_core_option_schema() {
     constexpr auto kSaveOnly =
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile);
 
-    assert(ds::config::effective_sources(reg.find("AlwaysEnableMod")->allowed_sources) ==
+    assert(ds::config::effective_sources(reg.find(std::string{kAlwaysEnableMod})->allowed_sources) ==
            ds::config::kConfigSourceAll);
-    assert(ds::config::effective_sources(reg.find("DisableJITWhenServer")->allowed_sources) ==
+    assert(ds::config::effective_sources(reg.find(std::string{kDisableJITWhenServer})->allowed_sources) ==
            ds::config::kConfigSourceAll);
-    assert(ds::config::effective_sources(reg.find("LuaVmType")->allowed_sources) ==
+    assert(ds::config::effective_sources(reg.find(std::string{kLuaVmType})->allowed_sources) ==
            ds::config::kConfigSourceAll);
-    assert(ds::config::effective_sources(reg.find("EnabledGenGC")->allowed_sources) ==
+    assert(ds::config::effective_sources(reg.find(std::string{kEnabledGenGC})->allowed_sources) ==
            kDefaultSaveEnv);
-    assert(ds::config::effective_sources(reg.find("modmain_path")->allowed_sources) == kLuajitOnly);
-    assert(ds::config::effective_sources(reg.find("modname")->allowed_sources) == kLuajitOnly);
-    assert(ds::config::effective_sources(reg.find("modid")->allowed_sources) == kLuajitOnly);
-    assert(ds::config::effective_sources(reg.find("save_file")->allowed_sources) == kSaveOnly);
+    assert(ds::config::effective_sources(reg.find(std::string{kModmainPath})->allowed_sources) ==
+           kLuajitOnly);
+    assert(ds::config::effective_sources(reg.find(std::string{kModname})->allowed_sources) ==
+           kLuajitOnly);
+    assert(ds::config::effective_sources(reg.find(std::string{kModid})->allowed_sources) ==
+           kLuajitOnly);
+    assert(ds::config::effective_sources(reg.find(std::string{kSaveFile})->allowed_sources) ==
+           kSaveOnly);
 
     // Identity key types
-    assert(reg.find("modmain_path")->type == ConfigValueType::String);
-    assert(reg.find("modname")->type == ConfigValueType::String);
-    assert(reg.find("modid")->type == ConfigValueType::String);
-    assert(reg.find("save_file")->type == ConfigValueType::String);
+    assert(reg.find(std::string{kModmainPath})->type == ConfigValueType::String);
+    assert(reg.find(std::string{kModname})->type == ConfigValueType::String);
+    assert(reg.find(std::string{kModid})->type == ConfigValueType::String);
+    assert(reg.find(std::string{kSaveFile})->type == ConfigValueType::String);
+
+    // Constants match wire names (OptionKeys SSOT).
+    assert(kAlwaysEnableMod == "AlwaysEnableMod");
+    assert(kDisableJITWhenServer == "DisableJITWhenServer");
+    assert(kLuaVmType == "LuaVmType");
+    assert(kEnabledGenGC == "EnabledGenGC");
+    assert(kModmainPath == "modmain_path");
+    assert(kModname == "modname");
+    assert(kModid == "modid");
+    assert(kSaveFile == "save_file");
 
     // Idempotent re-register.
     RegisterCoreOptionSchema(reg);
