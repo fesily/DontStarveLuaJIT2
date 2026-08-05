@@ -1,6 +1,7 @@
 #include "CoreVmBootstrap.hpp"
 
 #include "config/ResolvedConfig.hpp"
+#include "plugins/plugin_core_vm/VmConfig.hpp"
 #include "plugins/plugin_core_vm/VmOptionKeys.hpp"
 
 #include <cstdio>
@@ -173,8 +174,7 @@ bool TryRunSignatureAndReplace(const BootstrapArgs &args) {
         (void) ds::config::ensure_resolved();
         bool disable_on_server = false;
         if (auto *rc = ds::config::current()) {
-            // VM-domain accessor only — L0 Inject never calls this (OB-S1/S5).
-            disable_on_server = rc->disable_jit_when_server();
+            disable_on_server = ds::core_vm::disable_jit_when_server(*rc);
         }
         if (disable_on_server) {
             std::fprintf(stderr,

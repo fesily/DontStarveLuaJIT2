@@ -1,4 +1,5 @@
 #include "GameLua.hpp"
+#include "VmConfig.hpp"
 #include "LuajitVariantNames.hpp"
 #include "config/ResolvedConfig.hpp"
 #include "config/ConfigSession.hpp"
@@ -1477,7 +1478,7 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
     auto luaType = GameLuaType::jit;
     (void) ds::config::ensure_resolved();
     if (auto *rc = ds::config::current()) {
-        luaType = rc->get_lua_vm_type();
+        luaType = ds::core_vm::get_lua_vm_type(*rc);
     }
 
     RequestVmType(luaType, nullptr, "Default VM type setup");

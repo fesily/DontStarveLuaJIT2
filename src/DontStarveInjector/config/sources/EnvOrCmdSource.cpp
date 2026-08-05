@@ -24,7 +24,7 @@ ConfigPartial EnvOrCmdSource::read(CascadeContext &) const {
         // Preserve legacy env semantics:
         // - raw LuaVmType string was stored for GameLuaTypeFromString
         // - jit_gen is expressed as LuaVmType=jit + EnabledGenGC=true
-        //   (ResolvedConfig::get_lua_vm_type checks EnabledGenGC first)
+        //   (core.vm VmConfig::get_lua_vm_type checks EnabledGenGC first)
         std::string_view raw{lua_vm_type};
         if (raw == "jit_gen") {
             partial.values[std::string{keys::kLuaVmType}] =

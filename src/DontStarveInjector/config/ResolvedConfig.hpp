@@ -4,10 +4,8 @@
 #include "IConfigSource.hpp"
 #include "ConfigSchema.hpp"
 #include "BaseOptionKeys.hpp"
-#include "plugins/plugin_core_vm/VmOptionKeys.hpp"
 #include "plugins/plugin_render_angle/AngleOptionKeys.hpp"
 #include "core/PluginTypes.hpp"
-#include "GameLuaType.hpp"
 #include <optional>
 #include <string>
 #include <string_view>
@@ -20,51 +18,12 @@ struct ResolvedConfig {
     std::unordered_map<std::string, ConfigSource> source_of;
     CascadeContext ctx; // identity snapshot
 
-    // L0 base accessors (identity + AlwaysEnableMod). Prefer these over the
-    // legacy GameJitModConfig bag for inject / Host readers.
+    // L0 base accessors only (identity + AlwaysEnableMod).
+    // VM selection (GameLuaType / get_lua_vm_type) lives in plugin_core_vm/VmConfig.hpp.
     bool always_enable_mod() const {
         auto it = view.find(std::string{keys::kAlwaysEnableMod});
         return it != view.end() && it->second.type == ds::plugin::ConfigValueType::Bool &&
                it->second.b;
-    }
-    // VM-domain accessors (core.vm). Prefer core.vm bootstrap / GameLua only.
-    // Injector L0 must not use these as kill-switches (OB-S1 / OB-S5).
-    bool disable_jit_when_server() const {
-        auto it = view.find(std::string{keys::kDisableJITWhenServer});
-        return it != view.end() && it->second.type == ds::plugin::ConfigValueType::Bool &&
-               it->second.b;
-    }
-
-    bool enabled_gen_gc() const {
-        auto it = view.find(std::string{keys::kEnabledGenGC});
-        return it != view.end() && it->second.type == ds::plugin::ConfigValueType::Bool &&
-               it->second.b;
-    }
-
-    std::string_view lua_vm_type() const {
-        auto it = view.find(std::string{keys::kLuaVmType});
-        if (it != view.end() && it->second.type == ds::plugin::ConfigValueType::String) {
-            return it->second.s;
-        }
-        return {};
-    }
-
-    GameLuaType get_lua_vm_type() const {
-        if (enabled_gen_gc()) {
-            return GameLuaType::jit_gen;
-        }
-        auto it = source_of.find(std::string{keys::kLuaVmType});
-        if (it == source_of.end() || it->second == ConfigSource::None) {
-            // empty / never set → unknown (matches legacy bag GetLuaVmType)
-            if (lua_vm_type().empty()) {
-                return GameLuaType::unknown;
-            }
-        }
-        auto raw = lua_vm_type();
-        if (raw.empty()) {
-            return GameLuaType::unknown;
-        }
-        return GameLuaTypeFromString(raw);
     }
 
     std::string_view modmain_path() const {

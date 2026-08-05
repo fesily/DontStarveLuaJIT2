@@ -3,6 +3,8 @@
 #include "config/ResolvedConfig.hpp"
 #include "config/ConfigSchema.hpp"
 #include "config/Compat.hpp"
+#include "plugins/plugin_core_vm/VmConfig.hpp"
+#include "plugins/plugin_core_vm/GameLuaType.hpp"
 #include <cassert>
 #include <cstdio>
 #include <vector>
@@ -244,10 +246,10 @@ void test_resolved_config_accessors() {
     auto resolved = resolve(reg, ctx, sources);
 
     assert(resolved.always_enable_mod());
-    assert(resolved.disable_jit_when_server());
-    assert(resolved.enabled_gen_gc());
-    assert(resolved.lua_vm_type() == "jit");
-    assert(resolved.get_lua_vm_type() == GameLuaType::jit_gen); // EnabledGenGC wins
+    assert(ds::core_vm::disable_jit_when_server(resolved));
+    assert(ds::core_vm::enabled_gen_gc(resolved));
+    assert(ds::core_vm::lua_vm_type_string(resolved) == "jit");
+    assert(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit_gen); // EnabledGenGC wins
     assert(resolved.angle_backend() == "vulkan");
     assert(resolved.modname() == "workshop-9");
 
