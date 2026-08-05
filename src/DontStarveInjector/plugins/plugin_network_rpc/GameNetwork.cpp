@@ -1,6 +1,7 @@
 #include "core/PluginServices.hpp"
 #include "gum_plugin_export.hpp"
 #include "GameNetwork.hpp"
+#include "core/GameInjectorLuaBind.hpp"
 #include "frida-gum.h"
 #include "config/InjectorHostConfig.hpp"
 #include "MemorySignature.hpp"
@@ -195,6 +196,17 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_SetNextRpcInfo(std::optional<PacketPr
     next_orderingChannel = std::move(orderingChannel);
 }
 
+// C ABI for GiSig::V_OptI32x3 trampoline (null pointer = absent).
+extern "C" void DS_LUAJIT_SetNextRpcInfo_C(const int *prio, const int *rel, const int *ch) {
+    std::optional<PacketPriority> p;
+    std::optional<PacketReliability> r;
+    std::optional<char> c;
+    if (prio) p = static_cast<PacketPriority>(*prio);
+    if (rel) r = static_cast<PacketReliability>(*rel);
+    if (ch) c = static_cast<char>(*ch);
+    DS_LUAJIT_SetNextRpcInfo(std::move(p), std::move(r), std::move(c));
+}
+
 static void ResetNextRpcInfo(GumInvocationContext *context) {
     auto packetPriority = next_packetPriority;
     auto reliability = next_reliability;
@@ -327,4 +339,13 @@ void RegisterNetworkRpcHostServices(ds::plugin::PluginHost *host) {
     host->register_service(
         "DS_LUAJIT_SetNextRpcInfo",
         reinterpret_cast<void *>(&DS_LUAJIT_SetNextRpcInfo));
+    host->register_service(
+        "DS_LUAJIT_SetNextRpcInfo_C",
+        reinterpret_cast<void *>(&DS_LUAJIT_SetNextRpcInfo_C));
+    (void) host->register_game_injector_export(
+        "DS_LUAJIT_EntityNetWorkExtension_Register", ds::plugin::GiSig::Ptr_Ptr_I64,
+        reinterpret_cast<void *>(&DS_LUAJIT_EntityNetWorkExtension_Register));
+    (void) host->register_game_injector_export(
+        "DS_LUAJIT_SetNextRpcInfo", ds::plugin::GiSig::V_OptI32x3,
+        reinterpret_cast<void *>(&DS_LUAJIT_SetNextRpcInfo_C));
 }

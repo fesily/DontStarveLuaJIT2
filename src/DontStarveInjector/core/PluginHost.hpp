@@ -2,6 +2,7 @@
 
 #include "config/ConfigSchema.hpp"
 #include "PluginTypes.hpp"
+#include "GameInjectorLuaRegistry.hpp"
 
 #include <string>
 #include <string_view>
@@ -42,6 +43,9 @@ public:
     DS_PLUGIN_HOST_API bool register_option_schema(OptionSchemaEntry e);
     // Service registration — only while registration window is open (module_init).
     DS_PLUGIN_HOST_API bool register_service(std::string_view name, void *fn);
+    // Register a typed GameInjector Lua export (module_init window only).
+    // core.vm applies GiSig trampolines at luaopen_GameInjector.
+    DS_PLUGIN_HOST_API bool register_game_injector_export(const char *name, ds::plugin::GiSig sig, void *fn);
     DS_PLUGIN_HOST_API void begin_module_registration();
     DS_PLUGIN_HOST_API void end_module_registration();
     DS_PLUGIN_HOST_API ConfigSchemaRegistry &option_schema();

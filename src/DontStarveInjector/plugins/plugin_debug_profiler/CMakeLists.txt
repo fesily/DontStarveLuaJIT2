@@ -21,3 +21,8 @@ target_include_directories(plugin_debug_profiler PRIVATE
     ${FRIDA_GUM_INCLUDE_DIR}
     ${FUNCTION_RELOCATION_INCLUDE_DIR}
     ${LUAJIT_INCLUDE_DIR})
+
+target_include_directories(plugin_debug_profiler PRIVATE
+    ${SOL2_INCLUDE_DIRS}
+    ${DONTSTARVEINJECTOR_ROOT}
+    ${LUAJIT_INCLUDE_DIR})

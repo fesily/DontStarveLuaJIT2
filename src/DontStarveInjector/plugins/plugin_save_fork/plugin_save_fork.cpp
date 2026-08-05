@@ -3,6 +3,7 @@
 // Native APIs: DS_LUAJIT_fork_save / exit / cleanup / wait / poll.
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
+#include "core/GameInjectorLuaBind.hpp"
 #include "core/PluginTypes.hpp"
 #include "config/ConfigSource.hpp"
 #include "ForkSaveOptionKeys.hpp"
@@ -85,6 +86,16 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     host->register_service("DS_LUAJIT_fork_save_cleanup", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_cleanup));
     host->register_service("DS_LUAJIT_fork_save_wait", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_wait));
     host->register_service("DS_LUAJIT_fork_save_poll", reinterpret_cast<void *>(&DS_LUAJIT_fork_save_poll));
+        (void) host->register_game_injector_export(
+        "DS_LUAJIT_fork_save", ds::plugin::GiSig::CString_void, reinterpret_cast<void *>(&DS_LUAJIT_fork_save));
+    (void) host->register_game_injector_export(
+        "DS_LUAJIT_fork_save_exit", ds::plugin::GiSig::V_void, reinterpret_cast<void *>(&DS_LUAJIT_fork_save_exit));
+    (void) host->register_game_injector_export(
+        "DS_LUAJIT_fork_save_cleanup", ds::plugin::GiSig::V_void, reinterpret_cast<void *>(&DS_LUAJIT_fork_save_cleanup));
+    (void) host->register_game_injector_export(
+        "DS_LUAJIT_fork_save_wait", ds::plugin::GiSig::V_void, reinterpret_cast<void *>(&DS_LUAJIT_fork_save_wait));
+    (void) host->register_game_injector_export(
+        "DS_LUAJIT_fork_save_poll", ds::plugin::GiSig::CString_void, reinterpret_cast<void *>(&DS_LUAJIT_fork_save_poll));
     host->register_plugin(&g_save_fork);
     std::fprintf(stderr, "[plugin_save_fork] module init registered save.fork\n");
     return true;

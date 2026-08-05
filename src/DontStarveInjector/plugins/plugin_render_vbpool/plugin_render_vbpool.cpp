@@ -2,6 +2,7 @@
 #include "gum_plugin_export.hpp"
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
+#include "core/GameInjectorLuaBind.hpp"
 #include "core/PluginTypes.hpp"
 #include "config/ConfigSource.hpp"
 #include "VbpoolOptionKeys.hpp"
@@ -83,6 +84,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
 
     host->register_service("DS_LUAJIT_set_vbpool_enabled",
                              reinterpret_cast<void *>(&DS_LUAJIT_set_vbpool_enabled));
+        (void) host->register_game_injector_export(
+        "DS_LUAJIT_set_vbpool_enabled", ds::plugin::GiSig::V_Bool, reinterpret_cast<void *>(&DS_LUAJIT_set_vbpool_enabled));
     host->register_plugin(&g_render_vbpool);
     std::fprintf(stderr, "[plugin_render_vbpool] module init registered render.vbpool\n");
     return true;

@@ -4,6 +4,7 @@
 // AlwaysOn native so trampolines find exports when DLL is staged; Lua gates work.
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
+#include "core/GameInjectorLuaBind.hpp"
 #include "core/PluginTypes.hpp"
 #include "core/PluginServices.hpp"
 #include "plugins/plugin_core_vm/VmServices.hpp"
@@ -137,6 +138,14 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
                              reinterpret_cast<void *>(&DS_LUAJIT_enable_tracy));
     host->register_service("DS_LUAJIT_enable_framegc",
                              reinterpret_cast<void *>(&DS_LUAJIT_enable_framegc));
+        (void) host->register_game_injector_export(
+        "DS_LUAJIT_disable_fullgc", ds::plugin::GiSig::V_Bool, reinterpret_cast<void *>(&DS_LUAJIT_disable_fullgc));
+    (void) host->register_game_injector_export(
+        "DS_LUAJIT_replace_profiler_api", ds::plugin::GiSig::I32_void, reinterpret_cast<void *>(&DS_LUAJIT_replace_profiler_api));
+    (void) host->register_game_injector_export(
+        "DS_LUAJIT_enable_tracy", ds::plugin::GiSig::V_I32, reinterpret_cast<void *>(&DS_LUAJIT_enable_tracy));
+    (void) host->register_game_injector_export(
+        "DS_LUAJIT_enable_framegc", ds::plugin::GiSig::Bool_Bool, reinterpret_cast<void *>(&DS_LUAJIT_enable_framegc));
     host->register_plugin(&g_plugin);
     std::fprintf(stderr, "[plugin_debug_profiler] module init registered debug.profiler\n");
     return true;

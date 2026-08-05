@@ -17,3 +17,13 @@ target_include_directories(plugin_render_vbpool PRIVATE
     ${FRIDA_GUM_INCLUDE_DIR}
     ${FUNCTION_RELOCATION_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR})
+
+target_include_directories(plugin_render_vbpool PRIVATE
+    ${SOL2_INCLUDE_DIRS}
+    ${DONTSTARVEINJECTOR_ROOT}
+    ${LUAJIT_INCLUDE_DIR})
+
+target_include_directories(plugin_render_vbpool PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/io
+    ${LUAJIT_INCLUDE_DIR})

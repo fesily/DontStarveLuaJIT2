@@ -1,6 +1,7 @@
 // plugin_render_angle — dynamic EarlyNative face of render.angle
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
+#include "core/GameInjectorLuaBind.hpp"
 #include "core/PluginTypes.hpp"
 #include "config/ConfigSource.hpp"
 #include "AngleOptionKeys.hpp"
@@ -82,6 +83,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     }
     host->register_service("DS_LUAJIT_get_render_backend_name",
                              reinterpret_cast<void *>(&DS_LUAJIT_get_render_backend_name));
+        (void) host->register_game_injector_export(
+        "DS_LUAJIT_get_render_backend_name", ds::plugin::GiSig::CString_void, reinterpret_cast<void *>(&DS_LUAJIT_get_render_backend_name));
     host->register_plugin(&g_render_angle);
     std::fprintf(stderr, "[plugin_render_angle] module init registered render.angle\n");
     return true;

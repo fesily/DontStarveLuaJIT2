@@ -4,6 +4,7 @@
 #include "gum_plugin_export.hpp"
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
+#include "core/GameInjectorLuaBind.hpp"
 #include "core/PluginTypes.hpp"
 #include "config/ConfigSource.hpp"
 #include "NetSimOptionKeys.hpp"
@@ -99,6 +100,14 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
                              reinterpret_cast<void *>(&DS_LUAJIT_net_sim_update));
     host->register_service("DS_LUAJIT_net_sim_get_stats",
                              reinterpret_cast<void *>(&DS_LUAJIT_net_sim_get_stats));
+        (void) host->register_game_injector_export(
+        "DS_LUAJIT_net_sim_enable", ds::plugin::GiSig::V_Bool, reinterpret_cast<void *>(&DS_LUAJIT_net_sim_enable));
+    (void) host->register_game_injector_export(
+        "DS_LUAJIT_net_sim_set", ds::plugin::GiSig::V_U32_U32_U32, reinterpret_cast<void *>(&DS_LUAJIT_net_sim_set));
+    (void) host->register_game_injector_export(
+        "DS_LUAJIT_net_sim_update", ds::plugin::GiSig::V_void, reinterpret_cast<void *>(&DS_LUAJIT_net_sim_update));
+    (void) host->register_game_injector_export(
+        "DS_LUAJIT_net_sim_get_stats", ds::plugin::GiSig::Table_NetSimStats, reinterpret_cast<void *>(&DS_LUAJIT_net_sim_get_stats));
     host->register_plugin(&g_network_sim);
     std::fprintf(stderr, "[plugin_network_sim] module init registered network.sim\n");
     return true;

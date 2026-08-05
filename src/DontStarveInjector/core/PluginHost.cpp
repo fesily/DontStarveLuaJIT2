@@ -1,6 +1,7 @@
 #include "PluginHost.hpp"
 #include "PluginOptionRules.hpp"
 #include "PluginServices.hpp"
+#include "GameInjectorLuaRegistry.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -58,6 +59,13 @@ bool PluginHost::register_service(std::string_view name, void *fn) {
         return false;
     }
     return ds::plugin::register_service(name, fn);
+}
+
+bool PluginHost::register_game_injector_export(const char *name, GiSig sig, void *fn) {
+    if (!registration_open_) {
+        return false;
+    }
+    return ds::plugin::register_game_injector_export(name, sig, fn);
 }
 
 void PluginHost::begin_module_registration() {

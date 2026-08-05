@@ -1,11 +1,10 @@
 #include "config/InjectorHostConfig.hpp"
-#include "core/PluginServices.hpp"
 #include <cstdint>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <optional>
-#include <slikenet/PacketPriority.h>
+#include <vector>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -1175,71 +1174,14 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 #endif
 #include "config/ConfigSchema.hpp"
 #include "util/PersistentString.hpp"
-#include "plugins/plugin_network_sim/NetSimStats.hpp"
 
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_workshop_dir();
-// Implemented in plugins/plugin_debug_profiler. Resolved at runtime (Task 3).
-using DsLuajitDisableFullgcFn = void (*)(bool);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept;
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(const char *type, const char *moduleName);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_vm_type_name(int next);
-// Implemented in plugins/plugin_render_angle/GameOpenGl.cpp. Injector resolves at runtime.
-using DsLuajitGetRenderBackendNameFn = const char *(*)();
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int tt);
-// Implemented in plugins/plugin_debug_profiler. Resolved at runtime (Task 2).
-using DsLuajitReplaceProfilerApiFn = int (*)();
-using DsLuajitEnableTracyFn = void (*)(int);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version();
-// Implemented in plugins/plugin_network_rpc/GameNetwork.cpp. Resolved at runtime.
-using DsLuajitEntityNetWorkRegisterFn = void *(*)(void *, int64_t);
-using DsLuajitSetNextRpcInfoFn = void (*)(std::optional<PacketPriority>, std::optional<PacketReliability>, std::optional<char>);
-using DsLuajitEnableFramegcFn = bool (*)(bool);
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_enable_profiler(int en);
-using DsLuajitSetVbpoolEnabledFn = void (*)(bool);
-// Implemented in plugins/plugin_network_sim/GameNetworkSim.cpp. Resolved at runtime.
-using DsLuajitNetSimEnableFn = void (*)(bool);
-using DsLuajitNetSimSetFn = void (*)(uint32_t, uint32_t, uint32_t);
-using DsLuajitNetSimUpdateFn = void (*)();
-using DsLuajitNetSimGetStatsFn = const NetSimStats *(*)();
-// Implemented in plugins/plugin_sim_lagcomp/GameSimHook.cpp. Resolved at runtime.
-using DsLuajitEntityGetRawPtrFn = int (*)(lua_State *);
-
-// Implemented in plugins/plugin_save_fork/GameForkSave.cpp. Resolved at runtime.
-using DsLuajitForkSaveFn = const char *(*)();
-using DsLuajitForkSaveVoidFn = void (*)();
-using DsLuajitForkSavePollFn = const char *(*)();
-
-static std::optional<PacketPriority> parse_lua_packet_priority(const sol::optional<int>& value) {
-	if (!value) {
-		return std::nullopt;
-	}
-	return static_cast<PacketPriority>(*value);
-}
-
-static std::optional<PacketReliability> parse_lua_packet_reliability(const sol::optional<int>& value) {
-	if (!value) {
-		return std::nullopt;
-	}
-	return static_cast<PacketReliability>(*value);
-}
-
-static std::optional<char> parse_lua_ordering_channel(const sol::optional<int>& value) {
-	if (!value) {
-		return std::nullopt;
-	}
-	return static_cast<char>(*value);
-}
-
-
-// Resolve a C service registered by a peer plugin via Host service table.
-// No hardcoded peer DLL names — missing plugin => nullptr (Lua no-ops).
-template <class Fn>
-static Fn host_service(const char *name) {
-    return reinterpret_cast<Fn>(ds_host_lookup_service(name));
-}
-
-// export DONTSTARVEINJECTOR_GAME_API functions to lua module
 
 char luajit_ds_check_slowtailcall(lua_State *L, const char *chunkname) {
     const char *path, *modstart, *slash;
@@ -1285,137 +1227,26 @@ char luajit_ds_check_slowtailcall(lua_State *L, const char *chunkname) {
     }
 }
 
+#include "GameInjectorApply.hpp"
+
 int luaopen_GameInjector(lua_State* L) {
     sol::state_view lua(L);
     sol::table module = lua.create_table();
 
+    // core.vm-owned exports only.
     module.set_function("DS_LUAJIT_get_workshop_dir", &DS_LUAJIT_get_workshop_dir);
-    module.set_function("DS_LUAJIT_disable_fullgc", [](bool enable) {
-        if (auto *fn = host_service<DsLuajitDisableFullgcFn>("DS_LUAJIT_disable_fullgc")) {
-            fn(enable);
-        }
-    });
     module.set_function("DS_LUAJIT_Fengxun_Decrypt", &DS_LUAJIT_Fengxun_Decrypt);
     module.set_function("DS_LUAJIT_set_vm_type", &DS_LUAJIT_set_vm_type);
     module.set_function("DS_LUAJIT_get_vm_type_name", &DS_LUAJIT_get_vm_type_name);
-    module.set_function("DS_LUAJIT_get_render_backend_name", []() -> const char * {
-        auto *fn = host_service<DsLuajitGetRenderBackendNameFn>("DS_LUAJIT_get_render_backend_name");
-        return fn ? fn() : nullptr;
-    });
-    module.set_function("DS_LUAJIT_replace_network_tick",
-                        [](char upload_tick, char download_tick, bool isclient) -> int {
-                            using Fn = int (*)(char, char, bool);
-                            auto *fn = host_service<Fn>("DS_LUAJIT_replace_network_tick");
-                            return fn ? fn(upload_tick, download_tick, isclient) : 0;
-                        });
-    module.set_function("DS_LUAJIT_set_target_fps", [](int fps, int tt) -> int {
-        using Fn = int (*)(int, int);
-        auto *fn = host_service<Fn>("DS_LUAJIT_set_target_fps");
-        return fn ? fn(fps, tt) : -1;
-    });
     module.set_function("DS_LUAJIT_update", &DS_LUAJIT_update);
-    module.set_function("DS_LUAJIT_replace_profiler_api", []() -> int {
-        auto *fn = host_service<DsLuajitReplaceProfilerApiFn>("DS_LUAJIT_replace_profiler_api");
-        return fn ? fn() : 0;
-    });
-    module.set_function("DS_LUAJIT_enable_tracy", [](int en) {
-        if (auto *fn = host_service<DsLuajitEnableTracyFn>("DS_LUAJIT_enable_tracy")) {
-            fn(en);
-        }
-    });
     module.set_function("DS_LUAJIT_get_mod_version", &DS_LUAJIT_get_mod_version);
-    module.set_function("DS_LUAJIT_EntityNetWorkExtension_Register",
-                        [](void *networkComponentLuaProxyPtr, int64_t networkid) -> void * {
-                            auto *fn = host_service<DsLuajitEntityNetWorkRegisterFn>(
-                                "DS_LUAJIT_EntityNetWorkExtension_Register");
-                            return fn ? fn(networkComponentLuaProxyPtr, networkid) : nullptr;
-                        });
-    module.set_function("DS_LUAJIT_SetNextRpcInfo", [](sol::optional<int> packetPriority, sol::optional<int> reliability, sol::optional<int> orderingChannel) {
-        if (auto *fn = host_service<DsLuajitSetNextRpcInfoFn>("DS_LUAJIT_SetNextRpcInfo")) {
-            fn(parse_lua_packet_priority(packetPriority),
-               parse_lua_packet_reliability(reliability),
-               parse_lua_ordering_channel(orderingChannel));
-        }
-    });
-    module.set_function("DS_LUAJIT_enable_framegc", [](bool enable) -> bool {
-        auto *fn = host_service<DsLuajitEnableFramegcFn>("DS_LUAJIT_enable_framegc");
-        return fn ? fn(enable) : false;
-    });
-    module.set_function("DS_LUAJIT_set_vbpool_enabled", [](bool enable) {
-        if (auto *fn = host_service<DsLuajitSetVbpoolEnabledFn>("DS_LUAJIT_set_vbpool_enabled")) {
-            fn(enable);
-        }
-    });
-    module.set_function("DS_LUAJIT_net_sim_enable", [](bool enable) {
-        if (auto *fn = host_service<DsLuajitNetSimEnableFn>("DS_LUAJIT_net_sim_enable")) {
-            fn(enable);
-        }
-    });
-    module.set_function("DS_LUAJIT_net_sim_set", [](uint32_t delay_ms, uint32_t jitter_ms, uint32_t loss_pct) {
-        if (auto *fn = host_service<DsLuajitNetSimSetFn>("DS_LUAJIT_net_sim_set")) {
-            fn(delay_ms, jitter_ms, loss_pct);
-        }
-    });
-    module.set_function("DS_LUAJIT_net_sim_update", []() {
-        if (auto *fn = host_service<DsLuajitNetSimUpdateFn>("DS_LUAJIT_net_sim_update")) {
-            fn();
-        }
-    });
-    module.set_function("DS_LUAJIT_net_sim_get_stats", [L = lua.lua_state()]() -> sol::table {
-        auto *fn = host_service<DsLuajitNetSimGetStatsFn>("DS_LUAJIT_net_sim_get_stats");
-        sol::state_view sv(L);
-        sol::table t = sv.create_table();
-        const NetSimStats *s = fn ? fn() : nullptr;
-        if (s == nullptr) {
-            return t;
-        }
-        t["enabled"] = s->enabled;
-        t["delay_ms"] = s->delay_ms;
-        t["jitter_ms"] = s->jitter_ms;
-        t["loss_pct"] = s->loss_pct;
-        t["packets_total"] = s->packets_total;
-        t["packets_delayed"] = s->packets_delayed;
-        t["packets_dropped"] = s->packets_dropped;
-        t["packets_released"] = s->packets_released;
-        t["queue_depth"] = s->queue_depth;
-        return t;
-    });
-    {
-        auto *entity_get_raw_ptr_fn = host_service<DsLuajitEntityGetRawPtrFn>("DS_LUAJIT_entity_get_raw_ptr");
-        if (entity_get_raw_ptr_fn) {
-            module.set_function("DS_LUAJIT_entity_get_raw_ptr", entity_get_raw_ptr_fn);
-        } else {
-            module.set_function("DS_LUAJIT_entity_get_raw_ptr", [](sol::this_state) {
-                return sol::lua_nil;
-            });
-        }
-    }
-    //module.set_function("enable_profiler", &DS_LUAJIT_enable_profiler);
-    module.set_function("DS_LUAJIT_fork_save", []() -> const char * {
-        auto *fn = host_service<DsLuajitForkSaveFn>("DS_LUAJIT_fork_save");
-        return fn ? fn() : nullptr;
-    });
-    module.set_function("DS_LUAJIT_fork_save_exit", []() {
-        if (auto *fn = host_service<DsLuajitForkSaveVoidFn>("DS_LUAJIT_fork_save_exit")) {
-            fn();
-        }
-    });
-    module.set_function("DS_LUAJIT_fork_save_cleanup", []() {
-        if (auto *fn = host_service<DsLuajitForkSaveVoidFn>("DS_LUAJIT_fork_save_cleanup")) {
-            fn();
-        }
-    });
-    module.set_function("DS_LUAJIT_fork_save_wait", []() {
-        if (auto *fn = host_service<DsLuajitForkSaveVoidFn>("DS_LUAJIT_fork_save_wait")) {
-            fn();
-        }
-    });
-    module.set_function("DS_LUAJIT_fork_save_poll", []() -> const char * {
-        auto *fn = host_service<DsLuajitForkSavePollFn>("DS_LUAJIT_fork_save_poll");
-        return fn ? fn() : "idle";
-    });
 
-lua["GameInjector"] = module;
+    // Typed exports from plugins (GiSig trampolines / LuaCFunction).
+    module.push();
+    ds::core_vm::apply_game_injector_exports(L, -1);
+    lua_settop(L, lua_gettop(L) - 1);
+
+    lua["GameInjector"] = module;
     return 1;
 }
 

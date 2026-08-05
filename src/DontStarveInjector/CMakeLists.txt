@@ -18,6 +18,7 @@ set(SOURCES
         config/InjectorHostConfig.cpp
         core/PluginHost.cpp
         core/PluginServices.cpp
+        core/GameInjectorLuaRegistry.cpp
         core/PluginOptionRules.cpp
         config/ConfigSchema.cpp
         config/CascadeEngine.cpp

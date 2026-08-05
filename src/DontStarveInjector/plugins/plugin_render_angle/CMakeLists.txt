@@ -16,3 +16,13 @@ target_include_directories(plugin_render_angle PRIVATE
     ${PROJECT_SOURCE_DIR}/3rd
     ${FRIDA_GUM_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR})
+
+target_include_directories(plugin_render_angle PRIVATE
+    ${SOL2_INCLUDE_DIRS}
+    ${DONTSTARVEINJECTOR_ROOT}
+    ${LUAJIT_INCLUDE_DIR})
+
+target_include_directories(plugin_render_angle PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/io
+    ${LUAJIT_INCLUDE_DIR})
