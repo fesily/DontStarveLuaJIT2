@@ -6,6 +6,7 @@
 #include "core/PluginHost.hpp"
 #include "core/PluginTypes.hpp"
 #include "core/PluginServices.hpp"
+#include "plugins/plugin_core_vm/VmServices.hpp"
 #include "core/LuaEvent.hpp"
 #include "config/ConfigSchema.hpp"
 #include "GameProfilerHook.hpp"
@@ -26,6 +27,7 @@ struct DebugProfilerPlugin final : IPlugin {
         // Native EarlyNative registration (sticky); Lua drives AfterModMain APIs.
         man.phases = PluginPhase::EarlyNative;
         man.support_reload = false;
+        man.soft_depends = {"core.vm"};
         man.soft_requires_services = {"ds_core_vm_get_game_lua_context"};
         man.priority = 20;
         // Prefer AlwaysOn native so replace_profiler / Tracy / GC exports stay
@@ -40,8 +42,13 @@ struct DebugProfilerPlugin final : IPlugin {
         return true;
     }
 
-    void load(PluginContext &) override {
-        std::fprintf(stderr, "[plugin_debug_profiler] load debug.profiler\n");
+    void load(PluginContext &ctx) override {
+        // Soft DI: cache GameLuaContext when core.vm present; hot paths use cache/lookup.
+        if (ds::core_vm::BindGameLuaContextService(&ctx)) {
+            std::fprintf(stderr, "[plugin_debug_profiler] load debug.profiler (GameLuaContext bound)\n");
+        } else {
+            std::fprintf(stderr, "[plugin_debug_profiler] load debug.profiler (no core.vm service)\n");
+        }
     }
 
     void unload(PluginContext &) override {

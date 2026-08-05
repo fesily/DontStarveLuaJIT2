@@ -786,6 +786,32 @@ static void test_requires_services_present_injects() {
 }
 
 
+
+static void test_failed_provider_poisons_dependents() {
+    // B fails MissingService; A.depends={B} must become MissingHardDep (phase 3c).
+    PluginHost host;
+    FakePlugin b, a;
+    b.man.id = "B";
+    b.man.phases = PluginPhase::EarlyNative;
+    b.man.options = always();
+    b.man.requires_services = {"svc.never.registered"};
+    a.man.id = "A";
+    a.man.phases = PluginPhase::EarlyNative;
+    a.man.options = always();
+    a.man.depends = {"B"};
+    host.register_plugin(&b);
+    host.register_plugin(&a);
+    PluginContext ctx;
+    ConfigView cfg;
+    auto r = host.resolve(cfg, ctx);
+    assert(host.fail_reason("B") == PluginFailReason::MissingService);
+    assert(host.fail_reason("A") == PluginFailReason::MissingHardDep);
+    assert(std::find(r.failed.begin(), r.failed.end(), "A") != r.failed.end());
+    assert(std::find(r.failed.begin(), r.failed.end(), "B") != r.failed.end());
+    printf("PASS: failed_provider_poisons_dependents\n");
+}
+
+
 int main() {
     test_empty_registry();
     test_topo_linear();
@@ -810,6 +836,7 @@ int main() {
     test_render_angle_backend_parameter_matrix();
     test_requires_services_missing_fails();
     test_requires_services_present_injects();
+    test_failed_provider_poisons_dependents();
     printf("All host graph tests passed!\n");
     return 0;
 }

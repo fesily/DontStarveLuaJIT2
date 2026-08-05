@@ -8,8 +8,10 @@
 #include "LagCompOptionKeys.hpp"
 
 #include "core/PluginServices.hpp"
+#include "plugins/plugin_core_vm/VmServices.hpp"
 
 #include <cstdio>
+#include <stdexcept>
 
 namespace {
 
@@ -23,8 +25,10 @@ struct SimLagcompPlugin final : IPlugin {
         man.version = "1.0.0";
         man.phases = PluginPhase::EarlyNative;
         man.support_reload = false;
-        // Inventory priority 60 (with network.sim / save.fork).
+        // Hard: service + plugin-id (topo + Failed propagation if core.vm fails).
+        man.depends = {"core.vm"};
         man.requires_services = {"ds_core_vm_get_game_lua_context"};
+        // Inventory priority 60 (with network.sim / save.fork).
         man.priority = 60;
         man.options.kind = OptionRuleKind::AllOf;
         man.options.keys = {std::string{ds::config::keys::kEnableLagCompensation}};
@@ -43,9 +47,13 @@ struct SimLagcompPlugin final : IPlugin {
 #endif
     }
 
-    void load(PluginContext &) override {
+    void load(PluginContext &ctx) override {
+        // DI: Host injects requires_services; cache for FFI hot path (GameSimHook).
+        if (!ds::core_vm::BindGameLuaContextService(&ctx)) {
+            throw std::runtime_error("sim.lagcomp: missing ds_core_vm_get_game_lua_context");
+        }
         // No eager hooks — lag_compensation.lua drives lag_comp_* via FFI.
-        std::fprintf(stderr, "[plugin_sim_lagcomp] native lag_comp APIs ready\n");
+        std::fprintf(stderr, "[plugin_sim_lagcomp] native lag_comp APIs ready (GameLuaContext bound)\n");
     }
 
     void unload(PluginContext &) override {

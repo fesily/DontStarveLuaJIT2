@@ -255,6 +255,35 @@ ResolveResult PluginHost::resolve(const ConfigView &config, const PluginContext 
         }
     }
 
+    // Phase 3c: re-propagate plugin-id hard deps after service failures (fixpoint).
+    // MissingService/Conflict/Failed providers must poison dependents.
+    candidates.clear();
+    for (const auto &e : entries_) {
+        if (e.status == PluginStatus::Registered) {
+            candidates.insert(e.plugin->manifest().id);
+        }
+    }
+    changed = true;
+    while (changed) {
+        changed = false;
+        for (const auto &id : std::vector<std::string>(candidates.begin(), candidates.end())) {
+            Entry *e = find(id);
+            if (!e || e->status != PluginStatus::Registered) {
+                continue;
+            }
+            for (const auto &dep : e->plugin->manifest().depends) {
+                Entry *d = find(dep);
+                const bool dep_ok = d && d->status == PluginStatus::Registered;
+                if (!dep_ok) {
+                    mark_failed(*e, PluginFailReason::MissingHardDep, dep);
+                    candidates.erase(id);
+                    changed = true;
+                    break;
+                }
+            }
+        }
+    }
+
     // Phase 4: cycle detection among remaining candidates (hard deps only)
     candidates.clear();
     for (const auto &e : entries_) {
