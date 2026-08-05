@@ -57,10 +57,10 @@ bool reload_locked() {
     return true;
 }
 
-bool save_locked() {
+bool save_locked(const ds::plugin::PluginPinConfig &cfg) {
     const auto path = ds::plugin::resolve_config_path();
     g_config_path_buf = path.generic_string();
-    if (!ds::plugin::save_to_file(g_cfg, path)) {
+    if (!ds::plugin::save_to_file(cfg, path)) {
         set_error_locked("failed to save pin config");
         return false;
     }
@@ -151,11 +151,17 @@ DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_plugin_pin_set(const char *id, const 
         return false;
     }
     std::lock_guard lock(g_mu);
+    // Mutate a copy; only commit to g_cfg after disk save succeeds.
+    ds::plugin::PluginPinConfig next = g_cfg;
     ds::plugin::PinEntry entry;
     entry.version = version;
     entry.source = is_override ? "override" : "channel";
-    g_cfg.pins[std::string(id)] = std::move(entry);
-    return save_locked();
+    next.pins[std::string(id)] = std::move(entry);
+    if (!save_locked(next)) {
+        return false;
+    }
+    g_cfg = std::move(next);
+    return true;
 }
 
 DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_plugin_pin_clear(const char *id) {
@@ -165,8 +171,14 @@ DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_plugin_pin_clear(const char *id) {
         return false;
     }
     std::lock_guard lock(g_mu);
-    g_cfg.pins.erase(std::string(id));
-    return save_locked();
+    // Mutate a copy; only commit to g_cfg after disk save succeeds.
+    ds::plugin::PluginPinConfig next = g_cfg;
+    next.pins.erase(std::string(id));
+    if (!save_locked(next)) {
+        return false;
+    }
+    g_cfg = std::move(next);
+    return true;
 }
 
 // Task 8: HTTP fetch — stub.
