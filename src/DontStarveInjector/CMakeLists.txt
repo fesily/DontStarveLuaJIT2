@@ -34,6 +34,7 @@ set(SOURCES
         core/RegisterBuiltinPlugins.cpp
         core/PluginConfigBridge.cpp
         core/DynamicPluginLoader.cpp
+        core/PluginPendingUpdates.cpp
         core/CoreVmBootstrap.cpp
 )
 
@@ -195,12 +196,17 @@ function(ds_add_dynamic_plugin name)
         LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
         ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
     )
+    install(TARGETS ${name}
+        RUNTIME DESTINATION plugins
+        LIBRARY DESTINATION plugins
+        ARCHIVE DESTINATION plugins)
 endfunction()
 
 # Always-on / cross-platform plugins (no second Frida Gum).
 add_subdirectory(plugins/plugin_dummy)
 add_subdirectory(plugins/plugin_save_fork)
 add_subdirectory(plugins/plugin_core_vm)
+add_subdirectory(plugins/plugin_manager)
 
 # Gum-using dynamic plugins need Injector to re-export static frida-gum symbols.
 # Windows: FridaGum.def. Linux/macOS: not implemented — skip targets (source also

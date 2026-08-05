@@ -1,80 +1,129 @@
-# Task 8 Report — M5 trunk surface + L-F check
+# Task 8 Report: HTTP fetch, download, verify, apply
 
 **Status:** DONE  
-**Date:** 2026-08-03  
-**Commit:** `93dc0c0` — `test(plugin): add L-F trunk surface check (M5 Task 8)`
+**Branch:** feature/plugin-manager  
+**Base:** fd99b86  
+**Commit:** 26b1ba7c8c88a6a4effea374e8b00f79d608b0f7
 
 ## Summary
 
-M5 L-F trunk surface gate is in place and green. Feature entrypoints already live only in PluginHost plugins (Tasks 1–7); trunks required no further slim edits.
+Wired real download/apply into optional `plugin.manager`:
 
-| Check | Target | Result |
-|---|---|---|
-| Inject() | no `GameNetWorkHookRpc4` / `InitGameOpenGl` / `DS_LUAJIT_set_vbpool_enabled` | clean |
-| LoadGameModConfig() | no VBPool / OpenGL side effects | clean (L0 thread-name only on Win) |
-| modmain `_M:Main` | no direct `modimport` of `scripts/fork_save`, `lag_compensation`, `netsim` | clean |
+- `PluginHttp` — `http_get` (WinHTTP on Windows; libcurl if `DS_PLUGIN_MANAGER_HAS_CURL`, else `"http unsupported"`)
+- Auto probe: prefer_proxy `auto` tries direct short timeout then gh-proxy wrap
+- Injectable `set_http_get_override` for offline tests
+- `PluginHash` — pure SHA-256 (module verify)
+- `PluginZipExtract` — libzip extract with `..` / absolute / nested reject + files[] allowlist (default: top-level `plugin_*` modules + meta)
+- `PluginApply` — resolve tag → fetch `plugins-manifest.json` → channel cache → download asset → sha256 verify → install to `plugins/` or `update_pending/` on lock
+- `PluginManagerApi` — real `fetch_manifest` / `apply` (fail-soft network errors)
 
-## Changes
+## Files
 
-### Created
-| File | Role |
-|---|---|
-| `tests/plugin/check_trunk_surface.py` | L-F static check: brace-aware Inject/LoadGameModConfig scan + modmain Main modimport banlist; exit 0/1 |
-| `.superpowers/sdd/task-8-report.md` | This report |
+| Path | Action |
+|------|--------|
+| `plugins/plugin_manager/PluginHttp.hpp/.cpp` | Create — WinHTTP GET + proxy probe + override |
+| `plugins/plugin_manager/PluginHash.hpp/.cpp` | Create — sha256_hex / file / equal |
+| `plugins/plugin_manager/PluginZipExtract.hpp/.cpp` | Create — safe extract |
+| `plugins/plugin_manager/PluginApply.hpp/.cpp` | Create — manifest fetch + apply plan |
+| `plugins/plugin_manager/PluginManagerApi.cpp` | Wire fetch/apply + channel cache |
+| `plugins/plugin_manager/PluginManagerApi.hpp` | Comment update |
+| `plugins/plugin_manager/CMakeLists.txt` | Sources + libzip + winhttp / optional curl |
+| `tests/plugin/test_plugin_hash_zip.cpp` | Offline sha256 + zip fixtures |
+| `tests/plugin/test_plugin_apply_offline.cpp` | Mock HTTP apply pipeline |
+| `tests/CMakeLists.txt` | New test targets |
 
-### Modified
-| File | Change |
-|---|---|
-| `tests/CMakeLists.txt` | `add_test(NAME plugin_trunk_surface … check_trunk_surface.py ${CMAKE_SOURCE_DIR})` |
+## TDD Evidence
 
-### Slim (already done by M1–M4; verified no remaining violations)
-| File | Host-only path |
-|---|---|
-| `DontStarveInjector.cpp` `Inject()` | `LoadGameModConfig` → `RegisterBuiltinPlugins` → resolve → `load_phase(EarlyNative)` → `DisableScriptZip` |
-| `gameModConfig.cpp` `LoadGameModConfig()` | resolve cascade via `GameJitModConfig`; Win `repalce_set_thread_name` only |
-| `Mod/modmain.lua` `_M:Main` | PluginHost AfterModMain; no feature modimports |
+### RED → GREEN (offline)
 
-## L-F rules enforced
+1. **hash/zip** — `test_plugin_hash_zip` (MSVC `/MD` + vcpkg libzip):
+   ```
+   PASS: sha256_known_vectors
+   PASS: sha256_file
+   PASS: zip_unsafe_detection
+   PASS: zip_extract_allowlist_default
+   PASS: zip_extract_explicit_allowlist
+   PASS: zip_reject_dotdot
+   PASS: zip_reject_nested
+   PASS: zip_memory_extract
+   ALL PASS plugin_hash_zip
+   ```
 
-1. **Inject forbidden:** identifier call sites of `GameNetWorkHookRpc4`, `InitGameOpenGl`, `DS_LUAJIT_set_vbpool_enabled` inside `Inject(bool)` body (comments/strings ignored).
-2. **LoadGameModConfig forbidden:** same for `DS_LUAJIT_set_vbpool_enabled`, `InitGameOpenGl` (VBPool/OpenGL side effects).
-3. **modmain forbidden:** `modimport("scripts/fork_save"|"scripts/lag_compensation"|"scripts/netsim")` and bare name variants inside `_M:Main`.
+2. **apply offline** — mock HTTP map, no network:
+   ```
+   PASS: channel_cache_and_lookup (platform=windows module=plugin_dummy.dll)
+   PASS: fetch_manifest_mock
+   PASS: apply_plan_with_mock_http
+   PASS: install_pending_fallback
+   ALL PASS plugin_apply_offline
+   ```
+   Includes intentional sha256 mismatch failure path (keeps old install semantics).
 
-Allowed: L0 + PluginHost (`ReplaceLuaModule`, signatures, crash guard, `RegisterBuiltinPlugins`, `PluginHost::*`).
+3. **Syntax-check** — `cl /c` of PluginHttp, PluginApply, PluginManagerApi, PluginZipExtract, PluginHash: PASS (C4819 codepage warnings only).
 
-## Verification
+### Full plugin_manager MODULE link
 
-```text
-python tests/plugin/check_trunk_surface.py .
-→ L-F trunk surface OK
+Skipped — worktree not configured in main `builds/ninja-multi-vcpkg` (same as Task 6/7). CMake sources + link lines ready for next configure.
 
-builds/test_plugin_host_graph.exe
-→ All host graph tests passed!
+## Behavior notes
 
-builds/test_plugin_option_rules.exe
-→ All option rule tests passed!
+| Case | Behavior |
+|------|----------|
+| `prefer_proxy=always` | only proxied URL |
+| `prefer_proxy=never` | only direct |
+| `prefer_proxy=auto` | direct 3s then proxy full timeout |
+| Network fail | `last_error` set; return false; no partial corrupt modules (staging + sha gate) |
+| Zip `..` / abs / nested | hard reject extract |
+| DLL write lock | `plugins/update_pending/` + `needs_restart` |
+| No manifest | apply fails with clear error |
 
-builds/test_plugin_config_bridge.exe
-→ All plugin config bridge tests passed!
+## Security
 
-python tests/plugin/run_lua_host.py
-→ plugin_host_lua_spec: all tests passed
+- Path traversal reject on extract (`..`, absolute, drive letters, nested paths)
+- Only extract `files[]` when present; else only top-level plugin modules/meta
+- SHA-256 of **module** bytes vs manifest platform.sha256 before install
 
-builds/ninja-multi-vcpkg/luajit/Release/luajit.exe tests/fork_save/fork_save_spec.lua
-→ fork_save_spec: all tests passed
+## Checklist
+
+- [x] PluginHttp WinHTTP + fail-soft non-Win without curl
+- [x] fetch_manifest + channel cache + optional file cache beside pin config
+- [x] apply download / verify / extract / pending
+- [x] Offline sha256 + zip tests PASS
+- [x] Offline mock-HTTP apply tests PASS
+- [x] CMake libzip + winhttp
+- [x] Commit `feat(plugin-manager): GitHub download, gh-proxy, verify, and apply`
+
+
+## Fix: Critical/Important review findings
+
+**Date:** 2026-08-05  
+**Commit message:** `fix(plugin-manager): harden apply path and HTTP bounds`
+
+
+
+
+### Findings fixed
+
+| Pri | Issue | Fix |
+|-----|-------|-----|
+| P0 | Raw `module` path used for sha256 under staging | `is_flat_safe_basename`; reject abs/`..`/separators; hash only staging basename among extracted members |
+| P1 | Foreign platform fallback when current missing | Fail with `platform '…' missing`; no first-available OS |
+| P1 | Path-like `files[]` installed unchecked | Sanitize each `files[]` at lookup + re-validate before install; module must be listed |
+| P1 | `remove(dest)` before replace | Write sibling `.ds_tmp_*` first; rename/copy over live dest; staging kept for pending |
+| P2 | Unbounded HTTP body | Cap `kMaxHttpBodyBytes` (64 MiB) in WinHTTP and curl write paths |
+
+### Tests
+
 ```
+PASS: sha256_known_vectors … zip_memory_extract
+ALL PASS plugin_hash_zip
 
-## Acceptance checklist
-
-- [x] Step 1: Write L-F script (`check_trunk_surface.py`)
-- [x] Step 2: Fix trunks until L-F green (already green; no source slim needed)
-- [x] Step 3: Full unit suite relevant tests + lua host + fork_save_lua green
-- [x] Step 4: Commit + this report
-- [x] Wire ctest `plugin_trunk_surface`
-
-## Notes
-
-1. No production trunk edits this task — migrations in Tasks 3–7 already removed hard-wires.
-2. Feature implementations remain in plugins / `RegisterBuiltinPlugins` / `Mod/plugins/*`; L-F only guards the three trunks.
-3. L-G dedicated sim pause is out of Task 8 scope (M-G / Task 10).
-4. CMake configure not re-run; `plugin_trunk_surface` lands on next cmake gen. Script is runnable standalone.
+PASS: channel_cache_and_lookup
+PASS: fetch_manifest_mock
+PASS: apply_plan_with_mock_http
+PASS: install_pending_fallback
+PASS: reject_pathlike_module_and_files
+PASS: reject_foreign_platform
+PASS: http_body_size_cap_constant
+ALL PASS plugin_apply_offline
+```

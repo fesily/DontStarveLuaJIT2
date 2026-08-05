@@ -1,103 +1,99 @@
-# Task 7 Report — M4 jit/gc/profiler/fps/tailcall Lua plugins
+# Task 7 Report — Local inventory + status_json + plan (no network)
 
 **Status:** DONE  
-**Date:** 2026-08-03  
-**Commit:** `48fd06a` — `feat(plugin): migrate jit/gc/profiler/fps/tailcall Lua plugins (M4 Task 7)`
+**Date:** 2026-08-05  
+**Base:** `a85dcb8`  
+**Commit:** `feat(plugin-manager): local inventory, status JSON, apply plan`
 
 ## Summary
 
-Migrated hard-wired AfterModMain features from `modmain.lua` onto Path A Lua PluginHost:
+Extended optional `plugin.manager` with pure local inventory scan, real `status_json`, and offline `plan_apply_json`. No HTTP. Manager remains runtime-optional.
 
-| Plugin | File | Priority | Options / gates |
-|---|---|---:|---|
-| `jit.tailcall` | `Mod/plugins/jit_tailcall.lua` | 10 | any_of `SlowTailCall` / `ForceDisableTailCall` / `AutoDetectEncryptedMod`; `has_luajit`. Folded encrypt detect + frostxx ctx. |
-| `debug.profiler` | `Mod/plugins/debug_profiler.lua` | 20 | any_of `EnableProfiler` / `EnableTracy` (string is_bool_on: `"off"` off, `"fzvp"`/`"on"` on); `has_luajit` |
-| `gc.policy` | `Mod/plugins/gc_policy.lua` | 30 | AlwaysOn; resets fullgc/framegc then applies `DisableForceFullGC` / `EnableFrameGC` unless `EnabledGenGC` |
-| `fps.render` | `Mod/plugins/fps_render.lua` | 50 | `TargetRenderFPS` (nonzero); `is_windows` gate |
-| `jit.runtime` | `Mod/plugins/jit_runtime.lua` | 70 | AlwaysOn + `has_luajit`; ForceJitOpt, EnabledJIT, ModBlackList/frostxx kleiloadlua, **HideGlobalJIT last** |
+## Files
 
-`compat.frostxx` merged into `jit.tailcall` (thin; compile-time `EnableFrostxxMods=false` preserves former default).
+| Path | Action |
+|------|--------|
+| `src/DontStarveInjector/plugins/plugin_manager/PluginLocalInventory.hpp` | Create — scan / status / plan pure APIs |
+| `src/DontStarveInjector/plugins/plugin_manager/PluginLocalInventory.cpp` | Create — meta+module scan, status rows, plan actions |
+| `src/DontStarveInjector/plugins/plugin_manager/PluginManagerApi.cpp` | Modify — wire inventory into status/plan; recompute on read |
+| `src/DontStarveInjector/plugins/plugin_manager/PluginManagerApi.hpp` | Modify — comment (Task 7 scope) |
+| `src/DontStarveInjector/plugins/plugin_manager/CMakeLists.txt` | Modify — add `PluginLocalInventory.cpp` |
+| `tests/plugin/test_plugin_local_inventory.cpp` | Create — TDD inventory/status/plan |
+| `tests/CMakeLists.txt` | Modify — `test_plugin_local_inventory` target |
 
-## Changes
+## API
 
-### Created
-| File | Role |
-|---|---|
-| `Mod/plugins/jit_tailcall.lua` | SlowTailCall + ForceDisableTailCall + AutoDetectEncryptedMod |
-| `Mod/plugins/debug_profiler.lua` | EnableProfiler + EnableTracy |
-| `Mod/plugins/gc_policy.lua` | fullgc / framegc policy |
-| `Mod/plugins/fps_render.lua` | TargetRenderFPS |
-| `Mod/plugins/jit_runtime.lua` | JIT opt/on + HideGlobalJIT + blacklist hook |
-| `.superpowers/sdd/task-7-report.md` | This report |
+```cpp
+namespace ds::plugin {
+struct LocalPluginEntry { id, version?, sha256?, module, path, has_meta, has_module };
+std::vector<LocalPluginEntry> scan_local_inventory(path plugins_dir);
+std::filesystem::path resolve_plugins_dir(); // DS_LUAJIT_PLUGIN_DIR or injector/plugins
 
-### Modified
-| File | Change |
-|---|---|
-| `Mod/plugins/init.lua` | Register M4 plugins; order reflects priority bands |
-| `Mod/modmain.lua` | Strip hard-wired feature blocks; Main keeps version UI / NoInjector / crash clean / AlwaysEnableMod write / host bootstrap; gate_ctx gains `jit` + `mod_env` |
-| `tests/plugin/plugin_host_lua_spec.lua` | L-E matrices for all five plugins; real-registry profiler-before-jit order; GC stubs for network matrices |
+struct PluginStatusEntry {
+  id, local_version?, desired_version?, channel_version?, pin_source?,
+  state /* ok|missing|update_available|unknown */, module, sha256?
+};
+std::vector<PluginStatusEntry> build_plugin_status(cfg, inventory, channel_cache={});
 
-## Behavior (production)
-
-```text
-modmain Main (GameInjector present):
-  GetModVersion / AlwaysLoad / version gate
-  HookGetModConfigData
-  PluginHost register(plugins/init) → resolve(GetModConfigData, gate_ctx) → load_phase(AfterModMain)
-    10 jit.tailcall     (encrypt detect, slow tail, force disable)
-    20 debug.profiler   (jit.zone / jit.p / tracy — before hide)
-    30 gc.policy
-    40 network.rpc / network.entity
-    50 fps.render
-    60 sim.lagcomp / network.sim / save.fork
-    70 jit.runtime      (ForceJitOpt, EnabledJIT, blacklist, HideGlobalJIT)
-  SwitchVm / GetModMainPath / HookGameVersionUI / luajit_config:WriteConfig
-  modimport inject_server_only_mod
-
-GameInjector nil → NoInjectorMain (unchanged)
+struct PlanAction { id, from?, to, reason /* version_mismatch|missing|prefer_present */ };
+std::vector<PlanAction> build_plan_actions(cfg, inventory, channel_cache={});
+}
 ```
 
-## Verification
+### Plugins dir discovery
+1. `DS_LUAJIT_PLUGIN_DIR` env  
+2. else `<injector_module_dir>/plugins` (same heuristic as DynamicPluginLoader)  
+3. Inventory scan always takes an explicit path (testable).
 
-```text
-python tests/plugin/run_lua_host.py
-→ PASS: … profiler_before_hide, m4_plugin_priorities_and_order,
-         debug_profiler_enable_matrix, gc_policy_enable_matrix,
-         fps_render_enable_matrix, jit_tailcall_enable_matrix,
-         jit_runtime_enable_matrix, network_* (GC stubs)
-→ plugin_host_lua_spec: all tests passed
-```
+### Meta sidecar
+`plugin_*.meta.json`: `{id, version, sha256, module}` (from `gen_plugins_manifest.py --write-meta`).  
+Module file without meta → logical id via stem map, `version` unknown.
 
-## L-E matrix rows covered
+### status_json fields
+- Top: `config_path`, `plugins_dir`, `schema_version`, `channel_name`, `repo`, `release_tag`, `follow_latest`, `prefer_proxy`, `auto_apply_on_boot`, `needs_restart`, `last_error`
+- `plugins[]`: `id`, `local_version`, `desired_version`, `channel_version`, `pin_source`, `state`, `module`, `sha256`
+- Offline: `channel_version` null unless Task 8 cache filled; desired from override pins only via `desired_version()`
 
-| Plugin | Config | Expected |
-|---|---|---|
-| `debug.profiler` | EnableProfiler=off, EnableTracy=off | Disabled |
-| `debug.profiler` | EnableProfiler=fzvp | Loaded, ProfilerJit installed |
-| `debug.profiler` | EnableTracy=on | Loaded, tracy=1 |
-| `gc.policy` | DisableForceFullGC+EnableFrameGC, GenGC off | Loaded; fullgc/framegc true |
-| `gc.policy` | same + EnabledGenGC | Loaded; flags reset false |
-| `fps.render` | TargetRenderFPS=144, Win | Loaded; set_target_fps |
-| `fps.render` | TargetRenderFPS=0 | Disabled |
-| `fps.render` | TargetRenderFPS=120, non-Win | Disabled (when) |
-| `jit.tailcall` | SlowTailCall+AnyMod | Loaded; registry `__any__` |
-| `jit.tailcall` | all options false | Disabled |
-| `jit.tailcall` | has_luajit=false | Disabled |
-| `jit.runtime` | has_luajit | Loaded |
-| `jit.runtime` | no luajit | Disabled |
-| `jit.runtime` | HideGlobalJIT=true | global `jit` cleared |
-| order | real registry | tailcall < profiler < jit.runtime |
+### plan_apply_json
+JSON array of `{id, from, to, reason}` for:
+- override/channel desired ≠ local (`version_mismatch`)
+- desired but not on disk (`missing`)
+- `prefer_present` soft missing (`prefer_present`) — never hard-fails
 
-## Acceptance checklist
+## TDD Evidence
 
-- [x] Step 1: RED/GREEN profiler before jit.runtime (existing fake + real registry order test)
-- [x] Step 2: Migrate functions into plugins; strip modmain hard-wire; keep NoInjector/version/AlwaysEnableMod
-- [x] Step 3: Lua host tests + option matrices green
-- [x] Step 4: Commit + this report
+- **RED:** test included `PluginLocalInventory.hpp` before sources existed → missing header.
+- **GREEN:** `g++ -std=c++23` + nlohmann include path; run:
+  ```
+  PASS: scan_meta_and_module
+  PASS: module_without_meta_version_unknown
+  PASS: missing_dir_empty
+  PASS: status_override_update_available
+  PASS: status_local_only_ok
+  PASS: plan_mismatch_and_prefer_present
+  PASS: plan_missing_override
+  PASS: status_with_channel_cache
+  ALL PASS plugin_local_inventory
+  ```
+- Regression: `test_plugin_pin_config` ALL PASS  
+- `clang++ -std=c++23 -fsyntax-only PluginManagerApi.cpp` + `PluginLocalInventory.cpp` PASS
 
-## Notes / concerns
+## Behavior matrix
 
-1. **Host bootstrap order:** PluginHost still runs before `GetModMainPath` / `WriteConfig` (same as Task 2+). M4 features do not depend on modmain_path.
-2. **gc.policy AlwaysOn:** always loads when registered (matches former unconditional fullgc/framegc reset). Network Lua tests needed GC API stubs on injectors.
-3. **EnableFrostxxMods** remains compile-time false inside `jit.tailcall` (former modmain default).
-4. No C++ / Injector rebuild for this task (Lua-only M4).
+| Case | Result |
+|------|--------|
+| meta + dll | id/version/sha256 from meta |
+| dll only | id from stem map; version null; state `unknown` |
+| local only, no pins | state `ok` |
+| override pin ≠ local | state `update_available`; plan `version_mismatch` |
+| override, no local | state `missing`; plan `missing` |
+| prefer_present absent | plan soft `prefer_present` |
+| channel cache present | desired follows channel (non-override pin) |
+
+## Self-review
+
+- No network; `g_channel_cache` reserved empty for Task 8
+- Manager still optional; pure library + optional module
+- `prefer_present` soft only
+- pin_set/pin_clear commit `g_cfg` then refresh status (no stale pins)
+- status/plan recompute on API read

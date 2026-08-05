@@ -569,6 +569,27 @@ local function main()
 			ModConfigurationScreen._ctor = function(self, _modname, client_config, ...)
 				old_ctor(self, _modname, client_config, ...)
 				if _modname == modname then
+					-- Plugin Manager entry is available on all platforms (soft-absent when DLL missing).
+					do
+						local pm = require "plugin_manager_screen"
+						local actions = self.dialog and self.dialog.actions
+						if actions then
+							self.plugin_manager_btn = actions:AddItem(
+								translate({ en = "Plugin Manager", zh = "插件管理" }),
+								function()
+									pm.open_plugin_manager()
+								end
+							)
+							local sizeX, sizeY = actions:GetSize()
+							local buttons_len = actions:GetNumberOfItems()
+							local space_per_button = sizeX / buttons_len
+							local has_space_for_big_buttons = space_per_button > 209
+							local button_spacing = has_space_for_big_buttons and 320 or 230
+							local button_height = -30 -- cover bottom crown
+							actions:SetPosition(-(button_spacing * (buttons_len - 1)) / 2, button_height)
+						end
+					end
+					-- Uninstall remains Windows-only (native update path).
 					if os_is_windows then
 						luajit_config_screen_ctor(self, client_config)
 					end
