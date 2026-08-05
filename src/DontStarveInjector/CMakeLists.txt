@@ -214,6 +214,8 @@ if (WIN32)
     add_subdirectory(plugins/plugin_render_vbpool)
     add_subdirectory(plugins/plugin_render_angle)
     add_subdirectory(plugins/plugin_debug_profiler)
+    add_subdirectory(plugins/plugin_fps_render)
+    add_subdirectory(plugins/plugin_network_tick)
 else()
     message(WARNING
         "Skipping gum-using dynamic plugins (network.rpc / network.sim / sim.lagcomp / render.vbpool / render.angle / debug.profiler): "

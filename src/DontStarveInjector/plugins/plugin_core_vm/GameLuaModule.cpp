@@ -1187,8 +1187,6 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(const char *type, const c
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_vm_type_name(int next);
 // Implemented in plugins/plugin_render_angle/GameOpenGl.cpp. Injector resolves at runtime.
 using DsLuajitGetRenderBackendNameFn = const char *(*)();
-DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_network_tick(char upload_tick, char download_tick, bool isclient);
-DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_set_target_fps(int fps, int tt);
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int tt);
 // Implemented in plugins/plugin_debug_profiler. Resolved at runtime (Task 2).
 using DsLuajitReplaceProfilerApiFn = int (*)();
@@ -1305,8 +1303,17 @@ int luaopen_GameInjector(lua_State* L) {
         auto *fn = host_service<DsLuajitGetRenderBackendNameFn>("DS_LUAJIT_get_render_backend_name");
         return fn ? fn() : nullptr;
     });
-    module.set_function("DS_LUAJIT_replace_network_tick", &DS_LUAJIT_replace_network_tick);
-    module.set_function("DS_LUAJIT_set_target_fps", &DS_LUAJIT_set_target_fps);
+    module.set_function("DS_LUAJIT_replace_network_tick",
+                        [](char upload_tick, char download_tick, bool isclient) -> int {
+                            using Fn = int (*)(char, char, bool);
+                            auto *fn = host_service<Fn>("DS_LUAJIT_replace_network_tick");
+                            return fn ? fn(upload_tick, download_tick, isclient) : 0;
+                        });
+    module.set_function("DS_LUAJIT_set_target_fps", [](int fps, int tt) -> int {
+        using Fn = int (*)(int, int);
+        auto *fn = host_service<Fn>("DS_LUAJIT_set_target_fps");
+        return fn ? fn(fps, tt) : -1;
+    });
     module.set_function("DS_LUAJIT_update", &DS_LUAJIT_update);
     module.set_function("DS_LUAJIT_replace_profiler_api", []() -> int {
         auto *fn = host_service<DsLuajitReplaceProfilerApiFn>("DS_LUAJIT_replace_profiler_api");

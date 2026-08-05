@@ -2,6 +2,7 @@
 // plugin_debug_profiler — Tracy / FrameGC / profiler push-pop hooks + FullGC policy (Task 3).
 #include "FullGcPolicy.hpp"
 #include "config.hpp"
+#include "core/PluginServices.hpp"
 #include "MemorySignature.hpp"
 #include "util/inlinehook.hpp"
 #include "GameLua.hpp"
@@ -106,7 +107,6 @@ static bool enable_frame_gc = false;
 extern bool tracy_active;
 
 // Injector export — avoid importing mutable frame_time_s across DLL boundary.
-DONTSTARVEINJECTOR_API float DS_LUAJIT_get_frame_time_s(void);
 
 DONTSTARVEINJECTOR_GAME_API inline bool DS_LUAJIT_enable_framegc(bool enable) {
     if (auto *ctx = ds::core_vm::TryGetGameLuaContext()) {
@@ -116,7 +116,12 @@ DONTSTARVEINJECTOR_GAME_API inline bool DS_LUAJIT_enable_framegc(bool enable) {
         }
     }
     enable_frame_gc = enable;
-    frame_gc_time_ns = static_cast<int>(DS_LUAJIT_get_frame_time_s() * 1e9f);
+    {
+        using Fn = float (*)(void);
+        auto *fn = reinterpret_cast<Fn>(ds_host_lookup_service("DS_LUAJIT_get_frame_time_s"));
+        float ft = fn ? fn() : (1.0f / 30.0f);
+        frame_gc_time_ns = static_cast<int>(ft * 1e9f);
+    }
     return enable_frame_gc;
 }
 
