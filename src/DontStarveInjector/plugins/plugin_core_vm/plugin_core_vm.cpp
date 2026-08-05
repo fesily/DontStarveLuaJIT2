@@ -289,18 +289,12 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     }
     // Publish GameLuaContext via host service table (no peer DLL name coupling).
     // Returns GameLuaContext& — treated as LightUserdata-sized pointer for schema.
-    if (!host->register_service(
-            "ds_core_vm_get_game_lua_context",
-            {ds::plugin::GiType::LightUserdata},
-            reinterpret_cast<void *>(&ds_core_vm_get_game_lua_context))) {
+    if (!host->register_service("ds_core_vm_get_game_lua_context", &ds_core_vm_get_game_lua_context)) {
         std::fprintf(stderr, "[plugin_core_vm] service conflict ds_core_vm_get_game_lua_context\n");
         return false;
     }
     // bool (*)(listener) — listener is function pointer → LightUserdata
-    if (!host->register_service(
-            "ds_register_lua_event_listener",
-            {ds::plugin::GiType::Bool, ds::plugin::GiType::LightUserdata},
-            reinterpret_cast<void *>(&ds_register_lua_event_listener))) {
+    if (!host->register_service("ds_register_lua_event_listener", &ds_register_lua_event_listener)) {
         std::fprintf(stderr, "[plugin_core_vm] service conflict ds_register_lua_event_listener\n");
         return false;
     }

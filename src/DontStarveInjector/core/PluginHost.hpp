@@ -3,6 +3,7 @@
 #include "config/ConfigSchema.hpp"
 #include "PluginTypes.hpp"
 #include "GameInjectorLuaRegistry.hpp"
+#include "GiTypeTraits.hpp"
 
 #include <string>
 #include <string_view>
@@ -42,19 +43,27 @@ public:
     DS_PLUGIN_HOST_API void register_plugin(IPlugin *plugin); // non-owning; caller keeps lifetime
     DS_PLUGIN_HOST_API bool register_option_schema(OptionSchemaEntry e);
     // Service registration — only while registration window is open (module_init).
-    // Schema: types[0]=ret, types[1..]=args (same GiType[] as GameInjector exports).
     DS_PLUGIN_HOST_API bool register_service(const char *name, const ds::plugin::GiType *types, size_t ntypes, void *fn);
     template <size_t N>
     bool register_service(const char *name, const ds::plugin::GiType (&types)[N], void *fn) {
         return register_service(name, types, N, fn);
     }
-    // Register a typed GameInjector Lua export (module_init window only).
-    // core.vm applies GiSig trampolines at luaopen_GameInjector.
+    // Preferred: schema auto-deduced from Fn.
+    template <class Fn>
+    bool register_service(const char *name, Fn fn) {
+        using Sig = ds::plugin::GiSignature<Fn>;
+        return register_service(name, Sig::types, Sig::ntypes, reinterpret_cast<void *>(fn));
+    }
+    // GameInjector Lua export (module_init window). Preferred: auto-deduce from Fn.
     DS_PLUGIN_HOST_API bool register_game_injector_export(const char *name, const ds::plugin::GiType *types, size_t ntypes, void *fn);
-    // Brace-init helper: register_game_injector_export("x", {GiType::I32, GiType::I32}, fn)
     template <size_t N>
     bool register_game_injector_export(const char *name, const ds::plugin::GiType (&types)[N], void *fn) {
         return register_game_injector_export(name, types, N, fn);
+    }
+    template <class Fn>
+    bool register_game_injector_export(const char *name, Fn fn) {
+        using Sig = ds::plugin::GiSignature<Fn>;
+        return register_game_injector_export(name, Sig::types, Sig::ntypes, reinterpret_cast<void *>(fn));
     }
     DS_PLUGIN_HOST_API void begin_module_registration();
     DS_PLUGIN_HOST_API void end_module_registration();

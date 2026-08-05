@@ -82,10 +82,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         return false;
     }
 
-        (void) host->register_game_injector_export(
-        "DS_LUAJIT_set_vbpool_enabled",
-        {ds::plugin::GiType::Void, ds::plugin::GiType::Bool},
-        reinterpret_cast<void *>(&DS_LUAJIT_set_vbpool_enabled));
+        (void) host->register_game_injector_export("DS_LUAJIT_set_vbpool_enabled", &DS_LUAJIT_set_vbpool_enabled);
     host->register_plugin(&g_render_vbpool);
     std::fprintf(stderr, "[plugin_render_vbpool] module init registered render.vbpool\n");
     return true;

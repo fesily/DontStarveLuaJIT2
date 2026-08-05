@@ -342,10 +342,7 @@ static int lj_need_transform_path() noexcept {
 // Do not reintroduce ds_core_vm_fullgc_* or ds_core_vm_lua_gc_func_ptr.
 static void ds_core_vm_lj_gc_fullgc_forward(void *L, void (*oldfn)(void *L)) {
     using Fn = void (*)(void *, void (*)(void *));
-    // Typed service: Void(LightUserdata, LightUserdata) — matches debug.profiler registration.
-    static constexpr ds::plugin::GiType kFullGcTypes[] = {
-        ds::plugin::GiType::Void, ds::plugin::GiType::LightUserdata, ds::plugin::GiType::LightUserdata};
-    auto *fn = ds::plugin::request_service<Fn>("lj_gc_fullgc_external", kFullGcTypes);
+    auto *fn = ds::plugin::request_service<Fn>("lj_gc_fullgc_external");
     if (fn) {
         fn(L, oldfn);
         return;

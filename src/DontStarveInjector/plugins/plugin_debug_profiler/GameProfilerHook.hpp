@@ -119,9 +119,7 @@ DONTSTARVEINJECTOR_GAME_API inline bool DS_LUAJIT_enable_framegc(bool enable) {
     enable_frame_gc = enable;
     {
         using Fn = float (*)(void);
-        // Schema F32 matches float (*)(void).
-        static constexpr ds::plugin::GiType kFrameTimeTypes[] = {ds::plugin::GiType::F32};
-        auto *fn = ds::plugin::request_service<Fn>("DS_LUAJIT_get_frame_time_s", kFrameTimeTypes);
+        auto *fn = ds::plugin::request_service<Fn>("DS_LUAJIT_get_frame_time_s");
         float ft = fn ? fn() : (1.0f / 30.0f);
         frame_gc_time_ns = static_cast<int>(ft * 1e9f);
     }

@@ -13,7 +13,7 @@ namespace ds::core_vm {
 inline constexpr const char *kGetGameLuaContextService = "ds_core_vm_get_game_lua_context";
 
 // Schema must match plugin_core_vm registration (LightUserdata = pointer-sized return).
-inline constexpr ds::plugin::ServiceDesc<GameLuaContext &(*)(), ds::plugin::GiType::LightUserdata>
+inline constexpr ds::plugin::ServiceDesc<GameLuaContext &(*)()>
     kGetGameLuaContext{kGetGameLuaContextService};
 
 using GetGameLuaContextFn = GameLuaContext &(*)();

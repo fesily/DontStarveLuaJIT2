@@ -129,26 +129,11 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     // Host service table + lua_event bus — no L0 hardcode of this DLL.
     // Declarations come from FullGcPolicy.hpp / GameProfilerHook.hpp / ProfilerApi.cpp.
         // core.vm gameio forwards fullgc here (typed service).
-    (void) host->register_service(
-        "lj_gc_fullgc_external",
-        {ds::plugin::GiType::Void, ds::plugin::GiType::LightUserdata, ds::plugin::GiType::LightUserdata},
-        reinterpret_cast<void *>(&lj_gc_fullgc_external));
-    (void) host->register_game_injector_export(
-        "DS_LUAJIT_disable_fullgc",
-        {ds::plugin::GiType::Void, ds::plugin::GiType::Bool},
-        reinterpret_cast<void *>(&DS_LUAJIT_disable_fullgc));
-    (void) host->register_game_injector_export(
-        "DS_LUAJIT_replace_profiler_api",
-        {ds::plugin::GiType::I32},
-        reinterpret_cast<void *>(&DS_LUAJIT_replace_profiler_api));
-    (void) host->register_game_injector_export(
-        "DS_LUAJIT_enable_tracy",
-        {ds::plugin::GiType::Void, ds::plugin::GiType::I32},
-        reinterpret_cast<void *>(&DS_LUAJIT_enable_tracy));
-    (void) host->register_game_injector_export(
-        "DS_LUAJIT_enable_framegc",
-        {ds::plugin::GiType::Bool, ds::plugin::GiType::Bool},
-        reinterpret_cast<void *>(&DS_LUAJIT_enable_framegc));
+    (void) host->register_service("lj_gc_fullgc_external", &lj_gc_fullgc_external);
+    (void) host->register_game_injector_export("DS_LUAJIT_disable_fullgc", &DS_LUAJIT_disable_fullgc);
+    (void) host->register_game_injector_export("DS_LUAJIT_replace_profiler_api", &DS_LUAJIT_replace_profiler_api);
+    (void) host->register_game_injector_export("DS_LUAJIT_enable_tracy", &DS_LUAJIT_enable_tracy);
+    (void) host->register_game_injector_export("DS_LUAJIT_enable_framegc", &DS_LUAJIT_enable_framegc);
     host->register_plugin(&g_plugin);
     std::fprintf(stderr, "[plugin_debug_profiler] module init registered debug.profiler\n");
     return true;

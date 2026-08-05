@@ -333,12 +333,6 @@ void RegisterNetworkRpcHostServices(ds::plugin::PluginHost *host) {
     if (!host) {
         return;
     }
-    (void) host->register_game_injector_export(
-        "DS_LUAJIT_EntityNetWorkExtension_Register",
-        {ds::plugin::GiType::LightUserdata, ds::plugin::GiType::LightUserdata, ds::plugin::GiType::I64},
-        reinterpret_cast<void *>(&DS_LUAJIT_EntityNetWorkExtension_Register));
-    (void) host->register_game_injector_export(
-        "DS_LUAJIT_SetNextRpcInfo",
-        {ds::plugin::GiType::Void, ds::plugin::GiType::OptI32, ds::plugin::GiType::OptI32, ds::plugin::GiType::OptI32},
-        reinterpret_cast<void *>(&DS_LUAJIT_SetNextRpcInfo_C));
+    (void) host->register_game_injector_export("DS_LUAJIT_EntityNetWorkExtension_Register", &DS_LUAJIT_EntityNetWorkExtension_Register);
+    (void) host->register_game_injector_export("DS_LUAJIT_SetNextRpcInfo", &DS_LUAJIT_SetNextRpcInfo_C);
 }
