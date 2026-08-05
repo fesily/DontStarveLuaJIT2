@@ -304,6 +304,7 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 | `save.fork` | `plugin_save_fork` | `all_of` `EnableForkSave` | EarlyNative | 60 | — | — | always (platform-native) |
 | `sim.lagcomp` | `plugin_sim_lagcomp` | `all_of` `EnableLagCompensation` | EarlyNative | 60 | — | — | Win; degrades without core.vm context |
 | `debug.profiler` | `plugin_debug_profiler` | AlwaysOn (native face) | EarlyNative | 20 | — | — | always (optional DLL; missing ⇒ soft no-op for Tracy/FullGC/FrameGC) |
+| `plugin.manager` | `plugin_manager` | AlwaysOn | EarlyNative | 50 | — | — | always (optional DLL; missing ⇒ no package manager; inject + other plugins continue) |
 | `debug.dummy` | `plugin_dummy` | AlwaysOn | EarlyNative | 1000 | — | — | always |
 
 ### 6.2 Lua (`Mod/plugins/init.lua` order + manifests)
@@ -424,8 +425,9 @@ When adding a plugin:
 | `src/DontStarveInjector/core/CoreVmBootstrap.*` | Optional load of `plugin_core_vm` + `ds_core_vm_run_signature_and_replace` |
 | `src/DontStarveInjector/plugins/plugin_core_vm/` | Optional `core.vm` (Signature + GameLua + GameInjector open; fullgc forwarder only) |
 | `src/DontStarveInjector/plugins/plugin_debug_profiler/` | Optional `debug.profiler` (Tracy / FullGC / FrameGC) |
+| `src/DontStarveInjector/plugins/plugin_manager/` | Optional `plugin.manager` (channel/pin download; soft-absent) |
 | `src/DontStarveInjector/plugins/plugin_*/` | Dynamic native feature modules (rpc/sim/vbpool/angle/fork/lagcomp/dummy/…) |
-| `src/DontStarveInjector/DontStarveInjector.cpp` | Schema seed + optional VM path + EarlyNative host + dynamic loader |
+| `src/DontStarveInjector/core/PluginPendingUpdates.*` | L0 pre-load `plugins/update_pending/` moves (no manager needed) |
 | `Mod/plugins/host.lua` | Lua host |
 | `Mod/plugins/init.lua` | Lua registry |
 | `Mod/plugins/*.lua` | Lua plugins |
@@ -455,6 +457,7 @@ EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`, �
 | `bin64/Injector.dll` (+ loader e.g. `Winmm.dll`) | **Yes** | L0 inject + PluginHost + DynamicPluginLoader |
 | `bin64/plugins/plugin_core_vm.dll` | **Recommended for JIT** | Optional. Missing ⇒ no Signature/ReplaceLuaModule/`GameInjector`; feature plugins still load |
 | `bin64/plugins/plugin_debug_profiler.dll` | **Optional (Tracy/FullGC/FrameGC)** | Independent of core.vm. Missing ⇒ soft no-op for profiler/GC policy APIs; inject + JIT still work |
+| `bin64/plugins/plugin_manager.dll` | **Optional (package manager)** | Independent of every business plugin. Missing ⇒ manual install only; UI soft-degrades. See **§13** |
 | `bin64/plugins/plugin_*.dll` | Per feature | `network_*`, `render_*`, `save_fork`, `sim_lagcomp`, `dummy`, … |
 
 `DisableJITWhenServer` (or harness `DS_LUAJIT_FORCE_DISABLE_VM=1`) only skips the VM path; it does **not** skip DynamicPluginLoader. Harness negative path: rename `plugin_core_vm.dll` or set `DS_LUAJIT_FORCE_NO_CORE_VM=1`.
@@ -564,3 +567,79 @@ Env/cmd angle overrides write **strings** into `business_options["AngleBackend"]
 | `EnableFrameGC` | Bool | `true` | `debug.profiler` | AlwaysOn native; Lua `any_of` |
 
 `debug.dummy` is AlwaysOn with no option schema (load always when `can_load`).
+
+## 13. Plugin install paths and optional `plugin.manager`
+
+Design: `docs/superpowers/specs/2026-08-05-plugin-manager-design.md` (**Accepted** — fully optional / non-core).
+
+**Manual install is first-class.** The optional `plugin.manager` module is pure upside (in-game pin/download). Deleting it must never break Inject, PluginHost, or any business plugin.
+
+### 13.1 Manual install (baseline — no manager required)
+
+| Source | How |
+|---|---|
+| `{platform}_Mod.zip` | Unpack the monorepo release zip; copy its `plugins/` tree next to the Injector (`bin64/plugins/` or platform equivalent). |
+| Per-plugin zip | From the same Release: `plugin_<stem>-<ver>-<platform>.zip` (e.g. `plugin_network_rpc-1.0.0-windows.zip`). Extract module + optional `plugin_*.meta.json` into `plugins/`. |
+| `plugins/update_pending/` | Drop replacement modules here when the live DLL is locked. L0 `apply_pending_plugin_updates` runs **before** `LoadLibrary` on every inject — no manager needed. |
+
+Also published for humans and tools: `plugins-manifest.json` (catalog of ids, versions, assets, sha256). CI stages `plugins/` via `install(TARGETS … DESTINATION plugins)` so Mod zips include modules even without the manager.
+
+```text
+Release assets (manual baseline):
+  {platform}_Mod.zip              full mod + Injector + plugins/
+  plugins-manifest.json           catalog
+  plugin_<stem>-<ver>-<platform>.zip   single module package
+```
+
+After any manual copy, **restart the game / dedicated process** so DynamicPluginLoader can LoadLibrary the new files. There is no FreeLibrary hot-swap.
+
+### 13.2 Optional `plugin.manager` (when present)
+
+| Field | Value |
+|---|---|
+| Logical id | `plugin.manager` |
+| Module stem | `plugin_manager` (`plugin_manager.dll` / `.so` / `.dylib`) |
+| Phase | EarlyNative, AlwaysOn if loaded, priority 50 |
+| Core dependency | **No** |
+
+When the module is staged:
+
+1. **Config** — independent `data/unsafedata/luajit_plugins.json` (override env `DS_LUAJIT_PLUGINS_CONFIG`). Channel (`repo` / `stable|preview` / tag / `follow_latest`), download (`github_base`, `gh_proxy_base`, `prefer_proxy=auto|always|never`, `auto_apply_on_boot`), per-id pins, soft `prefer_present` (default empty — never blocks boot).
+2. **Download** — GitHub Releases; gh-proxy wrap when direct probe fails (`prefer_proxy=auto`).
+3. **Apply** — extract allowlisted files into `plugins/` or `plugins/update_pending/` if locked; set `needs_restart`.
+4. **UI** — this mod’s `ModConfigurationScreen` action-bar **Plugin Manager / 插件管理** (all platforms). Full list / channel / pin / apply when exports present.
+5. **Dedicated** — no UI; optional `auto_apply_on_boot` only if the module loaded.
+
+GameInjector surface (registered only when the module loads): `DS_LUAJIT_plugin_config_path`, `DS_LUAJIT_plugin_manager_status_json`, `DS_LUAJIT_plugin_config_reload`, `DS_LUAJIT_plugin_config_set_json`, `DS_LUAJIT_plugin_pin_set` / `pin_clear`, `DS_LUAJIT_plugin_fetch_manifest`, `DS_LUAJIT_plugin_manifest_json`, `DS_LUAJIT_plugin_plan_apply_json`, `DS_LUAJIT_plugin_apply`, `DS_LUAJIT_plugin_needs_restart`.
+
+Lua always soft-looks up these names. Missing export ⇒ `nil` / popup with manual install guidance — never a hard Injector error.
+
+### 13.3 Soft absence / non-core guarantee
+
+| Rule | Detail |
+|---|---|
+| Dependency class | Optional enhancement only |
+| Missing module | Same as any absent `plugin_*`; loader skips; no Injector error |
+| Other plugins | **Must not** list `plugin.manager` in `depends` / `soft_depends` or `DS_LUAJIT_plugin_*` in `requires_services` / `soft_requires_services` |
+| Pins / prefer_present | Missing file or soft preference never blocks boot |
+| First install of manager | Manual (full Mod.zip or `plugin_manager-*-<platform>.zip`) |
+| Self-update | When present, manager may pin/update/remove itself (no special bootstrap lock) |
+
+**Grep guard (CI/review):** no production plugin outside `plugin_manager` may hard-depend on manager APIs.
+
+### 13.4 Restart after apply
+
+Successful replace writes new files (or `update_pending/`) and reports `needs_restart`. Sticky modules are not reloaded in-process. User/UI must restart (client Quit/`DoRestart` confirm; dedicated process restart) before the new modules load. Pending dir is applied on the **next** inject before LoadLibrary.
+
+### 13.5 Absence hardening checklist
+
+```text
+[ ] Delete plugin_manager.dll → dedicated/client still injects
+[ ] Other plugins load; no MissingService for manager APIs
+[ ] UI shows manual guidance
+[ ] Restore DLL → manager functions
+[ ] Manual copy of a business plugin zip still works without manager
+```
+
+Related plan: `docs/superpowers/plans/2026-08-05-plugin-manager.md`.
+

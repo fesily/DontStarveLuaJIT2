@@ -15,9 +15,9 @@ Plan commit at start: fb025b3
 - Task 6: complete (commits e8fe133..a85dcb8, review clean after pin-save fix)
 - Task 7: complete (commits a85dcb8..fd99b86, review clean after plugins-dir fix)
 - Task 8: complete (see task-8-report.md)
-- Task 9: pending — auto_apply_on_boot
-- Task 10: pending — Client UI soft-absent
-- Task 11: pending — Docs + absence hardening
+- Task 9: complete (see task-9-report.md)
+- Task 10: complete (commit 267f726, see task-10-report.md)
+- Task 11: complete (see task-11-report.md)
 
 ## Notes
 
