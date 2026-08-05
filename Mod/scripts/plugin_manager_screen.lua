@@ -1,4 +1,5 @@
 -- Plugin Manager screen (optional plugin.manager). Soft-absent when exports missing.
+-- Optional CString plugin APIs take "" (not nil): channel default / apply all.
 local Screen = require "widgets/screen"
 local Widget = require "widgets/widget"
 local Text = require "widgets/text"
@@ -54,6 +55,9 @@ local function manager_available()
 	return ok and status ~= nil
 end
 
+-- Call a GameInjector export under pcall.
+-- Optional CString plugin APIs (fetch_manifest release_tag, apply id) MUST receive
+-- "" not nil: binding uses luaL_checkstring. Empty string = channel default / apply all.
 local function call_api(name, ...)
 	local inj = injector()
 	if not inj then
@@ -373,8 +377,9 @@ end
 
 function PluginManagerScreen:OnRefresh()
 	call_api("DS_LUAJIT_plugin_config_reload")
-	-- nil release_tag => follow configured channel / latest resolution
-	call_api("DS_LUAJIT_plugin_fetch_manifest", nil)
+	-- Empty string release_tag => follow configured channel / latest resolution.
+	-- (GameInjector CString binding uses luaL_checkstring; Lua nil errors before native runs.)
+	call_api("DS_LUAJIT_plugin_fetch_manifest", "")
 	self:FetchStatus()
 	self:UpdateLabels()
 	self:RebuildList()
@@ -432,7 +437,8 @@ end
 
 function PluginManagerScreen:OnApplyAll()
 	local ok_apply
-	local result, ok = call_api("DS_LUAJIT_plugin_apply", nil)
+	-- Empty string id => apply all planned plugins (same as native nullptr/empty).
+	local result, ok = call_api("DS_LUAJIT_plugin_apply", "")
 	ok_apply = ok and result and true or false
 	self:FetchStatus()
 	self:UpdateLabels()
