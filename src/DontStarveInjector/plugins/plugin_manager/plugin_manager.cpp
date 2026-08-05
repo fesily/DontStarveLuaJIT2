@@ -9,6 +9,7 @@
 #include "PluginManagerApi.hpp"
 
 #include <cstdio>
+#include <exception>
 
 namespace {
 
@@ -35,9 +36,44 @@ struct PluginManagerPlugin final : IPlugin {
     }
 
     void load(PluginContext &) override {
-        // Reload pin config only — no network in load().
+        // Reload pin config first. Optional network apply only when config opts in.
+        // Failures are logged and never abort Inject / host boot.
         ds::plugin_manager::reload_pin_config();
-        std::fprintf(stderr, "[plugin_manager] pin config reloaded (no network)\n");
+        std::fprintf(stderr, "[plugin_manager] pin config reloaded\n");
+
+        if (!ds::plugin_manager::auto_apply_on_boot()) {
+            return;
+        }
+
+        try {
+            std::fprintf(stderr, "[plugin_manager] auto_apply_on_boot: fetch_manifest...\n");
+            const bool fetched = DS_LUAJIT_plugin_fetch_manifest(nullptr);
+            if (!fetched) {
+                std::fprintf(stderr,
+                             "[plugin_manager] auto_apply_on_boot: fetch_manifest failed "
+                             "(non-fatal)\n");
+                return;
+            }
+
+            std::fprintf(stderr, "[plugin_manager] auto_apply_on_boot: apply...\n");
+            const bool applied = DS_LUAJIT_plugin_apply(nullptr);
+            if (!applied) {
+                std::fprintf(stderr,
+                             "[plugin_manager] auto_apply_on_boot: apply failed or nothing "
+                             "to apply (non-fatal)\n");
+                return;
+            }
+
+            std::fprintf(stderr, "[plugin_manager] auto_apply_on_boot: complete\n");
+        } catch (const std::exception &e) {
+            std::fprintf(stderr,
+                         "[plugin_manager] auto_apply_on_boot: exception (non-fatal): %s\n",
+                         e.what());
+        } catch (...) {
+            std::fprintf(stderr,
+                         "[plugin_manager] auto_apply_on_boot: unknown exception "
+                         "(non-fatal)\n");
+        }
     }
 
     void unload(PluginContext &) override {

@@ -22,4 +22,5 @@ DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_plugin_needs_restart();
 // Internal: reload pin config from disk (used by IPlugin::load).
 namespace ds::plugin_manager {
 void reload_pin_config();
+bool auto_apply_on_boot();
 }

@@ -161,6 +161,11 @@ void reload_pin_config() {
     (void)reload_locked();
 }
 
+bool auto_apply_on_boot() {
+    std::lock_guard lock(g_mu);
+    return g_cfg.auto_apply_on_boot;
+}
+
 } // namespace ds::plugin_manager
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_config_path() {
