@@ -1,5 +1,6 @@
-// plugin.manager — pin config + local inventory/status/plan (no network in Task 7).
+// plugin.manager — pin config + inventory + HTTP fetch/apply pipeline.
 #include "PluginManagerApi.hpp"
+#include "PluginApply.hpp"
 #include "PluginLocalInventory.hpp"
 #include "PluginPinConfig.hpp"
 
@@ -21,8 +22,12 @@ std::string g_manifest_json_buf = "{}";
 std::string g_plan_json_buf = "[]";
 std::string g_last_error; // empty => null in status
 bool g_needs_restart = false;
-// Optional channel version cache (filled by Task 8 fetch_manifest). Empty offline.
+// Channel version cache filled by fetch_manifest.
 ds::plugin::ChannelVersionCache g_channel_cache;
+// Full last-fetched manifest (object); "{}" when empty.
+nlohmann::json g_manifest = nlohmann::json::object();
+// Resolved tag used for last successful fetch (for apply downloads).
+std::string g_resolved_release_tag;
 
 nlohmann::json status_plugins_json(const std::vector<ds::plugin::PluginStatusEntry> &rows) {
     nlohmann::json arr = nlohmann::json::array();
@@ -81,6 +86,9 @@ void refresh_status_locked() {
     j["channel_name"] = g_cfg.channel_name;
     j["repo"] = g_cfg.repo;
     j["release_tag"] = g_cfg.release_tag;
+    j["resolved_release_tag"] =
+        g_resolved_release_tag.empty() ? nlohmann::json(nullptr)
+                                       : nlohmann::json(g_resolved_release_tag);
     j["follow_latest"] = g_cfg.follow_latest;
     j["prefer_proxy"] = g_cfg.prefer_proxy;
     j["auto_apply_on_boot"] = g_cfg.auto_apply_on_boot;
@@ -122,6 +130,26 @@ bool save_locked(const ds::plugin::PluginPinConfig &cfg) {
     // Caller commits g_cfg then refresh_status_locked() — avoid stale pins in status.
     g_last_error.clear();
     return true;
+}
+
+// Optional on-disk manifest cache next to pin config.
+void maybe_write_manifest_cache_locked(const std::string &text) {
+    try {
+        const auto cfg_path = ds::plugin::resolve_config_path();
+        if (cfg_path.empty()) {
+            return;
+        }
+        const auto cache = cfg_path.parent_path() / "plugins-manifest.cache.json";
+        if (!cache.parent_path().empty()) {
+            std::filesystem::create_directories(cache.parent_path());
+        }
+        std::ofstream out(cache);
+        if (out.is_open()) {
+            out << text;
+        }
+    } catch (...) {
+        // best-effort only
+    }
 }
 
 } // namespace
@@ -238,13 +266,30 @@ DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_plugin_pin_clear(const char *id) {
     return true;
 }
 
-// Task 8: HTTP fetch — stub.
 DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_plugin_fetch_manifest(const char *release_tag_or_null) {
-    (void)release_tag_or_null;
     std::lock_guard lock(g_mu);
-    set_error_locked("fetch_manifest: not implemented (Task 8)");
-    g_manifest_json_buf = "{}";
-    return false;
+    std::string err;
+    auto tag = ds::plugin_manager::resolve_release_tag(g_cfg, release_tag_or_null, &err);
+    if (!tag) {
+        set_error_locked(err.empty() ? "fetch_manifest: resolve tag failed" : err);
+        return false;
+    }
+    auto manifest = ds::plugin_manager::fetch_plugins_manifest(g_cfg, *tag, &err);
+    if (!manifest) {
+        set_error_locked(err.empty() ? "fetch_manifest: download failed" : err);
+        return false;
+    }
+    g_manifest = std::move(*manifest);
+    g_manifest_json_buf = g_manifest.dump();
+    g_resolved_release_tag = *tag;
+    // Keep cfg.release_tag in sync when it was empty so apply can download assets.
+    if (g_cfg.release_tag.empty()) {
+        g_cfg.release_tag = *tag;
+    }
+    g_channel_cache = ds::plugin_manager::channel_cache_from_manifest(g_manifest);
+    maybe_write_manifest_cache_locked(g_manifest_json_buf);
+    clear_error_locked();
+    return true;
 }
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_manifest_json() {
@@ -254,7 +299,7 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_manifest_json() {
 
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_plan_apply_json() {
     std::lock_guard lock(g_mu);
-    // Always recompute plan from current inventory + pins (no network).
+    // Always recompute plan from current inventory + pins (+ channel cache).
     if (g_config_path_buf.empty()) {
         g_config_path_buf = ds::plugin::resolve_config_path().generic_string();
     }
@@ -263,10 +308,68 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_plan_apply_json() {
 }
 
 DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_plugin_apply(const char *id_or_null) {
-    (void)id_or_null;
     std::lock_guard lock(g_mu);
-    set_error_locked("apply: not implemented (Task 8)");
-    return false;
+    if (g_manifest.is_null() || !g_manifest.is_object() || g_manifest.empty() ||
+        g_manifest_json_buf == "{}") {
+        // Allow apply when plugins array missing? Require prior fetch.
+        if (!g_manifest.contains("plugins")) {
+            set_error_locked("apply: no manifest loaded (call fetch_manifest first)");
+            return false;
+        }
+    }
+
+    const auto plugins_dir = ds::plugin::resolve_plugins_dir();
+    if (plugins_dir.empty()) {
+        set_error_locked("apply: plugins_dir unavailable");
+        return false;
+    }
+
+    // Ensure release_tag for asset URLs.
+    ds::plugin::PluginPinConfig cfg = g_cfg;
+    if (cfg.release_tag.empty() && !g_resolved_release_tag.empty()) {
+        cfg.release_tag = g_resolved_release_tag;
+    }
+
+    const auto inv = ds::plugin::scan_local_inventory(plugins_dir);
+    auto actions = ds::plugin::build_plan_actions(cfg, inv, g_channel_cache);
+
+    const std::string only = (id_or_null && id_or_null[0]) ? std::string(id_or_null) : std::string();
+    if (!only.empty()) {
+        // Single-id apply: if not in plan (already ok), still force one action when manifest has it.
+        bool found = false;
+        for (const auto &a : actions) {
+            if (a.id == only) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            ds::plugin::PlanAction a;
+            a.id = only;
+            a.from = std::nullopt;
+            auto it = g_channel_cache.find(only);
+            a.to = it != g_channel_cache.end() ? it->second : std::string();
+            a.reason = "explicit";
+            actions.push_back(std::move(a));
+        }
+    }
+
+    auto result = ds::plugin_manager::apply_plan(cfg, g_manifest, actions, plugins_dir, only);
+    if (result.needs_restart) {
+        g_needs_restart = true;
+    }
+    if (result.succeeded == 0) {
+        set_error_locked(result.last_error.empty() ? "apply: nothing applied" : result.last_error);
+        return false;
+    }
+    // Partial success: report last_error but return true if anything applied.
+    if (!result.last_error.empty() && result.succeeded < result.attempted) {
+        g_last_error = result.last_error;
+    } else {
+        g_last_error.clear();
+    }
+    refresh_status_locked();
+    return true;
 }
 
 DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_plugin_needs_restart() {

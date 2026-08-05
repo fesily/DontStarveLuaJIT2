@@ -1,6 +1,6 @@
 #pragma once
 // plugin.manager — C API surface for GameInjector / soft Lua bindings.
-// Implementations live in PluginManagerApi.cpp (inventory/status/plan real; HTTP/apply stubs for Task 8).
+// Implementations live in PluginManagerApi.cpp (inventory + HTTP fetch/apply).
 
 #include "config/InjectorHostConfig.hpp"
 

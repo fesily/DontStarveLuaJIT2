@@ -163,6 +163,37 @@ find_package(nlohmann_json CONFIG REQUIRED)
 target_link_libraries(test_plugin_local_inventory PRIVATE nlohmann_json::nlohmann_json)
 add_test(NAME plugin_local_inventory COMMAND test_plugin_local_inventory)
 
+add_executable(test_plugin_hash_zip
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_hash_zip.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginHash.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginZipExtract.cpp)
+target_include_directories(test_plugin_hash_zip PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_plugin_hash_zip PRIVATE cxx_std_23)
+find_package(libzip CONFIG REQUIRED)
+target_link_libraries(test_plugin_hash_zip PRIVATE libzip::zip)
+add_test(NAME plugin_hash_zip COMMAND test_plugin_hash_zip)
+
+add_executable(test_plugin_apply_offline
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_apply_offline.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginApply.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginHash.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginHttp.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginZipExtract.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginPinConfig.cpp)
+target_include_directories(test_plugin_apply_offline PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_plugin_apply_offline PRIVATE cxx_std_23)
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(libzip CONFIG REQUIRED)
+target_link_libraries(test_plugin_apply_offline PRIVATE
+    nlohmann_json::nlohmann_json
+    libzip::zip)
+if (WIN32)
+    target_link_libraries(test_plugin_apply_offline PRIVATE winhttp)
+endif()
+add_test(NAME plugin_apply_offline COMMAND test_plugin_apply_offline)
+
 # L0 lua_event bus — no hard-coded plugin DLL forwarder
 add_executable(test_lua_event_bus
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_lua_event_bus.cpp
