@@ -135,6 +135,16 @@ target_include_directories(test_plugin_pending_updates PRIVATE
 target_compile_features(test_plugin_pending_updates PRIVATE cxx_std_23)
 add_test(NAME plugin_pending_updates COMMAND test_plugin_pending_updates)
 
+add_executable(test_plugin_pin_config
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_pin_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginPinConfig.cpp)
+target_include_directories(test_plugin_pin_config PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_plugin_pin_config PRIVATE cxx_std_23)
+find_package(nlohmann_json CONFIG REQUIRED)
+target_link_libraries(test_plugin_pin_config PRIVATE nlohmann_json::nlohmann_json)
+add_test(NAME plugin_pin_config COMMAND test_plugin_pin_config)
+
 # L0 lua_event bus — no hard-coded plugin DLL forwarder
 add_executable(test_lua_event_bus
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_lua_event_bus.cpp
