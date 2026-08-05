@@ -28,7 +28,7 @@ file(TO_NATIVE_PATH "${GAME_DIR}" GAMEDIR)
 string(REPLACE "\\" "\\\\" GAMEDIR ${GAMEDIR})
 file(TO_NATIVE_PATH "${LUA_LIBRARIES_PATH}" LUA51_PATH)
 string(REPLACE "\\" "\\\\" LUA51_PATH ${LUA51_PATH})
-target_compile_definitions(signature_checker PUBLIC GAMEDIR="${GAMEDIR}" LUA51_PATH="${LUA51_PATH}" PROJECT_DIR="${PROJECT_SOURCE_DIR}")
+target_compile_definitions(signature_checker PUBLIC GAMEDIR="${GAMEDIR}" LUA51_PATH="${LUA51_PATH}" PROJECT_DIR="${PROJECT_SOURCE_DIR}" DS_PLUGIN_HOST_STATIC)
 
 if (MSVC)
     target_link_options(signature_checker PUBLIC "/NODEFAULTLIB:LIBCMT")

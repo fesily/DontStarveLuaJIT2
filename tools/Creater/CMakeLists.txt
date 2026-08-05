@@ -70,6 +70,7 @@ target_include_directories(signature_updater PRIVATE ${DONTSTARVEINJECTOR_ROOT}/
 target_include_directories(signature_updater PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
 target_compile_definitions(signature_updater PUBLIC
+        DS_PLUGIN_HOST_STATIC
         GAMEDIR="${GAME_DIR}"
         LUA51_PATH="${LUA_LIBRARIES_PATH}"
         WORKER_DIR="${CMAKE_INSTALL_PREFIX}"
@@ -83,21 +84,28 @@ endif ()
 add_dependencies(signature_updater create_missfuncs)
 
 if (WIN32)
+    # Standalone tool: enumerates game EXE imports via util/module.cpp.
+    # module.hpp pulls config/InjectorHostConfig.hpp (export macros only).
     add_executable(angle_iat_api_generator
             angle_iat_api_generator.cpp
             ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
             ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
     )
 
-    target_include_directories(angle_iat_api_generator PUBLIC ${DONTSTARVEINJECTOR_UTIL_DIR})
-    target_include_directories(angle_iat_api_generator PUBLIC ${PROJECT_SOURCE_DIR}/src)
-    target_compile_definitions(angle_iat_api_generator PUBLIC
+    target_include_directories(angle_iat_api_generator PRIVATE
+            ${DONTSTARVEINJECTOR_UTIL_DIR}
+            ${DONTSTARVEINJECTOR_ROOT}
+            ${PROJECT_SOURCE_DIR}/src
+    )
+    # Compile util sources into this EXE — not dllimport from Injector.
+    target_compile_definitions(angle_iat_api_generator PRIVATE
+            DS_PLUGIN_HOST_STATIC
             GAMEDIR="${GAME_DIR}"
             EXECUTABLE_SUFFIX="${CMAKE_EXECUTABLE_SUFFIX}"
             OUTPUT_HPP_PATH="${PROJECT_SOURCE_DIR}/src/DontStarveInjector/angle_iat_generated.hpp"
     )
 
     if (MSVC)
-        target_link_options(angle_iat_api_generator PUBLIC "/NODEFAULTLIB:LIBCMT")
+        target_link_options(angle_iat_api_generator PRIVATE "/NODEFAULTLIB:LIBCMT")
     endif ()
 endif ()

@@ -36,7 +36,8 @@ set_tests_properties(fork_save_lua PROPERTIES
 add_executable(test_buffer_name_pool
     ${CMAKE_CURRENT_SOURCE_DIR}/test_buffer_name_pool.cpp)
 target_include_directories(test_buffer_name_pool PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_render_vbpool)
 target_compile_features(test_buffer_name_pool PRIVATE cxx_std_17)
 add_test(NAME BufferNamePool COMMAND test_buffer_name_pool)
 
