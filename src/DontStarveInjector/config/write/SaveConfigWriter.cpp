@@ -1,7 +1,7 @@
 // Client save write-back for GameJitModConfig projection (L0).
-// Cascade load path lives under config/sources (SaveFile / ModOverrides).
+// Lives under config/write — load path is config/sources/*.
 #include "gameModConfig.hpp"
-#include "../modinfo.hpp"
+#include "../../modinfo.hpp"
 #include "plugins/plugin_render_angle/AngleOptionKeys.hpp"
 #include "plugins/plugin_render_vbpool/VbpoolOptionKeys.hpp"
 #include "util/PersistentString.hpp"

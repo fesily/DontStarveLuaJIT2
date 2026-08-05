@@ -12,8 +12,9 @@ set(SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/lua51_object.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/PersistentString.cpp
-        gameModConfig.cpp
-        GameJitModConfigCascade.cpp
+        config/ConfigSession.cpp
+        config/write/SaveConfigWriter.cpp
+        GameRuntimeApis.cpp
         config/sources/LuajitConfigFile.cpp
         game_info.cpp
         config.cpp

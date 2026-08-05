@@ -38,3 +38,7 @@ struct GameJitModConfig {
 bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const GameJitModConfig &config);
 
 DONTSTARVEINJECTOR_API int DS_LUAJIT_set_target_fps(int fps, int tt);
+DONTSTARVEINJECTOR_GAME_API float DS_LUAJIT_get_frame_time_s(void);
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_network_tick(char upload_tick, char download_tick, bool isclient);
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int tt);
+DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version();

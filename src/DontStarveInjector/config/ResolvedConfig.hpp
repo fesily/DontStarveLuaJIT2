@@ -1,4 +1,5 @@
 #pragma once
+#include "config.hpp" // DS_INJECTOR_CXX_API (must be outside ds::config)
 #include "ConfigSource.hpp"
 #include "IConfigSource.hpp"
 #include "ConfigSchema.hpp"
@@ -133,7 +134,6 @@ struct ResolvedConfig {
 // L0 cascade cache filled by GameJitModConfig::instance() / refresh path.
 // Null before first resolve. Host / L0 hot path consume current() (CF-S4/S5).
 // Exported so plugins can import from Injector.dll.
-#include "config.hpp"
 DS_INJECTOR_CXX_API const ResolvedConfig *current();
 
 // After DynamicPluginLoader module_init has registered late keys (VM/business),
