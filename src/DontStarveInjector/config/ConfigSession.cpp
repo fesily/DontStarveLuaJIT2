@@ -1,6 +1,7 @@
 #include "config.hpp"  // InjectorCtx, MOD_VERSION
 #include "config/ConfigSession.hpp"
 #include "gameModConfig.hpp"
+#include "config/write/SaveConfigWriter.hpp"
 #include "game_info.hpp"
 #include "config/sources/LuajitConfigFile.hpp"
 #include "config/CascadeEngine.hpp"
