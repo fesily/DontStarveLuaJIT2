@@ -1,5 +1,9 @@
 #include "CoreVmBootstrap.hpp"
 
+#include "config/ResolvedConfig.hpp"
+#include "gameModConfig.hpp"
+#include "plugins/plugin_core_vm/VmOptionKeys.hpp"
+
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -158,6 +162,29 @@ RunSigReplaceFn GetRunSignatureAndReplaceFn() {
 }
 
 bool TryRunSignatureAndReplace(const BootstrapArgs &args) {
+    // Process env (CI harness) and game option DisableJITWhenServer soft-skip the
+    // signature/replace path only. L0 Inject continues either way (OB-S1).
+    if (!args.is_client) {
+        if (const char *env = std::getenv("DS_LUAJIT_FORCE_DISABLE_VM"); env && env[0] == '1') {
+            std::fprintf(stderr,
+                         "[core.vm] Lua VM path disabled — skipping signature/replace; native plugins continue\n");
+            return false;
+        }
+        // Cascade may not have run yet; resolve identity + known keys (incl. VM keys while still L0-seeded).
+        (void) GameJitModConfig::instance();
+        bool disable_on_server = false;
+        if (auto *rc = ds::config::current()) {
+            auto it = rc->view.find(std::string{ds::config::keys::kDisableJITWhenServer});
+            disable_on_server = it != rc->view.end() &&
+                                it->second.type == ds::plugin::ConfigValueType::Bool && it->second.b;
+        }
+        if (disable_on_server) {
+            std::fprintf(stderr,
+                         "[core.vm] Lua VM path disabled — skipping signature/replace; native plugins continue\n");
+            return false;
+        }
+    }
+
     auto *fn = GetRunSignatureAndReplaceFn();
     if (!fn) {
         std::fprintf(stderr,

@@ -136,21 +136,9 @@ void DisableScriptZip() {
     }
 }
 
-static bool VmPathEnabled(bool isClient) {
-    if (isClient) {
-        return true;
-    }
-    // CI / harness: force DisableJITWhenServer-equivalent without mutating config.
-    if (const char *env = std::getenv("DS_LUAJIT_FORCE_DISABLE_VM"); env && env[0] == '1') {
-        return false;
-    }
-    // Ensure cascade has run; prefer ResolvedConfig accessors (CF-S5).
-    (void) GameJitModConfig::instance();
-    if (auto *rc = ds::config::current(); rc && rc->disable_jit_when_server()) {
-        return false;
-    }
-    return true;
-}
+// VM soft-skip (DisableJITWhenServer / DS_LUAJIT_FORCE_DISABLE_VM) lives in
+// CoreVmBootstrap — L0 never aborts Inject for those flags (OB-S1).
+
 
 
 // VM signature/replace is owned by plugin_core_vm (ds_core_vm_run_signature_and_replace).
@@ -202,7 +190,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 
     // Steam UGC workshop path hook lives in plugin_core_vm (with gameio).
 
-    if (VmPathEnabled(isClient)) {
+    {
         ds::core_vm::BootstrapArgs args{};
         args.is_client = isClient;
         // lua_module_base / main_path resolved inside plugin when zero/null.
@@ -210,13 +198,11 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         args.main_path = nullptr;
         if (!ds::core_vm::TryRunSignatureAndReplace(args)) {
             // Hard failures call showError inside plugin_core_vm; soft skip when
-            // module/export missing or soft miss (no luamodule base).
+            // disabled, module/export missing, or soft miss (no luamodule base).
+            // Disable path logs "[core.vm] Lua VM path disabled …" inside bootstrap.
             spdlog::warn("core.vm signature/replace path skipped — continuing inject");
             std::fprintf(stderr, "[core.vm] signature/replace path skipped — continuing inject\n");
         }
-    } else {
-        spdlog::info("Lua VM path disabled — skipping signature/replace; native plugins continue");
-        std::fprintf(stderr, "[core.vm] Lua VM path disabled — skipping signature/replace; native plugins continue\n");
     }
 
     LoadGameModConfig();
