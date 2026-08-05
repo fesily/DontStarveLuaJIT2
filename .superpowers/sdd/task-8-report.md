@@ -3,7 +3,7 @@
 **Status:** DONE  
 **Branch:** feature/plugin-manager  
 **Base:** fd99b86  
-**Commit:** 38e44fec104f52dd965e3481ec3fe8cbb47babc0
+**Commit:** 26b1ba7c8c88a6a4effea374e8b00f79d608b0f7
 
 ## Summary
 
