@@ -22,6 +22,10 @@ struct GameJitModConfig {
     bool AlwaysEnableMod = false;
     bool DisableJITWhenServer = false;
     bool EnabledGenGC = false;
+    // True when cascade ResolvedConfig.view carried VM schema keys
+    // (plugin_core_vm present). False ⇒ write-back must not emit empty/false
+    // bag defaults over an existing client save (OB-S2 optional core.vm).
+    bool has_vm_options = false;
 
     // Deprecated for Host (CF-S4/S5): cascade ConfigView is SSOT. Still filled by
     // map_to_game_jit_mod_config for save write-back and a few legacy readers.

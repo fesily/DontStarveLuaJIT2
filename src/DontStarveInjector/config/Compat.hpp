@@ -42,14 +42,17 @@ inline GameJitModConfig map_to_game_jit_mod_config(const ResolvedConfig &resolve
         }
         if (key == keys::kDisableJITWhenServer && value.type == ds::plugin::ConfigValueType::Bool) {
             out.DisableJITWhenServer = value.b;
+            out.has_vm_options = true;
             continue;
         }
         if (key == keys::kLuaVmType && value.type == ds::plugin::ConfigValueType::String) {
             out.LuaVmType = value.s;
+            out.has_vm_options = true;
             continue;
         }
         if (key == keys::kEnabledGenGC && value.type == ds::plugin::ConfigValueType::Bool) {
             out.EnabledGenGC = value.b;
+            out.has_vm_options = true;
             continue;
         }
         if (!is_core_option_key(key)) {

@@ -180,22 +180,27 @@ bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const Ga
 	angle_backend_opt["saved"] = angle_backend;
 	angle_backend_opt["saved_client"] = angle_backend;
 
-	auto lua_vm_type = find_or_create_option(lua, root, ModConfigurationOptions::LuaVmType.name);
-	lua_vm_type["saved"] = config.LuaVmType;
-	lua_vm_type["saved_client"] = config.LuaVmType;
+	// OB-S2: VM keys are owned by optional plugin_core_vm. When the cascade
+	// view never carried them (has_vm_options=false), bag defaults are empty/
+	// false and must not overwrite the user's save.
+	if (config.has_vm_options) {
+		auto lua_vm_type = find_or_create_option(lua, root, ModConfigurationOptions::LuaVmType.name);
+		lua_vm_type["saved"] = config.LuaVmType;
+		lua_vm_type["saved_client"] = config.LuaVmType;
+
+		auto disable_jit_when_server =
+			find_or_create_option(lua, root, ModConfigurationOptions::DisableJITWhenServer.name);
+		disable_jit_when_server["saved"] = config.DisableJITWhenServer;
+		disable_jit_when_server["saved_client"] = config.DisableJITWhenServer;
+
+		auto enabled_gen_gc = find_or_create_option(lua, root, ModConfigurationOptions::EnabledGenGC.name);
+		enabled_gen_gc["saved"] = config.EnabledGenGC;
+		enabled_gen_gc["saved_client"] = config.EnabledGenGC;
+	}
 
 	auto always_enable_mod = find_or_create_option(lua, root, ModConfigurationOptions::AlwaysEnableMod.name);
 	always_enable_mod["saved"] = config.AlwaysEnableMod;
 	always_enable_mod["saved_client"] = config.AlwaysEnableMod;
-
-	auto disable_jit_when_server =
-		find_or_create_option(lua, root, ModConfigurationOptions::DisableJITWhenServer.name);
-	disable_jit_when_server["saved"] = config.DisableJITWhenServer;
-	disable_jit_when_server["saved_client"] = config.DisableJITWhenServer;
-
-	auto enabled_gen_gc = find_or_create_option(lua, root, ModConfigurationOptions::EnabledGenGC.name);
-	enabled_gen_gc["saved"] = config.EnabledGenGC;
-	enabled_gen_gc["saved_client"] = config.EnabledGenGC;
 
 	bool enable_vbpool = ModConfigurationOptions::EnableVBPool.default_value;
 	if (auto it = config.business_options.find("EnableVBPool");
