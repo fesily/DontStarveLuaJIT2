@@ -257,7 +257,7 @@ def check_inject(root: Path) -> list[str]:
 
 
 def check_load_game_mod_config(root: Path) -> list[str]:
-    path = root / "src" / "DontStarveInjector" / "gameModConfig.cpp"
+    path = root / "src" / "DontStarveInjector" / "config" / "ConfigSession.cpp"
     if not path.is_file():
         return [f"missing file: {path}"]
 

@@ -1170,7 +1170,6 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 #include <spdlog/spdlog.h>
 #include <sstream>
 
-#include "gameModConfig.hpp"
 #ifndef _WIN32
 #include <dlfcn.h>
 #endif

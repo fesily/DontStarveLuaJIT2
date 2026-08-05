@@ -7,7 +7,6 @@
 #include "util/module.hpp"
 #include "angle_iat_generated.hpp"
 #include "config/ResolvedConfig.hpp"
-#include "gameModConfig.hpp"
 
 
 
@@ -97,7 +96,7 @@ namespace {
     static bool IsVulkanPlatformRequested() {
         static bool result = []() {
             DstAngleBackend backend = DstAngleBackend::Auto;
-            (void) GameJitModConfig::instance();
+            (void) ds::config::ensure_resolved();
             if (auto *rc = ds::config::current()) {
                 backend = from_string(rc->angle_backend());
                 if (backend == DstAngleBackend::Unknown) {
@@ -438,7 +437,7 @@ DONTSTARVEINJECTOR_GAME_API void InitGameOpenGl() {
     if (!InjectorCtx::instance()->DontStarveInjectorIsClient) {
         return;
     }
-    (void) GameJitModConfig::instance();
+    (void) ds::config::ensure_resolved();
     std::string_view angle_backend = "auto";
     const bool has_rc = ds::config::current() != nullptr;
     if (auto *rc = ds::config::current()) {

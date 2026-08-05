@@ -1,6 +1,7 @@
 #include "GameLua.hpp"
 #include "LuajitVariantNames.hpp"
-#include "gameModConfig.hpp"
+#include "config/ResolvedConfig.hpp"
+#include "config/ConfigSession.hpp"
 #include "config/ResolvedConfig.hpp"
 
 #include "DontStarveSignature.hpp"
@@ -288,7 +289,7 @@ struct GameLuaContextImpl : GameLuaContext {
         }
 
         if (!InjectorConfig::instance()->DisableForceLoadLuaJITMod) {
-            (void) GameJitModConfig::instance();
+            (void) ds::config::ensure_resolved();
             if (auto *rc = ds::config::current(); rc && rc->always_enable_mod()) {
                 do {
                     auto modname = rc->modname();
@@ -1474,7 +1475,7 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
 #endif
     CacheRuntimeSetup(mainPath, signatures, exports);
     auto luaType = GameLuaType::jit;
-    (void) GameJitModConfig::instance();
+    (void) ds::config::ensure_resolved();
     if (auto *rc = ds::config::current()) {
         luaType = rc->get_lua_vm_type();
     }

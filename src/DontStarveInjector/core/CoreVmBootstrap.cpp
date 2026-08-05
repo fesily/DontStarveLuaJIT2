@@ -1,7 +1,6 @@
 #include "CoreVmBootstrap.hpp"
 
 #include "config/ResolvedConfig.hpp"
-#include "gameModConfig.hpp"
 #include "plugins/plugin_core_vm/VmOptionKeys.hpp"
 
 #include <cstdio>
@@ -171,7 +170,7 @@ bool TryRunSignatureAndReplace(const BootstrapArgs &args) {
                          "[core.vm] Lua VM path disabled — skipping signature/replace; native plugins continue\n");
             return false;
         }
-        (void) GameJitModConfig::instance();
+        (void) ds::config::ensure_resolved();
         bool disable_on_server = false;
         if (auto *rc = ds::config::current()) {
             // VM-domain accessor only — L0 Inject never calls this (OB-S1/S5).

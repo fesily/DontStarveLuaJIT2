@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 
 set(SOURCES
         main.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/config.cpp
+        ${DONTSTARVEINJECTOR_ROOT}/config/InjectorHostConfig.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp

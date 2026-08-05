@@ -17,7 +17,7 @@ set(SOURCES
         GameRuntimeApis.cpp
         config/sources/LuajitConfigFile.cpp
         game_info.cpp
-        config.cpp
+        config/InjectorHostConfig.cpp
         core/PluginHost.cpp
         core/PluginServices.cpp
         core/LuaEventBus.cpp
@@ -150,7 +150,7 @@ if (TARGET liblua_static)
         target_link_options(Injector PRIVATE "-Wl,--exclude-libs,ALL")
     endif()
 else()
-    message(FATAL_ERROR "liblua_static (src/lua51original) required for L0 GameJitModConfig cascade")
+    message(FATAL_ERROR "liblua_static (src/lua51original) required for L0 config cascade")
 endif()
 
 # Optional legacy switches: macros only — do not re-link game JIT into L0.

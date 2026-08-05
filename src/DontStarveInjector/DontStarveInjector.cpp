@@ -6,7 +6,6 @@
 #include "util/platform.hpp"
 #include "ctx.hpp"
 #include "MemorySignature.hpp"
-#include "gameModConfig.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginConfigBridge.hpp"
 #include "config/ConfigSchema.hpp"

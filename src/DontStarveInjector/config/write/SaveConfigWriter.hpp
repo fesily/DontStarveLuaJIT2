@@ -1,11 +1,12 @@
 #pragma once
-// Client save write-back for the GameJitModConfig projection bag.
-// Load path remains config/sources/*; this is write-only.
+// Client save write-back from WriteBackBag (projection of ResolvedConfig).
 
-#include "gameModConfig.hpp"
+#include "WriteBackBag.hpp"
 
 #include <filesystem>
 
-// Returns true if the save table was written successfully.
-bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path,
-                                     const GameJitModConfig &config);
+namespace ds::config {
+
+bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const WriteBackBag &config);
+
+} // namespace ds::config

@@ -1,4 +1,4 @@
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include <stdio.h>
 #include <string>
 #include "util/platform.hpp"

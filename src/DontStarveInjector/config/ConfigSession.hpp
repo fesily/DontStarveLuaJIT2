@@ -1,14 +1,15 @@
 #pragma once
 // Config cascade session: schema seed, resolve cache, current(), refresh after plugins.
-// GAME_API fps/network/update live in GameRuntimeApis.cpp (not here).
 
 #include "ResolvedConfig.hpp"
 #include "ConfigSchema.hpp"
 
 namespace ds::config {
 
-// Declared in ResolvedConfig.hpp:
-//   const ResolvedConfig *current();
-//   void refresh_cascade_after_plugins(const ds::plugin::ConfigSchemaRegistry &);
+// current() — null until first resolve/refresh.
+// ensure_resolved() — run cascade once if needed; returns current().
+DS_INJECTOR_CXX_API const ResolvedConfig *ensure_resolved();
+
+// refresh_cascade_after_plugins — declared on ResolvedConfig.hpp
 
 } // namespace ds::config

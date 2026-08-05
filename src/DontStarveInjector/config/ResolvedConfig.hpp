@@ -131,14 +131,14 @@ struct ResolvedConfig {
         return std::string_view{it->second.s};
     }
 };
-// L0 cascade cache filled by GameJitModConfig::instance() / refresh path.
-// Null before first resolve. Host / L0 hot path consume current() (CF-S4/S5).
-// Exported so plugins can import from Injector.dll.
+// L0 cascade cache filled by ensure_resolved() / refresh_cascade_after_plugins.
+// Null before first resolve. Host / L0 hot path consume current() / ensure_resolved().
 DS_INJECTOR_CXX_API const ResolvedConfig *current();
+DS_INJECTOR_CXX_API const ResolvedConfig *ensure_resolved();
 
 // After DynamicPluginLoader module_init has registered late keys (VM/business),
 // merge host schema into cascade schema and re-resolve so save/env apply to them.
-// Overwrites g_resolved_config / GameJitModConfig cache (OB-S2).
+// Overwrites g_resolved_config (OB-S2).
 DS_INJECTOR_CXX_API void refresh_cascade_after_plugins(
     const ds::plugin::ConfigSchemaRegistry &host_schema);
 } // namespace ds::config

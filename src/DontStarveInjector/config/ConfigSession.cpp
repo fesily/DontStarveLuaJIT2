@@ -1,7 +1,7 @@
-#include "config.hpp"  // InjectorCtx, MOD_VERSION
+#include "config.hpp"
 #include "config/ConfigSession.hpp"
-#include "gameModConfig.hpp"
 #include "config/write/SaveConfigWriter.hpp"
+#include "config/write/WriteBackBag.hpp"
 #include "game_info.hpp"
 #include "config/sources/LuajitConfigFile.hpp"
 #include "config/CascadeEngine.hpp"
@@ -15,9 +15,6 @@
 
 namespace {
 
-// Mutable production cascade schema: L0 core first; plugins append VM/business
-// keys during DynamicPluginLoader module_init. Full resolve must run after that
-// merge so save/env values are not dropped as unknown (OB-S2 / OB-S4).
 ds::plugin::ConfigSchemaRegistry &cascade_option_schema() {
     static ds::plugin::ConfigSchemaRegistry schema = [] {
         ds::plugin::ConfigSchemaRegistry r;
@@ -28,7 +25,6 @@ ds::plugin::ConfigSchemaRegistry &cascade_option_schema() {
 }
 
 static std::optional<ds::config::ResolvedConfig> g_resolved_config;
-static std::optional<GameJitModConfig> g_game_jit_mod_config;
 
 static ds::config::CascadeContext build_cascade_context() {
     auto *ictx = InjectorCtx::instance();
@@ -55,16 +51,13 @@ static ds::config::CascadeContext build_cascade_context() {
     return ctx;
 }
 
-static std::optional<GameJitModConfig> load_resolved_game_mod_config() {
+static void resolve_and_maybe_write_back() {
     auto ctx = build_cascade_context();
     g_resolved_config = ds::config::resolve(cascade_option_schema(), ctx);
-    auto resolved = ds::config::map_to_game_jit_mod_config(*g_resolved_config);
-
-    if (ctx.is_client && resolved.save_file && !resolved.save_file->empty()) {
-        WriteGameJitModConfigToSaveFile(*resolved.save_file, resolved);
+    auto bag = ds::config::map_to_write_back_bag(*g_resolved_config);
+    if (ctx.is_client && bag.save_file && !bag.save_file->empty()) {
+        ds::config::WriteGameJitModConfigToSaveFile(*bag.save_file, bag);
     }
-
-    return resolved;
 }
 
 } // namespace
@@ -73,6 +66,14 @@ namespace ds::config {
 
 DS_INJECTOR_CXX_API const ResolvedConfig *current() {
     return g_resolved_config ? &*g_resolved_config : nullptr;
+}
+
+// Ensure cascade has run at least once (early bootstrap). Prefer refresh after plugins.
+DS_INJECTOR_CXX_API const ResolvedConfig *ensure_resolved() {
+    if (!g_resolved_config) {
+        resolve_and_maybe_write_back();
+    }
+    return current();
 }
 
 DS_INJECTOR_CXX_API void refresh_cascade_after_plugins(
@@ -86,23 +87,10 @@ DS_INJECTOR_CXX_API void refresh_cascade_after_plugins(
     }
     auto ctx = build_cascade_context();
     g_resolved_config = ds::config::resolve(cascade, ctx);
-    auto mapped = map_to_game_jit_mod_config(*g_resolved_config);
-    if (ctx.is_client && mapped.save_file && !mapped.save_file->empty()) {
-        WriteGameJitModConfigToSaveFile(*mapped.save_file, mapped);
+    auto bag = map_to_write_back_bag(*g_resolved_config);
+    if (ctx.is_client && bag.save_file && !bag.save_file->empty()) {
+        WriteGameJitModConfigToSaveFile(*bag.save_file, bag);
     }
-    g_game_jit_mod_config = std::move(mapped);
 }
 
 } // namespace ds::config
-
-std::optional<GameJitModConfig> GameJitModConfig::instance() {
-    if (g_game_jit_mod_config) {
-        return g_game_jit_mod_config;
-    }
-    static std::optional<GameJitModConfig> early = load_resolved_game_mod_config();
-    if (!g_game_jit_mod_config && early) {
-        g_game_jit_mod_config = early;
-    }
-    return g_game_jit_mod_config;
-}
-

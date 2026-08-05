@@ -1,6 +1,8 @@
 // Client save write-back for GameJitModConfig projection (L0).
 // Lives under config/write — load path is config/sources/*.
 #include "SaveConfigWriter.hpp"
+#include "plugins/plugin_core_vm/VmOptionKeys.hpp"
+#include "config/BaseOptionKeys.hpp"
 #include "../../modinfo.hpp"
 #include "plugins/plugin_render_angle/AngleOptionKeys.hpp"
 #include "plugins/plugin_render_vbpool/VbpoolOptionKeys.hpp"
@@ -162,7 +164,9 @@ static sol::table find_or_create_option(sol::state &lua, sol::table root, std::s
 
 } // namespace
 
-bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const GameJitModConfig &config) {
+namespace ds::config {
+
+bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const WriteBackBag &config) {
 	sol::state lua;
 	sol::table root = lua.create_table();
 	std::string serialized_before = "return {}";
@@ -232,3 +236,5 @@ bool WriteGameJitModConfigToSaveFile(const std::filesystem::path &path, const Ga
 	spdlog::info("updated mod configuration at {}", path.string());
 	return true;
 }
+
+} // namespace ds::config
