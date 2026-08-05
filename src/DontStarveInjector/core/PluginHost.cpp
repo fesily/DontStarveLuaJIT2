@@ -61,11 +61,11 @@ bool PluginHost::register_service(std::string_view name, void *fn) {
     return ds::plugin::register_service(name, fn);
 }
 
-bool PluginHost::register_game_injector_export(const char *name, GiSig sig, void *fn) {
+bool PluginHost::register_game_injector_export(const char *name, const GiType *types, size_t ntypes, void *fn) {
     if (!registration_open_) {
         return false;
     }
-    return ds::plugin::register_game_injector_export(name, sig, fn);
+    return ds::plugin::register_game_injector_export(name, types, ntypes, fn);
 }
 
 void PluginHost::begin_module_registration() {

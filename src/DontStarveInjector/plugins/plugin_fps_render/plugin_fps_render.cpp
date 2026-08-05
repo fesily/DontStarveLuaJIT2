@@ -70,7 +70,9 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     host->register_service("DS_LUAJIT_get_frame_time_s",
                              reinterpret_cast<void *>(&DS_LUAJIT_get_frame_time_s));
         (void) host->register_game_injector_export(
-        "DS_LUAJIT_set_target_fps", ds::plugin::GiSig::I32_I32_I32, reinterpret_cast<void *>(&DS_LUAJIT_set_target_fps));
+        "DS_LUAJIT_set_target_fps",
+        {ds::plugin::GiType::I32, ds::plugin::GiType::I32, ds::plugin::GiType::I32},
+        reinterpret_cast<void *>(&DS_LUAJIT_set_target_fps));
     host->register_plugin(&g_plugin);
     std::fprintf(stderr, "[plugin_fps_render] module init registered fps.render\n");
     return true;

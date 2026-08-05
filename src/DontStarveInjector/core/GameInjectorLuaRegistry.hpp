@@ -1,58 +1,56 @@
 #pragma once
 // GameInjector Lua export registry (L0 storage only — never calls lua_*).
-// Plugins register (name, sig, native_fn) in module_init via PluginHost.
-// core.vm applies descriptors in luaopen_GameInjector with table-driven trampolines.
+// Plugins register (name, GiType[ret,args...], native_fn) in module_init.
+// core.vm applies descriptors with a type-array trampoline (no per-shape enum explosion).
 
 #include "config/InjectorHostConfig.hpp"
 
 #include <cstdint>
+#include <cstddef>
 
 struct lua_State;
 
 namespace ds::plugin {
 
-// Fixed signature catalogue for auto trampolines (core.vm). Extend only when a
-// new shape appears — no general reflection.
-enum class GiSig : uint16_t {
-    // void (*)(bool)
-    V_Bool = 1,
-    // void (*)(int)
-    V_I32 = 2,
-    // void (*)()
-    V_void = 3,
-    // int (*)(int, int)
-    I32_I32_I32 = 4,
-    // int (*)(char, char, bool)
-    I32_I8_I8_Bool = 5,
-    // const char *(*)()
-    CString_void = 6,
-    // void (*)(uint32_t, uint32_t, uint32_t)
-    V_U32_U32_U32 = 7,
-    // void *(*)(void *, int64_t)
-    Ptr_Ptr_I64 = 8,
-    // void (*)(opt i32, opt i32, opt i32)  — three optional ints (nil = absent)
-    V_OptI32x3 = 9,
-    // const NetSimStats *(*)() → Lua table (layout known to core.vm)
-    Table_NetSimStats = 10,
-    // int (*)(lua_State *) — install as lua_CFunction as-is
-    LuaCFunction = 11,
-    // int (*)()
-    I32_void = 12,
-    // bool (*)(bool)
-    Bool_Bool = 13,
+// Scalar / special types used in GameInjector native exports.
+// Signature = array: types[0] = return, types[1..] = parameters.
+enum class GiType : uint8_t {
+    Void = 0,
+    Bool,
+    I8,
+    I32,
+    U32,
+    I64,
+    F64,
+    CString,       // const char*
+    LightUserdata, // void*
+    OptI32,        // optional int: nil → null const int* to native (C ABI)
+    NetSimStats,   // const NetSimStats*(*)() → Lua table (core.vm pack)
+    LuaCFunction,  // int(*)(lua_State*): install as-is; must be sole types[0]
 };
+
+inline constexpr size_t kGiMaxTypes = 1 + 8; // ret + up to 8 args
 
 struct GameInjectorExport {
-    const char *name = nullptr; // stable literal
-    GiSig sig = GiSig::V_void;
-    void *fn = nullptr;         // native pointer matching sig
+    const char *name = nullptr;
+    GiType types[kGiMaxTypes]{};
+    uint8_t ntypes = 0; // >= 1
+    void *fn = nullptr;
 };
 
-// Window-gated write (PluginHost).
-bool register_game_injector_export(const char *name, GiSig sig, void *fn);
+// Window-gated write (PluginHost). types[0]=ret, types[1..ntypes)=args.
+// ntypes must be in [1, kGiMaxTypes]. Copies the type array into registry storage.
+bool register_game_injector_export(const char *name, const GiType *types, size_t ntypes, void *fn);
 
-// Snapshot for core.vm (names point into registry storage until process exit).
+// Snapshot for core.vm (name/types point into registry storage until process exit).
 int copy_game_injector_exports(GameInjectorExport *out, int max);
+
+// Helper for brace-init at call sites: register_game_injector_export(host, "x", {GiType::I32, GiType::I32, GiType::I32}, fn)
+template <size_t N>
+inline bool register_game_injector_export(const char *name, const GiType (&types)[N], void *fn) {
+    static_assert(N >= 1 && N <= kGiMaxTypes, "GiType signature length");
+    return register_game_injector_export(name, types, N, fn);
+}
 
 } // namespace ds::plugin
 

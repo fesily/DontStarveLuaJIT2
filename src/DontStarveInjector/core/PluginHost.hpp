@@ -45,7 +45,12 @@ public:
     DS_PLUGIN_HOST_API bool register_service(std::string_view name, void *fn);
     // Register a typed GameInjector Lua export (module_init window only).
     // core.vm applies GiSig trampolines at luaopen_GameInjector.
-    DS_PLUGIN_HOST_API bool register_game_injector_export(const char *name, ds::plugin::GiSig sig, void *fn);
+    DS_PLUGIN_HOST_API bool register_game_injector_export(const char *name, const ds::plugin::GiType *types, size_t ntypes, void *fn);
+    // Brace-init helper: register_game_injector_export("x", {GiType::I32, GiType::I32}, fn)
+    template <size_t N>
+    bool register_game_injector_export(const char *name, const ds::plugin::GiType (&types)[N], void *fn) {
+        return register_game_injector_export(name, types, N, fn);
+    }
     DS_PLUGIN_HOST_API void begin_module_registration();
     DS_PLUGIN_HOST_API void end_module_registration();
     DS_PLUGIN_HOST_API ConfigSchemaRegistry &option_schema();

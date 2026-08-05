@@ -196,7 +196,7 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_SetNextRpcInfo(std::optional<PacketPr
     next_orderingChannel = std::move(orderingChannel);
 }
 
-// C ABI for GiSig::V_OptI32x3 trampoline (null pointer = absent).
+// C ABI for GiType::OptI32 x3 trampoline (null pointer = absent).
 extern "C" void DS_LUAJIT_SetNextRpcInfo_C(const int *prio, const int *rel, const int *ch) {
     std::optional<PacketPriority> p;
     std::optional<PacketReliability> r;
@@ -343,9 +343,11 @@ void RegisterNetworkRpcHostServices(ds::plugin::PluginHost *host) {
         "DS_LUAJIT_SetNextRpcInfo_C",
         reinterpret_cast<void *>(&DS_LUAJIT_SetNextRpcInfo_C));
     (void) host->register_game_injector_export(
-        "DS_LUAJIT_EntityNetWorkExtension_Register", ds::plugin::GiSig::Ptr_Ptr_I64,
+        "DS_LUAJIT_EntityNetWorkExtension_Register",
+        {ds::plugin::GiType::LightUserdata, ds::plugin::GiType::LightUserdata, ds::plugin::GiType::I64},
         reinterpret_cast<void *>(&DS_LUAJIT_EntityNetWorkExtension_Register));
     (void) host->register_game_injector_export(
-        "DS_LUAJIT_SetNextRpcInfo", ds::plugin::GiSig::V_OptI32x3,
+        "DS_LUAJIT_SetNextRpcInfo",
+        {ds::plugin::GiType::Void, ds::plugin::GiType::OptI32, ds::plugin::GiType::OptI32, ds::plugin::GiType::OptI32},
         reinterpret_cast<void *>(&DS_LUAJIT_SetNextRpcInfo_C));
 }

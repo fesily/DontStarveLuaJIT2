@@ -5,12 +5,16 @@
 
 namespace ds::plugin {
 
-inline bool gi_export(PluginHost *host, const char *name, GiSig sig, void *fn) {
-    return host && host->register_game_injector_export(name, sig, fn);
+template <size_t N>
+inline bool gi_export(PluginHost *host, const char *name, const GiType (&types)[N], void *fn) {
+    return host && host->register_game_injector_export(name, types, N, fn);
 }
 
-// Convenience: export under the same name as a C identifier string.
-#define DS_GI_EXPORT(host, c_fn, sig) \
-    ::ds::plugin::gi_export((host), #c_fn, ::ds::plugin::GiSig::sig, reinterpret_cast<void *>(&(c_fn)))
+// DS_GI_EXPORT(host, DS_LUAJIT_foo, GiType::Void, GiType::Bool)
+#define DS_GI_EXPORT(host, c_fn, ...) \
+    ::ds::plugin::gi_export( \
+        (host), #c_fn, \
+        ::ds::plugin::GiType[]{__VA_ARGS__}, \
+        reinterpret_cast<void *>(&(c_fn)))
 
 } // namespace ds::plugin

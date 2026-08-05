@@ -1,5 +1,6 @@
 #include "GameInjectorLuaRegistry.hpp"
 
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -8,7 +9,8 @@ namespace {
 
 struct Entry {
     std::string name;
-    ds::plugin::GiSig sig = ds::plugin::GiSig::V_void;
+    ds::plugin::GiType types[ds::plugin::kGiMaxTypes]{};
+    uint8_t ntypes = 0;
     void *fn = nullptr;
 };
 
@@ -19,8 +21,12 @@ std::vector<Entry> g_exports;
 
 namespace ds::plugin {
 
-bool register_game_injector_export(const char *name, GiSig sig, void *fn) {
-    if (!name || !name[0] || !fn) {
+bool register_game_injector_export(const char *name, const GiType *types, size_t ntypes, void *fn) {
+    if (!name || !name[0] || !fn || !types || ntypes < 1 || ntypes > kGiMaxTypes) {
+        return false;
+    }
+    // LuaCFunction must be alone.
+    if (types[0] == GiType::LuaCFunction && ntypes != 1) {
         return false;
     }
     std::lock_guard lock(g_mu);
@@ -29,7 +35,12 @@ bool register_game_injector_export(const char *name, GiSig sig, void *fn) {
             return false;
         }
     }
-    g_exports.push_back(Entry{std::string{name}, sig, fn});
+    Entry ent;
+    ent.name = name;
+    ent.ntypes = static_cast<uint8_t>(ntypes);
+    ent.fn = fn;
+    std::memcpy(ent.types, types, ntypes * sizeof(GiType));
+    g_exports.push_back(std::move(ent));
     return true;
 }
 
@@ -41,9 +52,11 @@ int copy_game_injector_exports(GameInjectorExport *out, int max) {
     }
     const int write = n < max ? n : max;
     for (int i = 0; i < write; ++i) {
-        out[i].name = g_exports[static_cast<size_t>(i)].name.c_str();
-        out[i].sig = g_exports[static_cast<size_t>(i)].sig;
-        out[i].fn = g_exports[static_cast<size_t>(i)].fn;
+        const auto &e = g_exports[static_cast<size_t>(i)];
+        out[i].name = e.name.c_str();
+        out[i].ntypes = e.ntypes;
+        out[i].fn = e.fn;
+        std::memcpy(out[i].types, e.types, e.ntypes * sizeof(GiType));
     }
     return n;
 }

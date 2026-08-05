@@ -54,7 +54,9 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     host->register_service("DS_LUAJIT_replace_network_tick",
                              reinterpret_cast<void *>(&DS_LUAJIT_replace_network_tick));
         (void) host->register_game_injector_export(
-        "DS_LUAJIT_replace_network_tick", ds::plugin::GiSig::I32_I8_I8_Bool, reinterpret_cast<void *>(&DS_LUAJIT_replace_network_tick));
+        "DS_LUAJIT_replace_network_tick",
+        {ds::plugin::GiType::I32, ds::plugin::GiType::I8, ds::plugin::GiType::I8, ds::plugin::GiType::Bool},
+        reinterpret_cast<void *>(&DS_LUAJIT_replace_network_tick));
     host->register_plugin(&g_plugin);
     std::fprintf(stderr, "[plugin_network_tick] module init registered network.tick\n");
     return true;
