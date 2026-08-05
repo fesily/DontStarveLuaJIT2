@@ -147,6 +147,16 @@ configuration_options = {
         default = true,
     },
     {
+        name = "AllowLocalNewerWorkshopVersion",
+        label = translate({ en = "Allow Local Newer Than Workshop", zh = "允许本地版本新于工坊" }),
+        hover = translate({
+            zh = "本模组本地 version 不低于创意工坊时，不显示“模组过期/需要更新”警告（开发/未同步工坊时有用）",
+            en = "When this mod's local version is not older than the Steam Workshop version, suppress the out-of-date warning (useful while developing or before Workshop catches up)"
+        }),
+        options = toggle,
+        default = true,
+    },
+    {
         name = "NetworkOpt",
         label = translate({ en = "Network RPC Optimizations", zh = "网络RPC优化" }),
         hover = translate({

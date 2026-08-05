@@ -434,7 +434,48 @@ local function main()
 		return false
 	end
 
+
+	-- Klei IsModOutOfDate uses string inequality vs TheSim:GetWorkshopVersion.
+	-- Local-newer workshop copies of this mod would still show as "out of date".
+	-- When enabled, report local version for this modname if local >= workshop.
+	local function InstallAllowLocalNewerWorkshopVersionHook()
+		if GetModConfigData("AllowLocalNewerWorkshopVersion") == false then
+			return
+		end
+		if TheSim == nil or type(TheSim.GetWorkshopVersion) ~= "function" then
+			return
+		end
+		if TheSim.__luajit_allow_local_newer_workshop_version then
+			return
+		end
+		TheSim.__luajit_allow_local_newer_workshop_version = true
+		local old_GetWorkshopVersion = TheSim.GetWorkshopVersion
+		function TheSim:GetWorkshopVersion(name, ...)
+			local workshop_version = old_GetWorkshopVersion(self, name, ...)
+			if name ~= modname then
+				return workshop_version
+			end
+			if type(workshop_version) ~= "string" or workshop_version == "" then
+				return workshop_version
+			end
+			local local_info = KnownModIndex and KnownModIndex:GetModInfo(modname)
+			local local_version = local_info and local_info.version
+			if type(local_version) ~= "string" or local_version == "" then
+				local_version = modinfo and modinfo.version
+			end
+			if type(local_version) ~= "string" or local_version == "" then
+				return workshop_version
+			end
+			if Version2Number(local_version) >= Version2Number(workshop_version) then
+				return local_version
+			end
+			return workshop_version
+		end
+		print("AllowLocalNewerWorkshopVersion: hooked TheSim:GetWorkshopVersion for " .. tostring(modname))
+	end
+
 	function _M:AlwaysLoad(injector, VersionMissMatch)
+		InstallAllowLocalNewerWorkshopVersionHook()
 		AddGamePostInit(function()
 			local workshop_dir_root = self.workshop_dir_root
 			local PopupDialogScreen = require "screens/popupdialog"
