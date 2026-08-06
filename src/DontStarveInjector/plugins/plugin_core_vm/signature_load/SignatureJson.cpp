@@ -10,22 +10,61 @@
 
 #include "SignatureJson.hpp"
 #include "util/GameVersionFile.hpp"
-#include "core/PluginPath.hpp"
 #include "frida-gum.h"
 #include "disasm.h"
 #include "MemorySignature.hpp"
 #include "ModuleSections.hpp"
 #include <filesystem>
+#ifdef _WIN32
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <Windows.h>
+#else
+#  include <dlfcn.h>
+#endif
 
 using namespace std::literals;
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(Signatures, version, funcs);
 
+// Directory of the already-mapped real Injector module (mod_root/bin64 after
+// bootstrap). Empty when Injector is not loaded (tools / first boot). Avoid
+// PluginPath / DS_INJECTOR_CXX_API here: ds_signature is a STATIC lib also
+// linked into signature_updater, which does not import Injector.dll.
+static std::filesystem::path injector_dir_if_loaded() {
+#ifdef _WIN32
+    HMODULE inj = GetModuleHandleW(L"Injector");
+    if (!inj) {
+        inj = GetModuleHandleA("Injector.dll");
+    }
+    if (!inj) {
+        return {};
+    }
+    wchar_t buf[MAX_PATH];
+    const DWORD n = GetModuleFileNameW(inj, buf, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) {
+        return {};
+    }
+    return std::filesystem::path(buf).parent_path();
+#else
+    void *sym = dlsym(RTLD_DEFAULT, "HookStartupEntry");
+    if (!sym) {
+        return {};
+    }
+    Dl_info info{};
+    if (!dladdr(sym, &info) || !info.dli_fname) {
+        return {};
+    }
+    return std::filesystem::path(info.dli_fname).parent_path();
+#endif
+}
+
 static std::string get_signatures_filename(bool isClient) {
     const auto file = "signatures_"s + (isClient ? "client" : "server") + ".json";
     // Prefer mod-local bin64 (same directory as real Injector). Fall back to CWD
     // absolute path for legacy game-bin64 installs / first-write creation.
-    const auto inj = ds::plugin::injector_module_dir();
+    const auto inj = injector_dir_if_loaded();
     if (!inj.empty()) {
         return (inj / file).string();
     }
