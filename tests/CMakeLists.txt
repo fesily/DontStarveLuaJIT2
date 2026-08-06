@@ -50,6 +50,21 @@ set(PLUGIN_HOST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/ConfigSchema.cpp
 )
 
+# ConfigSchema.cpp includes generated src/modinfo.hpp (create_modinfo_hpp).
+# Any target that compiles ConfigSchema.cpp must depend on that custom target.
+set(DS_CONFIG_SCHEMA_TARGETS
+    test_plugin_host_graph
+    test_config_schema
+    test_config_source_whitelist
+    test_config_resolve
+    test_config_view_build
+    test_dynamic_plugin_loader
+    test_plugin_services
+)
+# Targets added later that also use PLUGIN_HOST_SOURCES / ConfigSchema should
+# call: add_dependencies(<tgt> create_modinfo_hpp)
+
+
 add_executable(test_plugin_host_graph
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_host_graph.cpp
     ${PLUGIN_HOST_SOURCES})
@@ -318,3 +333,10 @@ add_test(
         -DLUAJIT_GENGC_TARGET_FILE_NAME_FILE=${CMAKE_BINARY_DIR}/$<CONFIG>/luajit_gengc_target_file_name.txt
         -P ${CMAKE_CURRENT_SOURCE_DIR}/luajit_gengc_output_name_test.cmake
 )
+
+# Ensure generated modinfo.hpp exists before compiling ConfigSchema.cpp.
+foreach(_ds_cfg_tgt IN LISTS DS_CONFIG_SCHEMA_TARGETS)
+    if (TARGET ${_ds_cfg_tgt})
+        add_dependencies(${_ds_cfg_tgt} create_modinfo_hpp)
+    endif()
+endforeach()
