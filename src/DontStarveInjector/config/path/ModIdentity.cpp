@@ -1,9 +1,10 @@
 #include "ModIdentity.hpp"
 
+#include "config/path/ModFolderAliases.hpp"
 #include "config/sources/LuajitConfigFile.hpp"
 
 #include <algorithm>
-#include <array>
+#include <cctype>
 #include <filesystem>
 #include <string_view>
 
@@ -12,14 +13,6 @@ namespace {
 
 using namespace std::string_view_literals;
 
-constexpr auto kPrimaryWorkshopModName = "workshop-3444078585"sv;
-constexpr std::array<std::string_view, 5> kStaticModAliases = {
-    kPrimaryWorkshopModName,
-    "3444078585"sv,
-    "luajit"sv,
-    "luajit2"sv,
-    "DontStarveLuaJit2"sv,
-};
 
 void add_alias(std::vector<std::string> &aliases, std::string_view alias) {
     if (alias.empty()) {
@@ -90,7 +83,7 @@ ResolvedModIdentity build_mod_identity() {
         add_alias_variants(identity.aliases, identity.modid);
     }
 
-    for (auto alias : kStaticModAliases) {
+    for (auto alias : kModFolderAliases) {
         add_alias_variants(identity.aliases, alias);
     }
     add_alias_variants(identity.aliases, identity.canonical_modname);

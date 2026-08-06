@@ -172,6 +172,8 @@ endif ()
 install(TARGETS Injector RUNTIME DESTINATION . COMPONENT injector)
 
 
+add_subdirectory(loader/bootstrap)
+
 if (WIN32)
     add_subdirectory(loader)
 endif ()
