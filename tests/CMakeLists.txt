@@ -121,6 +121,7 @@ add_executable(test_dynamic_plugin_loader
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_dynamic_plugin_loader.cpp
     ${PLUGIN_HOST_SOURCES}
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/DynamicPluginLoader.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPath.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPendingUpdates.cpp)
 target_include_directories(test_dynamic_plugin_loader PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
@@ -165,7 +166,8 @@ add_test(NAME plugin_proxy_url COMMAND test_plugin_proxy_url)
 add_executable(test_plugin_local_inventory
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_local_inventory.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginLocalInventory.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginPinConfig.cpp)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_manager/PluginPinConfig.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPath.cpp)
 target_include_directories(test_plugin_local_inventory PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
 target_compile_features(test_plugin_local_inventory PRIVATE cxx_std_23)

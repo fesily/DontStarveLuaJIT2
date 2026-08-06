@@ -1,4 +1,5 @@
 #include "PluginLocalInventory.hpp"
+#include "core/PluginPath.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -8,18 +9,6 @@
 #include <fstream>
 #include <unordered_map>
 #include <unordered_set>
-
-#if defined(_WIN32)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
 
 namespace ds::plugin {
 namespace {
@@ -75,30 +64,6 @@ bool is_meta_filename(std::string_view name) {
 std::string meta_stem(std::string_view name) {
     constexpr std::string_view suffix = ".meta.json";
     return std::string(name.substr(0, name.size() - suffix.size()));
-}
-
-std::filesystem::path injector_module_dir() {
-#if defined(_WIN32)
-    HMODULE mod = nullptr;
-    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                            reinterpret_cast<LPCWSTR>(&injector_module_dir), &mod) ||
-        !mod) {
-        return {};
-    }
-    wchar_t buf[MAX_PATH];
-    const DWORD n = GetModuleFileNameW(mod, buf, MAX_PATH);
-    if (n == 0 || n >= MAX_PATH) {
-        return {};
-    }
-    return std::filesystem::path(buf).parent_path();
-#else
-    Dl_info info{};
-    if (dladdr(reinterpret_cast<const void *>(&injector_module_dir), &info) && info.dli_fname) {
-        return std::filesystem::path(info.dli_fname).parent_path();
-    }
-    return {};
-#endif
 }
 
 struct Accum {
@@ -248,35 +213,13 @@ std::vector<LocalPluginEntry> scan_local_inventory(const std::filesystem::path &
     return out;
 }
 
-std::filesystem::path plugins_dir_from_module_dir(const std::filesystem::path &module_dir) {
-    if (module_dir.empty()) {
-        return {};
-    }
-    // Prefer the path as-is when this module already lives under plugins/
-    // (plugin_manager.dll is deployed to <InjectorDir>/plugins/).
-    const auto leaf = module_dir.filename();
-    if (!leaf.empty() && iequals_ascii(leaf.string(), "plugins")) {
-        return module_dir;
-    }
-    // Also accept paths whose string form ends with /plugins (defensive for
-    // root-edge cases where filename() may be empty on some platforms).
-    const auto s = module_dir.generic_string();
-    if (s.size() >= 8) {
-        const auto tail = std::string_view(s).substr(s.size() - 8);
-        if (iequals_ascii(tail, "/plugins") || iequals_ascii(tail, "\\plugins")) {
-            return module_dir;
-        }
-    }
-    if (iequals_ascii(s, "plugins")) {
-        return module_dir;
-    }
-    return module_dir / "plugins";
-}
-
 std::filesystem::path resolve_plugins_dir() {
-    if (const char *env = std::getenv("DS_LUAJIT_PLUGIN_DIR"); env && *env) {
-        return std::filesystem::path(env);
+    // Prefer first entry of shared search policy when available.
+    auto dirs = default_plugin_search_dirs();
+    if (!dirs.empty()) {
+        return dirs.front();
     }
+    // Fallback: module-relative plugins dir even if missing on disk.
     return plugins_dir_from_module_dir(injector_module_dir());
 }
 

@@ -12,7 +12,9 @@
 #include "config/ResolvedConfig.hpp"
 #include "core/RegisterBuiltinPlugins.hpp"
 #include "core/DynamicPluginLoader.hpp"
+#include "core/PluginPath.hpp"
 #include "core/CoreVmBootstrap.hpp"
+
 
 
 
@@ -41,6 +43,8 @@
 #include <frida-gum.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
+
+#include "config/sources/LuajitConfigFile.hpp"
 
 #if !ONLY_LUA51
 #include <lua.h>
@@ -190,6 +194,15 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     // Steam UGC workshop path hook lives in plugin_core_vm (with gameio).
 
     LoadGameModConfig();
+
+    // Production modmain path for shared plugin search (parent(modmain)/plugins).
+    // Must be registered before DynamicPluginLoader::load_all / default_plugin_search_dirs.
+    ds::plugin::set_modmain_path_provider([]() -> std::string {
+        if (auto cfg = luajit_config::read_from_file(); cfg) {
+            return cfg->modmain_path;
+        }
+        return {};
+    });
 
     // PluginHost: static RegisterBuiltinPlugins (empty extension point) then
     // DynamicPluginLoader (network.rpc / render.vbpool / render.angle / core.vm / …).

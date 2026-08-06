@@ -1,4 +1,5 @@
 #include "CoreVmBootstrap.hpp"
+#include "PluginPath.hpp"
 
 #include "config/ResolvedConfig.hpp"
 #include "plugins/plugin_core_vm/VmConfig.hpp"
@@ -39,27 +40,36 @@ constexpr const char *kCoreVmModuleName = "plugin_core_vm.so";
 
 constexpr const char *kRunExportName = "ds_core_vm_run_signature_and_replace";
 
-std::filesystem::path injector_module_dir() {
+void *load_core_vm_from_search_dirs() {
+    for (const auto &dir : ds::plugin::default_plugin_search_dirs()) {
+        (void)ds::plugin::configure_plugin_dll_search({dir});
+        const auto path = dir / kCoreVmModuleName;
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(path, ec)) {
+            continue;
+        }
 #if defined(_WIN32)
-    HMODULE mod = nullptr;
-    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                            reinterpret_cast<LPCWSTR>(&injector_module_dir), &mod) ||
-        !mod) {
-        return {};
-    }
-    wchar_t buf[MAX_PATH];
-    const DWORD n = GetModuleFileNameW(mod, buf, MAX_PATH);
-    if (n == 0 || n >= MAX_PATH) {
-        return {};
-    }
-    return std::filesystem::path(buf).parent_path();
+        const UINT prev = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+        SetLastError(0);
+        HMODULE handle = LoadLibraryExW(path.wstring().c_str(), nullptr,
+                                        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+                                            LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
+                                            LOAD_LIBRARY_SEARCH_USER_DIRS);
+        if (!handle) {
+            SetLastError(0);
+            handle = LoadLibraryW(path.wstring().c_str());
+        }
+        SetErrorMode(prev);
+        if (handle) {
+            return static_cast<void *>(handle);
+        }
 #else
-    Dl_info info{};
-    if (dladdr(reinterpret_cast<const void *>(&injector_module_dir), &info) && info.dli_fname) {
-        return std::filesystem::path(info.dli_fname).parent_path();
-    }
-    return {};
+        if (void *h = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL)) {
+            return h;
+        }
 #endif
+    }
+    return nullptr;
 }
 
 void *core_vm_module_handle() {
@@ -77,31 +87,6 @@ void *core_vm_module_handle() {
 #endif
 }
 
-void *load_core_vm_from_plugins_dir() {
-    const auto dir = injector_module_dir();
-    if (dir.empty()) {
-        return nullptr;
-    }
-    const auto path = dir / "plugins" / kCoreVmModuleName;
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(path, ec)) {
-        return nullptr;
-    }
-#if defined(_WIN32)
-    const UINT prev = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
-    SetLastError(0);
-    HMODULE handle = LoadLibraryExW(path.wstring().c_str(), nullptr,
-                                    LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
-    if (!handle) {
-        SetLastError(0);
-        handle = LoadLibraryW(path.wstring().c_str());
-    }
-    SetErrorMode(prev);
-    return static_cast<void *>(handle);
-#else
-    return dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
-#endif
-}
 
 void *lookup_symbol(void *handle, const char *name) {
     if (!handle || !name) {
@@ -119,7 +104,7 @@ void *ensure_handle_locked() {
     if (void *h = core_vm_module_handle()) {
         return h;
     }
-    return load_core_vm_from_plugins_dir();
+    return load_core_vm_from_search_dirs();
 }
 
 } // namespace

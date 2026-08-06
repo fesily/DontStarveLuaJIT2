@@ -29,10 +29,12 @@ std::vector<LocalPluginEntry> scan_local_inventory(const std::filesystem::path &
 // Pure path helper: if module_dir's last component is "plugins", use it as-is
 // (plugin_manager lives under <InjectorDir>/plugins/); otherwise append "plugins"
 // (Injector-style layout). Empty input → empty.
+// Defined by core/PluginPath.cpp (shared ds::plugin symbol).
 std::filesystem::path plugins_dir_from_module_dir(const std::filesystem::path &module_dir);
 
-// DS_LUAJIT_PLUGIN_DIR env first; else plugins_dir_from_module_dir(this module's dir).
-// May be empty if both env and module path are unavailable.
+// Shared plugin search policy (default_plugin_search_dirs front), else
+// plugins_dir_from_module_dir(injector_module_dir()) even if missing on disk.
+// May be empty if both search policy and module path are unavailable.
 std::filesystem::path resolve_plugins_dir();
 
 // Channel cache: plugin id → version from last fetched remote manifest (empty offline).

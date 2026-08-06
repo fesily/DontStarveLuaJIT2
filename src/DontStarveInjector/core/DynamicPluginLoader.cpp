@@ -1,11 +1,12 @@
 #include "DynamicPluginLoader.hpp"
 #include "PluginModuleAbi.hpp"
+#include "PluginPath.hpp"
 #include "PluginPendingUpdates.hpp"
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <unordered_set>
+
 
 #if defined(_WIN32)
 #  ifndef NOMINMAX
@@ -31,11 +32,13 @@ void *load_library(const std::filesystem::path &path, DWORD *out_err = nullptr) 
     // Avoid modal "Bad Image" / critical-error UI when probing non-PE files under CTest.
     const UINT prev = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
     SetLastError(0);
-    // Prefer LoadLibraryEx so dependencies resolve from the DLL's directory and
-    // the already-mapped Injector module (same basename) without PATH games.
+    // Prefer LoadLibraryEx so dependencies resolve from the DLL's directory,
+    // USER_DIRS (plugins + plugins/deps via configure_plugin_dll_search), and
+    // default system dirs — without PATH games.
     void *handle = static_cast<void *>(LoadLibraryExW(
         path.wstring().c_str(), nullptr,
-        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS));
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
+            LOAD_LIBRARY_SEARCH_USER_DIRS));
     if (!handle) {
         // Fallback for older search-path combinations / non-standard layouts.
         SetLastError(0);
@@ -58,20 +61,6 @@ void close_library(void *handle) {
     }
 }
 
-std::filesystem::path injector_module_dir() {
-    HMODULE mod = nullptr;
-    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                            reinterpret_cast<LPCWSTR>(&injector_module_dir), &mod) ||
-        !mod) {
-        return {};
-    }
-    wchar_t buf[MAX_PATH];
-    const DWORD n = GetModuleFileNameW(mod, buf, MAX_PATH);
-    if (n == 0 || n >= MAX_PATH) {
-        return {};
-    }
-    return std::filesystem::path(buf).parent_path();
-}
 #else
 void *load_library(const std::filesystem::path &path) {
     return dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
@@ -87,13 +76,6 @@ void close_library(void *handle) {
     }
 }
 
-std::filesystem::path injector_module_dir() {
-    Dl_info info{};
-    if (dladdr(reinterpret_cast<const void *>(&injector_module_dir), &info) && info.dli_fname) {
-        return std::filesystem::path(info.dli_fname).parent_path();
-    }
-    return {};
-}
 #endif
 
 bool has_plugin_extension(const std::filesystem::path &path) {
@@ -122,19 +104,6 @@ std::string skip_reason(const std::filesystem::path &path, const char *reason) {
     return path.string() + ": " + reason;
 }
 
-void try_push_dir(std::vector<std::filesystem::path> &out, std::unordered_set<std::string> &seen,
-                  const std::filesystem::path &dir) {
-    std::error_code ec;
-    if (dir.empty() || !std::filesystem::is_directory(dir, ec)) {
-        return;
-    }
-    const auto canon = std::filesystem::weakly_canonical(dir, ec);
-    const auto key = (ec ? dir : canon).string();
-    if (!seen.insert(key).second) {
-        return;
-    }
-    out.push_back(ec ? dir : canon);
-}
 
 } // namespace
 
@@ -145,24 +114,14 @@ DynamicPluginLoader::~DynamicPluginLoader() {
 }
 
 std::vector<std::filesystem::path> DynamicPluginLoader::default_search_dirs() {
-    std::vector<std::filesystem::path> dirs;
-    std::unordered_set<std::string> seen;
-
-    if (const char *env = std::getenv("DS_LUAJIT_PLUGIN_DIR"); env && *env) {
-        try_push_dir(dirs, seen, std::filesystem::path(env));
-    }
-
-    const auto mod_dir = injector_module_dir();
-    if (!mod_dir.empty()) {
-        try_push_dir(dirs, seen, mod_dir / "plugins");
-    }
-
-    return dirs;
+    return default_plugin_search_dirs();
 }
 
 DynamicLoadReport DynamicPluginLoader::load_all(PluginHost &host) {
     DynamicLoadReport report;
-    for (const auto &dir : default_search_dirs()) {
+    const auto dirs = default_search_dirs();
+    (void)configure_plugin_dll_search(dirs);
+    for (const auto &dir : dirs) {
         auto partial = load_directory(host, dir);
         report.loaded_modules.insert(report.loaded_modules.end(), partial.loaded_modules.begin(),
                                      partial.loaded_modules.end());
@@ -177,6 +136,9 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
     if (!std::filesystem::is_directory(dir, ec)) {
         return report;
     }
+
+    // Test seam / per-root: register this plugins root (and deps/) for USER_DIRS.
+    (void)configure_plugin_dll_search({dir});
 
     // Apply manager/manual drops from update_pending/ before any LoadLibrary.
     (void)apply_pending_plugin_updates(dir);

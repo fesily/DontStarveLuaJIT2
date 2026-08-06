@@ -8,7 +8,9 @@ ds_add_dynamic_plugin(plugin_manager
     PluginHttp.cpp
     PluginHash.cpp
     PluginZipExtract.cpp
-    PluginApply.cpp)
+    PluginApply.cpp
+    # Shared search policy (not exported from Injector import lib).
+    ${DONTSTARVEINJECTOR_ROOT}/core/PluginPath.cpp)
 target_link_libraries(plugin_manager PRIVATE
     nlohmann_json::nlohmann_json
     libzip::zip)
