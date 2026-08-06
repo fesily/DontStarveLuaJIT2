@@ -19,7 +19,7 @@ target_link_libraries(signature_checker PRIVATE ${FRIDA_GUM_LIBRARIES})
 
 target_link_libraries(signature_checker PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(signature_checker PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
-target_link_libraries(signature_checker PRIVATE function_relocation)
+target_link_libraries(signature_checker PRIVATE function_relocation_static)
 target_link_libraries(signature_checker PRIVATE ds_signature)
 target_include_directories(signature_checker PRIVATE ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/signature_load)
 target_link_libraries(signature_checker PRIVATE spdlog::spdlog)

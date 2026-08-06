@@ -64,7 +64,7 @@ target_include_directories(signature_updater PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
 target_link_libraries(signature_updater PRIVATE ${FRIDA_GUM_LIBRARIES})
 
 target_link_libraries(signature_updater PRIVATE nlohmann_json::nlohmann_json)
-target_link_libraries(signature_updater PRIVATE function_relocation)
+target_link_libraries(signature_updater PRIVATE function_relocation_static)
 target_link_libraries(signature_updater PRIVATE ds_signature)
 target_include_directories(signature_updater PRIVATE ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/signature_load)
 target_include_directories(signature_updater PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
