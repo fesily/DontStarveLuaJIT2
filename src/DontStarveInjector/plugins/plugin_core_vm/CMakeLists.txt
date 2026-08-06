@@ -1,4 +1,4 @@
-# core.vm — optional Signature + GameLua + game I/O. All platforms.
+# core.vm — required Signature + GameLua + game I/O (force-loaded at inject). All platforms.
 # Gum symbols come from Injector re-exports (FridaGum.def on MSVC).
 #
 # Layout:

@@ -5,7 +5,7 @@ namespace ds::plugin {
 
 // Path A static registry is intentionally empty after Phase B migration.
 // EarlyNative plugins ship as dynamic modules under plugins/:
-//   plugin_core_vm       → core.vm   (optional JIT path; Signature + GameLua)
+//   plugin_core_vm       → core.vm   (required JIT path; Signature + GameLua)
 //   plugin_network_rpc   → network.rpc
 //   plugin_network_sim   → network.sim
 //   plugin_save_fork     → save.fork
@@ -19,7 +19,8 @@ namespace ds::plugin {
 // before load_all so cascade parse and BuildConfigView share the same keys.
 // Host still calls RegisterBuiltinPlugins before DynamicPluginLoader so the
 // extension point remains for true L0-only static plugins if ever needed.
-// Do not register core.vm or debug.profiler here — both are optional dynamic
+// core.vm is required at runtime (force-loaded by CoreVmBootstrap); still dynamic MODULE.
+// Do not register core.vm or debug.profiler here — both are dynamic
 // modules (missing DLL soft-skips that feature; inject continues).
 void RegisterBuiltinPlugins(PluginHost &host) {
     (void) host;

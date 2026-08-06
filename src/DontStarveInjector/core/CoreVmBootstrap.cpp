@@ -113,19 +113,19 @@ bool EnsureCoreVmModuleLoaded() {
     static std::once_flag once;
     static bool loaded = false;
     std::call_once(once, [] {
-        // CI / harness: pretend core.vm is absent without renaming the DLL.
+        // CI / harness only: pretend core.vm is absent without renaming the DLL.
         if (const char *env = std::getenv("DS_LUAJIT_FORCE_NO_CORE_VM"); env && env[0] == '1') {
             loaded = false;
-            std::fprintf(stderr, "[core.vm] module not found (optional): %s (DS_LUAJIT_FORCE_NO_CORE_VM=1)\n",
-                         kCoreVmModuleName);
+            std::fprintf(stderr,
+                         "[core.vm] FORCE_NO_CORE_VM=1 — treating module as absent (CI harness)\n");
             return;
         }
         void *h = ensure_handle_locked();
         loaded = h != nullptr;
         if (loaded) {
-            std::fprintf(stderr, "[core.vm] module mapped: %s\n", kCoreVmModuleName);
+            std::fprintf(stderr, "[core.vm] module mapped (required): %s\n", kCoreVmModuleName);
         } else {
-            std::fprintf(stderr, "[core.vm] module not found (optional): %s\n", kCoreVmModuleName);
+            std::fprintf(stderr, "[core.vm] REQUIRED module missing: %s\n", kCoreVmModuleName);
         }
     });
     return loaded;
@@ -146,10 +146,19 @@ RunSigReplaceFn GetRunSignatureAndReplaceFn() {
     return reinterpret_cast<RunSigReplaceFn>(lookup_symbol(h, kRunExportName));
 }
 
-bool TryRunSignatureAndReplace(const BootstrapArgs &args) {
-    // Process env (CI harness) and game option DisableJITWhenServer soft-skip the
-    // signature/replace path only. L0 Inject continues either way (OB-S1).
+[[noreturn]] static void hard_fail(const char *msg) {
+#ifdef _WIN32
+    MessageBoxA(NULL, msg, "core.vm required", 0);
+#else
+    std::fprintf(stderr, "[core.vm] FATAL: %s\n", msg);
+    std::fflush(stderr);
+#endif
+    std::exit(1);
+}
+
+bool ForceRunSignatureAndReplace(const BootstrapArgs &args) {
     // Prefer calling after refresh_cascade_after_plugins so VM schema keys exist.
+    // Intentional soft-skip only: server VM disable flags.
     if (!args.is_client) {
         if (const char *env = std::getenv("DS_LUAJIT_FORCE_DISABLE_VM"); env && env[0] == '1') {
             std::fprintf(stderr,
@@ -168,20 +177,42 @@ bool TryRunSignatureAndReplace(const BootstrapArgs &args) {
         }
     }
 
-    auto *fn = GetRunSignatureAndReplaceFn();
-    if (!fn) {
+    // Required module: CI may opt out with DS_LUAJIT_FORCE_NO_CORE_VM=1.
+    if (const char *env = std::getenv("DS_LUAJIT_FORCE_NO_CORE_VM"); env && env[0] == '1') {
         std::fprintf(stderr,
-                     "[core.vm] ds_core_vm_run_signature_and_replace missing — "
-                     "skipping VM signature/replace\n");
+                     "[core.vm] FORCE_NO_CORE_VM=1 — skipping force load (CI harness)\n");
         return false;
     }
+
+    if (!EnsureCoreVmModuleLoaded()) {
+        hard_fail("required plugin_core_vm is missing or failed to load "
+                  "(expected under Mod/plugins/). Install RelWithDebInfo/Debug "
+                  "plugins component, or set DS_LUAJIT_FORCE_NO_CORE_VM=1 for CI.");
+    }
+
+    auto *fn = GetRunSignatureAndReplaceFn();
+    if (!fn) {
+        hard_fail("plugin_core_vm loaded but export "
+                  "ds_core_vm_run_signature_and_replace is missing");
+    }
+
+    std::fprintf(stderr, "[core.vm] force-running signature + ReplaceLuaModule\n");
+    std::fflush(stderr);
     if (fn(&args)) {
+        std::fprintf(stderr, "[core.vm] signature + ReplaceLuaModule OK\n");
+        std::fflush(stderr);
         return true;
     }
+    // Soft miss inside plugin (e.g. no luamodule base) returns false without showError.
     std::fprintf(stderr,
                  "[core.vm] ds_core_vm_run_signature_and_replace returned false — "
-                 "skipping VM signature/replace\n");
+                 "soft miss; inject continues\n");
+    std::fflush(stderr);
     return false;
+}
+
+bool TryRunSignatureAndReplace(const BootstrapArgs &args) {
+    return ForceRunSignatureAndReplace(args);
 }
 
 } // namespace ds::core_vm

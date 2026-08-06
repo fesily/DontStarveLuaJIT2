@@ -249,17 +249,17 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         // Merge late keys (VM from core.vm, business from plugins) and re-resolve.
         ds::config::refresh_cascade_after_plugins(g_plugin_host.option_schema());
 
-        // VM signature/replace after cascade has VM keys (DisableJITWhenServer / LuaVmType).
+        // core.vm is required: force-load plugin_core_vm and run signature/replace.
+        // Missing module/export aborts inject. Soft skip only for intentional VM disable
+        // (server DisableJITWhenServer / DS_LUAJIT_FORCE_DISABLE_VM) or soft miss.
         {
             ds::core_vm::BootstrapArgs args{};
             args.is_client = isClient;
             args.lua_module_base = 0;
             args.main_path = nullptr;
-            if (!ds::core_vm::TryRunSignatureAndReplace(args)) {
-                // Hard failures call showError inside plugin_core_vm; soft skip when
-                // disabled, module/export missing, or soft miss (no luamodule base).
-                spdlog::warn("core.vm signature/replace path skipped — continuing inject");
-                std::fprintf(stderr, "[core.vm] signature/replace path skipped — continuing inject\n");
+            if (!ds::core_vm::ForceRunSignatureAndReplace(args)) {
+                spdlog::warn("core.vm signature/replace soft-skipped — continuing inject");
+                std::fprintf(stderr, "[core.vm] signature/replace soft-skipped — continuing inject\n");
             }
         }
 
