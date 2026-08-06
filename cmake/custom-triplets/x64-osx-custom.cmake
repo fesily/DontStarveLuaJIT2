@@ -1,8 +1,9 @@
-# custom-triplets/x64-windows-custom.cmake
+# custom-triplets/x64-osx-custom.cmake
 
 set(VCPKG_TARGET_ARCHITECTURE x64)
 set(VCPKG_CRT_LINKAGE dynamic)
 set(VCPKG_LIBRARY_LINKAGE dynamic)
+set(VCPKG_CMAKE_SYSTEM_NAME Darwin)
 
 # Keep CI installs release-only to avoid building both variants there.
 if ((DEFINED ENV{GITHUB_ACTIONS} AND NOT "$ENV{GITHUB_ACTIONS}" STREQUAL "")
