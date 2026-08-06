@@ -305,8 +305,33 @@ std::vector<std::filesystem::path> default_plugin_search_dirs() {
     return dirs;
 }
 
-std::filesystem::path plugins_deps_dir(const std::filesystem::path &plugins_root) {
-    return plugins_root / "deps";
+std::filesystem::path mod_root_from_plugins_dir(const std::filesystem::path &plugins_dir) {
+    if (plugins_dir.empty()) {
+        return {};
+    }
+    const auto leaf = plugins_dir.filename();
+    if (!leaf.empty() && iequals_ascii(leaf.string(), "plugins")) {
+        return plugins_dir.parent_path();
+    }
+    // Defensive: some platforms may yield empty filename() for trailing separators.
+    const auto s = plugins_dir.generic_string();
+    if (s.size() >= 8) {
+        const auto tail = std::string_view(s).substr(s.size() - 8);
+        if (iequals_ascii(tail, "/plugins") || iequals_ascii(tail, "\\plugins")) {
+            return plugins_dir.parent_path();
+        }
+    }
+    if (iequals_ascii(s, "plugins")) {
+        return plugins_dir.parent_path();
+    }
+    return plugins_dir;
+}
+
+std::filesystem::path mod_deps_dir(const std::filesystem::path &mod_root) {
+    if (mod_root.empty()) {
+        return {};
+    }
+    return mod_root / "deps";
 }
 
 bool configure_plugin_dll_search(const std::vector<std::filesystem::path> &plugins_roots) {
@@ -342,7 +367,7 @@ bool configure_plugin_dll_search(const std::vector<std::filesystem::path> &plugi
                 log_once("warn", buf);
             }
         };
-        add(plugins_deps_dir(root));
+        add(mod_deps_dir(mod_root_from_plugins_dir(root)));
         add(root); // optional private side-by-side
     }
     return true;

@@ -45,11 +45,15 @@ DS_INJECTOR_CXX_API void set_modmain_path_override_for_test(std::string_view pat
 // PluginPath.cpp into another image or modmain registration is invisible.
 DS_INJECTOR_CXX_API std::vector<std::filesystem::path> default_plugin_search_dirs();
 
-// deps path for a plugins root: root / "deps"
-DS_INJECTOR_CXX_API std::filesystem::path plugins_deps_dir(const std::filesystem::path &plugins_root);
+// Derive mod root from a plugins directory: leaf "plugins" → parent,
+// otherwise treat plugins_dir itself as the root (env override may be bare).
+DS_INJECTOR_CXX_API std::filesystem::path mod_root_from_plugins_dir(const std::filesystem::path &plugins_dir);
 
-// Windows: for each plugins root, AddDllDirectory(root/deps) if exists and
-// AddDllDirectory(root) for private side-by-side deps. Does NOT call
+// Shared runtimes path: mod_root / "deps" (sibling of plugins/, not under it).
+DS_INJECTOR_CXX_API std::filesystem::path mod_deps_dir(const std::filesystem::path &mod_root);
+
+// Windows: for each plugins root, AddDllDirectory(mod_root/deps) if exists and
+// AddDllDirectory(plugins_root) for private side-by-side deps. Does NOT call
 // SetDefaultDllDirectories (process-wide); callers load with LoadLibraryEx
 // flags USER_DIRS | DLL_LOAD_DIR | DEFAULT_DIRS.
 // Idempotent: repeated calls with same absolute paths no-op.

@@ -80,60 +80,67 @@ static void test_search_order_mod_without_env() {
     printf("PASS: search_order_mod_without_env\n");
 }
 
-static void test_deps_dir_name() {
-    auto d = plugins_deps_dir(fs::path("C:/m/plugins"));
+static void test_mod_deps_dir_sibling() {
+    auto plugins = fs::path("C:/mods/workshop-1/plugins");
+    auto mod = mod_root_from_plugins_dir(plugins);
+    assert(mod.filename() == "workshop-1" || mod.generic_string().ends_with("workshop-1"));
+    auto d = mod_deps_dir(mod);
     assert(d.filename() == "deps");
-    printf("PASS: deps_dir_name\n");
+    assert(d.parent_path() == mod);
+    // NOT under plugins/
+    assert(d.parent_path().filename() != "plugins");
+    // plugins_root/deps layout is wrong for shared runtimes
+    assert(d != plugins / "deps");
+    printf("PASS: mod_deps_dir_sibling\n");
 }
 
 static void test_configure_dll_search_idempotent() {
     reset_plugin_dll_search_for_test();
-    auto root = make_temp("ds_plugin_path_deps");
-    fs::create_directories(root / "deps");
-    assert(configure_plugin_dll_search({root}));
-    assert(configure_plugin_dll_search({root})); // second call OK
+    auto mod = make_temp("ds_plugin_path_deps");
+    auto plugins = mod / "plugins";
+    fs::create_directories(plugins);
+    fs::create_directories(mod / "deps");
+    assert(configure_plugin_dll_search({plugins}));
+    assert(configure_plugin_dll_search({plugins})); // second call OK
     reset_plugin_dll_search_for_test();
     printf("PASS: configure_dll_search_idempotent\n");
 }
 
-// Stronger deps gate: deps path identity + missing-deps is OK + deps never a
+// Stronger deps gate: sibling mod/deps identity + missing-deps is OK + deps never a
 // plugin search root. Full LoadLibrary import-from-deps PE probe is residual.
 static void test_deps_registration_contract() {
     reset_plugin_dll_search_for_test();
     set_env(kPluginDirEnv, "");
     set_modmain_path_override_for_test("");
 
-    auto root_with_deps = make_temp("ds_plugin_path_deps_ok");
-    auto root_no_deps = make_temp("ds_plugin_path_deps_missing");
-    fs::create_directories(root_with_deps / "deps");
-    // root_no_deps intentionally has no deps/ subdirectory.
+    auto mod = make_temp("ds_mod_root");
+    auto plugins = mod / "plugins";
+    fs::create_directories(plugins);
+    fs::create_directories(mod / "deps");
 
-    const auto deps = plugins_deps_dir(root_with_deps);
-    assert(deps == root_with_deps / "deps");
-    assert(fs::is_directory(deps));
-    assert(deps.filename() == "deps");
-    // Naming contract: deps is sibling under plugins root, not a search root itself.
-    assert(plugins_deps_dir(root_no_deps) == root_no_deps / "deps");
-    assert(!fs::exists(plugins_deps_dir(root_no_deps)));
+    assert(mod_root_from_plugins_dir(plugins) == mod);
+    assert(mod_deps_dir(mod) == mod / "deps");
+    assert(fs::is_directory(mod / "deps"));
+    assert(configure_plugin_dll_search({plugins}));
 
-    // configure must succeed with and without deps present.
-    assert(configure_plugin_dll_search({root_with_deps}));
-    assert(configure_plugin_dll_search({root_no_deps}));
-    assert(configure_plugin_dll_search({root_with_deps, root_no_deps}));
+    // missing deps still OK
+    auto mod2 = make_temp("ds_mod_root_nodeps");
+    fs::create_directories(mod2 / "plugins");
+    assert(configure_plugin_dll_search({mod2 / "plugins"}));
 
-    // Search dirs must never return the deps path as a plugin root.
-    set_env(kPluginDirEnv, root_with_deps.string().c_str());
+    // bare env override (leaf not "plugins") still uses that dir as mod root
+    auto bare = make_temp("ds_plugin_path_bare");
+    fs::create_directories(bare / "deps");
+    assert(mod_root_from_plugins_dir(bare) == bare);
+    assert(mod_deps_dir(bare) == bare / "deps");
+    assert(configure_plugin_dll_search({bare}));
+
+    // deps never a plugin search root
+    set_env(kPluginDirEnv, plugins.string().c_str());
     auto dirs = default_plugin_search_dirs();
     assert(!dirs.empty());
     for (const auto &d : dirs) {
         assert(d.filename() != "deps");
-        // deps itself must not be listed even if someone points env at plugins/
-        assert(!fs::equivalent(d, deps));
-        // If env points at plugins root, that root is listed — but not its deps child
-        // as a separate entry from this API.
-        if (fs::equivalent(d, root_with_deps)) {
-            // ok: plugins root is a search root
-        }
     }
 
     set_env(kPluginDirEnv, "");
@@ -154,7 +161,7 @@ int main() {
     test_plugins_dir_from_modmain();
     test_search_order_env_wins();
     test_search_order_mod_without_env();
-    test_deps_dir_name();
+    test_mod_deps_dir_sibling();
     test_configure_dll_search_idempotent();
     test_deps_registration_contract();
     test_empty_modmain_does_not_crash();
