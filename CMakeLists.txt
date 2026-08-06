@@ -300,31 +300,37 @@ endif ()
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX}
 #install(FILES ${LUA_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})
 # Package staging: cmake --install writes under CMAKE_INSTALL_PREFIX
-# (Mod/bin64/<platform>/…), including plugins/ for the mod zip layout.
-# Live game install: only inject shell (Winmm / POSIX InjectorStub) + non-plugin
-# non-Injector payload. Real Injector stays package/mod-local (Mod/bin64/<plat>/);
-# business plugins stay package/mod-local (mod plugins/ or DS_LUAJIT_PLUGIN_DIR).
+# (Mod/bin64/<platform>/…), including plugins/, lua VMs, signatures, deps.
+# Live game install: ONLY the inject shell (Winmm / POSIX InjectorStub).
+# Real Injector, lua51*, signatures_*.json, plugins, deps stay mod-local.
 #
-# Dual libInjector destinations (shell kept; real excluded):
-#   real → package root libInjector.so|.dylib  (excluded from game mirror)
-#   Linux stub → package lib64/libInjector.so  (copied into game bin64/lib64)
-#   macOS stub → package shell/libInjector.dylib (copied; install script may flatten)
-# Do NOT exclude lib64/ or shell/ — those are shell paths.
+# Dual libInjector destinations (shell kept; real never mirrored to game):
+#   real → package root libInjector.so|.dylib
+#   Linux stub → package lib64/libInjector.so  (game PRELOAD path)
+#   macOS stub → package shell/libInjector.dylib
 if (GAME_DIR)
-    # Shell only into live game bin64. Real Injector lives under the mod package.
-    # install(DIRECTORY) REGEX matches the full file path. Match real modules only
-    # at package root Mod/bin64/<platform>/… — not Linux lib64/ or macOS shell/.
-    install(DIRECTORY ${CMAKE_INSTALL_PREFIX}/
-            DESTINATION ${GAME_INSTALL_PREFIX}
-            COMPONENT injector_shell
-            PATTERN "plugins" EXCLUDE
-            PATTERN "plugins/*" EXCLUDE
-            PATTERN "deps" EXCLUDE
-            PATTERN "deps/*" EXCLUDE
-            REGEX "[/\\\\]bin64[/\\\\][^/\\\\]+[/\\\\]Injector\\.dll$" EXCLUDE
-            REGEX "[/\\\\]bin64[/\\\\][^/\\\\]+[/\\\\]libInjector\\.so$" EXCLUDE
-            REGEX "[/\\\\]bin64[/\\\\][^/\\\\]+[/\\\\]libInjector\\.dylib$" EXCLUDE
-            )
+    if (WIN32)
+        # Explicit shell only — never mirror the whole package into game bin64.
+        # Winmm target is defined under src/DontStarveInjector/loader (WIN32).
+        install(FILES $<TARGET_FILE:Winmm>
+                DESTINATION ${GAME_INSTALL_PREFIX}
+                COMPONENT injector_shell)
+    elseif (TARGET InjectorStub)
+        # Install the already-built stub into the live game tree only.
+        # Package-side stub install remains on the InjectorStub target rules
+        # (lib64/ or shell/) under CMAKE_INSTALL_PREFIX for mod packaging.
+        if (UNIX AND NOT APPLE)
+            install(FILES $<TARGET_FILE:InjectorStub>
+                    DESTINATION ${GAME_INSTALL_PREFIX}/lib64
+                    COMPONENT injector_shell
+                    RENAME libInjector.so)
+        elseif (APPLE)
+            install(FILES $<TARGET_FILE:InjectorStub>
+                    DESTINATION ${GAME_INSTALL_PREFIX}
+                    COMPONENT injector_shell
+                    RENAME libInjector.dylib)
+        endif ()
+    endif ()
 endif ()
 set(BUILD_CMD ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/update_version.py")
 execute_process(COMMAND ${CMAKE_COMMAND} -E env MOD_VERSION=${CMAKE_PROJECT_VERSION} ${BUILD_CMD}

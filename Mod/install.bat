@@ -74,13 +74,8 @@ if "!shell_ok!"=="0" (
     exit /b 1
 )
 
-REM Remove stale game-dir real Injector so legacy same-dir load cannot silently win
-if exist "%destination%\Injector.dll" (
-    echo [INFO] removing stale game-dir Injector.dll -^> %destination%\Injector.dll
-    del /Q /F "%destination%\Injector.dll" >NUL 2>NUL
-)
-REM 2) Real Injector to mod bin64
-echo [INFO] install Injector -^> %mod_bin64%
+REM 2) Real Injector + Lua VMs + signatures to mod bin64 (never game bin64)
+echo [INFO] install Injector/runtime -^> %mod_bin64%
 if not exist "%mod_bin64%" mkdir "%mod_bin64%"
 if exist "%source%\Injector.dll" (
     copy /Y "%source%\Injector.dll" "%mod_bin64%\Injector.dll" >NUL
@@ -91,6 +86,25 @@ if exist "%source%\Injector.dll" (
     )
 ) else (
     echo [WARN] no Injector.dll at %source%\Injector.dll
+)
+REM Optional PDB for local debugging
+if exist "%source%\Injector.pdb" copy /Y "%source%\Injector.pdb" "%mod_bin64%\Injector.pdb" >NUL 2>NUL
+for %%F in (lua51.dll lua51.pdb lua51DS.dll lua51DS.pdb lua51DS_gengc.dll lua51DS_gengc.pdb lua51Original.dll lua51Original.pdb signatures_client.json signatures_server.json) do (
+    if exist "%source%\%%F" (
+        copy /Y "%source%\%%F" "%mod_bin64%\%%F" >NUL
+        if errorlevel 1 (
+            echo [ERROR] install %%F failed
+            timeout /t 5
+            exit /b 1
+        )
+    )
+)
+REM Drop stale copies previously mirrored into game bin64 by cmake --install
+for %%F in (Injector.dll Injector.pdb lua51.dll lua51.pdb lua51DS.dll lua51DS.pdb lua51DS_gengc.dll lua51DS_gengc.pdb lua51Original.dll lua51Original.pdb signatures_client.json signatures_server.json) do (
+    if exist "%destination%\%%F" (
+        echo [INFO] removing stale game-dir %%F
+        del /Q /F "%destination%\%%F" >NUL 2>NUL
+    )
 )
 
 REM 3) Business plugins stay under the mod directory (mod-local plugins/)

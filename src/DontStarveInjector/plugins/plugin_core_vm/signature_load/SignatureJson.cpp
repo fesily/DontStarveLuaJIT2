@@ -10,17 +10,26 @@
 
 #include "SignatureJson.hpp"
 #include "util/GameVersionFile.hpp"
+#include "core/PluginPath.hpp"
 #include "frida-gum.h"
 #include "disasm.h"
 #include "MemorySignature.hpp"
 #include "ModuleSections.hpp"
+#include <filesystem>
 
 using namespace std::literals;
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(Signatures, version, funcs);
 
 static std::string get_signatures_filename(bool isClient) {
-    return std::filesystem::absolute("signatures_"s + (isClient ? "client" : "server") + ".json").string();
+    const auto file = "signatures_"s + (isClient ? "client" : "server") + ".json";
+    // Prefer mod-local bin64 (same directory as real Injector). Fall back to CWD
+    // absolute path for legacy game-bin64 installs / first-write creation.
+    const auto inj = ds::plugin::injector_module_dir();
+    if (!inj.empty()) {
+        return (inj / file).string();
+    }
+    return std::filesystem::absolute(file).string();
 }
 
 const char *SignatureJson::version_path = "../version.txt";

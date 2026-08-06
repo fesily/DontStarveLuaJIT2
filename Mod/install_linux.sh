@@ -98,8 +98,8 @@ if [ -f "$destination/../libInjector.so" ]; then
     rm -f "$destination/../libInjector.so"
 fi
 
-# 2) Real Injector into mod bin64
-echo "[INFO] install Injector -> $mod_bin64"
+# 2) Real Injector + Lua VMs + signatures into mod bin64 (never game bin64)
+echo "[INFO] install Injector/runtime -> $mod_bin64"
 mkdir -p "$mod_bin64"
 if [ -f "$source/libInjector.so" ]; then
     cp -a "$source/libInjector.so" "$mod_bin64/libInjector.so"
@@ -108,8 +108,37 @@ if [ -f "$source/libInjector.so" ]; then
         exit 1
     fi
 else
-    echo "[WARN] no real libInjector.so at $source/libInjector.so"
+    echo "[WARN] no libInjector.so at $source/libInjector.so"
 fi
+for f in \
+    liblua51.so liblua51DS.so liblua51DS_gengc.so liblua51Original.so \
+    lua51.dll lua51DS.dll lua51DS_gengc.dll lua51Original.dll \
+    signatures_client.json signatures_server.json
+do
+    if [ -f "$source/$f" ]; then
+        cp -a "$source/$f" "$mod_bin64/$f"
+        if [ $? -ne 0 ]; then
+            echo "[ERROR] install $f failed"
+            exit 1
+        fi
+    fi
+    # also check package lib64 for Linux .so layout
+    if [ -f "$source/lib64/$f" ]; then
+        cp -a "$source/lib64/$f" "$mod_bin64/$f"
+    fi
+done
+# Drop stale copies previously mirrored into game bin64 by cmake --install
+for f in \
+    libInjector.so Injector.dll Injector.pdb \
+    liblua51.so liblua51DS.so liblua51DS_gengc.so liblua51Original.so \
+    lua51.dll lua51.pdb lua51DS.dll lua51DS_gengc.dll lua51Original.dll \
+    signatures_client.json signatures_server.json
+do
+    if [ -f "$destination/$f" ]; then
+        echo "[INFO] removing stale game-dir $f"
+        rm -f "$destination/$f"
+    fi
+done
 
 # 3) Business plugins stay under the mod directory
 if [ -d "$source/plugins" ]; then

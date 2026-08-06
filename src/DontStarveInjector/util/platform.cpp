@@ -36,16 +36,44 @@ module_handler_t loadlib(const char *name, int mode) {
         return nullptr;
     }
     if (!std::filesystem::exists(name)) {
+        // Prefer directory of already-mapped real Injector (mod_root/bin64 after
+        // bootstrap). Fall back to game exe dir / cwd for legacy installs.
+        // Do not include PluginPath here — platform.cpp is also linked into Winmm.
         std::filesystem::path path;
-        if (auto p = getExePath().parent_path() / name; std::filesystem::exists(p))
-            path = p;
-        else if (auto p = std::filesystem::current_path() / name; std::filesystem::exists(p))
-            path = p;
+        const auto try_set = [&](const std::filesystem::path &candidate) {
+            if (path.empty() && !candidate.empty() && std::filesystem::exists(candidate)) {
+                path = candidate;
+            }
+        };
+#ifdef _WIN32
+        HMODULE inj = GetModuleHandleW(L"Injector");
+        if (!inj) {
+            inj = GetModuleHandleA("Injector.dll");
+        }
+        if (inj) {
+            wchar_t buf[MAX_PATH];
+            const DWORD n = GetModuleFileNameW(inj, buf, MAX_PATH);
+            if (n > 0 && n < MAX_PATH) {
+                try_set(std::filesystem::path(buf).parent_path() / name);
+            }
+        }
+#else
+        Dl_info info{};
+        // Any symbol from the real Injector image works; HookStartupEntry is the
+        // stable bootstrap export.
+        if (dlsym(RTLD_DEFAULT, "HookStartupEntry") != nullptr &&
+            dladdr(dlsym(RTLD_DEFAULT, "HookStartupEntry"), &info) && info.dli_fname) {
+            try_set(std::filesystem::path(info.dli_fname).parent_path() / name);
 #if defined(__linux__)
-        else if (auto p = getExePath().parent_path() / "lib64"/ name; std::filesystem::exists(p))
-            path = p;
-        else if (auto p = std::filesystem::current_path() / "lib64" /name; std::filesystem::exists(p))
-            path = p;
+            try_set(std::filesystem::path(info.dli_fname).parent_path() / "lib64" / name);
+#endif
+        }
+#endif
+        try_set(getExePath().parent_path() / name);
+        try_set(std::filesystem::current_path() / name);
+#if defined(__linux__)
+        try_set(getExePath().parent_path() / "lib64" / name);
+        try_set(std::filesystem::current_path() / "lib64" / name);
 #endif
         if (!path.empty())
             return loadlib(path.string().c_str(), mode);
