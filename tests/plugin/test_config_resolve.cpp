@@ -196,7 +196,7 @@ void test_enabled_gen_gc_excludes_luajit() {
         auto resolved = resolve(reg, ctx, sources);
         assert(resolved.view.at("EnabledGenGC").b == false);
         assert(resolved.source_of.at("EnabledGenGC") == ConfigSource::ModinfoDefault);
-        assert(!resolved.enabled_gen_gc());
+        assert(!ds::core_vm::enabled_gen_gc(resolved));
     }
     // SaveFile may set it.
     {
@@ -204,7 +204,7 @@ void test_enabled_gen_gc_excludes_luajit() {
         auto resolved = resolve(reg, ctx, sources);
         assert(resolved.view.at("EnabledGenGC").b == true);
         assert(resolved.source_of.at("EnabledGenGC") == ConfigSource::SaveFile);
-        assert(resolved.enabled_gen_gc());
+        assert(ds::core_vm::enabled_gen_gc(resolved));
     }
     printf("PASS: enabled_gen_gc_excludes_luajit\n");
 }
