@@ -171,8 +171,10 @@ endif ()
 
 # Package layout (mod-local Injector bootstrap):
 # - Real Injector installs to package root Mod/bin64/<plat>/ (mod-side payload).
-# - POSIX InjectorStub installs separately under lib64/ (Linux) or . (macOS) so
-#   install scripts can copy stub→game and real→mod bin64 without name clash.
+# - POSIX InjectorStub installs separately so install scripts / GAME_DIR mirror can
+#   copy stub→game without name-clashing with real Injector:
+#     Linux: lib64/   (game PRELOAD path ./lib64/libInjector.so)
+#     macOS: shell/   (distinct from package-root real libInjector.dylib)
 # - Windows shell is Winmm (loader/); real Injector remains COMPONENT injector.
 install(TARGETS Injector
     RUNTIME DESTINATION . COMPONENT injector
@@ -182,9 +184,9 @@ install(TARGETS Injector
 add_subdirectory(loader/bootstrap)
 
 # POSIX game-side shell (libInjector.so/.dylib). Windows uses Winmm.
-# OUTPUT_NAME Injector → libInjector.*; dual destinations on Linux:
+# OUTPUT_NAME Injector → libInjector.*; dual destinations:
 #   real Injector → package root (mod bin64)
-#   stub          → lib64/ (game PRELOAD path ./lib64/libInjector.so)
+#   stub          → lib64/ (Linux) or shell/ (macOS)
 if (NOT WIN32)
     add_library(InjectorStub SHARED
         ${DONTSTARVEINJECTOR_ROOT}/loader/injector_stub.cpp)
@@ -200,7 +202,8 @@ if (NOT WIN32)
     if (UNIX AND NOT APPLE)
         install(TARGETS InjectorStub LIBRARY DESTINATION lib64 COMPONENT injector_shell)
     else()
-        install(TARGETS InjectorStub LIBRARY DESTINATION . COMPONENT injector_shell)
+        # macOS: do not install stub next to real libInjector.dylib at package root.
+        install(TARGETS InjectorStub LIBRARY DESTINATION shell COMPONENT injector_shell)
     endif()
 endif()
 

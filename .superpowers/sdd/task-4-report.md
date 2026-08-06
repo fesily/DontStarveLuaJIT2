@@ -1,84 +1,132 @@
-# Task 4 Report — M1 migrate `sim.lagcomp` and `network.sim`
+# Task 4 Report: POSIX InjectorStub + install component split (CMake)
 
-**Status:** DONE  
-**Date:** 2026-08-03  
-**Commit:** `c9f272d` — `feat(plugin): migrate sim.lagcomp and network.sim Lua faces (M1 Task 4)`
+## Status
+**DONE**
 
-## Summary
-
-Migrated the Lua faces of dual-face plugins `sim.lagcomp` and `network.sim` onto the pure-Lua PluginHost. Both are registered from `plugins/init.lua` with priority 60 and option gates matching the former modmain hard-wires. Hard-wired `EnableLagCompensation` / `EnableNetSim` `modimport` blocks are removed; host `load_phase(AfterModMain)` owns those paths. Native `GameSimHook` / `GameNetworkSim` stay as lazy API backends (unchanged). L-E enable-matrix rows green for both options; lua host suite green.
+## Goal
+Add thin POSIX `InjectorStub` that constructor-calls bootstrap. Split install: real Injector at package root; stub to `lib64` on Linux. Root GAME_DIR mirror becomes shell-only (exclude real Injector, plugins, deps).
 
 ## Changes
 
-### Created
-| File | Role |
-|---|---|
-| `Mod/plugins/sim_lagcomp.lua` | Lua plugin: id `sim.lagcomp`, option `EnableLagCompensation`, priority 60, when has_luajit+windows+mastersim → `modimport("scripts/lag_compensation")` |
-| `Mod/plugins/network_sim.lua` | Lua plugin: id `network.sim`, option `EnableNetSim`, priority 60, when has_luajit+windows+not mastersim → `modimport("scripts/netsim")` |
-| `.superpowers/sdd/task-4-report.md` | This report |
+### Create `src/DontStarveInjector/loader/injector_stub.cpp`
+- POSIX-only (`#error` on `_WIN32`).
+- Static `BootstrapOnce` ctor calls `ds::bootstrap::load_injector_hook_entry()`, then the entry.
+- stderr diagnostics on fail / success; no business logic.
 
-### Modified
-| File | Change |
-|---|---|
-| `Mod/plugins/init.lua` | Registry returns `save_fork`, `sim_lagcomp`, `network_sim` |
-| `Mod/modmain.lua` | Extended `gate_ctx` with `is_windows` / `is_mastersim`; removed hard-wired lagcomp/netsim blocks |
-| `tests/plugin/plugin_host_lua_spec.lua` | L-E matrix: EnableLagCompensation / EnableNetSim true/false + when gates; save.fork lookup by id |
+### `src/DontStarveInjector/CMakeLists.txt`
+- Real Injector install: `RUNTIME` + `LIBRARY` → `.` COMPONENT `injector` (mod package root `Mod/bin64/<plat>/`).
+- After `loader/bootstrap`, `if (NOT WIN32)`:
+  - `add_library(InjectorStub SHARED …/loader/injector_stub.cpp)`
+  - Links `injector_bootstrap` + `${CMAKE_DL_LIBS}`
+  - `OUTPUT_NAME Injector`, `PREFIX lib` → `libInjector.so` / `.dylib`
+  - Build output under `$<TARGET_FILE_DIR:Injector>/stub` (no clash with real module)
+  - Install: Linux `lib64` COMPONENT `injector_shell`; else `.` (macOS) COMPONENT `injector_shell`
+- Comments document dual destinations: real → package root; stub → `lib64` (Linux PRELOAD).
 
-## Behavior (production)
+### Root `CMakeLists.txt` GAME_DIR mirror
+- Component renamed `injector` → `injector_shell`.
+- Exclude `plugins/`, `deps/`.
+- Exclude package-root real modules via REGEX on full path:
+  - `…/bin64/<plat>/Injector.dll`
+  - `…/bin64/<plat>/libInjector.so`
+  - `…/bin64/<plat>/libInjector.dylib`
+- Does **not** exclude `…/bin64/<plat>/lib64/libInjector.so` (Linux stub).
+
+## Layout (Linux)
+
+| Target | Package path | Game path (mirror / install script) |
+|--------|--------------|-------------------------------------|
+| Real Injector | `Mod/bin64/linux/libInjector.so` | stays mod-local |
+| Stub | `Mod/bin64/linux/lib64/libInjector.so` | game `bin64/lib64/` (PRELOAD) |
+| Winmm (Windows shell) | package `.` | game `bin64` |
+
+## Build / smoke (Windows host)
 
 ```text
-HookGetModConfigData()
-→ PluginHost: register_all([save.fork, sim.lagcomp, network.sim])
-→ resolve(GetModConfigData, {has_luajit, is_client, is_windows, is_mastersim})
-→ load_phase(AfterModMain)
-   when EnableLagCompensation on + has_luajit + windows + mastersim:
-     modimport("scripts/lag_compensation")
-   when EnableNetSim on + has_luajit + windows + not mastersim:
-     modimport("scripts/netsim")
-   else for each: Disabled, no load
-→ … remaining hard-wired features (HideGlobalJIT, GC policy, …)
+cmake --build builds/ninja-multi-vcpkg --config RelWithDebInfo --target Injector
+cmake --build builds/ninja-multi-vcpkg --config RelWithDebInfo --target Winmm
 ```
 
-`gate_ctx.is_mastersim` is `TheWorld and TheWorld.ismastersim` so boolean `false` (client shard with world) is distinct from `nil` (world not ready). Plugins fall back to `TheWorld` when the field is unset — same readiness requirement as the former hard-wires.
+- **Injector**: success → `builds/ninja-multi-vcpkg/src/DontStarveInjector/RelWithDebInfo/Injector.dll`
+- **Winmm**: success (up-to-date after reconfigure)
+- **InjectorStub**: `ninja: error: unknown target 'InjectorStub'` — expected on WIN32 (`if (NOT WIN32)`); CMake still configures with stub block present for POSIX generators.
+- Reconfigure after CMake edits completed cleanly (no configure errors from new install rules).
 
-Native faces: lag-comp / netsim symbols remain exported by injector bridge; Lua faces only wrap game APIs when those backends exist (`scripts/*.lua` early-return if missing).
-
-## Verification
-
-```text
-python tests/plugin/run_lua_host.py
-→ PASS: empty_registry … sticky_and_reload, config_function_getmodconfigdata
-→ PASS: save_fork_enable_matrix
-→ PASS: sim_lagcomp_enable_matrix
-→ PASS: network_sim_enable_matrix
-→ PASS: option_rules_unit
-→ plugin_host_lua_spec: all tests passed
-```
-
-## L-E matrix rows covered
-
-| Plugin | Config / gate | Expected |
-|---|---|---|
-| `sim.lagcomp` | EnableLagCompensation=true, has_luajit, windows, mastersim | Loaded, load_count=1, modimport `scripts/lag_compensation` |
-| `sim.lagcomp` | EnableLagCompensation=false, same gates | Disabled, load_count=0 |
-| `sim.lagcomp` | option on, not mastersim | Disabled |
-| `sim.lagcomp` | option on, not windows | Disabled |
-| `sim.lagcomp` | option on, no luajit | Disabled |
-| `network.sim` | EnableNetSim=true, has_luajit, windows, not mastersim | Loaded, load_count=1, modimport `scripts/netsim` |
-| `network.sim` | EnableNetSim=false, same gates | Disabled, load_count=0 |
-| `network.sim` | option on, mastersim | Disabled |
-| `network.sim` | option on, not windows | Disabled |
-| `network.sim` | option on, no luajit | Disabled |
-
-## Intentionally deferred
-
-- Native sticky no-op plugins for API documentation (optional; APIs already exported).
-- Remaining hard-wired modmain features (jit/gc/HideGlobalJIT, network.rpc/entity, …).
-- Dual-face shared host state with C++ PluginHost (not required; Lua face independent).
+## Commit
+- Branch: `feat/mod-local-injector-bootstrap`
+- Hash: `97faf8d`
+- Message: `feat(loader): POSIX InjectorStub and shell vs core install split`
+- Files:
+  - `src/DontStarveInjector/loader/injector_stub.cpp` (new)
+  - `src/DontStarveInjector/CMakeLists.txt`
+  - `CMakeLists.txt`
 
 ## Acceptance checklist
+- [x] Stub source with bootstrap ctor
+- [x] `InjectorStub` CMake target guarded by `NOT WIN32`
+- [x] Real Injector install DESTINATION `.` COMPONENT `injector` (+ LIBRARY)
+- [x] Stub install `lib64` (Linux) / `.` (macOS) COMPONENT `injector_shell`
+- [x] GAME_DIR mirror shell-only: exclude plugins, deps, package-root real Injector
+- [x] Windows build of Injector + Winmm still works
+- [x] Commit created
 
-- [x] Step 1: L-E enable-matrix rows for sim.lagcomp + network.sim (true/false + when)
-- [x] Step 2: Register plugins; remove hard-wired modmain paths
-- [x] Step 3: lua host tests green
-- [x] Step 4: Commit + report at `.superpowers/sdd/task-4-report.md`
+## Concerns / notes
+1. **Linux dual name:** Real and stub are both `libInjector.so`. Destinations differ (`.` vs `lib64`). GAME_DIR REGEX excludes only package-root form; stub under `lib64/` remains. Install scripts (Task 5+) must copy stub→game `lib64` and real→mod `bin64` separately.
+2. **macOS:** Stub installs to package root (same as real) — name clash risk if both installed into one tree without component filtering. Spec allows `.` for macOS; install script must still split shell vs real.
+3. **CMake REGEX full-path:** Documented that `install(DIRECTORY)` REGEX matches full path; patterns require `bin64/<plat>/` segment so `lib64/libInjector.so` is kept.
+4. **InjectorStub not built on this Windows host** — correct by design; full stub link needs Linux/macOS CI or WSL.
+5. Unrelated dirty tree not committed: `.superpowers/sdd/task-2-report.md`, `task-3-report.md`, `.angle-bincache/`.
+
+## Review fixes (post Task 4 review)
+
+### Findings addressed
+1. **CRITICAL — POSIX `HookStartupEntry` export** (`DontStarveInjector.cpp`):
+   - Extracted `install_posix_startup_hook()` shared by constructor + export.
+   - `DONTSTARVEINJECTOR_API bool HookStartupEntry()` now defined under `#ifndef _WIN32` with default visibility via existing macro.
+   - Idempotent: if constructor already installed chdir hook, returns `true`; otherwise installs equivalent startup hook.
+2. **IMPORTANT — PIC for static bootstrap**:
+   - `loader/bootstrap/CMakeLists.txt`: `set_target_properties(injector_bootstrap PROPERTIES POSITION_INDEPENDENT_CODE ON)` for safe link into `InjectorStub` SHARED.
+3. **IMPORTANT — macOS stub install path**:
+   - `InjectorStub` macOS install DESTINATION changed from `.` → `shell` (COMPONENT `injector_shell`).
+   - Linux remains `lib64`.
+   - Root GAME_DIR comments updated: keep `lib64/` and `shell/`; exclude only package-root real `libInjector.*`.
+4. **IMPORTANT — Winmm component**:
+   - `loader/CMakeLists.txt`: `install(TARGETS Winmm … COMPONENT injector_shell)` (was `injector`).
+
+### Verification
+```text
+cmake --build builds/ninja-multi-vcpkg --config RelWithDebInfo --target Injector
+→ success (DontStarveInjector.cpp recompiled + linked)
+
+cmake --build builds/ninja-multi-vcpkg --config RelWithDebInfo --target Winmm
+→ success (up-to-date after CMake reconfigure)
+
+ctest --test-dir builds/ninja-multi-vcpkg -C RelWithDebInfo -R injector_bootstrap -V
+→ 14: injector_bootstrap  Passed
+→ ALL PASS test_injector_bootstrap (10 PASS cases)
+
+dumpbin /exports Injector.dll | HookStartupEntry
+→ present (Windows path; POSIX export is compile-time sibling of same API)
+```
+
+### Layout after fix
+
+| Target | Package path | Notes |
+|--------|--------------|-------|
+| Real Injector | `Mod/bin64/<plat>/` (`.`) | COMPONENT `injector`; excluded from GAME_DIR |
+| Linux stub | `Mod/bin64/linux/lib64/libInjector.so` | COMPONENT `injector_shell` |
+| macOS stub | `Mod/bin64/osx/shell/libInjector.dylib` | COMPONENT `injector_shell` (no clash with real) |
+| Winmm | package `.` | COMPONENT `injector_shell` |
+
+### Acceptance (review)
+- [x] POSIX HookStartupEntry exported, idempotent, default visibility
+- [x] injector_bootstrap POSITION_INDEPENDENT_CODE ON
+- [x] macOS stub DESTINATION `shell` (not `.`)
+- [x] Winmm COMPONENT `injector_shell`
+- [x] Injector + Winmm rebuild OK
+- [x] ctest -R injector_bootstrap PASS
+
+### Concerns remaining
+1. Install scripts (Task 5+) must copy macOS `shell/libInjector.dylib` into game load path (may flatten to `MacOs/` or PRELOAD path).
+2. POSIX HookStartupEntry cannot be dumpbin-verified on this Windows host; logic is source-level under `#ifndef _WIN32` with `DONTSTARVEINJECTOR_API` visibility default.
+3. Unrelated dirty reports (`task-2-report.md`, `task-3-report.md`) and `.angle-bincache/` not part of this fix commit.

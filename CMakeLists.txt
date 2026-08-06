@@ -305,14 +305,15 @@ endif ()
 # non-Injector payload. Real Injector stays package/mod-local (Mod/bin64/<plat>/);
 # business plugins stay package/mod-local (mod plugins/ or DS_LUAJIT_PLUGIN_DIR).
 #
-# Linux dual libInjector.so destinations:
-#   real → package root libInjector.so  (excluded from game mirror)
-#   stub → package lib64/libInjector.so (copied into game bin64/lib64 for PRELOAD)
-# Do NOT exclude lib64/ — that is the shell path.
+# Dual libInjector destinations (shell kept; real excluded):
+#   real → package root libInjector.so|.dylib  (excluded from game mirror)
+#   Linux stub → package lib64/libInjector.so  (copied into game bin64/lib64)
+#   macOS stub → package shell/libInjector.dylib (copied; install script may flatten)
+# Do NOT exclude lib64/ or shell/ — those are shell paths.
 if (GAME_DIR)
     # Shell only into live game bin64. Real Injector lives under the mod package.
     # install(DIRECTORY) REGEX matches the full file path. Match real modules only
-    # at package root Mod/bin64/<platform>/… — not the Linux stub under …/lib64/.
+    # at package root Mod/bin64/<platform>/… — not Linux lib64/ or macOS shell/.
     install(DIRECTORY ${CMAKE_INSTALL_PREFIX}/
             DESTINATION ${GAME_INSTALL_PREFIX}
             COMPONENT injector_shell
