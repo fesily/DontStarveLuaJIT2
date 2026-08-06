@@ -35,7 +35,10 @@ DS_INJECTOR_CXX_API void set_modmain_path_override_for_test(std::string_view pat
 // Search roots in priority order, existing dirs only, weakly-canonical deduped:
 //   1) DS_LUAJIT_PLUGIN_DIR if set and is a directory
 //   2) plugins_dir_from_modmain(resolve_modmain_path()) if non-empty and is dir
+//      OR, when modmain_path is empty: discovered known mod plugins root
+//      (workshop-3444078585 / aliases under game mods/ or Steam UGC content)
 //   3) plugins_dir_from_module_dir(injector_module_dir()) if non-empty and is dir
+// Logs once (stderr) when modmain is empty/missing and when injector fallback is used.
 //
 // Process-wide: provider/override/DLL-search bookkeeping live in Injector only.
 // Plugins (e.g. plugin_manager) must import these symbols — do not compile
@@ -45,8 +48,10 @@ DS_INJECTOR_CXX_API std::vector<std::filesystem::path> default_plugin_search_dir
 // deps path for a plugins root: root / "deps"
 DS_INJECTOR_CXX_API std::filesystem::path plugins_deps_dir(const std::filesystem::path &plugins_root);
 
-// Windows: once per process set default dirs policy; for each plugins root,
-// AddDllDirectory(root/deps) if exists, optionally AddDllDirectory(root).
+// Windows: for each plugins root, AddDllDirectory(root/deps) if exists and
+// AddDllDirectory(root) for private side-by-side deps. Does NOT call
+// SetDefaultDllDirectories (process-wide); callers load with LoadLibraryEx
+// flags USER_DIRS | DLL_LOAD_DIR | DEFAULT_DIRS.
 // Idempotent: repeated calls with same absolute paths no-op.
 // Non-Windows: no-op success (RPATH is link-time).
 // Returns true if no hard failure; missing deps dir is OK (not an error).
