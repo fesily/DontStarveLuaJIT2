@@ -402,6 +402,9 @@ endforeach()
 string(STRIP "${_ds_mod_deps_seed_genex}" _ds_mod_deps_seed_genex)
 
 install(CODE "
+    if(POLICY CMP0207)
+        cmake_policy(SET CMP0207 NEW)
+    endif()
     set(_ds_seeds ${_ds_mod_deps_seed_genex})
     set(_ds_dirs \"${_ds_mod_deps_search_dirs_code}\")
     list(APPEND _ds_dirs \"\$<TARGET_FILE_DIR:Injector>\")
@@ -453,6 +456,9 @@ install(CODE "
 if (WIN32)
     set(_ds_stage_script "${CMAKE_CURRENT_BINARY_DIR}/stage_mod_deps.cmake")
     file(WRITE "${_ds_stage_script}" [=[
+if(POLICY CMP0207)
+  cmake_policy(SET CMP0207 NEW)
+endif()
 if(NOT DEFINED DS_SEEDS OR NOT DEFINED DS_OUT OR NOT DEFINED DS_DIRS)
   message(FATAL_ERROR "stage_mod_deps.cmake: DS_SEEDS, DS_OUT, DS_DIRS required")
 endif()
