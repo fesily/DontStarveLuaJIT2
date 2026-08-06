@@ -34,8 +34,7 @@ struct NetworkRpcPlugin final : IPlugin {
     bool can_load(const PluginContext &) const override { return true; }
 
     void load(PluginContext &) override {
-        // function_relocation is a static lib — each plugin DLL has its own copy of
-        // capstone/ctx state. Gum itself is process-global via Injector re-exports.
+        // Shared function_relocation ctx (refcounted). Gum via Injector re-exports.
         (void) function_relocation::init_ctx();
         GameNetWorkHookRpc4();
         std::fprintf(stderr, "[plugin_network_rpc] GameNetWorkHookRpc4 installed\n");

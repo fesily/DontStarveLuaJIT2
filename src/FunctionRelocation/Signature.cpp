@@ -8,7 +8,9 @@
 #include <string_view>
 
 #include <frida-gum.h>
+#if defined(__linux__)
 #include <keystone/keystone.h>
+#endif
 #include <range/v3/all.hpp>
 #include <spdlog/spdlog.h>
 
@@ -178,6 +180,7 @@ namespace function_relocation {
             return ret;
         }
 
+#if defined(__linux__)
         std::vector<uint8_t> AsmX86(const char *CODE) {
             ks_engine *ks;
             ks_err err;
@@ -205,6 +208,7 @@ namespace function_relocation {
             return res;
         }
 
+#endif
         std::pair<Signature, uintptr_t>
         create_signature(ModuleSections *section, uint8_t *address, size_t size, size_t max_len, int offset) {
             Signature signature{};

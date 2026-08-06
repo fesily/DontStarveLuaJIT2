@@ -9,6 +9,7 @@
 #include <frida-gum.h>
 #include <memory>
 #include <list>
+#include "export.hpp"
 
 
 struct Signature;
@@ -51,10 +52,10 @@ namespace function_relocation {
         bool in_function(uint64_t addr) const {
             return address <= addr && addr < address + size;
         }
-        size_t consts_count() const;
-        size_t calls_count() const;
-        size_t const_count() const;
-        size_t const_offset_count() const;
+        FUNCTION_RELOCATION_API size_t consts_count() const;
+        FUNCTION_RELOCATION_API size_t calls_count() const;
+        FUNCTION_RELOCATION_API size_t const_count() const;
+        FUNCTION_RELOCATION_API size_t const_offset_count() const;
 
 
         std::vector<uintptr_t> blocks;
@@ -64,7 +65,7 @@ namespace function_relocation {
         size_t consts_hash = 0;
         ModuleSections *module = nullptr;
 
-        CodeBlock* get_block(size_t index) const;
+        FUNCTION_RELOCATION_API CodeBlock* get_block(size_t index) const;
     };
 
     struct ModuleDetials {
@@ -123,10 +124,9 @@ namespace function_relocation {
             return iter != functions.end() ? &(*iter) : nullptr;
         }
 
-        uintptr_t try_fix_func_address(const Function &original, SignatureInfo* maybe_addr, uintptr_t limit_address);
+        FUNCTION_RELOCATION_API uintptr_t try_fix_func_address(const Function &original, SignatureInfo* maybe_addr, uintptr_t limit_address);
     };
 
-    bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections);
-    bool get_module_sections(const char *path, ModuleSections &sections);
+    FUNCTION_RELOCATION_API bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections);
+    FUNCTION_RELOCATION_API bool get_module_sections(const char *path, ModuleSections &sections);
 }
-

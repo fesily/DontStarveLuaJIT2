@@ -20,7 +20,12 @@
 #include "disasm.h"
 #include "ScanCtx.hpp"
 #include "config.hpp"
+#ifdef _WIN32
+#include <windows.h>
+#include <filesystem>
+#else
 #include "../DontStarveInjector/util/platform.hpp"
+#endif
 
 #include <thread>
 
@@ -142,7 +147,10 @@ namespace function_relocation {
         // try get the function name by debug info
 #ifdef _WIN32
         static auto loadflag = std::once_flag{};
-        std::call_once(loadflag, loadlib, "dbghelp.dll", 0);
+        std::call_once(loadflag, [] {
+            // Avoid linking Injector util::loadlib (would circular-import Injector).
+            (void) LoadLibraryA("dbghelp.dll");
+        });
         //TODO: symbols is error, should special the pdb search path
          gum_load_symbols(std::filesystem::path{path}.filename().string().c_str());
 #endif

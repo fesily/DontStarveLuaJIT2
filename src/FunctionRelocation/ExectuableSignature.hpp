@@ -7,6 +7,7 @@
 #include <optional>
 #include <memory>
 #include "ModuleSections.hpp"
+#include "export.hpp"
 namespace function_relocation {
     struct ModuleSections;
     namespace FileSignature {
@@ -18,9 +19,9 @@ namespace function_relocation {
             std::unordered_map<uintptr_t, std::vector<uint8_t>> blocks_memory;
             std::shared_ptr<void> buffer;
 
-            void fix_ptr();
+            FUNCTION_RELOCATION_API void fix_ptr();
         };
-        bool create_file_signature(const char *path);
-        std::optional<FileData> read_file_signature(const char *file_path);
+        FUNCTION_RELOCATION_API bool create_file_signature(const char *path);
+        FUNCTION_RELOCATION_API std::optional<FileData> read_file_signature(const char *file_path);
     }// namespace FileSignature
 }// namespace function_relocation

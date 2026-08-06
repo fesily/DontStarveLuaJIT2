@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <atomic>
+#include "export.hpp"
 namespace function_relocation {
 	struct Ctx
 	{
@@ -9,10 +10,10 @@ namespace function_relocation {
         std::atomic_int16_t ref = 0;
 	};
 
-	bool init_ctx();
+	FUNCTION_RELOCATION_API bool init_ctx();
 
-	void deinit_ctx();
+	FUNCTION_RELOCATION_API void deinit_ctx();
 
-	Ctx& get_ctx();
+	FUNCTION_RELOCATION_API Ctx& get_ctx();
 
 }

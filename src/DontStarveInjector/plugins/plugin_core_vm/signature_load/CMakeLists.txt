@@ -27,18 +27,18 @@ target_include_directories(ds_signature
 )
 
 # Do NOT link frida-gum here: plugins already get gum_* from Injector re-exports.
-# function_relocation is also gum-based; keep it PUBLIC for headers/types only and
-# avoid pulling a second gum copy into the final MODULE link line.
+# function_relocation is SHARED: PUBLIC-link the import lib so consumers get the
+# DLL dependency once (no static archive absorption of reloc objects).
 target_link_libraries(ds_signature
     PUBLIC
         nlohmann_json::nlohmann_json
         spdlog::spdlog
         range-v3::meta range-v3::concepts range-v3::range-v3
+        function_relocation
 )
-# Headers from function_relocation; actual gum symbols resolved when linked into
-# plugin_core_vm (Injector) or tools (explicit frida-gum).
+# Headers from function_relocation; gum symbols resolve from Injector re-exports
+# when the final MODULE/DLL is loaded with Injector already mapped.
 target_include_directories(ds_signature PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
-target_link_libraries(ds_signature PUBLIC function_relocation)
 
 target_compile_definitions(ds_signature
     PRIVATE
