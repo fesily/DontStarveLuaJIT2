@@ -70,43 +70,27 @@ static std::filesystem::path module_dir_if_loaded_sym(const char *sym_name) {
 #endif
 }
 
-// Canonical: <mod>/plugins/deps (same tree as plugin_core_vm + lua51*).
+// Canonical: <mod>/deps (sibling of plugins/; lua51* + signatures_*.json).
 static std::filesystem::path core_vm_deps_dir_if_loaded() {
 #ifdef _WIN32
     const auto core = module_dir_if_loaded_win(L"plugin_core_vm", "plugin_core_vm.dll");
     if (!core.empty()) {
-        return core / "deps";
+        // plugins/ → parent/deps
+        return core.parent_path() / "deps";
     }
     const auto inj = module_dir_if_loaded_win(L"Injector", "Injector.dll");
     if (!inj.empty()) {
-        // Injector in mod/bin64 → mod/plugins/deps; or package .../bin64/windows.
-        auto cand = inj / "plugins" / "deps";
-        if (std::filesystem::is_directory(cand)) {
-            return cand;
-        }
-        cand = inj.parent_path() / "plugins" / "deps";
-        if (std::filesystem::is_directory(cand)) {
-            return cand;
-        }
-        // Last resort: create under plugins/deps relative to injector parent chain.
-        return inj.parent_path() / "plugins" / "deps";
+        // bin64/Injector → parent/deps (mod/deps)
+        return inj.parent_path() / "deps";
     }
 #else
     const auto core = module_dir_if_loaded_sym("ds_core_vm_run_signature_and_replace");
     if (!core.empty()) {
-        return core / "deps";
+        return core.parent_path() / "deps";
     }
     const auto inj = module_dir_if_loaded_sym("HookStartupEntry");
     if (!inj.empty()) {
-        auto cand = inj / "plugins" / "deps";
-        if (std::filesystem::is_directory(cand)) {
-            return cand;
-        }
-        cand = inj.parent_path() / "plugins" / "deps";
-        if (std::filesystem::is_directory(cand)) {
-            return cand;
-        }
-        return inj.parent_path() / "plugins" / "deps";
+        return inj.parent_path() / "deps";
     }
 #endif
     return {};

@@ -367,9 +367,9 @@ bool configure_plugin_dll_search(const std::vector<std::filesystem::path> &plugi
                 log_once("warn", buf);
             }
         };
-        // mod_root/deps (shared third-party layout from earlier design)
+        // mod_root/deps: third-party + lua51* + signatures_*.json (canonical)
         add(mod_deps_dir(mod_root_from_plugins_dir(root)));
-        // plugins/deps: core.vm assets (lua51*, signatures_*.json) + may also hold shared runtimes
+        // legacy discarded layout plugins/deps — still AddDllDirectory if present during migration
         add(root / "deps");
         add(root); // optional private side-by-side next to plugin_*.dll
     }

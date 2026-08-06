@@ -225,14 +225,10 @@ add_subdirectory(util)
 # shared helper and orchestrates add_subdirectory.
 #
 # Install / package policy:
-# - Business plugins ship inside the mod package as plugins/ relative to the
-#   package prefix (Mod/bin64/<platform>/plugins). That tree extracts under the
-#   mod root; runtime search prefers parent(modmain)/plugins or
-#   DS_LUAJIT_PLUGIN_DIR — not game bin64/plugins.
-# - Keep cmake --install staging into package DESTINATION plugins for packaging.
-# - GAME_INSTALL_PREFIX install must copy Injector/winmm shell only; it must not
-#   force plugin_*.dll into the live game bin64 tree. Root CMake excludes
-#   plugins/ from the game-directory mirror for that reason.
+# - plugin_*.dll → ${DS_MOD_ROOT_ABS}/plugins  (mod root, NOT bin64/<platform>/plugins)
+# - shared runtimes + lua51* + signatures → ${DS_MOD_ROOT_ABS}/deps
+# - Injector/shell → CMAKE_INSTALL_PREFIX (Mod/bin64/<platform>)
+# - GAME_INSTALL_PREFIX: shell only; never plugin_*.dll into game bin64
 function(ds_add_dynamic_plugin name)
     add_library(${name} MODULE ${ARGN})
     # Plugin dir (CMAKE_CURRENT_SOURCE_DIR when called from plugins/<name>/)
@@ -254,9 +250,9 @@ function(ds_add_dynamic_plugin name)
     # MODULE targets cannot take RUNTIME_DEPENDENCY_SET; shared ports used only by
     # plugins are staged via TARGET_RUNTIME_DLLS install below.
     install(TARGETS ${name}
-        RUNTIME DESTINATION plugins COMPONENT plugins
-        LIBRARY DESTINATION plugins COMPONENT plugins
-        ARCHIVE DESTINATION plugins COMPONENT plugins)
+        RUNTIME DESTINATION "${DS_MOD_ROOT_ABS}/plugins" COMPONENT plugins
+        LIBRARY DESTINATION "${DS_MOD_ROOT_ABS}/plugins" COMPONENT plugins
+        ARCHIVE DESTINATION "${DS_MOD_ROOT_ABS}/plugins" COMPONENT plugins)
 endfunction()
 
 
@@ -286,15 +282,14 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Shared runtimes → package/mod deps/ (sibling of plugins/, not under it)
+# Shared runtimes → Mod/deps (sibling of Mod/plugins; NOT under bin64/<plat>/)
 # ---------------------------------------------------------------------------
-# Package: CMAKE_INSTALL_PREFIX/deps → Mod/bin64/<plat>/deps
-# install.bat / install_linux.sh mirror that tree to <mod>/deps.
+# Package: ${DS_MOD_ROOT_ABS}/deps
 # Game bin64 never receives these (shell-only GAME_INSTALL_PREFIX rules).
 #
 # Use install(CODE)+file(GET_RUNTIME_DEPENDENCIES) so PE/ELF imports that
 # CMake TARGET_RUNTIME_DLLS misses (e.g. zlib1.dll via FindZLIB) still stage.
-# function_relocation already has install(TARGETS … DESTINATION deps).
+# function_relocation installs to the same Mod/deps.
 # Exclude package-owned modules (Injector, plugins, lua51*) and OS/system libs.
 
 set(_ds_mod_deps_search_dirs "")
@@ -410,7 +405,7 @@ install(CODE "
     set(_ds_dirs \"${_ds_mod_deps_search_dirs_code}\")
     list(APPEND _ds_dirs \"\$<TARGET_FILE_DIR:Injector>\")
     list(REMOVE_DUPLICATES _ds_dirs)
-    set(_ds_out \"\${CMAKE_INSTALL_PREFIX}/deps\")
+    set(_ds_out \"${DS_MOD_ROOT_ABS}/deps\")
     file(MAKE_DIRECTORY \"\${_ds_out}\")
     set(_ds_pre_exclude ${_ds_mod_deps_pre_exclude_code})
     set(_ds_post_exclude ${_ds_mod_deps_post_exclude_code})

@@ -112,7 +112,7 @@ endif()
 # Build-tree stage: lua51* + signatures_*.json under plugins/deps (core.vm assets).
 add_custom_command(TARGET plugin_core_vm POST_BUILD
     COMMAND ${CMAKE_COMMAND}
-        "-DDS_OUT=$<TARGET_FILE_DIR:plugin_core_vm>/deps"
+        "-DDS_OUT=$<TARGET_FILE_DIR:Injector>/deps"
         "-DDS_CFG=$<CONFIG>"
         "-DCMAKE_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
         "-DCMAKE_BINARY_DIR=${CMAKE_BINARY_DIR}"

@@ -95,8 +95,8 @@ if (WIN32)
 
     # RUNTIME only for package deps/ (import .lib is build-only, not shipped).
     install(TARGETS function_relocation
-            RUNTIME DESTINATION deps COMPONENT deps
-            LIBRARY DESTINATION deps COMPONENT deps)
+            RUNTIME DESTINATION "${DS_MOD_ROOT_ABS}/deps" COMPONENT deps
+            LIBRARY DESTINATION "${DS_MOD_ROOT_ABS}/deps" COMPONENT deps)
 
     # --- STATIC: tools (signature_updater / signature_checker) ---
     # Tools already link ${FRIDA_GUM_LIBRARIES}. They must not depend on

@@ -65,6 +65,11 @@ else ()
 endif ()
 
 set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/${PLATFORM_NAME})
+# Package layout under Mod/:
+#   CMAKE_INSTALL_PREFIX = Mod/bin64/<platform>  → Injector + thin shell only
+#   DS_MOD_ROOT_ABS      = <repo>/Mod            → plugins/ and deps/ install here
+# Do NOT install plugins/ or deps/ under bin64/<platform>/ — that layout is discarded.
+set(DS_MOD_ROOT_ABS "${CMAKE_CURRENT_SOURCE_DIR}/Mod")
 if (UNIX AND NOT APPLE)
     set(CMAKE_INSTALL_LIBDIR "lib64")
 elseif (UNIX AND APPLE)
@@ -286,48 +291,46 @@ set(FUNCTION_RELOCATION_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/FunctionRelo
 
 add_subdirectory("src/DontStarveInjector")
 
-# core.vm assets: lua51* VMs + signature databases live under plugins/deps
+# core.vm assets: lua51* VMs + signature databases live under Mod/deps
 # (same tree as plugin_core_vm.dll and shared third-party runtimes).
-set(DS_CORE_VM_DEPS_DEST "plugins/deps")
+set(DS_CORE_VM_DEPS_DEST "deps")  # under DS_MOD_ROOT_ABS
 if (TARGET liblua)
     # lua51Original already installed by src/lua51original; ensure dest matches.
 endif()
-# LuaJIT variants (lua51DS / gengc) — install runtime artifacts into plugins/deps.
+# LuaJIT variants (lua51DS / gengc) — install runtime artifacts into Mod/deps.
 if (TARGET libluajit OR TARGET luajit)
     # Targets vary by luajit CMake; install known output names from build tree.
 endif()
 # Prefer explicit file install from known OUTPUT_NAME locations after build.
-install(CODE [[
-  set(_ds_deps "${CMAKE_INSTALL_PREFIX}/plugins/deps")
-  file(MAKE_DIRECTORY "${_ds_deps}")
-  # Copy signature DBs from package/source if present in build tree / Mod.
-]] COMPONENT plugins)
-
 # Signatures shipped with the mod package (source-controlled under Mod/bin64/windows historically).
 set(_ds_sig_candidates
-    "${CMAKE_SOURCE_DIR}/Mod/bin64/windows/signatures_client.json"
-    "${CMAKE_SOURCE_DIR}/Mod/bin64/windows/signatures_server.json"
-    "${CMAKE_SOURCE_DIR}/Mod/bin64/signatures_client.json"
-    "${CMAKE_SOURCE_DIR}/Mod/bin64/signatures_server.json"
+    "${CMAKE_SOURCE_DIR}/Mod/deps/signatures_client.json"
+    "${CMAKE_SOURCE_DIR}/Mod/deps/signatures_server.json"
+    "${CMAKE_SOURCE_DIR}/Mod/bin64/linux/signatures_client.json"
+    "${CMAKE_SOURCE_DIR}/Mod/bin64/linux/signatures_server.json"
+    "${CMAKE_SOURCE_DIR}/Mod/bin64/osx/signatures_client.json"
+    "${CMAKE_SOURCE_DIR}/Mod/bin64/osx/signatures_server.json"
+    "${CMAKE_BINARY_DIR}/src/DontStarveInjector/RelWithDebInfo/deps/signatures_client.json"
+    "${CMAKE_BINARY_DIR}/src/DontStarveInjector/RelWithDebInfo/deps/signatures_server.json"
 )
 foreach(_ds_sig IN LISTS _ds_sig_candidates)
     if (EXISTS "${_ds_sig}")
-        install(FILES "${_ds_sig}" DESTINATION plugins/deps COMPONENT plugins)
+        install(FILES "${_ds_sig}" DESTINATION "${DS_MOD_ROOT_ABS}/deps" COMPONENT plugins)
     endif()
 endforeach()
 
-# Install lua VM shared libs into plugins/deps when targets exist.
+# Install lua VM shared libs into Mod/deps when targets exist.
 foreach(_ds_lua_tgt IN ITEMS liblua lua51DS lua51DS_gengc lua51DS_arenagc)
     if (TARGET ${_ds_lua_tgt})
         install(TARGETS ${_ds_lua_tgt}
-            RUNTIME DESTINATION plugins/deps COMPONENT plugins
-            LIBRARY DESTINATION plugins/deps COMPONENT plugins)
+            RUNTIME DESTINATION "${DS_MOD_ROOT_ABS}/deps" COMPONENT plugins
+            LIBRARY DESTINATION "${DS_MOD_ROOT_ABS}/deps" COMPONENT plugins)
     endif()
 endforeach()
 # Custom-built lua51.dll from src/lua51 batch (Windows).
 if (WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/src/lua51")
     install(CODE [[
-      set(_ds_deps "${CMAKE_INSTALL_PREFIX}/plugins/deps")
+      set(_ds_deps "${DS_MOD_ROOT_ABS}/deps")
       file(MAKE_DIRECTORY "${_ds_deps}")
       foreach(_cfg IN ITEMS release debug RelWithDebInfo Release Debug)
         set(_cand "${CMAKE_SOURCE_DIR}/src/lua51/${_cfg}/lua51.dll")
@@ -370,10 +373,11 @@ endif ()
 
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX}
 #install(FILES ${LUA_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})
-# Package staging: cmake --install writes under CMAKE_INSTALL_PREFIX
-# (Mod/bin64/<platform>/…), including plugins/, lua VMs, signatures, deps.
+# Package staging:
+#   CMAKE_INSTALL_PREFIX (Mod/bin64/<platform>/) → Injector + shell
+#   Mod/plugins/ → plugin_*.dll
+#   Mod/deps/    → third-party + lua51* + signatures_*.json
 # Live game install: ONLY the inject shell (Winmm / POSIX InjectorStub).
-# Real Injector, plugins/, plugins/deps (lua51* + signatures + third-party) stay mod-local.
 #
 # Dual libInjector destinations (shell kept; real never mirrored to game):
 #   real → package root libInjector.so|.dylib

@@ -15,6 +15,8 @@ for %%p in (%processes%) do (
     )
 )
 
+REM cmake --install package tree: Mod/bin64/windows (Injector + shell only)
+REM plugins/ and deps/ are installed directly under Mod/ (mod root), not under bin64/windows.
 set "source=.\bin64\windows"
 set "current_dir=%cd%"
 set "mod_plugins=%current_dir%\plugins"
@@ -47,7 +49,7 @@ if /i "%1" == "uninstall" (
 )
 
 :install
-REM 1) Shell only to game bin64 (Winmm) — required; fail if missing
+REM 1) Shell only to game bin64 (Winmm)
 echo [INFO] install shell -^> %destination%
 set "shell_ok=0"
 if exist "%source%\Winmm.dll" (
@@ -74,8 +76,8 @@ if "!shell_ok!"=="0" (
     exit /b 1
 )
 
-REM 2) Real Injector + Lua VMs + signatures to mod bin64 (never game bin64)
-echo [INFO] install Injector/runtime -^> %mod_bin64%
+REM 2) Real Injector only under mod bin64 (never game bin64; never plugins/deps here)
+echo [INFO] install Injector -^> %mod_bin64%
 if not exist "%mod_bin64%" mkdir "%mod_bin64%"
 if exist "%source%\Injector.dll" (
     copy /Y "%source%\Injector.dll" "%mod_bin64%\Injector.dll" >NUL
@@ -87,55 +89,79 @@ if exist "%source%\Injector.dll" (
 ) else (
     echo [WARN] no Injector.dll at %source%\Injector.dll
 )
-REM Optional PDB for local debugging
 if exist "%source%\Injector.pdb" copy /Y "%source%\Injector.pdb" "%mod_bin64%\Injector.pdb" >NUL 2>NUL
-for %%F in (lua51.dll lua51.pdb lua51DS.dll lua51DS.pdb lua51DS_gengc.dll lua51DS_gengc.pdb lua51Original.dll lua51Original.pdb signatures_client.json signatures_server.json) do (
-    if exist "%source%\%%F" (
-        copy /Y "%source%\%%F" "%mod_bin64%\%%F" >NUL
-        if errorlevel 1 (
-            echo [ERROR] install %%F failed
-            timeout /t 5
-            exit /b 1
-        )
-    )
-)
-REM Drop stale copies previously mirrored into game bin64 by cmake --install
+
+REM Drop stale copies previously mirrored into game bin64 / mod bin64
 for %%F in (Injector.dll Injector.pdb lua51.dll lua51.pdb lua51DS.dll lua51DS.pdb lua51DS_gengc.dll lua51DS_gengc.pdb lua51Original.dll lua51Original.pdb signatures_client.json signatures_server.json) do (
     if exist "%destination%\%%F" (
         echo [INFO] removing stale game-dir %%F
         del /Q /F "%destination%\%%F" >NUL 2>NUL
     )
+    if exist "%mod_bin64%\%%F" if /I not "%%F"=="Injector.dll" if /I not "%%F"=="Injector.pdb" (
+        echo [INFO] removing stale mod-bin64 %%F ^(belongs in plugins/ or deps/^)
+        del /Q /F "%mod_bin64%\%%F" >NUL 2>NUL
+    )
 )
 
-REM 3) Business plugins stay under the mod directory (mod-local plugins/)
+REM 3) Business plugins: already under mod\plugins after cmake --install.
+REM    Also accept legacy package tree bin64\windows\plugins and migrate.
 if exist "%source%\plugins" (
-    echo [INFO] install plugins -^> %mod_plugins%
+    echo [INFO] migrate package plugins -^> %mod_plugins%
     if not exist "%mod_plugins%" mkdir "%mod_plugins%"
-    robocopy "%source%\plugins" "%mod_plugins%" /E /NFL /NDL /IS /IT /IM >NUL
+    robocopy "%source%\plugins" "%mod_plugins%" /E /XD deps /NFL /NDL /IS /IT /IM >NUL
     if errorlevel 8 (
-        echo [ERROR] install plugins failed
+        echo [ERROR] migrate plugins failed
         timeout /t 5
         exit /b 1
     )
+)
+if exist "%mod_plugins%" (
+    echo [INFO] plugins ready at %mod_plugins%
 ) else (
-    echo [INFO] no package plugins tree at %source%\plugins — skip mod plugins copy
+    echo [WARN] no plugins at %mod_plugins% — run cmake --install first
 )
 
-REM 4) Runtime deps stay under the mod directory (mod-local deps/)
+REM 4) Shared deps (third-party + lua51* + signatures): mod\deps only
 if exist "%source%\deps" (
-    echo [INFO] install deps -^> %mod_deps%
+    echo [INFO] migrate package deps -^> %mod_deps%
     if not exist "%mod_deps%" mkdir "%mod_deps%"
     robocopy "%source%\deps" "%mod_deps%" /E /NFL /NDL /IS /IT /IM >NUL
     if errorlevel 8 (
-        echo [ERROR] install deps failed
+        echo [ERROR] migrate deps failed
         timeout /t 5
         exit /b 1
     )
+)
+REM Legacy: plugins\deps under package or mod → fold into mod\deps
+if exist "%source%\plugins\deps" (
+    echo [INFO] migrate package plugins\deps -^> %mod_deps%
+    if not exist "%mod_deps%" mkdir "%mod_deps%"
+    robocopy "%source%\plugins\deps" "%mod_deps%" /E /NFL /NDL /IS /IT /IM >NUL
+)
+if exist "%mod_plugins%\deps" (
+    echo [INFO] migrate mod plugins\deps -^> %mod_deps%
+    if not exist "%mod_deps%" mkdir "%mod_deps%"
+    robocopy "%mod_plugins%\deps" "%mod_deps%" /E /NFL /NDL /IS /IT /IM >NUL
+    echo [INFO] removing discarded %mod_plugins%\deps
+    rmdir /S /Q "%mod_plugins%\deps" >NUL 2>NUL
+)
+if exist "%mod_deps%" (
+    echo [INFO] deps ready at %mod_deps%
 ) else (
-    echo [INFO] no package deps tree at %source%\deps — skip mod deps copy
+    echo [WARN] no deps at %mod_deps% — run cmake --install first
 )
 
-REM 5) Marker: game data/unsafedata/ds_luajit_injector.path -> absolute mod Injector path
+REM 5) Discard obsolete package-local trees under bin64\windows
+if exist "%source%\plugins" (
+    echo [INFO] removing discarded package tree %source%\plugins
+    rmdir /S /Q "%source%\plugins" >NUL 2>NUL
+)
+if exist "%source%\deps" (
+    echo [INFO] removing discarded package tree %source%\deps
+    rmdir /S /Q "%source%\deps" >NUL 2>NUL
+)
+
+REM 6) Marker: game data/unsafedata/ds_luajit_injector.path -> absolute mod Injector
 set "marker_dir=%destination%\..\data\unsafedata"
 if not exist "%marker_dir%" mkdir "%marker_dir%"
 if exist "%mod_bin64%\Injector.dll" (

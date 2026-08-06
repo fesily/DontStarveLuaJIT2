@@ -121,15 +121,16 @@ module_handler_t loadlib(const char *name, int mode) {
     };
     const auto core_dir = module_dir(L"plugin_core_vm", "plugin_core_vm.dll");
     if (!core_dir.empty()) {
-        // plugins/deps (sibling of plugins/ is mod/deps; user asked plugins/deps)
-        push_root(core_dir / "deps");
-        push_root(core_dir); // also allow side-by-side under plugins/
+        // core.vm lives in mod/plugins → mod/deps is the sibling deps tree
+        push_root(core_dir.parent_path() / "deps"); // <mod>/deps
+        push_root(core_dir / "deps");               // legacy plugins/deps (discarded)
+        push_root(core_dir);
     }
     const auto inj_dir = module_dir(L"Injector", "Injector.dll");
     if (!inj_dir.empty()) {
-        // <mod>/bin64/Injector.dll → <mod>/plugins/deps
-        push_root(inj_dir / "plugins" / "deps");
-        push_root(inj_dir.parent_path() / "plugins" / "deps");
+        // <mod>/bin64/Injector.dll → <mod>/deps
+        push_root(inj_dir.parent_path() / "deps");
+        push_root(inj_dir / "deps"); // legacy package bin64/deps
         push_root(inj_dir);
     }
 #else
