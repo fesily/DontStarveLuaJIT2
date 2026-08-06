@@ -148,6 +148,8 @@ target_compile_features(test_injector_bootstrap PRIVATE cxx_std_23)
 add_test(NAME injector_bootstrap COMMAND test_injector_bootstrap)
 if (WIN32)
     target_link_libraries(test_injector_bootstrap PRIVATE shell32)
+else()
+    target_link_libraries(test_injector_bootstrap PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
 

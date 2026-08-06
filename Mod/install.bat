@@ -47,8 +47,9 @@ if /i "%1" == "uninstall" (
 )
 
 :install
-REM 1) Shell only to game bin64 (Winmm)
+REM 1) Shell only to game bin64 (Winmm) — required; fail if missing
 echo [INFO] install shell -^> %destination%
+set "shell_ok=0"
 if exist "%source%\Winmm.dll" (
     copy /Y "%source%\Winmm.dll" "%destination%\Winmm.dll" >NUL
     if errorlevel 1 (
@@ -56,6 +57,7 @@ if exist "%source%\Winmm.dll" (
         timeout /t 5
         exit /b 1
     )
+    set "shell_ok=1"
 )
 if exist "%source%\winmm.dll" (
     copy /Y "%source%\winmm.dll" "%destination%\winmm.dll" >NUL
@@ -64,8 +66,19 @@ if exist "%source%\winmm.dll" (
         timeout /t 5
         exit /b 1
     )
+    set "shell_ok=1"
+)
+if "!shell_ok!"=="0" (
+    echo [ERROR] inject shell missing: no Winmm.dll / winmm.dll under %source%
+    timeout /t 5
+    exit /b 1
 )
 
+REM Remove stale game-dir real Injector so legacy same-dir load cannot silently win
+if exist "%destination%\Injector.dll" (
+    echo [INFO] removing stale game-dir Injector.dll -^> %destination%\Injector.dll
+    del /Q /F "%destination%\Injector.dll" >NUL 2>NUL
+)
 REM 2) Real Injector to mod bin64
 echo [INFO] install Injector -^> %mod_bin64%
 if not exist "%mod_bin64%" mkdir "%mod_bin64%"

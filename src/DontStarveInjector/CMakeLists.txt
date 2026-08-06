@@ -97,11 +97,13 @@ if (ENABLE_STEAM_SUPPORT)
 endif()
 
 if (APPLE)
-    set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")
-    set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../lib64")
+    # Real Injector is mod-local (mod/bin64); deps live at mod/deps → $ORIGIN/../deps.
+    # Keep lib64 for any legacy shared layout still co-located with the module.
+    set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../deps:\$ORIGIN/../lib64")
+    set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../deps:\$ORIGIN/../lib64")
 else()
-    set_target_properties(Injector PROPERTIES INSTALL_RPATH "./lib64:\$ORIGIN/lib64")
-    set_target_properties(Injector PROPERTIES BUILD_RPATH "./lib64:\$ORIGIN/lib64")
+    set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../deps:./lib64:\$ORIGIN/lib64")
+    set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../deps:./lib64:\$ORIGIN/lib64")
 endif()
 
 add_dependencies(Injector create_missfuncs)

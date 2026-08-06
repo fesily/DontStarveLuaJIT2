@@ -65,23 +65,37 @@ if [ "${1:-}" = "uninstall" ]; then
     uninstall
 fi
 
-# 1) Shell: stub into game bin64/lib64 (LD_PRELOAD path)
+# 1) Shell: stub into game bin64/lib64 (LD_PRELOAD path) — required
 echo "[INFO] install shell -> $destination/lib64"
 mkdir -p "$destination/lib64"
+shell_src=""
 if [ -f "$source/lib64/libInjector.so" ]; then
-    cp -a "$source/lib64/libInjector.so" "$destination/lib64/libInjector.so"
+    shell_src="$source/lib64/libInjector.so"
 elif [ -f "$source/stub/libInjector.so" ]; then
     # legacy/alternate package layout
-    cp -a "$source/stub/libInjector.so" "$destination/lib64/libInjector.so"
+    shell_src="$source/stub/libInjector.so"
 elif [ -f "$source/shell/libInjector.so" ]; then
     # macOS-style package layout (if reused)
-    cp -a "$source/shell/libInjector.so" "$destination/lib64/libInjector.so"
-else
-    echo "[WARN] no stub libInjector.so under $source/lib64 (or stub/shell)"
+    shell_src="$source/shell/libInjector.so"
 fi
+if [ -z "$shell_src" ]; then
+    echo "[ERROR] inject shell missing: no stub libInjector.so under $source/lib64 (or stub/shell)"
+    exit 1
+fi
+cp -a "$shell_src" "$destination/lib64/libInjector.so"
 if [ $? -ne 0 ]; then
     echo "[ERROR] install shell failed"
     exit 1
+fi
+
+# Remove stale game-dir real Injector (not the lib64 stub shell path)
+if [ -f "$destination/libInjector.so" ]; then
+    echo "[INFO] removing stale game-dir libInjector.so -> $destination/libInjector.so"
+    rm -f "$destination/libInjector.so"
+fi
+if [ -f "$destination/../libInjector.so" ]; then
+    echo "[INFO] removing stale game-root libInjector.so -> $destination/../libInjector.so"
+    rm -f "$destination/../libInjector.so"
 fi
 
 # 2) Real Injector into mod bin64
