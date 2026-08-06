@@ -128,6 +128,15 @@ target_compile_features(test_dynamic_plugin_loader PRIVATE cxx_std_23)
 target_compile_definitions(test_dynamic_plugin_loader PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME plugin_dynamic_loader COMMAND test_dynamic_plugin_loader)
 
+add_executable(test_plugin_path
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_path.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPath.cpp)
+target_include_directories(test_plugin_path PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_plugin_path PRIVATE cxx_std_23)
+target_compile_definitions(test_plugin_path PRIVATE DS_PLUGIN_HOST_STATIC)
+add_test(NAME plugin_path COMMAND test_plugin_path)
+
 add_executable(test_plugin_pending_updates
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_pending_updates.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPendingUpdates.cpp)
