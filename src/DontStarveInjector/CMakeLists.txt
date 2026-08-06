@@ -370,17 +370,36 @@ endif()
 string(REPLACE ";" "\\;" _ds_mod_deps_pre_exclude_code "${_ds_mod_deps_pre_exclude}")
 string(REPLACE ";" "\\;" _ds_mod_deps_post_exclude_code "${_ds_mod_deps_post_exclude}")
 
-# Seeds: Injector + core.vm (zip etc.). Optional function_relocation SHARED on Win.
-set(_ds_mod_deps_seed_genex "\"$<TARGET_FILE:Injector>\"")
-if (TARGET plugin_core_vm)
-    string(APPEND _ds_mod_deps_seed_genex " \"$<TARGET_FILE:plugin_core_vm>\"")
-endif()
+# Seeds: Injector + AlwaysOn / hard-import plugin MODULEs + optional reloc SHARED.
+# Prefer seeding plugin targets (not just imported Tracy/SLikeNet) so
+# GET_RUNTIME_DEPENDENCIES walks their PE imports (TracyClient, zip, …).
+# Injector alone is insufficient: DISABLE_TRACY_FUTURE can drop Tracy from L0
+# while plugin_debug_profiler still hard-imports TracyClient.dll.
+set(_ds_mod_deps_seed_targets Injector)
+foreach(_ds_seed_plugin IN ITEMS
+        plugin_core_vm
+        plugin_debug_profiler
+        plugin_manager
+        plugin_fps_render
+        plugin_network_tick
+        plugin_network_rpc
+        plugin_render_angle
+        plugin_dummy)
+    if (TARGET ${_ds_seed_plugin})
+        list(APPEND _ds_mod_deps_seed_targets ${_ds_seed_plugin})
+    endif()
+endforeach()
 if (WIN32 AND TARGET function_relocation)
     get_target_property(_ds_fr_type function_relocation TYPE)
     if (_ds_fr_type STREQUAL "SHARED_LIBRARY")
-        string(APPEND _ds_mod_deps_seed_genex " \"$<TARGET_FILE:function_relocation>\"")
+        list(APPEND _ds_mod_deps_seed_targets function_relocation)
     endif()
 endif()
+set(_ds_mod_deps_seed_genex "")
+foreach(_ds_seed_tgt IN LISTS _ds_mod_deps_seed_targets)
+    string(APPEND _ds_mod_deps_seed_genex " \"$<TARGET_FILE:${_ds_seed_tgt}>\"")
+endforeach()
+string(STRIP "${_ds_mod_deps_seed_genex}" _ds_mod_deps_seed_genex)
 
 install(CODE "
     set(_ds_seeds ${_ds_mod_deps_seed_genex})
@@ -489,27 +508,16 @@ foreach(_dep IN LISTS _resolved)
   execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_dep}" "${DS_OUT}/${_name}")
 endforeach()
 ]=])
-    set(_ds_stage_mod_deps_depends Injector)
-    if (TARGET plugin_core_vm)
-        list(APPEND _ds_stage_mod_deps_depends plugin_core_vm)
-    endif()
-    if (TARGET function_relocation)
-        get_target_property(_ds_fr_type function_relocation TYPE)
-        if (_ds_fr_type STREQUAL "SHARED_LIBRARY")
-            list(APPEND _ds_stage_mod_deps_depends function_relocation)
+    # Reuse install seed target list for build-tree stage (same import graph).
+    set(_ds_stage_mod_deps_depends ${_ds_mod_deps_seed_targets})
+    set(_ds_stage_seeds "")
+    foreach(_ds_seed_tgt IN LISTS _ds_mod_deps_seed_targets)
+        if (_ds_stage_seeds)
+            set(_ds_stage_seeds "${_ds_stage_seeds};$<TARGET_FILE:${_ds_seed_tgt}>")
+        else()
+            set(_ds_stage_seeds "$<TARGET_FILE:${_ds_seed_tgt}>")
         endif()
-    endif()
-    # Build seed list at generate time via genex; order: Injector, core.vm, reloc.
-    set(_ds_stage_seeds "$<TARGET_FILE:Injector>")
-    if (TARGET plugin_core_vm)
-        set(_ds_stage_seeds "${_ds_stage_seeds};$<TARGET_FILE:plugin_core_vm>")
-    endif()
-    if (TARGET function_relocation)
-        get_target_property(_ds_fr_type function_relocation TYPE)
-        if (_ds_fr_type STREQUAL "SHARED_LIBRARY")
-            set(_ds_stage_seeds "${_ds_stage_seeds};$<TARGET_FILE:function_relocation>")
-        endif()
-    endif()
+    endforeach()
     add_custom_target(stage_mod_deps ALL
         COMMAND ${CMAKE_COMMAND}
             -D "DS_SEEDS=${_ds_stage_seeds}"
