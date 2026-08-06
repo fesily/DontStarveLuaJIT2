@@ -21,4 +21,4 @@ target_link_libraries(Winmm PRIVATE injector_bootstrap)
 target_compile_definitions(Winmm PRIVATE NO_FRIDA_GUM=1)
 
 # Shell must stay CRT-only + system libs. No vcpkg shared runtimes.
-install(TARGETS Winmm RUNTIME DESTINATION . COMPONENT injector_shell)
+install(TARGETS Winmm RUNTIME DESTINATION "${DS_INSTALL_SHELL_DIR}" COMPONENT injector_shell)

@@ -49,27 +49,31 @@ message(STATUS "VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR}")
 
 option(DISABLE_TRACY_FUTURE "disable tray future" ON)
 
-set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod)
+# Package root = Mod/. All install destinations are relative to this prefix.
+#   .                      → Injector.* (all platforms)
+#   plugins/               → plugin_*.dll
+#   deps/                  → third-party + lua51* + signatures_*.json
+#   bin64/<platform>/      → thin shell only (Winmm / InjectorStub)
+# Never use absolute DESTINATION with unset vars (install(CODE [[]]) won't expand them → /deps).
+set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod CACHE PATH "Mod package root" FORCE)
 set(TARGET_MOD_DIR ${CMAKE_INSTALL_PREFIX})
+set(DS_MOD_ROOT_ABS ${CMAKE_INSTALL_PREFIX})
+if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(DS_INSTALL_SHELL_DIR "bin64/${PLATFORM_NAME}")
+else ()
+    set(DS_INSTALL_SHELL_DIR "bin/${PLATFORM_NAME}")
+endif ()
 if (UNIX AND APPLE)
     set(GAME_INSTALL_PREFIX ${GAME_DIR}/MacOs)
-    set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/bin64)
 else ()
     if (CMAKE_SIZEOF_VOID_P EQUAL 8)
         set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin64)
-        set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/bin64)
     else ()
         set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin)
-        set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/bin)
     endif ()
 endif ()
-
-set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/${PLATFORM_NAME})
-# Package layout under Mod/:
-#   DS_MOD_ROOT_ABS      = <repo>/Mod            → Injector.*, plugins/, deps/
-#   CMAKE_INSTALL_PREFIX = Mod/bin64/<platform>  → thin shell only (Winmm / stub)
-# Do NOT install Injector/plugins/deps under bin64/<platform>/ — that layout is discarded.
-set(DS_MOD_ROOT_ABS "${CMAKE_CURRENT_SOURCE_DIR}/Mod")
+# Keep a cache-visible alias for scripts that still mention platform package dir.
+set(DS_INSTALL_SHELL_ABS "${CMAKE_INSTALL_PREFIX}/${DS_INSTALL_SHELL_DIR}")
 if (UNIX AND NOT APPLE)
     set(CMAKE_INSTALL_LIBDIR "lib64")
 elseif (UNIX AND APPLE)
@@ -264,14 +268,14 @@ download_frida_gum(${FRIDA_GUM_VERSION})
 
 set(LUA_INCLUDE_DIR ${lua51_root}/src)
 if (MSVC)
-    set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
-    set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/lua51)
+    set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/deps/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/deps/lua51)
 elseif (APPLE)
-    set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/lua51)
-    set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/deps/lua51)
+    set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/deps/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
 else ()
-    set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/lib64/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
-    set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/lib64/lua51)
+    set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/deps/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/deps/lua51)
 endif ()
 set(LUA_CONFIG_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll)
 set(LUA_LIBRARIES lua51)
@@ -315,7 +319,7 @@ set(_ds_sig_candidates
 )
 foreach(_ds_sig IN LISTS _ds_sig_candidates)
     if (EXISTS "${_ds_sig}")
-        install(FILES "${_ds_sig}" DESTINATION "${DS_MOD_ROOT_ABS}/deps" COMPONENT plugins)
+        install(FILES "${_ds_sig}" DESTINATION deps COMPONENT plugins)
     endif()
 endforeach()
 
@@ -323,36 +327,37 @@ endforeach()
 foreach(_ds_lua_tgt IN ITEMS liblua lua51DS lua51DS_gengc lua51DS_arenagc)
     if (TARGET ${_ds_lua_tgt})
         install(TARGETS ${_ds_lua_tgt}
-            RUNTIME DESTINATION "${DS_MOD_ROOT_ABS}/deps" COMPONENT plugins
-            LIBRARY DESTINATION "${DS_MOD_ROOT_ABS}/deps" COMPONENT plugins)
+            RUNTIME DESTINATION deps COMPONENT plugins
+            LIBRARY DESTINATION deps COMPONENT plugins)
     endif()
 endforeach()
 # Custom-built lua51.dll from src/lua51 batch (Windows).
 if (WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/src/lua51")
-    install(CODE [[
-      set(_ds_deps "${DS_MOD_ROOT_ABS}/deps")
-      file(MAKE_DIRECTORY "${_ds_deps}")
+    # NOTE: use double-quoted CODE so CMAKE_* expand at configure time.
+    # Bracket [[ ]] would leave ${DS_MOD_ROOT_ABS} empty → install to /deps.
+    install(CODE "
+      set(_ds_deps \"\${CMAKE_INSTALL_PREFIX}/deps\")
+      file(MAKE_DIRECTORY \"\${_ds_deps}\")
       foreach(_cfg IN ITEMS release debug RelWithDebInfo Release Debug)
-        set(_cand "${CMAKE_SOURCE_DIR}/src/lua51/${_cfg}/lua51.dll")
-        if(EXISTS "${_cand}")
-          file(INSTALL "${_cand}" DESTINATION "${_ds_deps}")
+        set(_cand \"${CMAKE_SOURCE_DIR}/src/lua51/\${_cfg}/lua51.dll\")
+        if(EXISTS \"\${_cand}\")
+          file(INSTALL \"\${_cand}\" DESTINATION \"\${_ds_deps}\")
         endif()
       endforeach()
-      # Also multi-config build output for luajit variants if present.
       foreach(_name IN ITEMS lua51DS.dll lua51DS_gengc.dll lua51Original.dll lua51.dll)
         foreach(_root IN ITEMS
-            "${CMAKE_BINARY_DIR}/luajit/RelWithDebInfo"
-            "${CMAKE_BINARY_DIR}/luajit/Release"
-            "${CMAKE_BINARY_DIR}/luajit/Debug"
-            "${CMAKE_BINARY_DIR}/src/lua51original/RelWithDebInfo"
-            "${CMAKE_BINARY_DIR}/src/lua51original/Release"
-            "${CMAKE_BINARY_DIR}/src/lua51original/Debug")
-          if(EXISTS "${_root}/${_name}")
-            file(INSTALL "${_root}/${_name}" DESTINATION "${_ds_deps}")
+            \"${CMAKE_BINARY_DIR}/luajit/RelWithDebInfo\"
+            \"${CMAKE_BINARY_DIR}/luajit/Release\"
+            \"${CMAKE_BINARY_DIR}/luajit/Debug\"
+            \"${CMAKE_BINARY_DIR}/src/lua51original/RelWithDebInfo\"
+            \"${CMAKE_BINARY_DIR}/src/lua51original/Release\"
+            \"${CMAKE_BINARY_DIR}/src/lua51original/Debug\")
+          if(EXISTS \"\${_root}/\${_name}\")
+            file(INSTALL \"\${_root}/\${_name}\" DESTINATION \"\${_ds_deps}\")
           endif()
         endforeach()
       endforeach()
-    ]] COMPONENT plugins)
+    " COMPONENT plugins)
 endif()
 
 if (MSVC)
@@ -373,11 +378,11 @@ endif ()
 
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX}
 #install(FILES ${LUA_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})
-# Package staging:
-#   Mod/              → Injector.* (all platforms)
-#   Mod/plugins/      → plugin_*.dll
-#   Mod/deps/         → third-party + lua51* + signatures_*.json
-#   Mod/bin64/<plat>/ → thin shell only (Winmm / InjectorStub)
+# Package staging (CMAKE_INSTALL_PREFIX = Mod/):
+#   .                 → Injector.*
+#   plugins/          → plugin_*.dll
+#   deps/             → third-party + lua51* + signatures_*.json
+#   bin64/<plat>/     → thin shell only (Winmm / InjectorStub)
 # Live game install: ONLY the inject shell (Winmm / POSIX InjectorStub).
 #
 # Dual libInjector destinations (shell kept; real never mirrored to game):

@@ -172,17 +172,17 @@ if (MSVC)
 endif ()
 
 # Package layout (mod-local Injector bootstrap):
-# - Real Injector installs to Mod root (all platforms): ${DS_MOD_ROOT_ABS}/
+# - Real Injector installs to Mod root (all platforms): Mod root (.)/
 #   e.g. Mod/Injector.dll, Mod/libInjector.so, Mod/libInjector.dylib
-# - Thin shell only under CMAKE_INSTALL_PREFIX (Mod/bin64/<plat>/):
+# - Thin shell only under bin64/<plat>/ under Mod:
 #     Windows: Winmm.dll
 #     Linux:   lib64/libInjector.so stub (game PRELOAD)
 #     macOS:   shell/libInjector.dylib stub
 # - plugins → Mod/plugins; deps → Mod/deps
 # - game bin64 never receives real Injector / plugins / deps
 install(TARGETS Injector
-    RUNTIME DESTINATION "${DS_MOD_ROOT_ABS}" COMPONENT injector
-    LIBRARY DESTINATION "${DS_MOD_ROOT_ABS}" COMPONENT injector)
+    RUNTIME DESTINATION . COMPONENT injector
+    LIBRARY DESTINATION . COMPONENT injector)
 
 
 add_subdirectory(loader/bootstrap)
@@ -205,10 +205,11 @@ if (NOT WIN32)
         LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/stub"
     )
     if (UNIX AND NOT APPLE)
-        install(TARGETS InjectorStub LIBRARY DESTINATION lib64 COMPONENT injector_shell)
+        # Game PRELOAD path is bin64/lib64; package mirror under bin64/<plat>/lib64
+        install(TARGETS InjectorStub LIBRARY DESTINATION "${DS_INSTALL_SHELL_DIR}/lib64" COMPONENT injector_shell)
     else()
         # macOS: do not install stub next to real libInjector.dylib at package root.
-        install(TARGETS InjectorStub LIBRARY DESTINATION shell COMPONENT injector_shell)
+        install(TARGETS InjectorStub LIBRARY DESTINATION "${DS_INSTALL_SHELL_DIR}/shell" COMPONENT injector_shell)
     endif()
 endif()
 
@@ -224,9 +225,9 @@ add_subdirectory(util)
 # shared helper and orchestrates add_subdirectory.
 #
 # Install / package policy:
-# - plugin_*.dll → ${DS_MOD_ROOT_ABS}/plugins  (mod root, NOT bin64/<platform>/plugins)
-# - shared runtimes + lua51* + signatures → ${DS_MOD_ROOT_ABS}/deps
-# - Injector → ${DS_MOD_ROOT_ABS}; shell → CMAKE_INSTALL_PREFIX (bin64/<platform>)
+# - plugin_*.dll → plugins/  (mod root, NOT bin64/<platform>/plugins)
+# - shared runtimes + lua51* + signatures → deps/
+# - Injector → Mod root (.); shell → bin64/<platform> under Mod
 # - GAME_INSTALL_PREFIX: shell only; never plugin_*.dll into game bin64
 function(ds_add_dynamic_plugin name)
     add_library(${name} MODULE ${ARGN})
@@ -249,9 +250,9 @@ function(ds_add_dynamic_plugin name)
     # MODULE targets cannot take RUNTIME_DEPENDENCY_SET; shared ports used only by
     # plugins are staged via TARGET_RUNTIME_DLLS install below.
     install(TARGETS ${name}
-        RUNTIME DESTINATION "${DS_MOD_ROOT_ABS}/plugins" COMPONENT plugins
-        LIBRARY DESTINATION "${DS_MOD_ROOT_ABS}/plugins" COMPONENT plugins
-        ARCHIVE DESTINATION "${DS_MOD_ROOT_ABS}/plugins" COMPONENT plugins)
+        RUNTIME DESTINATION plugins COMPONENT plugins
+        LIBRARY DESTINATION plugins COMPONENT plugins
+        ARCHIVE DESTINATION plugins COMPONENT plugins)
 endfunction()
 
 
@@ -283,7 +284,7 @@ endif()
 # ---------------------------------------------------------------------------
 # Shared runtimes → Mod/deps (sibling of Mod/plugins; NOT under bin64/<plat>/)
 # ---------------------------------------------------------------------------
-# Package: ${DS_MOD_ROOT_ABS}/deps
+# Package: deps/
 # Game bin64 never receives these (shell-only GAME_INSTALL_PREFIX rules).
 #
 # Use install(CODE)+file(GET_RUNTIME_DEPENDENCIES) so PE/ELF imports that
@@ -404,7 +405,7 @@ install(CODE "
     set(_ds_dirs \"${_ds_mod_deps_search_dirs_code}\")
     list(APPEND _ds_dirs \"\$<TARGET_FILE_DIR:Injector>\")
     list(REMOVE_DUPLICATES _ds_dirs)
-    set(_ds_out \"${DS_MOD_ROOT_ABS}/deps\")
+    set(_ds_out \"\${CMAKE_INSTALL_PREFIX}/deps\")
     file(MAKE_DIRECTORY \"\${_ds_out}\")
     set(_ds_pre_exclude ${_ds_mod_deps_pre_exclude_code})
     set(_ds_post_exclude ${_ds_mod_deps_post_exclude_code})
