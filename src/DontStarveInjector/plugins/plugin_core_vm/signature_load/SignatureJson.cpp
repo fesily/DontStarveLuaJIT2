@@ -71,26 +71,51 @@ static std::filesystem::path module_dir_if_loaded_sym(const char *sym_name) {
 }
 
 // Canonical: <mod>/deps (sibling of plugins/; lua51* + signatures_*.json).
+// Injector is installed at <mod>/Injector.* (all platforms).
 static std::filesystem::path core_vm_deps_dir_if_loaded() {
 #ifdef _WIN32
     const auto core = module_dir_if_loaded_win(L"plugin_core_vm", "plugin_core_vm.dll");
     if (!core.empty()) {
-        // plugins/ → parent/deps
+        // .../plugins/plugin_core_vm.dll → .../deps
+        if (core.filename() == "plugins") {
+            return core.parent_path() / "deps";
+        }
         return core.parent_path() / "deps";
     }
     const auto inj = module_dir_if_loaded_win(L"Injector", "Injector.dll");
     if (!inj.empty()) {
-        // bin64/Injector → parent/deps (mod/deps)
-        return inj.parent_path() / "deps";
+        // .../Mod/Injector.dll → .../Mod/deps
+        // legacy .../Mod/bin64[/windows]/Injector.dll → .../Mod/deps
+        if (inj.filename() == "bin64" || inj.filename() == "windows" || inj.filename() == "linux" ||
+            inj.filename() == "osx") {
+            auto p = inj;
+            while (!p.empty() && (p.filename() == "bin64" || p.filename() == "windows" ||
+                                  p.filename() == "linux" || p.filename() == "osx")) {
+                p = p.parent_path();
+            }
+            return p / "deps";
+        }
+        return inj / "deps";
     }
 #else
     const auto core = module_dir_if_loaded_sym("ds_core_vm_run_signature_and_replace");
     if (!core.empty()) {
+        if (core.filename() == "plugins") {
+            return core.parent_path() / "deps";
+        }
         return core.parent_path() / "deps";
     }
     const auto inj = module_dir_if_loaded_sym("HookStartupEntry");
     if (!inj.empty()) {
-        return inj.parent_path() / "deps";
+        if (inj.filename() == "bin64" || inj.filename() == "lib64") {
+            auto p = inj;
+            while (!p.empty() && (p.filename() == "bin64" || p.filename() == "lib64" ||
+                                  p.filename() == "linux" || p.filename() == "osx")) {
+                p = p.parent_path();
+            }
+            return p / "deps";
+        }
+        return inj / "deps";
     }
 #endif
     return {};

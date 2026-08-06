@@ -20,7 +20,7 @@ REM plugins/ and deps/ are installed directly under Mod/ (mod root), not under b
 set "source=.\bin64\windows"
 set "current_dir=%cd%"
 set "mod_plugins=%current_dir%\plugins"
-set "mod_bin64=%current_dir%\bin64"
+set "mod_root=%current_dir%"
 set "mod_deps=%current_dir%\deps"
 
 echo !current_dir! | find /I "workshop\content\322330" >NUL
@@ -76,30 +76,33 @@ if "!shell_ok!"=="0" (
     exit /b 1
 )
 
-REM 2) Real Injector only under mod bin64 (never game bin64; never plugins/deps here)
-echo [INFO] install Injector -^> %mod_bin64%
-if not exist "%mod_bin64%" mkdir "%mod_bin64%"
-if exist "%source%\Injector.dll" (
-    copy /Y "%source%\Injector.dll" "%mod_bin64%\Injector.dll" >NUL
+REM 2) Real Injector at mod root (all platforms); never game bin64
+echo [INFO] install Injector -^> %mod_root%
+if exist "%current_dir%\Injector.dll" (
+    echo [INFO] Injector already at mod root
+) else if exist "%source%\Injector.dll" (
+    copy /Y "%source%\Injector.dll" "%current_dir%\Injector.dll" >NUL
     if errorlevel 1 (
         echo [ERROR] install Injector.dll failed
         timeout /t 5
         exit /b 1
     )
 ) else (
-    echo [WARN] no Injector.dll at %source%\Injector.dll
+    echo [WARN] no Injector.dll at mod root or package source
 )
-if exist "%source%\Injector.pdb" copy /Y "%source%\Injector.pdb" "%mod_bin64%\Injector.pdb" >NUL 2>NUL
-
-REM Drop stale copies previously mirrored into game bin64 / mod bin64
+if exist "%source%\Injector.pdb" copy /Y "%source%\Injector.pdb" "%current_dir%\Injector.pdb" >NUL 2>NUL
+if exist "%current_dir%\bin64\Injector.dll" (
+    echo [INFO] removing legacy mod bin64\Injector.dll
+    del /Q /F "%current_dir%\bin64\Injector.dll" >NUL 2>NUL
+)
+if exist "%current_dir%\bin64\windows\Injector.dll" (
+    echo [INFO] removing discarded package Injector under bin64\windows
+    del /Q /F "%current_dir%\bin64\windows\Injector.dll" >NUL 2>NUL
+)
 for %%F in (Injector.dll Injector.pdb lua51.dll lua51.pdb lua51DS.dll lua51DS.pdb lua51DS_gengc.dll lua51DS_gengc.pdb lua51Original.dll lua51Original.pdb signatures_client.json signatures_server.json) do (
     if exist "%destination%\%%F" (
         echo [INFO] removing stale game-dir %%F
         del /Q /F "%destination%\%%F" >NUL 2>NUL
-    )
-    if exist "%mod_bin64%\%%F" if /I not "%%F"=="Injector.dll" if /I not "%%F"=="Injector.pdb" (
-        echo [INFO] removing stale mod-bin64 %%F ^(belongs in plugins/ or deps/^)
-        del /Q /F "%mod_bin64%\%%F" >NUL 2>NUL
     )
 )
 
@@ -164,20 +167,20 @@ if exist "%source%\deps" (
 REM 6) Marker: game data/unsafedata/ds_luajit_injector.path -> absolute mod Injector
 set "marker_dir=%destination%\..\data\unsafedata"
 if not exist "%marker_dir%" mkdir "%marker_dir%"
-if exist "%mod_bin64%\Injector.dll" (
-    for %%I in ("%mod_bin64%\Injector.dll") do (
+if exist "%current_dir%\Injector.dll" (
+    for %%I in ("%current_dir%\Injector.dll") do (
         >"%marker_dir%\ds_luajit_injector.path" echo %%~fI
     )
     echo [INFO] wrote marker -^> %marker_dir%\ds_luajit_injector.path
 ) else (
-    echo [WARN] skip marker: %mod_bin64%\Injector.dll missing
+    echo [WARN] skip marker: %current_dir%\Injector.dll missing
 )
 
 echo [INFO] install success
 goto end
 
 :uninstall
-REM Only remove inject shell + marker from game; leave mod bin64/plugins/deps alone
+REM Only remove inject shell + marker from game; leave mod Injector/plugins/deps alone
 echo [INFO] removing injector shell from %destination% ...
 del /Q /F "%destination%\winmm.dll" >NUL 2>NUL
 del /Q /F "%destination%\Winmm.dll" >NUL 2>NUL

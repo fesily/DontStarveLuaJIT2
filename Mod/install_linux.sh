@@ -17,6 +17,7 @@ done
 source="bin64/linux"
 current_dir=$(pwd)
 mod_plugins="${current_dir}/plugins"
+mod_root="${current_dir}"
 mod_bin64="${current_dir}/bin64"
 mod_deps="${current_dir}/deps"
 
@@ -53,7 +54,7 @@ abs_path() {
 }
 
 uninstall() {
-    # Only remove game stub + marker; leave mod bin64/plugins/deps alone
+    # Only remove game stub + marker; leave mod Injector/plugins/deps alone
     echo "[INFO] removing injector shell from $destination ..."
     rm -f "$destination/lib64/libInjector.so"
     rm -f "$destination/../data/unsafedata/ds_luajit_injector.path"
@@ -98,34 +99,44 @@ if [ -f "$destination/../libInjector.so" ]; then
     rm -f "$destination/../libInjector.so"
 fi
 
-# 2) Real Injector + Lua VMs + signatures into mod bin64 (never game bin64)
-echo "[INFO] install Injector/runtime -> $mod_bin64"
-mkdir -p "$mod_bin64"
-if [ -f "$source/libInjector.so" ]; then
-    cp -a "$source/libInjector.so" "$mod_bin64/libInjector.so"
+# 2) Real Injector at mod root; lua/signatures live under mod/deps (never game bin64)
+echo "[INFO] install Injector -> $mod_root"
+if [ -f "$mod_root/libInjector.so" ]; then
+    echo "[INFO] Injector already at mod root"
+elif [ -f "$source/libInjector.so" ]; then
+    cp -a "$source/libInjector.so" "$mod_root/libInjector.so"
     if [ $? -ne 0 ]; then
         echo "[ERROR] install libInjector.so failed"
         exit 1
     fi
+elif [ -f "$current_dir/libInjector.so" ]; then
+    echo "[INFO] Injector already at $current_dir"
 else
-    echo "[WARN] no libInjector.so at $source/libInjector.so"
+    echo "[WARN] no libInjector.so at mod root or package source"
 fi
+# Migrate legacy mod bin64 Injector
+if [ -f "$mod_bin64/libInjector.so" ] && [ ! -f "$mod_root/libInjector.so" ]; then
+    mv "$mod_bin64/libInjector.so" "$mod_root/libInjector.so"
+    echo "[INFO] moved legacy bin64/libInjector.so -> mod root"
+elif [ -f "$mod_bin64/libInjector.so" ]; then
+    rm -f "$mod_bin64/libInjector.so"
+    echo "[INFO] removed legacy mod bin64/libInjector.so"
+fi
+# lua/signatures should be under deps (cmake --install); migrate leftovers from package/bin64
+mkdir -p "$mod_deps"
 for f in \
     liblua51.so liblua51DS.so liblua51DS_gengc.so liblua51Original.so \
     lua51.dll lua51DS.dll lua51DS_gengc.dll lua51Original.dll \
     signatures_client.json signatures_server.json
 do
-    if [ -f "$source/$f" ]; then
-        cp -a "$source/$f" "$mod_bin64/$f"
-        if [ $? -ne 0 ]; then
-            echo "[ERROR] install $f failed"
-            exit 1
+    for src in "$source/$f" "$source/lib64/$f" "$mod_bin64/$f"; do
+        if [ -f "$src" ]; then
+            cp -a "$src" "$mod_deps/$f"
+            break
         fi
-    fi
-    # also check package lib64 for Linux .so layout
-    if [ -f "$source/lib64/$f" ]; then
-        cp -a "$source/lib64/$f" "$mod_bin64/$f"
-    fi
+    done
+    # drop leftovers under mod bin64
+    rm -f "$mod_bin64/$f"
 done
 # Drop stale copies previously mirrored into game bin64 by cmake --install
 for f in \
@@ -169,15 +180,15 @@ fi
 # 5) Marker: game data/unsafedata/ds_luajit_injector.path -> absolute mod Injector path
 marker_dir="$destination/../data/unsafedata"
 mkdir -p "$marker_dir"
-if [ -f "$mod_bin64/libInjector.so" ]; then
-    abs_path "$mod_bin64/libInjector.so" > "$marker_dir/ds_luajit_injector.path"
+if [ -f "$mod_root/libInjector.so" ]; then
+    abs_path "$mod_root/libInjector.so" > "$marker_dir/ds_luajit_injector.path"
     if [ $? -ne 0 ]; then
         echo "[ERROR] write marker failed"
         exit 1
     fi
     echo "[INFO] wrote marker -> $marker_dir/ds_luajit_injector.path"
 else
-    echo "[WARN] skip marker: $mod_bin64/libInjector.so missing"
+    echo "[WARN] skip marker: $mod_root/libInjector.so missing"
 fi
 
 # Launcher rewrite UNCHANGED: LD_PRELOAD=./lib64/libInjector.so (stub)

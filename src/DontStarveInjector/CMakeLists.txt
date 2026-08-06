@@ -97,13 +97,13 @@ if (ENABLE_STEAM_SUPPORT)
 endif()
 
 if (APPLE)
-    # Real Injector is mod-local (mod/bin64); deps live at mod/deps → $ORIGIN/../deps.
+    # Real Injector is at mod root; deps live at mod/deps → $ORIGIN/deps.
     # Keep lib64 for any legacy shared layout still co-located with the module.
-    set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../deps:\$ORIGIN/../lib64")
-    set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../deps:\$ORIGIN/../lib64")
+    set_target_properties(Injector PROPERTIES INSTALL_RPATH "$ORIGIN/deps")
+    set_target_properties(Injector PROPERTIES BUILD_RPATH "$ORIGIN/deps")
 else()
-    set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../deps:./lib64:\$ORIGIN/lib64")
-    set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../deps:./lib64:\$ORIGIN/lib64")
+    set_target_properties(Injector PROPERTIES INSTALL_RPATH "$ORIGIN/deps")
+    set_target_properties(Injector PROPERTIES BUILD_RPATH "$ORIGIN/deps")
 endif()
 
 add_dependencies(Injector create_missfuncs)
@@ -172,19 +172,17 @@ if (MSVC)
 endif ()
 
 # Package layout (mod-local Injector bootstrap):
-# - Real Injector installs to package root Mod/bin64/<plat>/ (mod-side payload).
-# - POSIX InjectorStub installs separately so install scripts / GAME_DIR mirror can
-#   copy stub→game without name-clashing with real Injector:
-#     Linux: lib64/   (game PRELOAD path ./lib64/libInjector.so)
-#     macOS: shell/   (distinct from package-root real libInjector.dylib)
-# - Windows shell is Winmm (loader/); real Injector remains COMPONENT injector.
-# - Shared third-party + function_relocation runtimes stage to package deps/
-#   (COMPONENT deps) via TARGET_RUNTIME_DLLS / install rules below.
-#   install.bat / install_linux.sh copy that tree to mod-root deps/;
-#   game bin64 is never polluted.
+# - Real Injector installs to Mod root (all platforms): ${DS_MOD_ROOT_ABS}/
+#   e.g. Mod/Injector.dll, Mod/libInjector.so, Mod/libInjector.dylib
+# - Thin shell only under CMAKE_INSTALL_PREFIX (Mod/bin64/<plat>/):
+#     Windows: Winmm.dll
+#     Linux:   lib64/libInjector.so stub (game PRELOAD)
+#     macOS:   shell/libInjector.dylib stub
+# - plugins → Mod/plugins; deps → Mod/deps
+# - game bin64 never receives real Injector / plugins / deps
 install(TARGETS Injector
-    RUNTIME DESTINATION . COMPONENT injector
-    LIBRARY DESTINATION . COMPONENT injector)
+    RUNTIME DESTINATION "${DS_MOD_ROOT_ABS}" COMPONENT injector
+    LIBRARY DESTINATION "${DS_MOD_ROOT_ABS}" COMPONENT injector)
 
 
 add_subdirectory(loader/bootstrap)
@@ -220,14 +218,15 @@ endif ()
 
 add_subdirectory(util)
 
-# Dynamic plugin modules (Phase B). Output next to Injector under plugins/.
+# Dynamic plugin modules (Phase B). Build-tree output under Injector/plugins/;
+# install to Mod/plugins.
 # Each plugin owns plugins/<name>/CMakeLists.txt; this file only defines the
 # shared helper and orchestrates add_subdirectory.
 #
 # Install / package policy:
 # - plugin_*.dll → ${DS_MOD_ROOT_ABS}/plugins  (mod root, NOT bin64/<platform>/plugins)
 # - shared runtimes + lua51* + signatures → ${DS_MOD_ROOT_ABS}/deps
-# - Injector/shell → CMAKE_INSTALL_PREFIX (Mod/bin64/<platform>)
+# - Injector → ${DS_MOD_ROOT_ABS}; shell → CMAKE_INSTALL_PREFIX (bin64/<platform>)
 # - GAME_INSTALL_PREFIX: shell only; never plugin_*.dll into game bin64
 function(ds_add_dynamic_plugin name)
     add_library(${name} MODULE ${ARGN})

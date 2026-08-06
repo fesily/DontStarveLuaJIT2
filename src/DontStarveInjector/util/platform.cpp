@@ -128,9 +128,10 @@ module_handler_t loadlib(const char *name, int mode) {
     }
     const auto inj_dir = module_dir(L"Injector", "Injector.dll");
     if (!inj_dir.empty()) {
-        // <mod>/bin64/Injector.dll → <mod>/deps
+        // Canonical: <mod>/Injector.dll → <mod>/deps
+        push_root(inj_dir / "deps");
+        // Legacy: <mod>/bin64/Injector.dll → <mod>/deps
         push_root(inj_dir.parent_path() / "deps");
-        push_root(inj_dir / "deps"); // legacy package bin64/deps
         push_root(inj_dir);
     }
 #else
@@ -150,8 +151,10 @@ module_handler_t loadlib(const char *name, int mode) {
     void *inj_sym = dlsym(RTLD_DEFAULT, "HookStartupEntry");
     if (inj_sym && dladdr(inj_sym, &info) && info.dli_fname) {
         const auto inj_dir = module_dir_from_path(info.dli_fname);
-        push_root(inj_dir / "plugins" / "deps");
-        push_root(inj_dir.parent_path() / "plugins" / "deps");
+        // Canonical mod-root Injector → mod/deps
+        push_root(inj_dir / "deps");
+        // Legacy bin64 layouts
+        push_root(inj_dir.parent_path() / "deps");
         push_root(inj_dir);
 #if defined(__linux__)
         push_root(inj_dir / "lib64");

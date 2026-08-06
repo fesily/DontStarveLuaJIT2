@@ -66,9 +66,9 @@ endif ()
 
 set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/${PLATFORM_NAME})
 # Package layout under Mod/:
-#   CMAKE_INSTALL_PREFIX = Mod/bin64/<platform>  → Injector + thin shell only
-#   DS_MOD_ROOT_ABS      = <repo>/Mod            → plugins/ and deps/ install here
-# Do NOT install plugins/ or deps/ under bin64/<platform>/ — that layout is discarded.
+#   DS_MOD_ROOT_ABS      = <repo>/Mod            → Injector.*, plugins/, deps/
+#   CMAKE_INSTALL_PREFIX = Mod/bin64/<platform>  → thin shell only (Winmm / stub)
+# Do NOT install Injector/plugins/deps under bin64/<platform>/ — that layout is discarded.
 set(DS_MOD_ROOT_ABS "${CMAKE_CURRENT_SOURCE_DIR}/Mod")
 if (UNIX AND NOT APPLE)
     set(CMAKE_INSTALL_LIBDIR "lib64")
@@ -374,9 +374,10 @@ endif ()
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX}
 #install(FILES ${LUA_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})
 # Package staging:
-#   CMAKE_INSTALL_PREFIX (Mod/bin64/<platform>/) → Injector + shell
-#   Mod/plugins/ → plugin_*.dll
-#   Mod/deps/    → third-party + lua51* + signatures_*.json
+#   Mod/              → Injector.* (all platforms)
+#   Mod/plugins/      → plugin_*.dll
+#   Mod/deps/         → third-party + lua51* + signatures_*.json
+#   Mod/bin64/<plat>/ → thin shell only (Winmm / InjectorStub)
 # Live game install: ONLY the inject shell (Winmm / POSIX InjectorStub).
 #
 # Dual libInjector destinations (shell kept; real never mirrored to game):

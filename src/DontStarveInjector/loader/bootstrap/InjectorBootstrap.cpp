@@ -198,7 +198,12 @@ std::vector<fs::path> module_candidates_under_dir(const fs::path &dir) {
 }
 
 std::vector<fs::path> module_candidates_under_mod_root(const fs::path &mod_root) {
-    return module_candidates_under_dir(mod_root / "bin64");
+    // Prefer mod-root Injector; keep bin64/ for legacy packages.
+    auto c = module_candidates_under_dir(mod_root);
+    if (c.empty()) {
+        c = module_candidates_under_dir(mod_root / "bin64");
+    }
+    return c;
 }
 
 bool looks_like_mod_root(const fs::path &mod_root) {
@@ -454,6 +459,8 @@ bool resolve_injector_module(std::filesystem::path &out_abs) {
 }
 
 std::filesystem::path mod_root_from_injector_module(const std::filesystem::path &abs_module) {
+    // Canonical: Injector lives at <mod_root>/Injector.dll (or libInjector.so/.dylib).
+    // Legacy: <mod_root>/bin64/... or <mod_root>/bin64/lib64/...
     const auto parent = abs_module.parent_path();
     if (parent.empty()) {
         return {};
@@ -469,8 +476,15 @@ std::filesystem::path mod_root_from_injector_module(const std::filesystem::path 
     if (parent_name == "bin64") {
         return parent.parent_path();
     }
-    // Best effort: grandparent of the module file.
-    return parent.parent_path();
+    // windows/ under bin64 package tree (legacy package layout)
+    if (parent_name == "windows" || parent_name == "linux" || parent_name == "osx") {
+        const auto bin64 = parent.parent_path();
+        if (bin64.filename() == "bin64") {
+            return bin64.parent_path();
+        }
+    }
+    // Canonical: parent directory of Injector module is the mod root.
+    return parent;
 }
 
 bool configure_injector_deps_search(const std::filesystem::path &mod_root,
