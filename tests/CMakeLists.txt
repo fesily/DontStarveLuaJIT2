@@ -171,6 +171,8 @@ add_executable(test_plugin_local_inventory
 target_include_directories(test_plugin_local_inventory PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
 target_compile_features(test_plugin_local_inventory PRIVATE cxx_std_23)
+# Compile PluginPath into the test image (not via Injector import lib).
+target_compile_definitions(test_plugin_local_inventory PRIVATE DS_PLUGIN_HOST_STATIC)
 find_package(nlohmann_json CONFIG REQUIRED)
 target_link_libraries(test_plugin_local_inventory PRIVATE nlohmann_json::nlohmann_json)
 add_test(NAME plugin_local_inventory COMMAND test_plugin_local_inventory)

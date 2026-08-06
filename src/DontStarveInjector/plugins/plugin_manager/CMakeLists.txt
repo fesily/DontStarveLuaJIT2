@@ -1,5 +1,9 @@
 # plugin_manager — optional package manager (runtime optional if deleted).
 # No Frida Gum; always built cross-platform. Soft absence when DLL removed.
+#
+# PluginPath lives only in Injector (process-wide provider / search state).
+# ds_add_dynamic_plugin already links Injector; PluginPath symbols are
+# exported via DS_INJECTOR_CXX_API — do NOT compile PluginPath.cpp here.
 ds_add_dynamic_plugin(plugin_manager
     plugin_manager.cpp
     PluginManagerApi.cpp
@@ -8,9 +12,7 @@ ds_add_dynamic_plugin(plugin_manager
     PluginHttp.cpp
     PluginHash.cpp
     PluginZipExtract.cpp
-    PluginApply.cpp
-    # Shared search policy (not exported from Injector import lib).
-    ${DONTSTARVEINJECTOR_ROOT}/core/PluginPath.cpp)
+    PluginApply.cpp)
 target_link_libraries(plugin_manager PRIVATE
     nlohmann_json::nlohmann_json
     libzip::zip)

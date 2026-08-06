@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginPinConfig.hpp"
+#include "core/PluginPath.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -26,14 +27,10 @@ struct LocalPluginEntry {
 // Pure filesystem — takes an explicit path so unit tests can use a temp dir.
 std::vector<LocalPluginEntry> scan_local_inventory(const std::filesystem::path &plugins_dir);
 
-// Pure path helper: if module_dir's last component is "plugins", use it as-is
-// (plugin_manager lives under <InjectorDir>/plugins/); otherwise append "plugins"
-// (Injector-style layout). Empty input → empty.
-// Defined by core/PluginPath.cpp (shared ds::plugin symbol).
-std::filesystem::path plugins_dir_from_module_dir(const std::filesystem::path &module_dir);
-
+// plugins_dir_from_module_dir is declared in core/PluginPath.hpp (Injector export).
 // Shared plugin search policy (default_plugin_search_dirs front), else
 // plugins_dir_from_module_dir(injector_module_dir()) even if missing on disk.
+// Uses Injector's process-wide PluginPath state (modmain provider included).
 // May be empty if both search policy and module path are unavailable.
 std::filesystem::path resolve_plugins_dir();
 

@@ -1,5 +1,4 @@
 #include "PluginLocalInventory.hpp"
-#include "core/PluginPath.hpp"
 
 #include <nlohmann/json.hpp>
 
