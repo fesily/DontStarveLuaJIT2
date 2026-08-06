@@ -6,6 +6,13 @@ Spec: docs/superpowers/specs/2026-08-03-plugin-architecture-design.md §12.10
 Also supports core.vm degradation matrix (Task 5):
   --scenario present|absent|vm_disabled
 
+Deploy layout (Task 3):
+  - Injector / winmm stay in game bin64 (install.bat / install_linux.sh).
+  - Business plugins stage under the mod `plugins/` directory, not game bin64.
+  - CI / local smoke may set DS_LUAJIT_PLUGIN_DIR to a build-output plugins dir
+    (e.g. builds/.../RelWithDebInfo/plugins) so core.vm is found without
+    copying into game bin64/plugins. Game bin64/plugins remains a compat fallback.
+
 Exit codes:
   0 PASS
   1 FAIL
@@ -115,21 +122,45 @@ def ensure_force_enable(game_dir: Path) -> None:
     print(f"[lg] force-enable via CLI only (mods under {game_dir / 'mods'})")
 
 
+def core_vm_candidates(game_dir: Path) -> list[Path]:
+    """Ordered plugin_core_vm.dll candidates for presence checks / absent staging.
+
+    Prefer DS_LUAJIT_PLUGIN_DIR (CI / mod-local deploy knob), then game
+    bin64/plugins as the historical fallback. Mod-local paths without
+    modmain_path are not known here — use the env override for that case.
+    """
+    out: list[Path] = []
+    env = os.environ.get("DS_LUAJIT_PLUGIN_DIR")
+    if env:
+        out.append(Path(env) / "plugin_core_vm.dll")
+    out.append(game_dir / "bin64" / "plugins" / "plugin_core_vm.dll")
+    return out
+
+
 def core_vm_dll_path(game_dir: Path) -> Path:
-    return game_dir / "bin64" / "plugins" / "plugin_core_vm.dll"
+    """First existing core.vm candidate, else primary (env or game) path."""
+    cands = core_vm_candidates(game_dir)
+    for p in cands:
+        if p.exists():
+            return p
+    return cands[0]
 
 
 def stage_core_vm_absent(game_dir: Path) -> Optional[Path]:
-    """Rename plugin_core_vm.dll aside; return original path if renamed."""
-    dll = core_vm_dll_path(game_dir)
-    if not dll.exists():
-        print(f"[lg] core.vm already absent at {dll}")
+    """Rename first existing plugin_core_vm.dll aside; return original path if renamed."""
+    dll = None
+    for cand in core_vm_candidates(game_dir):
+        if cand.exists():
+            dll = cand
+            break
+    if dll is None:
+        print(f"[lg] core.vm already absent (checked: {core_vm_candidates(game_dir)})")
         return None
     off = dll.with_suffix(dll.suffix + ".off")
     if off.exists():
         off.unlink()
     dll.rename(off)
-    print(f"[lg] renamed {dll.name} -> {off.name}")
+    print(f"[lg] renamed {dll} -> {off.name}")
     return dll
 
 

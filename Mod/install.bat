@@ -17,6 +17,7 @@ for %%p in (%processes%) do (
 
 set "source=.\bin64\windows"
 set "current_dir=%cd%"
+set "mod_plugins=%current_dir%\plugins"
 
 echo !current_dir! | find /I "workshop\content\322330" >NUL
 if !errorlevel! == 0 (
@@ -44,20 +45,37 @@ if /i "%1" == "uninstall" (
 )
 
 :install
-echo [INFO] moving files...
-robocopy "%source%" "%destination%" /E /NFL /NDL /IS /IT /IM >NUL
-
+REM Inject shell + non-plugin payload -> game bin64 (exclude plugins tree)
+echo [INFO] install injector -^> %destination%
+robocopy "%source%" "%destination%" /E /XD plugins /NFL /NDL /IS /IT /IM >NUL
 if errorlevel 8 (
-    echo [ERROR] moving files failed
+    echo [ERROR] install injector failed
     timeout /t 5
     exit /b 1
-) 
+)
+
+REM Business plugins stay under the mod directory (mod-local plugins/)
+if exist "%source%\plugins" (
+    echo [INFO] install plugins -^> %mod_plugins%
+    if not exist "%mod_plugins%" mkdir "%mod_plugins%"
+    robocopy "%source%\plugins" "%mod_plugins%" /E /NFL /NDL /IS /IT /IM >NUL
+    if errorlevel 8 (
+        echo [ERROR] install plugins failed
+        timeout /t 5
+        exit /b 1
+    )
+) else (
+    echo [INFO] no package plugins tree at %source%\plugins — skip mod plugins copy
+)
+
 echo [INFO] install success
 goto end
 
 :uninstall
-echo [INFO] removing files...
-del /Q /F "%destination%\winmm.dll" >NUL
+REM Only remove inject shell from game bin64; leave mod plugins alone
+echo [INFO] removing injector shell from %destination% ...
+del /Q /F "%destination%\winmm.dll" >NUL 2>NUL
+del /Q /F "%destination%\Winmm.dll" >NUL 2>NUL
 echo [INFO] removing success
 
 :end
