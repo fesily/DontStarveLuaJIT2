@@ -96,20 +96,24 @@ static std::expected<ListExports_t, std::string>
 get_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase,
                const std::function<void(const Signatures &)> &updated) {
     auto &funcs = signatures.funcs;
-    std::string errormsg;
-
     auto exports = get_lua51_exports();
-    for (auto &[name, address]: exports) {
+
+    // Stale signature DBs (or a richer lua51.dll export set) must refresh —
+    // do not showError with a raw "name;name;..." list and abort the game.
+    bool need_update = SignatureJson::current_version() != signatures.version;
+    for (auto &[name, address] : exports) {
+        (void)address;
         if (!funcs.contains(name)) {
-            errormsg += name + ";";
+            funcs[name] = {};
+            need_update = true;
+            spdlog::warn("signature DB missing export {}; will refresh", name);
         }
     }
-    if (!errormsg.empty()) {
-        return std::unexpected(errormsg);
-    }
-    if (SignatureJson::current_version() != signatures.version) {
-        spdlog::warn("try fix all signatures");
-        errormsg = update_signatures_from_disasm(signatures, targetLuaModuleBase, exports);
+
+    if (need_update) {
+        spdlog::warn("try fix all signatures (version and/or export set changed)");
+        auto errormsg =
+            update_signatures_from_disasm(signatures, targetLuaModuleBase, exports);
         if (!errormsg.empty()) {
             return std::unexpected(errormsg);
         }

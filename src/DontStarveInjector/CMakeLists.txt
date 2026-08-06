@@ -287,6 +287,11 @@ endif()
 # Package: deps/
 # Game bin64 never receives these (shell-only GAME_INSTALL_PREFIX rules).
 #
+# Debug install is first-class for local debugging: `cmake --install --config Debug`
+# must stage debug vcpkg runtimes (spdlogd/fmtd/zlibd1/…) into the same Mod/deps
+# next to release names. Seeds use $<TARGET_FILE:…> so GET_RUNTIME_DEPENDENCIES
+# walks the installed config; search dirs include vcpkg debug/bin.
+#
 # Use install(CODE)+file(GET_RUNTIME_DEPENDENCIES) so PE/ELF imports that
 # CMake TARGET_RUNTIME_DLLS misses (e.g. zlib1.dll via FindZLIB) still stage.
 # function_relocation installs to the same Mod/deps.
