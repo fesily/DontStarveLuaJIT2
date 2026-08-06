@@ -1,12 +1,14 @@
 #include "PluginPath.hpp"
 
-#include <array>
+#include "config/path/ModFolderAliases.hpp"
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
 #include <string_view>
 #include <unordered_set>
+
 
 #if defined(_WIN32)
 #  ifndef NOMINMAX
@@ -34,15 +36,7 @@ std::unordered_set<std::string> g_added_dll_dirs;
 
 // Primary workshop folder + local/dev aliases used when luajit_config.modmain_path
 // is empty (first client boot / dedicated before config is written).
-constexpr auto kPrimaryWorkshopModName = "workshop-3444078585"sv;
-constexpr std::array kModFolderAliases = {
-    kPrimaryWorkshopModName,
-    "3444078585"sv,
-    "luajit"sv,
-    "luajit2"sv,
-    "DontStarveLuaJit2"sv,
-    "DontStarveLuaJIT2"sv,
-};
+// Shared list: ds::config::path::kModFolderAliases / kPrimaryWorkshopModName.
 
 bool iequals_ascii(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) {
@@ -157,7 +151,7 @@ std::filesystem::path discover_mod_plugins_dir() {
         if (base.empty() || !std::filesystem::is_directory(base, ec)) {
             continue;
         }
-        for (const auto alias : kModFolderAliases) {
+        for (const auto alias : ds::config::path::kModFolderAliases) {
             const auto mod_root = base / std::string{alias};
             const auto plugins = mod_root / "plugins";
             if (std::filesystem::is_directory(plugins, ec)) {

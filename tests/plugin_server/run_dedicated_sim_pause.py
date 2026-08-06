@@ -6,8 +6,9 @@ Spec: docs/superpowers/specs/2026-08-03-plugin-architecture-design.md §12.10
 Also supports core.vm degradation matrix (Task 5):
   --scenario present|absent|vm_disabled
 
-Deploy layout (Task 3):
-  - Injector / winmm stay in game bin64 (install.bat / install_linux.sh).
+Deploy layout (mod-local Injector bootstrap):
+  - Game bin64 keeps only the inject shell (Winmm / POSIX stub).
+  - Real Injector lives under mod bin64; harness prefers DS_LUAJIT_INJECTOR.
   - Business plugins stage under the mod `plugins/` directory, not game bin64.
   - CI / local smoke may set DS_LUAJIT_PLUGIN_DIR to a build-output plugins dir
     (e.g. builds/.../RelWithDebInfo/plugins) so core.vm is found without
@@ -325,38 +326,107 @@ def wait_markers(marker_dir: Path, names: tuple[str, ...], timeout: float, serve
 
 
 def build_inject_env(game_dir: Path, extra: Optional[dict] = None) -> dict:
-    """Best-effort inject env. Linux LD_PRELOAD; Windows relies on installed injector/winmm."""
+    """Best-effort inject env for mod-local Injector bootstrap.
+
+    Linux/macOS: PRELOAD the game stub when present; always set
+    DS_LUAJIT_INJECTOR to the real module (mod package or build tree) so the
+    shell can load it without a full install/marker. If stub is missing, fall
+    back to PRELOAD of the real module for legacy layouts.
+
+    Windows: expect Winmm already in game bin64; set DS_LUAJIT_INJECTOR when
+    the real Injector is only under the mod tree / build output.
+    """
     env: dict = {}
+
+    def _first_existing(paths: list[Path]) -> Optional[Path]:
+        for p in paths:
+            if p.exists():
+                return p
+        return None
+
     if sys.platform.startswith("linux"):
-        so = ROOT / "Mod" / "bin64" / "linux" / "lib64" / "libInjector.so"
-        alt = game_dir / "bin64" / "lib64" / "libInjector.so"
-        lib = so if so.exists() else alt
-        if lib.exists():
-            env["LD_PRELOAD"] = str(lib)
-            env["LD_LIBRARY_PATH"] = str(lib.parent) + os.pathsep + env.get("LD_LIBRARY_PATH", "")
-            print(f"[lg] LD_PRELOAD={lib}")
+        real = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "linux" / "libInjector.so",
+                ROOT / "Mod" / "bin64" / "libInjector.so",
+                game_dir / "bin64" / "libInjector.so",  # rare legacy
+            ]
+        )
+        # Prefer package/build stub paths, then installed game stub.
+        stub = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "linux" / "lib64" / "libInjector.so",
+                ROOT / "Mod" / "bin64" / "linux" / "stub" / "libInjector.so",
+                ROOT / "Mod" / "bin64" / "linux" / "shell" / "libInjector.so",
+                game_dir / "bin64" / "lib64" / "libInjector.so",
+            ]
+        )
+        # Avoid treating the real module as stub when both live under the same tree.
+        if stub is not None and real is not None and stub.resolve() == real.resolve():
+            stub = game_dir / "bin64" / "lib64" / "libInjector.so"
+            if not stub.exists():
+                stub = None
+
+        if real is not None:
+            env["DS_LUAJIT_INJECTOR"] = str(real)
+            print(f"[lg] DS_LUAJIT_INJECTOR={real}")
+
+        preload = stub if stub is not None else real
+        if preload is not None:
+            env["LD_PRELOAD"] = str(preload)
+            lib_dir = str(preload.parent)
+            env["LD_LIBRARY_PATH"] = lib_dir + os.pathsep + env.get("LD_LIBRARY_PATH", "")
+            kind = "stub" if stub is not None else "real fallback"
+            print(f"[lg] LD_PRELOAD={preload} ({kind})")
         else:
             print("[lg] WARN: libInjector.so not found; inject may be missing")
     elif sys.platform == "darwin":
-        dylib = ROOT / "Mod" / "bin64" / "osx" / "libInjector.dylib"
-        if dylib.exists():
-            env["DYLD_INSERT_LIBRARIES"] = str(dylib)
+        real = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "osx" / "libInjector.dylib",
+                ROOT / "Mod" / "bin64" / "libInjector.dylib",
+            ]
+        )
+        stub = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "osx" / "shell" / "libInjector.dylib",
+                ROOT / "Mod" / "bin64" / "osx" / "stub" / "libInjector.dylib",
+                game_dir / "bin64" / "libInjector.dylib",
+            ]
+        )
+        if real is not None:
+            env["DS_LUAJIT_INJECTOR"] = str(real)
+            print(f"[lg] DS_LUAJIT_INJECTOR={real}")
+        insert = stub if stub is not None else real
+        if insert is not None:
+            env["DYLD_INSERT_LIBRARIES"] = str(insert)
+            print(f"[lg] DYLD_INSERT_LIBRARIES={insert}")
+        else:
+            print("[lg] WARN: libInjector.dylib not found; inject may be missing")
     else:
-        # Windows: expect winmm/injector already installed into game bin64
-        inj = game_dir / "bin64" / "Injector.dll"
-        if not inj.exists():
-            # try mod tree
-            cand = list((ROOT / "Mod" / "bin64" / "windows").glob("**/Injector.dll"))
-            if cand:
-                print(f"[lg] note: Injector.dll at {cand[0]} — ensure game bin64 has inject layout")
-            else:
-                print("[lg] WARN: Injector.dll not found in game bin64; inject may be missing")
+        # Windows: Winmm shell must already be in game bin64; real Injector is mod-local.
+        winmm = game_dir / "bin64" / "Winmm.dll"
+        winmm_alt = game_dir / "bin64" / "winmm.dll"
+        if not winmm.exists() and not winmm_alt.exists():
+            print("[lg] WARN: Winmm.dll missing in game bin64; inject shell may be absent")
+        real = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "windows" / "Injector.dll",
+                ROOT / "Mod" / "bin64" / "Injector.dll",
+                game_dir / "bin64" / "Injector.dll",  # legacy install only
+            ]
+        )
+        if real is not None:
+            env["DS_LUAJIT_INJECTOR"] = str(real)
+            print(f"[lg] DS_LUAJIT_INJECTOR={real}")
+        else:
+            print("[lg] WARN: Injector.dll not found under mod/game bin64; inject may be missing")
+
     if extra:
         env.update(extra)
         for k, v in extra.items():
             print(f"[lg] inject env {k}={v}")
     return env
-
 
 def plugins_loaded_ok(server: ServerProc) -> bool:
     """Native DynamicPluginLoader evidence (independent of GameInjector)."""

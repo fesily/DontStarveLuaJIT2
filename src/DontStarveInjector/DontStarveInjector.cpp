@@ -298,19 +298,39 @@ int chdir_hook(const char *path) {
 
 extern char *__progname;
 static bool gum_initialized = false;
+static std::atomic_bool posix_startup_hook_installed = false;
+
+// Shared by constructor (LD_PRELOAD / direct load) and HookStartupEntry (bootstrap
+// stub after dlopen). Idempotent: only the first caller installs the chdir hook.
+static bool install_posix_startup_hook() {
+    bool expected = false;
+    if (!posix_startup_hook_installed.compare_exchange_strong(expected, true)) {
+        return true;
+    }
+
+    auto api = dlsym(RTLD_DEFAULT, "chdir");
+    if (!api) {
+        posix_startup_hook_installed = false;
+        return false;
+    }
+    if (!gum_initialized) {
+        gum_init_embedded();
+        gum_initialized = true;
+    }
+    auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
+    gum_interceptor_replace_fast(interceptor, api, (void *) &chdir_hook, (void **) &origin);
+    if (!origin) {
+        posix_startup_hook_installed = false;
+        return false;
+    }
+    return true;
+}
 
 __attribute__((constructor)) void init() {
     if (!getExePath().string().contains("dontstarve")) {
         return;
     }
-    auto api = dlsym(RTLD_DEFAULT, "chdir");
-    if (!api) {
-        return;
-    }
-    gum_init_embedded();
-    gum_initialized = true;
-    auto intercetor = InjectorCtx::instance()->GetGumInterceptor();
-    gum_interceptor_replace_fast(intercetor, api, (void *) &chdir_hook, (void **) &origin);
+    (void) install_posix_startup_hook();
 }
 
 __attribute__((destructor)) void fini() {
@@ -319,6 +339,16 @@ __attribute__((destructor)) void fini() {
     }
     _exit(0);
 }
+
+// Exported for shell bootstrap (InjectorStub) dlsym("HookStartupEntry").
+// Constructor may already have installed the chdir hook — return true when ready.
+DONTSTARVEINJECTOR_API bool HookStartupEntry() {
+    if (posix_startup_hook_installed.load(std::memory_order_acquire)) {
+        return true;
+    }
+    return install_posix_startup_hook();
+}
+
 #else
 using SetCurrentDirectoryWFn = BOOL(WINAPI *)(LPCWSTR);
 SetCurrentDirectoryWFn original_SetCurrentDirectoryW = nullptr;

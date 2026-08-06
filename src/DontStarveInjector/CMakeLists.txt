@@ -97,11 +97,13 @@ if (ENABLE_STEAM_SUPPORT)
 endif()
 
 if (APPLE)
-    set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib64")
-    set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../lib64")
+    # Real Injector is mod-local (mod/bin64); deps live at mod/deps → $ORIGIN/../deps.
+    # Keep lib64 for any legacy shared layout still co-located with the module.
+    set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../deps:\$ORIGIN/../lib64")
+    set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../deps:\$ORIGIN/../lib64")
 else()
-    set_target_properties(Injector PROPERTIES INSTALL_RPATH "./lib64:\$ORIGIN/lib64")
-    set_target_properties(Injector PROPERTIES BUILD_RPATH "./lib64:\$ORIGIN/lib64")
+    set_target_properties(Injector PROPERTIES INSTALL_RPATH "\$ORIGIN/../deps:./lib64:\$ORIGIN/lib64")
+    set_target_properties(Injector PROPERTIES BUILD_RPATH "\$ORIGIN/../deps:./lib64:\$ORIGIN/lib64")
 endif()
 
 add_dependencies(Injector create_missfuncs)
@@ -169,8 +171,43 @@ if (MSVC)
     target_link_options(Injector PUBLIC "/NODEFAULTLIB:LIBCMT")
 endif ()
 
-install(TARGETS Injector RUNTIME DESTINATION . COMPONENT injector)
+# Package layout (mod-local Injector bootstrap):
+# - Real Injector installs to package root Mod/bin64/<plat>/ (mod-side payload).
+# - POSIX InjectorStub installs separately so install scripts / GAME_DIR mirror can
+#   copy stub→game without name-clashing with real Injector:
+#     Linux: lib64/   (game PRELOAD path ./lib64/libInjector.so)
+#     macOS: shell/   (distinct from package-root real libInjector.dylib)
+# - Windows shell is Winmm (loader/); real Injector remains COMPONENT injector.
+install(TARGETS Injector
+    RUNTIME DESTINATION . COMPONENT injector
+    LIBRARY DESTINATION . COMPONENT injector)
 
+
+add_subdirectory(loader/bootstrap)
+
+# POSIX game-side shell (libInjector.so/.dylib). Windows uses Winmm.
+# OUTPUT_NAME Injector → libInjector.*; dual destinations:
+#   real Injector → package root (mod bin64)
+#   stub          → lib64/ (Linux) or shell/ (macOS)
+if (NOT WIN32)
+    add_library(InjectorStub SHARED
+        ${DONTSTARVEINJECTOR_ROOT}/loader/injector_stub.cpp)
+    target_link_libraries(InjectorStub PRIVATE injector_bootstrap ${CMAKE_DL_LIBS})
+    target_include_directories(InjectorStub PRIVATE ${DONTSTARVEINJECTOR_ROOT})
+    target_compile_features(InjectorStub PRIVATE cxx_std_23)
+    set_target_properties(InjectorStub PROPERTIES
+        OUTPUT_NAME "Injector"
+        PREFIX "lib"
+        # Keep build-tree stub separate from real Injector output dir.
+        LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/stub"
+    )
+    if (UNIX AND NOT APPLE)
+        install(TARGETS InjectorStub LIBRARY DESTINATION lib64 COMPONENT injector_shell)
+    else()
+        # macOS: do not install stub next to real libInjector.dylib at package root.
+        install(TARGETS InjectorStub LIBRARY DESTINATION shell COMPONENT injector_shell)
+    endif()
+endif()
 
 if (WIN32)
     add_subdirectory(loader)

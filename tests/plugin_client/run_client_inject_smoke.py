@@ -94,22 +94,210 @@ def find_server_exe(game_dir: Path) -> Optional[Path]:
     return None
 
 
+def _first_existing(paths: List[Path]) -> Optional[Path]:
+    for p in paths:
+        if p.exists():
+            return p
+    return None
+
+
+def build_inject_env(game_dir: Path, extra: Optional[dict] = None) -> dict:
+    """Mod-local Injector bootstrap env (mirror L-G server harness).
+
+    Game bin64 keeps only the inject shell (Winmm / POSIX stub). Real Injector
+    is resolved via DS_LUAJIT_INJECTOR from the mod package / build tree.
+    """
+    env: dict = {}
+
+    if sys.platform.startswith("linux"):
+        real = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "linux" / "libInjector.so",
+                ROOT / "Mod" / "bin64" / "libInjector.so",
+                game_dir / "bin64" / "libInjector.so",  # rare legacy
+            ]
+        )
+        stub = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "linux" / "lib64" / "libInjector.so",
+                ROOT / "Mod" / "bin64" / "linux" / "stub" / "libInjector.so",
+                ROOT / "Mod" / "bin64" / "linux" / "shell" / "libInjector.so",
+                game_dir / "bin64" / "lib64" / "libInjector.so",
+            ]
+        )
+        if stub is not None and real is not None and stub.resolve() == real.resolve():
+            stub = game_dir / "bin64" / "lib64" / "libInjector.so"
+            if not stub.exists():
+                stub = None
+
+        if real is not None:
+            env["DS_LUAJIT_INJECTOR"] = str(real)
+            print(f"[lc] DS_LUAJIT_INJECTOR={real}")
+
+        preload = stub if stub is not None else real
+        if preload is not None:
+            env["LD_PRELOAD"] = str(preload)
+            lib_dir = str(preload.parent)
+            env["LD_LIBRARY_PATH"] = lib_dir + os.pathsep + env.get("LD_LIBRARY_PATH", "")
+            kind = "stub" if stub is not None else "real fallback"
+            print(f"[lc] LD_PRELOAD={preload} ({kind})")
+        else:
+            print("[lc] WARN: libInjector.so not found; inject may be missing")
+    elif sys.platform == "darwin":
+        real = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "osx" / "libInjector.dylib",
+                ROOT / "Mod" / "bin64" / "libInjector.dylib",
+            ]
+        )
+        stub = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "osx" / "shell" / "libInjector.dylib",
+                ROOT / "Mod" / "bin64" / "osx" / "stub" / "libInjector.dylib",
+                game_dir / "bin64" / "libInjector.dylib",
+            ]
+        )
+        if real is not None:
+            env["DS_LUAJIT_INJECTOR"] = str(real)
+            print(f"[lc] DS_LUAJIT_INJECTOR={real}")
+        insert = stub if stub is not None else real
+        if insert is not None:
+            env["DYLD_INSERT_LIBRARIES"] = str(insert)
+            print(f"[lc] DYLD_INSERT_LIBRARIES={insert}")
+        else:
+            print("[lc] WARN: libInjector.dylib not found; inject may be missing")
+    else:
+        # Windows: Winmm shell in game bin64; real Injector is mod-local.
+        winmm = game_dir / "bin64" / "Winmm.dll"
+        winmm_alt = game_dir / "bin64" / "winmm.dll"
+        if not winmm.exists() and not winmm_alt.exists():
+            print("[lc] WARN: Winmm.dll missing in game bin64; inject shell may be absent")
+        real = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "windows" / "Injector.dll",
+                ROOT / "Mod" / "bin64" / "Injector.dll",
+                game_dir / "bin64" / "Injector.dll",  # legacy install only
+            ]
+        )
+        if real is not None:
+            env["DS_LUAJIT_INJECTOR"] = str(real)
+            print(f"[lc] DS_LUAJIT_INJECTOR={real}")
+        else:
+            print("[lc] WARN: Injector.dll not found under mod/game bin64; inject may be missing")
+
+    if extra:
+        env.update(extra)
+        for k, v in extra.items():
+            print(f"[lc] inject env {k}={v}")
+    return env
+
+
 def ensure_injector(game_dir: Path) -> bool:
+    """Stage inject shell into game bin64; keep real Injector mod-local.
+
+    Does NOT copy real Injector.dll into game bin64. Sets up Winmm (Windows) or
+    verifies POSIX stub path availability for build_inject_env.
+    """
     bin64 = game_dir / "bin64"
-    inj = bin64 / "Injector.dll"
-    winmm = bin64 / "Winmm.dll"
-    mod_inj = ROOT / "Mod" / "bin64" / "windows" / "Injector.dll"
-    mod_winmm = ROOT / "Mod" / "bin64" / "windows" / "Winmm.dll"
-    if not inj.exists() and mod_inj.exists():
-        shutil.copy2(mod_inj, inj)
-        print(f"[lc] installed Injector.dll -> {inj}")
-    if not winmm.exists() and mod_winmm.exists():
-        shutil.copy2(mod_winmm, winmm)
-        print(f"[lc] installed Winmm.dll -> {winmm}")
-    ok = inj.exists()
-    if not ok:
-        eprint(f"[lc] Injector.dll missing under {bin64}")
-    return ok
+    bin64.mkdir(parents=True, exist_ok=True)
+
+    if sys.platform.startswith("win"):
+        winmm = bin64 / "Winmm.dll"
+        winmm_alt = bin64 / "winmm.dll"
+        mod_winmm = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "windows" / "Winmm.dll",
+                ROOT / "Mod" / "bin64" / "windows" / "winmm.dll",
+            ]
+        )
+        if not winmm.exists() and not winmm_alt.exists():
+            if mod_winmm is None:
+                eprint(f"[lc] Winmm shell missing under {bin64} and Mod package")
+                return False
+            shutil.copy2(mod_winmm, winmm)
+            print(f"[lc] installed Winmm.dll shell -> {winmm}")
+
+        # Prefer mod-local real Injector; do not stage it into game bin64.
+        real = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "windows" / "Injector.dll",
+                ROOT / "Mod" / "bin64" / "Injector.dll",
+            ]
+        )
+        if real is None and (bin64 / "Injector.dll").exists():
+            # Legacy game-dir only — allow for smoke, but warn.
+            eprint(f"[lc] WARN: using legacy game-dir Injector.dll at {bin64 / 'Injector.dll'}")
+            real = bin64 / "Injector.dll"
+        if real is None:
+            eprint("[lc] Injector.dll missing under Mod/bin64 (mod-local layout)")
+            return False
+
+        # Drop stale game-dir real Injector so Winmm + DS_LUAJIT_INJECTOR is the path.
+        stale = bin64 / "Injector.dll"
+        if stale.exists() and real.resolve() != stale.resolve():
+            try:
+                stale.unlink()
+                print(f"[lc] removed stale game-dir Injector.dll -> {stale}")
+            except OSError as exc:
+                eprint(f"[lc] WARN: could not remove stale {stale}: {exc}")
+
+        return True
+
+    if sys.platform.startswith("linux"):
+        stub_dst = bin64 / "lib64" / "libInjector.so"
+        real = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "linux" / "libInjector.so",
+                ROOT / "Mod" / "bin64" / "libInjector.so",
+            ]
+        )
+        stub_src = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "linux" / "lib64" / "libInjector.so",
+                ROOT / "Mod" / "bin64" / "linux" / "stub" / "libInjector.so",
+                ROOT / "Mod" / "bin64" / "linux" / "shell" / "libInjector.so",
+            ]
+        )
+        if not stub_dst.exists() and stub_src is not None:
+            stub_dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(stub_src, stub_dst)
+            print(f"[lc] installed POSIX stub shell -> {stub_dst}")
+
+        if real is None and not stub_dst.exists():
+            eprint("[lc] libInjector real/stub missing under Mod package and game bin64")
+            return False
+
+        # Remove stale real module at game bin64 root (keep lib64 stub).
+        stale = bin64 / "libInjector.so"
+        if stale.exists() and (real is None or real.resolve() != stale.resolve()):
+            try:
+                stale.unlink()
+                print(f"[lc] removed stale game-dir libInjector.so -> {stale}")
+            except OSError as exc:
+                eprint(f"[lc] WARN: could not remove stale {stale}: {exc}")
+        return True
+
+    if sys.platform == "darwin":
+        real = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "osx" / "libInjector.dylib",
+                ROOT / "Mod" / "bin64" / "libInjector.dylib",
+            ]
+        )
+        stub = _first_existing(
+            [
+                ROOT / "Mod" / "bin64" / "osx" / "shell" / "libInjector.dylib",
+                ROOT / "Mod" / "bin64" / "osx" / "stub" / "libInjector.dylib",
+                bin64 / "libInjector.dylib",
+            ]
+        )
+        if real is None and stub is None:
+            eprint("[lc] libInjector.dylib missing under Mod package and game bin64")
+            return False
+        return True
+
+    eprint(f"[lc] unsupported platform for ensure_injector: {sys.platform}")
+    return False
 
 
 def install_mod_tree(src: Path, dst: Path, files: List[str]) -> None:
@@ -213,13 +401,19 @@ def start_dedicated(game_dir: Path, cluster: str) -> LogProcess:
         "-sigprefix",
         "DST_Master",
     ]
+    env = os.environ.copy()
+    inject_env = build_inject_env(game_dir)
+    env.update({k: str(v) for k, v in inject_env.items()})
     print(f"[lc] dedicated: {' '.join(cmd)}")
+    if inject_env:
+        print(f"[lc] dedicated inject env: {sorted(inject_env.keys())}")
     lp.proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         cwd=str(game_dir / "bin64"),
+        env=env,
         text=False,
     )
     lp._thread = threading.Thread(target=lp._read, daemon=True)
@@ -263,11 +457,10 @@ def start_client(game_dir: Path, force_mods: str, extra_env: Optional[dict] = No
     ]
     env = os.environ.copy()
     env["AppVersionDevPatch"] = "1"
-    if extra_env:
-        env.update({k: str(v) for k, v in extra_env.items()})
+    inject_env = build_inject_env(game_dir, extra=extra_env)
+    env.update({k: str(v) for k, v in inject_env.items()})
     print(f"[lc] client: {' '.join(cmd)}")
-    if extra_env:
-        print(f"[lc] client extra_env: {sorted(extra_env.keys())}")
+    print(f"[lc] client inject env: {sorted(inject_env.keys())}")
     lp.proc = subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,

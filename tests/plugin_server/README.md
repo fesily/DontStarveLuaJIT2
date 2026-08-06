@@ -41,7 +41,7 @@ python tests/plugin_server/run_dedicated_sim_pause.py --scenario vm_disabled  # 
 ## Prerequisites
 
 - Pre-created DST cluster `LGPluginTest` (or `--cluster`) under Klei `DoNotStarveTogether` with `offline_server = true` recommended  
-- Injector installed into game `bin64` (Windows winmm layout / Linux `LD_PRELOAD`)  
+- Inject shell in game `bin64` (Windows `Winmm.dll` / Linux stub `LD_PRELOAD`); real Injector under mod `bin64` (or `DS_LUAJIT_INJECTOR`)  
 - Pause API: probe uses `TheNet:SetServerPaused(true)` (pinned on first green run)
 
 ## CTest

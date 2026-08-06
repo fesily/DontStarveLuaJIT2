@@ -138,6 +138,22 @@ target_compile_features(test_plugin_path PRIVATE cxx_std_23)
 target_compile_definitions(test_plugin_path PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME plugin_path COMMAND test_plugin_path)
 
+add_executable(test_injector_bootstrap
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_injector_bootstrap.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/loader/bootstrap/InjectorBootstrap.cpp)
+target_include_directories(test_injector_bootstrap PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_injector_bootstrap PRIVATE cxx_std_23)
+# Bootstrap must not require DONTSTARVEINJECTOR_BUILD / Gum.
+add_test(NAME injector_bootstrap COMMAND test_injector_bootstrap)
+if (WIN32)
+    target_link_libraries(test_injector_bootstrap PRIVATE shell32)
+else()
+    target_link_libraries(test_injector_bootstrap PRIVATE ${CMAKE_DL_LIBS})
+endif()
+
+
+
 add_executable(test_plugin_pending_updates
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_pending_updates.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPendingUpdates.cpp)

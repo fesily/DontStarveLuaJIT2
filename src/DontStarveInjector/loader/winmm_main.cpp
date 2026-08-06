@@ -14,6 +14,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "platform.hpp"
+#include "loader/bootstrap/InjectorBootstrap.hpp"
 
 
 extern "C" {
@@ -94,17 +95,14 @@ void DontStarveInjectorStart() {
     spdlog::set_level(spdlog::level::trace);
 #endif
 
-    auto mod = LoadLibraryA("injector");
-    if (!mod) {
-        spdlog::error("can't load injector.dll");
+    auto hook_startup_entry = ds::bootstrap::load_injector_hook_entry();
+    if (!hook_startup_entry) {
+        spdlog::error("can't load injector.dll (bootstrap resolve/load failed)");
         return;
     }
-
-    auto hook_startup_entry = (bool (*)()) GetProcAddress(mod, "HookStartupEntry");
-    if (hook_startup_entry && hook_startup_entry()) {
+    if (hook_startup_entry()) {
         spdlog::info("installed injector startup hook");
         return;
     }
-
     spdlog::error("failed to install injector startup hook");
 }
