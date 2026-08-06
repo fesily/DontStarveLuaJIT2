@@ -190,6 +190,7 @@ install(TARGETS Injector
 add_subdirectory(loader/bootstrap)
 
 # POSIX game-side shell (libInjector.so/.dylib). Windows uses Winmm.
+# Thin shell only: injector_bootstrap + libdl. No vcpkg/third-party shared libs.
 # OUTPUT_NAME Injector → libInjector.*; dual destinations:
 #   real Injector → package root (mod bin64)
 #   stub          → lib64/ (Linux) or shell/ (macOS)
