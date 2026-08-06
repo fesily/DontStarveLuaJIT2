@@ -80,6 +80,28 @@ find_library(UNOFFICIAL_ANGLE_VULKAN_LIBRARY_DEBUG
     NO_DEFAULT_PATH
 )
 
+
+# release_only ANGLE stages only ship lib/ (no debug/lib). Stale CMake cache can
+# still point DEBUG locations at missing debug/lib/*.lib and break multi-config
+# Debug builds. Drop non-existent debug paths so imported targets map Debug→Release.
+# release_only ANGLE stages only ship lib/ (no debug/lib). Clear missing/NOTFOUND
+# debug locations so consumers can fall back to release CRT + release libs.
+set(_ds_angle_has_debug_libs TRUE)
+foreach(_ds_angle_dbg_var IN ITEMS
+        UNOFFICIAL_ANGLE_EGL_LIBRARY_DEBUG
+        UNOFFICIAL_ANGLE_GLESv2_LIBRARY_DEBUG
+        UNOFFICIAL_ANGLE_ANGLE_LIBRARY_DEBUG
+        UNOFFICIAL_ANGLE_SPIRV_TOOLS_LIBRARY_DEBUG
+        UNOFFICIAL_ANGLE_VULKAN_LIBRARY_DEBUG)
+    if(NOT ${_ds_angle_dbg_var} OR "${${_ds_angle_dbg_var}}" MATCHES "-NOTFOUND$" OR NOT EXISTS "${${_ds_angle_dbg_var}}")
+        unset(${_ds_angle_dbg_var} CACHE)
+        unset(${_ds_angle_dbg_var})
+        set(_ds_angle_has_debug_libs FALSE)
+    endif()
+endforeach()
+set(UNOFFICIAL_ANGLE_HAS_DEBUG_LIBS "${_ds_angle_has_debug_libs}" CACHE INTERNAL
+    "ANGLE debug/lib present (false when release_only stage)")
+
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(unofficial-angle
     REQUIRED_VARS
@@ -122,7 +144,10 @@ if(NOT TARGET unofficial::angle::libANGLE)
             IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_ANGLE_LIBRARY_DEBUG}"
         )
     else()
+        # release_only stage: use release libs for Debug configs (multi-config MSVC).
+        set_property(TARGET unofficial::angle::libANGLE APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
         set_target_properties(unofficial::angle::libANGLE PROPERTIES
+            IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_ANGLE_LIBRARY_RELEASE}"
             MAP_IMPORTED_CONFIG_DEBUG RELEASE
         )
     endif()
@@ -173,7 +198,10 @@ if(NOT TARGET unofficial::angle::libGLESv2)
             IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_GLESv2_LIBRARY_DEBUG}"
         )
     else()
+        # release_only stage: use release libs for Debug configs (multi-config MSVC).
+        set_property(TARGET unofficial::angle::libGLESv2 APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
         set_target_properties(unofficial::angle::libGLESv2 PROPERTIES
+            IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_GLESv2_LIBRARY_RELEASE}"
             MAP_IMPORTED_CONFIG_DEBUG RELEASE
         )
     endif()
@@ -196,7 +224,10 @@ if(NOT TARGET unofficial::angle::libEGL)
             IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_EGL_LIBRARY_DEBUG}"
         )
     else()
+        # release_only stage: use release libs for Debug configs (multi-config MSVC).
+        set_property(TARGET unofficial::angle::libEGL APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
         set_target_properties(unofficial::angle::libEGL PROPERTIES
+            IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_EGL_LIBRARY_RELEASE}"
             MAP_IMPORTED_CONFIG_DEBUG RELEASE
         )
     endif()

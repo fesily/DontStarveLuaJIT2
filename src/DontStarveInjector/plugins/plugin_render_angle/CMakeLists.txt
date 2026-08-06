@@ -26,3 +26,12 @@ target_include_directories(plugin_render_angle PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/io
     ${LUAJIT_INCLUDE_DIR})
+
+# release_only ANGLE is built with /MD + _ITERATOR_DEBUG_LEVEL=0. Linking that
+# into a /MDd Debug plugin fails LNK2038. When debug ANGLE libs are absent,
+# compile/link this plugin with the release MSVC runtime for all configs.
+if (MSVC AND DEFINED UNOFFICIAL_ANGLE_HAS_DEBUG_LIBS AND NOT UNOFFICIAL_ANGLE_HAS_DEBUG_LIBS)
+    set_property(TARGET plugin_render_angle PROPERTY MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+    target_compile_definitions(plugin_render_angle PRIVATE _ITERATOR_DEBUG_LEVEL=0)
+    message(STATUS "plugin_render_angle: release_only ANGLE — using /MD for all configs")
+endif()
