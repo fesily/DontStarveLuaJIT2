@@ -299,8 +299,17 @@ endif ()
 
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX}
 #install(FILES ${LUA_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})
+# Package staging: cmake --install writes under CMAKE_INSTALL_PREFIX
+# (Mod/bin64/<platform>/…), including plugins/ for the mod zip layout.
+# Live game install: only inject shell (Injector/winmm + non-plugin payload).
+# Business plugins stay package/mod-local (mod plugins/ or DS_LUAJIT_PLUGIN_DIR);
+# never mirror package plugins/ into GAME_INSTALL_PREFIX (game bin64).
 if (GAME_DIR)
-    install(DIRECTORY ${CMAKE_INSTALL_PREFIX}/ DESTINATION ${GAME_INSTALL_PREFIX})
+    install(DIRECTORY ${CMAKE_INSTALL_PREFIX}/
+            DESTINATION ${GAME_INSTALL_PREFIX}
+            COMPONENT injector
+            PATTERN "plugins" EXCLUDE
+            PATTERN "plugins/*" EXCLUDE)
 endif ()
 set(BUILD_CMD ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/update_version.py")
 execute_process(COMMAND ${CMAKE_COMMAND} -E env MOD_VERSION=${CMAKE_PROJECT_VERSION} ${BUILD_CMD}

@@ -20,4 +20,4 @@ add_compile_definitions(NO_FRIDA_GUM=1)
 
 target_include_directories(Winmm PUBLIC ${LUAJIT_INCLUDE_DIR})
 target_link_libraries(Winmm PRIVATE ${LUAJIT_LIBRARIES})
-install(TARGETS Winmm RUNTIME DESTINATION .)
+install(TARGETS Winmm RUNTIME DESTINATION . COMPONENT injector)

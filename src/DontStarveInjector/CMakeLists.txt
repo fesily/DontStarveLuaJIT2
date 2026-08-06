@@ -169,7 +169,8 @@ if (MSVC)
     target_link_options(Injector PUBLIC "/NODEFAULTLIB:LIBCMT")
 endif ()
 
-install(TARGETS Injector RUNTIME DESTINATION .)
+install(TARGETS Injector RUNTIME DESTINATION . COMPONENT injector)
+
 
 if (WIN32)
     add_subdirectory(loader)
@@ -180,6 +181,16 @@ add_subdirectory(util)
 # Dynamic plugin modules (Phase B). Output next to Injector under plugins/.
 # Each plugin owns plugins/<name>/CMakeLists.txt; this file only defines the
 # shared helper and orchestrates add_subdirectory.
+#
+# Install / package policy:
+# - Business plugins ship inside the mod package as plugins/ relative to the
+#   package prefix (Mod/bin64/<platform>/plugins). That tree extracts under the
+#   mod root; runtime search prefers parent(modmain)/plugins or
+#   DS_LUAJIT_PLUGIN_DIR — not game bin64/plugins.
+# - Keep cmake --install staging into package DESTINATION plugins for packaging.
+# - GAME_INSTALL_PREFIX install must copy Injector/winmm shell only; it must not
+#   force plugin_*.dll into the live game bin64 tree. Root CMake excludes
+#   plugins/ from the game-directory mirror for that reason.
 function(ds_add_dynamic_plugin name)
     add_library(${name} MODULE ${ARGN})
     # Plugin dir (CMAKE_CURRENT_SOURCE_DIR when called from plugins/<name>/)
@@ -197,11 +208,14 @@ function(ds_add_dynamic_plugin name)
         LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
         ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
     )
+    # Package-local only (COMPONENT plugins). Not part of game bin64 deploy.
     install(TARGETS ${name}
-        RUNTIME DESTINATION plugins
-        LIBRARY DESTINATION plugins
-        ARCHIVE DESTINATION plugins)
+        RUNTIME DESTINATION plugins COMPONENT plugins
+        LIBRARY DESTINATION plugins COMPONENT plugins
+        ARCHIVE DESTINATION plugins COMPONENT plugins)
 endfunction()
+
+[src/DontStarveInjector/CMakeLists.txt#24A1]
 
 # Always-on / cross-platform plugins (no second Frida Gum).
 add_subdirectory(plugins/plugin_dummy)
