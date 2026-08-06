@@ -27,6 +27,23 @@ bool write_injector_marker(const std::filesystem::path &abs_module);
 // Read marker path if file exists and points at an existing regular file.
 bool read_injector_marker(std::filesystem::path &out_abs);
 
+using HookStartupEntryFn = bool (*)();
+
+// Resolve, configure deps search for mod_root/deps, LoadLibraryEx/dlopen,
+// return HookStartupEntry or nullptr. Logs on failure.
+HookStartupEntryFn load_injector_hook_entry();
+
+// Derive mod_root from absolute module path:
+//   .../mod/bin64/Injector.dll            -> .../mod
+//   .../mod/bin64/lib64/libInjector.so     -> .../mod
+std::filesystem::path mod_root_from_injector_module(const std::filesystem::path &abs_module);
+
+// Windows: AddDllDirectory(mod_root/deps) if exists; AddDllDirectory(module parent).
+// Non-Windows: no-op true (RPATH). Idempotent bookkeeping like PluginPath.
+bool configure_injector_deps_search(const std::filesystem::path &mod_root,
+                                    const std::filesystem::path &module_dir);
+
+
 // --- Test seams (always available; no-ops / empty outside tests is fine) ---
 void reset_for_test();
 // Override game root used for marker path: game_root / data / unsafedata / marker.

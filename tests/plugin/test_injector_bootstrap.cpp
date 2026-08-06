@@ -229,6 +229,34 @@ static void test_fail_when_nothing() {
     printf("PASS: fail_when_nothing\n");
 }
 
+static void test_mod_root_from_module_path() {
+    auto p = fs::path("C:/mods/luajit/bin64") / injector_module_filename();
+    auto root = mod_root_from_injector_module(p);
+    assert(root.filename() == "luajit" || root.generic_string().ends_with("luajit"));
+#if !defined(_WIN32) && !defined(__APPLE__)
+    auto p2 = fs::path("/m/luajit/bin64/lib64") / injector_module_filename();
+    auto root2 = mod_root_from_injector_module(p2);
+    assert(root2.filename() == "luajit");
+#endif
+    printf("PASS: mod_root_from_module_path\n");
+}
+
+static void test_load_fail_fast_no_module() {
+    clear_env_and_state();
+    auto root = make_temp("ds_inj_load_fail");
+    auto game = root / "game";
+    fs::create_directories(game / "bin64");
+    fs::create_directories(game / "mods");
+    set_marker_game_root_for_test(game);
+    set_exe_dir_for_test(game / "bin64");
+
+    auto fn = load_injector_hook_entry();
+    assert(fn == nullptr);
+    clear_env_and_state();
+    printf("PASS: load_fail_fast_no_module\n");
+}
+
+
 int main() {
     test_env_file_wins();
     test_env_dir_wins_over_marker();
@@ -238,6 +266,8 @@ int main() {
     test_ugc_directory_base();
     test_legacy_no_marker_write();
     test_fail_when_nothing();
-    printf("ALL PASS test_injector_bootstrap (task1)\n");
+    test_mod_root_from_module_path();
+    test_load_fail_fast_no_module();
+    printf("ALL PASS test_injector_bootstrap\n");
     return 0;
 }

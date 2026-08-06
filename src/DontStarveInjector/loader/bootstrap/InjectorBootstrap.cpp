@@ -26,6 +26,10 @@
 #  include <limits.h>
 #  include <unistd.h>
 #endif
+#if !defined(_WIN32)
+#  include <dlfcn.h>
+#endif
+
 
 namespace ds::bootstrap {
 namespace {
@@ -41,6 +45,9 @@ std::vector<std::string> g_cmdline_override;
 bool g_has_cmdline_override = false;
 bool g_logged_legacy = false;
 bool g_logged_failure = false;
+std::mutex g_dll_search_mu;
+std::unordered_set<std::string> g_added_dll_dirs;
+
 
 void log_once_tag(const char *msg) {
     static std::mutex mu;
@@ -446,6 +453,113 @@ bool resolve_injector_module(std::filesystem::path &out_abs) {
     return false;
 }
 
+std::filesystem::path mod_root_from_injector_module(const std::filesystem::path &abs_module) {
+    const auto parent = abs_module.parent_path();
+    if (parent.empty()) {
+        return {};
+    }
+    const auto parent_name = parent.filename().string();
+    if (parent_name == "lib64") {
+        const auto bin64 = parent.parent_path();
+        if (bin64.filename() == "bin64") {
+            return bin64.parent_path();
+        }
+        return bin64;
+    }
+    if (parent_name == "bin64") {
+        return parent.parent_path();
+    }
+    // Best effort: grandparent of the module file.
+    return parent.parent_path();
+}
+
+bool configure_injector_deps_search(const std::filesystem::path &mod_root,
+                                    const std::filesystem::path &module_dir) {
+#if !defined(_WIN32)
+    (void)mod_root;
+    (void)module_dir;
+    return true;
+#else
+    std::lock_guard lock(g_dll_search_mu);
+    // Mirror PluginPath: AddDllDirectory only - no SetDefaultDllDirectories.
+    auto add = [&](const fs::path &p) {
+        std::error_code ec;
+        if (p.empty() || !fs::is_directory(p, ec)) {
+            return;
+        }
+        const auto canon = fs::weakly_canonical(p, ec);
+        const auto key = (ec ? p : canon).string();
+        if (!g_added_dll_dirs.insert(key).second) {
+            return;
+        }
+        const DLL_DIRECTORY_COOKIE cookie =
+            AddDllDirectory((ec ? p : canon).wstring().c_str());
+        if (cookie == nullptr) {
+            const DWORD err = GetLastError();
+            std::fprintf(stderr,
+                         "[ds-bootstrap] AddDllDirectory failed for '%s' (GetLastError=%lu)\n",
+                         key.c_str(), static_cast<unsigned long>(err));
+            std::fflush(stderr);
+        }
+    };
+    if (!mod_root.empty()) {
+        add(mod_root / "deps");
+    }
+    add(module_dir);
+    return true;
+#endif
+}
+
+HookStartupEntryFn load_injector_hook_entry() {
+    std::filesystem::path abs;
+    if (!resolve_injector_module(abs)) {
+        std::fprintf(stderr, "[ds-bootstrap] cannot resolve Injector module\n");
+        std::fflush(stderr);
+        return nullptr;
+    }
+    const auto mod_root = mod_root_from_injector_module(abs);
+    const auto module_dir = abs.parent_path();
+    (void)configure_injector_deps_search(mod_root, module_dir);
+
+#if defined(_WIN32)
+    HMODULE h = LoadLibraryExW(abs.wstring().c_str(), nullptr,
+                               LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+                                   LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
+                                   LOAD_LIBRARY_SEARCH_USER_DIRS);
+    if (!h) {
+        h = LoadLibraryW(abs.wstring().c_str()); // fallback
+    }
+    if (!h) {
+        std::fprintf(stderr, "[ds-bootstrap] LoadLibrary failed (%lu): %s\n",
+                     static_cast<unsigned long>(GetLastError()), abs.string().c_str());
+        std::fflush(stderr);
+        return nullptr;
+    }
+    auto fn = reinterpret_cast<HookStartupEntryFn>(
+        GetProcAddress(h, "HookStartupEntry"));
+#else
+    void *h = dlopen(abs.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    if (!h) {
+        const char *err = dlerror();
+        std::fprintf(stderr, "[ds-bootstrap] dlopen failed: %s (%s)\n",
+                     abs.c_str(), err ? err : "unknown");
+        std::fflush(stderr);
+        return nullptr;
+    }
+    auto fn = reinterpret_cast<HookStartupEntryFn>(dlsym(h, "HookStartupEntry"));
+#endif
+    if (!fn) {
+        std::fprintf(stderr, "[ds-bootstrap] missing export HookStartupEntry: %s\n",
+                     abs.string().c_str());
+        std::fflush(stderr);
+        return nullptr;
+    }
+    std::fprintf(stderr, "[ds-bootstrap] loaded Injector: %s\n", abs.string().c_str());
+    std::fflush(stderr);
+    return fn;
+}
+
+
 void reset_for_test() {
     std::lock_guard lock(g_state_mu);
     g_cached_module.clear();
@@ -456,6 +570,10 @@ void reset_for_test() {
     g_has_cmdline_override = false;
     g_logged_legacy = false;
     g_logged_failure = false;
+    {
+        std::lock_guard dll_lock(g_dll_search_mu);
+        g_added_dll_dirs.clear();
+    }
 }
 
 void set_marker_game_root_for_test(const std::filesystem::path &game_root_or_empty) {
