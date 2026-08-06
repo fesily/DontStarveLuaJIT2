@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-06  
 **Status:** Draft for review  
-**Scope:** Relocate native `plugin_*.dll` from game `bin64/plugins` to the workshop/mod directory; introduce `plugins/deps` for shared dynamic third-party libraries; fix DLL search so future static→dynamic linking does not depend on game `bin64` or `PATH`.
+**Scope:** Relocate native `plugin_*.dll` from game `bin64/plugins` to the workshop/mod directory; introduce `deps` for shared dynamic third-party libraries; fix DLL search so future static→dynamic linking does not depend on game `bin64` or `PATH`.
 
 ---
 
@@ -11,7 +11,7 @@
 ### Goals
 
 1. Business `plugin_*.dll` deploy under **mod root** `…/<mod>/plugins/`, not into game `bin64/plugins` by default.
-2. Shared third-party dynamic libraries live under **`…/<mod>/plugins/deps/`**.
+2. Shared third-party dynamic libraries live under **`…/<mod>/deps/`**.
 3. Loader resolves plugins and their deps without polluting game `bin64` or relying on global `PATH`.
 4. Prepare the path contract for later “static third-party → dynamic link” work; **this design does not itself re-link libraries**.
 5. `Injector` / injection shell (`winmm` etc.) may remain under game `bin64` (current install model).
@@ -36,18 +36,18 @@
     plugin_network_rpc.dll
     …
     update_pending/                 # existing pending-update drop dir (unchanged semantics)
-    deps/                           # shared dynamic third-party libs only
-      zlib1.dll
-      …
+  deps/                             # shared dynamic third-party libs (sibling of plugins/)
+    zlib1.dll
+    …
 ```
 
 | Path | Contents | Scanned as plugin? |
 |------|----------|--------------------|
 | `plugins/plugin_*.{dll,so}` | Dynamic plugin modules | Yes (top-level only) |
-| `plugins/deps/*` | Shared runtime deps | **No** (never treated as plugins) |
+| `deps/*` (mod root, sibling of `plugins/`) | Shared runtime deps | **No** (never scanned as plugins) |
 | `plugins/update_pending/` | Staged replacements | Applied into `plugins/` before load (existing) |
 
-**Naming:** deps directory name is fixed to **`deps`** (not `lib`) for one canonical layout.
+**Naming:** deps directory is mod-root **`deps/`** (sibling of `plugins/`, not `plugins/deps`; not `lib`).
 
 **Lua:** Existing `Mod/plugins/*.lua` remains; native and Lua trees share the mod `plugins/` name space by extension / naming convention (`plugin_*.dll` vs `*.lua`). No rename of Lua modules in this design.
 
@@ -77,7 +77,7 @@ Resolution:
 ```text
 mod_root = filesystem::path(modmain_path).parent_path()
 plugins_dir = mod_root / "plugins"
-deps_dir    = plugins_dir / "deps"
+deps_dir    = mod_root / "deps"   # sibling of plugins/, not plugins/deps
 ```
 
 If `modmain_path` is empty: skip step (2); use env and/or injector fallback; log that mod-local plugins are unavailable.
@@ -99,10 +99,10 @@ Order for `EnsureCoreVmModuleLoaded`:
 
 Before loading plugins from a given search root (and at least once per process before the first plugin `LoadLibrary`):
 
-1. Prefer absolute, weakly-canonical paths for that root’s `plugins/` and `plugins/deps/`.
+1. Prefer absolute, weakly-canonical paths for plugin roots and for `mod_root/deps`.
 2. Idempotent per-directory registration:
    - First successful call may run `SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_USER_DIRS)` when available.
-   - `AddDllDirectory(<root>/deps)` when that directory exists (each search root’s deps is added if present).
+   - `AddDllDirectory(mod_root/deps)` when that directory exists (one mod-level deps root, not per-plugin-root).
    - Optionally `AddDllDirectory(<root>)` so rare private side-by-side deps next to the plugin still resolve under the user-dirs model.
 3. Load plugins with:
 
@@ -120,7 +120,7 @@ Fallback to plain `LoadLibraryW` remains only for environments where the search 
 | Dependency class | Resolved from |
 |------------------|---------------|
 | Import of already-mapped `Injector` / Gum re-exports | Loaded module list (no PATH) |
-| Shared third-party | `plugins/deps` via `AddDllDirectory` |
+| Shared third-party | `mod/deps` via `AddDllDirectory` |
 | Plugin-private rare DLL | Same directory as `plugin_*.dll` (`DLL_LOAD_DIR`) |
 
 **Failure:** missing dep → `load_failed(err=…)` for that module; **fail-fast**, no silent feature degradation.
@@ -128,8 +128,8 @@ Fallback to plain `LoadLibraryW` remains only for environments where the search 
 ### Linux / macOS (minimal contract)
 
 - Plugins are `dlopen`'d by absolute path (unchanged).
-- Preferred link contract for plugins: `RPATH` / `$ORIGIN/deps` so deps next to the module tree resolve without mutating global `LD_LIBRARY_PATH`.
-- Implementation may land in the same PR as Windows or immediately after; behavior must match “deps live under `plugins/deps`”.
+- Preferred link contract for plugins: `RPATH` / `$ORIGIN/../deps` so deps sit beside `plugins/` under mod root resolve without mutating global `LD_LIBRARY_PATH`.
+- Implementation may land in the same PR as Windows or immediately after; behavior must match “deps live under `mod/deps`”.
 
 ---
 
@@ -139,7 +139,7 @@ Fallback to plain `LoadLibraryW` remains only for environments where the search 
 |----------|-------------|
 | `Injector.dll` + injection shell | Game `bin64/` (keep current install.bat destination model) |
 | `plugin_*.dll` | **Mod root** `plugins/` — **not** game `bin64/plugins` |
-| Third-party dynamic libs | Mod `plugins/deps/` |
+| Third-party dynamic libs | Mod `deps/` |
 | `update_pending/` drops | Mod `plugins/update_pending/` |
 | Manifest / meta generation | Scan mod `plugins/` (or staged package path equivalent) |
 
@@ -167,8 +167,8 @@ Fallback to plain `LoadLibraryW` remains only for environments where the search 
 Lock path contract first. Later linking work only:
 
 1. CMake: plugins `target_link_libraries` to import libs (PRIVATE).
-2. Install / stage runtime deps into `plugins/deps` (`install(RUNTIME_DEPENDENCY_SET …)` or explicit list).
-3. **No loader changes** if deps land in `plugins/deps`.
+2. Install / stage runtime deps into mod-root `deps/` (`install(RUNTIME_DEPENDENCY_SET …)` or explicit list).
+3. Loader must `AddDllDirectory(mod_root/deps)` (not `plugins/deps`).
 
 Unchanged: Gum re-export from `Injector`; plugins must not static-link a second Frida Gum.
 
@@ -181,9 +181,9 @@ Unchanged: Gum re-export from `Injector`; plugins must not static-link a second 
 | `DynamicPluginLoader::default_search_dirs` | Prefer `parent(modmain_path)/plugins`; keep env + injector fallback |
 | `DynamicPluginLoader::load_library` / `load_all` | Configure `AddDllDirectory` / search flags once; include `USER_DIRS` |
 | `CoreVmBootstrap` | Same search dirs; drop injector-only hardcode |
-| Shared helper (new or existing path util) | `mod_plugins_dir()`, `mod_plugins_deps_dir()`, `configure_plugin_dll_search()` |
+| Shared helper (new or existing path util) | `mod_plugins_dir()`, `mod_deps_dir()`, `configure_plugin_dll_search()` |
 | `Mod/install.bat` (+ linux install if present) | Split inject vs plugins destinations |
-| CMake install rules | Plugins install component → mod-relative `plugins/`; deps → `plugins/deps` |
+| CMake install rules | Plugins install component → mod-relative `plugins/`; deps → mod-relative `deps/` |
 | Tests | Search-order unit tests; deps load success/fail; L-G with `DS_LUAJIT_PLUGIN_DIR` or mod-staged path |
 | Docs / CI release scripts | Manifest scan root + package layout |
 
@@ -192,7 +192,7 @@ Unchanged: Gum re-export from `Injector`; plugins must not static-link a second 
 ## 8. Testing gates
 
 1. **Unit — search order:** with fake `modmain_path` / `DS_LUAJIT_PLUGIN_DIR` / injector dir, assert order and dedupe.
-2. **Unit — deps:** stub plugin importing a DLL only present under `plugins/deps` → loads; remove deps DLL → `load_failed`.
+2. **Unit — deps:** stub plugin importing a DLL only present under `mod/deps` → loads; remove deps DLL → `load_failed`.
 3. **core.vm:** succeed when module exists only under mod `plugins` (no copy under `bin64/plugins`).
 4. **L-G present:** after deploy-to-mod (or env override) still PASS.
 5. **Regression:** `DS_LUAJIT_PLUGIN_DIR` always wins when set.
@@ -216,8 +216,8 @@ Unchanged: Gum re-export from `Injector`; plugins must not static-link a second 
 ## 10. Acceptance criteria
 
 - [ ] Production default: plugins load from `parent(modmain_path)/plugins`.
-- [ ] `plugins/deps` is on the DLL search path before any plugin `LoadLibrary`.
-- [ ] `plugin_*` scan does not treat files under `deps/` as plugins.
+- [ ] `mod/deps` is on the DLL search path before any plugin `LoadLibrary`.
+- [ ] `plugin_*` scan stays top-level under `plugins/` only; `mod/deps` is never scanned as plugins.
 - [ ] `core.vm` uses the same roots as the dynamic loader.
 - [ ] Install no longer requires copying business plugins into game `bin64/plugins`.
 - [ ] `DS_LUAJIT_PLUGIN_DIR` override and L-G still green.
@@ -230,7 +230,7 @@ Unchanged: Gum re-export from `Injector`; plugins must not static-link a second 
 | Decision | Choice |
 |----------|--------|
 | Physical root | Workshop/mod directory `plugins/` |
-| Deps layout | Independent `plugins/deps/` |
+| Deps layout | Independent mod-root `deps/` (sibling of `plugins/`) |
 | Approach | Mod root preferred + explicit deps DLL search; env override; bin64 fallback for compat |
-| Deps folder name | `deps` |
+| Deps folder name | mod-root `deps/` (not `plugins/deps`) |
 | Per-plugin isolation | Deferred (YAGNI) |

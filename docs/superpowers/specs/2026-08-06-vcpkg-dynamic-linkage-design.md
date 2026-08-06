@@ -2,14 +2,14 @@
 
 **Date:** 2026-08-06  
 **Status:** Draft for review  
-**Scope:** Switch vcpkg library linkage from static to dynamic on Windows / Linux / macOS; stage runtime shared libraries under mod-local `plugins/deps/`; convert eligible in-tree libraries (primary: `function_relocation`) from STATIC to SHARED. Builds on `docs/superpowers/specs/2026-08-06-mod-local-plugins-deps-design.md` (search path + `plugins/deps` already exist).
+**Scope:** Switch vcpkg library linkage from static to dynamic on Windows / Linux / macOS; stage runtime shared libraries under mod-local `deps/`; convert eligible in-tree libraries (primary: `function_relocation`) from STATIC to SHARED. Builds on `docs/superpowers/specs/2026-08-06-mod-local-plugins-deps-design.md` (plugin search path). **Amendment:** shared runtime root is **`mod/deps/`**, not `plugins/deps/`.
 
 **User-locked choices (review):**
 
 | Decision | Choice |
 |----------|--------|
 | Scope | **B** — all vcpkg packages dynamic + eligible internal libs dynamic |
-| Runtime root | **A** — shared runtimes under **`mod/plugins/deps/`** |
+| Runtime root | **mod-root `deps/`** (sibling of `plugins/`, not `plugins/deps`) |
 | Gum | Remain **static inside Injector** + re-export (no second Gum) |
 | `liblua_static` | Remain **static PRIVATE** in L0 (cascade-only; symbols must not export) |
 
@@ -20,9 +20,9 @@
 ### Goals
 
 1. **All platforms:** vcpkg installs use `VCPKG_LIBRARY_LINKAGE=dynamic` (CRT remains dynamic where applicable).
-2. **Deploy:** Runtime `.dll` / `.so` / `.dylib` for shared third-party (and converted in-tree shared libs) stage to **`plugins/deps/`** under the mod package — not into game `bin64` by default.
+2. **Deploy:** Runtime `.dll` / `.so` / `.dylib` for shared third-party (and converted in-tree shared libs) stage to **`deps/`** under the mod package — not into game `bin64` by default.
 3. **Internal:** Convert `function_relocation` **STATIC → SHARED** so plugins import one copy instead of each absorbing a static archive (and its transitive vcpkg deps when dynamic).
-4. **Load path:** Reuse existing `configure_plugin_dll_search` / `AddDllDirectory(plugins/deps)` (Windows) and `$ORIGIN`-style RPATH (Linux/macOS) so Injector + plugins resolve deps without global `PATH` / game-dir pollution.
+4. **Load path:** Reuse existing `configure_plugin_dll_search` / `AddDllDirectory(deps)` (Windows) and `$ORIGIN`-style RPATH (Linux/macOS) so Injector + plugins resolve deps without global `PATH` / game-dir pollution.
 5. **CI / local:** Rebuild vcpkg installed tree under new triplets; invalidate caches keyed on triplet files; L-G + unit gates stay green.
 
 ### Non-goals
@@ -44,7 +44,7 @@
 | macOS | `VCPKG_TARGET_TRIPLET=x64-osx-release` (same) |
 | Injector links | `libzip`, `ZLIB`, `spdlog`, `SLikeNet`, optional `Tracy`, headers (`nlohmann`, `range-v3`, `boost-pfr`), `function_relocation` (STATIC), `liblua_static`, Frida Gum static + `.def` re-export |
 | `function_relocation` | STATIC; **must not** link frida-gum (consumers use Injector re-export); links spdlog/json + pe-parse (Win) or keystone/libdwarf (non-Win) |
-| Runtime deps root | Spec’d as `plugins/deps/`; loader already `AddDllDirectory` capable |
+| Runtime deps root | **Canonical: `mod/deps/`** (sibling of `plugins/`); loader must AddDllDirectory this path |
 | Install | Inject shell → game `bin64`; business plugins → mod `plugins/`; game install excludes `plugins/` |
 
 ---
@@ -69,19 +69,19 @@ CI release-only `VCPKG_BUILD_TYPE` (existing Windows CI branch) may remain.
 
 | Class | Examples | Runtime ship? |
 |-------|----------|----------------|
-| **Shared runtime** | zlib, libzip (+ bzip2/zstd if dynamic), fmt, spdlog, slikenet, tracy (if linked), pe-parse, keystone, libdwarf, openssl (non-Win curl), curl (non-Win), mimalloc **if** re-enabled as shared | **Yes → `plugins/deps/`** |
+| **Shared runtime** | zlib, libzip (+ bzip2/zstd if dynamic), fmt, spdlog, slikenet, tracy (if linked), pe-parse, keystone, libdwarf, openssl (non-Win curl), curl (non-Win), mimalloc **if** re-enabled as shared | **Yes → `mod/deps/`** |
 | **Header-only** | nlohmann-json, range-v3, boost-pfr, sol2, plf-hive, doctest | No runtime file |
 | **Tool-only / not Injector runtime** | doctest (tests), build tools | Not in mod deps |
 | **Stay static (exception)** | Frida Gum (prebuilt static devkit), `liblua_static` | N/A |
-| **In-tree shared (new)** | `function_relocation` SHARED | **Yes → `plugins/deps/`** (or next to Injector only if load order requires — prefer deps for one root) |
+| **In-tree shared (new)** | `function_relocation` SHARED | **Yes → `mod/deps/`** (or next to Injector only if load order requires — prefer deps for one root) |
 
-Exact runtime file names are platform-specific (`zlib1.dll` vs `libz.so.1` vs `libz.1.dylib`). Staging uses CMake `install(RUNTIME_DEPENDENCY_SET …)` / `$<TARGET_RUNTIME_DLLS:…>` (Windows) plus explicit install of known shared targets, then copy into package `plugins/deps/`.
+Exact runtime file names are platform-specific (`zlib1.dll` vs `libz.so.1` vs `libz.1.dylib`). Staging uses CMake `install(RUNTIME_DEPENDENCY_SET …)` / `$<TARGET_RUNTIME_DLLS:…>` (Windows) plus explicit install of known shared targets, then copy into package/mod `deps/`.
 
 ### 3.3 ANGLE
 
 ANGLE remains on the **separate** setup path (`tools/setup_angle.py` / unofficial-angle).  
 
-- If ANGLE artifacts are already dynamic DLLs for the render.angle plugin, stage **those** runtime DLLs into `plugins/deps/` (or keep current angle-specific deploy if already working) — do not force a multi-hour ANGLE rebuild solely for this migration unless linkage breaks.  
+- If ANGLE artifacts are already dynamic DLLs for the render.angle plugin, stage **those** runtime DLLs into `deps/` (or keep current angle-specific deploy if already working) — do not force a multi-hour ANGLE rebuild solely for this migration unless linkage breaks.  
 - Document in implementation plan whether ANGLE is “already dynamic” vs “follow-up.”
 
 ---
@@ -101,15 +101,15 @@ Today every plugin that `PRIVATE`/`PUBLIC` links `function_relocation` **static*
 1. `add_library(function_relocation SHARED …)`  
 2. Export surface: `FUNCTION_RELOCATION_API` (dllexport/visibility) on public classes/functions used across DLL boundaries — audit headers under `src/FunctionRelocation/`.  
 3. Link vcpkg deps **PRIVATE** where possible; plugins link `function_relocation` and do **not** re-link frida-gum.  
-4. Load order: Injector maps first (inject path); `function_relocation` + vcpkg deps must be findable via `plugins/deps` **before** plugins that import them load.  
+4. Load order: Injector maps first (inject path); `function_relocation` + vcpkg deps must be findable via `mod/deps` **before** plugins that import them load.  
    - Windows: `configure_plugin_dll_search` already runs before plugin `LoadLibrary`; also ensure Injector’s own import of `function_relocation` resolves (deps dir added early in inject, or delay-load, or place `function_relocation` where the OS finds it when mapping Injector).  
    - **Hard requirement:** When Injector.dll is loaded from game `bin64`, its dependent DLLs must resolve. Options (pick in plan, prefer one):  
-     - **P1:** Also `AddDllDirectory(mod/plugins/deps)` **before** `LoadLibrary(Injector)` in the inject shell (`winmm` / loader), once mod root is known or via env; or  
+     - **P1:** Also `AddDllDirectory(<mod_root>/deps)` **before** `LoadLibrary(Injector)` in the inject shell (`winmm` / loader), once mod root is known or via env; or  
      - **P2:** Stage a **copy** of deps next to Injector for inject-time only (duplicates ship) — rejected if avoidable; or  
      - **P3:** Keep `function_relocation` delay-loaded from Injector until after PluginPath configure — more invasive.  
    - **Preferred direction:** extend inject shell / early Injector entry to call the same deps search setup using mod discovery / `DS_LUAJIT_PLUGIN_DIR` **before** any code path that needs relocated APIs from another DLL; if Injector **imports** `function_relocation` at load time, OS loader runs before DllMain of Injector — then deps must be on the default search path **or** next to Injector.  
    - **Pragmatic lock for v1:** Stage **shared runtimes used by Injector** into **both**:  
-     - `plugins/deps/` (canonical for plugins), and  
+     - `mod/deps/` (canonical), and  
      - **game `bin64/` only for Injector’s direct import set** *or* set loader path in winmm **before** loading Injector.  
    - Spec prefers **winmm/loader configures DLL directories then LoadLibrary(Injector)** if mod path known; if not known at inject time, **ship Injector import deps beside Injector in bin64** as a **narrow** exception (not whole plugins tree). Document the dual-stage list explicitly in the plan (zlib, fmt, spdlog, zip, function_relocation, …).
 
@@ -130,7 +130,7 @@ Update all `target_link_libraries(... function_relocation)` sites to link the SH
 |----------|-------------|
 | `winmm` / inject shell, `Injector.dll` | Game `bin64/` (existing) |
 | `plugin_*.dll` | Mod `plugins/` (existing) |
-| vcpkg + `function_relocation` runtimes | **Mod `plugins/deps/`** (canonical) |
+| vcpkg + `function_relocation` runtimes | **Mod `deps/`** (canonical) |
 | Injector **load-time** import DLLs (subset) | **Also** game `bin64/` **or** path fixed in loader before Injector map (see §4.2) |
 | Header-only / static exceptions | Nothing |
 
@@ -138,10 +138,10 @@ Update all `target_link_libraries(... function_relocation)` sites to link the SH
 
 1. Inject shell → game bin64 (exclude full plugins tree — already).  
 2. Plugins → mod `plugins/`.  
-3. **New:** package `plugins/deps/**` → mod `plugins/deps/`.  
+3. **New:** package `deps/**` → mod-root `deps/` (sibling of `plugins/`).  
 4. **New if needed:** copy Injector import runtime set → game bin64 (minimal list generated by CMake).
 
-Linux/macOS: set `RPATH` on Injector / plugins / function_relocation to `$ORIGIN/deps` or `$ORIGIN/../plugins/deps` as appropriate for package layout; prefer not relying on `LD_LIBRARY_PATH` in production.
+Linux/macOS: set `RPATH` on Injector / plugins / function_relocation to `$ORIGIN/deps` or `$ORIGIN/../deps` as appropriate for package layout; prefer not relying on `LD_LIBRARY_PATH` in production.
 
 ---
 
@@ -151,10 +151,10 @@ Linux/macOS: set `RPATH` on Injector / plugins / function_relocation to `$ORIGIN
 |------|--------|
 | `cmake/custom-triplets/*.cmake` | Windows dynamic; add linux/osx custom overlays |
 | Root `CMakeLists.txt` | Point `VCPKG_TARGET_TRIPLET` + `VCPKG_OVERLAY_TRIPLETS` for all OS |
-| `src/FunctionRelocation/CMakeLists.txt` | SHARED + export macro + install to deps |
-| Injector / plugin CMake | Link import libs; runtime dependency set → `plugins/deps` |
+| `src/FunctionRelocation/CMakeLists.txt` | SHARED + export macro + install to mod `deps/` |
+| Injector / plugin CMake | Link import libs; runtime dependency set → `deps/` |
 | Loader (`winmm`) | Optional early `AddDllDirectory` / search path for Injector deps |
-| `Mod/install.*` | Stage `plugins/deps` |
+| `Mod/install.*` | Stage mod-root `deps/` |
 | `.github/workflows/release.yaml` | Cache bust via triplet hash (already); ensure package includes deps |
 | Docs | Note rebuild: delete old static `vcpkg_installed` |
 
@@ -165,7 +165,7 @@ Linux/macOS: set `RPATH` on Injector / plugins / function_relocation to `$ORIGIN
 1. **Configure + build** RelWithDebInfo after clean vcpkg install (dynamic triplet).  
 2. **Unit:** existing plugin path / host / services tests still PASS.  
 3. **Link smoke:** `dumpbin /dependents Injector.dll` (Win) / `ldd` (Linux) shows expected dynamic deps, **not** missing DLLs.  
-4. **Deps resolve:** With only `plugins/deps` holding zlib/spdlog/… (and bin64 inject exception set if any), plugins load; removing a required dep from deps → fail-fast load/link error (no silent static fallback).  
+4. **Deps resolve:** With only `mod/deps` holding zlib/spdlog/… (and bin64 inject exception set if any), plugins load; removing a required dep from deps → fail-fast load/link error (no silent static fallback).  
 5. **Gum invariant:** plugins still must not contain a second gum; `/NODEFAULTLIB:frida-gum.lib` / existing export policy holds.  
 6. **L-G present** with `DS_LUAJIT_PLUGIN_DIR` + staged deps.  
 7. **function_relocation:** single module mapped; signature/plugin paths that use it still work (core.vm signature path).
@@ -190,12 +190,12 @@ Linux/macOS: set `RPATH` on Injector / plugins / function_relocation to `$ORIGIN
 
 - [ ] Windows/Linux/macOS triplets request **dynamic** vcpkg library linkage.  
 - [ ] Clean vcpkg reinstall succeeds; Injector + plugins link against import libraries.  
-- [ ] Runtime shared libs for third-party + `function_relocation` ship under **`plugins/deps/`**.  
+- [ ] Runtime shared libs for third-party + `function_relocation` ship under **`mod/deps/`**.  
 - [ ] Injector maps successfully from game `bin64` (loader path and/or minimal side-by-side import set).  
 - [ ] Gum remains single-instance (Injector re-export only).  
 - [ ] `liblua_static` remains PRIVATE static embed.  
 - [ ] Unit tests + L-G present PASS.  
-- [ ] install scripts stage `plugins/deps`.  
+- [ ] install scripts stage `deps/`.  
 - [ ] No reliance on static vcpkg libs for packages listed as shared runtime.
 
 ---
@@ -216,3 +216,22 @@ Linux/macOS: set `RPATH` on Injector / plugins / function_relocation to `$ORIGIN
 | Header-only packages | No runtime staging |
 | mimalloc | If still commented out in Injector, leave out of deps until re-enabled |
 | Full Gum shared | Out of scope |
+
+---
+
+## 12. Amendment vs implemented PluginPath (2026-08-06)
+
+Runtime root is **`mod_root/deps`**, not `plugins_root/deps`.
+
+Current code (`plugins_deps_dir(plugins_root)` → `plugins_root / "deps"`, and `configure_plugin_dll_search` adding that path) still follows the older `plugins/deps` layout. **This dynamic-linkage work must change PluginPath to:**
+
+```text
+mod_root = parent(modmain_path)   # or discovered workshop/local mod root
+deps_dir = mod_root / "deps"
+```
+
+and `AddDllDirectory(deps_dir)` once per mod root (not `plugins_root/deps`).
+
+Env-only plugin dirs (`DS_LUAJIT_PLUGIN_DIR`) without a mod root: prefer sibling `../deps` if the env path ends with `plugins`, else `<env>/deps` only if explicitly documented — default **sibling of plugins**: `parent(plugin_dir)/deps` when `plugin_dir.filename()=="plugins"`.
+
+Update unit tests accordingly (`plugins_deps_dir` rename or replace with `mod_deps_dir(mod_root)`).
