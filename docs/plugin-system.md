@@ -157,7 +157,7 @@ ds_add_dynamic_plugin(plugin_my_feature
 ```
 
 Output lands in `$<TARGET_FILE_DIR:Injector>/plugins/plugin_my_feature.dll`.
-Deploy that folder next to the game Injector (`bin64/plugins/`).
+Deploy that folder under the **mod** `plugins/` tree (primary). Game `bin64/plugins/` remains a compat/dev fallback only.
 
 Hook entrypoints called from modules must be exported from Injector
 (`DONTSTARVEINJECTOR_GAME_API` / `DS_PLUGIN_HOST_API`).
@@ -445,20 +445,24 @@ When adding a plugin:
 2. Export `ds_plugin_module_init` / optional `ds_plugin_module_abi_version` (see `PluginModuleAbi.hpp`)
 3. Register `IPlugin*` with static storage duration
 4. Add via `ds_add_dynamic_plugin(...)` in Injector CMake (output `Injector/plugins/`)
-5. Deploy next to game Injector under `bin64/plugins/`
+5. Deploy under **mod** `plugins/` (primary). Game `bin64/plugins/` is compat/dev fallback only.
 6. Override search with `DS_LUAJIT_PLUGIN_DIR`
 
 EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`, …) already ship as dynamic modules. Keep `RegisterBuiltinPlugins` empty unless you need a true L0-only static plugin.
 
 ### 11.1 Deploy list (JIT recommended)
 
-| Artifact | Required? | Notes |
-|---|---|---|
-| `bin64/Injector.dll` (+ loader e.g. `Winmm.dll`) | **Yes** | L0 inject + PluginHost + DynamicPluginLoader |
-| `bin64/plugins/plugin_core_vm.dll` | **Recommended for JIT** | Optional. Missing ⇒ no Signature/ReplaceLuaModule/`GameInjector`; feature plugins still load |
-| `bin64/plugins/plugin_debug_profiler.dll` | **Optional (Tracy/FullGC/FrameGC)** | Independent of core.vm. Missing ⇒ soft no-op for profiler/GC policy APIs; inject + JIT still work |
-| `bin64/plugins/plugin_manager.dll` | **Optional (package manager)** | Independent of every business plugin. Missing ⇒ manual install only; UI soft-degrades. See **§13** |
-| `bin64/plugins/plugin_*.dll` | Per feature | `network_*`, `render_*`, `save_fork`, `sim_lagcomp`, `dummy`, … |
+| Artifact | Location | Required? | Notes |
+|----------|----------|-----------|-------|
+| Winmm / POSIX stub | **game** `bin64` (Linux: `bin64/lib64/libInjector.so`) | **Yes** (shell) | Thin inject shell only; no business logic |
+| Injector (real) | **mod** `bin64/` (`Injector.dll` / `libInjector.so` / `.dylib`) | **Yes** | L0 inject + PluginHost + DynamicPluginLoader |
+| `plugin_core_vm` | **mod** `plugins/` | **Recommended for JIT** | Optional. Missing ⇒ no Signature/ReplaceLuaModule/`GameInjector`; feature plugins still load |
+| `plugin_debug_profiler` | **mod** `plugins/` | **Optional (Tracy/FullGC/FrameGC)** | Independent of core.vm |
+| `plugin_manager` | **mod** `plugins/` | **Optional (package manager)** | Missing ⇒ manual install only; UI soft-degrades. See **§13** |
+| other `plugin_*` | **mod** `plugins/` | Per feature | `network_*`, `render_*`, `save_fork`, `sim_lagcomp`, `dummy`, … |
+| third-party runtime deps | **mod** `deps/` | As needed | Shared DLL/SO search for Injector + plugins |
+
+Override paths: `DS_LUAJIT_INJECTOR` / `DS_LUAJIT_INJECTOR_DIR` (real Injector); `DS_LUAJIT_PLUGIN_DIR` (plugins). Marker: `data/unsafedata/ds_luajit_injector.path`.
 
 `DisableJITWhenServer` (or harness `DS_LUAJIT_FORCE_DISABLE_VM=1`) only skips the VM path; it does **not** skip DynamicPluginLoader. Harness negative path: rename `plugin_core_vm.dll` or set `DS_LUAJIT_FORCE_NO_CORE_VM=1`.
 
@@ -578,15 +582,15 @@ Design: `docs/superpowers/specs/2026-08-05-plugin-manager-design.md` (**Accepted
 
 | Source | How |
 |---|---|
-| `{platform}_Mod.zip` | Unpack the monorepo release zip; copy its `plugins/` tree next to the Injector (`bin64/plugins/` or platform equivalent). |
-| Per-plugin zip | From the same Release: `plugin_<stem>-<ver>-<platform>.zip` (e.g. `plugin_network_rpc-1.0.0-windows.zip`). Extract module + optional `plugin_*.meta.json` into `plugins/`. |
+| `{platform}_Mod.zip` | Unpack the monorepo release zip; keep `plugins/` under the **mod** root (not game `bin64/plugins`). Run `install.bat` / `install_linux.sh` for shell + real Injector staging. |
+| Per-plugin zip | From the same Release: `plugin_<stem>-<ver>-<platform>.zip` (e.g. `plugin_network_rpc-1.0.0-windows.zip`). Extract module + optional `plugin_*.meta.json` into mod `plugins/`. |
 | `plugins/update_pending/` | Drop replacement modules here when the live DLL is locked. L0 `apply_pending_plugin_updates` runs **before** `LoadLibrary` on every inject — no manager needed. |
 
 Also published for humans and tools: `plugins-manifest.json` (catalog of ids, versions, assets, sha256). CI stages `plugins/` via `install(TARGETS … DESTINATION plugins)` so Mod zips include modules even without the manager.
 
 ```text
 Release assets (manual baseline):
-  {platform}_Mod.zip              full mod + Injector + plugins/
+  {platform}_Mod.zip              full mod + shell package + real Injector + plugins/ + deps/
   plugins-manifest.json           catalog
   plugin_<stem>-<ver>-<platform>.zip   single module package
 ```

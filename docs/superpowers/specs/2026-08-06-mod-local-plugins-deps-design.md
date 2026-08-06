@@ -1,5 +1,9 @@
 # Design: Mod-local plugins + deps search path
 
+**Amended 2026-08-06:** Injector location is no longer “remain under game bin64”.
+See `2026-08-06-mod-local-injector-bootstrap-design.md`. Goal §1.5 / install table
+in this doc are historical for the plugins-only slice.
+
 **Date:** 2026-08-06  
 **Status:** Draft for review  
 **Scope:** Relocate native `plugin_*.dll` from game `bin64/plugins` to the workshop/mod directory; introduce `deps` for shared dynamic third-party libraries; fix DLL search so future static→dynamic linking does not depend on game `bin64` or `PATH`.

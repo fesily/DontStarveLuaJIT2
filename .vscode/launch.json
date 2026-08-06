@@ -250,6 +250,10 @@
                 {
                     "name": "LD_PRELOAD",
                     "value": "./lib64/libInjector.so"
+                },
+                {
+                    "name": "DS_LUAJIT_INJECTOR",
+                    "value": "${workspaceFolder}/Mod/bin64/linux/libInjector.so"
                 }
                 //,{"name": "LD_DEBUG", "value": "libs"}
             ],
@@ -281,6 +285,10 @@
                 {
                     "name": "LD_LIBRARY_PATH",
                     "value": "./lib64"
+                },
+                {
+                    "name": "DS_LUAJIT_INJECTOR",
+                    "value": "${workspaceFolder}/Mod/bin64/linux/libInjector.so"
                 }
             ],
             "MIMode": "gdb",
@@ -418,6 +426,10 @@
                     "value": "./lib64"
                 },
                 {
+                    "name": "DS_LUAJIT_INJECTOR",
+                    "value": "${workspaceFolder}/Mod/bin64/linux/libInjector.so"
+                },
+                {
                     "name": "LUA_DEBUG_PLATFORM",
                     "value": "linux-x64"
                 },
@@ -492,6 +504,7 @@
                 //"LUAJIT_WAIT_DEBUGGER_ENABLE": "1",
                 "LD_PRELOAD": "${config:steam.game.root}/bin64/lib64/libInjector.so",
                 "LD_LIBRARY_PATH": "${config:steam.game.root}/bin64/lib64",
+                "DS_LUAJIT_INJECTOR": "${workspaceFolder}/Mod/bin64/linux/libInjector.so",
                 "LUA_DEBUG_PLATFORM": "linux-x64",
                 "GAME_INJECTOR_NO_DEFAULT_BEFORE": "1"
             },
