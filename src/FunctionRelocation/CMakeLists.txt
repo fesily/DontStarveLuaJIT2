@@ -93,10 +93,10 @@ if (WIN32)
             VISIBILITY_INLINES_HIDDEN ON
     )
 
+    # RUNTIME only for package deps/ (import .lib is build-only, not shipped).
     install(TARGETS function_relocation
             RUNTIME DESTINATION deps COMPONENT deps
-            LIBRARY DESTINATION deps COMPONENT deps
-            ARCHIVE DESTINATION deps COMPONENT deps)
+            LIBRARY DESTINATION deps COMPONENT deps)
 
     # --- STATIC: tools (signature_updater / signature_checker) ---
     # Tools already link ${FRIDA_GUM_LIBRARIES}. They must not depend on
@@ -119,6 +119,6 @@ else()
     # Same target for tool CMake that always asks for function_relocation_static.
     add_library(function_relocation_static ALIAS function_relocation)
 
-    install(TARGETS function_relocation
-            ARCHIVE DESTINATION deps COMPONENT deps)
+    # Non-Windows: STATIC only (no SHARED runtime to ship under deps/).
+    # Tools keep their own frida-gum; nothing to package for mod/deps.
 endif()

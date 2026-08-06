@@ -178,6 +178,10 @@ endif ()
 #     Linux: lib64/   (game PRELOAD path ./lib64/libInjector.so)
 #     macOS: shell/   (distinct from package-root real libInjector.dylib)
 # - Windows shell is Winmm (loader/); real Injector remains COMPONENT injector.
+# - Shared third-party + function_relocation runtimes stage to package deps/
+#   (COMPONENT deps) via TARGET_RUNTIME_DLLS / install rules below.
+#   install.bat / install_linux.sh copy that tree to mod-root deps/;
+#   game bin64 is never polluted.
 install(TARGETS Injector
     RUNTIME DESTINATION . COMPONENT injector
     LIBRARY DESTINATION . COMPONENT injector)
@@ -246,6 +250,8 @@ function(ds_add_dynamic_plugin name)
         ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
     )
     # Package-local only (COMPONENT plugins). Not part of game bin64 deploy.
+    # MODULE targets cannot take RUNTIME_DEPENDENCY_SET; shared ports used only by
+    # plugins are staged via TARGET_RUNTIME_DLLS install below.
     install(TARGETS ${name}
         RUNTIME DESTINATION plugins COMPONENT plugins
         LIBRARY DESTINATION plugins COMPONENT plugins
@@ -277,4 +283,247 @@ else()
         "Injector Frida Gum re-export is unimplemented on Linux/macOS (Windows uses FridaGum.def). "
         "Wait for ELF/Mach-O export-list fix; do not static-link a second frida-gum into plugins.")
 endif()
+
+# ---------------------------------------------------------------------------
+# Shared runtimes → package/mod deps/ (sibling of plugins/, not under it)
+# ---------------------------------------------------------------------------
+# Package: CMAKE_INSTALL_PREFIX/deps → Mod/bin64/<plat>/deps
+# install.bat / install_linux.sh mirror that tree to <mod>/deps.
+# Game bin64 never receives these (shell-only GAME_INSTALL_PREFIX rules).
+#
+# Use install(CODE)+file(GET_RUNTIME_DEPENDENCIES) so PE/ELF imports that
+# CMake TARGET_RUNTIME_DLLS misses (e.g. zlib1.dll via FindZLIB) still stage.
+# function_relocation already has install(TARGETS … DESTINATION deps).
+# Exclude package-owned modules (Injector, plugins, lua51*) and OS/system libs.
+
+set(_ds_mod_deps_search_dirs "")
+if (DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+    if (WIN32)
+        list(APPEND _ds_mod_deps_search_dirs
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin"
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/bin"
+        )
+    else()
+        list(APPEND _ds_mod_deps_search_dirs
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib"
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib"
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin"
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/bin"
+        )
+    endif()
+endif()
+string(REPLACE ";" "\\;" _ds_mod_deps_search_dirs_code "${_ds_mod_deps_search_dirs}")
+
+if (WIN32)
+    set(_ds_mod_deps_pre_exclude
+        "api-ms-.*"
+        "ext-ms-.*"
+        "hvsifiletrust.*"
+        "pdmutilities.*"
+    )
+    set(_ds_mod_deps_post_exclude
+        ".*[\\\\/][Ss]ystem32[\\\\/].*"
+        ".*[\\\\/][Ss]ysWOW64[\\\\/].*"
+        ".*[\\\\/]Windows[\\\\/]WinSxS[\\\\/].*"
+        ".*[\\\\/]MSVC[\\\\/].*"
+        "ucrtbase.*\\.dll"
+        "vcruntime.*\\.dll"
+        "msvcp.*\\.dll"
+        "concrt.*\\.dll"
+        "msvc.*\\.dll"
+        # Package-owned (bin64 / plugins), not third-party deps/
+        ".*[\\\\/]Injector\\.dll"
+        ".*[\\\\/]Winmm\\.dll"
+        ".*[\\\\/]plugin_.*\\.dll"
+        ".*[\\\\/]lua51.*\\.dll"
+        # Game / OS surface
+        ".*[\\\\/]steam_api64\\.dll"
+        ".*[\\\\/]steam_api\\.dll"
+        ".*[\\\\/]vulkan-1\\.dll"
+        ".*[\\\\/]d3d9\\.dll"
+        ".*[\\\\/]d3d11\\.dll"
+        ".*[\\\\/]dxgi\\.dll"
+    )
+else()
+    set(_ds_mod_deps_pre_exclude
+        "^/lib"
+        "^/usr/lib"
+        "^/lib64"
+        "^/usr/lib64"
+    )
+    set(_ds_mod_deps_post_exclude
+        ".*/ld-linux.*\\.so.*"
+        ".*/libc\\.so.*"
+        ".*/libm\\.so.*"
+        ".*/libdl\\.so.*"
+        ".*/libpthread\\.so.*"
+        ".*/librt\\.so.*"
+        ".*/libresolv\\.so.*"
+        ".*/libgcc_s\\.so.*"
+        ".*/libstdc\\+\\+\\.so.*"
+        ".*/libsteam_api\\.so.*"
+        ".*/libInjector\\.so.*"
+        ".*/plugin_.*\\.so.*"
+        ".*/liblua51.*\\.so.*"
+    )
+endif()
+string(REPLACE ";" "\\;" _ds_mod_deps_pre_exclude_code "${_ds_mod_deps_pre_exclude}")
+string(REPLACE ";" "\\;" _ds_mod_deps_post_exclude_code "${_ds_mod_deps_post_exclude}")
+
+# Seeds: Injector + core.vm (zip etc.). Optional function_relocation SHARED on Win.
+set(_ds_mod_deps_seed_genex "\"$<TARGET_FILE:Injector>\"")
+if (TARGET plugin_core_vm)
+    string(APPEND _ds_mod_deps_seed_genex " \"$<TARGET_FILE:plugin_core_vm>\"")
+endif()
+if (WIN32 AND TARGET function_relocation)
+    get_target_property(_ds_fr_type function_relocation TYPE)
+    if (_ds_fr_type STREQUAL "SHARED_LIBRARY")
+        string(APPEND _ds_mod_deps_seed_genex " \"$<TARGET_FILE:function_relocation>\"")
+    endif()
+endif()
+
+install(CODE "
+    set(_ds_seeds ${_ds_mod_deps_seed_genex})
+    set(_ds_dirs \"${_ds_mod_deps_search_dirs_code}\")
+    list(APPEND _ds_dirs \"\$<TARGET_FILE_DIR:Injector>\")
+    list(REMOVE_DUPLICATES _ds_dirs)
+    set(_ds_out \"\${CMAKE_INSTALL_PREFIX}/deps\")
+    file(MAKE_DIRECTORY \"\${_ds_out}\")
+    set(_ds_pre_exclude ${_ds_mod_deps_pre_exclude_code})
+    set(_ds_post_exclude ${_ds_mod_deps_post_exclude_code})
+    file(GET_RUNTIME_DEPENDENCIES
+        LIBRARIES \${_ds_seeds}
+        DIRECTORIES \${_ds_dirs}
+        RESOLVED_DEPENDENCIES_VAR _ds_resolved
+        UNRESOLVED_DEPENDENCIES_VAR _ds_unresolved
+        CONFLICTING_DEPENDENCIES_PREFIX _ds_conflict
+        PRE_EXCLUDE_REGEXES \${_ds_pre_exclude}
+        POST_EXCLUDE_REGEXES \${_ds_post_exclude}
+    )
+    # Conflicts: applocal copies next to Injector vs vcpkg_installed — prefer vcpkg.
+    foreach(_ds_name IN LISTS _ds_conflict_FILENAMES)
+        set(_ds_pick \"\")
+        foreach(_ds_path IN LISTS _ds_conflict_\${_ds_name})
+            if(_ds_path MATCHES \"vcpkg_installed\")
+                set(_ds_pick \"\${_ds_path}\")
+                break()
+            endif()
+            if(NOT _ds_pick)
+                set(_ds_pick \"\${_ds_path}\")
+            endif()
+        endforeach()
+        if(_ds_pick)
+            list(APPEND _ds_resolved \"\${_ds_pick}\")
+        endif()
+    endforeach()
+    list(REMOVE_DUPLICATES _ds_resolved)
+    foreach(_ds_dep IN LISTS _ds_resolved)
+        get_filename_component(_ds_name \"\${_ds_dep}\" NAME)
+        if(_ds_name MATCHES \"^(Injector|libInjector|plugin_.*|lua51.*|Winmm)(\\\\.(dll|so|dylib)).*\")
+            continue()
+        endif()
+        file(INSTALL \"\${_ds_dep}\" DESTINATION \"\${_ds_out}\" FOLLOW_SYMLINK_CHAIN)
+    endforeach()
+    if(_ds_unresolved)
+        message(STATUS \"ds_mod_deps: unresolved (non-fatal): \${_ds_unresolved}\")
+    endif()
+" COMPONENT deps)
+
+# Windows build-tree smoke: stage into $<TARGET_FILE_DIR:Injector>/deps without
+# cmake --install. Mirrors package layout for local DS_LUAJIT_PLUGIN_DIR runs.
+if (WIN32)
+    set(_ds_stage_script "${CMAKE_CURRENT_BINARY_DIR}/stage_mod_deps.cmake")
+    file(WRITE "${_ds_stage_script}" [=[
+if(NOT DEFINED DS_SEEDS OR NOT DEFINED DS_OUT OR NOT DEFINED DS_DIRS)
+  message(FATAL_ERROR "stage_mod_deps.cmake: DS_SEEDS, DS_OUT, DS_DIRS required")
+endif()
+file(MAKE_DIRECTORY "${DS_OUT}")
+file(GET_RUNTIME_DEPENDENCIES
+  LIBRARIES ${DS_SEEDS}
+  DIRECTORIES ${DS_DIRS}
+  RESOLVED_DEPENDENCIES_VAR _resolved
+  UNRESOLVED_DEPENDENCIES_VAR _unresolved
+  CONFLICTING_DEPENDENCIES_PREFIX _conflict
+  PRE_EXCLUDE_REGEXES
+    "api-ms-.*"
+    "ext-ms-.*"
+  POST_EXCLUDE_REGEXES
+    ".*[\\\\/][Ss]ystem32[\\\\/].*"
+    ".*[\\\\/][Ss]ysWOW64[\\\\/].*"
+    ".*[\\\\/]Windows[\\\\/]WinSxS[\\\\/].*"
+    ".*[\\\\/]MSVC[\\\\/].*"
+    "ucrtbase.*\\.dll"
+    "vcruntime.*\\.dll"
+    "msvcp.*\\.dll"
+    "concrt.*\\.dll"
+    "msvc.*\\.dll"
+    ".*[\\\\/]steam_api64\\.dll"
+    ".*[\\\\/]steam_api\\.dll"
+    ".*[\\\\/]vulkan-1\\.dll"
+    ".*[\\\\/]d3d9\\.dll"
+    ".*[\\\\/]d3d11\\.dll"
+    ".*[\\\\/]dxgi\\.dll"
+)
+# Conflicts: applocal next to Injector vs vcpkg_installed — prefer vcpkg.
+foreach(_name IN LISTS _conflict_FILENAMES)
+  set(_pick "")
+  foreach(_path IN LISTS _conflict_${_name})
+    if(_path MATCHES "vcpkg_installed")
+      set(_pick "${_path}")
+      break()
+    endif()
+    if(NOT _pick)
+      set(_pick "${_path}")
+    endif()
+  endforeach()
+  if(_pick)
+    list(APPEND _resolved "${_pick}")
+  endif()
+endforeach()
+list(REMOVE_DUPLICATES _resolved)
+foreach(_dep IN LISTS _resolved)
+  get_filename_component(_name "${_dep}" NAME)
+  if(_name MATCHES "^(Injector|Winmm|plugin_.*|lua51.*)\\.dll$")
+    continue()
+  endif()
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_dep}" "${DS_OUT}/${_name}")
+endforeach()
+]=])
+    set(_ds_stage_mod_deps_depends Injector)
+    if (TARGET plugin_core_vm)
+        list(APPEND _ds_stage_mod_deps_depends plugin_core_vm)
+    endif()
+    if (TARGET function_relocation)
+        get_target_property(_ds_fr_type function_relocation TYPE)
+        if (_ds_fr_type STREQUAL "SHARED_LIBRARY")
+            list(APPEND _ds_stage_mod_deps_depends function_relocation)
+        endif()
+    endif()
+    # Build seed list at generate time via genex; order: Injector, core.vm, reloc.
+    set(_ds_stage_seeds "$<TARGET_FILE:Injector>")
+    if (TARGET plugin_core_vm)
+        set(_ds_stage_seeds "${_ds_stage_seeds};$<TARGET_FILE:plugin_core_vm>")
+    endif()
+    if (TARGET function_relocation)
+        get_target_property(_ds_fr_type function_relocation TYPE)
+        if (_ds_fr_type STREQUAL "SHARED_LIBRARY")
+            set(_ds_stage_seeds "${_ds_stage_seeds};$<TARGET_FILE:function_relocation>")
+        endif()
+    endif()
+    add_custom_target(stage_mod_deps ALL
+        COMMAND ${CMAKE_COMMAND}
+            -D "DS_SEEDS=${_ds_stage_seeds}"
+            -D "DS_OUT=$<TARGET_FILE_DIR:Injector>/deps"
+            -D "DS_DIRS=${_ds_mod_deps_search_dirs};$<TARGET_FILE_DIR:Injector>"
+            -P "${_ds_stage_script}"
+        DEPENDS ${_ds_stage_mod_deps_depends}
+        COMMENT "Stage shared runtimes into build-tree deps/"
+        VERBATIM
+    )
+endif()
+
+
+
+
+
 
