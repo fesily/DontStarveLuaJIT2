@@ -172,4 +172,6 @@ endif ( )
 add_executable ( luac ${SRC_LUAC} ${LUAC_RC} )
 target_link_libraries ( luac liblua_static )
 
-install(TARGETS liblua RUNTIME DESTINATION .)
+install(TARGETS liblua RUNTIME DESTINATION plugins/deps
+                          LIBRARY DESTINATION plugins/deps
+                          ARCHIVE DESTINATION plugins/deps)

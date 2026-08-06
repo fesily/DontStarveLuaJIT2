@@ -12,6 +12,8 @@
 #endif
 
 #include <filesystem>
+#include <vector>
+#include <string>
 #include "platform.hpp"
 
 std::filesystem::path getExePath() {
@@ -35,54 +37,187 @@ module_handler_t loadlib(const char *name, int mode) {
     if (!name || !*name) {
         return nullptr;
     }
-    if (!std::filesystem::exists(name)) {
-        // Prefer directory of already-mapped real Injector (mod_root/bin64 after
-        // bootstrap). Fall back to game exe dir / cwd for legacy installs.
-        // Do not include PluginPath here — platform.cpp is also linked into Winmm.
-        std::filesystem::path path;
-        const auto try_set = [&](const std::filesystem::path &candidate) {
-            if (path.empty() && !candidate.empty() && std::filesystem::exists(candidate)) {
-                path = candidate;
-            }
-        };
-#ifdef _WIN32
-        HMODULE inj = GetModuleHandleW(L"Injector");
-        if (!inj) {
-            inj = GetModuleHandleA("Injector.dll");
+
+    namespace fs = std::filesystem;
+    const fs::path input{name};
+
+    // Bare basenames (e.g. "lua51") must try the platform shared-library suffix.
+    // Otherwise exists(.../"lua51") fails and LoadLibraryA("lua51") only searches
+    // the game exe directory — missing mod-local VMs under plugins/deps.
+    auto with_platform_suffix = [](const fs::path &p) -> fs::path {
+        if (p.has_extension()) {
+            return p;
         }
-        if (inj) {
-            wchar_t buf[MAX_PATH];
-            const DWORD n = GetModuleFileNameW(inj, buf, MAX_PATH);
-            if (n > 0 && n < MAX_PATH) {
-                try_set(std::filesystem::path(buf).parent_path() / name);
-            }
-        }
+#if defined(_WIN32)
+        return fs::path(p.string() + ".dll");
+#elif defined(__APPLE__)
+        return fs::path(p.string() + ".dylib");
 #else
-        Dl_info info{};
-        // Any symbol from the real Injector image works; HookStartupEntry is the
-        // stable bootstrap export.
-        if (dlsym(RTLD_DEFAULT, "HookStartupEntry") != nullptr &&
-            dladdr(dlsym(RTLD_DEFAULT, "HookStartupEntry"), &info) && info.dli_fname) {
-            try_set(std::filesystem::path(info.dli_fname).parent_path() / name);
-#if defined(__linux__)
-            try_set(std::filesystem::path(info.dli_fname).parent_path() / "lib64" / name);
+        return fs::path(p.string() + ".so");
 #endif
+    };
+
+    const auto try_load_path = [&](const fs::path &candidate) -> module_handler_t {
+        if (candidate.empty()) {
+            return nullptr;
         }
+        std::error_code ec;
+        if (!fs::is_regular_file(candidate, ec)) {
+            return nullptr;
+        }
+        const auto s = candidate.string();
+#ifdef _WIN32
+        return LoadLibraryExA(s.c_str(), nullptr,
+                              LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+#else
+        return dlopen(s.c_str(), RTLD_NOW | mode);
 #endif
-        try_set(getExePath().parent_path() / name);
-        try_set(std::filesystem::current_path() / name);
-#if defined(__linux__)
-        try_set(getExePath().parent_path() / "lib64" / name);
-        try_set(std::filesystem::current_path() / "lib64" / name);
-#endif
-        if (!path.empty())
-            return loadlib(path.string().c_str(), mode);
+    };
+
+    if (auto h = try_load_path(input)) {
+        return h;
     }
-    return
+    if (auto h = try_load_path(with_platform_suffix(input))) {
+        return h;
+    }
+
+    // Search roots (priority):
+    // 1) plugins/deps next to already-mapped plugin_core_vm (canonical for lua51*).
+    // 2) plugins/deps derived from Injector: <injector_dir>/../plugins/deps
+    // 3) Injector directory (legacy dual-stage)
+    // 4) Game exe / cwd (legacy)
+    std::vector<fs::path> roots;
+    const auto push_root = [&](const fs::path &dir) {
+        if (dir.empty()) {
+            return;
+        }
+        std::error_code ec;
+        if (!fs::is_directory(dir, ec)) {
+            return;
+        }
+        for (const auto &existing : roots) {
+            if (existing == dir) {
+                return;
+            }
+        }
+        roots.push_back(dir);
+    };
+
 #ifdef _WIN32
-        LoadLibraryA(name);
+    auto module_dir = [](const wchar_t *wname, const char *aname) -> fs::path {
+        HMODULE mod = GetModuleHandleW(wname);
+        if (!mod && aname) {
+            mod = GetModuleHandleA(aname);
+        }
+        if (!mod) {
+            return {};
+        }
+        wchar_t buf[MAX_PATH];
+        const DWORD n = GetModuleFileNameW(mod, buf, MAX_PATH);
+        if (n == 0 || n >= MAX_PATH) {
+            return {};
+        }
+        return fs::path(buf).parent_path();
+    };
+    const auto core_dir = module_dir(L"plugin_core_vm", "plugin_core_vm.dll");
+    if (!core_dir.empty()) {
+        // plugins/deps (sibling of plugins/ is mod/deps; user asked plugins/deps)
+        push_root(core_dir / "deps");
+        push_root(core_dir); // also allow side-by-side under plugins/
+    }
+    const auto inj_dir = module_dir(L"Injector", "Injector.dll");
+    if (!inj_dir.empty()) {
+        // <mod>/bin64/Injector.dll → <mod>/plugins/deps
+        push_root(inj_dir / "plugins" / "deps");
+        push_root(inj_dir.parent_path() / "plugins" / "deps");
+        push_root(inj_dir);
+    }
 #else
-            dlopen(name, RTLD_NOW | mode);
+    auto module_dir_from_path = [](const char *path) -> fs::path {
+        if (!path || !*path) {
+            return {};
+        }
+        return fs::path(path).parent_path();
+    };
+    Dl_info info{};
+    void *core_sym = dlsym(RTLD_DEFAULT, "ds_core_vm_run_signature_and_replace");
+    if (core_sym && dladdr(core_sym, &info) && info.dli_fname) {
+        const auto core_dir = module_dir_from_path(info.dli_fname);
+        push_root(core_dir / "deps");
+        push_root(core_dir);
+    }
+    void *inj_sym = dlsym(RTLD_DEFAULT, "HookStartupEntry");
+    if (inj_sym && dladdr(inj_sym, &info) && info.dli_fname) {
+        const auto inj_dir = module_dir_from_path(info.dli_fname);
+        push_root(inj_dir / "plugins" / "deps");
+        push_root(inj_dir.parent_path() / "plugins" / "deps");
+        push_root(inj_dir);
+#if defined(__linux__)
+        push_root(inj_dir / "lib64");
+#endif
+    }
+#endif
+
+    push_root(getExePath().parent_path());
+    {
+        std::error_code ec;
+        push_root(fs::current_path(ec));
+    }
+#if defined(__linux__)
+    push_root(getExePath().parent_path() / "lib64");
+#endif
+
+    const fs::path base = input.filename().empty() ? input : input.filename();
+    const fs::path base_suf = with_platform_suffix(base);
+#if !defined(_WIN32)
+    fs::path base_lib;
+    if (!base.has_extension()) {
+        const auto s = base.string();
+        if (s.rfind("lib", 0) != 0) {
+            base_lib = fs::path(std::string("lib") + s +
+#if defined(__APPLE__)
+                                ".dylib"
+#else
+                                ".so"
+#endif
+            );
+        }
+    }
+#endif
+
+    for (const auto &root : roots) {
+        if (auto h = try_load_path(root / base_suf)) {
+            return h;
+        }
+        if (auto h = try_load_path(root / base)) {
+            return h;
+        }
+#if !defined(_WIN32)
+        if (!base_lib.empty()) {
+            if (auto h = try_load_path(root / base_lib)) {
+                return h;
+            }
+        }
+#endif
+    }
+
+#ifdef _WIN32
+    if (auto h = LoadLibraryA(with_platform_suffix(input).string().c_str())) {
+        return h;
+    }
+    return LoadLibraryA(name);
+#else
+    if (auto h = dlopen(with_platform_suffix(input).string().c_str(), RTLD_NOW | mode)) {
+        return h;
+    }
+#if !defined(_WIN32)
+    if (!base_lib.empty()) {
+        if (auto h = dlopen(base_lib.string().c_str(), RTLD_NOW | mode)) {
+            return h;
+        }
+    }
+#endif
+    return dlopen(name, RTLD_NOW | mode);
 #endif
 }
 

@@ -28,27 +28,34 @@ using namespace std::literals;
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(Signatures, version, funcs);
 
-// Directory of the already-mapped real Injector module (mod_root/bin64 after
-// bootstrap). Empty when Injector is not loaded (tools / first boot). Avoid
-// PluginPath / DS_INJECTOR_CXX_API here: ds_signature is a STATIC lib also
-// linked into signature_updater, which does not import Injector.dll.
-static std::filesystem::path injector_dir_if_loaded() {
+// Directory of already-mapped plugin_core_vm (plugins/). Signatures and lua51*
+// live under plugins/deps. Avoid PluginPath / DS_INJECTOR_CXX_API here:
+// ds_signature is a STATIC lib also linked into signature_updater.
+static std::filesystem::path module_dir_if_loaded_win(const wchar_t *wname, const char *aname) {
 #ifdef _WIN32
-    HMODULE inj = GetModuleHandleW(L"Injector");
-    if (!inj) {
-        inj = GetModuleHandleA("Injector.dll");
+    HMODULE mod = GetModuleHandleW(wname);
+    if (!mod && aname) {
+        mod = GetModuleHandleA(aname);
     }
-    if (!inj) {
+    if (!mod) {
         return {};
     }
     wchar_t buf[MAX_PATH];
-    const DWORD n = GetModuleFileNameW(inj, buf, MAX_PATH);
+    const DWORD n = GetModuleFileNameW(mod, buf, MAX_PATH);
     if (n == 0 || n >= MAX_PATH) {
         return {};
     }
     return std::filesystem::path(buf).parent_path();
 #else
-    void *sym = dlsym(RTLD_DEFAULT, "HookStartupEntry");
+    (void)wname;
+    (void)aname;
+    return {};
+#endif
+}
+
+static std::filesystem::path module_dir_if_loaded_sym(const char *sym_name) {
+#if !defined(_WIN32)
+    void *sym = dlsym(RTLD_DEFAULT, sym_name);
     if (!sym) {
         return {};
     }
@@ -57,16 +64,61 @@ static std::filesystem::path injector_dir_if_loaded() {
         return {};
     }
     return std::filesystem::path(info.dli_fname).parent_path();
+#else
+    (void)sym_name;
+    return {};
 #endif
+}
+
+// Canonical: <mod>/plugins/deps (same tree as plugin_core_vm + lua51*).
+static std::filesystem::path core_vm_deps_dir_if_loaded() {
+#ifdef _WIN32
+    const auto core = module_dir_if_loaded_win(L"plugin_core_vm", "plugin_core_vm.dll");
+    if (!core.empty()) {
+        return core / "deps";
+    }
+    const auto inj = module_dir_if_loaded_win(L"Injector", "Injector.dll");
+    if (!inj.empty()) {
+        // Injector in mod/bin64 → mod/plugins/deps; or package .../bin64/windows.
+        auto cand = inj / "plugins" / "deps";
+        if (std::filesystem::is_directory(cand)) {
+            return cand;
+        }
+        cand = inj.parent_path() / "plugins" / "deps";
+        if (std::filesystem::is_directory(cand)) {
+            return cand;
+        }
+        // Last resort: create under plugins/deps relative to injector parent chain.
+        return inj.parent_path() / "plugins" / "deps";
+    }
+#else
+    const auto core = module_dir_if_loaded_sym("ds_core_vm_run_signature_and_replace");
+    if (!core.empty()) {
+        return core / "deps";
+    }
+    const auto inj = module_dir_if_loaded_sym("HookStartupEntry");
+    if (!inj.empty()) {
+        auto cand = inj / "plugins" / "deps";
+        if (std::filesystem::is_directory(cand)) {
+            return cand;
+        }
+        cand = inj.parent_path() / "plugins" / "deps";
+        if (std::filesystem::is_directory(cand)) {
+            return cand;
+        }
+        return inj.parent_path() / "plugins" / "deps";
+    }
+#endif
+    return {};
 }
 
 static std::string get_signatures_filename(bool isClient) {
     const auto file = "signatures_"s + (isClient ? "client" : "server") + ".json";
-    // Prefer mod-local bin64 (same directory as real Injector). Fall back to CWD
-    // absolute path for legacy game-bin64 installs / first-write creation.
-    const auto inj = injector_dir_if_loaded();
-    if (!inj.empty()) {
-        return (inj / file).string();
+    // Prefer plugins/deps next to core.vm. Fall back to CWD absolute path for
+    // tools / first-write creation.
+    const auto deps = core_vm_deps_dir_if_loaded();
+    if (!deps.empty()) {
+        return (deps / file).string();
     }
     return std::filesystem::absolute(file).string();
 }

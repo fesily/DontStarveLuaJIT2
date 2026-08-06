@@ -108,3 +108,14 @@ endif()
 if (ENABLE_ONLY_LUA51)
     target_compile_definitions(plugin_core_vm PRIVATE ENABLE_ONLY_LUA51)
 endif()
+
+# Build-tree stage: lua51* + signatures_*.json under plugins/deps (core.vm assets).
+add_custom_command(TARGET plugin_core_vm POST_BUILD
+    COMMAND ${CMAKE_COMMAND}
+        "-DDS_OUT=$<TARGET_FILE_DIR:plugin_core_vm>/deps"
+        "-DDS_CFG=$<CONFIG>"
+        "-DCMAKE_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        "-DCMAKE_BINARY_DIR=${CMAKE_BINARY_DIR}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_core_vm_deps.cmake"
+    COMMENT "stage core.vm lua/signatures into plugins/deps"
+    VERBATIM)
