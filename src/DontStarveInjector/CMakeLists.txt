@@ -215,7 +215,6 @@ function(ds_add_dynamic_plugin name)
         ARCHIVE DESTINATION plugins COMPONENT plugins)
 endfunction()
 
-[src/DontStarveInjector/CMakeLists.txt#24A1]
 
 # Always-on / cross-platform plugins (no second Frida Gum).
 add_subdirectory(plugins/plugin_dummy)
