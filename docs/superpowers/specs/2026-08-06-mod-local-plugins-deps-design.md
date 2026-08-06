@@ -97,13 +97,13 @@ Order for `EnsureCoreVmModuleLoaded`:
 
 ## 4. Dependency search (Windows primary)
 
-Before the first `LoadLibrary` of any plugin in a process:
+Before loading plugins from a given search root (and at least once per process before the first plugin `LoadLibrary`):
 
-1. Prefer absolute, weakly-canonical paths for `plugins/` and `plugins/deps/`.
-2. Call once (idempotent guard):
-   - `SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_USER_DIRS)` when available.
-   - `AddDllDirectory(plugins/deps)` when the directory exists.
-   - Optionally `AddDllDirectory(plugins)` so rare private side-by-side deps next to the plugin still resolve under the user-dirs model.
+1. Prefer absolute, weakly-canonical paths for that root’s `plugins/` and `plugins/deps/`.
+2. Idempotent per-directory registration:
+   - First successful call may run `SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_USER_DIRS)` when available.
+   - `AddDllDirectory(<root>/deps)` when that directory exists (each search root’s deps is added if present).
+   - Optionally `AddDllDirectory(<root>)` so rare private side-by-side deps next to the plugin still resolve under the user-dirs model.
 3. Load plugins with:
 
 ```text
