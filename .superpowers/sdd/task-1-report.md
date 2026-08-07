@@ -84,3 +84,33 @@ Notes:
 - Create: `builds/nucleus-only/CMakeLists.txt` (local smoke only; gitignored under `builds/`)
 - Modify: `src/FunctionRelocation/CMakeLists.txt`
 - Create: `.superpowers/sdd/task-1-report.md`
+
+## Fix: Important/Critical review findings
+
+**Date:** 2026-08-07  
+**Commit message:** `fix(nucleus): private gum link, PE VirtualSize pad, document BFD dynreloc`
+
+### Findings fixed
+
+| # | Severity | Finding | Fix |
+|---|----------|---------|-----|
+| 1 | P1 | `nucleus_static` linked Frida Gum / Capstone **PUBLIC** | `target_link_libraries(... PRIVATE ${FRIDA_GUM_LIBRARIES})` and Capstone fallback also PRIVATE (same as pe-parse) so FunctionRelocation SHARED will not re-pull gum |
+| 2 | P1 | PE `pe_section_cb` used `min(VS, raw)` only → OOB when VS > raw | Allocate `VirtualSize` via `calloc`, copy `min(raw, VS)`, zero-fill remainder; `sec->size = VirtualSize` |
+| 3 | P2 | BFD `load_dynrelocs_bfd` no longer apply-reloc vs pin | **Documented intentional deviation** in `3rd/nucleus/patches/README.md` (symbol naming only; product path is PE) |
+| 4 | P3 | `xorshift128plus` fixed seeds not documented | Restored upstream-like seed via `rand64()`/`random_device` + noted in patches table |
+
+### Build smoke
+
+```text
+cmake --build builds/ninja-nucleus --config RelWithDebInfo --target nucleus_static -j 8
+```
+
+Result: **success** (reconfigured + rebuilt `loader.cc` / `util.cc`, linked `nucleus/RelWithDebInfo/nucleus_static.lib`).
+
+### Files touched (fix)
+
+- `3rd/nucleus/CMakeLists.txt` — PRIVATE Gum/Capstone link
+- `3rd/nucleus/loader.cc` — PE VirtualSize allocate/copy/zero-fill
+- `3rd/nucleus/util.cc` — restore rand64-seeded xorshift
+- `3rd/nucleus/patches/README.md` — PRIVATE link, PE pad, BFD dynreloc deviation, xorshift seed
+- `.superpowers/sdd/task-1-report.md` — this section

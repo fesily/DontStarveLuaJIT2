@@ -71,27 +71,29 @@ pe_section_cb(void *user, const peparse::VA &secBase, const std::string &secName
     return 0;
   }
 
-  if (!data || !data->buf || data->bufLen == 0) {
-    return 0;
-  }
-
+  /* Prefer VirtualSize (in-memory). Fall back to raw size when VS is 0. */
   uint64_t size = s.Misc.VirtualSize;
   if (size == 0) {
     size = s.SizeOfRawData;
   }
-  const uint64_t copy_n =
-      size < data->bufLen ? size : static_cast<uint64_t>(data->bufLen);
-  if (copy_n == 0) {
+  if (size == 0) {
     return 0;
   }
 
-  uint8_t *bytes = static_cast<uint8_t *>(malloc(static_cast<size_t>(copy_n)));
+  const uint64_t raw_len =
+      (data && data->buf) ? static_cast<uint64_t>(data->bufLen) : 0ULL;
+  const uint64_t copy_n = size < raw_len ? size : raw_len;
+
+  uint8_t *bytes = static_cast<uint8_t *>(calloc(1, static_cast<size_t>(size)));
   if (!bytes) {
     print_err("out of memory");
     ctx->fail = 1;
     return 0;
   }
-  memcpy(bytes, data->buf, static_cast<size_t>(copy_n));
+  if (copy_n > 0) {
+    memcpy(bytes, data->buf, static_cast<size_t>(copy_n));
+  }
+  /* Remainder size-copy_n already zero from calloc (VirtualSize > raw). */
 
   ctx->bin->sections.push_back(Section());
   Section *sec = &ctx->bin->sections.back();
@@ -100,10 +102,11 @@ pe_section_cb(void *user, const peparse::VA &secBase, const std::string &secName
   sec->type    = static_cast<unsigned>(sectype);
   /* pe-parse IterSec secBase is already image VA (image_base + RVA). */
   sec->vma     = static_cast<uint64_t>(secBase);
-  sec->size    = copy_n;
+  sec->size    = size;
   sec->bytes   = bytes;
   return 0;
 }
+
 
 static int
 pe_export_cb(void *user, const peparse::VA &va, const std::string & /*mod*/,

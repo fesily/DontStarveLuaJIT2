@@ -117,12 +117,25 @@ rand64()
 uint64_t
 xorshift128plus()
 {
-  static uint64_t s[2] = { 0xdeadbeefcafebabeULL, 0x8badf00dbaada555ULL };
-  uint64_t x = s[0];
-  uint64_t const y = s[1];
+  uint64_t x, y;
+  static uint64_t s[2];
+  static int inited = 0;
+
+  /* Upstream seeds from rand64() (random_device). Keep that on all hosts;
+   * fixed constants were a temporary portability stand-in and are not retained. */
+  if (!inited) {
+    s[0] = rand64();
+    s[1] = rand64();
+    inited = 1;
+  }
+
+  x = s[0];
+  y = s[1];
+
   s[0] = y;
   x ^= x << 23;
   s[1] = x ^ y ^ (x >> 17) ^ (y >> 26);
+
   return s[1] + y;
 }
 
