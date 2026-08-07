@@ -14,10 +14,7 @@ target_link_libraries(plugin_render_angle PRIVATE
     unofficial::angle::libGLESv2
     unofficial::angle::libEGL
     spdlog::spdlog)
-target_link_options(plugin_render_angle PRIVATE
-    "/NODEFAULTLIB:frida-gum.lib")
 target_compile_definitions(plugin_render_angle PRIVATE
-    GUM_STATIC=1
     SPDLOG_COMPILED_LIB
     SPDLOG_FMT_EXTERNAL)
 target_include_directories(plugin_render_angle PRIVATE

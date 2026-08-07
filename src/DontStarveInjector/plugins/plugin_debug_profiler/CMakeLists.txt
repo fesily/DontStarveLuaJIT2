@@ -7,11 +7,7 @@ target_link_libraries(plugin_debug_profiler PRIVATE
     spdlog::spdlog
     function_relocation
     Tracy::TracyClient)
-if (MSVC)
-    target_link_options(plugin_debug_profiler PRIVATE "/NODEFAULTLIB:frida-gum.lib")
-endif()
 target_compile_definitions(plugin_debug_profiler PRIVATE
-    GUM_STATIC=1
     SPDLOG_COMPILED_LIB
     SPDLOG_FMT_EXTERNAL
     DS_INJECTOR_CONSUMER=1)

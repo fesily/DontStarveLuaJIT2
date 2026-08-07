@@ -168,3 +168,9 @@ After this spec is accepted, produce a phased plan via the writing-plans skill:
 - **Capstone:** keep direct `cs_*` use; export them from the same shared library as the combined header implies.
 - **Source:** git submodule pinned to `FRIDA_GUM_VERSION`; Windows-first, Linux/macOS same model.
 - **Packaging:** Approach B for v1 (static meson build + thin export shell); A deferred.
+
+## Implementation status
+
+- Implemented: Approach B shared shell + Frida::Gum consumers (see plan 2026-08-07-frida-gum-shared-from-source.md).
+- Residual: full meson CI cache; Approach A evaluation deferred.
+

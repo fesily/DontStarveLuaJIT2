@@ -26,11 +26,10 @@ target_include_directories(ds_signature
         ${PROJECT_SOURCE_DIR}/src
 )
 
-# Do NOT link frida-gum here: plugins already get gum_* from Injector re-exports.
+# Do NOT PUBLIC-link frida-gum here: final MODULE/EXE consumers link Frida::Gum.
 # Do NOT PUBLIC-link function_relocation:
 #   - Plugins/Injector link the SHARED target (Windows) themselves.
-#   - Tools link function_relocation_static + their own frida-gum.
-# PUBLIC-linking SHARED would force tools to delay-load Injector.dll for gum.
+#   - Tools link function_relocation_static + Frida::Gum.
 target_link_libraries(ds_signature
     PUBLIC
         nlohmann_json::nlohmann_json
@@ -42,7 +41,6 @@ target_include_directories(ds_signature PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR
 
 target_compile_definitions(ds_signature
     PRIVATE
-        GUM_STATIC=1
         SPDLOG_COMPILED_LIB
         SPDLOG_FMT_EXTERNAL
         # Progress UI only on MSVC builds of this lib when SUPPORT_PROGRESS is set by consumer

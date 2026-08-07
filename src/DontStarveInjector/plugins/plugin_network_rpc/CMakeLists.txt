@@ -1,4 +1,4 @@
-# RPC4 / entity network extension (Path A M-N1). Gum from Injector re-exports.
+# RPC4 / entity network extension (Path A M-N1). Gum via Frida::Gum shared.
 ds_add_dynamic_plugin(plugin_network_rpc
     plugin_network_rpc.cpp
     GameNetwork.cpp)
@@ -6,10 +6,7 @@ target_link_libraries(plugin_network_rpc PRIVATE
     spdlog::spdlog
     SLikeNet
     function_relocation)
-target_link_options(plugin_network_rpc PRIVATE
-    "/NODEFAULTLIB:frida-gum.lib")
 target_compile_definitions(plugin_network_rpc PRIVATE
-    GUM_STATIC=1
     SPDLOG_COMPILED_LIB
     SPDLOG_FMT_EXTERNAL)
 target_include_directories(plugin_network_rpc PRIVATE

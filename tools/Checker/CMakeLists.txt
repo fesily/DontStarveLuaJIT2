@@ -15,7 +15,7 @@ target_include_directories(signature_checker PUBLIC ${DONTSTARVEINJECTOR_UTIL_DI
 target_include_directories(signature_checker PUBLIC ${DONTSTARVEINJECTOR_ROOT})
 
 target_include_directories(signature_checker PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
-target_link_libraries(signature_checker PRIVATE ${FRIDA_GUM_LIBRARIES})
+target_link_libraries(signature_checker PRIVATE Frida::Gum)
 
 target_link_libraries(signature_checker PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(signature_checker PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
@@ -35,3 +35,11 @@ if (MSVC)
 endif ()
 
 add_dependencies(signature_checker signature_updater)
+
+if (WIN32 AND DEFINED FRIDA_GUM_RUNTIME)
+    add_custom_command(TARGET signature_checker POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${FRIDA_GUM_RUNTIME}"
+            "$<TARGET_FILE_DIR:signature_checker>"
+        VERBATIM)
+endif()

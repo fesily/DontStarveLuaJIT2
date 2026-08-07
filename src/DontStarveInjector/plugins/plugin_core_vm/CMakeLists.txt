@@ -1,5 +1,5 @@
 # core.vm — required Signature + GameLua + game I/O (force-loaded at inject). All platforms.
-# Gum symbols come from Injector re-exports (FridaGum.def on MSVC).
+# Gum symbols from Frida::Gum shared (linked explicitly on this gum-using plugin).
 #
 # Layout:
 #   signature_load/  → STATIC ds_signature (scan/json/progress)
@@ -60,12 +60,7 @@ target_link_libraries(plugin_core_vm PRIVATE
     libzip::zip
     SLikeNet
 )
-if (MSVC)
-    target_link_options(plugin_core_vm PRIVATE
-        "/NODEFAULTLIB:frida-gum.lib")
-endif()
 target_compile_definitions(plugin_core_vm PRIVATE
-    GUM_STATIC=1
     SPDLOG_COMPILED_LIB
     SPDLOG_FMT_EXTERNAL
     DS_INJECTOR_CONSUMER=1

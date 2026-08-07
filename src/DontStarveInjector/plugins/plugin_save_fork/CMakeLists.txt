@@ -4,10 +4,6 @@ ds_add_dynamic_plugin(plugin_save_fork
     GameForkSave.cpp)
 target_link_libraries(plugin_save_fork PRIVATE
     spdlog::spdlog)
-target_link_options(plugin_save_fork PRIVATE
-    "/NODEFAULTLIB:frida-gum.lib")
-target_compile_definitions(plugin_save_fork PRIVATE
-    GUM_STATIC=1)
 target_compile_definitions(plugin_save_fork PRIVATE
     SPDLOG_COMPILED_LIB
     SPDLOG_FMT_EXTERNAL)
