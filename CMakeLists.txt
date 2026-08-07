@@ -209,26 +209,33 @@ else ()
     set(LUA_LIBRARIES_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/src)
 endif ()
 
-function(download_frida_gum version)
-    message(STATUS "Downloading Frida-Gum version ${version}...")
+function(setup_frida_gum version)
+    message(STATUS "Setting up shared Frida-Gum version ${version}...")
+    set(_setup_args "-v=${version}")
+    # Optional: in CI you may pass env DS_FRIDA_GUM_SKIP_MESON=1 with pre-staged artifacts.
+    if (DEFINED ENV{DS_FRIDA_GUM_SKIP_MESON} AND NOT "$ENV{DS_FRIDA_GUM_SKIP_MESON}" STREQUAL "")
+        list(APPEND _setup_args "--skip-meson")
+    endif()
     execute_process(
-            COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tools/download_frida_gum.py" "-v=${version}" 
-            RESULT_VARIABLE download_result 
-            OUTPUT_VARIABLE download_stdout
-            ERROR_VARIABLE download_stderr
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/setup_frida_gum.py" ${_setup_args}
+        RESULT_VARIABLE setup_result
+        OUTPUT_VARIABLE setup_stdout
+        ERROR_VARIABLE setup_stderr
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
-    if(download_stdout)
-        message("${download_stdout}")
+    if (setup_stdout)
+        message("${setup_stdout}")
     endif()
-    if(download_stderr)
-        message(STATUS "${download_stderr}")
+    if (setup_stderr)
+        message(STATUS "${setup_stderr}")
     endif()
-    if (NOT download_result EQUAL 0)
-        message(FATAL_ERROR "Failed to download Frida-Gum. Please check your internet connection or the version specified.")
+    if (NOT setup_result EQUAL 0)
+        message(FATAL_ERROR
+            "Failed to set up Frida-Gum. Run: ${PYTHON_EXECUTABLE_NAME} tools/setup_frida_gum.py -v ${version}\n"
+            "Or stage with --skip-meson using a static archive + header, then reconfigure.")
     else()
-        message(STATUS "Frida-Gum downloaded successfully.")
-    endif ()
+        message(STATUS "Frida-Gum setup completed.")
+    endif()
 endfunction()
 
 function(setup_angle)
@@ -263,7 +270,7 @@ function(setup_angle)
     endif ()
 endfunction()
 setup_angle()
-download_frida_gum(${FRIDA_GUM_VERSION})
+setup_frida_gum(${FRIDA_GUM_VERSION})
 
 
 set(LUA_INCLUDE_DIR ${lua51_root}/src)
