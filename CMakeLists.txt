@@ -331,34 +331,48 @@ foreach(_ds_lua_tgt IN ITEMS liblua lua51DS lua51DS_gengc lua51DS_arenagc)
             LIBRARY DESTINATION deps COMPONENT plugins)
     endif()
 endforeach()
-# Custom-built lua51.dll from src/lua51 batch (Windows).
+# Custom-built lua51.dll from src/lua51 batch (Windows) + multi-config LuaJIT VMs.
+# IMPORTANT: only stage the *active* install config's VMs into Mod/deps.
+# Iterating Debug after RelWithDebInfo previously overwrote release lua51DS.dll
+# with a Debug-CRT binary (ucrtbased) → LoadLibrary 0x7E under normal game launch.
 if (WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/src/lua51")
-    # NOTE: use double-quoted CODE so CMAKE_* expand at configure time.
-    # Bracket [[ ]] would leave ${DS_MOD_ROOT_ABS} empty → install to /deps.
     install(CODE "
       set(_ds_deps \"\${CMAKE_INSTALL_PREFIX}/deps\")
       file(MAKE_DIRECTORY \"\${_ds_deps}\")
-      foreach(_cfg IN ITEMS release debug RelWithDebInfo Release Debug)
-        set(_cand \"${CMAKE_SOURCE_DIR}/src/lua51/\${_cfg}/lua51.dll\")
-        if(EXISTS \"\${_cand}\")
-          file(INSTALL \"\${_cand}\" DESTINATION \"\${_ds_deps}\")
-        endif()
-      endforeach()
+      # Active multi-config name (Debug / Release / RelWithDebInfo / …)
+      set(_ds_cfg \"\${CMAKE_INSTALL_CONFIG_NAME}\")
+      if(NOT _ds_cfg)
+        set(_ds_cfg RelWithDebInfo)
+      endif()
+      # Map common names to source tree folders
+      set(_ds_lua51_cfg \"\${_ds_cfg}\")
+      if(_ds_cfg MATCHES \"^[Dd][Ee][Bb][Uu][Gg]$\")
+        set(_ds_lua51_cfg debug)
+      elseif(_ds_cfg MATCHES \"^[Rr][Ee][Ll]\")
+        set(_ds_lua51_cfg release)
+      endif()
+      set(_cand \"${CMAKE_SOURCE_DIR}/src/lua51/\${_ds_lua51_cfg}/lua51.dll\")
+      if(EXISTS \"\${_cand}\")
+        file(INSTALL \"\${_cand}\" DESTINATION \"\${_ds_deps}\")
+      endif()
+      # Prefer exact active config build outputs only (no cross-config overwrite).
       foreach(_name IN ITEMS lua51DS.dll lua51DS_gengc.dll lua51Original.dll lua51.dll)
+        set(_ds_picked \"\")
         foreach(_root IN ITEMS
-            \"${CMAKE_BINARY_DIR}/luajit/RelWithDebInfo\"
-            \"${CMAKE_BINARY_DIR}/luajit/Release\"
-            \"${CMAKE_BINARY_DIR}/luajit/Debug\"
-            \"${CMAKE_BINARY_DIR}/src/lua51original/RelWithDebInfo\"
-            \"${CMAKE_BINARY_DIR}/src/lua51original/Release\"
-            \"${CMAKE_BINARY_DIR}/src/lua51original/Debug\")
+            \"${CMAKE_BINARY_DIR}/luajit/\${_ds_cfg}\"
+            \"${CMAKE_BINARY_DIR}/src/lua51original/\${_ds_cfg}\")
           if(EXISTS \"\${_root}/\${_name}\")
-            file(INSTALL \"\${_root}/\${_name}\" DESTINATION \"\${_ds_deps}\")
+            set(_ds_picked \"\${_root}/\${_name}\")
+            break()
           endif()
         endforeach()
+        if(_ds_picked)
+          file(INSTALL \"\${_ds_picked}\" DESTINATION \"\${_ds_deps}\")
+        endif()
       endforeach()
     " COMPONENT plugins)
 endif()
+
 
 if (MSVC)
     add_subdirectory("tools/Checker")
