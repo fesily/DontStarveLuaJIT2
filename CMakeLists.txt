@@ -212,10 +212,63 @@ endif ()
 function(setup_frida_gum version)
     message(STATUS "Setting up shared Frida-Gum version ${version}...")
     set(_setup_args "-v=${version}")
-    # Optional: in CI you may pass env DS_FRIDA_GUM_SKIP_MESON=1 with pre-staged artifacts.
+
+    # Platform stage dir (mirrors tools/setup_frida_gum.py map_plat).
+    if (WIN32)
+        set(_ds_gum_plat "win64")
+    elseif (APPLE)
+        set(_ds_gum_plat "osx")
+    else()
+        set(_ds_gum_plat "linux64")
+    endif()
+    set(_ds_gum_stage "${CMAKE_CURRENT_SOURCE_DIR}/3rd/frida-gum/${_ds_gum_plat}")
+    set(_ds_gum_legacy "${CMAKE_CURRENT_SOURCE_DIR}/3rd/frida-gum/_legacy_${_ds_gum_plat}")
+    set(_ds_gum_input "${CMAKE_CURRENT_SOURCE_DIR}/3rd/frida-gum-build/input")
+
+    set(_ds_gum_force_meson FALSE)
+    if (DEFINED ENV{DS_FRIDA_GUM_FORCE_MESON} AND NOT "$ENV{DS_FRIDA_GUM_FORCE_MESON}" STREQUAL "")
+        set(_ds_gum_force_meson TRUE)
+    endif()
+
+    set(_ds_gum_skip FALSE)
     if (DEFINED ENV{DS_FRIDA_GUM_SKIP_MESON} AND NOT "$ENV{DS_FRIDA_GUM_SKIP_MESON}" STREQUAL "")
+        set(_ds_gum_skip TRUE)
+    endif()
+
+    # Auto skip when a valid stage marker already exists, or durable static inputs are present.
+    # Full meson only when forced or when no skip inputs exist.
+    if (NOT _ds_gum_force_meson)
+        if (EXISTS "${_ds_gum_stage}/version-${version}.txt")
+            set(_ds_gum_skip TRUE)
+            message(STATUS "Frida-Gum: stage marker present; using --skip-meson (set DS_FRIDA_GUM_FORCE_MESON=1 to rebuild via meson)")
+        elseif (
+            (EXISTS "${_ds_gum_legacy}/frida-gum.lib" OR EXISTS "${_ds_gum_legacy}/libfrida-gum.a")
+            AND (EXISTS "${_ds_gum_legacy}/frida-gum.h" OR EXISTS "${_ds_gum_legacy}/include/frida-gum.h")
+        )
+            set(_ds_gum_skip TRUE)
+            message(STATUS "Frida-Gum: durable legacy static archive found; using --skip-meson")
+        elseif (
+            (EXISTS "${_ds_gum_input}/frida-gum.lib" OR EXISTS "${_ds_gum_input}/libfrida-gum.a")
+            AND EXISTS "${_ds_gum_input}/frida-gum.h"
+        )
+            set(_ds_gum_skip TRUE)
+            message(STATUS "Frida-Gum: frida-gum-build/input static archive found; using --skip-meson")
+        elseif (
+            (EXISTS "${_ds_gum_stage}/frida-gum.lib" OR EXISTS "${_ds_gum_stage}/libfrida-gum.a")
+            AND (EXISTS "${_ds_gum_stage}/frida-gum.h")
+        )
+            # Pre-restage flat legacy under stage root (static, not import lib).
+            set(_ds_gum_skip TRUE)
+            message(STATUS "Frida-Gum: flat stage static archive found; using --skip-meson")
+        endif()
+    else()
+        message(STATUS "Frida-Gum: DS_FRIDA_GUM_FORCE_MESON set; full meson path")
+    endif()
+
+    if (_ds_gum_skip AND NOT _ds_gum_force_meson)
         list(APPEND _setup_args "--skip-meson")
     endif()
+
     execute_process(
         COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/setup_frida_gum.py" ${_setup_args}
         RESULT_VARIABLE setup_result
@@ -232,7 +285,9 @@ function(setup_frida_gum version)
     if (NOT setup_result EQUAL 0)
         message(FATAL_ERROR
             "Failed to set up Frida-Gum. Run: ${PYTHON_EXECUTABLE_NAME} tools/setup_frida_gum.py -v ${version}\n"
-            "Or stage with --skip-meson using a static archive + header, then reconfigure.")
+            "Or stage with --skip-meson using a durable static archive + header "
+            "(3rd/frida-gum/_legacy_<plat>/ or --static-lib), then reconfigure.\n"
+            "Set DS_FRIDA_GUM_FORCE_MESON=1 to force a full meson build.")
     else()
         message(STATUS "Frida-Gum setup completed.")
     endif()

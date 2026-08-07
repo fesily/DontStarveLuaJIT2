@@ -350,7 +350,14 @@ if (WIN32)
   target_compile_features(test_function_ranges PRIVATE cxx_std_23)
   # Prefer static so the test does not delay-load Injector for gum.
   # Static reloc TUs pull frida-gum via headers; tools/tests must link gum.
-  target_link_libraries(test_function_ranges PRIVATE function_relocation_static ${FRIDA_GUM_LIBRARIES})
+  target_link_libraries(test_function_ranges PRIVATE function_relocation_static Frida::Gum)
+  if (DEFINED FRIDA_GUM_RUNTIME)
+    add_custom_command(TARGET test_function_ranges POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${FRIDA_GUM_RUNTIME}"
+          "$<TARGET_FILE_DIR:test_function_ranges>"
+      VERBATIM)
+  endif()
   add_test(NAME function_ranges COMMAND test_function_ranges)
 endif()
 

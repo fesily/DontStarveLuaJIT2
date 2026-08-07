@@ -9,10 +9,13 @@ configure wrapper (meson), then links tools/frida/frida_gum_shell.c against it
 with tools/frida/FridaGum.def to produce a thin shared library.
 
 Bootstrap / CI-fast path:
+  python tools/setup_frida_gum.py --skip-meson
   python tools/setup_frida_gum.py --skip-meson \\
       --static-lib PATH/to/frida-gum.lib --header PATH/to/frida-gum.h
-Uses an existing static archive (e.g. legacy 3rd/frida-gum/win64) and only
-builds the shared shell. Prefer this for first green; full meson may take hours.
+Uses a durable static archive (prefer 3rd/frida-gum/_legacy_<plat>/, then
+3rd/frida-gum-build/input/) and only builds the shared shell. Never reuse the
+staged import lib for /WHOLEARCHIVE. Prefer this for first green; full meson
+may take hours.
 """
 from __future__ import annotations
 
@@ -33,6 +36,8 @@ STAGE_ROOT = ROOT / "3rd" / "frida-gum"
 DEF_PATH = ROOT / "tools" / "frida" / "FridaGum.def"
 SHELL_C = ROOT / "tools" / "frida" / "frida_gum_shell.c"
 BUILD_ROOT = ROOT / "3rd" / "frida-gum-build"  # gitignored work dir
+# Import libs are tiny; static amalgamated archives are multi-MB.
+MIN_STATIC_LIB_BYTES = 1 * 1024 * 1024
 
 # Windows system libs required by the amalgamated static archive (from header
 # #pragma comment(lib, ...) plus common GLib/Frida deps).
@@ -100,7 +105,14 @@ def source_commit(src: Path) -> str:
         return "unknown"
 
 
-def fingerprint(version: str, src: Path, configure_flags: str) -> str:
+def fingerprint(
+    version: str,
+    src: Path,
+    configure_flags: str,
+    *,
+    skip_static: Path | None = None,
+    skip_header: Path | None = None,
+) -> str:
     h = hashlib.sha256()
     h.update(version.encode())
     h.update(b"\0")
@@ -111,6 +123,16 @@ def fingerprint(version: str, src: Path, configure_flags: str) -> str:
     h.update(DEF_PATH.read_bytes())
     h.update(b"\0")
     h.update(SHELL_C.read_bytes())
+    if skip_static is not None and skip_static.is_file():
+        h.update(b"\0skip-static\0")
+        h.update(str(skip_static.resolve()).encode())
+        h.update(b"\0")
+        h.update(sha256_file(skip_static).encode())
+    if skip_header is not None and skip_header.is_file():
+        h.update(b"\0skip-header\0")
+        h.update(str(skip_header.resolve()).encode())
+        h.update(b"\0")
+        h.update(sha256_file(skip_header).encode())
     return h.hexdigest()[:16]
 
 
@@ -431,25 +453,136 @@ def write_marker(stage: Path, version: str, fp: str, src: Path) -> None:
     marker_path(stage, version).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def _looks_like_static_archive(path: Path) -> bool:
+    """Reject tiny MSVC import libs; accept large static archives / .a files."""
+    if not path.is_file():
+        return False
+    name = path.name.lower()
+    size = path.stat().st_size
+    if name.endswith(".a"):
+        return size > 0
+    # Windows: staged frida-gum.lib after first restage is an import lib (~hundreds of KB).
+    return size >= MIN_STATIC_LIB_BYTES
+
+
+def _legacy_plat_dirs(plat: str) -> list[Path]:
+    """Durable static inputs outside the wipeable stage tree."""
+    return [
+        STAGE_ROOT / f"_legacy_{plat}",
+        STAGE_ROOT / f"_legacy-{plat}",
+        STAGE_ROOT / "legacy" / plat,
+        # Flat historical layout still used by some checkouts.
+        STAGE_ROOT / f"legacy_{plat}",
+    ]
+
+
+def _candidate_static_paths(plat: str, explicit: Path | None) -> list[Path]:
+    paths: list[Path] = []
+    if explicit is not None:
+        paths.append(Path(explicit))
+    for root in _legacy_plat_dirs(plat):
+        paths.append(root / "frida-gum.lib")
+        paths.append(root / "libfrida-gum.a")
+    paths.append(BUILD_ROOT / "input" / "frida-gum.lib")
+    paths.append(BUILD_ROOT / "input" / "libfrida-gum.a")
+    # Staged tree only if still a large static archive (pre-restage legacy layout).
+    stage = STAGE_ROOT / plat
+    paths.append(stage / "frida-gum.lib")
+    paths.append(stage / "lib" / "frida-gum.lib")
+    paths.append(stage / "libfrida-gum.a")
+    paths.append(stage / "lib" / "libfrida-gum.a")
+    # Dedup while preserving order.
+    seen: set[str] = set()
+    out: list[Path] = []
+    for p in paths:
+        key = str(p.resolve()) if p.exists() else str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return out
+
+
+def _candidate_header_paths(
+    plat: str, explicit: Path | None, static_lib: Path | None
+) -> list[Path]:
+    paths: list[Path] = []
+    if explicit is not None:
+        paths.append(Path(explicit))
+    if static_lib is not None:
+        paths.append(static_lib.parent / "frida-gum.h")
+    for root in _legacy_plat_dirs(plat):
+        paths.append(root / "frida-gum.h")
+        paths.append(root / "include" / "frida-gum.h")
+    paths.append(BUILD_ROOT / "input" / "frida-gum.h")
+    stage = STAGE_ROOT / plat
+    paths.append(stage / "frida-gum.h")
+    paths.append(stage / "include" / "frida-gum.h")
+    seen: set[str] = set()
+    out: list[Path] = []
+    for p in paths:
+        key = str(p.resolve()) if p.exists() else str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return out
+
+
 def resolve_skip_meson_inputs(args: argparse.Namespace, plat: str) -> tuple[Path, Path]:
-    static_lib = args.static_lib
-    header = args.header
-    if static_lib is None:
-        legacy = STAGE_ROOT / plat
-        cand = legacy / "frida-gum.lib"
+    """Locate durable static archive + header for --skip-meson restage.
+
+    Preference order:
+      1. --static-lib / --header (must still look like a static archive)
+      2. 3rd/frida-gum/_legacy_<plat>/
+      3. 3rd/frida-gum-build/input/
+      4. staged tree only if the .lib is clearly a large static archive
+
+    Never pick the staged import lib (~288KB after first shell stage).
+    """
+    static_candidates = _candidate_static_paths(plat, args.static_lib)
+    static_lib: Path | None = None
+    rejected: list[str] = []
+    for cand in static_candidates:
         if not cand.is_file():
-            cand = legacy / "libfrida-gum.a"
-        static_lib = cand
+            continue
+        if _looks_like_static_archive(cand):
+            static_lib = cand
+            break
+        rejected.append(f"{cand} ({cand.stat().st_size} bytes; looks like import lib)")
+
+    if static_lib is None:
+        expected = "\n  ".join(str(p) for p in static_candidates[:8])
+        detail = ""
+        if rejected:
+            detail = "\nRejected (too small / import lib):\n  " + "\n  ".join(rejected)
+        die(
+            "--skip-meson requires a durable static frida-gum archive, not the staged "
+            "import lib.\n"
+            "Provide --static-lib PATH (and optionally --header PATH), or place a static "
+            f"archive (>{MIN_STATIC_LIB_BYTES} bytes or .a) at one of:\n  {expected}"
+            f"{detail}"
+        )
+
+    header: Path | None = None
+    for cand in _candidate_header_paths(plat, args.header, static_lib):
+        if cand.is_file():
+            header = cand
+            break
     if header is None:
-        header = STAGE_ROOT / plat / "frida-gum.h"
-        if not header.is_file():
-            header = STAGE_ROOT / plat / "include" / "frida-gum.h"
+        expected_h = "\n  ".join(
+            str(p) for p in _candidate_header_paths(plat, args.header, static_lib)[:8]
+        )
+        die(
+            f"--skip-meson requires frida-gum.h next to the static archive or via --header.\n"
+            f"Looked for:\n  {expected_h}"
+        )
+
     static_lib = Path(static_lib).resolve()
     header = Path(header).resolve()
-    if not static_lib.is_file():
-        die(f"--skip-meson requires static lib; missing {static_lib}")
-    if not header.is_file():
-        die(f"--skip-meson requires header; missing {header}")
+    print(f"skip-meson static_lib={static_lib} ({static_lib.stat().st_size} bytes)", flush=True)
+    print(f"skip-meson header={header}", flush=True)
+
     # Shell staging will wipe stage — copy inputs out of stage first.
     tmp_lib = BUILD_ROOT / "input" / static_lib.name
     tmp_h = BUILD_ROOT / "input" / "frida-gum.h"
@@ -477,7 +610,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--skip-meson",
         action="store_true",
-        help="Do not run meson; use --static-lib/--header or legacy 3rd/frida-gum/<plat> static files",
+        help=(
+            "Do not run meson; use --static-lib/--header or durable static inputs under "
+            "3rd/frida-gum/_legacy_<plat>/ or 3rd/frida-gum-build/input/ "
+            "(never the staged import lib)"
+        ),
     )
     p.add_argument(
         "--static-lib",
@@ -503,7 +640,28 @@ def main() -> int:
         ensure_source(src, args.version)
     configure_flags = "default_library=static;devkits=gum;shell=def"
     fp_src = src if src.is_dir() else DEFAULT_SOURCE
-    fp = fingerprint(args.version, fp_src, configure_flags)
+
+    # Resolve skip inputs early so fingerprint can include static identity.
+    skip_static_src: Path | None = None
+    skip_header_src: Path | None = None
+    if args.skip_meson:
+        for cand in _candidate_static_paths(plat, args.static_lib):
+            if cand.is_file() and _looks_like_static_archive(cand):
+                skip_static_src = cand.resolve()
+                break
+        if skip_static_src is not None:
+            for cand in _candidate_header_paths(plat, args.header, skip_static_src):
+                if cand.is_file():
+                    skip_header_src = cand.resolve()
+                    break
+
+    fp = fingerprint(
+        args.version,
+        fp_src,
+        configure_flags,
+        skip_static=skip_static_src if args.skip_meson else None,
+        skip_header=skip_header_src if args.skip_meson else None,
+    )
 
     print(f"version={args.version} plat={plat} fingerprint={fp}", flush=True)
     if not args.force and is_staged(stage, args.version, fp):

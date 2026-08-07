@@ -175,7 +175,7 @@ install(TARGETS Injector
     RUNTIME DESTINATION . COMPONENT injector
     LIBRARY DESTINATION . COMPONENT injector)
 
-if (WIN32 AND DEFINED FRIDA_GUM_RUNTIME)
+if (DEFINED FRIDA_GUM_RUNTIME)
     install(FILES "${FRIDA_GUM_RUNTIME}" DESTINATION deps COMPONENT deps)
 endif()
 
@@ -232,7 +232,7 @@ function(ds_add_dynamic_plugin name)
         ${DONTSTARVEINJECTOR_ROOT}
         ${DONTSTARVEINJECTOR_UTIL_DIR})
     target_compile_features(${name} PRIVATE cxx_std_23)
-    target_link_libraries(${name} PRIVATE Injector Frida::Gum)
+    target_link_libraries(${name} PRIVATE Injector)
     set_target_properties(${name} PROPERTIES
         PREFIX ""
         OUTPUT_NAME "${name}"
@@ -250,13 +250,14 @@ function(ds_add_dynamic_plugin name)
 endfunction()
 
 
-# Always-on / cross-platform plugins (no second Frida Gum).
+# Always-on / cross-platform plugins. Gum only for plugins that call gum/cs.
 add_subdirectory(plugins/plugin_dummy)
 add_subdirectory(plugins/plugin_save_fork)
 add_subdirectory(plugins/plugin_core_vm)
+target_link_libraries(plugin_core_vm PRIVATE Frida::Gum)
 add_subdirectory(plugins/plugin_manager)
 
-# Gum plugins link Frida::Gum shared directly (no Injector re-export).
+# Gum plugins link Frida::Gum shared directly (no Injector re-export; selective).
 # Keep WIN32 gate until POSIX shared stage is verified in-tree.
 if (WIN32)
     add_subdirectory(plugins/plugin_network_rpc)
@@ -267,6 +268,18 @@ if (WIN32)
     add_subdirectory(plugins/plugin_debug_profiler)
     add_subdirectory(plugins/plugin_fps_render)
     add_subdirectory(plugins/plugin_network_tick)
+    # Gum-using plugins only — not dummy / manager / save_fork.
+    foreach(_ds_gum_plugin IN ITEMS
+            plugin_network_rpc
+            plugin_network_sim
+            plugin_sim_lagcomp
+            plugin_render_vbpool
+            plugin_render_angle
+            plugin_debug_profiler
+            plugin_fps_render
+            plugin_network_tick)
+        target_link_libraries(${_ds_gum_plugin} PRIVATE Frida::Gum)
+    endforeach()
 else()
     message(WARNING
         "Skipping gum-using dynamic plugins (network.rpc / network.sim / sim.lagcomp / render.vbpool / render.angle / debug.profiler / fps.render / network.tick): "

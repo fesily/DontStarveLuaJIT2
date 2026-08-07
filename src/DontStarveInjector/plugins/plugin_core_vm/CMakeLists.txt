@@ -1,5 +1,5 @@
 # core.vm — required Signature + GameLua + game I/O (force-loaded at inject). All platforms.
-# Gum symbols from Frida::Gum shared (linked via ds_add_dynamic_plugin).
+# Gum symbols from Frida::Gum shared (linked explicitly on this gum-using plugin).
 #
 # Layout:
 #   signature_load/  → STATIC ds_signature (scan/json/progress)
