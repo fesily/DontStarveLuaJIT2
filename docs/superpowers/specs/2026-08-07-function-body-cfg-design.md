@@ -1,7 +1,7 @@
 # Design: 基于 **Nucleus（进树改工程面）** 的函数体区间
 
 **Date:** 2026-08-07  
-**Status:** Approved（用户 2026-08-07：vendor 进树 + 改工程面；算法面保留 Nucleus）  
+**Status:** Implemented (Nucleus vendor + FunctionTable + signature body contract)
 **Scope:** 函数起点/体边界以 VUSec **[Nucleus](https://www.vusec.net/projects/function-detection/)**（*Compiler-Agnostic Function Detection in Binaries*, EuroS&P 2017）的 **CFG / 函数划分实现** 为唯一权威；以 **vendor 进树 + 修改工程面** 方式接入本仓库，供签名生成（pattern ⊆ body）与目标侧命中回退（`function_containing`）使用。
 
 ---
@@ -229,7 +229,7 @@ src/FunctionRelocation/
 2. **是** vendor Nucleus + **改工程面**（loader/构建/导出）+ **保算法面**。  
 3. 签名只消费 Nucleus 体区间；回退只用目标表。  
 4. 禁止硬编码兼容与自研主发现。  
-5. N0–N4 分阶段；本 spec 批准后再 writing-plans。
+5. N0–N4 分阶段已完成；本 spec 标记 **Implemented**。
 
 ---
 
@@ -245,7 +245,15 @@ src/FunctionRelocation/
 
 ---
 
-**请 review。**  
-路径：`docs/superpowers/specs/2026-08-07-function-body-cfg-design.md`  
+## 12. Implementation residual
 
-**批准前不写实现代码。** 批准后进入 `writing-plans`（N0–N4）。
+| Residual | Notes |
+|----------|-------|
+| `GameLua` / `ReplaceApis` getstack/getinfo runtime workarounds | **Out of this plan** (explicit non-goal). Remove only after client smoke confirms regen signatures alone are enough. |
+| Linux BFD loader path polish | Product path is Windows pe-parse; BFD retained for optional non-Windows builds (see `3rd/nucleus/patches/README.md` dynreloc note). |
+| Capstone unify | Currently Gum Capstone surface + include shim; full single Capstone package still optional follow-up. |
+| Full multi-config tree `function_ranges` CTest | Covered historically; this worktree’s `builds/ninja-nucleus` runs `nucleus_adapter` + `signature_body_link`. |
+
+**Vendor pin:** `3rd/nucleus` @ `95a38b7a04810757eb1cceb642fb6bdfce16b506` (see `VENDOR.md`).
+
+**Forbidden-authority grep (Task 5):** `training_body_end`, magic `0x1000` nearest-start retreat, and `next_export` as body size are **absent** from `src/FunctionRelocation/Signature.cpp` authority paths. Residual `ScanCtx` local scan limits remain for disassembly walk only when Nucleus sizes are already applied.
