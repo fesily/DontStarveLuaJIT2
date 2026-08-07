@@ -1,6 +1,5 @@
 
 # Nucleus CFG stack (function body authority). Built as nucleus_static.
-# Link is deferred to Task 2 (NucleusAdapter); only ensure the target exists.
 if (NOT TARGET nucleus_static)
     add_subdirectory(${CMAKE_SOURCE_DIR}/3rd/nucleus ${CMAKE_BINARY_DIR}/3rd/nucleus)
 endif()
@@ -18,6 +17,7 @@ set(SOURCE
         ScanCtx.cpp
         ExectuableSignature.cpp
         FunctionRanges.cpp
+        NucleusAdapter.cpp
 )
 
 find_package(spdlog CONFIG REQUIRED)
@@ -58,6 +58,8 @@ function(_function_relocation_common_config target)
         target_link_libraries(${target} PRIVATE ${KEYSTONE_LIBRARIES})
         target_link_libraries(${target} PRIVATE libdwarf::dwarf)
     endif()
+    # Nucleus PE/CFG stack for NucleusAdapter (do not re-export Nucleus types).
+    target_link_libraries(${target} PRIVATE nucleus_static)
 endfunction()
 
 if (WIN32)

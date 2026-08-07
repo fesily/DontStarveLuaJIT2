@@ -34,7 +34,7 @@ target_compile_features(nucleus_static PUBLIC cxx_std_17)
 target_include_directories(nucleus_static
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
-    PRIVATE
+        # Consumers of nucleus headers (insn.h) need <capstone/capstone.h> -> frida-gum.
         ${CMAKE_CURRENT_SOURCE_DIR}/cmake/capstone_shim
 )
 

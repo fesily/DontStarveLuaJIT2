@@ -352,5 +352,17 @@ if (WIN32)
   # Static reloc TUs pull frida-gum via headers; tools/tests must link gum.
   target_link_libraries(test_function_ranges PRIVATE function_relocation_static ${FRIDA_GUM_LIBRARIES})
   add_test(NAME function_ranges COMMAND test_function_ranges)
+
+  add_executable(test_nucleus_adapter
+      ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_nucleus_adapter.cpp)
+  target_include_directories(test_nucleus_adapter PRIVATE
+      ${FUNCTION_RELOCATION_INCLUDE_DIR}
+      ${FRIDA_GUM_INCLUDE_DIR})
+  target_compile_features(test_nucleus_adapter PRIVATE cxx_std_23)
+  # Static reloc: tools/tests link frida-gum directly (no Injector delay-load).
+  target_link_libraries(test_nucleus_adapter PRIVATE function_relocation_static ${FRIDA_GUM_LIBRARIES})
+  add_test(NAME nucleus_adapter COMMAND test_nucleus_adapter)
+  set_tests_properties(nucleus_adapter PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif()
 

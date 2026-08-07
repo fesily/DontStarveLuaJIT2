@@ -1,214 +1,117 @@
-# Task 2 Report: Wire DynamicPluginLoader + CoreVmBootstrap + manager inventory
+# Task 2 Report: FunctionTable + NucleusAdapter + lua51 regression
 
-**Status:** DONE_WITH_CONCERNS  
-**Commit:** `66d7acb` — `feat(plugin): load plugins from mod dir + deps DLL search`  
-**Base:** `7d8340c` (Task 1 PluginPath helpers)  
-**Branch:** `master`  
-**Date:** 2026-08-06
+**Branch:** `feature/nucleus-function-body`  
+**Worktree:** `C:/Users/fesil/DontStarveLuaJIT2/.worktrees/nucleus-function-body`  
+**Base:** Task 1 at `4d0d9ad`  
+**Date:** 2026-08-07  
 
 ## Summary
 
-Wired loader, core.vm bootstrap, and plugin_manager inventory onto the shared `ds::plugin` PluginPath search policy from Task 1. Production modmain path is supplied via `set_modmain_path_provider` after `LoadGameModConfig()` and before `DynamicPluginLoader::load_all`. Windows loads use `LOAD_LIBRARY_SEARCH_USER_DIRS` together with `configure_plugin_dll_search` so `plugins/` and `plugins/deps/` are visible to dependent DLLs.
+Implemented portable `FunctionTable` with binary-search `containing` / `span_containing`, and `NucleusAdapter` that runs the stock Nucleus pipeline (`load_binary` → `nucleus_disasm` linear strategy → `CFG::make_cfg`) and maps `Function::{start,end}` into half-open image-VA spans. Wired `nucleus_static` PRIVATE into FunctionRelocation targets. Regression test on `Mod/deps/lua51.dll` asserts non-empty table and that `lua_getstack` body span is `0x7a` (≪ `0x120` and ≪ next-export gap `0x150`).
 
-## Files
+## Acceptance
 
-| Path | Action |
-|------|--------|
-| `src/DontStarveInjector/core/DynamicPluginLoader.cpp` | Replace private search/`injector_module_dir` with `default_plugin_search_dirs`; configure DLL search in `load_all` + `load_directory`; add `LOAD_LIBRARY_SEARCH_USER_DIRS` |
-| `src/DontStarveInjector/core/CoreVmBootstrap.cpp` | Probe all `default_plugin_search_dirs()` for `plugin_core_vm.*`; same LoadLibraryEx flags; drop private `injector_module_dir` |
-| `src/DontStarveInjector/plugins/plugin_manager/PluginLocalInventory.cpp` | `resolve_plugins_dir` uses shared search dirs + fallback; remove private path helpers / platform includes |
-| `src/DontStarveInjector/plugins/plugin_manager/PluginLocalInventory.hpp` | Document shared `plugins_dir_from_module_dir` / new resolve policy |
-| `src/DontStarveInjector/plugins/plugin_manager/CMakeLists.txt` | Compile `core/PluginPath.cpp` into plugin_manager (symbols not exported from Injector import lib) |
-| `src/DontStarveInjector/DontStarveInjector.cpp` | Register production `ModmainPathProvider` from `luajit_config::read_from_file()->modmain_path` before `load_all` |
-| `tests/CMakeLists.txt` | Link `PluginPath.cpp` into `test_dynamic_plugin_loader` and `test_plugin_local_inventory` |
+| Criterion | Status |
+|-----------|--------|
+| `nucleus_analyze_file(Mod/deps/lua51.dll)` non-empty | PASS (887 functions) |
+| `containing(getstack_va)` works | PASS (`entry == 0x1800090f0`) |
+| span size `< 0x120` | PASS (`size = 0x7a`) |
+| `ctest -R nucleus_adapter` | PASS |
+| Commit on feature branch | PASS (this commit) |
+| Report path | PASS (this file) |
 
-## Behavior changes
+## VA convention (locked)
 
-### Search policy (single source)
+- Spans and export lookups use **image VA** = preferred PE **ImageBase + RVA** (not process load address).
+- Nucleus PE loader already fills section `vma` / export `Symbol::addr` as image VAs (`pe-parse` IterSec / IterExpVA).
+- `FunctionSpan::{start,end}`: **half-open** `[start, end)` — Nucleus `Function::end` / `BB::end` are exclusive (first byte past last non-NOP insn).
+- `NucleusAnalyzeResult` carries both `table` and `image_base` so callers can form `export_va = image_base + export_rva` without re-parsing PE.
+- Convenience: `nucleus_analyze_file_table(...)` returns only `FunctionTable` (plan-shaped); `pe_image_base(path)` for standalone base reads.
 
-1. `DS_LUAJIT_PLUGIN_DIR` if set and is a directory  
-2. `parent(modmain_path)/plugins` via provider/override when that dir exists  
-3. `plugins_dir_from_module_dir(injector_module_dir())` when that dir exists  
-
-`DynamicPluginLoader::default_search_dirs()` is now a thin wrapper around `default_plugin_search_dirs()`.
-
-### DLL search (Windows)
-
-- `load_all`: `configure_plugin_dll_search(dirs)` once before scanning roots.  
-- `load_directory`: also `configure_plugin_dll_search({dir})` so the test seam registers that root’s `deps/`.  
-- `LoadLibraryExW` flags:  
-  `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_USER_DIRS`  
-  with plain `LoadLibraryW` fallback unchanged.  
-- Core.vm bootstrap uses the same flags when mapping `plugin_core_vm` from each search root.
-
-### Production modmain provider
+## API surface
 
 ```cpp
-LoadGameModConfig();
-ds::plugin::set_modmain_path_provider([]() -> std::string {
-    if (auto cfg = luajit_config::read_from_file(); cfg) {
-        return cfg->modmain_path;
-    }
-    return {};
-});
-// then DynamicPluginLoader::load_all(...)
+// FunctionTable.hpp
+struct FunctionSpan { uint64_t start; uint64_t end; }; // [start,end)
+class FunctionTable {
+  void clear();
+  void add(FunctionSpan);
+  uint64_t containing(uint64_t) const;                 // start or 0
+  const FunctionSpan *span_containing(uint64_t) const;
+  const std::vector<FunctionSpan> &spans() const;
+  bool empty() const;
+};
+
+// NucleusAdapter.hpp
+struct NucleusAnalyzeOptions { bool log_pdata_crosscheck = false; };
+struct NucleusAnalyzeResult { FunctionTable table; uint64_t image_base; };
+std::expected<NucleusAnalyzeResult, std::string>
+  nucleus_analyze_file(path, opt = {});
+std::expected<FunctionTable, std::string>
+  nucleus_analyze_file_table(path, opt = {});
+std::expected<uint64_t, std::string> pe_image_base(path);
 ```
 
-Test override (`set_modmain_path_override_for_test`) remains the unit-test seam; production never uses it.
+No Nucleus types leak outside `NucleusAdapter.cpp`.
 
-### Plugin manager inventory
+## Adapter pipeline
 
-```cpp
-std::filesystem::path resolve_plugins_dir() {
-    auto dirs = default_plugin_search_dirs();
-    if (!dirs.empty()) return dirs.front();
-    return plugins_dir_from_module_dir(injector_module_dir()); // may not exist yet
-}
-```
+1. `gum_init_embedded()` + `cs_arch_register_x86()` once (Frida Gum modular Capstone; same pattern as `function_relocation::init_ctx`).
+2. Ensure `options.strategy_function.name = "linear"` (defaults from `options_defaults.cc`).
+3. `load_binary(fname, &bin, BIN_TYPE_AUTO)` — Windows PE path via pe-parse (Task 1).
+4. `nucleus_disasm(&bin, &disasm)` — stock linear strategy (no CFG rewrite).
+5. `cfg.make_cfg(&bin, &disasm)`.
+6. For each `cfg.functions`: `table.add({f.start, f.end})` if `end > start`.
+7. `unload_binary(&bin)`; empty table → error string (no silent success).
 
-`plugins_dir_from_module_dir` is no longer defined in this TU; declaration stays in the public header and the definition comes from `PluginPath.cpp` (linked into plugin_manager and inventory unit tests).
+## CMake
 
-## Build + verification
+- `src/FunctionRelocation/CMakeLists.txt`: add `NucleusAdapter.cpp`; `target_link_libraries(... PRIVATE nucleus_static)` in common config (SHARED + STATIC).
+- `3rd/nucleus/CMakeLists.txt`: promote Capstone shim include to **PUBLIC** so consumers of Nucleus headers (`insn.h` → `<capstone/capstone.h>`) compile without private shim.
+- `tests/CMakeLists.txt` (WIN32): `test_nucleus_adapter` → `function_relocation_static` + Frida Gum; ctest name `nucleus_adapter`, `WORKING_DIRECTORY` = source root so `Mod/deps/lua51.dll` resolves.
+- Smoke build (isolated, same as Task 1): `builds/nucleus-only` extended with `nucleus_adapter_smoke` + `test_nucleus_adapter` under `builds/ninja-nucleus` (gitignored under `builds/`).
 
-```bash
-cmake --build builds/ninja-multi-vcpkg --config RelWithDebInfo \
-  --target Injector plugin_core_vm plugin_manager \
-           test_plugin_path test_dynamic_plugin_loader test_plugin_local_inventory -j 4
-builds/ninja-multi-vcpkg/tests/RelWithDebInfo/test_plugin_path.exe
-builds/ninja-multi-vcpkg/tests/RelWithDebInfo/test_dynamic_plugin_loader.exe
-builds/ninja-multi-vcpkg/tests/RelWithDebInfo/test_plugin_local_inventory.exe
-```
-
-Results:
+## Build & test evidence
 
 ```text
-PASS: plugins_dir_from_modmain
-PASS: search_order_env_wins
-PASS: search_order_mod_without_env
-PASS: deps_dir_name
-PASS: configure_dll_search_idempotent
-ALL PASS: plugin_path
+cmake -S builds/nucleus-only -B builds/ninja-nucleus \
+  -G "Ninja Multi-Config" \
+  -DCMAKE_TOOLCHAIN_FILE=<repo>/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DVCPKG_TARGET_TRIPLET=x64-windows-custom \
+  -DVCPKG_INSTALLED_DIR=<master>/builds/ninja-multi-vcpkg/vcpkg_installed
 
-PASS: empty_dir
-PASS: noise_ignored
-PASS: bad_library_skipped
-ALL PASS dynamic_plugin_loader
-
-PASS: scan_meta_and_module
-...
-PASS: plugins_dir_from_module_dir
-ALL PASS plugin_local_inventory
+cmake --build builds/ninja-nucleus --config RelWithDebInfo --target test_nucleus_adapter -j 8
+ctest --test-dir builds/ninja-nucleus -C RelWithDebInfo -R nucleus_adapter --output-on-failure
 ```
 
-Also linked successfully: `Injector.dll`, `plugin_core_vm.dll`, `plugin_manager.dll`.
-
-## Link note (plugin_manager)
-
-First link of `plugin_manager` failed with unresolved `default_plugin_search_dirs` / `injector_module_dir` / `plugins_dir_from_module_dir` because Injector does not export those C++ symbols on its import lib. Fixed by compiling `core/PluginPath.cpp` into the `plugin_manager` MODULE (and into `test_plugin_local_inventory`). This duplicates the TU in process when both Injector and plugin_manager are loaded; provider state lives in Injector’s copy (production load path), while inventory path resolution in the manager MODULE uses its own PluginPath globals (env + module-dir still work; modmain provider set in Injector is not visible to the manager’s copy).
-
-## Self-review
-
-- Private `injector_module_dir` / `try_push_dir` duplicates removed from DynamicPluginLoader and CoreVmBootstrap.  
-- Inventory no longer reimplements leaf/`plugins` path logic.  
-- Provider registration order is after `LoadGameModConfig` and before `load_all`.  
-- Focused unit tests all pass; no install.bat / CMake install policy changes (Tasks 3–4).  
-- `DynamicPluginLoader.hpp` left unchanged (wrapper stays in `.cpp` only).
-
-## Concerns (original Task 2)
-
-1. ~~**Duplicate PluginPath TU**~~ — **FIXED** (see below).  
-2. **MSVC C4819** on some plugin_manager headers remains (pre-existing code-page noise); not introduced as functional breakage.  
-3. **No in-game L-G smoke** in this task — unit + link only, per brief Step 6.  
-4. ~~**`plugins_dir_from_module_dir` still declared from inventory header**~~ — **FIXED**: inventory header now includes `core/PluginPath.hpp` and reuses the exported declaration.
-
-## Commit (original)
+Result:
 
 ```text
-66d7acb feat(plugin): load plugins from mod dir + deps DLL search
+lua_getstack: va=0x1800090f0 entry=0x1800090f0 end=0x18000916a size=0x7a
+              functions=887 image_base=0x180000000
+test_nucleus_adapter: ok
+
+1/1 Test #1: nucleus_adapter ..................   Passed
+100% tests passed, 0 tests failed out of 1
 ```
 
-7 files, +72 / −163.
+Unit checks on synthetic spans also pass (`containing` boundaries / exclusive end).
 
----
+## Files touched
 
-## Follow-up fix: share PluginPath state with plugin_manager
+- Create: `src/FunctionRelocation/FunctionTable.hpp`
+- Create: `src/FunctionRelocation/NucleusAdapter.hpp`
+- Create: `src/FunctionRelocation/NucleusAdapter.cpp`
+- Create: `tests/function_relocation/test_nucleus_adapter.cpp`
+- Modify: `src/FunctionRelocation/CMakeLists.txt`
+- Modify: `tests/CMakeLists.txt`
+- Modify: `3rd/nucleus/CMakeLists.txt` (PUBLIC capstone shim)
+- Create: `.superpowers/sdd/task-2-report.md`
+- Local only (gitignored): `builds/nucleus-only/CMakeLists.txt` smoke extension
 
-**Status:** DONE  
-**Commit:** `fix(plugin): share PluginPath state with plugin_manager`  
-**Date:** 2026-08-06  
-**Finding:** Important — unshared PluginPath globals between Injector and plugin_manager.
+## Notes / follow-ups
 
-### Problem
-
-`plugin_manager/CMakeLists.txt` compiled its own `core/PluginPath.cpp`. Injector’s `set_modmain_path_provider` only mutated Injector’s statics. Manager `resolve_plugins_dir()` → `default_plugin_search_dirs()` never saw `modmain_path`, so `parent(modmain)/plugins` was skipped when only that root differed from injector-module plugins.
-
-### Fix (preferred path)
-
-Process-wide sharing via Injector export:
-
-1. **`PluginPath.hpp`**: mark all free functions with `DS_INJECTOR_CXX_API` (existing Injector C++ export macro from `InjectorHostConfig.hpp`). Document that plugins must import, not recompile, PluginPath.
-2. **`plugin_manager/CMakeLists.txt`**: stop compiling `PluginPath.cpp`; rely on `ds_add_dynamic_plugin` → link against Injector import lib.
-3. **`PluginLocalInventory.hpp`**: include `core/PluginPath.hpp` so `plugins_dir_from_module_dir` / search helpers come from the exported header (no local re-declaration that clashed with dllimport).
-4. **`tests/CMakeLists.txt`**: `test_plugin_local_inventory` still compiles `PluginPath.cpp` statically and sets `DS_PLUGIN_HOST_STATIC` so export macros are empty in the test image.
-
-Unit tests (`test_plugin_path`, `test_dynamic_plugin_loader`) already used `DS_PLUGIN_HOST_STATIC` + static PluginPath — unchanged and still valid.
-
-### Files
-
-| Path | Action |
-|------|--------|
-| `src/DontStarveInjector/core/PluginPath.hpp` | Export all PluginPath APIs with `DS_INJECTOR_CXX_API`; process-wide ownership notes |
-| `src/DontStarveInjector/plugins/plugin_manager/CMakeLists.txt` | Remove `PluginPath.cpp` from MODULE sources |
-| `src/DontStarveInjector/plugins/plugin_manager/PluginLocalInventory.hpp` | Include `core/PluginPath.hpp`; drop local `plugins_dir_from_module_dir` redeclare |
-| `src/DontStarveInjector/plugins/plugin_manager/PluginLocalInventory.cpp` | Drop redundant `PluginPath.hpp` include (via inventory header) |
-| `tests/CMakeLists.txt` | `DS_PLUGIN_HOST_STATIC` on `test_plugin_local_inventory` |
-
-### Verification
-
-```bash
-cmake --build builds/ninja-multi-vcpkg --config RelWithDebInfo \
-  --target Injector plugin_manager test_plugin_path \
-           test_dynamic_plugin_loader test_plugin_local_inventory -j 4
-builds/ninja-multi-vcpkg/tests/RelWithDebInfo/test_plugin_path.exe
-builds/ninja-multi-vcpkg/tests/RelWithDebInfo/test_dynamic_plugin_loader.exe
-builds/ninja-multi-vcpkg/tests/RelWithDebInfo/test_plugin_local_inventory.exe
-```
-
-Results:
-
-```text
-PASS: plugins_dir_from_modmain
-PASS: search_order_env_wins
-PASS: search_order_mod_without_env
-PASS: deps_dir_name
-PASS: configure_dll_search_idempotent
-ALL PASS: plugin_path
-
-PASS: empty_dir
-PASS: noise_ignored
-PASS: bad_library_skipped
-ALL PASS dynamic_plugin_loader
-
-PASS: scan_meta_and_module
-PASS: module_without_meta_version_unknown
-PASS: missing_dir_empty
-PASS: status_override_update_available
-PASS: status_local_only_ok
-PASS: plan_mismatch_and_prefer_present
-PASS: plan_missing_override
-PASS: status_with_channel_cache
-PASS: plugins_dir_from_module_dir
-ALL PASS plugin_local_inventory
-```
-
-Link evidence:
-
-- `Injector.dll` exports mangled PluginPath symbols (`default_plugin_search_dirs`, `set_modmain_path_provider`, `injector_module_dir`, `plugins_dir_from_module_dir`, …).
-- `plugin_manager.dll` imports those symbols from Injector (no private PluginPath TU).
-
-### Self-review
-
-- Preferred process-wide share path taken (not the dual-provider alternative).
-- Fail-fast: no silent wrong root from a second set of PluginPath globals.
-- Tests that need a static image still compile PluginPath with `DS_PLUGIN_HOST_STATIC`.
-- No change to production provider registration order in `DontStarveInjector.cpp`.
+- Capstone via Frida Gum requires **arch registration** before `cs_open`; without `cs_arch_register_x86()` Nucleus disasm fails with `failed to initialize libcapstone`.
+- SHARED `function_relocation` still delay-loads Injector for gum; NucleusAdapter symbols resolve through that import surface at process runtime. Tools/tests use static + direct gum (verified path for this task).
+- Task 3+: consume `FunctionTable` in Signature / ScanCtx; no signature path changes in this task.
+- No per-symbol hardcoding; getstack is only a regression oracle via PE export name lookup in the test.
