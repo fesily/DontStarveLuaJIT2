@@ -1,4 +1,10 @@
 
+# Nucleus CFG stack (function body authority). Built as nucleus_static.
+# Link is deferred to Task 2 (NucleusAdapter); only ensure the target exists.
+if (NOT TARGET nucleus_static)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/3rd/nucleus ${CMAKE_BINARY_DIR}/3rd/nucleus)
+endif()
+
 find_package(pe-parse CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
