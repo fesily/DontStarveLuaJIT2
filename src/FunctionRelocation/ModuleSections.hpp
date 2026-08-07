@@ -10,6 +10,7 @@
 #include <memory>
 #include <list>
 #include "export.hpp"
+#include "FunctionTable.hpp"
 
 
 struct Signature;
@@ -112,6 +113,10 @@ namespace function_relocation {
         std::unordered_map<uintptr_t, CodeBlock*> address_blocks;
         std::unordered_map<std::string, Function *> known_functions;
 
+        // Process-VA Nucleus spans (preferred ImageBase remapped to load base).
+        // Empty until apply_nucleus_function_table runs for this module.
+        FunctionTable function_table;
+
         void set_known_function(uintptr_t addr, const char* name) {
             if (auto func = find_function(addr); func) {
                 func->name = name;
@@ -129,4 +134,12 @@ namespace function_relocation {
 
     FUNCTION_RELOCATION_API bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections);
     FUNCTION_RELOCATION_API bool get_module_sections(const char *path, ModuleSections &sections);
+
+    // Remap Nucleus image-VA table into process VA, store on sections.function_table,
+    // and set Function::size from span_containing (authoritative body size).
+    // Functions without a containing Nucleus span get size 0 (no residual heuristics).
+    // Returns false if image_base is 0 or no sizes could be applied.
+    FUNCTION_RELOCATION_API bool apply_nucleus_function_table(ModuleSections &sections,
+                                                             const FunctionTable &image_table,
+                                                             uint64_t image_base);
 }

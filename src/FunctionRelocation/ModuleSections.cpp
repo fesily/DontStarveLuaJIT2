@@ -20,6 +20,7 @@
 #include "disasm.h"
 #include "ScanCtx.hpp"
 #include "config.hpp"
+#include "FunctionTable.hpp"
 #ifdef _WIN32
 #include <windows.h>
 #include <filesystem>
@@ -211,6 +212,87 @@ namespace function_relocation {
     uintptr_t
     ModuleSections::try_fix_func_address(const Function &original, SignatureInfo *signature, uintptr_t limit_address) {
         return (uintptr_t) fix_func_address_by_signature(*this, original, limit_address, signature);
+    }
+
+    bool apply_nucleus_function_table(ModuleSections &sections,
+                                      const FunctionTable &image_table,
+                                      uint64_t image_base) {
+        sections.function_table.clear();
+        auto log = spdlog::get(logger_name);
+        if (image_base == 0 || image_table.empty()) {
+            if (log) {
+                log->error("apply_nucleus_function_table: empty table or image_base=0 for {}",
+                           sections.details.path);
+            }
+            return false;
+        }
+
+        const auto process_base = sections.details.range.base_address;
+        // process_va = process_base + (image_va - image_base)
+        for (const auto &sp: image_table.spans()) {
+            if (sp.end <= sp.start) {
+                continue;
+            }
+            const uint64_t start = process_base + (sp.start - image_base);
+            const uint64_t end = process_base + (sp.end - image_base);
+            sections.function_table.add(FunctionSpan{start, end});
+        }
+
+        if (sections.function_table.empty()) {
+            if (log) {
+                log->error("apply_nucleus_function_table: remapped table empty for {}",
+                           sections.details.path);
+            }
+            return false;
+        }
+        // Refine process-VA table at every known function address (ScanCtx /
+        // exports / symbols). Same rule as PE export split in nucleus_analyze:
+        // interior entry E inside [S,End) becomes its own sub-span start so
+        // containing(E)==E and size = End-E (never move address to S).
+        {
+            std::vector<uint64_t> entries;
+            entries.reserve(sections.functions.size() + sections.known_functions.size());
+            for (const auto &fn: sections.functions) {
+                if (fn.address != 0) {
+                    entries.push_back(fn.address);
+                }
+            }
+            for (const auto &[name, fn]: sections.known_functions) {
+                (void) name;
+                if (fn && fn->address != 0) {
+                    entries.push_back(fn->address);
+                }
+            }
+            const size_t before = sections.function_table.size();
+            sections.function_table.split_at_known_entries(entries);
+            if (log && sections.function_table.size() != before) {
+                log->info("apply_nucleus_function_table: split {} -> {} spans at {} known entries ({})",
+                          before, sections.function_table.size(), entries.size(),
+                          sections.details.path);
+            }
+        }
+
+        size_t sized = 0;
+        for (auto &fn: sections.functions) {
+            if (const FunctionSpan *sp = sections.function_table.span_containing(fn.address)) {
+                // Keep function address = E (export / known VA). Authoritative
+                // body size is remaining parent body: End - E. When E is already
+                // a span start (after split), that equals full sub-span length.
+                fn.size = static_cast<size_t>(sp->end - fn.address);
+                ++sized;
+            } else {
+                // Drop residual ScanCtx / next-export / pdata sizes. Nucleus is the
+                // sole body authority — no span means size 0 (scan paths refuse it).
+                fn.size = 0;
+            }
+        }
+
+        if (log) {
+            log->info("apply_nucleus_function_table: {} spans, sized {}/{} functions ({})",
+                      sections.function_table.size(), sized, sections.functions.size(),
+                      sections.details.path);
+        }
+        return sized > 0;
     }
 
     size_t Function::consts_count() const {

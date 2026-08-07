@@ -1,4 +1,9 @@
 
+# Nucleus CFG stack (function body authority). Built as nucleus_static.
+if (NOT TARGET nucleus_static)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/3rd/nucleus ${CMAKE_BINARY_DIR}/3rd/nucleus)
+endif()
+
 find_package(pe-parse CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
@@ -12,6 +17,7 @@ set(SOURCE
         ScanCtx.cpp
         ExectuableSignature.cpp
         FunctionRanges.cpp
+        NucleusAdapter.cpp
 )
 
 find_package(spdlog CONFIG REQUIRED)
@@ -43,6 +49,10 @@ function(_function_relocation_common_config target)
         target_link_libraries(${target} PRIVATE ${KEYSTONE_LIBRARIES})
         target_link_libraries(${target} PRIVATE libdwarf::dwarf)
     endif()
+    # Nucleus PE/CFG stack for NucleusAdapter (do not re-export Nucleus types).
+    # nucleus_static does not carry frida-gum link deps; SHARED resolves gum via
+    # Injector import below, STATIC/tools via their own ${FRIDA_GUM_LIBRARIES}.
+    target_link_libraries(${target} PRIVATE nucleus_static)
 endfunction()
 
 if (WIN32)

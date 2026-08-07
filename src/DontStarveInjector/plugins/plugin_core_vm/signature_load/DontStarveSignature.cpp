@@ -17,6 +17,7 @@
 #include "FunctionRanges.hpp"
 #include "Signature.hpp"
 #include "SignatureJson.hpp"
+#include "NucleusAdapter.hpp"
 #include "missfunc.h"
 #include "range/v3/range/conversion.hpp"
 #include "ExectuableSignature.hpp"
@@ -184,6 +185,67 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                 throw  update_signatures_exception{"init_module_signature failed!"};
             }
 
+    // Authoritative body sizes from Nucleus FunctionTable (image VA remapped to process VA).
+    // Fail visibly — do not invent sizes via next-export or ret heuristics.
+    {
+        auto train_nt = function_relocation::nucleus_analyze_file(lua51_path);
+        if (!train_nt) {
+            throw update_signatures_exception{
+                    fmt::format("nucleus_analyze_file(lua51) failed: {}", train_nt.error())};
+        }
+        if (!function_relocation::apply_nucleus_function_table(modulelua51, train_nt->table,
+                                                              train_nt->image_base)) {
+            throw update_signatures_exception{"apply_nucleus_function_table(lua51) failed"};
+        }
+
+        auto target_nt = function_relocation::nucleus_analyze_file(game_path);
+        if (!target_nt) {
+            throw update_signatures_exception{
+                    fmt::format("nucleus_analyze_file(game) failed: {}", target_nt.error())};
+        }
+        if (!function_relocation::apply_nucleus_function_table(moduleMain, target_nt->table,
+                                                              target_nt->image_base)) {
+            throw update_signatures_exception{"apply_nucleus_function_table(game) failed"};
+        }
+
+        // Optional pdata cross-check (log only; Nucleus remains authority).
+        {
+            std::vector<function_relocation::FuncRange> pdata_ranges;
+            if (function_relocation::enumerate_function_ranges_win(moduleMain, pdata_ranges)) {
+                size_t compared = 0;
+                size_t mismatches = 0;
+                for (const auto &sp: moduleMain.function_table.spans()) {
+                    const function_relocation::FuncRange *hit = nullptr;
+                    size_t hits = 0;
+                    for (const auto &pr: pdata_ranges) {
+                        if (pr.start <= sp.start && sp.start < pr.end) {
+                            hit = &pr;
+                            ++hits;
+                        }
+                    }
+                    if (hits != 1 || hit == nullptr) {
+                        continue;
+                    }
+                    ++compared;
+                    if (hit->end != sp.end) {
+                        ++mismatches;
+                        const auto delta = static_cast<intptr_t>(hit->end) -
+                                           static_cast<intptr_t>(sp.end);
+                        if (delta >= 0x20 || delta <= -0x20) {
+                            spdlog::warn(
+                                    "pdata/nucleus end mismatch start={} nucleus_end={} pdata_end={} delta={}",
+                                    (void *) sp.start, (void *) sp.end, (void *) hit->end, delta);
+                        }
+                    }
+                }
+                spdlog::info("pdata cross-check: compared={} mismatches={} (Nucleus not overridden)",
+                             compared, mismatches);
+            } else {
+                spdlog::info("pdata cross-check: no .pdata ranges for {}", moduleMain.details.path);
+            }
+        }
+    }
+
     auto lua51_module = gum_process_find_module_by_name(lua51_name);
 #ifndef __APPLE__
     spdlog::info("lua51 module base address:{}", (void*)modulelua51.details.range.base_address);
@@ -216,6 +278,10 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
         auto originalFunc = modulelua51.find_function((uintptr_t) original);
         if (!originalFunc) {
             throw update_signatures_exception{fmt::format("can't find {} at module lua51", name)};
+        }
+        if (originalFunc->size == 0) {
+            throw update_signatures_exception{
+                    fmt::format("func[{}] has size 0 after Nucleus sizing (no containing span)", name)};
         }
     }
     set_progress(1, "");
@@ -272,50 +338,66 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
         }
         if (target == maybe_target)
             continue;
-        // fix the offset by module
+        // fix the offset by module — prefer Nucleus target table over scan heuristics.
         if (moduleMain.find_function(target) == nullptr) {
             spdlog::info("can't find function at address: {}", (void *) target);
-            auto all_address =
-                    moduleMain.address_functions | std::ranges::views::transform([](auto &p) { return p.first; }) |
-                    ranges::to<std::vector>();
-            std::ranges::sort(all_address);
-            auto pattern_address = target - signature.pattern_offset;
-            auto iter = std::ranges::adjacent_find(all_address,
-                                                   [pattern_address](auto l, auto r) {
-                                                       return l <= pattern_address && pattern_address < r;
-                                                   });
-            if (iter == all_address.end()) {
-                throw update_signatures_exception{fmt::format("func[{}] can't find the real address", name)};
-            }
-            const auto fn = moduleMain.find_function(*iter);
-            target = fn->address;
-            auto pattern_offset = (intptr_t) target - (intptr_t) pattern_address;
-            spdlog::info("refix signature pattern offset: [{}]->[{}]", signature.pattern_offset, pattern_offset);
-            signature.pattern_offset = pattern_offset;
-        }
-#ifdef _WIN32
-        {
-            static thread_local std::vector<function_relocation::FuncRange> cached_ranges;
-            static thread_local const function_relocation::ModuleSections* cached_mod = nullptr;
-            if (cached_mod != &moduleMain) {
-                cached_ranges.clear();
-                (void)function_relocation::enumerate_function_ranges_win(moduleMain, cached_ranges);
-                cached_mod = &moduleMain;
-            }
-            if (const auto* range = function_relocation::find_range_containing(cached_ranges, target)) {
-                if (target != range->start) {
-                    // pattern may have matched mid-function or a stub still inside the range
-                    const auto pattern_address = target - signature.pattern_offset;
-                    const auto new_po = static_cast<intptr_t>(range->start) - static_cast<intptr_t>(pattern_address);
-                    spdlog::info("snap signature [{}] {} -> range start {} (pattern_offset {}->{})",
-                                 name, (void*)target, (void*)range->start,
-                                 signature.pattern_offset, new_po);
-                    signature.pattern_offset = new_po;
-                    target = range->start;
+            if (!moduleMain.function_table.empty()) {
+                // pattern_offset is target-local after Creator resolve: entry - match.
+                // Recover match, then re-resolve entry via containing().
+                const auto pattern_address =
+                        static_cast<uintptr_t>(static_cast<intptr_t>(target) -
+                                               static_cast<intptr_t>(signature.pattern_offset));
+                const uint64_t entry = moduleMain.function_table.containing(
+                        signature.pattern_offset == 0 ? target : pattern_address);
+                if (entry == 0) {
+                    throw update_signatures_exception{
+                            fmt::format("func[{}] match not in target FunctionTable", name)};
                 }
+                const auto match = signature.pattern_offset == 0
+                                           ? target
+                                           : pattern_address;
+                const auto new_po =
+                        static_cast<intptr_t>(entry) - static_cast<intptr_t>(match);
+                spdlog::info("refix signature via FunctionTable: [{}]->[{}] entry={}",
+                             signature.pattern_offset, new_po, (void *) entry);
+                signature.pattern_offset = static_cast<int>(new_po);
+                target = static_cast<uintptr_t>(entry);
+            } else {
+                auto all_address =
+                        moduleMain.address_functions | std::ranges::views::transform([](auto &p) { return p.first; }) |
+                        ranges::to<std::vector>();
+                std::ranges::sort(all_address);
+                auto pattern_address = target - signature.pattern_offset;
+                auto iter = std::ranges::adjacent_find(all_address,
+                                                       [pattern_address](auto l, auto r) {
+                                                           return l <= pattern_address && pattern_address < r;
+                                                       });
+                if (iter == all_address.end()) {
+                    throw update_signatures_exception{fmt::format("func[{}] can't find the real address", name)};
+                }
+                const auto fn = moduleMain.find_function(*iter);
+                target = fn->address;
+                auto pattern_offset = (intptr_t) target - (intptr_t) pattern_address;
+                spdlog::info("refix signature pattern offset: [{}]->[{}]", signature.pattern_offset, pattern_offset);
+                signature.pattern_offset = pattern_offset;
             }
         }
-#endif
+        // Prefer Nucleus FunctionTable over pdata for snap-to-entry (pdata is log-only authority).
+        if (!moduleMain.function_table.empty()) {
+            const uint64_t entry = moduleMain.function_table.containing(target);
+            if (entry != 0 && entry != target) {
+                const auto pattern_address =
+                        static_cast<uintptr_t>(static_cast<intptr_t>(target) -
+                                               static_cast<intptr_t>(signature.pattern_offset));
+                const auto new_po =
+                        static_cast<intptr_t>(entry) - static_cast<intptr_t>(pattern_address);
+                spdlog::info("snap signature [{}] {} -> nucleus entry {} (pattern_offset {}->{})",
+                             name, (void *) target, (void *) entry,
+                             signature.pattern_offset, new_po);
+                signature.pattern_offset = static_cast<int>(new_po);
+                target = static_cast<uintptr_t>(entry);
+            }
+        }
         auto new_offset = target - targetLuaModuleBase;
         spdlog::info("update signatures [{}:{}]: {} to {}", name, (void *) target, old_offset, new_offset);
         signature.offset = new_offset;
