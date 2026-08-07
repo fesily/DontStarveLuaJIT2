@@ -2,7 +2,7 @@
  * Thin shared shell for frida-gum.
  * Linked against the static frida-gum archive (+ deps) with tools/frida/FridaGum.def.
  * Compile with -DGUM_EXPORTS and WITHOUT GUM_STATIC so GUM_API is dllexport on Windows.
- * No real logic — the .def pulls gum_*/cs_* from the static archive.
+ * No real logic - the .def pulls gum_* / cs_* from the static archive.
  */
 #include <frida-gum.h>
 
