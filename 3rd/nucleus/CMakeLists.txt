@@ -38,7 +38,14 @@ target_include_directories(nucleus_static
         ${CMAKE_CURRENT_SOURCE_DIR}/cmake/capstone_shim
 )
 
-# Capstone via Frida Gum (preferred) or find_package(Capstone).
+# Capstone / Frida Gum surface:
+#   - Includes + GUM_STATIC only on this archive (compile-time).
+#   - Do NOT target_link_libraries frida-gum/capstone here.
+#     CMake propagates PRIVATE deps of STATIC libs to every final link unit,
+#     which would force a second frida-gum into SHARED function_relocation
+#     (game path must import gum from Injector only). Tools/tests that use
+#     nucleus_static / function_relocation_static link ${FRIDA_GUM_LIBRARIES}
+#     (or Capstone) explicitly on the final executable/DLL.
 if (NOT FRIDA_GUM_INCLUDE_DIR)
     # When added early from FunctionRelocation, Frida-gum may already be found
     # at the top level. Fall back to module path search.
@@ -47,19 +54,14 @@ endif()
 
 if (FRIDA_GUM_INCLUDE_DIR)
     target_include_directories(nucleus_static PRIVATE ${FRIDA_GUM_INCLUDE_DIR})
-    if (FRIDA_GUM_LIBRARIES)
-        target_link_libraries(nucleus_static PRIVATE ${FRIDA_GUM_LIBRARIES})
-    endif()
     target_compile_definitions(nucleus_static PRIVATE GUM_STATIC=1)
 else()
     find_path(CAPSTONE_INCLUDE_DIR NAMES capstone/capstone.h)
-    find_library(CAPSTONE_LIBRARY NAMES capstone)
-    if (NOT CAPSTONE_INCLUDE_DIR OR NOT CAPSTONE_LIBRARY)
+    if (NOT CAPSTONE_INCLUDE_DIR)
         message(FATAL_ERROR
-            "nucleus_static: need Frida-gum Capstone surface or system Capstone")
+            "nucleus_static: need Frida-gum Capstone surface or system Capstone headers")
     endif()
     target_include_directories(nucleus_static PRIVATE ${CAPSTONE_INCLUDE_DIR})
-    target_link_libraries(nucleus_static PRIVATE ${CAPSTONE_LIBRARY})
 endif()
 
 if (WIN32)

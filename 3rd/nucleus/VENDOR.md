@@ -11,10 +11,17 @@
 
 ## Capstone
 
-`nucleus_static` consumes Capstone through the project Frida Gum surface
-(`frida-gum.h` + `frida-gum.lib` / equivalent). A thin include shim under
+`nucleus_static` compiles against Capstone through the project Frida Gum surface
+(`frida-gum.h` + include shim). A thin include shim under
 `cmake/capstone_shim/capstone/capstone.h` satisfies Nucleus's
 `#include <capstone/capstone.h>` without a second Capstone copy.
+
+**Link policy:** `nucleus_static` does **not** link `frida-gum.lib` / Capstone.
+CMake would propagate that PRIVATE STATIC dependency into every consumer,
+including SHARED `function_relocation`, which must import gum only from
+Injector. Final link units own gum resolution:
+- SHARED reloc / plugins → Injector import lib + `/NODEFAULTLIB:frida-gum.lib`
+- tools / tests / STATIC reloc consumers → explicit `${FRIDA_GUM_LIBRARIES}`
 
 ## Windows loader
 

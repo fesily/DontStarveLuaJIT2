@@ -15,7 +15,7 @@ surface only**. Do not use this directory for algorithm forks of `CFG::make_cfg`
 
 | Area | File(s) | Why (not algorithm) |
 |------|---------|---------------------|
-| CMake library | `CMakeLists.txt` | Produce `nucleus_static` without CLI/getopt/BFD on Windows; Frida Gum / Capstone linked **PRIVATE** so consumers do not inherit gum/capstone link deps |
+| CMake library | `CMakeLists.txt` | Produce `nucleus_static` without CLI/getopt/BFD on Windows; Frida Gum / Capstone are **headers-only** on this archive (no `target_link_libraries` of `frida-gum`/`capstone`) so STATIC PRIVATE deps cannot re-pull a second gum into SHARED `function_relocation`; tools/tests link gum on the final unit |
 | Capstone shim | `cmake/capstone_shim/capstone/capstone.h` | Map `<capstone/capstone.h>` → Frida Gum Capstone surface |
 | Options defaults | `options_defaults.cc` | Library consumers need defaults without CLI `getopt` |
 | PE loader | `loader.cc` / `loader.h` | Fill `Binary`/`Section` via pe-parse; no libbfd on Windows |
