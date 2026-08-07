@@ -139,6 +139,21 @@ static void test_table_containing_unit() {
   REQUIRE(t.containing(0x50) == 0);
   REQUIRE(t.span_containing(0x10ff) != nullptr);
   REQUIRE(t.span_containing(0x10ff)->end == 0x1100);
+
+  // Nested spans: large outer body wholly contains a later entry-point.
+  // Mirrors lua_yield [ad60,b5ae) covering lua_resume @ b4f0 when Nucleus
+  // has not emitted a dedicated resume span (old lookup returned null).
+  FunctionTable nested;
+  nested.add({0xad60, 0xb5ae}); // outer (e.g. lua_yield)
+  nested.add({0xae30, 0xaf31}); // sibling inside outer
+  nested.add({0xb4f0, 0xb54a}); // tight resume body
+  REQUIRE(nested.containing(0xb4f0) == 0xb4f0);
+  REQUIRE(nested.span_containing(0xb4f0)->end == 0xb54a);
+  FunctionTable only_outer;
+  only_outer.add({0xad60, 0xb5ae});
+  only_outer.add({0xae30, 0xaf31});
+  REQUIRE(only_outer.containing(0xb4f0) == 0xad60);
+  REQUIRE(only_outer.span_containing(0xb4f0)->end == 0xb5ae);
 }
 
 static void test_lua51_getstack_span() {
@@ -199,9 +214,38 @@ static void test_lua51_getstack_span() {
               static_cast<unsigned long long>(image_base));
 }
 
+static void test_lua51_resume_containing() {
+  auto path = repo_lua51();
+  if (!std::filesystem::exists(path)) {
+    std::printf("FAIL test_lua51_resume_containing: missing %s\n", path.string().c_str());
+    std::abort();
+  }
+  auto res = nucleus_analyze_file(path);
+  REQUIRE(res.has_value());
+  const uint32_t exp_rva = pe_export_rva(path, "lua_resume");
+  REQUIRE(exp_rva != 0);
+  uint64_t image_base = res->image_base;
+  if (image_base == 0) {
+    auto base = pe_image_base(path);
+    REQUIRE(base.has_value());
+    image_base = *base;
+  }
+  const uint64_t resume_va = image_base + exp_rva;
+  auto *sp = res->table.span_containing(resume_va);
+  REQUIRE(sp != nullptr);
+  REQUIRE(resume_va >= sp->start);
+  REQUIRE(resume_va < sp->end);
+  std::printf("lua_resume: va=0x%llx entry=0x%llx end=0x%llx size=0x%llx\n",
+              static_cast<unsigned long long>(resume_va),
+              static_cast<unsigned long long>(sp->start),
+              static_cast<unsigned long long>(sp->end),
+              static_cast<unsigned long long>(sp->end - sp->start));
+}
+
 int main() {
   test_table_containing_unit();
   test_lua51_getstack_span();
+  test_lua51_resume_containing();
   std::puts("test_nucleus_adapter: ok");
   return 0;
 }

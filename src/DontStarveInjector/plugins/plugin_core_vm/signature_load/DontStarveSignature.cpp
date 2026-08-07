@@ -207,6 +207,43 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                                                               target_nt->image_base)) {
             throw update_signatures_exception{"apply_nucleus_function_table(game) failed"};
         }
+
+        // Optional pdata cross-check (log only; Nucleus remains authority).
+        {
+            std::vector<function_relocation::FuncRange> pdata_ranges;
+            if (function_relocation::enumerate_function_ranges_win(moduleMain, pdata_ranges)) {
+                size_t compared = 0;
+                size_t mismatches = 0;
+                for (const auto &sp: moduleMain.function_table.spans()) {
+                    const function_relocation::FuncRange *hit = nullptr;
+                    size_t hits = 0;
+                    for (const auto &pr: pdata_ranges) {
+                        if (pr.start <= sp.start && sp.start < pr.end) {
+                            hit = &pr;
+                            ++hits;
+                        }
+                    }
+                    if (hits != 1 || hit == nullptr) {
+                        continue;
+                    }
+                    ++compared;
+                    if (hit->end != sp.end) {
+                        ++mismatches;
+                        const auto delta = static_cast<intptr_t>(hit->end) -
+                                           static_cast<intptr_t>(sp.end);
+                        if (delta >= 0x20 || delta <= -0x20) {
+                            spdlog::warn(
+                                    "pdata/nucleus end mismatch start={} nucleus_end={} pdata_end={} delta={}",
+                                    (void *) sp.start, (void *) sp.end, (void *) hit->end, delta);
+                        }
+                    }
+                }
+                spdlog::info("pdata cross-check: compared={} mismatches={} (Nucleus not overridden)",
+                             compared, mismatches);
+            } else {
+                spdlog::info("pdata cross-check: no .pdata ranges for {}", moduleMain.details.path);
+            }
+        }
     }
 
     auto lua51_module = gum_process_find_module_by_name(lua51_name);
