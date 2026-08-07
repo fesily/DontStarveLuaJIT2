@@ -340,3 +340,17 @@ foreach(_ds_cfg_tgt IN LISTS DS_CONFIG_SCHEMA_TARGETS)
         add_dependencies(${_ds_cfg_tgt} create_modinfo_hpp)
     endif()
 endforeach()
+
+if (WIN32)
+  add_executable(test_function_ranges
+      ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_function_ranges.cpp)
+  target_include_directories(test_function_ranges PRIVATE
+      ${FUNCTION_RELOCATION_INCLUDE_DIR}
+      ${FRIDA_GUM_INCLUDE_DIR})
+  target_compile_features(test_function_ranges PRIVATE cxx_std_23)
+  # Prefer static so the test does not delay-load Injector for gum.
+  # Static reloc TUs pull frida-gum via headers; tools/tests must link gum.
+  target_link_libraries(test_function_ranges PRIVATE function_relocation_static ${FRIDA_GUM_LIBRARIES})
+  add_test(NAME function_ranges COMMAND test_function_ranges)
+endif()
+
