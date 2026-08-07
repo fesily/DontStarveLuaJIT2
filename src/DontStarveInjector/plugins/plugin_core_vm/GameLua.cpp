@@ -328,22 +328,57 @@ struct GameLuaContextImpl : GameLuaContext {
             sharedlibraryName = getenv("GAME_LUA_MODULE_NAME");
         }
 
-        LuaModule = gum_process_find_module_by_name(sharedlibraryName.c_str());
+        // Windows: gum_module_load("lua51DS.dll") only searches the game bin64
+        // default path and fails 0x7E when the VM is under Mod/deps. loadlib()
+        // resolves Mod/deps (next to Injector / plugin_core_vm) and maps the DLL;
+        // then gum attaches to the already-loaded module.
+        auto try_attach = [&](const std::string &name) -> bool {
+            if (name.empty()) {
+                return false;
+            }
+            if (loadlib(name.c_str())) {
+                LuaModule = gum_process_find_module_by_name(name.c_str());
+                if (LuaModule) {
+                    sharedlibraryName = name;
+                    spdlog::info("Attached Lua module (loadlib): {}", name);
+                    std::fprintf(stderr, "[core.vm] Attached Lua module (loadlib): %s\n", name.c_str());
+                    return true;
+                }
+                // Loaded but gum name lookup failed — try basename of what loadlib used.
+                std::fprintf(stderr,
+                             "[core.vm] loadlib(%s) mapped module but gum_process_find_module_by_name failed\n",
+                             name.c_str());
+            }
+            return false;
+        };
+
+        if (!try_attach(sharedlibraryName)) {
+#ifdef _WIN32
+            if (sharedlibraryName.find('.') == std::string::npos) {
+                (void) try_attach(sharedlibraryName + ".dll");
+            }
+#endif
+        }
+
         if (!LuaModule) {
             GError *error = nullptr;
-#ifndef _WIN32
-            loadlib(sharedlibraryName.c_str());
-#endif
             LuaModule = gum_module_load(sharedlibraryName.c_str(), &error);
             if (!LuaModule) {
-                spdlog::error("Cannot load Lua module: {}, error: {}", sharedlibraryName, error->message);
-                g_error_free(error);
+                spdlog::error("Cannot load Lua module: {}, error: {}", sharedlibraryName,
+                              error ? error->message : "unknown");
+                std::fprintf(stderr, "[core.vm] Cannot load Lua module: %s, error: %s\n",
+                             sharedlibraryName.c_str(), error ? error->message : "unknown");
+                if (error) {
+                    g_error_free(error);
+                }
             } else {
                 spdlog::info("Loaded Lua module: {}", sharedlibraryName);
+                std::fprintf(stderr, "[core.vm] Loaded Lua module: %s\n", sharedlibraryName.c_str());
             }
         }
         if (!LuaModule) {
             spdlog::error("Failed to load Lua module: {}", sharedlibraryName);
+            std::fprintf(stderr, "[core.vm] Failed to load Lua module: %s\n", sharedlibraryName.c_str());
         }
         return LuaModule != nullptr;
     }

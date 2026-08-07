@@ -67,6 +67,9 @@ module_handler_t loadlib(const char *name, int mode) {
         }
         const auto s = candidate.string();
 #ifdef _WIN32
+        // Absolute path + DLL_LOAD_DIR: dependency dir is the VM's own folder (Mod/deps).
+        // Do NOT add USER_DIRS here unless AddDllDirectory was called — otherwise
+        // LoadLibraryEx can fail with ERROR_INVALID_PARAMETER (0x57) / 0x7E chain.
         return LoadLibraryExA(s.c_str(), nullptr,
                               LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
 #else
