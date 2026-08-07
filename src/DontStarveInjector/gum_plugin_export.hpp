@@ -1,15 +1,7 @@
 #pragma once
 
-// Dynamic plugins call gum_* / cs_* as imports from Injector.
-//
-// Windows: Injector statically links frida-gum-devkit and re-exports via FridaGum.def.
-// Linux / macOS: equivalent ELF version-script / Mach-O export list is NOT implemented.
-// Linking libfrida-gum.a into each plugin would create a second Gum instance (crashy).
-//
-// Fail fast until that re-export lands. Do not weaken this to a warning.
+// Dynamic plugins and Injector call gum_*/cs_* via the process-wide shared
+// frida-gum library (Frida::Gum). There is no second Gum copy and no Injector
+// re-export. This header remains as a documentation include for gum plugins.
 
-#if defined(__linux__) || defined(__APPLE__)
-#  error "Frida Gum re-export for dynamic plugins is unimplemented on Linux/macOS " \
-         "(Windows uses FridaGum.def). Wait for ELF/Mach-O export list before building " \
-         "gum-using plugins; do not static-link a second frida-gum into plugins."
-#endif
+// Optional: nothing to #error — missing Frida::Gum fails at CMake/link time.

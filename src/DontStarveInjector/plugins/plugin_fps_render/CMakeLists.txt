@@ -5,10 +5,7 @@ ds_add_dynamic_plugin(plugin_fps_render
 target_link_libraries(plugin_fps_render PRIVATE
     spdlog::spdlog
     function_relocation)
-target_link_options(plugin_fps_render PRIVATE
-    "/NODEFAULTLIB:frida-gum.lib")
 target_compile_definitions(plugin_fps_render PRIVATE
-    GUM_STATIC=1
     SPDLOG_COMPILED_LIB
     SPDLOG_FMT_EXTERNAL)
 target_include_directories(plugin_fps_render PRIVATE

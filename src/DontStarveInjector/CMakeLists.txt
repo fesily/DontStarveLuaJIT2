@@ -45,16 +45,7 @@ if (ENABLE_STEAM_SUPPORT)
     find_package(Steam REQUIRED)
 endif ()
 
-if (NOT MSVC)
-    # GameForkSave lives in plugin_save_fork (all platforms).
-else()
-    list(APPEND SOURCES
-        #profiler.cpp
-        # Re-export static frida-gum symbols from Injector.dll so plugins can
-        # call gum_* without linking a second Gum copy (official devkit is static-only).
-        FridaGum.def
-    )
-endif()
+# GameForkSave lives in plugin_save_fork (all platforms). Gum is Frida::Gum shared.
 
 find_package(libzip CONFIG REQUIRED)
 find_package(ZLIB REQUIRED)
@@ -111,7 +102,7 @@ add_dependencies(Injector create_modinfo_hpp)
 
 target_include_directories(Injector PRIVATE ${SOL2_INCLUDE_DIRS})
 target_include_directories(Injector PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
-target_link_libraries(Injector PRIVATE ${FRIDA_GUM_LIBRARIES})
+target_link_libraries(Injector PRIVATE Frida::Gum)
 
 target_link_libraries(Injector PRIVATE Boost::pfr)
 target_link_libraries(Injector PRIVATE libzip::zip)
@@ -184,6 +175,9 @@ install(TARGETS Injector
     RUNTIME DESTINATION . COMPONENT injector
     LIBRARY DESTINATION . COMPONENT injector)
 
+if (WIN32 AND DEFINED FRIDA_GUM_RUNTIME)
+    install(FILES "${FRIDA_GUM_RUNTIME}" DESTINATION deps COMPONENT deps)
+endif()
 
 add_subdirectory(loader/bootstrap)
 
@@ -238,7 +232,7 @@ function(ds_add_dynamic_plugin name)
         ${DONTSTARVEINJECTOR_ROOT}
         ${DONTSTARVEINJECTOR_UTIL_DIR})
     target_compile_features(${name} PRIVATE cxx_std_23)
-    target_link_libraries(${name} PRIVATE Injector)
+    target_link_libraries(${name} PRIVATE Injector Frida::Gum)
     set_target_properties(${name} PROPERTIES
         PREFIX ""
         OUTPUT_NAME "${name}"
@@ -262,9 +256,8 @@ add_subdirectory(plugins/plugin_save_fork)
 add_subdirectory(plugins/plugin_core_vm)
 add_subdirectory(plugins/plugin_manager)
 
-# Gum-using dynamic plugins need Injector to re-export static frida-gum symbols.
-# Windows: FridaGum.def. Linux/macOS: not implemented — skip targets (source also
-# #errors via gum_plugin_export.hpp if pulled in by mistake).
+# Gum plugins link Frida::Gum shared directly (no Injector re-export).
+# Keep WIN32 gate until POSIX shared stage is verified in-tree.
 if (WIN32)
     add_subdirectory(plugins/plugin_network_rpc)
     add_subdirectory(plugins/plugin_network_sim)
@@ -276,9 +269,9 @@ if (WIN32)
     add_subdirectory(plugins/plugin_network_tick)
 else()
     message(WARNING
-        "Skipping gum-using dynamic plugins (network.rpc / network.sim / sim.lagcomp / render.vbpool / render.angle / debug.profiler): "
-        "Injector Frida Gum re-export is unimplemented on Linux/macOS (Windows uses FridaGum.def). "
-        "Wait for ELF/Mach-O export-list fix; do not static-link a second frida-gum into plugins.")
+        "Skipping gum-using dynamic plugins (network.rpc / network.sim / sim.lagcomp / render.vbpool / render.angle / debug.profiler / fps.render / network.tick): "
+        "shared gum stage not available or unverified on Linux/macOS. "
+        "Plugins link Frida::Gum directly once the stage is ready.")
 endif()
 
 # ---------------------------------------------------------------------------
@@ -312,6 +305,15 @@ if (DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
             "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/bin"
         )
     endif()
+endif()
+if (DEFINED FRIDA_GUM_LIBRARY_DIR)
+    list(APPEND _ds_mod_deps_search_dirs "${FRIDA_GUM_LIBRARY_DIR}")
+endif()
+if (DEFINED FRIDA_GUM_RUNTIME)
+    get_filename_component(_ds_frida_gum_bin "${FRIDA_GUM_RUNTIME}" DIRECTORY)
+    list(APPEND _ds_mod_deps_search_dirs "${_ds_frida_gum_bin}")
+elseif (DEFINED _FRIDA_GUM_ROOT)
+    list(APPEND _ds_mod_deps_search_dirs "${_FRIDA_GUM_ROOT}/bin")
 endif()
 string(REPLACE ";" "\\;" _ds_mod_deps_search_dirs_code "${_ds_mod_deps_search_dirs}")
 

@@ -5,10 +5,7 @@ ds_add_dynamic_plugin(plugin_network_tick
 target_link_libraries(plugin_network_tick PRIVATE
     spdlog::spdlog
     function_relocation)
-target_link_options(plugin_network_tick PRIVATE
-    "/NODEFAULTLIB:frida-gum.lib")
 target_compile_definitions(plugin_network_tick PRIVATE
-    GUM_STATIC=1
     SPDLOG_COMPILED_LIB
     SPDLOG_FMT_EXTERNAL)
 target_include_directories(plugin_network_tick PRIVATE

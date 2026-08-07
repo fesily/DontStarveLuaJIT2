@@ -61,7 +61,7 @@ target_link_libraries(signature_updater PRIVATE spdlog::spdlog)
 
 
 target_include_directories(signature_updater PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
-target_link_libraries(signature_updater PRIVATE ${FRIDA_GUM_LIBRARIES})
+target_link_libraries(signature_updater PRIVATE Frida::Gum)
 
 target_link_libraries(signature_updater PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(signature_updater PRIVATE function_relocation_static)
@@ -80,6 +80,14 @@ target_compile_definitions(signature_updater PUBLIC
 if (MSVC)
     target_link_options(signature_updater PUBLIC "/NODEFAULTLIB:LIBCMT")
 endif ()
+
+if (WIN32 AND DEFINED FRIDA_GUM_RUNTIME)
+    add_custom_command(TARGET signature_updater POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${FRIDA_GUM_RUNTIME}"
+            "$<TARGET_FILE_DIR:signature_updater>"
+        VERBATIM)
+endif()
 
 add_dependencies(signature_updater create_missfuncs)
 
