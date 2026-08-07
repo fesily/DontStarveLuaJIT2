@@ -35,6 +35,51 @@ public:
     spans_.insert(it, span);
   }
 
+  // Refine spans so every known entry VA that falls strictly inside a parent
+  // becomes a sub-span start: [S, e0), [e0, e1), …, [en, End).
+  // Used for PE SYM_TYPE_FUNC exports and module-known function addresses so
+  // interior exports (e.g. lua_resume inside a lua_yield outer body) map
+  // containing(E) → E instead of the outer start.
+  // Does not hardcode symbol names — any address list works.
+  void split_at_known_entries(const std::vector<uint64_t> &entries) {
+    if (spans_.empty() || entries.empty()) {
+      return;
+    }
+    std::vector<uint64_t> pts = entries;
+    std::sort(pts.begin(), pts.end());
+    pts.erase(std::unique(pts.begin(), pts.end()), pts.end());
+
+    std::vector<FunctionSpan> out;
+    out.reserve(spans_.size() + pts.size());
+    for (const auto &sp : spans_) {
+      std::vector<uint64_t> cuts;
+      for (uint64_t e : pts) {
+        if (e > sp.start && e < sp.end) {
+          cuts.push_back(e);
+        }
+      }
+      if (cuts.empty()) {
+        out.push_back(sp);
+        continue;
+      }
+      uint64_t cur = sp.start;
+      for (uint64_t c : cuts) {
+        if (c > cur) {
+          out.push_back(FunctionSpan{cur, c});
+        }
+        cur = c;
+      }
+      if (sp.end > cur) {
+        out.push_back(FunctionSpan{cur, sp.end});
+      }
+    }
+    std::sort(out.begin(), out.end(),
+              [](const FunctionSpan &a, const FunctionSpan &b) {
+                return a.start < b.start;
+              });
+    spans_ = std::move(out);
+  }
+
   // Returns start of the tightest (innermost) function containing addr, or 0.
   uint64_t containing(uint64_t addr) const {
     const FunctionSpan *s = span_containing(addr);

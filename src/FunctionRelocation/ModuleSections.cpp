@@ -245,17 +245,40 @@ namespace function_relocation {
             }
             return false;
         }
+        // Refine process-VA table at every known function address (ScanCtx /
+        // exports / symbols). Same rule as PE export split in nucleus_analyze:
+        // interior entry E inside [S,End) becomes its own sub-span start so
+        // containing(E)==E and size = End-E (never move address to S).
+        {
+            std::vector<uint64_t> entries;
+            entries.reserve(sections.functions.size() + sections.known_functions.size());
+            for (const auto &fn: sections.functions) {
+                if (fn.address != 0) {
+                    entries.push_back(fn.address);
+                }
+            }
+            for (const auto &[name, fn]: sections.known_functions) {
+                (void) name;
+                if (fn && fn->address != 0) {
+                    entries.push_back(fn->address);
+                }
+            }
+            const size_t before = sections.function_table.size();
+            sections.function_table.split_at_known_entries(entries);
+            if (log && sections.function_table.size() != before) {
+                log->info("apply_nucleus_function_table: split {} -> {} spans at {} known entries ({})",
+                          before, sections.function_table.size(), entries.size(),
+                          sections.details.path);
+            }
+        }
 
         size_t sized = 0;
         for (auto &fn: sections.functions) {
             if (const FunctionSpan *sp = sections.function_table.span_containing(fn.address)) {
-                // Authoritative body size from Nucleus. Prefer full span when the
-                // known address is the entry; otherwise clamp to remaining body.
-                if (fn.address == sp->start) {
-                    fn.size = static_cast<size_t>(sp->end - sp->start);
-                } else {
-                    fn.size = static_cast<size_t>(sp->end - fn.address);
-                }
+                // Keep function address = E (export / known VA). Authoritative
+                // body size is remaining parent body: End - E. When E is already
+                // a span start (after split), that equals full sub-span length.
+                fn.size = static_cast<size_t>(sp->end - fn.address);
                 ++sized;
             } else {
                 // Drop residual ScanCtx / next-export / pdata sizes. Nucleus is the

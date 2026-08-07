@@ -140,20 +140,26 @@ static void test_table_containing_unit() {
   REQUIRE(t.span_containing(0x10ff) != nullptr);
   REQUIRE(t.span_containing(0x10ff)->end == 0x1100);
 
-  // Nested spans: large outer body wholly contains a later entry-point.
-  // Mirrors lua_yield [ad60,b5ae) covering lua_resume @ b4f0 when Nucleus
-  // has not emitted a dedicated resume span (old lookup returned null).
+  // Nested spans with a dedicated interior entry span.
   FunctionTable nested;
-  nested.add({0xad60, 0xb5ae}); // outer (e.g. lua_yield)
+  nested.add({0xad60, 0xb5ae}); // outer (e.g. pre-split yield body)
   nested.add({0xae30, 0xaf31}); // sibling inside outer
   nested.add({0xb4f0, 0xb54a}); // tight resume body
   REQUIRE(nested.containing(0xb4f0) == 0xb4f0);
   REQUIRE(nested.span_containing(0xb4f0)->end == 0xb54a);
+
+  // Export-aware split: interior export VAs become sub-span starts.
   FunctionTable only_outer;
   only_outer.add({0xad60, 0xb5ae});
   only_outer.add({0xae30, 0xaf31});
-  REQUIRE(only_outer.containing(0xb4f0) == 0xad60);
+  only_outer.split_at_known_entries({0xade0, 0xb4f0}); // yield, resume
+  REQUIRE(only_outer.containing(0xb4f0) == 0xb4f0);
+  REQUIRE(only_outer.span_containing(0xb4f0)->start == 0xb4f0);
   REQUIRE(only_outer.span_containing(0xb4f0)->end == 0xb5ae);
+  REQUIRE(only_outer.containing(0xade0) == 0xade0);
+  REQUIRE(only_outer.span_containing(0xade0)->end == 0xb4f0);
+  // Size for interior export E is End-E, not End-S.
+  REQUIRE(only_outer.span_containing(0xb4f0)->end - 0xb4f0 == 0xb5ae - 0xb4f0);
 }
 
 static void test_lua51_getstack_span() {
@@ -222,24 +228,43 @@ static void test_lua51_resume_containing() {
   }
   auto res = nucleus_analyze_file(path);
   REQUIRE(res.has_value());
-  const uint32_t exp_rva = pe_export_rva(path, "lua_resume");
-  REQUIRE(exp_rva != 0);
   uint64_t image_base = res->image_base;
   if (image_base == 0) {
     auto base = pe_image_base(path);
     REQUIRE(base.has_value());
     image_base = *base;
   }
-  const uint64_t resume_va = image_base + exp_rva;
-  auto *sp = res->table.span_containing(resume_va);
-  REQUIRE(sp != nullptr);
-  REQUIRE(resume_va >= sp->start);
-  REQUIRE(resume_va < sp->end);
+
+  const uint32_t resume_rva = pe_export_rva(path, "lua_resume");
+  const uint32_t yield_rva = pe_export_rva(path, "lua_yield");
+  REQUIRE(resume_rva != 0);
+  REQUIRE(yield_rva != 0);
+  REQUIRE(resume_rva != yield_rva);
+
+  const uint64_t resume_va = image_base + resume_rva;
+  const uint64_t yield_va = image_base + yield_rva;
+
+  auto *sp_resume = res->table.span_containing(resume_va);
+  auto *sp_yield = res->table.span_containing(yield_va);
+  REQUIRE(sp_resume != nullptr);
+  REQUIRE(sp_yield != nullptr);
+  // Export-aware split: each export is its own span start (not outer entry).
+  REQUIRE(sp_resume->start == resume_va);
+  REQUIRE(sp_yield->start == yield_va);
+  REQUIRE(sp_resume->start != sp_yield->start);
+  REQUIRE(resume_va < sp_resume->end);
+  REQUIRE(yield_va < sp_yield->end);
+
   std::printf("lua_resume: va=0x%llx entry=0x%llx end=0x%llx size=0x%llx\n",
               static_cast<unsigned long long>(resume_va),
-              static_cast<unsigned long long>(sp->start),
-              static_cast<unsigned long long>(sp->end),
-              static_cast<unsigned long long>(sp->end - sp->start));
+              static_cast<unsigned long long>(sp_resume->start),
+              static_cast<unsigned long long>(sp_resume->end),
+              static_cast<unsigned long long>(sp_resume->end - sp_resume->start));
+  std::printf("lua_yield: va=0x%llx entry=0x%llx end=0x%llx size=0x%llx\n",
+              static_cast<unsigned long long>(yield_va),
+              static_cast<unsigned long long>(sp_yield->start),
+              static_cast<unsigned long long>(sp_yield->end),
+              static_cast<unsigned long long>(sp_yield->end - sp_yield->start));
 }
 
 int main() {
