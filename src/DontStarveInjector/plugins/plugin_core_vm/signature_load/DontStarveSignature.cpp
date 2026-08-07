@@ -14,6 +14,7 @@
 #include "MemorySignature.hpp"
 #include "ctx.hpp"
 #include "ModuleSections.hpp"
+#include "FunctionRanges.hpp"
 #include "Signature.hpp"
 #include "SignatureJson.hpp"
 #include "missfunc.h"
@@ -292,6 +293,29 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
             spdlog::info("refix signature pattern offset: [{}]->[{}]", signature.pattern_offset, pattern_offset);
             signature.pattern_offset = pattern_offset;
         }
+#ifdef _WIN32
+        {
+            static thread_local std::vector<function_relocation::FuncRange> cached_ranges;
+            static thread_local const function_relocation::ModuleSections* cached_mod = nullptr;
+            if (cached_mod != &moduleMain) {
+                cached_ranges.clear();
+                (void)function_relocation::enumerate_function_ranges_win(moduleMain, cached_ranges);
+                cached_mod = &moduleMain;
+            }
+            if (const auto* range = function_relocation::find_range_containing(cached_ranges, target)) {
+                if (target != range->start) {
+                    // pattern may have matched mid-function or a stub still inside the range
+                    const auto pattern_address = target - signature.pattern_offset;
+                    const auto new_po = static_cast<intptr_t>(range->start) - static_cast<intptr_t>(pattern_address);
+                    spdlog::info("snap signature [{}] {} -> range start {} (pattern_offset {}->{})",
+                                 name, (void*)target, (void*)range->start,
+                                 signature.pattern_offset, new_po);
+                    signature.pattern_offset = new_po;
+                    target = range->start;
+                }
+            }
+        }
+#endif
         auto new_offset = target - targetLuaModuleBase;
         spdlog::info("update signatures [{}:{}]: {} to {}", name, (void *) target, old_offset, new_offset);
         signature.offset = new_offset;
