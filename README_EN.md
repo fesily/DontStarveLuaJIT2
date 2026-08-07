@@ -187,9 +187,7 @@ for i = 0, 255 do
 
 - Install `CMake` and `Ninja`
 - Copy `lua51.dll` to `src/x64/release/lua51.dll`
-- Download `frida-gum.lib` from [github/frida](https://github.com/frida). The name
-  should be like `frida-gum-devkit-16.2.1-windows-x86_64.exe`
-- Copy `frida-gum.lib` to `src/frida-gum/frida-gum.lib`
+- Build shared Frida-Gum via `python tools/setup_frida_gum.py` (or let CMake `setup_frida_gum()` stage it into `3rd/frida-gum/<plat>/`). Requires submodule `3rd/frida-gum-src` at `FRIDA_GUM_VERSION`.
 - In `CMakeLists.txt`, set variable `GAME_DIR` = your game dir
 - Build with cmake
 
