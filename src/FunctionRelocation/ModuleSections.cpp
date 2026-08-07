@@ -20,6 +20,7 @@
 #include "disasm.h"
 #include "ScanCtx.hpp"
 #include "config.hpp"
+#include "FunctionTable.hpp"
 #ifdef _WIN32
 #include <windows.h>
 #include <filesystem>
@@ -211,6 +212,60 @@ namespace function_relocation {
     uintptr_t
     ModuleSections::try_fix_func_address(const Function &original, SignatureInfo *signature, uintptr_t limit_address) {
         return (uintptr_t) fix_func_address_by_signature(*this, original, limit_address, signature);
+    }
+
+    bool apply_nucleus_function_table(ModuleSections &sections,
+                                      const FunctionTable &image_table,
+                                      uint64_t image_base) {
+        sections.function_table.clear();
+        auto log = spdlog::get(logger_name);
+        if (image_base == 0 || image_table.empty()) {
+            if (log) {
+                log->error("apply_nucleus_function_table: empty table or image_base=0 for {}",
+                           sections.details.path);
+            }
+            return false;
+        }
+
+        const auto process_base = sections.details.range.base_address;
+        // process_va = process_base + (image_va - image_base)
+        for (const auto &sp: image_table.spans()) {
+            if (sp.end <= sp.start) {
+                continue;
+            }
+            const uint64_t start = process_base + (sp.start - image_base);
+            const uint64_t end = process_base + (sp.end - image_base);
+            sections.function_table.add(FunctionSpan{start, end});
+        }
+
+        if (sections.function_table.empty()) {
+            if (log) {
+                log->error("apply_nucleus_function_table: remapped table empty for {}",
+                           sections.details.path);
+            }
+            return false;
+        }
+
+        size_t sized = 0;
+        for (auto &fn: sections.functions) {
+            if (const FunctionSpan *sp = sections.function_table.span_containing(fn.address)) {
+                // Authoritative body size from Nucleus. Prefer full span when the
+                // known address is the entry; otherwise clamp to remaining body.
+                if (fn.address == sp->start) {
+                    fn.size = static_cast<size_t>(sp->end - sp->start);
+                } else {
+                    fn.size = static_cast<size_t>(sp->end - fn.address);
+                }
+                ++sized;
+            }
+        }
+
+        if (log) {
+            log->info("apply_nucleus_function_table: {} spans, sized {}/{} functions ({})",
+                      sections.function_table.size(), sized, sections.functions.size(),
+                      sections.details.path);
+        }
+        return sized > 0;
     }
 
     size_t Function::consts_count() const {

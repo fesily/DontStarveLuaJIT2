@@ -18,6 +18,7 @@
 
 #include "MemorySignature.hpp"
 #include "ModuleSections.hpp"
+#include "FunctionTable.hpp"
 #include "ctx.hpp"
 #include "disasm.h"
 #include "config.hpp"
@@ -284,35 +285,114 @@ namespace function_relocation {
             return {signature, real_address};
         }
 
+        // Training scan: pattern_offset is relative to original entry (usually <= 0).
+        // Target scan: pattern_offset=0 raw matches, then resolve via target FunctionTable.
         void *scan_by_signature(const std::string &signature, int signature_offset, bool skip_check = false) {
+            if (!original || original->size == 0) {
+                if (auto logger = spdlog::get(logger_name)) {
+                    logger->error("scan_by_signature: original body size is 0 (need Nucleus sizes) for {}",
+                                  original ? original->name : "<null>");
+                }
+                return nullptr;
+            }
+
+            // Validate pattern uniqueness on training module against original entry.
             MemorySignature scan1{signature.c_str(), signature_offset, false};
             scan1.log = !nolog;
             scan1.scan(original->module->details.range.base_address, original->module->details.range.size);
             if (!skip_check && scan1.targets.size() != 1) return nullptr;
 
-            if (skip_check || scan1.target_address == original->address) {
-                MemorySignature scan{signature.c_str(), signature_offset, false};
-                scan.log = !nolog;
-                assert(limit_address > target->text.base_address);
-                scan.scan(limit_address, target->text.size - (limit_address - target->text.base_address));
-                void *target = 0;
-                if (scan.targets.size() == 1) target = (void *) scan.target_address;
-                else {
-                    auto targets =
-                            scan.targets | std::views::filter([this](auto addr) { return addr >= limit_address; }) |
-                            ranges::to<std::vector>();
-                    if (targets.size() == 1) target = (void *) targets[0];
-                    auto ptrs =
-                            scan.targets | std::views::transform([](auto v) { return reinterpret_cast<void *>(v); });
-                    function_address.insert(function_address.end(), ptrs.begin(), ptrs.end());
+            const auto training_hit = scan1.target_address;
+            // training MemorySignature already applied signature_offset to targets.
+            // Accept when the resolved address is the original entry.
+            if (!(skip_check || training_hit == original->address)) {
+                return nullptr;
+            }
+
+            // Training pattern bytes must live inside Nucleus body:
+            // match_addr = training_hit - signature_offset  (raw match start).
+            const intptr_t train_match =
+                    static_cast<intptr_t>(training_hit) - static_cast<intptr_t>(signature_offset);
+            if (train_match < static_cast<intptr_t>(original->address) ||
+                train_match >= static_cast<intptr_t>(original->address + original->size)) {
+                if (auto logger = spdlog::get(logger_name)) {
+                    logger->warn("scan_by_signature: training match {:#x} outside body [{:#x},{:#x})",
+                                 train_match, original->address, original->address + original->size);
                 }
-                if (target && signature_info) {
-                    signature_info->pattern = signature;
-                    signature_info->pattern_offset = signature_offset;
-                    return target;
+                return nullptr;
+            }
+
+            if (target->function_table.empty()) {
+                if (auto logger = spdlog::get(logger_name)) {
+                    logger->error("scan_by_signature: target FunctionTable empty; run apply_nucleus_function_table");
+                }
+                return nullptr;
+            }
+
+            // Target: raw pattern matches (offset 0), resolve entry via containing().
+            MemorySignature scan{signature.c_str(), /*pattern_offset=*/0, false};
+            scan.log = !nolog;
+            assert(limit_address > target->text.base_address);
+            scan.scan(limit_address, target->text.size - (limit_address - target->text.base_address));
+
+            std::vector<uintptr_t> raw_matches = scan.targets;
+            if (raw_matches.empty()) {
+                // Also collect from full-text scan fallback? stick to limit window.
+                return nullptr;
+            }
+
+            // Keep matches that fall in a known target function at/after limit.
+            std::vector<std::pair<uintptr_t, uint64_t>> resolved; // match, entry
+            for (auto match: raw_matches) {
+                if (match < limit_address) continue;
+                const uint64_t entry = target->function_table.containing(match);
+                if (entry == 0) continue;
+                if (entry < limit_address) continue;
+                resolved.emplace_back(match, entry);
+            }
+
+            if (resolved.empty()) {
+                // Record raw matches for LCS fallback path (as process VAs of match sites).
+                auto ptrs = raw_matches | std::views::transform([](auto v) {
+                    return reinterpret_cast<void *>(v);
+                });
+                function_address.insert(function_address.end(), ptrs.begin(), ptrs.end());
+                return nullptr;
+            }
+
+            // Require a unique entry among resolved matches.
+            uint64_t unique_entry = resolved.front().second;
+            uintptr_t unique_match = resolved.front().first;
+            bool unique = true;
+            for (size_t i = 1; i < resolved.size(); ++i) {
+                if (resolved[i].second != unique_entry) {
+                    unique = false;
+                    break;
+                }
+                // Prefer the earliest match for the same entry.
+                if (resolved[i].first < unique_match) {
+                    unique_match = resolved[i].first;
                 }
             }
-            return nullptr;
+
+            if (!unique) {
+                // Ambiguous entries — keep candidates for LCS fallback.
+                for (const auto &[match, entry]: resolved) {
+                    (void)match;
+                    function_address.push_back(reinterpret_cast<void *>(entry));
+                }
+                return nullptr;
+            }
+
+            // Target-local pattern_offset only: entry - match.
+            const int target_po =
+                    static_cast<int>(static_cast<intptr_t>(unique_entry) - static_cast<intptr_t>(unique_match));
+            last_training_offset = signature_offset;
+            if (signature_info) {
+                signature_info->pattern = signature;
+                signature_info->pattern_offset = target_po;
+            }
+            return reinterpret_cast<void *>(unique_entry);
         }
 
         static auto trim(std::string s) {
@@ -326,17 +406,79 @@ namespace function_relocation {
         }
 
         void *scan_by_block(ModuleSections *section, CodeBlock *block) {
+            if (!original || original->size == 0) {
+                if (auto logger = spdlog::get(logger_name)) {
+                    logger->error("scan_by_block: original->size==0 for {}; refusing to invent body",
+                                  original ? original->name : "<null>");
+                }
+                return nullptr;
+            }
+
+            const uint64_t body_begin = original->address;
+            const uint64_t body_end = original->address + original->size; // exclusive
+
+            // Reject blocks that do not overlap the Nucleus body at all.
+            if (block->address >= body_end || block->address + block->size <= body_begin) {
+                return nullptr;
+            }
+
+            // Clamp the block window to [body_begin, body_end).
+            const uint64_t clamped_addr = std::max<uint64_t>(block->address, body_begin);
+            const uint64_t clamped_end = std::min<uint64_t>(block->address + block->size, body_end);
+            if (clamped_end <= clamped_addr) {
+                return nullptr;
+            }
+            const size_t clamped_size = static_cast<size_t>(clamped_end - clamped_addr);
+
+            // Insn count for the clamped window: scale when we clipped the start.
+            size_t start_skip_insns = 0;
+            if (clamped_addr > block->address && block->size > 0 && block->insn_count > 0) {
+                const double ratio =
+                        static_cast<double>(clamped_addr - block->address) / static_cast<double>(block->size);
+                start_skip_insns = static_cast<size_t>(ratio * static_cast<double>(block->insn_count));
+                if (start_skip_insns >= block->insn_count) {
+                    start_skip_insns = block->insn_count - 1;
+                }
+            }
+            const int max_insns = static_cast<int>(block->insn_count - start_skip_insns);
+            if (max_insns <= 1) {
+                return nullptr;
+            }
+
             std::string signature;
             int signature_offset;
-            for (int limit = block->insn_count; limit > 1; --limit) {
-                for (int offset = block->insn_count - limit; offset >= 0; --offset) {
-                    const auto [s, real_address] = create_signature(section, (uint8_t *) block->address, block->size,
-                                                                    limit, offset);
+            for (int limit = max_insns; limit > 1; --limit) {
+                for (int offset = max_insns - limit; offset >= 0; --offset) {
+                    // create_signature starts at clamped_addr — offset is relative to that base.
+                    const auto [s, real_address] = create_signature(
+                            section, reinterpret_cast<uint8_t *>(clamped_addr), clamped_size,
+                            static_cast<size_t>(limit), offset);
+
+                    // real_address is the first byte of the kept pattern window.
+                    if (real_address < body_begin || real_address >= body_end) {
+                        continue;
+                    }
+
                     signature = trim(s.to_string(false));
-                    assert(real_address >= original->address);
-                    signature_offset = static_cast<int>(-(static_cast<intptr_t>(real_address) -
-                                                          static_cast<intptr_t>(original->address)));
-                    if (auto ptr = scan_by_signature(signature, signature_offset); ptr) return ptr;
+                    if (signature.empty()) {
+                        continue;
+                    }
+
+                    // Training signature_offset: entry - real_address (usually negative).
+                    signature_offset = static_cast<int>(
+                            static_cast<intptr_t>(original->address) -
+                            static_cast<intptr_t>(real_address));
+
+                    // Training offset must not step outside body when applied to entry.
+                    // match = entry - signature_offset = real_address (already checked).
+                    // Also ensure the resolved training address (entry) is inside body.
+                    if (!original->in_function(original->address)) {
+                        continue;
+                    }
+
+                    if (auto ptr = scan_by_signature(signature, signature_offset); ptr) {
+                        return ptr;
+                    }
                 }
             }
             return nullptr;
@@ -351,15 +493,17 @@ namespace function_relocation {
                 Creator* self;
             } scope{this};
             std::string &signature = signature_info->pattern;
-            int &signature_offset = signature_info->pattern_offset;
             if (signature.size() <= 8 * 2 + 7)
                 return true;
+            // Shorten using training-module offset (byte units). Target-local po is
+            // rewritten by scan_by_signature on each successful candidate.
+            const int train_po = last_training_offset;
             for (size_t length = 8 * 2 + 7; length < signature.size(); length += 3) {
-                auto begin = 0;
-                for (; begin < length; begin += 3) {
+                for (size_t begin = 0; begin < length; begin += 3) {
                     auto new_s = trim(signature.substr(begin, length));
-                    assert(signature_offset <= 0);
-                    const auto offset = signature_offset - begin;
+                    // begin is hex-string index ("xx " * n); convert to byte offset.
+                    const int byte_begin = static_cast<int>(begin / 3);
+                    const int offset = train_po - byte_begin;
                     if (scan_by_signature(new_s, offset)) {
                         return true;
                     }
@@ -375,8 +519,10 @@ namespace function_relocation {
 
         std::vector<void *> function_address;
 
-        bool nolog;
-
+        bool nolog = false;
+        // Last training-module pattern_offset used for validation (entry - match).
+        // Distinct from signature_info->pattern_offset which is target-local after resolve.
+        int last_training_offset = 0;
     };
 
 
