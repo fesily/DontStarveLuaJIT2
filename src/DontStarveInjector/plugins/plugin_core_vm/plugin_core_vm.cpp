@@ -130,8 +130,8 @@ void replace_game_branch_flag_to_dev(const std::string &mainPath) {
         interceptor,
         reinterpret_cast<void *>(target),
         reinterpret_cast<void *>(&forced_get_build_type),
-        nullptr,
-        reinterpret_cast<void **>(&original_get_build_type));
+        reinterpret_cast<void **>(&original_get_build_type),
+        nullptr);
     if (replace_result != GUM_REPLACE_OK) {
         spdlog::error("failed to replace GetBuildType at {}: {}",
                       reinterpret_cast<void *>(target), static_cast<int>(replace_result));

@@ -289,8 +289,8 @@ static bool installPoolHooks() {
             interceptor,
             reinterpret_cast<void*>(HWBufferInit_sig.target_address),
             reinterpret_cast<void*>(static_cast<void (*)(void*, const void*)>(&hooked_HWBufferInit)),
-            nullptr,
-            reinterpret_cast<void**>(&original_HWBufferInit));
+            reinterpret_cast<void**>(&original_HWBufferInit),
+            nullptr);
         if (r == GUM_REPLACE_OK) {
             spdlog::info("[RenderHook] hooked HWBuffer::Init at {:#x}", HWBufferInit_sig.target_address);
             initOk = true;
@@ -306,8 +306,8 @@ static bool installPoolHooks() {
             interceptor,
             reinterpret_cast<void*>(HWBufferDtor_sig.target_address),
             reinterpret_cast<void*>(static_cast<void (*)(void*)>(&hooked_HWBufferDtor)),
-            nullptr,
-            reinterpret_cast<void**>(&original_HWBufferDtor));
+            reinterpret_cast<void**>(&original_HWBufferDtor),
+            nullptr);
         if (r == GUM_REPLACE_OK) {
             spdlog::info("[RenderHook] hooked HWBuffer::~HWBuffer at {:#x}", HWBufferDtor_sig.target_address);
             dtorOk = true;
@@ -368,8 +368,8 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable) {
                     interceptor,
                     reinterpret_cast<void*>(BatcherFlush_sig.target_address),
                     reinterpret_cast<void*>(&hooked_BatcherFlush),
-                    nullptr,
-                    reinterpret_cast<void**>(&original_BatcherFlush));
+                    reinterpret_cast<void**>(&original_BatcherFlush),
+                    nullptr);
                 if (r == GUM_REPLACE_OK)
                     spdlog::info("[RenderHook] hooked Batcher::Flush at {:#x}", BatcherFlush_sig.target_address);
                 else

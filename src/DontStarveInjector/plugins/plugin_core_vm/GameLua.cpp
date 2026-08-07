@@ -197,7 +197,20 @@ struct GameLuaInjectorFramework {
         } else {
             ctx->_lua_pushnil(L);
         }
-        ctx->_lua_pcall(L, 2, 0, 0);
+        // args: spdlog table + native_getenv; chunk sets global GameLuaInjector
+        if (ctx->_lua_pcall(L, 2, 0, 0) != LUA_OK) {
+            const char *err = ctx->_lua_tostring(L, -1);
+            spdlog::error("GameLuaInjectFramework pcall failed: {}", err ? err : "?");
+            ctx->_lua_pop(L, 1);
+            return;
+        }
+        ctx->_lua_getglobal(L, GameLuaInjectorName);
+        const bool ok = ctx->_lua_istable(L, -1) != 0;
+        ctx->_lua_pop(L, 1);
+        if (!ok) {
+            spdlog::error("GameLuaInjector global is not a table after framework init");
+            return;
+        }
     }
 
     void forceEnabledLuaMod(GameLuaContext &ctx, lua_State *L, const std::string_view &modname) {
@@ -440,15 +453,21 @@ struct GameLuaContextImpl : GameLuaContext {
         HOOK_LUA_API(luaL_loadbuffer) + [](lua_State *L, const char *buff, size_t size, const char *name) {
             auto &ctx = *currentCtx;
             if (name == "@scripts/main.lua"sv) {
-                ctx->_luaL_dostring(L, GameLuaInjectorName ".init()");
-                // load custom main.lua script
+                if (ctx->_luaL_dostring(L, GameLuaInjectorName ".init()") != LUA_OK) {
+                    const char *err = ctx->_lua_tostring(L, -1);
+                    spdlog::error("GameLuaInjector.init failed: {}", err ? err : "?");
+                    if (err) {
+                        ctx->_lua_pop(L, 1);
+                    }
+                }
                 int top = ctx->_lua_gettop(L);
                 auto new_buffer = wrapper_game_main_buffer(L, {buff, size});
                 assert(ctx->_lua_gettop(L) == top);
                 if (new_buffer.empty()) {
                     return ctx->_luaL_loadbuffer(L, buff, size, name);
                 }
-                return ctx->_luaL_loadbuffer(L, new_buffer.c_str(), new_buffer.size(), new_buffer.c_str());
+                // Keep original chunk name; do not use new_buffer.c_str() as name.
+                return ctx->_luaL_loadbuffer(L, new_buffer.c_str(), new_buffer.size(), name);
             }
             return ctx->_luaL_loadbuffer(L, buff, size, name);
         };
@@ -461,24 +480,67 @@ struct GameLuaContextImpl : GameLuaContext {
             if (UseGameIO() && name == "luaopen_io"sv) {
                 continue;
             }
+            // Only APIs resolvable in the loaded LuaJIT module. Hook(null) AVs.
+            if (GetLuaExport(name) == nullptr) {
+                spdlog::warn("skip replace {}: no export in loaded Lua module", name);
+                continue;
+            }
             hookTargets.emplace_back(&name);
         }
 
         std::list<uint8_t *> hookeds;
+        size_t skipped = 0;
         for (auto *_name: hookTargets) {
             auto &name = *_name;
             auto offset = signatures.funcs.at(name).offset;
             auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
+            // Signature scan can land on a 5-byte stub just before the real
+            // lua_getstack (`movzx eax,[rcx+imm]; ret` + INT3 pad). Hook the body.
+            if (name == "lua_getstack"sv &&
+                target[0] == 0x0f && target[1] == 0xb6 && target[4] == 0xc3) {
+                spdlog::warn("lua_getstack signature hit 5-byte stub at {}; advancing +0x20",
+                             (void *) target);
+                target += 0x20;
+            }
+            // Trust signature JSON for lua_getinfo. Wrong offsets must be fixed
+            // in signatures_*.json — no runtime retarget scan.
+            if (name == "lua_getinfo"sv) {
+                bool has_gt = false;
+                for (int k = 0; k < 0x40; ++k) {
+                    if (target[k] == 0x80 && target[k + 1] == 0x3a && target[k + 2] == 0x3e) {
+                        has_gt = true;
+                        break;
+                    }
+                }
+                if (!has_gt) {
+                    spdlog::error("lua_getinfo signature at {} lacks what[0]=='>' check; skip hook "
+                                  "(fix signatures_client.json offset/pattern)",
+                                  (void *) target);
+                    ++skipped;
+                    continue;
+                }
+            }
             auto replacer = (uint8_t *) GetLuaExport(name);
+            if (replacer == nullptr) {
+                spdlog::error("replace {} aborted: null replacer", name);
+                break;
+            }
             if (!Hook(target, replacer)) {
                 spdlog::error("replace {} failed", name);
                 break;
             }
             hookeds.emplace_back(target);
-            spdlog::info("replace {}: {} to {}", name, (void *) target, (void *) replacer);
+            // Verify trampoline (12-byte mov rax,imm64; jmp rax) actually landed.
+            const auto *b = reinterpret_cast<const uint8_t *>(target);
+            const bool looks_hooked = (b[0] == 0x48 && b[1] == 0xB8 && b[10] == 0xFF && b[11] == 0xE0);
+            if (!looks_hooked) {
+                spdlog::error("replace {} wrote but bytes not hooked at {}", name, (void *) target);
+            } else {
+                spdlog::info("replace {}: {} to {}", name, (void *) target, (void *) replacer);
+            }
         }
 
-        if (hookeds.size() != hookTargets.size()) {
+        if (hookeds.size() + skipped != hookTargets.size()) {
             for (auto target: hookeds) {
                 ResetHook(target);
             }
@@ -879,7 +941,7 @@ struct GameLuaContextGame : GameLua51Context {
                 return false;
             }
             void *original = nullptr;
-            if (gum_interceptor_replace(interceptor, *api, newaddr, nullptr, (void **) &original) == GumReplaceReturn::GUM_REPLACE_OK) {
+            if (gum_interceptor_replace(interceptor, *api, newaddr, (void **) &original, nullptr) == GumReplaceReturn::GUM_REPLACE_OK) {
                 *api = original;
                 spdlog::info("Replaced game lua api {}: {} to {}", name, (void *) original, (void *) newaddr);
             }
@@ -1272,8 +1334,13 @@ static std::string wrapper_game_main_buffer(lua_State *L, std::string_view buffe
         return std::string(buffer);
     }
 
-    // - lua code
-    std::string before_code = "DBG=1;";
+    // DBG=1 forces game debug APIs (getstack/getlocal via CallInfo). Those walk
+    // L->ci/base_ci which do not exist on LuaJIT states and AV at LOADING LUA.
+    // Only enable when lua debugger is explicitly requested.
+    std::string before_code;
+    if (InjectorConfig::instance()->enable_lua_debugger) {
+        before_code = "DBG=1;";
+    }
     std::string before_injector_code;
     auto ictx = InjectorCtx::instance();
     bool default_before_code = !ictx->config.GameInjectorNoDefaultBeforeCode;
@@ -1358,7 +1425,8 @@ static std::string wrapper_game_main_buffer(lua_State *L, std::string_view buffe
     auto &ctx = *GameLuaContextImpl::currentCtx;
     ctx->_lua_getglobal(L, GameLuaInjectorName);
     if (!ctx->_lua_istable(L, -1)) {
-        spdlog::error(GameLuaInjectorName " is not a table, cannot inject scripts");
+        const int ty = ctx->_lua_type(L, -1);
+        spdlog::error(GameLuaInjectorName " is not a table (lua_type={}), cannot inject scripts", ty);
         ctx->_lua_pop(L, 1);
         return {};
     }

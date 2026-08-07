@@ -400,8 +400,8 @@ void GameNetworkSimInstallHook(GumInterceptor* interceptor) {
             interceptor,
             reinterpret_cast<void*>(send_sig.target_address),
             reinterpret_cast<void*>(&hooked_SendBitStream),
-            nullptr,
-            reinterpret_cast<void**>(&original_SendBitStream));
+            reinterpret_cast<void**>(&original_SendBitStream),
+            nullptr);
         if (r == GUM_REPLACE_OK) {
             spdlog::info("[NetSim] hooked SendBitStream at {:x}",
                          send_sig.target_address);
@@ -459,8 +459,8 @@ void GameNetworkSimInstallHook(GumInterceptor* interceptor) {
             interceptor,
             reinterpret_cast<void*>(dtor_sig.target_address),
             reinterpret_cast<void*>(&hooked_ReliabilityLayerDtor),
-            nullptr,
-            reinterpret_cast<void**>(&original_ReliabilityLayerDtor));
+            reinterpret_cast<void**>(&original_ReliabilityLayerDtor),
+            nullptr);
         if (r == GUM_REPLACE_OK) {
             spdlog::info("[NetSim] hooked ~ReliabilityLayer at {:x}",
                          dtor_sig.target_address);
