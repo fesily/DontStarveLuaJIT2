@@ -99,3 +99,25 @@ rg training_body_end|0x1000|next_export src/FunctionRelocation/Signature.cpp
 - Rebuild full `signature_updater` against worktree sources and regenerate `signatures_*.json`.
 - Verify getstack entry bytes are body prologue (`4c 8b 49 28…`), not stub.
 - Optional pdata cross-check log only (do not override Nucleus).
+
+## Fix: Important review findings
+
+**Date:** 2026-08-07  
+**Commit message:** `fix(signature): zero residual sizes; refuse LCS with FunctionTable`
+
+### Findings fixed
+
+| # | Severity | Finding | Fix |
+|---|----------|---------|-----|
+| 1 | P1 | `apply_nucleus_function_table` left ScanCtx/next-export sizes when no Nucleus span hit | Always set `fn.size = 0` when `span_containing` misses; scan paths already refuse size 0 |
+| 2 | P1 | LCS fallback could return entry while keeping training `pattern_offset` | When `target.function_table` is non-empty, refuse LCS and return null; legacy LCS (no table) forces `pattern_offset = 0` |
+
+### Verification
+
+```text
+cmake --build builds/ninja-nucleus --config RelWithDebInfo \
+  --target function_relocation_static test_nucleus_adapter test_signature_body_link -j 8
+ctest --test-dir builds/ninja-nucleus -C RelWithDebInfo --output-on-failure
+# 1/2 nucleus_adapter ........ Passed (getstack size=0x7a)
+# 2/2 signature_body_link .... Passed (residual size cleared to 0)
+```

@@ -257,6 +257,10 @@ namespace function_relocation {
                     fn.size = static_cast<size_t>(sp->end - fn.address);
                 }
                 ++sized;
+            } else {
+                // Drop residual ScanCtx / next-export / pdata sizes. Nucleus is the
+                // sole body authority — no span means size 0 (scan paths refuse it).
+                fn.size = 0;
             }
         }
 

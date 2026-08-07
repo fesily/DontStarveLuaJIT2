@@ -651,6 +651,21 @@ namespace function_relocation {
         assert(false);
         return nullptr;
 #else
+        // LCS is a last-resort heuristic that compares entry-aligned asm windows.
+        // When a target FunctionTable is present, signatures must come from
+        // scan_by_block/scan_by_signature so pattern_offset is target-local.
+        // Accepting LCS would return an entry (or raw match site) without rewriting
+        // training pattern_offset — forbidden under the Nucleus contract.
+        if (!target.function_table.empty()) {
+            if (auto logger = spdlog::get(logger_name)) {
+                logger->error(
+                        "fix_func_address_by_signature: no block signature for {}; "
+                        "refusing LCS while FunctionTable is present",
+                        original.name);
+            }
+            return nullptr;
+        }
+
         auto &function_address = creator.function_address;
         if (function_address.empty() && !target.functions.empty()) {
             const auto ptrs = target.functions |
@@ -675,7 +690,14 @@ namespace function_relocation {
             const auto target_s = get_signature_cache(creator, fix_target);
             if (!target_s) continue;
             const auto max = longestCommonSubstring(original_s.asm_codes, target_s->asm_codes);
-            if (max == original_s.size()) return fix_target;
+            if (max == original_s.size()) {
+                // Legacy path only (no FunctionTable): still force pattern_offset=0 so
+                // callers cannot treat a training offset as target geometry.
+                if (signature) {
+                    signature->pattern_offset = 0;
+                }
+                return fix_target;
+            }
             if (max > maybe_target_count) {
                 maybe_target_count = max;
                 maybe_target_addr = fix_target;
@@ -685,6 +707,9 @@ namespace function_relocation {
             OUTPUT_SIGNATURE((void *) original.address, original_s.to_string());
             fprintf(stderr, "maybe target:\n");
             OUTPUT_SIGNATURE(maybe_target_addr, get_signature_cache(creator, maybe_target_addr)->to_string());
+            if (signature) {
+                signature->pattern_offset = 0;
+            }
             return maybe_target_addr;
         }
         OUTPUT_SIGNATURE((void *) original.address, original_s.to_string());
