@@ -44,10 +44,9 @@ EXPORTS
     cs_support
     cs_version
     cs_vsnprintf
+    g_error_free
     gum_address_get_type
     gum_address_spec_is_satisfied_by
-    gum_alloc_n_pages
-    gum_alloc_n_pages_near
     gum_api_resolver_enumerate_matches
     gum_api_resolver_get_type
     gum_api_resolver_make
@@ -119,8 +118,10 @@ EXPORTS
     gum_arm64_writer_put_mov_nzcv_reg
     gum_arm64_writer_put_mov_reg_nzcv
     gum_arm64_writer_put_mov_reg_reg
+    gum_arm64_writer_put_movk_reg_imm
     gum_arm64_writer_put_mrs
     gum_arm64_writer_put_nop
+    gum_arm64_writer_put_pacia_reg_reg
     gum_arm64_writer_put_pop_all_q_registers
     gum_arm64_writer_put_pop_all_x_registers
     gum_arm64_writer_put_pop_reg_reg
@@ -231,7 +232,6 @@ EXPORTS
     gum_arm_writer_skip
     gum_arm_writer_unref
     gum_asprintf
-    gum_attach_flags_get_type
     gum_attach_return_get_type
     gum_backtracer_generate
     gum_backtracer_generate_with_limit
@@ -281,8 +281,24 @@ EXPORTS
     gum_code_slice_get_type
     gum_code_slice_ref
     gum_code_slice_unref
+    gum_control_flow_graph_dominates
+    gum_control_flow_graph_enumerate_dominating_sites
+    gum_control_flow_graph_find_block_containing
+    gum_control_flow_graph_find_instruction_containing
+    gum_control_flow_graph_free
+    gum_control_flow_graph_get_block_bounds
+    gum_control_flow_graph_get_block_immediate_dominator
+    gum_control_flow_graph_get_block_predecessors
+    gum_control_flow_graph_get_block_successors
+    gum_control_flow_graph_get_entry_block
+    gum_control_flow_graph_get_num_blocks
+    gum_control_flow_graph_new
+    gum_control_flow_graph_new_for_function
+    gum_cpu_context_copy
+    gum_cpu_context_free
     gum_cpu_context_get_nth_argument
     gum_cpu_context_get_return_value
+    gum_cpu_context_get_type
     gum_cpu_context_replace_nth_argument
     gum_cpu_context_replace_return_value
     gum_cpu_type_get_type
@@ -371,11 +387,17 @@ EXPORTS
     gum_elf_module_translate_to_offline
     gum_elf_module_translate_to_online
     gum_elf_osabi_get_type
+    gum_elf_section_details_get_type
+    gum_elf_section_details_ref
+    gum_elf_section_details_unref
     gum_elf_section_flags_get_type
     gum_elf_section_type_get_type
     gum_elf_shdr_index_get_type
     gum_elf_source_mode_get_type
     gum_elf_symbol_bind_get_type
+    gum_elf_symbol_details_copy
+    gum_elf_symbol_details_free
+    gum_elf_symbol_details_get_type
     gum_elf_symbol_type_get_type
     gum_elf_type_get_type
     gum_elf_x64_relocation_get_type
@@ -395,18 +417,18 @@ EXPORTS
     gum_exceptor_backend_get_type
     gum_exceptor_backend_new
     gum_exceptor_catch
-    gum_exceptor_disable
     gum_exceptor_get_type
     gum_exceptor_has_scope
+    gum_exceptor_mode_get_type
     gum_exceptor_obtain
     gum_exceptor_remove
     gum_exceptor_reset
+    gum_exceptor_set_mode
     gum_export_type_get_type
     gum_find_function
     gum_find_functions_matching
     gum_find_functions_named
     gum_free
-    gum_free_pages
     gum_heap_api_list_add
     gum_heap_api_list_copy
     gum_heap_api_list_free
@@ -421,6 +443,8 @@ EXPORTS
     gum_interceptor_detect_hook_size
     gum_interceptor_end_transaction
     gum_interceptor_flush
+    gum_interceptor_flush_function
+    gum_interceptor_flush_listener
     gum_interceptor_get_current_invocation
     gum_interceptor_get_current_stack
     gum_interceptor_get_live_replacement_invocation
@@ -435,6 +459,8 @@ EXPORTS
     gum_interceptor_restore
     gum_interceptor_revert
     gum_interceptor_save
+    gum_interceptor_scenario_get_type
+    gum_interceptor_set_default_options
     gum_interceptor_unignore_current_thread
     gum_interceptor_unignore_other_threads
     gum_interceptor_with_lock_held
@@ -456,6 +482,7 @@ EXPORTS
     gum_invocation_context_get_thread_id
     gum_invocation_context_replace_nth_argument
     gum_invocation_context_replace_return_value
+    gum_invocation_ignorability_get_type
     gum_invocation_listener_get_type
     gum_invocation_listener_on_enter
     gum_invocation_listener_on_leave
@@ -500,6 +527,7 @@ EXPORTS
     gum_memory_decommit
     gum_memory_discard
     gum_memory_dispose_writable_pages
+    gum_memory_find_pointers
     gum_memory_free
     gum_memory_is_readable
     gum_memory_map_contains
@@ -649,6 +677,7 @@ EXPORTS
     gum_module_registry_get_type
     gum_module_registry_lock
     gum_module_registry_obtain
+    gum_module_registry_set_rtld_notifier_offsets
     gum_module_registry_unlock
     gum_mprotect
     gum_native_module_get_type
@@ -662,9 +691,11 @@ EXPORTS
     gum_process_enumerate_modules
     gum_process_enumerate_ranges
     gum_process_enumerate_threads
+    gum_process_find_function_range
     gum_process_find_heap_apis
     gum_process_find_module_by_address
     gum_process_find_module_by_name
+    gum_process_find_thread_by_id
     gum_process_get_code_signing_policy
     gum_process_get_current_thread_id
     gum_process_get_id
@@ -679,7 +710,6 @@ EXPORTS
     gum_process_set_teardown_requirement
     gum_query_cpu_features
     gum_query_is_rwx_supported
-    gum_query_page_allocation_range
     gum_query_page_size
     gum_query_ptrauth_support
     gum_query_rwx_support
@@ -688,6 +718,8 @@ EXPORTS
     gum_realloc
     gum_recover_from_fork_in_child
     gum_recover_from_fork_in_parent
+    gum_redirect_write_result_get_type
+    gum_relocation_policy_get_type
     gum_replace_return_get_type
     gum_return_address_array_is_equal
     gum_return_address_details_from_address
@@ -701,7 +733,6 @@ EXPORTS
     gum_spinlock_release
     gum_spinlock_try_acquire
     gum_stalker_activate
-    gum_stalker_activate_experimental_unwind_support
     gum_stalker_add_call_probe
     gum_stalker_backpatch_get_from
     gum_stalker_backpatch_get_to
@@ -891,9 +922,19 @@ EXPORTS
     gum_tls_key_get_value
     gum_tls_key_new
     gum_tls_key_set_value
-    gum_try_alloc_n_pages
-    gum_try_alloc_n_pages_near
     gum_try_mprotect
+    gum_unwind_broker_add_pc_translator
+    gum_unwind_broker_add_sections_provider
+    gum_unwind_broker_get_type
+    gum_unwind_broker_obtain
+    gum_unwind_broker_remove_pc_translator
+    gum_unwind_broker_remove_sections_provider
+    gum_unwind_pc_translator_get_type
+    gum_unwind_pc_translator_install_resume_context
+    gum_unwind_pc_translator_translate
+    gum_unwind_sections_provider_fill
+    gum_unwind_sections_provider_get_range
+    gum_unwind_sections_provider_get_type
     gum_vasprintf
     gum_vsnprintf
     gum_watch_conditions_get_type
@@ -988,6 +1029,8 @@ EXPORTS
     gum_x86_writer_put_jmp_reg_offset_ptr
     gum_x86_writer_put_jmp_reg_ptr
     gum_x86_writer_put_jmp_short_label
+    gum_x86_writer_put_kmovq_kreg_reg_offset_ptr
+    gum_x86_writer_put_kmovq_reg_offset_ptr_kreg
     gum_x86_writer_put_label
     gum_x86_writer_put_lahf
     gum_x86_writer_put_lea_reg_reg_offset
@@ -1050,6 +1093,10 @@ EXPORTS
     gum_x86_writer_put_test_reg_reg
     gum_x86_writer_put_test_reg_u32
     gum_x86_writer_put_u8
+    gum_x86_writer_put_vextracti64x4_reg_offset_ptr_zmm
+    gum_x86_writer_put_vinserti64x4_zmm_reg_offset_ptr
+    gum_x86_writer_put_vmovdqu64_reg_offset_ptr_zmm
+    gum_x86_writer_put_vmovdqu64_zmm_reg_offset_ptr
     gum_x86_writer_put_xchg_reg_reg_ptr
     gum_x86_writer_put_xor_reg_reg
     gum_x86_writer_ref
@@ -1057,4 +1104,3 @@ EXPORTS
     gum_x86_writer_set_target_abi
     gum_x86_writer_set_target_cpu
     gum_x86_writer_unref
-    g_error_free

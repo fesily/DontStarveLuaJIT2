@@ -20,7 +20,7 @@ elseif (APPLE)
 endif ()
 include(cmake/GameDir.cmake OPTIONAL)
 enable_testing()
-set(FRIDA_GUM_VERSION "17.5.1")
+set(FRIDA_GUM_VERSION "17.17.0")
 set(VCPKG_INSTALL_OPTION "${VCPKG_INSTALL_OPTION} --x-abi-tools-use-exact-versions")
 
 file(REAL_PATH ${GAME_DIR} GAME_DIR)

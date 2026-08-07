@@ -16,7 +16,7 @@ Scope: replace static frida-gum devkit + Injector re-export with a source-built 
 ### Invariants
 
 - Exactly one Gum + capstone implementation in the game process. Never a second static/shared copy in a plugin.
-- Pin version via `FRIDA_GUM_VERSION` (currently `17.5.1`) and a matching git submodule tag.
+- Pin version via `FRIDA_GUM_VERSION` (currently `17.17.0`) and a matching git submodule tag.
 - Runtime shared object installs to **`Mod/deps/`** (same layout as other third-party shared deps). Existing `AddDllDirectory(mod/deps)` / `$ORIGIN/deps` search paths remain the resolution mechanism.
 - Windows first; Linux/macOS use the **same** stage layout and direct-link model (removes the current “Injector re-export unimplemented → skip gum plugins” gate).
 
@@ -45,7 +45,7 @@ Rationale: B reuses the already-validated export surface (`FridaGum.def`: 1013 `
 
 ### 3.1 Submodule
 
-- Add git submodule: `3rd/frida-gum-src` → `https://github.com/frida/frida-gum`, pinned to tag matching `FRIDA_GUM_VERSION` (e.g. `17.5.1`).
+- Add git submodule: `3rd/frida-gum-src` → `https://github.com/frida/frida-gum`, pinned to tag matching `FRIDA_GUM_VERSION` (e.g. `17.17.0`).
 - Existing path `3rd/frida-gum/` stops holding downloaded static devkits. It becomes the **stage output** tree (still gitignored under `3rd/.gitignore`).
 
 ### 3.2 Stage layout
@@ -172,5 +172,6 @@ After this spec is accepted, produce a phased plan via the writing-plans skill:
 ## Implementation status
 
 - Implemented: Approach B shared shell + Frida::Gum consumers (see plan 2026-08-07-frida-gum-shared-from-source.md).
+- Version pin: `17.17.0` (latest frida-gum / frida release as of 2026-08-07).
 - Residual: full meson CI cache; Approach A evaluation deferred.
 

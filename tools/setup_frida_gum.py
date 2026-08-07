@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_VERSION = "17.5.1"
+DEFAULT_VERSION = "17.17.0"
 DEFAULT_SOURCE = ROOT / "3rd" / "frida-gum-src"
 STAGE_ROOT = ROOT / "3rd" / "frida-gum"
 DEF_PATH = ROOT / "tools" / "frida" / "FridaGum.def"
