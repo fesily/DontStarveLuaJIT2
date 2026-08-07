@@ -35,6 +35,8 @@ namespace function_relocation {
 
         std::unordered_map<uintptr_t, size_t> sureFunctions;
         std::unordered_map<uintptr_t, size_t> rodatas;
+        std::unordered_map<uintptr_t, size_t> authoritative_sizes; // start -> size from pdata
+
 
         std::vector<uintptr_t> pre_function();
 

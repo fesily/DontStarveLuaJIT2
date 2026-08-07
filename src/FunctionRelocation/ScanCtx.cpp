@@ -1,4 +1,7 @@
 #include "ScanCtx.hpp"
+#include "FunctionRanges.hpp"
+#include <spdlog/spdlog.h>
+
 
 #include <stdio.h>
 #include <unordered_set>
@@ -318,26 +321,22 @@ namespace function_relocation {
             }
             ++ptr;
         }
-        auto module_base_address = ctx.m.details.range.base_address;
 #ifdef _WIN32
-        range = ctx.m.pdata;
-        std::vector<std::pair<RUNTIME_FUNCTION, std::vector<RUNTIME_FUNCTION>>> runtime_functions;
-        for (auto ptr = (uint8_t *) range.base_address, end = (uint8_t *) range.base_address + range.size;
-             ptr < end; ptr += 12) {
-            PRUNTIME_FUNCTION function = (PRUNTIME_FUNCTION) ptr;
-            if (function->BeginAddress == 0) break;
-            if (!runtime_functions.empty() && runtime_functions.back().first.EndAddress == function->BeginAddress) {
-                runtime_functions.back().second.emplace_back(*function);
+        {
+            std::vector<FuncRange> ranges;
+            if (enumerate_function_ranges_win(ctx.m, ranges)) {
+                constexpr size_t kPdataWeight = 2;
+                for (const auto& r : ranges) {
+                    if (r.end <= r.start) continue;
+                    ctx.sureFunctions[r.start] = std::max(ctx.sureFunctions[r.start], kPdataWeight);
+                    ctx.authoritative_sizes[r.start] = static_cast<size_t>(r.end - r.start);
+                }
             } else {
-                auto blockBeing = module_base_address + function->BeginAddress;
-                auto blockEnding = module_base_address + function->EndAddress;
-                assert(ctx.m.in_text(blockBeing) && ctx.m.in_text(blockEnding));
-                runtime_functions.emplace_back(*function, std::vector<RUNTIME_FUNCTION>{*function});
-                if (!ctx.sureFunctions.contains(blockBeing))
-                    ctx.sureFunctions[blockBeing] = 0;
+                // keep silent here; pre_function can log once if map empty after all seeds
             }
         }
 #else
+        auto module_base_address = ctx.m.details.range.base_address;
         if (gum_module_get_path(gum_process_get_main_module()) == ctx.m.details.path) {
             module_base_address = 0;
         }
@@ -394,6 +393,14 @@ namespace function_relocation {
 
     std::vector<uintptr_t> ScanCtx::pre_function() {
         std::unordered_map<uint64_t, std::unordered_set<uint64_t>> maybeFunctions = scan_pre_text_range(*this);
+#ifdef _WIN32
+        if (authoritative_sizes.empty()) {
+            spdlog::warn("function_ranges: fallback heuristic (no pdata ranges)");
+        } else {
+            spdlog::info("function_ranges: {} authoritative pdata ranges", authoritative_sizes.size());
+        }
+#endif
+
 
         for (const auto &[address, func]: known_functions) {
             if (address < text.base_address)
@@ -496,6 +503,14 @@ namespace function_relocation {
                 fprintf(stderr, "%p discard less base address the function\n", (void *) addr);
                 continue;
             }
+            bool inside_auth = false;
+            for (const auto& [start, size] : authoritative_sizes) {
+                if (addr >= start && addr < start + size) {
+                    inside_auth = true;
+                    break;
+                }
+            }
+            if (inside_auth) continue;
             const auto ref_count = ref_addrs.size();
             auto sureFuncs = sureFunctions | std::ranges::views::keys | ranges::to<std::vector>();
             std::ranges::sort(sureFuncs);
@@ -511,7 +526,11 @@ namespace function_relocation {
                 continue;
             }
             if (!function_sizes.contains(near_address)) {
-                function_sizes[near_address] = guess_function_size(near_address);
+                if (auto it = authoritative_sizes.find(near_address); it != authoritative_sizes.end()) {
+                    function_sizes[near_address] = it->second;
+                } else {
+                    function_sizes[near_address] = guess_function_size(near_address);
+                }
             }
             const auto length = function_sizes[near_address];
             if (addr >= near_address + length) {
@@ -539,7 +558,13 @@ namespace function_relocation {
         const auto functions = pre_function();
         for (size_t i = 0; i < functions.size(); i++) {
             const auto address = functions[i];
-            function_limit = known_functions.contains(address) && known_functions.at(address).size != 0 ? known_functions[address].size + address : (i + 1 == functions.size() ? 1 : functions[i + 1]);
+            if (authoritative_sizes.contains(address)) {
+                function_limit = address + authoritative_sizes[address];
+            } else {
+                function_limit = known_functions.contains(address) && known_functions.at(address).size != 0
+                    ? known_functions[address].size + address
+                    : (i + 1 == functions.size() ? 1 : functions[i + 1]);
+            }
 
 #ifndef NDEBUG
             if (function_limit && known_functions.contains(address)) {
