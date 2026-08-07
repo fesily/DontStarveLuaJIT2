@@ -558,7 +558,8 @@ namespace function_relocation {
         const auto functions = pre_function();
         for (size_t i = 0; i < functions.size(); i++) {
             const auto address = functions[i];
-            if (authoritative_sizes.contains(address)) {
+            const bool limit_from_auth = authoritative_sizes.contains(address);
+            if (limit_from_auth) {
                 function_limit = address + authoritative_sizes[address];
             } else {
                 function_limit = known_functions.contains(address) && known_functions.at(address).size != 0
@@ -567,7 +568,7 @@ namespace function_relocation {
             }
 
 #ifndef NDEBUG
-            if (function_limit && known_functions.contains(address)) {
+            if (!limit_from_auth && function_limit && known_functions.contains(address)) {
                 const auto &func = known_functions[address];
                 if (func.size)
                     assert(func.size + func.address == function_limit);
