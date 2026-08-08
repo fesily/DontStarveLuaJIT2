@@ -42,6 +42,7 @@ target_compile_features(test_buffer_name_pool PRIVATE cxx_std_17)
 add_test(NAME BufferNamePool COMMAND test_buffer_name_pool)
 
 # --- PluginHost pure-logic unit tests (M0) ---
+find_path(SOL2_INCLUDE_DIRS "sol/abort.hpp")
 set(PLUGIN_HOST_SOURCES
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginHost.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginOptionRules.cpp
@@ -137,11 +138,21 @@ add_executable(test_dynamic_plugin_loader
     ${PLUGIN_HOST_SOURCES}
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/DynamicPluginLoader.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPath.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPendingUpdates.cpp)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPendingUpdates.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ExternalPluginDiscovery.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/EnabledDstMods.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPackModinfo.cpp)
 target_include_directories(test_dynamic_plugin_loader PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
+    ${SOL2_INCLUDE_DIRS}
+    ${PROJECT_SOURCE_DIR}/src/lua51original/src
+    ${CMAKE_BINARY_DIR}/src/lua51original)
 target_compile_features(test_dynamic_plugin_loader PRIVATE cxx_std_23)
 target_compile_definitions(test_dynamic_plugin_loader PRIVATE DS_PLUGIN_HOST_STATIC)
+if (TARGET liblua_static)
+    target_link_libraries(test_dynamic_plugin_loader PRIVATE liblua_static)
+    add_dependencies(test_dynamic_plugin_loader liblua_static)
+endif()
 add_test(NAME plugin_dynamic_loader COMMAND test_dynamic_plugin_loader)
 
 add_executable(test_plugin_path
@@ -264,7 +275,6 @@ target_compile_definitions(test_plugin_services PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME plugin_services COMMAND test_plugin_services)
 
 # External plugin pack modinfo trust gate (sol2 + liblua_static, L0 cascade style)
-find_path(SOL2_INCLUDE_DIRS "sol/abort.hpp")
 add_executable(test_plugin_pack_modinfo
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_pack_modinfo.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPackModinfo.cpp)
@@ -285,11 +295,20 @@ add_test(NAME plugin_pack_modinfo COMMAND test_plugin_pack_modinfo)
 
 add_executable(test_external_plugin_discovery
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_external_plugin_discovery.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ExternalPluginDiscovery.cpp)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ExternalPluginDiscovery.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/EnabledDstMods.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPackModinfo.cpp)
 target_include_directories(test_external_plugin_discovery PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
+    ${SOL2_INCLUDE_DIRS}
+    ${PROJECT_SOURCE_DIR}/src/lua51original/src
+    ${CMAKE_BINARY_DIR}/src/lua51original)
 target_compile_features(test_external_plugin_discovery PRIVATE cxx_std_23)
 target_compile_definitions(test_external_plugin_discovery PRIVATE DS_PLUGIN_HOST_STATIC)
+if (TARGET liblua_static)
+    target_link_libraries(test_external_plugin_discovery PRIVATE liblua_static)
+    add_dependencies(test_external_plugin_discovery liblua_static)
+endif()
 add_test(NAME external_plugin_discovery COMMAND test_external_plugin_discovery)
 
 # Enabled DST mod enumeration (modoverrides parse + root resolve)

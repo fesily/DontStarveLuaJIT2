@@ -189,6 +189,80 @@ DynamicLoadReport DynamicPluginLoader::load_all(PluginHost &host, bool is_client
     return report;
 }
 
+
+bool DynamicPluginLoader::load_module_path(PluginHost &host, const std::filesystem::path &module_path,
+                                           std::string *skip_reason) {
+    std::error_code path_ec;
+    const auto abs = std::filesystem::weakly_canonical(module_path, path_ec);
+    const auto path = path_ec ? module_path : abs;
+    const auto path_str = path.string();
+
+    (void)configure_plugin_dll_search({path.parent_path()});
+
+#if defined(_WIN32)
+    DWORD load_err = 0;
+    void *handle = load_library(path, &load_err);
+#else
+    void *handle = load_library(path);
+    unsigned long load_err = 0;
+#endif
+    if (!handle) {
+        if (skip_reason) {
+            char reason[64];
+            std::snprintf(reason, sizeof(reason), "load_failed(err=%lu)",
+                          static_cast<unsigned long>(load_err));
+            *skip_reason = reason;
+        }
+        std::fprintf(stderr, "[DynamicPluginLoader] load_failed: %s err=%lu\n", path_str.c_str(),
+                     static_cast<unsigned long>(load_err));
+        return false;
+    }
+
+    if (auto *abi = reinterpret_cast<AbiVersionFn>(lookup_symbol(handle, "ds_plugin_module_abi_version"))) {
+        const char *ver = abi();
+        if (ver == nullptr || std::strcmp(ver, DS_PLUGIN_ABI_VERSION) != 0) {
+            close_library(handle);
+            if (skip_reason) {
+                *skip_reason = "abi_mismatch";
+            }
+            std::fprintf(stderr, "[DynamicPluginLoader] abi_mismatch: %s\n", path_str.c_str());
+            return false;
+        }
+    }
+
+    auto *init = reinterpret_cast<ModuleInitFn>(lookup_symbol(handle, "ds_plugin_module_init"));
+    if (!init) {
+        close_library(handle);
+        if (skip_reason) {
+            *skip_reason = "missing_init";
+        }
+        std::fprintf(stderr, "[DynamicPluginLoader] missing_init: %s\n", path_str.c_str());
+        return false;
+    }
+
+    bool ok = false;
+    try {
+        host.begin_module_registration();
+        ok = init(&host);
+        host.end_module_registration();
+    } catch (...) {
+        host.end_module_registration();
+        ok = false;
+    }
+    if (!ok) {
+        close_library(handle);
+        if (skip_reason) {
+            *skip_reason = "init_failed";
+        }
+        std::fprintf(stderr, "[DynamicPluginLoader] init_failed: %s\n", path_str.c_str());
+        return false;
+    }
+
+    handles_.push_back(handle);
+    std::fprintf(stderr, "[DynamicPluginLoader] loaded: %s\n", path_str.c_str());
+    return true;
+}
+
 DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const std::filesystem::path &dir) {
     DynamicLoadReport report;
     std::error_code ec;
