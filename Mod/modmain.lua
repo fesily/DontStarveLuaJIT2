@@ -632,6 +632,12 @@ local function main()
 			return
 		end
 		HookGetModConfigData()
+		-- Client: confirm before enabling external luajit_plugin_pack mods.
+		if not TheNet:IsDedicated() then
+			pcall(function()
+				modimport("scripts/luajit_plugin_pack_enable_warn")
+			end)
+		end
 		-- Path A Lua PluginHost (AfterModMain). M4+ features load from plugins/init.
 		-- kleiloadlua chunks do NOT inherit the mod env (strict.lua treats MODROOT as undeclared).
 		-- Always setfenv to main_fenv so MODROOT / modimport / Add*PostInit resolve.
