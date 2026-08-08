@@ -260,6 +260,7 @@ bool DynamicPluginLoader::load_module_path(PluginHost &host, const std::filesyst
 
     handles_.push_back(handle);
     std::fprintf(stderr, "[DynamicPluginLoader] loaded: %s\n", path_str.c_str());
+    std::fflush(stderr);
     return true;
 }
 
