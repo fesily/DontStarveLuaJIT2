@@ -2,6 +2,10 @@
 """Generate per-platform plugin manifests, meta sidecars, and per-plugin zips.
 
 Also merges platform partials into a single plugins-manifest.json.
+
+Discovers modules both flat under the plugins root and inside package
+subdirectories (plugins/plugin_<stem>/plugin_<stem>.{dll,so,dylib}). Package
+zips include package-relative Lua (modinfo.lua, modmain.lua, scripts/**).
 """
 
 from __future__ import annotations
@@ -106,11 +110,60 @@ def write_meta(path: Path, meta: dict[str, Any]) -> None:
     path.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def make_plugin_zip(zip_path: Path, files: Iterable[Path]) -> None:
+def iter_plugin_modules(plugins_dir: Path) -> list[Path]:
+    """Discover plugin modules: flat under plugins_dir or package subdirs.
+
+    Package layout: plugins/plugin_<stem>/plugin_<stem>.{dll,so,dylib}
+    Flat (legacy / C-only staging): plugins/plugin_<stem>.{dll,so,dylib}
+    """
+    found: list[Path] = []
+    if not plugins_dir.is_dir():
+        return found
+    for p in sorted(plugins_dir.iterdir()):
+        if is_plugin_module(p):
+            found.append(p)
+            continue
+        if p.is_dir() and p.name.startswith("plugin_"):
+            for ext in MODULE_EXTS:
+                cand = p / f"{p.name}{ext}"
+                if cand.is_file():
+                    found.append(cand)
+                    break
+    return found
+
+
+def package_dir_for_module(module_path: Path) -> Path | None:
+    """Return package directory when module lives in plugins/plugin_<stem>/."""
+    stem = module_stem(module_path)
+    parent = module_path.parent
+    if parent.name == stem:
+        return parent
+    return None
+
+
+def collect_package_lua_files(pkg_dir: Path) -> list[Path]:
+    """Collect modinfo/modmain and scripts/**/*.lua under a package dir."""
+    files: list[Path] = []
+    for name in ("modinfo.lua", "modmain.lua"):
+        cand = pkg_dir / name
+        if cand.is_file():
+            files.append(cand)
+    scripts = pkg_dir / "scripts"
+    if scripts.is_dir():
+        files.extend(sorted(p for p in scripts.rglob("*.lua") if p.is_file()))
+    return files
+
+
+def make_plugin_zip(
+    zip_path: Path,
+    members: Iterable[tuple[Path, str]],
+) -> None:
+    """Write zip with (source_path, arcname) members. Arcnames may be nested."""
     zip_path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for f in files:
-            zf.write(f, arcname=f.name)
+        for src, arcname in members:
+            # Normalize zip entry separators to forward slash.
+            zf.write(src, arcname=arcname.replace("\\", "/"))
 
 
 def generate_partial(args: argparse.Namespace) -> int:
@@ -124,7 +177,7 @@ def generate_partial(args: argparse.Namespace) -> int:
         print(f"error: plugins dir missing: {plugins_dir}", file=sys.stderr)
         return 1
 
-    modules = sorted(p for p in plugins_dir.iterdir() if is_plugin_module(p))
+    modules = iter_plugin_modules(plugins_dir)
     plugins: list[dict[str, Any]] = []
 
     for module_path in modules:
@@ -136,7 +189,9 @@ def generate_partial(args: argparse.Namespace) -> int:
         version = extract_version_from_source(source_root, stem)
         digest = sha256_file(module_path)
         meta_name = f"{stem}.meta.json"
-        meta_path = plugins_dir / meta_name
+        pkg_dir = package_dir_for_module(module_path)
+        # Meta lives next to the module (package subdir or flat plugins root).
+        meta_path = (pkg_dir / meta_name) if pkg_dir is not None else (plugins_dir / meta_name)
         meta = {
             "id": plugin_id,
             "version": version,
@@ -147,14 +202,28 @@ def generate_partial(args: argparse.Namespace) -> int:
             write_meta(meta_path, meta)
 
         asset = f"{stem}-{version}-{platform}.zip"
-        files = [module_path.name]
-        packaged: list[Path] = [module_path]
+        # Members: (path, arcname). Prefer package-relative layout when packaged.
+        members: list[tuple[Path, str]] = []
+        files: list[str] = []
+
+        def add_member(path: Path, arcname: str) -> None:
+            arc = arcname.replace("\\", "/")
+            if arc in files:
+                return
+            members.append((path, arc))
+            files.append(arc)
+
+        add_member(module_path, module_path.name)
         if meta_path.is_file():
-            files.append(meta_name)
-            packaged.append(meta_path)
+            add_member(meta_path, meta_name)
+
+        if pkg_dir is not None:
+            for lua_path in collect_package_lua_files(pkg_dir):
+                rel = lua_path.relative_to(pkg_dir).as_posix()
+                add_member(lua_path, rel)
 
         if out_zips_dir is not None:
-            make_plugin_zip(out_zips_dir / asset, packaged)
+            make_plugin_zip(out_zips_dir / asset, members)
 
         plugins.append(
             {
