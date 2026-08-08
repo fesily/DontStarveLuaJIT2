@@ -292,6 +292,25 @@ target_compile_features(test_external_plugin_discovery PRIVATE cxx_std_23)
 target_compile_definitions(test_external_plugin_discovery PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME external_plugin_discovery COMMAND test_external_plugin_discovery)
 
+# Enabled DST mod enumeration (modoverrides parse + root resolve)
+add_executable(test_enabled_dst_mods
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_enabled_dst_mods.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/EnabledDstMods.cpp)
+target_include_directories(test_enabled_dst_mods PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
+    ${SOL2_INCLUDE_DIRS}
+    ${PROJECT_SOURCE_DIR}/src/lua51original/src
+    ${CMAKE_BINARY_DIR}/src/lua51original)
+target_compile_features(test_enabled_dst_mods PRIVATE cxx_std_23)
+target_compile_definitions(test_enabled_dst_mods PRIVATE DS_PLUGIN_HOST_STATIC)
+if (TARGET liblua_static)
+    target_link_libraries(test_enabled_dst_mods PRIVATE liblua_static)
+    add_dependencies(test_enabled_dst_mods liblua_static)
+else()
+    message(FATAL_ERROR "liblua_static required for test_enabled_dst_mods")
+endif()
+add_test(NAME enabled_dst_mods COMMAND test_enabled_dst_mods)
+
 add_test(
     NAME plugin_host_lua
     COMMAND ${CMAKE_COMMAND} -E env

@@ -39,6 +39,7 @@ set(SOURCES
         core/CoreVmBootstrap.cpp
         core/PluginPackModinfo.cpp
         core/ExternalPluginDiscovery.cpp
+        core/EnabledDstMods.cpp
 )
 
 
