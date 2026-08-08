@@ -42,32 +42,39 @@ constexpr const char *kRunExportName = "ds_core_vm_run_signature_and_replace";
 
 void *load_core_vm_from_search_dirs() {
     for (const auto &dir : ds::plugin::default_plugin_search_dirs()) {
-        (void)ds::plugin::configure_plugin_dll_search({dir});
-        const auto path = dir / kCoreVmModuleName;
-        std::error_code ec;
-        if (!std::filesystem::is_regular_file(path, ec)) {
-            continue;
-        }
+        // Package layout: plugins/plugin_core_vm/plugin_core_vm.dll
+        // Migration: also accept flat plugins/plugin_core_vm.dll
+        const std::filesystem::path candidates[] = {
+            dir / "plugin_core_vm" / kCoreVmModuleName,
+            dir / kCoreVmModuleName,
+        };
+        for (const auto &path : candidates) {
+            (void)ds::plugin::configure_plugin_dll_search({path.parent_path()});
+            std::error_code ec;
+            if (!std::filesystem::is_regular_file(path, ec)) {
+                continue;
+            }
 #if defined(_WIN32)
-        const UINT prev = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
-        SetLastError(0);
-        HMODULE handle = LoadLibraryExW(path.wstring().c_str(), nullptr,
-                                        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
-                                            LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
-                                            LOAD_LIBRARY_SEARCH_USER_DIRS);
-        if (!handle) {
+            const UINT prev = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
             SetLastError(0);
-            handle = LoadLibraryW(path.wstring().c_str());
-        }
-        SetErrorMode(prev);
-        if (handle) {
-            return static_cast<void *>(handle);
-        }
+            HMODULE handle = LoadLibraryExW(path.wstring().c_str(), nullptr,
+                                            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+                                                LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
+                                                LOAD_LIBRARY_SEARCH_USER_DIRS);
+            if (!handle) {
+                SetLastError(0);
+                handle = LoadLibraryW(path.wstring().c_str());
+            }
+            SetErrorMode(prev);
+            if (handle) {
+                return static_cast<void *>(handle);
+            }
 #else
-        if (void *h = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL)) {
-            return h;
-        }
+            if (void *h = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL)) {
+                return h;
+            }
 #endif
+        }
     }
     return nullptr;
 }

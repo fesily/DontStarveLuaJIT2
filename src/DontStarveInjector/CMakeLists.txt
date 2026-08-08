@@ -233,12 +233,26 @@ function(ds_add_dynamic_plugin name)
         ${DONTSTARVEINJECTOR_UTIL_DIR})
     target_compile_features(${name} PRIVATE cxx_std_23)
     target_link_libraries(${name} PRIVATE Injector)
+    # Multi-config generators (Ninja Multi-Config / VS) need per-config props;
+    # bare RUNTIME_OUTPUT_DIRECTORY alone can leave stale flat plugins/plugin_*.dll.
     set_target_properties(${name} PROPERTIES
         PREFIX ""
         OUTPUT_NAME "${name}"
         RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
         LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
         ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        LIBRARY_OUTPUT_DIRECTORY_DEBUG "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        LIBRARY_OUTPUT_DIRECTORY_RELEASE "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        ARCHIVE_OUTPUT_DIRECTORY_DEBUG "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        ARCHIVE_OUTPUT_DIRECTORY_RELEASE "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        ARCHIVE_OUTPUT_DIRECTORY_RELWITHDEBINFO "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
     )
     # Package-local only (COMPONENT plugins). Not part of game bin64 deploy.
     # MODULE targets cannot take RUNTIME_DEPENDENCY_SET; third-party shared

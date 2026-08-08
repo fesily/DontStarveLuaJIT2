@@ -10,7 +10,7 @@ struct BootstrapArgs {
     const char *main_path = nullptr;
 };
 
-// Loads plugins/plugin_core_vm.{dll,so} if not already mapped.
+// Loads plugins/plugin_core_vm/plugin_core_vm.{dll,so} (package layout; flat plugins/plugin_core_vm.* accepted during migration).
 // Required for normal inject. DS_LUAJIT_FORCE_NO_CORE_VM=1 is CI-only soft skip.
 bool EnsureCoreVmModuleLoaded();
 
