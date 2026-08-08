@@ -1,105 +1,107 @@
-# Task 6 Report — Optional `plugin.manager` skeleton + soft Lua bindings
+# Task 6 Report: Pilot package save.fork (P2)
 
 **Status:** DONE  
-**Date:** 2026-08-05  
-**Base:** `e8fe133`  
-**Commit:** (see git log) `feat(plugin-manager): optional plugin.manager skeleton and soft Lua bindings`
+**Branch:** `feature/plugin-package-aggregation`  
+**Worktree:** `C:/Users/fesil/DontStarveLuaJIT2/.worktrees/plugin-package-aggregation`  
+**Date:** 2026-08-08
 
-## Summary
+## Commits
 
-Added optional dynamic plugin module `plugin_manager` (logical id `plugin.manager`) with:
+| SHA | Subject |
+|-----|---------|
+| `ad06b60` | feat(save.fork): migrate to DST mini-mod package layout |
 
-- IPlugin skeleton (EarlyNative, AlwaysOn, priority 50, no reload)
-- C API surface for pin config + stubbed fetch/apply
-- Soft GameInjector exports via `register_game_injector_export` (GiType auto)
-- CMake always-built `add_subdirectory` (still **runtime-optional** if DLL deleted)
-
-## Architecture adaptation (vs plan wording)
-
-Plan / brief still said:
-
-> Modify `GameLuaModule.cpp` — bind all `DS_LUAJIT_plugin_*` via `host_service` only  
-> module_init: `register_service` for each API
-
-**Current repo pattern (supersedes that wording):**
-
-| Concern | Implementation |
-|---|---|
-| Lua soft bindings | `host->register_game_injector_export("DS_LUAJIT_plugin_*", &fn)` in `module_init` |
-| `luaopen_GameInjector` | core.vm binds owned symbols then `apply_game_injector_exports(L, -1)` |
-| Soft absence | If `plugin_manager.dll` missing → no exports registered → Lua sees **nil** |
-| `GameLuaModule.cpp` | **Not modified** — no host_service wrappers |
-| Optional C services | Also `register_service` same names for native callers (not required by any plugin) |
+Full SHA: `ad06b60c402a9ba66ca4ccc66415ce32ff115138`  
+Base: `a33217b` (Task 5 identity gate)
 
 ## Files
 
-| Path | Action |
-|---|---|
-| `src/DontStarveInjector/plugins/plugin_manager/CMakeLists.txt` | Create — `ds_add_dynamic_plugin` + nlohmann_json |
-| `src/DontStarveInjector/plugins/plugin_manager/plugin_manager.cpp` | Create — IPlugin + module_init exports |
-| `src/DontStarveInjector/plugins/plugin_manager/PluginManagerApi.hpp` | Create — C API decls |
-| `src/DontStarveInjector/plugins/plugin_manager/PluginManagerApi.cpp` | Create — pin ops real; HTTP/apply stubs |
-| `src/DontStarveInjector/CMakeLists.txt` | Modify — `add_subdirectory(plugins/plugin_manager)` in always-built list |
+| Action | Path |
+|--------|------|
+| Create | `src/DontStarveInjector/plugins/plugin_save_fork/modinfo.lua` (spec §6.3) |
+| Create | `src/DontStarveInjector/plugins/plugin_save_fork/modmain.lua` |
+| Create | `src/DontStarveInjector/plugins/plugin_save_fork/scripts/fork_save.lua` |
+| Create | `Mod/plugins/plugin_save_fork/{modinfo,modmain,scripts/fork_save}.lua` (runtime mirror) |
+| Modify | `Mod/plugins/init.lua` — `load_package("plugin_save_fork")`; package_modenv + test-path fallback |
+| Modify | `Mod/plugins/package_load.lua` — pass package env into `package_modimport` |
+| Modify | `src/DontStarveInjector/plugins/plugin_save_fork/plugin_save_fork.cpp` (comment) |
+| Delete | `Mod/plugins/save_fork.lua` |
+| Delete | `Mod/scripts/fork_save.lua` (moved into package) |
 
-Existing (linked, unchanged this task): `PluginPinConfig.*`, `PluginDownloadUrl.hpp`.
+## Interfaces / behavior
 
-## IPlugin
-
-- id: `plugin.manager`
-- version: `1.0.0`
-- phases: `EarlyNative`
-- AlwaysOn, priority 50, `support_reload = false`
-- `load()`: `reload_pin_config()` only (no network)
-
-## C API
-
-| Export | Behavior (Task 6) |
-|---|---|
-| `DS_LUAJIT_plugin_config_path` | `resolve_config_path()` static string buffer |
-| `DS_LUAJIT_plugin_manager_status_json` | Minimal stub JSON (`plugins:[]`, last_error, needs_restart, …) |
-| `DS_LUAJIT_plugin_config_reload` | Reload pin file |
-| `DS_LUAJIT_plugin_config_set_json` | Write + reload |
-| `DS_LUAJIT_plugin_pin_set` / `pin_clear` | Mutate pins + save |
-| `DS_LUAJIT_plugin_fetch_manifest` | **stub false** (Task 8) |
-| `DS_LUAJIT_plugin_manifest_json` | `"{}"` |
-| `DS_LUAJIT_plugin_plan_apply_json` | `"[]"` |
-| `DS_LUAJIT_plugin_apply` | **stub false** (Task 8) |
-| `DS_LUAJIT_plugin_needs_restart` | false |
-
-HTTP/curl/vcpkg intentionally skipped (Task 8).
-
-## Soft absence
-
-```text
-plugins/ without plugin_manager.dll
-  → DynamicPluginLoader skips missing module
-  → no DS_LUAJIT_plugin_* registered
-  → apply_game_injector_exports has nothing to bind
-  → GameInjector.DS_LUAJIT_plugin_* is nil in Lua
-  → other plugins unaffected (no requires_services / depends)
-```
+- Package SSOT under `src/.../plugin_save_fork/` with isomorphic `Mod/plugins/plugin_save_fork/` for in-repo runtime without cmake install.
+- Registry: `load_package("plugin_save_fork")` replaces `load_flat("save_fork")`.
+- Task2 minor: `package_modimport(package_root, rel, package_env)` setfenv’s imported chunks into package env so deferred `AddGamePostInit(function() modimport(...) end)` keeps package-local rebind.
+- Test path: when `MODROOT` is nil, `load_package` loads from `REPO_ROOT/Mod/plugins/<stem>/`; `AddGamePostInit` late-binds `_G` so host stubs still work.
 
 ## Verification
 
-| Check | Result |
-|---|---|
-| `add_subdirectory(plugins/plugin_manager)` in always-built list | Yes (next to dummy/save_fork/core_vm) |
-| No other plugin `requires_services` / depends on manager | Grep: only profiler soft-requires core.vm; lagcomp requires core.vm context — **no** manager refs |
-| GameLuaModule host_service not reintroduced | Confirmed: only `apply_game_injector_exports` |
-| clang++ -std=c++23 -c PluginManagerApi.cpp | PASS (syntax/includes) |
-| clang++ -std=c++23 -c plugin_manager.cpp | PASS (syntax/includes) |
-| Full `plugin_manager` MODULE link | Skipped — main `builds/ninja-multi-vcpkg` is master tree (`CMAKE_HOME_DIRECTORY` main repo); worktree not configured there. Sources complete for next configure. |
+```bash
+export LUA_BIN='C:/Users/fesil/DontStarveLuaJIT2/builds/ninja-multi-vcpkg/luajit/Release/luajit.exe'
+export REPO_ROOT="$PWD"
+python tools/check_plugin_package_identity.py --source-root . --stem plugin_save_fork
+python tests/plugin/run_package_load.py
+python tests/plugin/run_lua_host.py
+python tests/plugin/test_plugin_package_identity.py
+```
 
-## Acceptance checklist
+Results:
 
-- [x] Build files produce `plugin_manager` MODULE target when Injector CMake configures this worktree
-- [x] Module optional at runtime (no hard deps from other plugins)
-- [x] Soft Lua path via GameInjector exports (not GameLuaModule host_service)
-- [x] HTTP stubs only (Task 8)
-- [x] Commit + this report
+```text
+ok plugin_save_fork
+identity gate OK: checked=1 skipped=0
+IDENTITY_RC:0
+ALL PASS package_load_spec
+PKG_RC:0
+PASS: save_fork_enable_matrix
+...
+plugin_host_lua_spec: all tests passed
+HOST_RC:0
+IDTEST_RC:0 (6 tests)
+```
 
-## Notes
+- L-G present: not run (game optional / SKIP OK).
+- CMake install not rebuilt in this session; Task 4 already installs package Lua + scripts when present under plugin source dir.
 
-1. `register_service` duplicates export names for C DI; **no** other plugin lists them in `requires_services`.
-2. Status JSON is intentionally minimal until Task 7 inventory.
-3. Pin config write path uses existing `PluginPinConfig` load/save helpers.
+## Concerns
+
+- Dual content under `src/.../plugin_save_fork` and `Mod/plugins/plugin_save_fork` must stay in sync until install-only Mod tree is the sole runtime path.
+- Host tests for remaining dual-face flats still clear `package.loaded["plugins.save_fork"]`; harmless until those migrate.
+- Native DLL path still requires build/install for `plugins/plugin_save_fork/plugin_save_fork.dll`; only Lua package tree was staged in-repo.
+
+## Review fix: fork_save_spec load path
+
+**Finding:** `tests/fork_save/fork_save_spec.lua` still loaded the deleted flat path `Mod/scripts/fork_save.lua`.
+
+**Change:** Point `loadfile` at package script path:
+`Mod/plugins/plugin_save_fork/scripts/fork_save.lua`
+
+`package.loaded["scripts.fork_save"]` left unchanged (module name still `scripts.fork_save`).
+
+**Commit:** `fix(test): point fork_save_spec at package script path`
+
+### Re-test
+
+```text
+# fork_save (direct luajit; run.py PATH miss on this shell)
+PASS: unsupported falls back
+PASS: parent postsaves after child idle
+PASS: parent truncates when empty
+PASS: child saves and exits
+PASS: other result falls back
+PASS: child save failure exits
+PASS: isshutdown uses main process
+PASS: isshutdown ignores child fork result
+fork_save_spec: all tests passed
+FORK_RC:0
+
+ok plugin_save_fork
+identity gate OK: checked=1 skipped=0
+IDENTITY_RC:0
+ALL PASS package_load_spec
+PKG_RC:0
+plugin_host_lua_spec: all tests passed
+HOST_RC:0
+IDTEST_RC:0 (6 tests)
+```

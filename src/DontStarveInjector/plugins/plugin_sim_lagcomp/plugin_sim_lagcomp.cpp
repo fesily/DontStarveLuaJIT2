@@ -1,5 +1,5 @@
 // plugin_sim_lagcomp — dynamic EarlyNative face of sim.lagcomp
-// Lua face: Mod/plugins/sim_lagcomp.lua (AfterModMain, EnableLagCompensation).
+// Lua face: plugins/plugin_sim_lagcomp/ (modinfo + modmain + scripts/lag_compensation).
 // Native APIs: DS_LUAJIT_lag_comp_* + DS_LUAJIT_entity_get_raw_ptr (Win x64 only).
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"

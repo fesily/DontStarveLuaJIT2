@@ -1,5 +1,5 @@
 // plugin_debug_profiler — dynamic EarlyNative face of debug.profiler
-// Lua face: Mod/plugins/debug_profiler.lua (profiler + GC policy; former gc.policy folded).
+// Lua face: plugins/plugin_debug_profiler/ (modinfo + modmain; profiler + GC policy).
 // Native: GameProfilerHook / Tracy / FrameGC / FullGC ownership.
 // AlwaysOn native so trampolines find exports when DLL is staged; Lua gates work.
 #include "core/PluginModuleAbi.hpp"

@@ -213,16 +213,16 @@ endif ()
 
 add_subdirectory(util)
 
-# Dynamic plugin modules (Phase B). Build-tree output under Injector/plugins/;
-# install to Mod/plugins.
+# Dynamic plugin modules (Phase B). Build-tree output under Injector/plugins/<name>/;
+# install to Mod/plugins/<name>/.
 # Each plugin owns plugins/<name>/CMakeLists.txt; this file only defines the
 # shared helper and orchestrates add_subdirectory.
 #
 # Install / package policy:
-# - plugin_*.dll → plugins/  (mod root, NOT bin64/<platform>/plugins)
+# - plugin package → plugins/<name>/  (DLL + optional modinfo/modmain/scripts)
 # - shared runtimes + lua51* + signatures → deps/
 # - Injector → Mod root (.); shell → bin64/<platform> under Mod
-# - GAME_INSTALL_PREFIX: shell only; never plugin_*.dll into game bin64
+# - GAME_INSTALL_PREFIX: shell only; never plugin packages into game bin64
 function(ds_add_dynamic_plugin name)
     add_library(${name} MODULE ${ARGN})
     # Plugin dir (CMAKE_CURRENT_SOURCE_DIR when called from plugins/<name>/)
@@ -236,18 +236,37 @@ function(ds_add_dynamic_plugin name)
     set_target_properties(${name} PROPERTIES
         PREFIX ""
         OUTPUT_NAME "${name}"
-        RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
-        LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
-        ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
+        RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
+        ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
     )
     # Package-local only (COMPONENT plugins). Not part of game bin64 deploy.
     # MODULE targets cannot take RUNTIME_DEPENDENCY_SET; third-party shared
     # ports are staged into Mod/deps via install(CODE)+GET_RUNTIME_DEPENDENCIES
     # below. VCPKG_APPLOCAL_DEPS is OFF so nothing is dumped next to plugin_*.
     install(TARGETS ${name}
-        RUNTIME DESTINATION plugins COMPONENT plugins
-        LIBRARY DESTINATION plugins COMPONENT plugins
-        ARCHIVE DESTINATION plugins COMPONENT plugins)
+        RUNTIME DESTINATION plugins/${name} COMPONENT plugins
+        LIBRARY DESTINATION plugins/${name} COMPONENT plugins
+        ARCHIVE DESTINATION plugins/${name} COMPONENT plugins)
+
+    # Package Lua (optional files present in the plugin source dir)
+    set(_pkg_lua_files "")
+    foreach(_f IN ITEMS modinfo.lua modmain.lua)
+        if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_f}")
+            list(APPEND _pkg_lua_files "${CMAKE_CURRENT_SOURCE_DIR}/${_f}")
+        endif()
+    endforeach()
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/scripts"
+            DESTINATION plugins/${name}
+            COMPONENT plugins
+            FILES_MATCHING PATTERN "*.lua")
+    endif()
+    if (_pkg_lua_files)
+        install(FILES ${_pkg_lua_files}
+            DESTINATION plugins/${name}
+            COMPONENT plugins)
+    endif()
 endfunction()
 
 

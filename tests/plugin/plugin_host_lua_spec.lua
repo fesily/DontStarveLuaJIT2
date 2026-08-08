@@ -399,6 +399,7 @@ end
 local function test_save_fork_enable_matrix()
     -- L-E: save.fork EnableForkSave true/false (+ when gate).
     package.loaded["plugins.init"] = nil
+    package.loaded["plugins.package_load"] = nil
     package.loaded["plugins.save_fork"] = nil
     package.loaded["plugins.sim_lagcomp"] = nil
     package.loaded["plugins.network_sim"] = nil
@@ -492,6 +493,7 @@ end
 local function test_sim_lagcomp_enable_matrix()
     -- L-E: sim.lagcomp EnableLagCompensation true/false (+ when gates).
     package.loaded["plugins.init"] = nil
+    package.loaded["plugins.package_load"] = nil
     package.loaded["plugins.save_fork"] = nil
     package.loaded["plugins.sim_lagcomp"] = nil
     package.loaded["plugins.network_sim"] = nil
@@ -584,6 +586,7 @@ end
 local function test_network_sim_enable_matrix()
     -- L-E: network.sim EnableNetSim true/false (+ when gates).
     package.loaded["plugins.init"] = nil
+    package.loaded["plugins.package_load"] = nil
     package.loaded["plugins.save_fork"] = nil
     package.loaded["plugins.sim_lagcomp"] = nil
     package.loaded["plugins.network_sim"] = nil
@@ -675,6 +678,7 @@ end
 
 local function clear_plugin_modules()
     package.loaded["plugins.init"] = nil
+    package.loaded["plugins.package_load"] = nil
     package.loaded["plugins.save_fork"] = nil
     package.loaded["plugins.sim_lagcomp"] = nil
     package.loaded["plugins.network_sim"] = nil

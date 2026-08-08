@@ -101,6 +101,95 @@ class GenPluginsManifestTest(unittest.TestCase):
             self.assertIn("plugin_dummy.dll", names)
             self.assertIn("plugin_dummy.meta.json", names)
 
+    def test_package_subdir_discovery_and_zip_includes_lua(self) -> None:
+        """Package layout: plugins/plugin_save_fork/plugin_save_fork.dll + Lua."""
+        with tempfile.TemporaryDirectory() as td_raw:
+            td = Path(td_raw)
+            plug = td / "plugins"
+            pkg = plug / "plugin_save_fork"
+            pkg.mkdir(parents=True)
+            dll = pkg / "plugin_save_fork.dll"
+            dll.write_bytes(b"save-fork-bytes")
+            expected_sha = _sha256(dll)
+
+            (pkg / "modinfo.lua").write_text(
+                'plugin_id = "save.fork"\nversion = "1.0.0"\n',
+                encoding="utf-8",
+            )
+            (pkg / "modmain.lua").write_text(
+                'AddGamePostInit(function() modimport("scripts/fork_save") end)\n',
+                encoding="utf-8",
+            )
+            scripts = pkg / "scripts"
+            scripts.mkdir()
+            (scripts / "fork_save.lua").write_text("-- fork save\n", encoding="utf-8")
+
+            zips = td / "zips"
+            out = td / "partial.json"
+            src = td / "src" / "DontStarveInjector" / "plugins" / "plugin_save_fork"
+            src.mkdir(parents=True)
+            (src / "plugin_save_fork.cpp").write_text(
+                'man.id = "save.fork";\nman.version = "1.0.0";\n',
+                encoding="utf-8",
+            )
+
+            subprocess.check_call(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--plugins-dir",
+                    str(plug),
+                    "--platform",
+                    "windows",
+                    "--repo",
+                    "fesily/DontStarveLuaJIT2",
+                    "--release-tag",
+                    "v0.0.0-pkg",
+                    "--mod-version",
+                    "0.0.0",
+                    "--source-root",
+                    str(td),
+                    "--out-manifest",
+                    str(out),
+                    "--out-zips-dir",
+                    str(zips),
+                    "--write-meta",
+                ]
+            )
+
+            meta_path = pkg / "plugin_save_fork.meta.json"
+            self.assertTrue(meta_path.is_file(), "expected meta next to package module")
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            self.assertEqual(meta["id"], "save.fork")
+            self.assertEqual(meta["module"], "plugin_save_fork.dll")
+            self.assertEqual(meta["sha256"], expected_sha)
+
+            partial = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(len(partial["plugins"]), 1)
+            entry = partial["plugins"][0]
+            self.assertEqual(entry["id"], "save.fork")
+            plat = entry["platforms"]["windows"]
+            self.assertEqual(plat["module"], "plugin_save_fork.dll")
+            self.assertEqual(plat["sha256"], expected_sha)
+            for required in (
+                "plugin_save_fork.dll",
+                "plugin_save_fork.meta.json",
+                "modinfo.lua",
+                "modmain.lua",
+                "scripts/fork_save.lua",
+            ):
+                self.assertIn(required, plat["files"], f"files[] missing {required}")
+
+            zip_path = zips / "plugin_save_fork-1.0.0-windows.zip"
+            self.assertTrue(zip_path.is_file(), f"expected {zip_path.name}")
+            with zipfile.ZipFile(zip_path) as zf:
+                names = set(zf.namelist())
+            self.assertIn("plugin_save_fork.dll", names)
+            self.assertIn("plugin_save_fork.meta.json", names)
+            self.assertIn("modinfo.lua", names)
+            self.assertIn("modmain.lua", names)
+            self.assertIn("scripts/fork_save.lua", names)
+
     def test_merge_partials_and_bundle_zips(self) -> None:
         with tempfile.TemporaryDirectory() as td_raw:
             td = Path(td_raw)

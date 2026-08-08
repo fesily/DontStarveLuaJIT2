@@ -1,5 +1,5 @@
 // plugin_network_sim — dynamic EarlyNative face of network.sim
-// Lua face: Mod/plugins/network_sim.lua (AfterModMain, EnableNetSim).
+// Lua face: plugins/plugin_network_sim/ (modinfo + modmain + scripts/netsim).
 // Native APIs: DS_LUAJIT_net_sim_* (lazy hook install on enable).
 #include "gum_plugin_export.hpp"
 #include "core/PluginModuleAbi.hpp"

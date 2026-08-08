@@ -1,4 +1,5 @@
 // plugin_fps_render — native face of fps.render (independent of network.tick).
+// Lua face: plugins/plugin_fps_render/ (modinfo + modmain).
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/GameInjectorLuaBind.hpp"

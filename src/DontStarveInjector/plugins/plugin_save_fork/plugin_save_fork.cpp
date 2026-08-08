@@ -1,5 +1,5 @@
 // plugin_save_fork — dynamic EarlyNative face of save.fork
-// Lua face: Mod/plugins/save_fork.lua (AfterModMain, EnableForkSave).
+// Lua face: plugins/plugin_save_fork/ (modinfo + modmain + scripts/fork_save).
 // Native APIs: DS_LUAJIT_fork_save / exit / cleanup / wait / poll.
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"

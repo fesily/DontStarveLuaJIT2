@@ -29,7 +29,7 @@ L0 boots the host and always runs DynamicPluginLoader for feature modules. **Alw
 > Spec D3 in `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md` still treats **AlwaysEnableMod** and the **decision to run a VM path** as L0 concerns. The **implementation** of signature scan + `ReplaceLuaModule` + `GameLua` + `luaopen_GameInjector` is **no longer L0-linked**: it lives in optional `plugins/plugin_core_vm` (id `core.vm`). See `docs/superpowers/specs/2026-08-04-core-vm-plugin-design.md` (V1–V9). Deploy `plugins/plugin_core_vm.dll` next to Injector when you want JIT.
 
 > **Architecture note (`debug.profiler` owns GC policy):**  
-> Spec inventory rows that still list a separate Lua `gc.policy` are superseded. Tracy / replace-profiler / FullGC / FrameGC live in dual-face `debug.profiler` (`plugin_debug_profiler` + `Mod/plugins/debug_profiler.lua`). See `docs/superpowers/specs/2026-08-04-debug-profiler-plugin-design.md`. L0 has **no** fullgc reverse dep on core.vm; `core.vm` only installs a soft `lj_gc_fullgc_external` forwarder. Profiler and core.vm are optional independently.
+> Spec inventory rows that still list a separate Lua `gc.policy` are superseded. Tracy / replace-profiler / FullGC / FrameGC live in dual-face `debug.profiler` (`plugins/plugin_debug_profiler/` package: native MODULE + modinfo/modmain). See `docs/superpowers/specs/2026-08-04-debug-profiler-plugin-design.md`. L0 has **no** fullgc reverse dep on core.vm; `core.vm` only installs a soft `lj_gc_fullgc_external` forwarder. Profiler and core.vm are optional independently.
 
 ### Plugins (feature modules)
 
@@ -41,7 +41,7 @@ Features that used to be hard-wired in `Inject()`, `LoadGameModConfig`, or `modm
 | Native | `EarlyNative` | `network.rpc`, `render.vbpool`, `render.angle`, `save.fork`, `debug.profiler`, … |
 | Lua | `AfterModMain` | `jit.*`, `debug.profiler` (incl. former `gc.policy`), `network.*`, `save.fork`, … |
 
-Dual-face plugins share **one id**. Example: `network.rpc` has a native EarlyNative face (`GameNetWorkHookRpc4`) and a Lua AfterModMain face (`Mod/plugins/network_rpc.lua`).
+Dual-face plugins share **one id**. Example: `network.rpc` has a native EarlyNative face (`GameNetWorkHookRpc4`) and a Lua AfterModMain face (`Mod/plugins/plugin_network_rpc/` package via `load_package`).
 
 
 ## 2. Load phases
@@ -182,13 +182,38 @@ field list on `GameJitModConfig`. See **§12 ConfigView SSOT** for the full mode
 
 User-facing config remains **`Mod/modinfo.lua` `configuration_options` only** (D5).
 
-### 3.4 Dual-face native + Lua
+### 3.4 Dual-face native + Lua (package layout)
 
-1. Native face: register as above (`EarlyNative` and/or `AfterLuaBridge`).
-2. Lua face: same `id` under `Mod/plugins/`, listed in `init.lua`.
-3. Host treats one logical id; native completes before Lua `load` when both exist for that feature lifecycle.
+Dual-face features live as a **DST mini-mod package** under one directory, not as a flat
+`Mod/plugins/<face>.lua` next to a loose DLL.
 
-Example: `network.rpc` — see §7 examples.
+1. Create `src/DontStarveInjector/plugins/plugin_<stem>/` for the native MODULE
+   (`ds_add_dynamic_plugin`) plus package Lua sources.
+2. Add a **DST-complete** `modinfo.lua` (engine hard fields + private `plugin_id` /
+   `options` / …) and `modmain.lua` (+ optional `scripts/`). See package aggregation
+   design §6 for the engine-compatible field set.
+3. Register the Lua face in `Mod/plugins/init.lua` via
+   `load_package("plugin_<stem>")` (not `load_flat` for dual-face).
+4. Keep identity SSOT in package `modinfo`; native `PluginManifest` must match
+   (`python tools/check_plugin_package_identity.py --source-root .`). Prefer regenerating
+   native constants later via optional identity codegen; hand-sync is fine until then.
+5. **Do not** add a flat dual-face face at `Mod/plugins/<face>.lua` or park business
+   scripts only under `Mod/scripts/` — they belong in the package directory.
+
+Deployed / staged shape:
+
+```text
+plugins/plugin_save_fork/
+  plugin_save_fork.dll
+  modinfo.lua
+  modmain.lua
+  scripts/fork_save.lua
+```
+
+Host treats one logical `plugin_id`; native EarlyNative completes before Lua
+`AfterModMain` when both faces exist.
+
+Example: `network.rpc` / `save.fork` — see §7.
 
 ### 3.5 Do **not** call feature entrypoints from trunks
 
@@ -198,9 +223,14 @@ Example: `network.rpc` — see §7 examples.
 
 ## 4. How to add a Lua plugin
 
-### 4.1 Create `Mod/plugins/<name>.lua`
+### 4.1 Create a package or flat Lua face
 
-Return a plugin table (explicit registry; no filesystem scan):
+**Dual-face / package (preferred for features with native MODULE):** create
+`Mod/plugins/plugin_<stem>/` with `modinfo.lua` + `modmain.lua` (and optional
+`scripts/`). See §3.4.
+
+**Lua-only flat face:** create `Mod/plugins/<name>.lua` and return a plugin table
+(explicit registry; no filesystem scan):
 
 ```lua
 return {
@@ -231,13 +261,16 @@ return {
 
 ```lua
 return {
-    load_plugin("jit_tailcall"),
+    load_flat("jit_tailcall"),
     -- …
-    load_plugin("my_feature"),   -- file Mod/plugins/my_feature.lua
+    load_package("plugin_my_feature"),  -- dual-face package
+    load_flat("my_feature"),            -- Lua-only: Mod/plugins/my_feature.lua
 }
 ```
 
-`load_plugin` uses `kleiloadlua(MODROOT .. "plugins/" .. name .. ".lua")` in-game, or `require("plugins." .. name)` under unit tests.
+`load_package` loads `plugins/plugin_<stem>/modinfo.lua` (+ modmain rebind).
+`load_flat` uses `kleiloadlua(MODROOT .. "plugins/" .. name .. ".lua")` in-game,
+or `require("plugins." .. name)` under unit tests.
 
 ### 4.3 Runtime wiring (already in modmain)
 
@@ -340,19 +373,20 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 
 ## 7. Examples in-tree
 
-### `save.fork` (Lua + dedicated gate)
+### `save.fork` (package dual-face + dedicated gate)
 
-- File: `Mod/plugins/save_fork.lua`
-- Options: `EnableForkSave`
+- Package: `plugins/plugin_save_fork/` (`modinfo` + `modmain` + `scripts/fork_save.lua` + native MODULE)
+- Registry: `load_package("plugin_save_fork")` in `Mod/plugins/init.lua`
+- Options: `EnableForkSave` (parent modinfo UI; package private `options` names keys)
 - `when`: `has_luajit` and not client / dedicated
-- `load`: `AddGamePostInit` → `modimport("scripts/fork_save")`
+- `modmain`: `AddGamePostInit` → `modimport("scripts/fork_save")` under package rebind
 - Priority 60; sticky unload
 
-### `network.rpc` + `network.entity` (dual-face + hard dep)
+### `network.rpc` + `network.entity` (package dual-face + hard dep)
 
-- Native: `plugins/plugin_network_rpc/` → `GameNetWorkHookRpc4()` on EarlyNative when `NetworkOpt`
-- Lua rpc: `Mod/plugins/network_rpc.lua` — channel wraps, priority 40
-- Lua entity: `Mod/plugins/network_entity.lua` — `depends = { "network.rpc" }`, option `NetworkOptEntity`
+- Native + Lua package: `plugins/plugin_network_rpc/` → EarlyNative when `NetworkOpt`;
+  Lua face via `load_package("plugin_network_rpc")` (priority 40)
+- Lua-only peer: `Mod/plugins/network_entity.lua` — `depends = { "network.rpc" }`, option `NetworkOptEntity`
 - Entity on + rpc off → `MissingHardDep`, entity `load` not called
 
 ### `render.vbpool` / `render.angle` (EarlyNative only, dynamic)
@@ -360,16 +394,17 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 - VBPool: `plugin_render_vbpool` — `EnableVBPool` + Win client → `DS_LUAJIT_set_vbpool_enabled(true)`
 - Angle: `plugin_render_angle` — AlwaysOn + Win client → `InitGameOpenGl()` (backend string from ConfigView / `business_options`)
 
-### `debug.profiler` (dual-face: Tracy + FullGC + FrameGC)
+### `debug.profiler` (package dual-face: Tracy + FullGC + FrameGC)
 
-- Native: `plugins/plugin_debug_profiler/` → AlwaysOn EarlyNative so exports stay mapped when staged
-- Lua: `Mod/plugins/debug_profiler.lua` — AfterModMain priority 20 (before `jit.runtime` HideGlobalJIT)
+- Package: `plugins/plugin_debug_profiler/` → AlwaysOn EarlyNative so exports stay mapped when staged
+- Lua face: package `modmain` via `load_package("plugin_debug_profiler")` — AfterModMain priority 20 (before `jit.runtime` HideGlobalJIT)
 - Owns: `DS_LUAJIT_replace_profiler_api`, `DS_LUAJIT_enable_tracy`, `DS_LUAJIT_enable_framegc`, `DS_LUAJIT_disable_fullgc`, `lj_gc_fullgc_external`
 - Options: `EnableProfiler`, `EnableTracy`, `DisableForceFullGC`, `EnableFrameGC` (modinfo keys unchanged; GenGC still disables FullGC/FrameGC via `disabled_by`)
 - Former separate `gc.policy` Lua plugin is merged here (`gc_policy.lua` is a nil-registration shim only)
 - Soft peers: missing `plugin_debug_profiler.dll` → inject continues; GameInjector trampolines no-op; `core.vm` fullgc forwarder calls `oldfn`
 - Soft peers: missing `plugin_core_vm` → FrameGC / lua_gc path degrades; profiler DLL still loads
 - **L0 has no fullgc reverse dep** (`ds_core_vm_fullgc_*` removed)
+
 
 ---
 
@@ -399,14 +434,20 @@ When adding a plugin:
 
 ## 9. Checklist: new feature as plugin
 
-1. Add `modinfo` option(s) if user-facing.
-2. **Native hooks needed at inject time?** → dynamic module under `plugins/plugin_<name>/` + `ds_add_dynamic_plugin`.
+1. Add parent `Mod/modinfo` option(s) if user-facing (D5 UI SSOT).
+2. **Native hooks needed at inject time?** → dynamic module under
+   `src/DontStarveInjector/plugins/plugin_<stem>/` + `ds_add_dynamic_plugin`.
    Register option schema in `ds_plugin_module_init` **before** `register_plugin`. If cascade must parse the key before Host load, also add it to `RegisterBuiltinBusinessOptionSchema` (or the plugin's cascade seed). **Do not** add a new field on `GameJitModConfig`.
-3. **Lua / modimport / game API?** → `Mod/plugins/<name>.lua` + entry in `init.lua`.
-4. Set `id`, `options`, `depends` / `soft_depends` / `conflicts`, `priority`, `when`/`can_load`.
-5. Implement `load` only; leave `unload` empty unless `support_reload = true`.
-6. Do not edit `Inject()` / `LoadGameModConfig` / `_M:Main` feature lists beyond host calls already present. Keep `RegisterBuiltinPlugins` empty for business features.
-7. Extend L-A/L-B/L-C/L-E as appropriate; run L-F; L-G when game binary available.
+3. **Dual-face / Lua + game API?** → package layout (not flat face):
+   - `modinfo.lua` + `modmain.lua` (+ `scripts/`) next to the native sources
+   - `init.lua` entry: `load_package("plugin_<stem>")`
+   - Identity gate green vs native `man.id` / `man.version` / option keys
+4. **Lua-only (no native MODULE this round)?** → flat `Mod/plugins/<name>.lua` +
+   `load_flat("<name>")` still OK (`jit.*`, `network.entity`).
+5. Set `plugin_id` / `id`, `options`, `depends` / `soft_depends` / `conflicts`, `priority`, `when`/`can_load`.
+6. Implement package `modmain` (or flat `load`) only; leave `unload` empty unless `support_reload = true`.
+7. Do not edit `Inject()` / `LoadGameModConfig` / `_M:Main` feature lists beyond host calls already present. Keep `RegisterBuiltinPlugins` empty for business features.
+8. Extend L-A/L-B/L-C/L-E as appropriate; run L-F; L-G when game binary available; identity gate for dual-face packages.
 
 ---
 
@@ -430,7 +471,11 @@ When adding a plugin:
 | `src/DontStarveInjector/core/PluginPendingUpdates.*` | L0 pre-load `plugins/update_pending/` moves (no manager needed) |
 | `Mod/plugins/host.lua` | Lua host |
 | `Mod/plugins/init.lua` | Lua registry |
-| `Mod/plugins/*.lua` | Lua plugins |
+| `Mod/plugins/package_load.lua` | Package load helper (modinfo sandbox + modimport rebind) |
+| `Mod/plugins/plugin_*/` | Dual-face runtime packages (modinfo/modmain/scripts; DLL staged) |
+| `Mod/plugins/*.lua` | Lua-only flat plugins (`load_flat`) |
+| `tools/gen_plugins_manifest.py` | Partial manifests + package zips (DLL + package Lua) |
+| `tools/check_plugin_package_identity.py` | Dual-face modinfo vs native identity gate |
 | `Mod/modmain.lua` | AfterModMain host call site |
 | `tests/plugin/*` | L-A/B/C/E/F + `test_config_view_build` / `test_config_schema` |
 | `tests/plugin_server/*` | L-G (+ `--scenario present\|absent\|vm_disabled`) |
