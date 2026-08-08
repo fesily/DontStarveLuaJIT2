@@ -38,11 +38,11 @@ This is **directory / ownership aggregation**, not a redesign of Host phases or 
 ## 2. Goals
 
 1. **One feature → one directory** for dual-face plugins: native sources + DLL output + Lua entry + nested scripts.
-2. Package shape **matches DST external mod conventions**: `modinfo.lua` + `modmain.lua` (+ optional `scripts/`).
+2. Package shape **matches DST external mod conventions**: `modinfo.lua` + `modmain.lua` (+ optional `scripts/`). Package `modinfo` is **engine-compatible** (§6.0): required Klei fields present; private Host fields additive only.
 3. Business Lua uses **only game/mod APIs** (`modimport`, `GetModConfigData`, `Add*PostInit`, `kleiloadlua`, …). No second plugin framework API surface.
 4. **Same contract** for packages that ship inside this Mod tree and packages that may later load from another game-mod root (built-in vs external is not a Host flag).
 5. Keep **explicit** Lua registration (`init.lua`); no filesystem auto-discovery of packages.
-6. Keep **D5**: user-facing `configuration_options` UI remains only on the **parent** `Mod/modinfo.lua`. Package `modinfo` declares metadata + **consumed option keys**, not a second UI source when embedded.
+6. Keep **D5**: user-facing `configuration_options` UI remains only on the **parent** `Mod/modinfo.lua` when embedded. Package may still declare engine-legal `configuration_options` for standalone fidelity; embedded resolve does not treat that as parent UI.
 7. Clean cutover: after migration, delete obsolete flat faces and relocated `Mod/scripts/<biz>` copies (no permanent shims).
 
 ---
@@ -74,6 +74,7 @@ This is **directory / ownership aggregation**, not a redesign of Host phases or 
 | A8 | Registry | Explicit `load_package` / `load_flat` in `Mod/plugins/init.lua` |
 | A9 | Approach | Package-isomorphic layout + explicit init (not install-flatten-only; not auto-discovery) |
 | A10 | C-only packages | Subdirectory install for DLL; Lua Host registration not required; optional human-readable `modinfo` not mandatory for load |
+| A11 | Package `modinfo` format | **Must be DST engine–compatible.** Engine-requested fields from `ModIndex:InitializeModInfo` **must not be missing**. Private Host fields (`plugin_id`, `options`, `phases`, …) are additive only — never a substitute for engine fields. |
 
 ---
 
@@ -134,41 +135,128 @@ Lua package files install **next to** the DLL (same package directory), not flat
 
 ## 6. Package `modinfo.lua` contract
 
-### 6.1 Required / recognized fields (embedded load)
+### 6.0 DST engine compatibility (hard constraint)
 
-Package `modinfo.lua` is ordinary Lua executed with the mod environment (same constraints as today: setfenv so `MODROOT` / globals resolve under strict).
+Package `modinfo.lua` is a **real DST modinfo**, not a private mini-schema.
 
-| Field | Required | Meaning |
-|-------|----------|---------|
-| `plugin_id` | **yes** | Logical Host id (dotted), e.g. `"save.fork"` |
-| `version` | yes | Semver string; should match native `man.version` when dual-face |
-| `name` | recommended | Display name |
-| `priority` | no (default band) | AfterModMain tie-break; lower first (existing Host rule) |
+Authority: game `scripts/modindex.lua` → `ModIndex:InitializeModInfo` (repo mirror: `dst-scripts/scripts/modindex.lua`).
+
+The engine runs `modinfo.lua` in a sandbox env and validates fields. Packages **must** satisfy the same rules so that:
+
+1. Embedded load under this Mod remains honest to DST shape.
+2. A package directory can later sit under `MODS_ROOT/<folder>/` and pass `KnownModIndex` without rewriting `modinfo`.
+
+#### 6.0.1 Engine hard-fail fields
+
+If any of these are **nil** after `modinfo` executes, the engine sets `failed = true` (`Error loading modinfo.lua. These fields are required: …`):
+
+| Field | Notes |
+|-------|--------|
+| `name` | Display name string |
+| `description` | String (may be empty string, but **not** nil) |
+| `author` | String |
+| `version` | String (engine also lowercases/trims after load) |
+| `api_version` | Number; must equal game `MOD_API_VERSION` when loaded by the engine. Parent mod uses `10`. Prefer `api_version = 10` (or `api_version_dst = 10`, which the engine promotes to `api_version`). **Too new** (`> MOD_API_VERSION`) hard-fails; **too old** is warned as Old API. |
+
+Our `load_package` **must** fail-fast if any of the above are missing/nil (mirror engine required set), even when not going through `KnownModIndex`.
+
+#### 6.0.2 Engine check-list fields (must be present as keys for compatibility)
+
+`InitializeModInfo` also walks this list:  
+`name`, `description`, `author`, `version`, `api_version`, `dont_starve_compatible`, `reign_of_giants_compatible`, `configuration_options`, `dst_compatible`.
+
+| Field | Engine behavior if nil | Package rule |
+|-------|------------------------|--------------|
+| `dont_starve_compatible` | Defaults to `true` + `dont_starve_compatibility_specified = false` | **Must set explicitly** (recommend `false` for DST-only feature packages) — do not rely on silent default |
+| `reign_of_giants_compatible` | Defaults to `true` + flag | **Must set explicitly** (recommend `false` for DST-only) |
+| `dst_compatible` | Defaults to `true` + `dst_compatibility_specified = false` (prints WARNING) | **Must set explicitly `true`** so `dst_compatibility_specified` is not false |
+| `configuration_options` | Optional (nil OK for engine) | **Embedded:** omit or leave nil / empty; UI stays on parent (D5). **Standalone future:** may define full options table |
+
+#### 6.0.3 Engine role / network flags (strongly required for standalone; set explicitly in packages)
+
+Not in the hard-fail `missing` list, but consumed all over `modindex` / UI / server listing. Packages **must** set them so external install does not mis-classify the mod:
+
+| Field | Rule |
+|-------|------|
+| `client_only_mod` | Explicit bool |
+| `server_only_mod` | Explicit bool (engine allows both true in some mods; parent LuaJit2 uses both true) |
+| `all_clients_require_mod` | Explicit bool; **must not** be true when `client_only_mod` is true (engine WARNING; mutually exclusive) |
+
+Recommended defaults for feature packages under this Mod:
+
+- Match the **role the feature needs** (e.g. `save.fork` → dedicated/server-oriented: `server_only_mod = true`, `client_only_mod = false`, `all_clients_require_mod = false`).
+- Do not invent a third role model.
+
+Optional but conventional engine fields (set when useful; not fail-fast): `priority`, `forumthread`, `icon` / `icon_atlas`, `server_filter_tags`, `mod_dependencies`, `restart_required`, `game_modes`, `version_compatible`, …
+
+#### 6.0.4 Private Host fields (additive only)
+
+These are **ours**; allowed on the same `modinfo.lua` **in addition to** engine fields. They must never replace engine `name`/`version`/compat flags.
+
+| Field | Required for Host | Meaning |
+|-------|-------------------|---------|
+| `plugin_id` | **yes** for `load_package` | Logical Host id (dotted), e.g. `"save.fork"` |
 | `phases` | no | Default `AfterModMain` for Lua face |
-| `depends` / `soft_depends` / `conflicts` | no | Same semantics as current Lua face tables |
-| `options` | no | Existing option rule table (`all_of` / `any_of` / …) — **keys refer to parent modinfo** |
-| `when` | no | Optional function(ctx) gate (same as face today) |
+| `depends` / `soft_depends` / `conflicts` | no | Host graph (not Klei `mod_dependencies`) |
+| `options` | no | Host option rule (`all_of` / `any_of` / …); keys refer to **parent** modinfo when embedded |
+| `when` | no | `function(ctx)` gate |
 | `support_reload` | no | Default false (sticky) |
-| `configuration_options` | ignored when embedded | Reserved for future standalone external install |
 
-Missing `plugin_id` → **fail-fast** at `load_package` (do not register a silent broken entry).
+Naming: private fields use clear Host-oriented names (`plugin_id`, Host `depends`). Do **not** overload engine `mod_dependencies` for Host hard-deps.
+
+Missing `plugin_id` → **fail-fast** at `load_package`.
+
+#### 6.0.5 Validation summary for `load_package`
+
+1. `modinfo.lua` loads without error.
+2. Engine hard-fail set present: `name`, `description`, `author`, `version`, `api_version`.
+3. Engine compatibility flags present and explicit: `dst_compatible`, `dont_starve_compatible`, `reign_of_giants_compatible`.
+4. Role flags present: `client_only_mod`, `server_only_mod`, `all_clients_require_mod` (with mutual-exclusion check).
+5. Private: `plugin_id` present.
+6. Then build Host plugin table from private fields + `version` / `priority` / …
+
+Tests must include a fixture that fails when e.g. `api_version` or `description` is omitted.
+
+### 6.1 Field ownership (embedded vs engine)
+
+| Concern | Owner when embedded under this Mod | Owner when standalone external mod (future) |
+|---------|--------------------------------------|-----------------------------------------------|
+| User-facing option UI | Parent `Mod/modinfo.lua` `configuration_options` (D5) | Package `configuration_options` |
+| Host enable rules | Package private `options` / `when` | Same private fields + package config |
+| Display / API / compat | Package engine fields (still complete) | Same |
 
 ### 6.2 D5 embedding rule
 
-- User toggles and defaults remain authored only in parent `Mod/modinfo.lua` `configuration_options`.
-- Package `options` **names keys** consumed by that package; it does not own the UI rows when the package is embedded under this Mod.
+- User toggles and defaults remain authored only in parent `Mod/modinfo.lua` `configuration_options` when the package is embedded.
+- Package private `options` **names keys** consumed by that package; it does not own the UI rows when embedded.
 - `host:resolve` continues to use parent `GetModConfigData` / config lookup.
+- Package may still include `configuration_options` for standalone fidelity; **embedded Host ignores it for resolve** (does not merge into parent UI automatically).
 
-Standalone external install (future): the same package tree may carry `configuration_options` for the game mod UI; that path is not implemented in this design's delivery slices.
-
-### 6.3 Example (`save.fork`)
+### 6.3 Example (`save.fork`) — DST-complete + private Host fields
 
 ```lua
 -- plugins/plugin_save_fork/modinfo.lua
+-- Engine-required / compatibility (DST InitializeModInfo)
 name = "Save Fork"
-plugin_id = "save.fork"
+description = "Dedicated-server fork save path for DontStarveLuaJit2 (feature package)."
+author = "fesil"
 version = "1.0.0"
+api_version = 10
+
+dont_starve_compatible = false
+reign_of_giants_compatible = false
+dst_compatible = true
+
+client_only_mod = false
+server_only_mod = true
+all_clients_require_mod = false
+
+-- Optional engine
 priority = 60
+-- configuration_options = nil  -- embedded: UI on parent Mod; standalone may fill later
+
+-- Private Host fields (additive)
+plugin_id = "save.fork"
 phases = "AfterModMain"
 depends = {}
 soft_depends = {}
@@ -237,17 +325,19 @@ Do **not** introduce a parallel plugin framework or options environment layer.
 ### 8.2 `load_package(stem)` steps
 
 1. Resolve package root: `MODROOT .. "plugins/" .. stem .. "/"` (tests: equivalent root on `package.path` / fixture tree).
-2. Load and run `modinfo.lua` with mod env (`kleiloadlua` + setfenv pattern already used for host/init).
-3. Validate `plugin_id`; build Host plugin table:
+2. Load and run `modinfo.lua` with an env appropriate for DST modinfo (at minimum: allow assigning globals like `name` / `api_version`; provide `locale` / `folder_name` if scripts use them). Prefer isolating assignments into a result table the way the engine sandbox does, rather than polluting parent mod globals.
+3. Validate **§6.0** (engine hard-fail set + explicit compat/role flags + `plugin_id`). On failure → error / do not register.
+4. Build Host plugin table:
 
    | Host field | Source |
    |------------|--------|
-   | `id` | `plugin_id` |
-   | `version` / `priority` / `phases` / depends / options / when / support_reload | modinfo |
+   | `id` | private `plugin_id` |
+   | `version` | engine `version` |
+   | `priority` / `phases` / depends / options / when / support_reload | private (+ engine `priority` if Host priority not overridden) |
    | `load` | function that runs package `modmain.lua` under rebind (§8.3) |
    | `unload` | no-op sticky unless later extended |
 
-4. Return that table into the registry list (same as today’s face return value).
+5. Return that table into the registry list (same as today’s face return value).
 
 ### 8.3 `modimport` root rebind
 
@@ -366,6 +456,7 @@ Manager pin semantics beyond zip contents are **follow-up**; this design only re
 2. Future search roots may include additional filesystem roots beyond parent `MODROOT/plugins`; `load_package` takes a root + stem or an absolute package path.
 3. Host must **not** branch business logic on built-in vs external.
 4. Embedded D5 still wins for option UI when the package is pulled into this Mod’s Host; standalone game-mod enablement uses normal Klei mod UI.
+5. Standalone discovery still requires a **DST-complete** `modinfo.lua` (§6.0); private Host fields alone are never enough for `KnownModIndex`.
 
 No external downloader or multi-root scanner ships in the aggregation slices below.
 
@@ -375,9 +466,9 @@ No external downloader or multi-root scanner ships in the aggregation slices bel
 
 | Slice | Deliverable | Exit criteria |
 |-------|-------------|---------------|
-| **P0** | Package load helper + `load_package` / `load_flat`; unit tests for modinfo fail-fast, rebind, restore | No production package moved yet; flat faces still work |
+| **P0** | Package load helper + `load_package` / `load_flat`; unit tests for §6.0 modinfo fail-fast, rebind, restore | No production package moved yet; flat faces still work |
 | **P1** | CMake/loader subdirectory DLL + install package Lua resources; dummy/C-only smoke | Loader finds `plugins/plugin_dummy/plugin_dummy.dll` (or platform equiv.) |
-| **P2** | Pilot `save.fork` full package | Dedicated fork path works; old flat face/script removed for this id |
+| **P2** | Pilot `save.fork` full package (DST-complete modinfo + modmain + scripts) | Dedicated fork path works; old flat face/script removed for this id |
 | **P3** | Remaining dual-face five packages | Same as P2 per id |
 | **P4** | Delete obsolete paths; update `docs/plugin-system.md` checklist; manifest zip includes package Lua; CI layout green | Grep: no `Mod/plugins/save_fork.lua` etc.; no dual-face biz left only under `Mod/scripts/` for migrated ids |
 
@@ -392,8 +483,8 @@ Architecture incomplete without automation (project D7).
 | Gate | Proof |
 |------|--------|
 | Loader unit | Package-subdir module loads; garbage files in package dir ignored; bad DLL skipped |
-| Package load unit | Missing `plugin_id` fails; `modimport("scripts/…")` hits package; parent import after restore unchanged; deferred `AddGamePostInit` + `modimport` uses package root |
-| Layout contract | For each migrated dual-face: package dir has `modinfo.lua` + `modmain.lua`; old flat face path absent |
+| Package load unit | Missing `plugin_id` fails; missing engine hard field (`name`/`description`/`author`/`version`/`api_version`) fails; missing explicit `dst_compatible` fails our validator; `modimport("scripts/…")` hits package; parent import after restore unchanged; deferred `AddGamePostInit` + `modimport` uses package root |
+| Layout contract | For each migrated dual-face: package dir has DST-complete `modinfo.lua` + `modmain.lua`; old flat face path absent |
 | Host regression | Existing plugin host / option / resolve tests stay green |
 | L-G / smoke | Existing dedicated (and client if present) contracts do not regress for migrated features |
 
@@ -411,10 +502,11 @@ Architecture incomplete without automation (project D7).
 
 1. Changing a dual-face feature requires edits under a single `plugin_<stem>/` tree (native + modinfo + modmain + scripts).
 2. Package Lua reads like a small DST mod; no nested plugin runtime API.
-3. Parent D5 config UI ownership unchanged.
-4. Explicit registry preserved; Host remains the only orchestrator.
-5. Built-in packages use the same on-disk shape intended for future external roots.
-6. Automated gates in §13 pass for the migrated set.
+3. Every shipped package `modinfo.lua` passes §6.0 (engine hard fields + explicit compat/role flags + private `plugin_id`).
+4. Parent D5 config UI ownership unchanged when embedded.
+5. Explicit registry preserved; Host remains the only orchestrator.
+6. Built-in packages use the same on-disk shape intended for future external roots.
+7. Automated gates in §13 pass for the migrated set.
 
 ---
 
