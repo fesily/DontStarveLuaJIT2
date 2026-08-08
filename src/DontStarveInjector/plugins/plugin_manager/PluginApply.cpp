@@ -217,7 +217,11 @@ std::optional<nlohmann::json> fetch_plugins_manifest(const ds::plugin::PluginPin
     if (!http_get_with_proxy(direct, cfg.gh_proxy_base, cfg.prefer_proxy, kHttpTimeoutMs, &body,
                              &http_err, kAutoDirectTimeoutMs)) {
         if (err) {
-            *err = "fetch_manifest: " + http_err;
+            // 404 usually means the release exists but CI has not uploaded plugins-manifest.json.
+            *err = "fetch_manifest: missing plugins-manifest.json for tag '" +
+                   std::string(release_tag) + "' (" + http_err + ") url=" + direct +
+                   " - local plugins still listed; publish a Release asset named "
+                   "plugins-manifest.json to enable channel updates";
         }
         return std::nullopt;
     }
@@ -392,7 +396,7 @@ bool install_extracted_files(const std::filesystem::path &staging_dir,
             std::string copy_err;
             // Re-copy from staging (src may already have been moved).
             if (!std::filesystem::exists(src, ec)) {
-                // Already moved? try dest was partial — read from pending fail.
+                // Already moved? try dest was partial - read from pending fail.
                 if (err) {
                     *err = "install: staging missing after failed direct write: " + name;
                 }
@@ -577,10 +581,25 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
 ApplyResult apply_plan(const ds::plugin::PluginPinConfig &cfg, const nlohmann::json &manifest,
                        const std::vector<ds::plugin::PlanAction> &actions,
                        const std::filesystem::path &plugins_dir,
-                       std::string_view only_id_or_empty) {
+                       std::string_view only_id_or_empty, ApplyProgressFn progress,
+                       void *progress_user) {
     ApplyResult result;
+    auto report = [&](std::string phase, size_t cur, size_t tot, std::string id, std::string msg) {
+        if (!progress) {
+            return;
+        }
+        ApplyProgress p;
+        p.phase = std::move(phase);
+        p.current = cur;
+        p.total = tot;
+        p.plugin_id = std::move(id);
+        p.message = std::move(msg);
+        progress(p, progress_user);
+    };
+
     if (plugins_dir.empty()) {
         result.last_error = "apply: empty plugins_dir";
+        report("error", 0, 0, "", result.last_error);
         return result;
     }
 
@@ -592,43 +611,73 @@ ApplyResult apply_plan(const ds::plugin::PluginPinConfig &cfg, const nlohmann::j
     }
     if (cfg_local.release_tag.empty()) {
         result.last_error = "apply: cannot determine release_tag";
+        report("error", 0, 0, "", result.last_error);
         return result;
     }
 
     const std::string platform = current_platform_key();
 
+    // Count matching actions first for percent denominator.
+    size_t planned = 0;
     for (const auto &action : actions) {
         if (!only_id_or_empty.empty() && action.id != only_id_or_empty) {
             continue;
         }
-        // prefer_present with empty `to` and no channel entry may still try channel version.
+        ++planned;
+    }
+    if (planned == 0) {
+        result.last_error = "apply: no matching actions";
+        report("done", 0, 0, "", result.last_error);
+        return result;
+    }
+
+    size_t step = 0;
+    for (const auto &action : actions) {
+        if (!only_id_or_empty.empty() && action.id != only_id_or_empty) {
+            continue;
+        }
+        ++step;
         ++result.attempted;
+        report("download", step, planned, action.id,
+               "download " + action.id + " (" + std::to_string(step) + "/" +
+                   std::to_string(planned) + ")");
+
         std::string lerr;
         auto asset = lookup_manifest_asset(manifest, action.id, platform, &lerr);
         if (!asset) {
             result.last_error = lerr;
             std::fprintf(stderr, "[plugin_manager] apply skip %s: %s\n", action.id.c_str(),
                          lerr.c_str());
+            report("error", step, planned, action.id, lerr);
             continue;
         }
-        // If plan targets a specific version and manifest has different, still apply manifest
-        // asset for that id (channel catalog is SSOT for downloadable bits).
         bool nr = false;
+        report("install", step, planned, action.id,
+               "install " + action.id + " (" + std::to_string(step) + "/" +
+                   std::to_string(planned) + ")");
         if (!apply_one_plugin(cfg_local, manifest, *asset, plugins_dir, &nr, &lerr)) {
             result.last_error = lerr;
             std::fprintf(stderr, "[plugin_manager] apply fail %s: %s\n", action.id.c_str(),
                          lerr.c_str());
+            report("error", step, planned, action.id, lerr);
             continue;
         }
         ++result.succeeded;
         if (nr) {
             result.needs_restart = true;
         }
+        report("install", step, planned, action.id,
+               "ok " + action.id + " (" + std::to_string(step) + "/" + std::to_string(planned) +
+                   ")");
     }
 
     if (result.attempted > 0 && result.succeeded == 0 && result.last_error.empty()) {
         result.last_error = "apply: no matching actions";
     }
+    report("done", planned, planned, "",
+           result.succeeded > 0 ? ("applied " + std::to_string(result.succeeded) + "/" +
+                                   std::to_string(result.attempted))
+                               : result.last_error);
     return result;
 }
 

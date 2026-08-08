@@ -1,7 +1,15 @@
-# Stage lua51* + signatures_*.json into Injector/deps (build-tree analog of Mod/deps).
-# Missing sources are skipped (copy_if_different would error).
+# Stage lua51* into Injector/deps (build-tree analog of Mod/deps).
+# Signatures: only verified present at Mod/ root (not staged into deps).
+# Required -D vars: DS_OUT, DS_CFG, DS_SOURCE_DIR, DS_BINARY_DIR
+# (Do NOT use CMAKE_SOURCE_DIR in -P scripts — CMake overwrites it with CWD.)
 if(NOT DEFINED DS_OUT)
   message(FATAL_ERROR "stage_core_vm_deps.cmake: DS_OUT required")
+endif()
+if(NOT DEFINED DS_SOURCE_DIR OR DS_SOURCE_DIR STREQUAL "")
+  message(FATAL_ERROR "stage_core_vm_deps.cmake: DS_SOURCE_DIR required")
+endif()
+if(NOT DEFINED DS_BINARY_DIR OR DS_BINARY_DIR STREQUAL "")
+  message(FATAL_ERROR "stage_core_vm_deps.cmake: DS_BINARY_DIR required")
 endif()
 file(MAKE_DIRECTORY "${DS_OUT}")
 
@@ -11,53 +19,63 @@ if(NOT DEFINED DS_CFG OR DS_CFG STREQUAL "")
   set(DS_CFG RelWithDebInfo)
 endif()
 
-# Signatures (repo package tree + already-staged deps)
+# Signatures: ONLY Mod/signatures_*.json (all platforms). No bin64/<plat>/, no deps/.
+# Runtime SignatureJson reads <mod>/signatures_*.json; install ships from Mod/.
 foreach(_sig IN ITEMS signatures_client.json signatures_server.json)
-  foreach(_root IN ITEMS
-      "${CMAKE_SOURCE_DIR}/Mod/deps"
-      "${CMAKE_SOURCE_DIR}/Mod/bin64/linux"
-      "${CMAKE_SOURCE_DIR}/Mod/bin64/osx"
-      "${CMAKE_BINARY_DIR}")
-    if(EXISTS "${_root}/${_sig}")
-      file(COPY "${_root}/${_sig}" DESTINATION "${DS_OUT}")
-      break()
-    endif()
-  endforeach()
+  set(_src "${DS_SOURCE_DIR}/Mod/${_sig}")
+  if(NOT EXISTS "${_src}")
+    message(FATAL_ERROR
+      "stage_core_vm_deps: ${_sig} not found at ${_src}. "
+      "Regenerate with signature_updater (writes Mod/signatures_*.json).")
+  endif()
 endforeach()
 
-# Lua VMs — only the active config, then safe non-Debug fallbacks for Rel builds.
-foreach(_name IN ITEMS lua51.dll lua51DS.dll lua51DS_gengc.dll lua51Original.dll
-                       liblua51.so liblua51DS.so liblua51DS_gengc.so liblua51Original.so
-                       liblua51.dylib liblua51DS.dylib liblua51DS_gengc.dylib liblua51Original.dylib)
+# Map multi-config → src/lua51 batch folder
+set(_ds_lua51_cfg "release")
+if(DS_CFG MATCHES "^[Dd][Ee][Bb][Uu][Gg]$")
+  set(_ds_lua51_cfg "debug")
+endif()
+
+# lua51.dll — ONLY src/lua51/<debug|release>/ (no Mod/bin64/*)
+set(_ds_lua51_src "${DS_SOURCE_DIR}/src/lua51/${_ds_lua51_cfg}/lua51.dll")
+if(EXISTS "${_ds_lua51_src}")
+  file(COPY "${_ds_lua51_src}" DESTINATION "${DS_OUT}")
+else()
+  message(FATAL_ERROR
+    "stage_core_vm_deps: lua51.dll not found at ${_ds_lua51_src}. "
+    "Build it first (target build_lua51 / src/lua51/build_lua51.bat).")
+endif()
+
+# LuaJIT / original VMs — active config build outputs only (no package fallbacks).
+foreach(_name IN ITEMS lua51DS.dll lua51DS_gengc.dll lua51Original.dll
+                       liblua51DS.so liblua51DS_gengc.so liblua51Original.so
+                       liblua51DS.dylib liblua51DS_gengc.dylib liblua51Original.dylib)
   set(_picked "")
   foreach(_root IN ITEMS
-      "${CMAKE_BINARY_DIR}/luajit/${DS_CFG}"
-      "${CMAKE_BINARY_DIR}/src/lua51original/${DS_CFG}")
+      "${DS_BINARY_DIR}/luajit/${DS_CFG}"
+      "${DS_BINARY_DIR}/src/lua51original/${DS_CFG}")
     if(EXISTS "${_root}/${_name}")
       set(_picked "${_root}/${_name}")
       break()
     endif()
   endforeach()
-  # Non-Debug installs may fall back to RelWithDebInfo/Release only (never Debug).
+  # Non-Debug may fall back to RelWithDebInfo/Release build trees only (never Debug CRT).
   if(NOT _picked AND NOT DS_CFG MATCHES "^[Dd][Ee][Bb][Uu][Gg]$")
     foreach(_root IN ITEMS
-        "${CMAKE_BINARY_DIR}/luajit/RelWithDebInfo"
-        "${CMAKE_BINARY_DIR}/luajit/Release"
-        "${CMAKE_BINARY_DIR}/src/lua51original/RelWithDebInfo"
-        "${CMAKE_BINARY_DIR}/src/lua51original/Release"
-        "${CMAKE_SOURCE_DIR}/src/lua51/release")
+        "${DS_BINARY_DIR}/luajit/RelWithDebInfo"
+        "${DS_BINARY_DIR}/luajit/Release"
+        "${DS_BINARY_DIR}/src/lua51original/RelWithDebInfo"
+        "${DS_BINARY_DIR}/src/lua51original/Release")
       if(EXISTS "${_root}/${_name}")
         set(_picked "${_root}/${_name}")
         break()
       endif()
     endforeach()
   endif()
-  # Debug installs may fall back to debug tree only.
   if(NOT _picked AND DS_CFG MATCHES "^[Dd][Ee][Bb][Uu][Gg]$")
     foreach(_root IN ITEMS
-        "${CMAKE_BINARY_DIR}/luajit/Debug"
-        "${CMAKE_BINARY_DIR}/src/lua51original/Debug"
-        "${CMAKE_SOURCE_DIR}/src/lua51/debug")
+        "${DS_BINARY_DIR}/luajit/Debug"
+        "${DS_BINARY_DIR}/src/lua51original/Debug")
       if(EXISTS "${_root}/${_name}")
         set(_picked "${_root}/${_name}")
         break()

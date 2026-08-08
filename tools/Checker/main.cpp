@@ -21,7 +21,7 @@
 const char *game_path = GAMEDIR R"(\bin64\dontstarve_steam_x64.exe)";
 const char *game_server_path = GAMEDIR R"(\bin64\dontstarve_dedicated_server_nullrenderer_x64.exe)";
 const char *lua51_path = LUA51_PATH;
-const char *worker_dir = PROJECT_DIR "/Mod/bin64/windows";
+const char *worker_dir = PROJECT_DIR "/Mod";
 
 bool loadModule(const char *path) {
     GError *err = nullptr;

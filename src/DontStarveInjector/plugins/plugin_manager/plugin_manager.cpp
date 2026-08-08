@@ -47,7 +47,9 @@ struct PluginManagerPlugin final : IPlugin {
 
         try {
             std::fprintf(stderr, "[plugin_manager] auto_apply_on_boot: fetch_manifest...\n");
-            const bool fetched = DS_LUAJIT_plugin_fetch_manifest(nullptr);
+            // Blocking is intentional here: EarlyNative, no UI yet. The Lua UI
+            // path uses the async DS_LUAJIT_plugin_fetch_manifest export.
+            const bool fetched = ds::plugin_manager::fetch_manifest_blocking(nullptr);
             if (!fetched) {
                 std::fprintf(stderr,
                              "[plugin_manager] auto_apply_on_boot: fetch_manifest failed "
@@ -56,7 +58,7 @@ struct PluginManagerPlugin final : IPlugin {
             }
 
             std::fprintf(stderr, "[plugin_manager] auto_apply_on_boot: apply...\n");
-            const bool applied = DS_LUAJIT_plugin_apply(nullptr);
+            const bool applied = ds::plugin_manager::apply_blocking(nullptr);
             if (!applied) {
                 std::fprintf(stderr,
                              "[plugin_manager] auto_apply_on_boot: apply failed or nothing "

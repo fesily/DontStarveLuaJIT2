@@ -1,0 +1,5 @@
+{
+  "id": "debug.profiler",
+  "version": "1.0.0",
+  "module": "plugin_debug_profiler.dll"
+}

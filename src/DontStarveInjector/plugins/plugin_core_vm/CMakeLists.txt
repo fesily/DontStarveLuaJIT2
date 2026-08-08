@@ -104,13 +104,14 @@ if (ENABLE_ONLY_LUA51)
     target_compile_definitions(plugin_core_vm PRIVATE ENABLE_ONLY_LUA51)
 endif()
 
-# Build-tree stage: lua51* + signatures_*.json under plugins/deps (core.vm assets).
+# Build-tree stage: lua51* under Injector/deps; require Mod/signatures_*.json present.
+# Package install: lua51* → Mod/deps, signatures → Mod/ root.
 add_custom_command(TARGET plugin_core_vm POST_BUILD
     COMMAND ${CMAKE_COMMAND}
         "-DDS_OUT=$<TARGET_FILE_DIR:Injector>/deps"
         "-DDS_CFG=$<CONFIG>"
-        "-DCMAKE_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
-        "-DCMAKE_BINARY_DIR=${CMAKE_BINARY_DIR}"
+        "-DDS_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        "-DDS_BINARY_DIR=${CMAKE_BINARY_DIR}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_core_vm_deps.cmake"
-    COMMENT "stage core.vm lua/signatures into plugins/deps"
+    COMMENT "stage core.vm lua into Injector/deps; require Mod/signatures_*.json"
     VERBATIM)

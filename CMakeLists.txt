@@ -47,6 +47,12 @@ message(STATUS "CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
 message(STATUS "VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}")
 message(STATUS "VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR}")
 
+
+# Third-party shared runtimes are staged only under Mod/deps (bootstrap +
+# PluginPath AddDllDirectory). Disable vcpkg applocal so link does not dump
+# spdlog/fmt/zip/… next to Injector.dll or plugin_*.dll under plugins/.
+set(VCPKG_APPLOCAL_DEPS OFF CACHE BOOL
+    "Copy vcpkg DLLs next to targets (OFF: stage via Mod/deps only)" FORCE)
 option(DISABLE_TRACY_FUTURE "disable tray future" ON)
 
 # Package root = Mod/. All install destinations are relative to this prefix.
@@ -357,8 +363,10 @@ set(FUNCTION_RELOCATION_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/FunctionRelo
 
 add_subdirectory("src/DontStarveInjector")
 
-# core.vm assets: lua51* VMs + signature databases live under Mod/deps
-# (same tree as plugin_core_vm.dll and shared third-party runtimes).
+# core.vm assets:
+#   Mod/deps/              → lua51* VMs + third-party shared runtimes
+#   Mod/signatures_*.json  → signature DBs at mod root (all platforms)
+# (sibling of plugins/; loadlib resolves deps; SignatureJson resolves mod root).
 set(DS_CORE_VM_DEPS_DEST "deps")  # under DS_MOD_ROOT_ABS
 if (TARGET liblua)
     # lua51Original already installed by src/lua51original; ensure dest matches.
@@ -367,23 +375,20 @@ endif()
 if (TARGET libluajit OR TARGET luajit)
     # Targets vary by luajit CMake; install known output names from build tree.
 endif()
-# Prefer explicit file install from known OUTPUT_NAME locations after build.
-# Signatures shipped with the mod package (source-controlled under Mod/bin64/windows historically).
-set(_ds_sig_candidates
-    "${CMAKE_SOURCE_DIR}/Mod/deps/signatures_client.json"
-    "${CMAKE_SOURCE_DIR}/Mod/deps/signatures_server.json"
-    "${CMAKE_SOURCE_DIR}/Mod/bin64/linux/signatures_client.json"
-    "${CMAKE_SOURCE_DIR}/Mod/bin64/linux/signatures_server.json"
-    "${CMAKE_SOURCE_DIR}/Mod/bin64/osx/signatures_client.json"
-    "${CMAKE_SOURCE_DIR}/Mod/bin64/osx/signatures_server.json"
-    "${CMAKE_BINARY_DIR}/src/DontStarveInjector/RelWithDebInfo/deps/signatures_client.json"
-    "${CMAKE_BINARY_DIR}/src/DontStarveInjector/RelWithDebInfo/deps/signatures_server.json"
-)
-foreach(_ds_sig IN LISTS _ds_sig_candidates)
-    if (EXISTS "${_ds_sig}")
-        install(FILES "${_ds_sig}" DESTINATION deps COMPONENT plugins)
-    endif()
-endforeach()
+# Signatures: ONLY Mod/signatures_{client,server}.json → install to mod root.
+# No bin64/<plat>/ or deps/ fallbacks (Windows/Linux/macOS same).
+set(_ds_sig_client "${CMAKE_SOURCE_DIR}/Mod/signatures_client.json")
+set(_ds_sig_server "${CMAKE_SOURCE_DIR}/Mod/signatures_server.json")
+if (EXISTS "${_ds_sig_client}")
+    install(FILES "${_ds_sig_client}" DESTINATION . COMPONENT plugins)
+else()
+    message(FATAL_ERROR "Mod/signatures_client.json missing — regenerate with signature_updater")
+endif()
+if (EXISTS "${_ds_sig_server}")
+    install(FILES "${_ds_sig_server}" DESTINATION . COMPONENT plugins)
+else()
+    message(FATAL_ERROR "Mod/signatures_server.json missing — regenerate with signature_updater")
+endif()
 
 # Install lua VM shared libs into Mod/deps when targets exist.
 foreach(_ds_lua_tgt IN ITEMS liblua lua51DS lua51DS_gengc lua51DS_arenagc)
@@ -393,7 +398,7 @@ foreach(_ds_lua_tgt IN ITEMS liblua lua51DS lua51DS_gengc lua51DS_arenagc)
             LIBRARY DESTINATION deps COMPONENT plugins)
     endif()
 endforeach()
-# Custom-built lua51.dll from src/lua51 batch (Windows) + multi-config LuaJIT VMs.
+# Training / stock lua51.dll + multi-config LuaJIT VMs → Mod/deps only.
 # IMPORTANT: only stage the *active* install config's VMs into Mod/deps.
 # Iterating Debug after RelWithDebInfo previously overwrote release lua51DS.dll
 # with a Debug-CRT binary (ucrtbased) → LoadLibrary 0x7E under normal game launch.
@@ -406,19 +411,22 @@ if (WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/src/lua51")
       if(NOT _ds_cfg)
         set(_ds_cfg RelWithDebInfo)
       endif()
-      # Map common names to source tree folders
-      set(_ds_lua51_cfg \"\${_ds_cfg}\")
+      # Map common names to src/lua51 batch folders (debug|release)
+      set(_ds_lua51_cfg \"release\")
       if(_ds_cfg MATCHES \"^[Dd][Ee][Bb][Uu][Gg]$\")
         set(_ds_lua51_cfg debug)
-      elseif(_ds_cfg MATCHES \"^[Rr][Ee][Ll]\")
-        set(_ds_lua51_cfg release)
       endif()
-      set(_cand \"${CMAKE_SOURCE_DIR}/src/lua51/\${_ds_lua51_cfg}/lua51.dll\")
-      if(EXISTS \"\${_cand}\")
-        file(INSTALL \"\${_cand}\" DESTINATION \"\${_ds_deps}\")
+      # lua51.dll (training PE) — ONLY src/lua51/<debug|release>/lua51.dll → Mod/deps.
+      # No Mod/bin64/windows or other package fallbacks; missing is a hard error.
+      set(_ds_lua51_src \"${CMAKE_SOURCE_DIR}/src/lua51/\${_ds_lua51_cfg}/lua51.dll\")
+      if(EXISTS \"\${_ds_lua51_src}\")
+        file(INSTALL \"\${_ds_lua51_src}\" DESTINATION \"\${_ds_deps}\")
+        message(STATUS \"ds_mod_deps: installed lua51.dll from \${_ds_lua51_src}\")
+      else()
+        message(FATAL_ERROR \"ds_mod_deps: lua51.dll not found at \${_ds_lua51_src}. Build it first (target build_lua51 / src/lua51/build_lua51.bat).\")
       endif()
-      # Prefer exact active config build outputs only (no cross-config overwrite).
-      foreach(_name IN ITEMS lua51DS.dll lua51DS_gengc.dll lua51Original.dll lua51.dll)
+      # LuaJIT / original VMs for the active config only (no cross-config overwrite).
+      foreach(_name IN ITEMS lua51DS.dll lua51DS_gengc.dll lua51Original.dll)
         set(_ds_picked \"\")
         foreach(_root IN ITEMS
             \"${CMAKE_BINARY_DIR}/luajit/\${_ds_cfg}\"

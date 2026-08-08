@@ -442,15 +442,22 @@ local function main()
 		if GetModConfigData("AllowLocalNewerWorkshopVersion") == false then
 			return
 		end
-		if TheSim == nil or type(TheSim.GetWorkshopVersion) ~= "function" then
+		if TheSim == nil then
 			return
 		end
-		if TheSim.__luajit_allow_local_newer_workshop_version then
+		-- TheSim is engine userdata: methods live on getmetatable(TheSim).__index.
+		-- Direct field writes (TheSim.x = ...) raise "attempt to index a userdata value".
+		local sim_mt = getmetatable(TheSim)
+		sim_mt = sim_mt and sim_mt.__index
+		if type(sim_mt) ~= "table" or type(sim_mt.GetWorkshopVersion) ~= "function" then
 			return
 		end
-		TheSim.__luajit_allow_local_newer_workshop_version = true
-		local old_GetWorkshopVersion = TheSim.GetWorkshopVersion
-		function TheSim:GetWorkshopVersion(name, ...)
+		if sim_mt.__luajit_allow_local_newer_workshop_version then
+			return
+		end
+		sim_mt.__luajit_allow_local_newer_workshop_version = true
+		local old_GetWorkshopVersion = sim_mt.GetWorkshopVersion
+		sim_mt.GetWorkshopVersion = function(self, name, ...)
 			local workshop_version = old_GetWorkshopVersion(self, name, ...)
 			if name ~= modname then
 				return workshop_version
@@ -577,7 +584,10 @@ local function main()
 							self.plugin_manager_btn = actions:AddItem(
 								translate({ en = "Plugin Manager", zh = "插件管理" }),
 								function()
-									pm.open_plugin_manager()
+									local ok, err = pcall(pm.open_plugin_manager)
+									if not ok then
+										print("[luajit] plugin manager open failed:", err)
+									end
 								end
 							)
 							local sizeX, sizeY = actions:GetSize()

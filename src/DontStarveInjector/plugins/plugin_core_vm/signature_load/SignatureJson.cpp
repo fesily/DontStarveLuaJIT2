@@ -28,9 +28,10 @@ using namespace std::literals;
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(Signatures, version, funcs);
 
-// Directory of already-mapped plugin_core_vm (plugins/). Signatures and lua51*
-// live under plugins/deps. Avoid PluginPath / DS_INJECTOR_CXX_API here:
-// ds_signature is a STATIC lib also linked into signature_updater.
+// Resolve the mod package root (directory that contains modmain.lua / Injector.dll
+// / plugins/). Signatures live at <mod>/signatures_{client,server}.json — NOT
+// under bin64/<plat>/ and NOT under deps/. Avoid PluginPath / DS_INJECTOR_CXX_API
+// here: ds_signature is a STATIC lib also linked into signature_updater.
 static std::filesystem::path module_dir_if_loaded_win(const wchar_t *wname, const char *aname) {
 #ifdef _WIN32
     HMODULE mod = GetModuleHandleW(wname);
@@ -70,52 +71,48 @@ static std::filesystem::path module_dir_if_loaded_sym(const char *sym_name) {
 #endif
 }
 
-// Canonical: <mod>/deps (sibling of plugins/; lua51* + signatures_*.json).
-// Injector is installed at <mod>/Injector.* (all platforms).
-static std::filesystem::path core_vm_deps_dir_if_loaded() {
+// Walk up past platform package shells (bin64/windows|linux|osx, lib64).
+static std::filesystem::path strip_shell_dirs(std::filesystem::path p) {
+    while (!p.empty()) {
+        const auto leaf = p.filename();
+        if (leaf == "bin64" || leaf == "bin" || leaf == "windows" || leaf == "linux" ||
+            leaf == "osx" || leaf == "lib64" || leaf == "shell") {
+            p = p.parent_path();
+            continue;
+        }
+        break;
+    }
+    return p;
+}
+
+// Canonical: <mod>/  (sibling of plugins/ and deps/).
+static std::filesystem::path mod_root_if_loaded() {
 #ifdef _WIN32
     const auto core = module_dir_if_loaded_win(L"plugin_core_vm", "plugin_core_vm.dll");
     if (!core.empty()) {
-        // .../plugins/plugin_core_vm.dll → .../deps
+        // .../plugins/plugin_core_vm.dll → .../ (mod root)
         if (core.filename() == "plugins") {
-            return core.parent_path() / "deps";
+            return core.parent_path();
         }
-        return core.parent_path() / "deps";
+        return strip_shell_dirs(core.parent_path());
     }
     const auto inj = module_dir_if_loaded_win(L"Injector", "Injector.dll");
     if (!inj.empty()) {
-        // .../Mod/Injector.dll → .../Mod/deps
-        // legacy .../Mod/bin64[/windows]/Injector.dll → .../Mod/deps
-        if (inj.filename() == "bin64" || inj.filename() == "windows" || inj.filename() == "linux" ||
-            inj.filename() == "osx") {
-            auto p = inj;
-            while (!p.empty() && (p.filename() == "bin64" || p.filename() == "windows" ||
-                                  p.filename() == "linux" || p.filename() == "osx")) {
-                p = p.parent_path();
-            }
-            return p / "deps";
-        }
-        return inj / "deps";
+        // .../Mod/Injector.dll → .../Mod
+        // legacy .../Mod/bin64[/windows]/Injector.dll → .../Mod
+        return strip_shell_dirs(inj);
     }
 #else
     const auto core = module_dir_if_loaded_sym("ds_core_vm_run_signature_and_replace");
     if (!core.empty()) {
         if (core.filename() == "plugins") {
-            return core.parent_path() / "deps";
+            return core.parent_path();
         }
-        return core.parent_path() / "deps";
+        return strip_shell_dirs(core.parent_path());
     }
     const auto inj = module_dir_if_loaded_sym("HookStartupEntry");
     if (!inj.empty()) {
-        if (inj.filename() == "bin64" || inj.filename() == "lib64") {
-            auto p = inj;
-            while (!p.empty() && (p.filename() == "bin64" || p.filename() == "lib64" ||
-                                  p.filename() == "linux" || p.filename() == "osx")) {
-                p = p.parent_path();
-            }
-            return p / "deps";
-        }
-        return inj / "deps";
+        return strip_shell_dirs(inj);
     }
 #endif
     return {};
@@ -123,11 +120,11 @@ static std::filesystem::path core_vm_deps_dir_if_loaded() {
 
 static std::string get_signatures_filename(bool isClient) {
     const auto file = "signatures_"s + (isClient ? "client" : "server") + ".json";
-    // Prefer plugins/deps next to core.vm. Fall back to CWD absolute path for
-    // tools / first-write creation.
-    const auto deps = core_vm_deps_dir_if_loaded();
-    if (!deps.empty()) {
-        return (deps / file).string();
+    // Prefer <mod>/signatures_*.json next to modmain. Fall back to CWD absolute
+    // path for tools / first-write creation (signature_updater uses WORKER_DIR=Mod/).
+    const auto root = mod_root_if_loaded();
+    if (!root.empty()) {
+        return (root / file).string();
     }
     return std::filesystem::absolute(file).string();
 }

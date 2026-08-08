@@ -61,11 +61,13 @@ if (WIN32)
     _function_relocation_common_config(function_relocation)
     target_link_libraries(function_relocation PRIVATE Frida::Gum)
 
+    # Build-tree: next to Injector under deps/ (package install also → Mod/deps).
+    # Never next to Injector.dll itself — that was applocal pollution.
     set_target_properties(function_relocation PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>"
-            ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>"
-            LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>"
-            PDB_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>"
+            RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/deps"
+            ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/deps"
+            LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/deps"
+            PDB_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/deps"
             CXX_VISIBILITY_PRESET hidden
             VISIBILITY_INLINES_HIDDEN ON
     )

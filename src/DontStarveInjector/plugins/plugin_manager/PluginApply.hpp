@@ -54,8 +54,20 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
                       const ManifestPluginAsset &asset, const std::filesystem::path &plugins_dir,
                       bool *needs_restart, std::string *err);
 
+// Progress snapshot for UI (apply / multi-step fetch).
+struct ApplyProgress {
+    std::string phase;     // resolve | download | extract | install | done | error
+    size_t current = 0;    // 1-based step index when total > 0
+    size_t total = 0;      // planned plugin actions (0 = indeterminate)
+    std::string plugin_id; // current plugin id (may be empty)
+    std::string message;   // short human status
+};
+
+using ApplyProgressFn = void (*)(const ApplyProgress &p, void *user);
+
 // Apply plan actions (id filter optional). Uses g-level helpers in Api for cache/manifest.
 // Pure-ish entry for testing with injected http + temp plugins_dir.
+// `progress` may be null; called between steps (not during HTTP body stream).
 struct ApplyResult {
     size_t attempted = 0;
     size_t succeeded = 0;
@@ -66,7 +78,8 @@ struct ApplyResult {
 ApplyResult apply_plan(const ds::plugin::PluginPinConfig &cfg, const nlohmann::json &manifest,
                        const std::vector<ds::plugin::PlanAction> &actions,
                        const std::filesystem::path &plugins_dir,
-                       std::string_view only_id_or_empty);
+                       std::string_view only_id_or_empty,
+                       ApplyProgressFn progress = nullptr, void *progress_user = nullptr);
 
 // Install extracted files: try plugins_dir first; on open/write failure of an existing
 // locked target, write to plugins_dir/update_pending/ instead.

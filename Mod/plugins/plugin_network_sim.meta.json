@@ -1,0 +1,5 @@
+{
+  "id": "network.sim",
+  "version": "1.0.0",
+  "module": "plugin_network_sim.dll"
+}

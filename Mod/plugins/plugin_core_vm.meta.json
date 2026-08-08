@@ -1,0 +1,5 @@
+{
+  "id": "core.vm",
+  "version": "0.2.0",
+  "module": "plugin_core_vm.dll"
+}

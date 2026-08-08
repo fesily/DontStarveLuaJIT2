@@ -241,8 +241,9 @@ function(ds_add_dynamic_plugin name)
         ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins"
     )
     # Package-local only (COMPONENT plugins). Not part of game bin64 deploy.
-    # MODULE targets cannot take RUNTIME_DEPENDENCY_SET; shared ports used only by
-    # plugins are staged via TARGET_RUNTIME_DLLS install below.
+    # MODULE targets cannot take RUNTIME_DEPENDENCY_SET; third-party shared
+    # ports are staged into Mod/deps via install(CODE)+GET_RUNTIME_DEPENDENCIES
+    # below. VCPKG_APPLOCAL_DEPS is OFF so nothing is dumped next to plugin_*.
     install(TARGETS ${name}
         RUNTIME DESTINATION plugins COMPONENT plugins
         LIBRARY DESTINATION plugins COMPONENT plugins
