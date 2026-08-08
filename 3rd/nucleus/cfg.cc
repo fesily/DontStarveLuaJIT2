@@ -1208,6 +1208,12 @@ CFG::make_cfg(Binary *bin, std::list<DisasmSection> *disasm)
   /* Link basic blocks by direct and fallthrough edges */
   for(auto &dis: (*disasm)) {
     for(auto &bb: dis.BBs) {
+      /* invalid / empty-insn BBs are already parked in bad_bbs above.
+       * MSVC Debug CRT aborts on std::list::back() when empty; skip here
+       * (engineering guard, same predicate as the start2bb pass). */
+      if(bb.invalid || bb.insns.empty()) {
+        continue;
+      }
       flags = bb.insns.back().flags;
       if((flags & Instruction::INS_FLAG_CALL) || (flags & Instruction::INS_FLAG_JMP)) {
         if(!(flags & Instruction::INS_FLAG_INDIRECT)) {

@@ -21,6 +21,7 @@ surface only**. Do not use this directory for algorithm forks of `CFG::make_cfg`
 | PE loader | `loader.cc` / `loader.h` | Fill `Binary`/`Section` via pe-parse; no libbfd on Windows |
 | util portability | `util.cc` | Replace POSIX `realpath`/`libgen` for MSVC; keep upstream-like `xorshift128plus` seed via `rand64()`/`random_device` |
 | insn.h enum init | `insn.h` | MSVC requires enum-typed zero for Capstone reg fields |
+| make_cfg empty-BB guard | `cfg.cc` | Skip `invalid` / empty-`insns` BBs in the link loop so MSVC Debug CRT does not abort on `std::list::back()`; first pass already excludes them from `start2bb` |
 | endian MSVC | `endian.cc` | `__BYTE_ORDER__` not available on MSVC; force LE on Windows |
 
 ### PE section bytes (Windows pe-parse path)
