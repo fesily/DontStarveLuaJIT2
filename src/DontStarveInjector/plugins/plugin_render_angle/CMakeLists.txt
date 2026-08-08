@@ -34,7 +34,7 @@ if (MSVC AND DEFINED UNOFFICIAL_ANGLE_HAS_DEBUG_LIBS AND NOT UNOFFICIAL_ANGLE_HA
     # After packaging plugins, drop the hybrid /MD angle DLL from Debug installs.
     install(CODE [[
       if(CMAKE_INSTALL_CONFIG_NAME MATCHES "^([Dd][Ee][Bb][Uu][Gg])$")
-        set(_ds_angle "${CMAKE_INSTALL_PREFIX}/plugins/plugin_render_angle.dll")
+        set(_ds_angle "${CMAKE_INSTALL_PREFIX}/plugins/plugin_render_angle/plugin_render_angle.dll")
         if(EXISTS "${_ds_angle}")
           file(REMOVE "${_ds_angle}")
           message(STATUS "plugin_render_angle: removed from Debug package (release_only ANGLE is /MD-only; mixed CRT unsafe)")
