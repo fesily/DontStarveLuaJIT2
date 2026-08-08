@@ -37,6 +37,9 @@ set(SOURCES
         core/PluginPath.cpp
         core/PluginPendingUpdates.cpp
         core/CoreVmBootstrap.cpp
+        core/PluginPackModinfo.cpp
+        core/ExternalPluginDiscovery.cpp
+        core/EnabledDstMods.cpp
 )
 
 

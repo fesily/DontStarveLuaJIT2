@@ -692,3 +692,46 @@ Successful replace writes new files (or `update_pending/`) and reports `needs_re
 
 Related plan: `docs/superpowers/plans/2026-08-05-plugin-manager.md`.
 
+## 14. External plugin packs (enabled DST mods)
+
+External packs are **other enabled DST mods** (not this mod) that opt in with:
+
+```lua
+-- modinfo.lua of the external mod
+luajit_plugin_pack = true
+plugin_id = "vendor.feature"  -- required
+```
+
+### Layout
+
+```text
+mods/<external_mod>/
+  modinfo.lua                 -- marker + plugin_id + normal DST fields
+  plugins/plugin_foo/
+    plugin_foo.dll            -- optional native (package layout)
+    modinfo.lua               -- optional per-package face metadata
+    modmain.lua               -- optional AfterModMain face
+    scripts/...
+```
+
+### Load rules
+
+| Rule | Behavior |
+|------|----------|
+| Must be **enabled** | Disabled mods are never discovered (C or Lua) |
+| Trust before LoadLibrary | C parses mod `modinfo` first; no export-probe trust |
+| This mod | Marker-exempt; always uses its own `plugins/` |
+| Client enable UI | Enabling a marked external mod shows confirm; Cancel leaves it disabled |
+| Lua faces | `Mod/plugins/discover_external.lua` after built-in `init.lua` |
+| Native | `DynamicPluginLoader` external pass during Inject |
+
+### Author checklist
+
+1. Ship a normal DST-compatible mod with `modinfo.lua`.
+2. Set `luajit_plugin_pack = true` and non-empty `plugin_id`.
+3. Place native modules under `plugins/plugin_<stem>/plugin_<stem>.dll` (package layout).
+4. Optional: package `modmain.lua` for AfterModMain face.
+5. Users must **enable** the mod; clients see a risk confirmation dialog.
+
+Design: `docs/superpowers/specs/2026-08-08-external-plugin-discovery-design.md`.
+

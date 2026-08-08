@@ -632,6 +632,12 @@ local function main()
 			return
 		end
 		HookGetModConfigData()
+		-- Client: confirm before enabling external luajit_plugin_pack mods.
+		if not TheNet:IsDedicated() then
+			pcall(function()
+				modimport("scripts/luajit_plugin_pack_enable_warn")
+			end)
+		end
 		-- Path A Lua PluginHost (AfterModMain). M4+ features load from plugins/init.
 		-- kleiloadlua chunks do NOT inherit the mod env (strict.lua treats MODROOT as undeclared).
 		-- Always setfenv to main_fenv so MODROOT / modimport / Add*PostInit resolve.
@@ -659,6 +665,47 @@ local function main()
 			end
 			local PluginHost = run_mod_chunk("plugins/host.lua")
 			local registry = run_mod_chunk("plugins/init.lua") or {}
+			-- External enabled luajit_plugin_pack mods (faces only; native via C EarlyNative).
+			do
+				local ok_disc, discover = pcall(run_mod_chunk, "plugins/discover_external.lua")
+				if ok_disc and type(discover) == "table" and type(discover.run) == "function" then
+					local package_load = run_mod_chunk("plugins/package_load.lua")
+					local api = {
+						this_modname = modname,
+						is_client = not TheNet:IsDedicated(),
+						MODROOT = MODROOT,
+						kleiloadlua = kleiloadlua,
+						modimport = modimport,
+						parent_env = main_fenv,
+						GetModConfigData = GetModConfigData,
+						package_load = package_load,
+						mod_root_for = function(m)
+							local root = rawget(_G, "MODS_ROOT") or "../mods/"
+							if type(root) ~= "string" or root == "" then root = "../mods/" end
+							if root:sub(-1) ~= "/" and root:sub(-1) ~= "\\" then root = root .. "/" end
+							return root .. m .. "/"
+						end,
+						package_dirs_for_mod = function(mod_root)
+							-- Probe package dirs by trying kleiloadlua on common layout:
+							-- we cannot readdir portably; list via soft path check of plugin_*/modinfo.lua
+							-- when GameInjector/FS helpers missing, return empty (native-only packs OK).
+							local dirs = {}
+							if type(kleiloadlua) ~= "function" then return dirs end
+							-- Optional: TheSim:ListDirectory or similar is not stable; leave empty unless
+							-- DS_LUAJIT_EXTERNAL_PACKAGE_DIRS env-style not available in Lua.
+							return dirs
+						end,
+					}
+					local ok_run, external = pcall(discover.run, api)
+					if ok_run and type(external) == "table" then
+						for i = 1, #external do
+							registry[#registry + 1] = external[i]
+						end
+					elseif not ok_run then
+						print("[luajit][plugin-discover] run failed: " .. tostring(external))
+					end
+				end
+			end
 			local host = PluginHost.new()
 			host:register_all(registry)
 			-- Resolve against already-hooked GetModConfigData when available; raw otherwise.

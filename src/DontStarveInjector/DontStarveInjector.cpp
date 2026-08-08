@@ -217,7 +217,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         RegisterBuiltinPlugins(g_plugin_host);
         {
             static DynamicPluginLoader g_dyn_loader;
-            auto report = g_dyn_loader.load_all(g_plugin_host);
+            auto report = g_dyn_loader.load_all(g_plugin_host, isClient);
             for (auto &p : report.loaded_modules) {
                 spdlog::info("dynamic plugin module loaded: {}", p);
             }

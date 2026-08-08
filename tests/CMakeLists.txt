@@ -263,6 +263,85 @@ target_compile_features(test_plugin_services PRIVATE cxx_std_23)
 target_compile_definitions(test_plugin_services PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME plugin_services COMMAND test_plugin_services)
 
+# External plugin pack modinfo trust gate (sol2 + liblua_static, L0 cascade style)
+find_path(SOL2_INCLUDE_DIRS "sol/abort.hpp")
+add_executable(test_plugin_pack_modinfo
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_pack_modinfo.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPackModinfo.cpp)
+target_include_directories(test_plugin_pack_modinfo PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
+    ${SOL2_INCLUDE_DIRS}
+    ${PROJECT_SOURCE_DIR}/src/lua51original/src
+    ${CMAKE_BINARY_DIR}/src/lua51original)
+target_compile_features(test_plugin_pack_modinfo PRIVATE cxx_std_23)
+target_compile_definitions(test_plugin_pack_modinfo PRIVATE DS_PLUGIN_HOST_STATIC)
+if (TARGET liblua_static)
+    target_link_libraries(test_plugin_pack_modinfo PRIVATE liblua_static)
+    add_dependencies(test_plugin_pack_modinfo liblua_static)
+else()
+    message(FATAL_ERROR "liblua_static required for test_plugin_pack_modinfo")
+endif()
+add_test(NAME plugin_pack_modinfo COMMAND test_plugin_pack_modinfo)
+
+add_executable(test_external_plugin_discovery
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_external_plugin_discovery.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ExternalPluginDiscovery.cpp)
+target_include_directories(test_external_plugin_discovery PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_external_plugin_discovery PRIVATE cxx_std_23)
+target_compile_definitions(test_external_plugin_discovery PRIVATE DS_PLUGIN_HOST_STATIC)
+add_test(NAME external_plugin_discovery COMMAND test_external_plugin_discovery)
+
+# Enabled DST mod enumeration (modoverrides parse + root resolve)
+add_executable(test_enabled_dst_mods
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_enabled_dst_mods.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/EnabledDstMods.cpp)
+target_include_directories(test_enabled_dst_mods PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
+    ${SOL2_INCLUDE_DIRS}
+    ${PROJECT_SOURCE_DIR}/src/lua51original/src
+    ${CMAKE_BINARY_DIR}/src/lua51original)
+target_compile_features(test_enabled_dst_mods PRIVATE cxx_std_23)
+target_compile_definitions(test_enabled_dst_mods PRIVATE DS_PLUGIN_HOST_STATIC)
+if (TARGET liblua_static)
+    target_link_libraries(test_enabled_dst_mods PRIVATE liblua_static)
+    add_dependencies(test_enabled_dst_mods liblua_static)
+else()
+    message(FATAL_ERROR "liblua_static required for test_enabled_dst_mods")
+endif()
+add_test(NAME enabled_dst_mods COMMAND test_enabled_dst_mods)
+
+# External discovery trust gate (mock load_fn; no real LoadLibrary)
+add_executable(test_external_discover_gate
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_external_discover_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ExternalPluginDiscovery.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/EnabledDstMods.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPackModinfo.cpp
+    ${PLUGIN_HOST_SOURCES})
+target_include_directories(test_external_discover_gate PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
+    ${SOL2_INCLUDE_DIRS}
+    ${PROJECT_SOURCE_DIR}/src/lua51original/src
+    ${CMAKE_BINARY_DIR}/src/lua51original)
+target_compile_features(test_external_discover_gate PRIVATE cxx_std_23)
+target_compile_definitions(test_external_discover_gate PRIVATE DS_PLUGIN_HOST_STATIC)
+if (TARGET liblua_static)
+    target_link_libraries(test_external_discover_gate PRIVATE liblua_static)
+    add_dependencies(test_external_discover_gate liblua_static)
+else()
+    message(FATAL_ERROR "liblua_static required for test_external_discover_gate")
+endif()
+add_test(NAME external_discover_gate COMMAND test_external_discover_gate)
+
+add_test(
+    NAME plugin_discover_external
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_discover_external.py
+)
+set_tests_properties(plugin_discover_external PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
 add_test(
     NAME plugin_host_lua
     COMMAND ${CMAKE_COMMAND} -E env

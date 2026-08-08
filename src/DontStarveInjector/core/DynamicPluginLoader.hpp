@@ -24,9 +24,15 @@ public:
     DynamicPluginLoader(const DynamicPluginLoader &) = delete;
     DynamicPluginLoader &operator=(const DynamicPluginLoader &) = delete;
 
-    DynamicLoadReport load_all(PluginHost &host);
-    // Test seam: scan a single directory.
+    // is_client selects enabled-mod enumeration sources for external packs.
+    DynamicLoadReport load_all(PluginHost &host, bool is_client = true);
+    // Test seam: scan a single directory (built-in roots only).
     DynamicLoadReport load_directory(PluginHost &host, const std::filesystem::path &dir);
+
+    // Load one module path (package or flat). Used by external discovery after trust gate.
+    // On failure returns false and sets skip_reason when non-null.
+    bool load_module_path(PluginHost &host, const std::filesystem::path &path,
+                          std::string *skip_reason = nullptr);
 
     static std::vector<std::filesystem::path> default_search_dirs();
 
