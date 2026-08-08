@@ -30,20 +30,37 @@ foreach(_sig IN ITEMS signatures_client.json signatures_server.json)
   endif()
 endforeach()
 
-# Map multi-config → src/lua51 batch folder
+# Map multi-config → src/lua51 batch folder (debug|release).
+# Training PE only — not the game LuaJIT VM. Prefer matching config, then the
+# other batch, then already-staged Mod/deps (so Debug builds work after a
+# release-only build_lua51).
 set(_ds_lua51_cfg "release")
 if(DS_CFG MATCHES "^[Dd][Ee][Bb][Uu][Gg]$")
   set(_ds_lua51_cfg "debug")
 endif()
 
-# lua51.dll — ONLY src/lua51/<debug|release>/ (no Mod/bin64/*)
-set(_ds_lua51_src "${DS_SOURCE_DIR}/src/lua51/${_ds_lua51_cfg}/lua51.dll")
-if(EXISTS "${_ds_lua51_src}")
+set(_ds_lua51_src "")
+foreach(_cand IN ITEMS
+    "${DS_SOURCE_DIR}/src/lua51/${_ds_lua51_cfg}/lua51.dll"
+    "${DS_SOURCE_DIR}/src/lua51/release/lua51.dll"
+    "${DS_SOURCE_DIR}/src/lua51/debug/lua51.dll"
+    "${DS_SOURCE_DIR}/Mod/deps/lua51.dll")
+  if(EXISTS "${_cand}")
+    set(_ds_lua51_src "${_cand}")
+    break()
+  endif()
+endforeach()
+if(_ds_lua51_src)
+  if(NOT _ds_lua51_src STREQUAL "${DS_SOURCE_DIR}/src/lua51/${_ds_lua51_cfg}/lua51.dll")
+    message(STATUS
+      "stage_core_vm_deps: using fallback lua51.dll '${_ds_lua51_src}' "
+      "(wanted src/lua51/${_ds_lua51_cfg}/lua51.dll)")
+  endif()
   file(COPY "${_ds_lua51_src}" DESTINATION "${DS_OUT}")
 else()
   message(FATAL_ERROR
-    "stage_core_vm_deps: lua51.dll not found at ${_ds_lua51_src}. "
-    "Build it first (target build_lua51 / src/lua51/build_lua51.bat).")
+    "stage_core_vm_deps: lua51.dll not found under src/lua51/{debug,release} "
+    "or Mod/deps. Build it first (target build_lua51 / src/lua51/build_lua51.bat).")
 endif()
 
 # LuaJIT / original VMs — active config build outputs only (no package fallbacks).

@@ -52,9 +52,14 @@ Mod/scripts/jit
 .venv/
 cmake/GameDir.cmake
 Mod/**/*.dll
+!Mod/deps/lua51.dll
 Mod/mod.manifest
 dst-scripts/tests/plugin_server/_markers/
 
 __pycache__/
 *.py[cod]
 .worktrees/
+.sisyphus/
+.superpowers/
+.omo/
+.angle-bincache/

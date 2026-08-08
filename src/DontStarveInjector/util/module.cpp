@@ -2,7 +2,7 @@
 #include <Windows.h>
 #include "module.hpp"
 
-void module_enumerate_exports(HMODULE module,
+DS_INJECTOR_CXX_API void module_enumerate_exports(HMODULE module,
                               FoundExportFunc func,
                               void *user_data) {
     const uint8_t *mod_base;
@@ -50,7 +50,7 @@ void module_enumerate_exports(HMODULE module,
     }
 }
 
-void
+DS_INJECTOR_CXX_API void
 module_enumerate_imports(HMODULE module,
                          FoundImportFunc func,
                          void *user_data) {

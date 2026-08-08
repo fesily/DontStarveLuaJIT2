@@ -411,19 +411,28 @@ if (WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/src/lua51")
       if(NOT _ds_cfg)
         set(_ds_cfg RelWithDebInfo)
       endif()
-      # Map common names to src/lua51 batch folders (debug|release)
+      # Map multi-config → src/lua51 batch folders (debug|release).
+      # Prefer matching config, then the other batch, then already-staged Mod/deps.
       set(_ds_lua51_cfg \"release\")
       if(_ds_cfg MATCHES \"^[Dd][Ee][Bb][Uu][Gg]$\")
         set(_ds_lua51_cfg debug)
       endif()
-      # lua51.dll (training PE) — ONLY src/lua51/<debug|release>/lua51.dll → Mod/deps.
-      # No Mod/bin64/windows or other package fallbacks; missing is a hard error.
-      set(_ds_lua51_src \"${CMAKE_SOURCE_DIR}/src/lua51/\${_ds_lua51_cfg}/lua51.dll\")
-      if(EXISTS \"\${_ds_lua51_src}\")
+      set(_ds_lua51_src \"\")
+      foreach(_cand IN ITEMS
+          \"${CMAKE_SOURCE_DIR}/src/lua51/\${_ds_lua51_cfg}/lua51.dll\"
+          \"${CMAKE_SOURCE_DIR}/src/lua51/release/lua51.dll\"
+          \"${CMAKE_SOURCE_DIR}/src/lua51/debug/lua51.dll\"
+          \"${CMAKE_SOURCE_DIR}/Mod/deps/lua51.dll\")
+        if(EXISTS \"\${_cand}\")
+          set(_ds_lua51_src \"\${_cand}\")
+          break()
+        endif()
+      endforeach()
+      if(_ds_lua51_src)
         file(INSTALL \"\${_ds_lua51_src}\" DESTINATION \"\${_ds_deps}\")
         message(STATUS \"ds_mod_deps: installed lua51.dll from \${_ds_lua51_src}\")
       else()
-        message(FATAL_ERROR \"ds_mod_deps: lua51.dll not found at \${_ds_lua51_src}. Build it first (target build_lua51 / src/lua51/build_lua51.bat).\")
+        message(FATAL_ERROR \"ds_mod_deps: lua51.dll not found under src/lua51/{debug,release} or Mod/deps. Build it first (target build_lua51 / src/lua51/build_lua51.bat).\")
       endif()
       # LuaJIT / original VMs for the active config only (no cross-config overwrite).
       foreach(_name IN ITEMS lua51DS.dll lua51DS_gengc.dll lua51Original.dll)

@@ -187,29 +187,6 @@ static void test_ugc_directory_base() {
     printf("PASS: ugc_directory_base\n");
 }
 
-static void test_legacy_no_marker_write() {
-    clear_env_and_state();
-    auto root = make_temp("ds_inj_legacy");
-    auto game = root / "game";
-    auto exe_dir = game / "bin64";
-    auto legacy = exe_dir / injector_module_filename();
-    touch_file(legacy);
-    // ensure no mod injectors
-    fs::create_directories(game / "mods");
-
-    set_marker_game_root_for_test(game);
-    set_exe_dir_for_test(exe_dir);
-
-    fs::path out;
-    assert(resolve_injector_module(out));
-    assert(fs::equivalent(out, legacy));
-    assert(last_resolve_source_for_test() == "legacy");
-    fs::path marker_val;
-    assert(!read_injector_marker(marker_val)); // must NOT pin legacy
-
-    clear_env_and_state();
-    printf("PASS: legacy_no_marker_write\n");
-}
 
 static void test_fail_when_nothing() {
     clear_env_and_state();
@@ -264,7 +241,6 @@ int main() {
     test_invalid_marker_falls_through_to_scan();
     test_scan_alias_workshop();
     test_ugc_directory_base();
-    test_legacy_no_marker_write();
     test_fail_when_nothing();
     test_mod_root_from_module_path();
     test_load_fail_fast_no_module();

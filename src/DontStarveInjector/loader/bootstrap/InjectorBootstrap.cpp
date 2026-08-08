@@ -37,13 +37,11 @@ namespace {
 namespace fs = std::filesystem;
 
 std::mutex g_state_mu;
-fs::path g_cached_module;
 std::string g_last_source;
 fs::path g_marker_game_root_override;
 fs::path g_exe_dir_override;
 std::vector<std::string> g_cmdline_override;
 bool g_has_cmdline_override = false;
-bool g_logged_legacy = false;
 bool g_logged_failure = false;
 std::mutex g_dll_search_mu;
 std::unordered_set<std::string> g_added_dll_dirs;
@@ -249,8 +247,9 @@ void collect_scan_bases(std::vector<fs::path> &bases) {
 
     const auto exe = current_exe_dir();
     if (!exe.empty()) {
+        // Game install: <game>/bin64/exe → <game>/mods
         push_unique(exe.parent_path() / "mods");
-        push_unique(exe / "mods");
+        // Steam UGC: .../steamapps/common/<game>/bin64 → .../steamapps/workshop/content/322330
         const auto steamapps = exe.parent_path().parent_path().parent_path();
         if (!steamapps.empty()) {
             push_unique(steamapps / "workshop" / "content" / "322330");
@@ -300,12 +299,9 @@ bool scan_mod_injector(fs::path &out) {
     return false;
 }
 
-bool pin_success(const fs::path &module_abs, const char *source, bool write_marker) {
-    g_cached_module = module_abs;
+bool pin_success(const fs::path &module_abs, const char *source) {
     g_last_source = source;
-    if (write_marker) {
-        (void)write_injector_marker(module_abs);
-    }
+    (void)write_injector_marker(module_abs);
     return true;
 }
 
@@ -389,18 +385,13 @@ bool read_injector_marker(fs::path &out_abs) {
 bool resolve_injector_module(std::filesystem::path &out_abs) {
     std::lock_guard lock(g_state_mu);
 
-    if (!g_cached_module.empty() && is_regular_existing(g_cached_module)) {
-        out_abs = g_cached_module;
-        return true;
-    }
-
     // 1) DS_LUAJIT_INJECTOR file
     if (const char *file_env = env_or_null(kInjectorFileEnv)) {
         fs::path cand = file_env;
         if (is_regular_existing(cand)) {
             const auto abs = absolute_if_possible(cand);
             out_abs = abs;
-            return pin_success(abs, "env_file", /*write_marker=*/true);
+            return pin_success(abs, "env_file");
         }
     }
 
@@ -409,7 +400,7 @@ bool resolve_injector_module(std::filesystem::path &out_abs) {
         fs::path found;
         if (find_module_in_dir(fs::path(dir_env), found)) {
             out_abs = found;
-            return pin_success(found, "env_dir", /*write_marker=*/true);
+            return pin_success(found, "env_dir");
         }
     }
 
@@ -417,42 +408,24 @@ bool resolve_injector_module(std::filesystem::path &out_abs) {
     {
         fs::path marked;
         if (read_injector_marker(marked)) {
-            g_cached_module = marked;
             g_last_source = "marker";
             out_abs = marked;
             return true;
         }
     }
 
-    // 4) Mod alias scan
+    // 4) Mod alias scan under <game>/mods, Steam UGC, -ugc_directory
     {
         fs::path found;
         if (scan_mod_injector(found)) {
             out_abs = found;
-            return pin_success(found, "scan", /*write_marker=*/true);
-        }
-    }
-
-    // 5) Legacy next to exe
-    {
-        fs::path found;
-        const auto exe = current_exe_dir();
-        if (find_module_in_dir(exe, found)) {
-            if (!g_logged_legacy) {
-                log_once_tag("using legacy Injector next to game exe (no marker pin)");
-                g_logged_legacy = true;
-            }
-            g_cached_module = found;
-            g_last_source = "legacy";
-            out_abs = found;
-            return true;
+            return pin_success(found, "scan");
         }
     }
 
     g_last_source = "none";
-    g_cached_module.clear();
     if (!g_logged_failure) {
-        log_once_tag("failed to resolve real Injector module (env/marker/scan/legacy)");
+        log_once_tag("failed to resolve real Injector module (env/marker/scan)");
         g_logged_failure = true;
     }
     return false;
@@ -576,13 +549,11 @@ HookStartupEntryFn load_injector_hook_entry() {
 
 void reset_for_test() {
     std::lock_guard lock(g_state_mu);
-    g_cached_module.clear();
     g_last_source.clear();
     g_marker_game_root_override.clear();
     g_exe_dir_override.clear();
     g_cmdline_override.clear();
     g_has_cmdline_override = false;
-    g_logged_legacy = false;
     g_logged_failure = false;
     {
         std::lock_guard dll_lock(g_dll_search_mu);

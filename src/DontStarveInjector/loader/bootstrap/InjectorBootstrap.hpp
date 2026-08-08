@@ -16,11 +16,12 @@ inline constexpr const char *kMarkerFileName  = "ds_luajit_injector.path";
 const char *injector_module_filename();
 
 // Resolve absolute path to the real Injector module file.
-// Order: env file -> env dir -> marker -> mod scan -> legacy game bin64.
+// Order: env file -> env dir -> marker -> mod scan.
 // Does not load the module. Returns false if nothing found.
+// One-shot process bootstrap: no in-process path cache.
 bool resolve_injector_module(std::filesystem::path &out_abs);
 
-// After non-legacy success, write marker under game data/unsafedata/.
+// After env/scan success, write marker under game data/unsafedata/.
 // Exposed for tests; resolve may call this internally after success.
 bool write_injector_marker(const std::filesystem::path &abs_module);
 
@@ -45,7 +46,6 @@ std::filesystem::path mod_root_from_injector_module(const std::filesystem::path 
 bool configure_injector_deps_search(const std::filesystem::path &mod_root,
                                     const std::filesystem::path &module_dir);
 
-
 // --- Test seams (always available; no-ops / empty outside tests is fine) ---
 void reset_for_test();
 // Override game root used for marker path: game_root / data / unsafedata / marker.
@@ -55,11 +55,8 @@ void set_marker_game_root_for_test(const std::filesystem::path &game_root_or_emp
 void set_exe_dir_for_test(const std::filesystem::path &exe_dir_or_empty);
 // Override cmdline tokens for -ugc_directory (production: get_cmds()).
 void set_cmdline_for_test(std::vector<std::string> args_or_empty);
-// When true, next successful resolve treats path as legacy (no marker write).
-// Prefer automatic classification: path under test exe_dir counts as legacy.
-// Document: production classifies "next to exe" as legacy.
 
-// Optional: expose last resolve source for asserts: "env_file"|"env_dir"|"marker"|"scan"|"legacy"|"".
+// Optional: last resolve source for asserts: "env_file"|"env_dir"|"marker"|"scan"|"none"|"".
 std::string last_resolve_source_for_test();
 
 } // namespace ds::bootstrap

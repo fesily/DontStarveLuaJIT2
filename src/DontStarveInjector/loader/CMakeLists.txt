@@ -18,7 +18,8 @@ target_include_directories(Winmm PRIVATE
 )
 
 target_link_libraries(Winmm PRIVATE injector_bootstrap)
-target_compile_definitions(Winmm PRIVATE NO_FRIDA_GUM=1)
+# module.cpp / platform.cpp are compiled into this shell — not imported from Injector.
+target_compile_definitions(Winmm PRIVATE NO_FRIDA_GUM=1 DS_PLUGIN_HOST_STATIC)
 
 # Shell must stay CRT-only + system libs. No vcpkg shared runtimes.
 install(TARGETS Winmm RUNTIME DESTINATION "${DS_INSTALL_SHELL_DIR}" COMPONENT injector_shell)
