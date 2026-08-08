@@ -38,6 +38,7 @@ dist/
 *.ncb
 *.suo
 *.pdb
+!Mod/deps/lua51.pdb
 *.exp
 .idea/
 
