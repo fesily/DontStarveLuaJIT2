@@ -273,6 +273,15 @@ set_tests_properties(plugin_host_lua PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 add_test(
+    NAME plugin_package_load
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_package_load.py
+)
+set_tests_properties(plugin_package_load PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+add_test(
     NAME plugin_trunk_surface
     COMMAND ${PYTHON_EXECUTABLE_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/plugin/check_trunk_surface.py
