@@ -95,11 +95,14 @@ local function build_plugin_table(env, package_root, stem, api)
         load = function(ctx)
             local modmain_path = package_root .. "modmain.lua"
             local parent_modimport = api.modimport
-            local bound_modimport = function(name)
+            local parent_env = api.parent_env or _G
+            local mod_env
+            local bound_modimport
+            bound_modimport = function(name)
                 -- Prefer package-root relative paths (DST-style scripts/...).
                 local rel = normalize_modimport_name(name)
                 if api.package_modimport then
-                    return api.package_modimport(package_root, rel)
+                    return api.package_modimport(package_root, rel, mod_env)
                 end
                 if parent_modimport then
                     -- Fallback: call parent with package-relative path string for tests.
@@ -107,8 +110,7 @@ local function build_plugin_table(env, package_root, stem, api)
                 end
                 error("modimport not available in package load")
             end
-            local parent_env = api.parent_env or _G
-            local mod_env = setmetatable({
+            mod_env = setmetatable({
                 modimport = bound_modimport,
                 MODROOT = package_root, -- package-local for this chunk only
                 print = api.print or print,

@@ -9,7 +9,7 @@
 --   10 jit.tailcall | 20 debug.profiler | 40 network.*
 --   50 fps.render | 60 sim/save | 70 jit.runtime
 --
--- load_package is wired for Task 5+ dual-face migration; registry stays load_flat for P0.
+-- Dual-face packages use load_package; Lua-only faces remain load_flat.
 
 local function get_api()
     local env = getfenv(1)
@@ -22,17 +22,40 @@ local function get_api()
         modimport = modimport,
         parent_env = env,
         GetModConfigData = (type(env) == "table" and env.GetModConfigData) or GetModConfigData,
-        AddGamePostInit = (type(env) == "table" and env.AddGamePostInit) or AddGamePostInit,
-        print = print,
-        package_modimport = function(package_root, rel)
-            -- Prefer loading package-local file with kleiloadlua + package env.
-            local path = package_root .. rel .. ".lua"
-            local chunk = loadlua(path)
-            if type(chunk) == "function" then
-                setfenv(chunk, env)
-                return chunk()
+        -- Late-bind so host tests can stub _G.AddGamePostInit after requiring init.
+        AddGamePostInit = function(fn)
+            local f = (type(env) == "table" and (rawget(env, "AddGamePostInit") or env.AddGamePostInit))
+                or rawget(_G, "AddGamePostInit")
+            if type(f) == "function" then
+                return f(fn)
             end
-            error("package modimport failed: " .. path .. " " .. tostring(chunk))
+            -- Immediate run only as last resort (no host deferred registry).
+            return fn()
+        end,
+        print = print,
+        package_modimport = function(package_root, rel, package_env)
+            -- Prefer loading package-local file with kleiloadlua + package env.
+            -- package_env keeps deferred AddGamePostInit modimport rebind alive.
+            local path = package_root .. rel .. ".lua"
+            if type(loadlua) == "function" then
+                local chunk = loadlua(path)
+                if type(chunk) == "function" then
+                    setfenv(chunk, package_env or env)
+                    return chunk()
+                end
+                error("package modimport failed: " .. path .. " " .. tostring(chunk))
+            end
+            -- Test path: honor parent/global modimport stub when kleiloadlua is absent.
+            local mi = modimport or rawget(_G, "modimport")
+            if type(mi) == "function" then
+                return mi(rel)
+            end
+            local chunk, err = loadfile(path)
+            if type(chunk) ~= "function" then
+                error("package modimport failed: " .. path .. " " .. tostring(err or chunk))
+            end
+            setfenv(chunk, package_env or env or _G)
+            return chunk()
         end,
     }
 end
@@ -74,6 +97,14 @@ local function load_flat(name)
 end
 
 local function load_package(stem)
+    -- Test path (require plugins.*): no MODROOT; resolve package under package.path root.
+    if not api.MODROOT then
+        local root = (os.getenv("REPO_ROOT") or "."):gsub("\\", "/")
+        if root:sub(-1) ~= "/" then
+            root = root .. "/"
+        end
+        return R.load_package_from_root(root .. "Mod/plugins/" .. stem .. "/", stem, api)
+    end
     return R.load_package(stem, api)
 end
 
@@ -83,7 +114,7 @@ return {
     load_flat("network_rpc"),
     load_flat("network_entity"),
     load_flat("fps_render"),
-    load_flat("save_fork"),
+    load_package("plugin_save_fork"),
     load_flat("sim_lagcomp"),
     load_flat("network_sim"),
     load_flat("jit_runtime"),
