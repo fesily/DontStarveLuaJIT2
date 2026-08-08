@@ -1,5 +1,8 @@
 #include "ExternalPluginDiscovery.hpp"
+#include "EnabledDstMods.hpp"
+#include "PluginPackModinfo.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <string_view>
 
@@ -126,6 +129,92 @@ std::vector<std::filesystem::path> list_pack_modules_under_mod(const std::filesy
         out.push_back(std::move(abs));
     }
     return out;
+}
+
+
+ExternalDiscoverReport
+discover_and_load_external_plugins(PluginHost &host, bool is_client,
+                                   const std::filesystem::path &this_mod_root,
+                                   ExternalModuleLoadFn load_fn) {
+    ExternalDiscoverReport report;
+    std::error_code ec;
+    std::filesystem::path this_root_canon;
+    if (!this_mod_root.empty()) {
+        this_root_canon = std::filesystem::weakly_canonical(this_mod_root, ec);
+        if (ec) {
+            this_root_canon = this_mod_root.lexically_normal();
+            ec.clear();
+        }
+    }
+
+    auto mods = enumerate_enabled_dst_mods(is_client);
+    report.mods_seen = mods.size();
+
+    for (const auto &mod : mods) {
+        if (mod.root.empty()) {
+            report.skipped.push_back(mod.name + ": empty_root");
+            continue;
+        }
+        auto mod_canon = std::filesystem::weakly_canonical(mod.root, ec);
+        if (ec) {
+            mod_canon = mod.root.lexically_normal();
+            ec.clear();
+        }
+        if (!this_root_canon.empty() &&
+            mod_canon.generic_string() == this_root_canon.generic_string()) {
+            std::fprintf(stderr, "[plugin-discover] skip mod=%s reason=this_mod\n", mod.name.c_str());
+            continue;
+        }
+
+        const auto modinfo_path = mod.root / "modinfo.lua";
+        auto info = parse_plugin_pack_modinfo(modinfo_path);
+        if (!external_pack_trust_ok(info)) {
+            std::string reason = !info.ok ? ("modinfo:" + info.parse_error)
+                                          : (!info.luajit_plugin_pack ? "no_luajit_plugin_pack"
+                                                                      : "missing_plugin_id");
+            report.skipped.push_back(mod.name + ": " + reason);
+            std::fprintf(stderr, "[plugin-discover] skip mod=%s reason=%s\n", mod.name.c_str(),
+                         reason.c_str());
+            continue;
+        }
+
+        ++report.mods_accepted;
+        std::fprintf(stderr, "[plugin-discover] accept mod=%s id=%s\n", mod.name.c_str(),
+                     info.plugin_id.c_str());
+
+        auto modules = list_pack_modules_under_mod(mod.root);
+        for (const auto &module_path : modules) {
+            if (!path_under_root(mod.root, module_path)) {
+                report.skipped.push_back(module_path.string() + ": path_jail");
+                std::fprintf(stderr, "[plugin-discover] skip mod=%s path=%s reason=path_jail\n",
+                             mod.name.c_str(), module_path.string().c_str());
+                continue;
+            }
+            std::string skip;
+            bool loaded = false;
+            if (load_fn) {
+                loaded = load_fn(module_path, &skip);
+            } else {
+                // Production path requires a live DynamicPluginLoader instance;
+                // call site uses load_all overload that passes a bound load_fn.
+                skip = "no_load_fn";
+            }
+            if (!loaded) {
+                report.skipped.push_back(module_path.string() + ": " +
+                                         (skip.empty() ? "load_failed" : skip));
+                std::fprintf(stderr, "[plugin-discover] skip mod=%s path=%s reason=%s\n",
+                             mod.name.c_str(), module_path.string().c_str(),
+                             skip.empty() ? "load_failed" : skip.c_str());
+                continue;
+            }
+            ++report.modules_loaded;
+            report.loaded_modules.push_back(module_path.string());
+            std::fprintf(stderr, "[plugin-discover] load mod=%s id=%s module=%s\n", mod.name.c_str(),
+                         info.plugin_id.c_str(), module_path.string().c_str());
+            (void)host;
+        }
+    }
+    return report;
 }
 
 } // namespace ds::plugin

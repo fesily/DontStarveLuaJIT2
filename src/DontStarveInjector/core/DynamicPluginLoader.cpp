@@ -2,6 +2,8 @@
 #include "PluginModuleAbi.hpp"
 #include "PluginPath.hpp"
 #include "PluginPendingUpdates.hpp"
+#include "ExternalPluginDiscovery.hpp"
+#include "PluginPath.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -160,16 +162,30 @@ std::vector<std::filesystem::path> DynamicPluginLoader::default_search_dirs() {
     return default_plugin_search_dirs();
 }
 
-DynamicLoadReport DynamicPluginLoader::load_all(PluginHost &host) {
+DynamicLoadReport DynamicPluginLoader::load_all(PluginHost &host, bool is_client) {
     DynamicLoadReport report;
     const auto dirs = default_search_dirs();
     (void)configure_plugin_dll_search(dirs);
+    std::filesystem::path this_mod_root;
     for (const auto &dir : dirs) {
         auto partial = load_directory(host, dir);
         report.loaded_modules.insert(report.loaded_modules.end(), partial.loaded_modules.begin(),
                                      partial.loaded_modules.end());
         report.skipped.insert(report.skipped.end(), partial.skipped.begin(), partial.skipped.end());
+        if (this_mod_root.empty()) {
+            // Prefer first search root as this-mod plugins dir for exemption.
+            this_mod_root = mod_root_from_plugins_dir(dir);
+        }
     }
+    // External enabled packs: trust gate then load via this loader instance.
+    auto ext = discover_and_load_external_plugins(
+        host, is_client, this_mod_root,
+        [this, &host](const std::filesystem::path &module_path, std::string *skip_reason) {
+            return this->load_module_path(host, module_path, skip_reason);
+        });
+    report.loaded_modules.insert(report.loaded_modules.end(), ext.loaded_modules.begin(),
+                                 ext.loaded_modules.end());
+    report.skipped.insert(report.skipped.end(), ext.skipped.begin(), ext.skipped.end());
     return report;
 }
 
