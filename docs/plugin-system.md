@@ -41,7 +41,7 @@ Features that used to be hard-wired in `Inject()`, `LoadGameModConfig`, or `modm
 | Native | `EarlyNative` | `network.rpc`, `render.vbpool`, `render.angle`, `save.fork`, `debug.profiler`, … |
 | Lua | `AfterModMain` | `jit.*`, `debug.profiler` (incl. former `gc.policy`), `network.*`, `save.fork`, … |
 
-Dual-face plugins share **one id**. Example: `network.rpc` has a native EarlyNative face (`GameNetWorkHookRpc4`) and a Lua AfterModMain face (`Mod/plugins/network_rpc.lua`).
+Dual-face plugins share **one id**. Example: `network.rpc` has a native EarlyNative face (`GameNetWorkHookRpc4`) and a Lua AfterModMain face (`Mod/plugins/plugin_network_rpc/` package via `load_package`).
 
 
 ## 2. Load phases
@@ -223,9 +223,14 @@ Example: `network.rpc` / `save.fork` — see §7.
 
 ## 4. How to add a Lua plugin
 
-### 4.1 Create `Mod/plugins/<name>.lua`
+### 4.1 Create a package or flat Lua face
 
-Return a plugin table (explicit registry; no filesystem scan):
+**Dual-face / package (preferred for features with native MODULE):** create
+`Mod/plugins/plugin_<stem>/` with `modinfo.lua` + `modmain.lua` (and optional
+`scripts/`). See §3.4.
+
+**Lua-only flat face:** create `Mod/plugins/<name>.lua` and return a plugin table
+(explicit registry; no filesystem scan):
 
 ```lua
 return {
@@ -256,13 +261,16 @@ return {
 
 ```lua
 return {
-    load_plugin("jit_tailcall"),
+    load_flat("jit_tailcall"),
     -- …
-    load_plugin("my_feature"),   -- file Mod/plugins/my_feature.lua
+    load_package("plugin_my_feature"),  -- dual-face package
+    load_flat("my_feature"),            -- Lua-only: Mod/plugins/my_feature.lua
 }
 ```
 
-`load_plugin` uses `kleiloadlua(MODROOT .. "plugins/" .. name .. ".lua")` in-game, or `require("plugins." .. name)` under unit tests.
+`load_package` loads `plugins/plugin_<stem>/modinfo.lua` (+ modmain rebind).
+`load_flat` uses `kleiloadlua(MODROOT .. "plugins/" .. name .. ".lua")` in-game,
+or `require("plugins." .. name)` under unit tests.
 
 ### 4.3 Runtime wiring (already in modmain)
 

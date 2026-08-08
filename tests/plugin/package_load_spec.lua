@@ -171,9 +171,59 @@ _G.BIZ_LOADED = true
     assert_true(imported[1] == "scripts/biz", "modimport path")
     print("PASS: modimport_rebind_on_load")
 end
+local function test_when_sees_thenet_from_g()
+    local dir = tmp_dir("ds_pkg_when_thenet")
+    write_fixture(dir, "modinfo.lua", [[
+name = "WhenNet"
+description = "d"
+author = "a"
+version = "1.0.0"
+api_version = 10
+dst_compatible = true
+dont_starve_compatible = false
+reign_of_giants_compatible = false
+client_only_mod = false
+server_only_mod = true
+all_clients_require_mod = false
+plugin_id = "test.when_thenet"
+when = function(ctx)
+    if not ctx or not ctx.has_luajit then
+        return false
+    end
+    if ctx.is_client ~= nil then
+        return not ctx.is_client
+    end
+    return TheNet:IsDedicated()
+end
+]])
+    write_fixture(dir, "modmain.lua", "-- empty\n")
+
+    local prev = rawget(_G, "TheNet")
+    _G.TheNet = {
+        IsDedicated = function()
+            return false
+        end,
+    }
+    local ok, err = pcall(function()
+        local plugin = PL.load_package_from_root(dir, "plugin_test_when_thenet")
+        assert_true(type(plugin.when) == "function", "when present")
+        -- Incomplete gate_ctx (no is_client) must fall through to TheNet, not error.
+        local result = plugin.when({ has_luajit = true })
+        assert_true(result == false, "when returns TheNet:IsDedicated() result")
+        -- Host marker still raw on sandbox env.
+        assert_true(PL.last_modinfo_env.ds_luajit_package_host == true, "host marker")
+        assert_true(rawget(PL.last_modinfo_env, "ds_luajit_package_host") == true, "marker raw")
+    end)
+    _G.TheNet = prev
+    if not ok then
+        error(err, 2)
+    end
+    print("PASS: when_sees_thenet_from_g")
+end
 
 test_missing_api_version_fails()
 test_host_marker_true()
 test_engine_safe_without_marker()
 test_modimport_rebind_on_load()
+test_when_sees_thenet_from_g()
 print("ALL PASS package_load_spec")

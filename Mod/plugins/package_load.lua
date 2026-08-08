@@ -51,8 +51,10 @@ local function make_modinfo_env(stem, package_root, extras)
         ds_luajit_package_root = package_root,
         ds_luajit_package_stem = stem,
     }
-    -- Allow assigning globals into env via setfenv (modinfo style).
-    return env
+    -- Free globals (TheNet, TheWorld, _G, …) fall through to parent/_G for when().
+    -- Host markers stay raw fields on env; assignments write into env (no __newindex).
+    local parent = extras.parent_env or _G
+    return setmetatable(env, { __index = parent })
 end
 
 local function load_chunk(path, env, loader)
