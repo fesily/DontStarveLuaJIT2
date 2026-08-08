@@ -24,7 +24,7 @@ Today:
 
 Package aggregation introduced a **shared on-disk shape** for dual-face features (`plugins/plugin_<stem>/` + DST-complete `modinfo.lua` + optional `modmain.lua`). Spec foresight already said external roots may exist later, with **Host not branching on built-in vs external**.
 
-Missing piece: a **Lua entry** that discovers external packs among **enabled** game mods, and a **C registration path** that loads their native modules into the **same C PluginHost**, without “load every DLL first and see if it exports `ds_plugin_module_init`” (unsafe / malware-friendly).
+Missing pieces: (1) a **Lua entry** that discovers external packs among **enabled** game mods; (2) a **C registration path** that loads their native modules into the **same C PluginHost**, without “load every DLL first and see if it exports `ds_plugin_module_init`” (unsafe / malware-friendly); (3) a **client enable-time warning** so users cannot silently turn on native plugin packs.
 
 ---
 
@@ -37,6 +37,8 @@ Missing piece: a **Lua entry** that discovers external packs among **enabled** g
 5. **This mod (DontStarveLuaJit2) is exempt from the marker** — its `plugins/` remains the always-on built-in root.
 6. **External packs require `plugin_id`** (non-empty). Missing `plugin_id` → skip the entire external mod pack (no DLL load, no Lua face register).
 7. Same package layout and dual-face id rules as package aggregation; no second Host framework.
+8. **Enablement is mandatory for external packs:** disabled mods are never discovered, never LoadLibrary’d, never face-registered — even if files are present under `MODS_ROOT`.
+9. **Client UI enable warning:** when the player **turns on** an external mod with `luajit_plugin_pack = true` in the mods UI, the client **must** show a confirmation popup **before** the mod becomes enabled. Confirm → enable; Cancel → leave disabled. No silent enable.
 
 ---
 
@@ -49,6 +51,8 @@ Missing piece: a **Lua entry** that discovers external packs among **enabled** g
 - Auto-enabling arbitrary workshop mods.
 - Merging C++ and Lua Host status maps.
 - Changing D5 for **this** mod’s user option UI.
+- “Don’t show again” persistence for the enable warning (v1 always prompts on enable).
+- Server/dedicated interactive UI for the enable warning (server has no mods screen; enablement still required via modoverrides / enabled list).
 
 ---
 
@@ -64,6 +68,8 @@ Missing piece: a **Lua entry** that discovers external packs among **enabled** g
 | E6 | C trust order | **modinfo trust gate before LoadLibrary** |
 | E7 | External identity | **`plugin_id` required** or skip whole pack |
 | E8 | Approach | Symmetric dual discovery (not path-list lag, not late-only LoadLibrary) |
+| E9 | External load precondition | **Must be enabled** in the game mod list (client and/or server as applicable) |
+| E10 | Client enable UX | **Modal confirm on enable** (OK enables / Cancel keeps off); always show in v1 |
 
 ---
 
@@ -236,25 +242,67 @@ Native-only external packages (DLL + parent mod marker, no package `modmain`) si
 - External pack `options` / `GetModConfigData` should use **that mod’s** config when the face runs under that mod’s identity if the game provides it; v1 may document that external faces read **their** modname via `GetModConfigData(key, modname)` when needed.
 - Do not silently merge external options into this mod’s D5 UI.
 
+### 9.4 Enablement invariant
+
+- Discovery (C and Lua) **only** considers mods that are **enabled** for the current process role.
+- Files on disk under a disabled mod root are **invisible** to discovery.
+- Toggling a pack off in the game UI (or removing it from `modoverrides` / client enabled list) must stop C and Lua discovery on the **next** inject / modmain run.
+
 ---
 
-## 10. Security properties
+## 10. Client UI: enable-time warning (mandatory)
+
+### 10.1 Requirement
+
+On the **client** mods management UI, when the user action would **enable** a mod whose `modinfo` has `luajit_plugin_pack == true` (and the mod is not this built-in mod):
+
+1. **Do not enable immediately.**
+2. Push a **confirmation** `PopupDialog` (same family as existing mods warnings / this mod’s other popups).
+3. Copy must state, in zh + en at minimum:
+   - This mod is a **LuaJIT native plugin pack** and can load **native code (DLL/SO)** into the game process.
+   - Only enable packs you trust.
+   - Enabling applies after confirm; a full restart may still be required for EarlyNative modules (state truthfully if sticky/restart applies).
+4. Buttons:
+   - **Confirm / Enable** → proceed with the game’s normal enable path for that mod.
+   - **Cancel** → mod remains **disabled**; no enable side effects.
+5. v1: **always** show on each enable attempt (no “don’t show again”).
+
+### 10.2 Hook surface
+
+- Prefer hooking the mods screen / mods tab enable path used by DST Redux UI (same layer as existing `DST_COMPAT` / restart warnings in `modstab` / `modsscreen`).
+- Implementation lives in **this mod’s client Lua** (e.g. `modmain` client-only patch or a small `plugins`/scripts helper loaded only when `TheFrontEnd` exists).
+- Must not depend on external packs being already loaded.
+- Dedicated server: no popup; enablement still required via server enabled lists / `modoverrides`.
+
+### 10.3 Non-bypass
+
+- Force-enable paths that skip the UI (if any) are out of scope for the popup, but C/Lua discovery still requires the mod to appear on the **enabled** list after whatever path enabled it.
+- The popup is a **client consent** control, not a cryptographic trust boundary; C trust gate remains authoritative for LoadLibrary.
+
+### 10.4 This mod
+
+- Enabling **DontStarveLuaJit2** itself is **not** required to use this pack warning (optional separate messaging already exists for install/crash). The pack warning targets **other** mods with `luajit_plugin_pack`.
+
+---
+
+## 11. Security properties
 
 | Threat | Mitigation |
 |--------|------------|
-| Random DLL dropped in mods folder | Not enabled + no marker → never loaded |
+| Random DLL dropped in mods folder | **Not enabled** + no marker → never loaded |
 | Enabled normal mod with unrelated DLLs | No `luajit_plugin_pack` → never loaded |
 | Enabled pack without `plugin_id` | Skip entire pack |
 | Path escape (`plugins/../../../evil.dll`) | Path jail under `mod_root` |
 | Probe-load malware via export check | **Forbidden** — modinfo gate first |
 | Malicious modinfo script | Sandbox env; treat throw as parse fail → skip pack (no DLL) |
 | Id squatting on this mod’s plugins | Built-in registered first; duplicate external skipped |
+| Accidental enable of untrusted pack | **Client confirm dialog before enable** (E10) |
 
-v1 does **not** claim cryptographic trust—only structural trust + enablement + explicit opt-in marker.
+v1 does **not** claim cryptographic trust—only structural trust + enablement + explicit opt-in marker + client consent on enable.
 
 ---
 
-## 11. Logging
+## 12. Logging
 
 Structured, greppable lines (stderr / spdlog):
 
@@ -271,25 +319,28 @@ Lua:
 
 ```text
 [luajit][plugin-discover] ...
+[luajit][plugin-discover] enable_warn mod=... shown|confirmed|cancelled
 ```
 
 ---
 
-## 12. Testing gates
+## 13. Testing gates
 
 | Gate | Proof |
 |------|--------|
 | Unit: trust gate | Fixture modinfo without marker → no load; without plugin_id → no load; with marker+id → path accepted |
 | Unit: path jail | `..` candidate rejected |
 | Unit: enabled enumerate | Fixture modoverrides / modsettings tables → expected mod names (format pinned in plan) |
+| Unit: disabled ignored | Same pack files present but mod not on enabled list → zero LoadLibrary for that tree |
 | Loader | External package DLL only loaded after gate; bad DLL skipped |
-| Lua discover | Fake KnownModIndex list + temp mod tree → load_package called; unmarked skipped |
+| Lua discover | Fake KnownModIndex list + temp mod tree → load_package called; unmarked skipped; disabled skipped |
+| Client enable UI | Enabling a marked external mod shows confirm; Cancel leaves disabled; Confirm enables (hook unit / scripted FrontEnd test as available) |
 | Regression | Built-in dual-face packages still load; identity gate still green |
 | Security negative | Directory with only `evil.dll` and no modinfo pack marker never LoadLibrary’d |
 
 ---
 
-## 13. Migration / rollout slices (for plan)
+## 14. Migration / rollout slices (for plan)
 
 | Slice | Content |
 |-------|---------|
@@ -297,31 +348,36 @@ Lua:
 | D1 | C `enumerate_enabled_dst_mods` (server modoverrides first; client sources as available) |
 | D2 | Wire external scan into `DynamicPluginLoader::load_all` |
 | D3 | Lua `discover_external` + modmain hook |
-| D4 | Docs + example external pack skeleton + negative security tests |
+| D4 | Client enable-warning hook (confirm / cancel) + copy zh/en |
+| D5 | Docs + example external pack skeleton + negative security tests |
 
 ---
 
-## 14. Success criteria
+## 15. Success criteria
 
-1. An enabled external DST mod with `luajit_plugin_pack=true`, non-empty `plugin_id`, and `plugins/plugin_x/plugin_x.dll` has its native module registered in C Host at EarlyNative **without** this mod’s `init.lua` listing it.
+1. An **enabled** external DST mod with `luajit_plugin_pack=true`, non-empty `plugin_id`, and `plugins/plugin_x/plugin_x.dll` has its native module registered in C Host at EarlyNative **without** this mod’s `init.lua` listing it.
 2. The same pack’s Lua face is registered from Lua discovery at AfterModMain when it ships package `modmain.lua`.
-3. Disabling the mod or clearing the marker stops both C and Lua discovery on next run.
+3. **Disabling** the mod (or clearing the marker) stops both C and Lua discovery on next run; **disabled packs never load**.
 4. No DLL outside the trust gate is loaded for discovery purposes.
 5. Built-in this-mod plugins continue to work without `luajit_plugin_pack`.
+6. On client, **enabling** a marked external pack **always** shows a confirm dialog; cancel keeps the mod disabled.
 
 ---
 
-## 15. Follow-ups
+## 16. Follow-ups
 
 - `luajit_plugin_modules = { { stem=, sha256= } }` allowlist before LoadLibrary.
 - Stronger client enablement file coverage parity with all game SKUs.
 - Manager UI listing external packs.
 - Optional identity clash policy (fail-fast vs skip).
+- Optional “don’t show again” for enable warning (explicitly out of v1).
 
 ---
 
-## 16. Supersession / relation to package aggregation
+## 17. Supersession / relation to package aggregation
 
 - Does **not** replace package aggregation; **uses** its layout and `load_package` / package-subdir loader.
 - External foresight in aggregation §11 is **realized** here for enabled-mod multi-root discovery.
 - Explicit `init.lua` remains the registry for **built-in** packs; external packs are **additive discovery**, not a replacement for explicit built-in registration.
+
+
