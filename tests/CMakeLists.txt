@@ -334,6 +334,15 @@ endif()
 add_test(NAME external_discover_gate COMMAND test_external_discover_gate)
 
 add_test(
+    NAME plugin_discover_external
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_discover_external.py
+)
+set_tests_properties(plugin_discover_external PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+add_test(
     NAME plugin_host_lua
     COMMAND ${CMAKE_COMMAND} -E env
         REPO_ROOT=${CMAKE_SOURCE_DIR}
