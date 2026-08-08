@@ -75,6 +75,8 @@ This is **directory / ownership aggregation**, not a redesign of Host phases or 
 | A9 | Approach | Package-isomorphic layout + explicit init (not install-flatten-only; not auto-discovery) |
 | A10 | C-only packages | Subdirectory install for DLL; Lua Host registration not required; optional human-readable `modinfo` not mandatory for load |
 | A11 | Package `modinfo` format | **Must be DST engine–compatible.** Engine-requested fields from `ModIndex:InitializeModInfo` **must not be missing**. Private Host fields (`plugin_id`, `options`, `phases`, …) are additive only — never a substitute for engine fields. |
+| A12 | modinfo load environment | Engine injects only a **tiny** sandbox (`folder_name`, `locale`, `ChooseTranslationTable`). Our Host `load_package` **must** inject an explicit marker (and package path helpers) so `modinfo` can tell **engine KnownModIndex load** vs **LuaJit package Host load**. Host-only logic must not run unguarded at top-level when the engine loads modinfo. |
+| A13 | Native vs modinfo identity | Dual-face **must not** forever dual-maintain divergent manifests. **Logical SSOT = package `modinfo.lua`** for shared identity (`plugin_id`/`version`/consumed option keys). Native `PluginManifest` is a face projection (EarlyNative + services/`can_load`). Consistency is enforced (test/codegen); hand-fork without gate is a bug. |
 
 ---
 
@@ -196,26 +198,78 @@ These are **ours**; allowed on the same `modinfo.lua` **in addition to** engine 
 | Field | Required for Host | Meaning |
 |-------|-------------------|---------|
 | `plugin_id` | **yes** for `load_package` | Logical Host id (dotted), e.g. `"save.fork"` |
-| `phases` | no | Default `AfterModMain` for Lua face |
-| `depends` / `soft_depends` / `conflicts` | no | Host graph (not Klei `mod_dependencies`) |
-| `options` | no | Host option rule (`all_of` / `any_of` / …); keys refer to **parent** modinfo when embedded |
-| `when` | no | `function(ctx)` gate |
+| `phases` | no | **Lua face** phase(s); default `AfterModMain`. Native EarlyNative is **not** expressed here as the only phase — see §6.4 |
+| `depends` / `soft_depends` / `conflicts` | no | Host graph for the **Lua face** (not Klei `mod_dependencies`) |
+| `options` | no | Host option rule (`all_of` / `any_of` / …); keys refer to **parent** modinfo when embedded; **shared** with native face option keys for dual-face |
+| `when` | no | `function(ctx)` gate — **only called by Host**, never by engine |
 | `support_reload` | no | Default false (sticky) |
 
 Naming: private fields use clear Host-oriented names (`plugin_id`, Host `depends`). Do **not** overload engine `mod_dependencies` for Host hard-deps.
 
 Missing `plugin_id` → **fail-fast** at `load_package`.
 
-#### 6.0.5 Validation summary for `load_package`
+#### 6.0.5 Engine modinfo sandbox vs Host package load (API surface)
 
-1. `modinfo.lua` loads without error.
+DST engine `InitializeModInfo` runs `modinfo.lua` with **only**:
+
+```lua
+{
+  folder_name = modname,
+  locale = LOC.GetLocaleCode(),
+  ChooseTranslationTable = function(tbl) ... end,
+}
+```
+
+(See `dst-scripts/scripts/modindex.lua`.) There is **no** `TheNet`, `GetModConfigData`, `modimport`, parent `MODROOT`, or our Host.
+
+Therefore:
+
+1. **Top-level `modinfo.lua` must be safe under the engine sandbox.** Only assign data / define functions. Do **not** call `TheNet`, `GetModConfigData`, or other game APIs at load time.
+2. Host-only behavior belongs in:
+   - private function fields (`when`) invoked later by Host with a real `ctx`, or
+   - `modmain.lua` (package load, full mod API after rebind).
+3. Our `load_package` **must inject a marker** so authors can branch if they ever need Host-only *definition* paths (rare). Marker is required even if most packages never branch — tests assert it is present during Host load.
+
+**Host injects at least:**
+
+| Injected name | Value | Purpose |
+|---------------|-------|---------|
+| `folder_name` | package folder / stem | Mirror engine |
+| `locale` | current locale code if available, else `""` | Mirror engine |
+| `ChooseTranslationTable` | same semantics as engine (table → locale or `[1]`) | Mirror engine |
+| `ds_luajit_package_host` | `true` | **Marker: running under LuaJit package Host**, not bare `KnownModIndex` |
+| `ds_luajit_package_root` | absolute/mod-relative package root path string | Path for rare meta use; prefer not required for normal packages |
+| `ds_luajit_package_stem` | `plugin_<stem>` | Stable stem id |
+
+Rules:
+
+- Marker name is fixed: **`ds_luajit_package_host`**. Do not invent alternate flags per package.
+- When engine loads the same file, `ds_luajit_package_host` is **nil/false** — private Host tables may still be assigned (data), but any code gated on the marker must no-op.
+- `load_package` must **not** pollute parent mod globals; use a sandbox env (engine-like) and read fields out after execution.
+
+Example guard (optional; most packages need none at top-level):
+
+```lua
+if ds_luajit_package_host then
+    -- Host-only definitions if ever required (still avoid calling game APIs here)
+end
+```
+
+#### 6.0.6 Validation summary for `load_package`
+
+1. `modinfo.lua` loads without error under Host sandbox (with §6.0.5 injects).
 2. Engine hard-fail set present: `name`, `description`, `author`, `version`, `api_version`.
 3. Engine compatibility flags present and explicit: `dst_compatible`, `dont_starve_compatible`, `reign_of_giants_compatible`.
 4. Role flags present: `client_only_mod`, `server_only_mod`, `all_clients_require_mod` (with mutual-exclusion check).
 5. Private: `plugin_id` present.
-6. Then build Host plugin table from private fields + `version` / `priority` / …
+6. Build Host plugin table from private fields + engine `version` / `priority` / …
+7. (Dual-face) Identity consistency with native face is checked by §6.4 gates (not necessarily inside `load_package` itself).
 
-Tests must include a fixture that fails when e.g. `api_version` or `description` is omitted.
+Tests must include:
+
+- fixture fails when e.g. `api_version` or `description` is omitted;
+- Host load sees `ds_luajit_package_host == true`;
+- same file executed without marker does not error (engine-safe top-level).
 
 ### 6.1 Field ownership (embedded vs engine)
 
@@ -224,6 +278,7 @@ Tests must include a fixture that fails when e.g. `api_version` or `description`
 | User-facing option UI | Parent `Mod/modinfo.lua` `configuration_options` (D5) | Package `configuration_options` |
 | Host enable rules | Package private `options` / `when` | Same private fields + package config |
 | Display / API / compat | Package engine fields (still complete) | Same |
+| Shared plugin identity | Package `modinfo` SSOT (`plugin_id`, `version`, option keys) | Same |
 
 ### 6.2 D5 embedding rule
 
@@ -236,6 +291,8 @@ Tests must include a fixture that fails when e.g. `api_version` or `description`
 
 ```lua
 -- plugins/plugin_save_fork/modinfo.lua
+-- Safe under engine sandbox: data + function defs only (no TheNet at top-level).
+
 -- Engine-required / compatibility (DST InitializeModInfo)
 name = "Save Fork"
 description = "Dedicated-server fork save path for DontStarveLuaJit2 (feature package)."
@@ -255,9 +312,9 @@ all_clients_require_mod = false
 priority = 60
 -- configuration_options = nil  -- embedded: UI on parent Mod; standalone may fill later
 
--- Private Host fields (additive)
+-- Private Host fields (additive; Host invokes `when` later with real ctx)
 plugin_id = "save.fork"
-phases = "AfterModMain"
+phases = "AfterModMain"   -- Lua face only; native face remains EarlyNative in C++ projection
 depends = {}
 soft_depends = {}
 conflicts = {}
@@ -265,6 +322,7 @@ support_reload = false
 options = { all_of = { "EnableForkSave" } }
 
 when = function(ctx)
+    -- Called only by package Host, never by KnownModIndex.
     if not ctx or not ctx.has_luajit then
         return false
     end
@@ -274,6 +332,61 @@ when = function(ctx)
     return TheNet:IsDedicated()
 end
 ```
+
+### 6.4 Unified identity: native `PluginManifest` vs package `modinfo` (A13)
+
+#### 6.4.1 Problem
+
+Today dual-face identity is **forked by construction**:
+
+| Surface | Where identity lives today |
+|---------|----------------------------|
+| Native | C++ `PluginManifest` in `plugin_*.cpp` (`man.id`, `man.version`, `man.options`, `man.priority`, `man.depends`, services, `phases = EarlyNative`, …) |
+| Lua | Face table / (this design) package `modinfo` private fields + engine `version` |
+
+Nothing automatically keeps `man.id` / option keys / version aligned with Lua. Aggregation without a SSOT just moves the Lua half next to the DLL while leaving **two sources of truth**.
+
+#### 6.4.2 Logical SSOT
+
+For each dual-face package, **package `modinfo.lua` is the logical SSOT** for:
+
+- `plugin_id` ↔ native `man.id`
+- `version` ↔ native `man.version`
+- consumed option keys in private `options` ↔ native `man.options.keys` / kind (AllOf/AnyOf/AlwaysOn mapping must be documented per package)
+- display/engine metadata (`name`, `description`, `author`, compat/role flags)
+
+**Native-only projection** (not required to be expressible as pure modinfo data in v1, but must not contradict SSOT):
+
+- `man.phases` typically `EarlyNative`
+- `requires_services` / `soft_requires_services`
+- C++ `can_load` / `load` / Gum hooks
+- export registration
+
+**Lua-only projection** from same modinfo:
+
+- `phases` (AfterModMain), `when`, Lua `depends`/`soft_depends`, `modmain` body
+
+Same logical plugin id; two Host faces; **one identity document**.
+
+#### 6.4.3 Unification mechanism (delivery)
+
+| Layer | Requirement |
+|-------|-------------|
+| **Gate (required in this work)** | Automated check per dual-face package: native id/version/option-key set **equals** modinfo `plugin_id`/`version`/options keys. Fail CI if drift. |
+| **Authoring rule** | Change shared identity in **modinfo first**, then update native projection (or regenerate) in the same change. |
+| **Target implementation (prefer in P1–P4, not optional forever)** | Build-time or codegen path so native does not hand-edit `man.id`/`man.version`/option keys: e.g. generate `plugin_<stem>_identity.inc` / header from package `modinfo.lua`, included by `plugin_*.cpp`. Exact tool can reuse existing modinfo-parse patterns in repo. |
+| **C-only packages** | May keep C++-only manifest if no `modinfo`; if a `modinfo` exists for docs/external shape, identity gate still applies when both exist. |
+| **Lua-only flat plugins** | Out of package SSOT until packaged; unchanged this work. |
+
+Non-goals for unification v1:
+
+- Interpreting full `when()` in C++.
+- One process-wide Host merging native+Lua status maps.
+- Forcing native service deps into modinfo DSL.
+
+#### 6.4.4 Dual-face option kind note
+
+Some natives use `AlwaysOn` so exports stay mapped while Lua options gate AfterModMain (e.g. profiler/fps patterns). SSOT still owns the **user-facing option key names**; native `OptionRuleKind` may differ when documented in the package (comment in modinfo + plugin-system inventory). Consistency gate checks **key names** for AllOf/AnyOf natives; AlwaysOn natives assert modinfo `options` keys are the Lua-facing set and do not invent a second id.
 
 ---
 
@@ -325,19 +438,22 @@ Do **not** introduce a parallel plugin framework or options environment layer.
 ### 8.2 `load_package(stem)` steps
 
 1. Resolve package root: `MODROOT .. "plugins/" .. stem .. "/"` (tests: equivalent root on `package.path` / fixture tree).
-2. Load and run `modinfo.lua` with an env appropriate for DST modinfo (at minimum: allow assigning globals like `name` / `api_version`; provide `locale` / `folder_name` if scripts use them). Prefer isolating assignments into a result table the way the engine sandbox does, rather than polluting parent mod globals.
-3. Validate **§6.0** (engine hard-fail set + explicit compat/role flags + `plugin_id`). On failure → error / do not register.
-4. Build Host plugin table:
+2. Create an **engine-like sandbox env** and inject §6.0.5 fields (`folder_name`, `locale`, `ChooseTranslationTable`, **`ds_luajit_package_host = true`**, `ds_luajit_package_root`, `ds_luajit_package_stem`). Do **not** give modinfo the full parent mod env by default (avoids accidental top-level game API use and parent global pollution).
+3. Load and run `modinfo.lua` in that sandbox (`kleiloadlua` + setfenv / RunInEnvironment equivalent).
+4. Validate **§6.0.6**. On failure → error / do not register.
+5. Build Host plugin table:
 
    | Host field | Source |
    |------------|--------|
    | `id` | private `plugin_id` |
    | `version` | engine `version` |
-   | `priority` / `phases` / depends / options / when / support_reload | private (+ engine `priority` if Host priority not overridden) |
-   | `load` | function that runs package `modmain.lua` under rebind (§8.3) |
+   | `priority` / `phases` / depends / options / when / support_reload | private (+ engine `priority` if used as Host priority) |
+   | `load` | function that runs package `modmain.lua` under rebind (§8.3) with **full** mod API env (not the modinfo sandbox) |
    | `unload` | no-op sticky unless later extended |
 
-5. Return that table into the registry list (same as today’s face return value).
+6. Return that table into the registry list (same as today’s face return value).
+
+Note: `modmain.lua` uses the **parent mod environment + package modimport rebind**, not the restricted modinfo sandbox.
 
 ### 8.3 `modimport` root rebind
 
@@ -466,11 +582,11 @@ No external downloader or multi-root scanner ships in the aggregation slices bel
 
 | Slice | Deliverable | Exit criteria |
 |-------|-------------|---------------|
-| **P0** | Package load helper + `load_package` / `load_flat`; unit tests for §6.0 modinfo fail-fast, rebind, restore | No production package moved yet; flat faces still work |
-| **P1** | CMake/loader subdirectory DLL + install package Lua resources; dummy/C-only smoke | Loader finds `plugins/plugin_dummy/plugin_dummy.dll` (or platform equiv.) |
-| **P2** | Pilot `save.fork` full package (DST-complete modinfo + modmain + scripts) | Dedicated fork path works; old flat face/script removed for this id |
-| **P3** | Remaining dual-face five packages | Same as P2 per id |
-| **P4** | Delete obsolete paths; update `docs/plugin-system.md` checklist; manifest zip includes package Lua; CI layout green | Grep: no `Mod/plugins/save_fork.lua` etc.; no dual-face biz left only under `Mod/scripts/` for migrated ids |
+| **P0** | Package load helper + `load_package` / `load_flat`; §6.0.5 sandbox inject + marker; unit tests for engine-field fail-fast, marker present, engine-safe top-level | No production package moved yet; flat faces still work |
+| **P1** | CMake/loader subdirectory DLL + install package Lua; identity consistency gate (test and/or codegen hook); dummy/C-only smoke | Loader finds package-subdir DLL; dual-face identity check wired for at least pilot path |
+| **P2** | Pilot `save.fork` full package; native id/version/options keys match modinfo (codegen or hand-sync + gate) | Dedicated fork path works; old flat face/script removed; identity gate green for save.fork |
+| **P3** | Remaining dual-face five packages under same SSOT rules | Same as P2 per id |
+| **P4** | Delete obsolete paths; docs; manifest zip includes package Lua; prefer native identity generated from modinfo if not already | Grep clean; no dual-face biz only under `Mod/scripts/`; identity gate covers all dual-face packages |
 
 Rollback: per-slice git revert; P0 is additive; P2+ delete old paths only after package proven.
 
@@ -483,8 +599,9 @@ Architecture incomplete without automation (project D7).
 | Gate | Proof |
 |------|--------|
 | Loader unit | Package-subdir module loads; garbage files in package dir ignored; bad DLL skipped |
-| Package load unit | Missing `plugin_id` fails; missing engine hard field (`name`/`description`/`author`/`version`/`api_version`) fails; missing explicit `dst_compatible` fails our validator; `modimport("scripts/…")` hits package; parent import after restore unchanged; deferred `AddGamePostInit` + `modimport` uses package root |
-| Layout contract | For each migrated dual-face: package dir has DST-complete `modinfo.lua` + `modmain.lua`; old flat face path absent |
+| Package load unit | Missing `plugin_id` fails; missing engine hard field fails; missing explicit `dst_compatible` fails; Host load has `ds_luajit_package_host == true`; modinfo without marker path does not require Host APIs at top-level; `modimport("scripts/…")` in modmain hits package; parent import after restore unchanged; deferred PostInit import uses package root |
+| Identity unit/CI | For each dual-face package: `plugin_id`/`version`/option keys in modinfo match native `PluginManifest` projection |
+| Layout contract | Migrated dual-face: DST-complete modinfo + modmain; old flat face path absent |
 | Host regression | Existing plugin host / option / resolve tests stay green |
 | L-G / smoke | Existing dedicated (and client if present) contracts do not regress for migrated features |
 
@@ -503,10 +620,12 @@ Architecture incomplete without automation (project D7).
 1. Changing a dual-face feature requires edits under a single `plugin_<stem>/` tree (native + modinfo + modmain + scripts).
 2. Package Lua reads like a small DST mod; no nested plugin runtime API.
 3. Every shipped package `modinfo.lua` passes §6.0 (engine hard fields + explicit compat/role flags + private `plugin_id`).
-4. Parent D5 config UI ownership unchanged when embedded.
-5. Explicit registry preserved; Host remains the only orchestrator.
-6. Built-in packages use the same on-disk shape intended for future external roots.
-7. Automated gates in §13 pass for the migrated set.
+4. Host `load_package` always injects `ds_luajit_package_host = true` (+ path/stem helpers); engine-safe top-level modinfo holds without Host/game APIs.
+5. Dual-face shared identity is SSOT’d in package modinfo and **cannot drift** from native without failing the identity gate (codegen preferred).
+6. Parent D5 config UI ownership unchanged when embedded.
+7. Explicit registry preserved; Host remains the only orchestrator.
+8. Built-in packages use the same on-disk shape intended for future external roots.
+9. Automated gates in §13 pass for the migrated set.
 
 ---
 
@@ -522,6 +641,7 @@ Architecture incomplete without automation (project D7).
 
 ## 17. Supersession notes
 
-- Dual-face **identity** rules in `2026-08-03-plugin-architecture-design.md` §5.4 remain in force.
+- Dual-face **identity** rules in `2026-08-03-plugin-architecture-design.md` §5.4 remain in force; this spec adds **physical package layout** plus **modinfo SSOT + native projection** for shared fields.
 - Physical paths described as `Mod/plugins/<face>.lua` + `scripts/<biz>.lua` for dual-face plugins are **superseded** by this package layout once P2–P4 complete.
+- Hand-maintained divergent native `man.id`/`version`/option keys without an identity gate are **superseded** as acceptable practice.
 - `docs/plugin-system.md` Path A “static registry” narrative may still mention history; live dual-face **packaging** follows this document.
