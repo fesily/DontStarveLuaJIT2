@@ -100,6 +100,49 @@ bool is_plugin_candidate(const std::filesystem::directory_entry &entry) {
     return has_plugin_extension(entry.path());
 }
 
+// Platform shared-library suffix for package-layout candidate:
+// plugins/plugin_<stem>/plugin_<stem>.{dll,so,dylib}
+const char *plugin_module_extension() {
+#if defined(_WIN32)
+    return ".dll";
+#elif defined(__APPLE__)
+    return ".dylib";
+#else
+    return ".so";
+#endif
+}
+
+// Package dir: name starts with plugin_; candidate is <dir>/<name><ext>
+// and must be a regular file. Directory name is the module stem.
+bool package_plugin_candidate(const std::filesystem::directory_entry &entry,
+                              std::filesystem::path *out_path) {
+    std::error_code ec;
+    if (!entry.is_directory(ec) || ec) {
+        return false;
+    }
+    const auto stem = entry.path().filename().string();
+    if (stem.rfind("plugin_", 0) != 0) {
+        return false;
+    }
+    auto candidate = entry.path() / (stem + plugin_module_extension());
+    if (!std::filesystem::is_regular_file(candidate, ec) || ec) {
+#if defined(__APPLE__)
+        // Prefer .dylib, fall back to .so on Apple.
+        candidate = entry.path() / (stem + std::string(".so"));
+        if (!std::filesystem::is_regular_file(candidate, ec) || ec) {
+            return false;
+        }
+#else
+        return false;
+#endif
+    }
+    if (out_path) {
+        *out_path = std::move(candidate);
+    }
+    return true;
+}
+
+
 std::string skip_reason(const std::filesystem::path &path, const char *reason) {
     return path.string() + ": " + reason;
 }
@@ -147,19 +190,37 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
         if (ec) {
             break;
         }
-        if (!is_plugin_candidate(entry)) {
+
+        std::filesystem::path module_path;
+        bool from_package = false;
+        if (is_plugin_candidate(entry)) {
+            module_path = entry.path();
+        } else if (package_plugin_candidate(entry, &module_path)) {
+            from_package = true;
+        } else {
             continue;
+        }
+
+        // Package modules may ship private deps beside the DLL; register the
+        // package dir in addition to the plugins root already configured above.
+        if (from_package) {
+            (void)configure_plugin_dll_search({module_path.parent_path()});
         }
 
         // Do not reuse `ec` from the iterator — a failed weakly_canonical
         // must not abort the rest of the directory scan.
         std::error_code path_ec;
-        const auto abs = std::filesystem::weakly_canonical(entry.path(), path_ec);
-        const auto path = path_ec ? entry.path() : abs;
+        const auto abs = std::filesystem::weakly_canonical(module_path, path_ec);
+        const auto path = path_ec ? module_path : abs;
         const auto path_str = path.string();
 
+#if defined(_WIN32)
         DWORD load_err = 0;
         void *handle = load_library(path, &load_err);
+#else
+        void *handle = load_library(path);
+        unsigned long load_err = 0;
+#endif
         if (!handle) {
             char reason[64];
             std::snprintf(reason, sizeof(reason), "load_failed(err=%lu)", static_cast<unsigned long>(load_err));
