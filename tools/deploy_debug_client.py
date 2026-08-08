@@ -3,7 +3,12 @@
 
 Rules:
 - Winmm/Injector/function_relocation/plugins use Debug (/MDd, ucrtbased).
-- Skip plugin_render_angle (CMake release_only ANGLE — /MD, aborts under Debug CRT mix).
+- plugin_render_angle is built Debug-config as /MD+IDL0 so it can *statically*
+  link release_only ANGLE (IAT rebind needs static egl/gles in this DLL).
+  It must NOT be loaded into a /MDd Injector process: register_option_schema
+  moves std::string across the CRT boundary and AVs (cdb:
+  Injector!std::string::_Take_contents <- plugin_render_angle!ds_plugin_module_init).
+  Deploy therefore skips plugin_render_angle until the host/plugin CRT is unified.
 - Stage to Mod/ and workshop content 3444078585; shell to game bin64.
 
 Usage (repo root):
@@ -24,6 +29,7 @@ LOADER = ROOT / "builds/ninja-multi-vcpkg/src/DontStarveInjector/loader/Debug"
 MOD = ROOT / "Mod"
 WS = Path(r"C:\Program Files (x86)\Steam\steamapps\workshop\content\322330\3444078585")
 BIN64 = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Don't Starve Together\bin64")
+# Runtime skip: /MD static-ANGLE DLL cannot share std::string with /MDd Injector.
 SKIP_PLUGINS = {"plugin_render_angle"}
 
 
@@ -46,7 +52,11 @@ def cp(src: Path, dst: Path) -> None:
 def main() -> int:
     if not BUILD.is_dir():
         print("Debug build tree missing:", BUILD, file=sys.stderr)
-        print("Build first: cmake --build builds/ninja-multi-vcpkg --config Debug --target Injector Winmm function_relocation plugin_core_vm", file=sys.stderr)
+        print(
+            "Build first: cmake --build builds/ninja-multi-vcpkg --config Debug "
+            "--target Injector Winmm function_relocation plugin_core_vm",
+            file=sys.stderr,
+        )
         return 1
 
     os.system('taskkill /F /IM dontstarve_steam_x64.exe >nul 2>&1')
@@ -80,7 +90,11 @@ def main() -> int:
             if not pkg.is_dir() or not pkg.name.startswith("plugin_"):
                 continue
             if pkg.name in SKIP_PLUGINS:
-                print("SKIP", pkg.name, "(release_only / not Debug-safe)")
+                print(
+                    "SKIP",
+                    pkg.name,
+                    "(/MD static ANGLE; cannot load into /MDd Injector — C++ ABI)",
+                )
                 continue
             dll = pkg / f"{pkg.name}.dll"
             if not dll.is_file():
@@ -95,7 +109,7 @@ def main() -> int:
                 if pdb.is_file():
                     cp(pdb, dest / pdb.name)
 
-    # Ensure Debug tree never keeps a stale angle package
+    # Remove stale angle package from Debug deploy trees
     for root in (MOD / "plugins", WS / "plugins" if WS.exists() else None):
         if root is None:
             continue
