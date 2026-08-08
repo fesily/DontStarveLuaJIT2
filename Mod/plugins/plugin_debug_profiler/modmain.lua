@@ -1,25 +1,21 @@
--- debug.profiler — EnableProfiler / EnableTracy + GC policy (FullGC / FrameGC).
+-- plugins/plugin_debug_profiler/modmain.lua
+-- EnableProfiler / EnableTracy + GC policy (FullGC / FrameGC).
 -- Priority 20: must load before jit.runtime (70) HideGlobalJIT so jit.zone / jit.p remain requireable.
--- Absorbs former gc.policy (priority 30): always reset fullgc/framegc when load runs, then apply flags.
---
--- Option predicates: any of EnableProfiler / EnableTracy / DisableForceFullGC / EnableFrameGC.
--- is_bool_on treats string "off" as off and non-empty modes ("fzvp","Gz","on") as on.
+-- Absorbs former gc.policy: always reset fullgc/framegc when load runs, then apply flags.
 
-local function get_config(ctx, key)
-    local config = ctx and ctx.config
-    if type(config) == "function" then
-        return config(key)
-    end
-    if type(config) == "table" then
-        return config[key]
-    end
+local function get_config(key)
     if type(GetModConfigData) == "function" then
         return GetModConfigData(key)
     end
     return nil
 end
 
-local function EnableProfiler(injector, mode)
+local injector = GameInjector
+if not injector then
+    return
+end
+
+local function EnableProfiler(mode)
     local zone = require("jit.zone")
     local sim = getmetatable(TheSim).__index
     local old_profiler_push = sim.ProfilerPush
@@ -58,26 +54,26 @@ local function EnableProfiler(injector, mode)
     })
 end
 
-local function EnableTracy(injector)
+local function EnableTracy()
     injector.DS_LUAJIT_replace_profiler_api()
     injector.DS_LUAJIT_enable_tracy(1)
 end
 
-local function ApplyGcPolicy(injector, ctx)
+local function ApplyGcPolicy()
     -- Match former gc.policy / modmain: always clear, then re-enable when not GenGC.
     injector.DS_LUAJIT_disable_fullgc(false)
     injector.DS_LUAJIT_enable_framegc(false)
 
-    if get_config(ctx, "EnabledGenGC") then
+    if get_config("EnabledGenGC") then
         return
     end
 
-    if get_config(ctx, "DisableForceFullGC") then
+    if get_config("DisableForceFullGC") then
         injector.DS_LUAJIT_replace_profiler_api()
         injector.DS_LUAJIT_disable_fullgc(true)
     end
 
-    if get_config(ctx, "EnableFrameGC") then
+    if get_config("EnableFrameGC") then
         injector.DS_LUAJIT_replace_profiler_api()
         injector.DS_LUAJIT_enable_framegc(true)
 
@@ -97,50 +93,15 @@ local function ApplyGcPolicy(injector, ctx)
     end
 end
 
-return {
-    id = "debug.profiler",
-    version = "1.0.0",
-    depends = {},
-    soft_depends = {},
-    conflicts = {},
-    phases = "AfterModMain",
-    -- String feature switches + GC flags; is_bool_on treats "off" as off and "fzvp"/"Gz"/"on" as on.
-    options = {
-        any_of = {
-            "EnableProfiler",
-            "EnableTracy",
-            "DisableForceFullGC",
-            "EnableFrameGC",
-        },
-    },
-    support_reload = false,
-    priority = 20,
-    when = function(ctx)
-        if not ctx or not ctx.has_luajit then
-            return false
-        end
-        return true
-    end,
-    load = function(ctx)
-        local injector = ctx and ctx.injector
-        if not injector then
-            return
-        end
+-- 1) GC reset + DisableForceFullGC / EnableFrameGC (former gc.policy)
+ApplyGcPolicy()
 
-        -- 1) GC reset + DisableForceFullGC / EnableFrameGC (former gc.policy)
-        ApplyGcPolicy(injector, ctx)
+-- 2) EnableProfiler mode / EnableTracy
+local mode = get_config("EnableProfiler")
+if mode ~= nil and tostring(mode) ~= "off" and tostring(mode) ~= "" then
+    EnableProfiler(mode)
+end
 
-        -- 2) EnableProfiler mode / EnableTracy
-        local mode = get_config(ctx, "EnableProfiler")
-        if mode ~= nil and tostring(mode) ~= "off" and tostring(mode) ~= "" then
-            EnableProfiler(injector, mode)
-        end
-
-        if tostring(get_config(ctx, "EnableTracy") or "") == "on" then
-            EnableTracy(injector)
-        end
-    end,
-    unload = function(ctx)
-        -- Sticky by default; ProfilerPush wraps / tracy / GC hooks are not torn down.
-    end,
-}
+if tostring(get_config("EnableTracy") or "") == "on" then
+    EnableTracy()
+end

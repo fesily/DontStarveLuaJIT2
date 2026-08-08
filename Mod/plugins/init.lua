@@ -110,12 +110,12 @@ end
 
 return {
     load_flat("jit_tailcall"),
-    load_flat("debug_profiler"),
-    load_flat("network_rpc"),
+    load_package("plugin_debug_profiler"),
+    load_package("plugin_network_rpc"),
     load_flat("network_entity"),
-    load_flat("fps_render"),
+    load_package("plugin_fps_render"),
     load_package("plugin_save_fork"),
-    load_flat("sim_lagcomp"),
-    load_flat("network_sim"),
+    load_package("plugin_sim_lagcomp"),
+    load_package("plugin_network_sim"),
     load_flat("jit_runtime"),
 }

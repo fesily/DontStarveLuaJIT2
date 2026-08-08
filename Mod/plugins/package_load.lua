@@ -110,11 +110,23 @@ local function build_plugin_table(env, package_root, stem, api)
                 end
                 error("modimport not available in package load")
             end
+            -- Host gate_ctx supplies injector/config; fall back to parent globals.
+            local injector = (ctx and ctx.injector) or rawget(_G, "GameInjector")
+            local get_config = api.GetModConfigData
+            if type(get_config) ~= "function" and ctx and type(ctx.config) == "function" then
+                get_config = ctx.config
+            elseif type(get_config) ~= "function" and ctx and type(ctx.config) == "table" then
+                local cfg = ctx.config
+                get_config = function(key)
+                    return cfg[key]
+                end
+            end
             mod_env = setmetatable({
                 modimport = bound_modimport,
                 MODROOT = package_root, -- package-local for this chunk only
                 print = api.print or print,
-                GetModConfigData = api.GetModConfigData,
+                GetModConfigData = get_config,
+                GameInjector = injector,
                 AddGamePostInit = api.AddGamePostInit or function(fn) fn() end,
             }, { __index = parent_env, __newindex = parent_env })
             local loader = api.kleiloadlua or function(p)
