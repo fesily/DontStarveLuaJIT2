@@ -38,6 +38,7 @@ set(SOURCES
         core/PluginPendingUpdates.cpp
         core/CoreVmBootstrap.cpp
         core/PluginPackModinfo.cpp
+        core/ExternalPluginDiscovery.cpp
 )
 
 

@@ -283,6 +283,15 @@ else()
 endif()
 add_test(NAME plugin_pack_modinfo COMMAND test_plugin_pack_modinfo)
 
+add_executable(test_external_plugin_discovery
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_external_plugin_discovery.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ExternalPluginDiscovery.cpp)
+target_include_directories(test_external_plugin_discovery PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_external_plugin_discovery PRIVATE cxx_std_23)
+target_compile_definitions(test_external_plugin_discovery PRIVATE DS_PLUGIN_HOST_STATIC)
+add_test(NAME external_plugin_discovery COMMAND test_external_plugin_discovery)
+
 add_test(
     NAME plugin_host_lua
     COMMAND ${CMAKE_COMMAND} -E env
