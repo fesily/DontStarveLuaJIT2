@@ -84,16 +84,16 @@ end
 local function build_plugin_table(env, package_root, stem, api)
     api = api or {}
     local plugin = {
-        id = env.plugin_id,
-        version = env.version,
-        depends = env.depends or {},
-        soft_depends = env.soft_depends or {},
-        conflicts = env.conflicts or {},
-        phases = env.phases or "AfterModMain",
-        options = env.options,
-        support_reload = env.support_reload and true or false,
-        priority = env.priority or 100,
-        when = env.when,
+        id = rawget(env, "plugin_id"),
+        version = rawget(env, "version"),
+        depends = rawget(env, "depends") or {},
+        soft_depends = rawget(env, "soft_depends") or {},
+        conflicts = rawget(env, "conflicts") or {},
+        phases = rawget(env, "phases") or "AfterModMain",
+        options = rawget(env, "options"),
+        support_reload = rawget(env, "support_reload") and true or false,
+        priority = rawget(env, "priority") or 100,
+        when = rawget(env, "when"),  -- rawget: parent may be strict.lua (no bare when)
         load = function(ctx)
             local modmain_path = package_root .. "modmain.lua"
             local parent_modimport = api.modimport

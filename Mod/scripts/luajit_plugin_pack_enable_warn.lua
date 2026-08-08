@@ -125,8 +125,8 @@ local function try_hook()
     return true
 end
 
--- Pure helper for unit tests
-M = {
+-- Pure helper for unit tests (local — strict.lua forbids bare globals)
+local M = {
     should_warn = should_warn,
     set_this_modname = function(n)
         THIS_MODNAME = n
