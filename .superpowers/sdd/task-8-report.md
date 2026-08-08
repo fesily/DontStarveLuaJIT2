@@ -1,129 +1,60 @@
-# Task 8 Report: HTTP fetch, download, verify, apply
+# Task 8 Report: Manifest zip includes package Lua + docs cutover (P4)
 
 **Status:** DONE  
-**Branch:** feature/plugin-manager  
-**Base:** fd99b86  
-**Commit:** 26b1ba7c8c88a6a4effea374e8b00f79d608b0f7
+**Branch:** `feature/plugin-package-aggregation`
 
-## Summary
+## Commits
 
-Wired real download/apply into optional `plugin.manager`:
+| SHA | Message |
+|-----|---------|
+| `2711e09` | `docs+tools: package layout manifest zips and dual-face checklist` |
 
-- `PluginHttp` — `http_get` (WinHTTP on Windows; libcurl if `DS_PLUGIN_MANAGER_HAS_CURL`, else `"http unsupported"`)
-- Auto probe: prefer_proxy `auto` tries direct short timeout then gh-proxy wrap
-- Injectable `set_http_get_override` for offline tests
-- `PluginHash` — pure SHA-256 (module verify)
-- `PluginZipExtract` — libzip extract with `..` / absolute / nested reject + files[] allowlist (default: top-level `plugin_*` modules + meta)
-- `PluginApply` — resolve tag → fetch `plugins-manifest.json` → channel cache → download asset → sha256 verify → install to `plugins/` or `update_pending/` on lock
-- `PluginManagerApi` — real `fetch_manifest` / `apply` (fail-soft network errors)
+Full SHA: `2711e09` (see `git rev-parse 2711e09`)  
+Base: `9492535` (Task 7 report)
 
-## Files
+## Changes
 
-| Path | Action |
-|------|--------|
-| `plugins/plugin_manager/PluginHttp.hpp/.cpp` | Create — WinHTTP GET + proxy probe + override |
-| `plugins/plugin_manager/PluginHash.hpp/.cpp` | Create — sha256_hex / file / equal |
-| `plugins/plugin_manager/PluginZipExtract.hpp/.cpp` | Create — safe extract |
-| `plugins/plugin_manager/PluginApply.hpp/.cpp` | Create — manifest fetch + apply plan |
-| `plugins/plugin_manager/PluginManagerApi.cpp` | Wire fetch/apply + channel cache |
-| `plugins/plugin_manager/PluginManagerApi.hpp` | Comment update |
-| `plugins/plugin_manager/CMakeLists.txt` | Sources + libzip + winhttp / optional curl |
-| `tests/plugin/test_plugin_hash_zip.cpp` | Offline sha256 + zip fixtures |
-| `tests/plugin/test_plugin_apply_offline.cpp` | Mock HTTP apply pipeline |
-| `tests/CMakeLists.txt` | New test targets |
+| Action | Path |
+|--------|------|
+| Modify | `tools/gen_plugins_manifest.py` — `iter_plugin_modules` package-subdir discovery; zip members package-relative (`modinfo.lua`, `modmain.lua`, `scripts/**`); meta next to module |
+| Modify | `tests/plugin/test_gen_plugins_manifest.py` — package-subdir fixture asserts zip + `files[]` include Lua |
+| Modify | `docs/plugin-system.md` — §3.4 dual-face package how-to; §7 examples; §9 checklist; key paths |
 
-## TDD Evidence
+Identity codegen (`gen_plugin_identity.py` / `*_identity.inc`) **not** shipped this slice; docs note hand-sync + gate, regen later OK.
 
-### RED → GREEN (offline)
+## Tests
 
-1. **hash/zip** — `test_plugin_hash_zip` (MSVC `/MD` + vcpkg libzip):
-   ```
-   PASS: sha256_known_vectors
-   PASS: sha256_file
-   PASS: zip_unsafe_detection
-   PASS: zip_extract_allowlist_default
-   PASS: zip_extract_explicit_allowlist
-   PASS: zip_reject_dotdot
-   PASS: zip_reject_nested
-   PASS: zip_memory_extract
-   ALL PASS plugin_hash_zip
-   ```
+```bash
+python tests/plugin/test_gen_plugins_manifest.py -q
+# 3/3 OK (flat + package + merge)
 
-2. **apply offline** — mock HTTP map, no network:
-   ```
-   PASS: channel_cache_and_lookup (platform=windows module=plugin_dummy.dll)
-   PASS: fetch_manifest_mock
-   PASS: apply_plan_with_mock_http
-   PASS: install_pending_fallback
-   ALL PASS plugin_apply_offline
-   ```
-   Includes intentional sha256 mismatch failure path (keeps old install semantics).
+python tools/check_plugin_package_identity.py --source-root .
+# identity gate OK: checked=6 skipped=0  (IDENTITY_RC:0)
 
-3. **Syntax-check** — `cl /c` of PluginHttp, PluginApply, PluginManagerApi, PluginZipExtract, PluginHash: PASS (C4819 codepage warnings only).
+python tests/plugin/test_plugin_package_identity.py -q
+# 6/6 OK
 
-### Full plugin_manager MODULE link
+python tests/plugin/run_package_load.py
+# ALL PASS package_load_spec  (PKG_RC:0)
 
-Skipped — worktree not configured in main `builds/ninja-multi-vcpkg` (same as Task 6/7). CMake sources + link lines ready for next configure.
+LUA_BIN=<parent builds>/luajit/Release/luajit.exe python tests/plugin/run_lua_host.py
+# plugin_host_lua_spec: all tests passed  (HOST_RC:0)
 
-## Behavior notes
-
-| Case | Behavior |
-|------|----------|
-| `prefer_proxy=always` | only proxied URL |
-| `prefer_proxy=never` | only direct |
-| `prefer_proxy=auto` | direct 3s then proxy full timeout |
-| Network fail | `last_error` set; return false; no partial corrupt modules (staging + sha gate) |
-| Zip `..` / abs / nested | hard reject extract |
-| DLL write lock | `plugins/update_pending/` + `needs_restart` |
-| No manifest | apply fails with clear error |
-
-## Security
-
-- Path traversal reject on extract (`..`, absolute, drive letters, nested paths)
-- Only extract `files[]` when present; else only top-level plugin modules/meta
-- SHA-256 of **module** bytes vs manifest platform.sha256 before install
-
-## Checklist
-
-- [x] PluginHttp WinHTTP + fail-soft non-Win without curl
-- [x] fetch_manifest + channel cache + optional file cache beside pin config
-- [x] apply download / verify / extract / pending
-- [x] Offline sha256 + zip tests PASS
-- [x] Offline mock-HTTP apply tests PASS
-- [x] CMake libzip + winhttp
-- [x] Commit `feat(plugin-manager): GitHub download, gh-proxy, verify, and apply`
-
-
-## Fix: Critical/Important review findings
-
-**Date:** 2026-08-05  
-**Commit message:** `fix(plugin-manager): harden apply path and HTTP bounds`
-
-
-
-
-### Findings fixed
-
-| Pri | Issue | Fix |
-|-----|-------|-----|
-| P0 | Raw `module` path used for sha256 under staging | `is_flat_safe_basename`; reject abs/`..`/separators; hash only staging basename among extracted members |
-| P1 | Foreign platform fallback when current missing | Fail with `platform '…' missing`; no first-available OS |
-| P1 | Path-like `files[]` installed unchecked | Sanitize each `files[]` at lookup + re-validate before install; module must be listed |
-| P1 | `remove(dest)` before replace | Write sibling `.ds_tmp_*` first; rename/copy over live dest; staging kept for pending |
-| P2 | Unbounded HTTP body | Cap `kMaxHttpBodyBytes` (64 MiB) in WinHTTP and curl write paths |
-
-### Tests
-
+python tools/gen_plugins_manifest.py --help  # HELP_RC:0
 ```
-PASS: sha256_known_vectors … zip_memory_extract
-ALL PASS plugin_hash_zip
 
-PASS: channel_cache_and_lookup
-PASS: fetch_manifest_mock
-PASS: apply_plan_with_mock_http
-PASS: install_pending_fallback
-PASS: reject_pathlike_module_and_files
-PASS: reject_foreign_platform
-PASS: http_body_size_cap_constant
-ALL PASS plugin_apply_offline
+No full suite / formatters (per task scope). L-G not run.
+
+## Cutover greps
+
+```text
+rg load_flat("(save_fork|network_rpc|…)") Mod/plugins/init.lua → none
+Mod/plugins/{save_fork,network_rpc,network_sim,sim_lagcomp,debug_profiler,fps_render}.lua → gone
+Mod/scripts/{fork_save,netsim,lag_compensation}.lua → gone
 ```
+
+## Concerns
+
+1. **plugin.manager apply still flat-basename:** zips now list nested `scripts/...` and package Lua; `PluginZipExtract` / `PluginApply` still reject nested paths / require flat basenames. Spec marks full mini-mod manager apply as follow-up — download apply of dual-face package zips will need a later allowlist/install update.
+2. **Identity codegen deferred:** native still hand-syncs `man.id`/`version`/option keys; CI gate covers drift. Optional `plugin_*_identity.inc` regen can land later.
+3. **Dual tree mirror** (`src/.../plugin_*` vs `Mod/plugins/plugin_*`) unchanged from Task 6/7 until install is sole runtime path.
