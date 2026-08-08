@@ -179,7 +179,7 @@ local function run_case(name, fork_result, opts)
         return "default-save", isshutdown
     end
     package.loaded["scripts.fork_save"] = nil
-    local chunk, load_err = loadfile("Mod/scripts/fork_save.lua")
+    local chunk, load_err = loadfile("Mod/plugins/plugin_save_fork/scripts/fork_save.lua")
     if not chunk then
         restore_globals()
         error(load_err)
