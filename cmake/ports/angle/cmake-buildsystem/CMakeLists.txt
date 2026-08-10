@@ -144,9 +144,10 @@ set(gl_prototypes
 
 # Default library types for ANGLE
 # Override these in Platform*.cmake for your port as needed.
-set(ANGLE_LIBRARY_TYPE STATIC) # libANGLE static library (matches expected behavior & prior behavior)
-set(GLESv2_LIBRARY_TYPE) # VCPKG EDIT: Default to BUILD_SHARED_LIBS setting
-set(EGL_LIBRARY_TYPE) # VCPKG EDIT: Default to BUILD_SHARED_LIBS setting
+# DontStarveLuaJIT2: ship shared Khronos entry DLLs; keep libANGLE static inside them.
+set(ANGLE_LIBRARY_TYPE STATIC)
+set(GLESv2_LIBRARY_TYPE SHARED)
+set(EGL_LIBRARY_TYPE SHARED)
 
 # ANGLE makes a number of small static libraries that are then joined into a
 # bigger library that is built shared. Rather than making the small libraries
@@ -539,10 +540,14 @@ install(
     PATTERN "export.h" EXCLUDE
 )
 
-if(NOT BUILD_SHARED_LIBS)
-    foreach(angle_target EGL GLESv2 ANGLE)
-        if(TARGET ${angle_target})
+# Only static consumers of static GLESv2 would need KHRONOS_STATIC; we ship SHARED.
+# Gate by actual target type so SHARED GLESv2/EGL install interfaces never force it.
+foreach(angle_target EGL GLESv2 ANGLE)
+    if(TARGET ${angle_target})
+        get_target_property(_angle_target_type ${angle_target} TYPE)
+        if(_angle_target_type STREQUAL "STATIC_LIBRARY")
             target_compile_definitions(${angle_target} INTERFACE $<INSTALL_INTERFACE:KHRONOS_STATIC>)
         endif()
-    endforeach()
-endif()
+    endif()
+endforeach()
+unset(_angle_target_type)
