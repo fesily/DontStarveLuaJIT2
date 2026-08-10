@@ -131,10 +131,10 @@ def is_staged(stage_dir: Path, fp: str, release_only: bool) -> bool:
     required = [
         stage_dir / "include" / "EGL" / "egl.h",
         stage_dir / "include" / "GLES2" / "gl2.h",
-        stage_dir / "lib" / "libEGL.lib",
+        stage_dir / "bin" / "libGLESv2.dll",
+        stage_dir / "bin" / "libEGL.dll",
         stage_dir / "lib" / "libGLESv2.lib",
-        stage_dir / "lib" / "ANGLE.lib",
-        stage_dir / "lib" / "SPIRV-Tools.lib",
+        stage_dir / "lib" / "libEGL.lib",
         stage_dir / "lib" / "vulkan-1.lib",
         stage_dir / "include" / "vma" / "vk_mem_alloc.h",
     ]
@@ -186,21 +186,33 @@ def stage_from_install(install_prefix: Path, stage_dir: Path, release_only: bool
     if vk_video.exists():
         copy_tree(vk_video, stage_dir / "include" / "vk_video")
 
-    lib_names = [
-        "libEGL.lib",
-        "libGLESv2.lib",
-        "ANGLE.lib",
-        "SPIRV-Tools.lib",
-        "vulkan-1.lib",
-    ]
+    # Consumer import libs for shared GLESv2/EGL (+ Vulkan loader).
+    lib_names = ["libEGL.lib", "libGLESv2.lib", "vulkan-1.lib"]
     for name in lib_names:
         copy_file(install_prefix / "lib" / name, stage_dir / "lib" / name)
+
+    # Optional static/helper libs kept for the generator / tooling when present.
+    for name in ("ANGLE.lib", "SPIRV-Tools.lib"):
+        src = install_prefix / "lib" / name
+        if src.is_file():
+            copy_file(src, stage_dir / "lib" / name)
 
     if not release_only:
         for name in lib_names:
             src = install_prefix / "debug" / "lib" / name
             if src.is_file():
                 copy_file(src, stage_dir / "debug" / "lib" / name)
+        for name in ("ANGLE.lib", "SPIRV-Tools.lib"):
+            src = install_prefix / "debug" / "lib" / name
+            if src.is_file():
+                copy_file(src, stage_dir / "debug" / "lib" / name)
+
+    # Shared runtime DLLs produced by the ANGLE port (required).
+    for name in ("libGLESv2.dll", "libEGL.dll"):
+        src = install_prefix / "bin" / name
+        if not src.is_file():
+            die(f"shared ANGLE missing DLL: {src}")
+        copy_file(src, stage_dir / "bin" / name)
 
     # Keep the import library companion DLL when present (loader).
     vulkan_dll = install_prefix / "bin" / "vulkan-1.dll"
@@ -271,6 +283,8 @@ def write_marker(stage_dir: Path, fp: str, release_only: bool, triplet: str) -> 
         "release_only": release_only,
         "triplet": triplet,
         "platform": map_target_dir(),
+        "shared": True,
+        "link": "glesv2_egl_dll",
     }
     marker.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     # Convenience pointer used by CMake / humans.
