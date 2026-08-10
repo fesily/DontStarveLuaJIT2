@@ -212,6 +212,17 @@ def write_sideload_angle_dlls(bin_dir: Path) -> None:
 
 
 def stage_from_install(install_prefix: Path, stage_dir: Path, release_only: bool) -> None:
+    # Validate shared runtime first so a bad prefix never wipes a good stage tree.
+    for name in ("libGLESv2.dll", "libEGL.dll"):
+        src = install_prefix / "bin" / name
+        if not src.is_file():
+            die(
+                f"shared ANGLE missing DLL: {src}\n"
+                f"  install prefix has import libs but no shared runtime.\n"
+                f"  Rebuild ANGLE shared (python tools/setup_angle.py -f) or point "
+                f"--from-prefix at a prefix that contains bin/libGLESv2.dll."
+            )
+
     if stage_dir.exists():
         shutil.rmtree(stage_dir)
     stage_dir.mkdir(parents=True, exist_ok=True)
@@ -357,21 +368,44 @@ def default_from_prefix_candidates(triplet: str) -> list[Path]:
     ]
 
 
+def prefix_has_shared_angle_dlls(prefix: Path) -> bool:
+    """Shared ANGLE runtime required for plugin_render_angle sideload."""
+    return (prefix / "bin" / "libGLESv2.dll").is_file() and (prefix / "bin" / "libEGL.dll").is_file()
+
+
+def prefix_has_import_libs(prefix: Path) -> bool:
+    return (
+        (prefix / "lib" / "libEGL.lib").is_file()
+        and (prefix / "lib" / "libGLESv2.lib").is_file()
+        and (prefix / "lib" / "ANGLE.lib").is_file()
+    )
+
+
 def resolve_prefix(args: argparse.Namespace, release_only: bool) -> Path:
     if args.from_prefix:
         prefix = Path(args.from_prefix)
         if not prefix.is_dir():
             die(f"--from-prefix is not a directory: {prefix}")
+        if not prefix_has_shared_angle_dlls(prefix):
+            die(
+                f"--from-prefix missing shared ANGLE DLLs under bin/ "
+                f"(libGLESv2.dll / libEGL.dll): {prefix}"
+            )
         return prefix
 
     # Prefer an already-built install over recompiling ANGLE for hours.
+    # Import libs alone are not enough: older static-only prefixes have no bin/*.dll.
     for candidate in default_from_prefix_candidates(args.triplet):
-        egl = candidate / "lib" / "libEGL.lib"
-        gles = candidate / "lib" / "libGLESv2.lib"
-        angle = candidate / "lib" / "ANGLE.lib"
-        if egl.is_file() and gles.is_file() and angle.is_file():
+        if not candidate.is_dir():
+            continue
+        if prefix_has_import_libs(candidate) and prefix_has_shared_angle_dlls(candidate):
             print(f"reusing existing ANGLE install: {candidate}")
             return candidate
+        if prefix_has_import_libs(candidate) and not prefix_has_shared_angle_dlls(candidate):
+            print(
+                f"skip existing ANGLE install without shared DLLs: {candidate} "
+                f"(need bin/libGLESv2.dll + bin/libEGL.dll)"
+            )
 
     vcpkg = find_vcpkg(args.vcpkg)
     print(f"using vcpkg: {vcpkg}")
@@ -384,8 +418,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--release-only",
         action="store_true",
-        default=bool(os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS")),
-        help="Stage only Release libs (default on CI)",
+        default=True,
+        help="Stage only Release libs/DLL (default; shared ANGLE is release)",
     )
     parser.add_argument(
         "--with-debug",
