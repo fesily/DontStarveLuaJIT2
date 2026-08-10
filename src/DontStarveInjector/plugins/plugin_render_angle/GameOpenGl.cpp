@@ -340,24 +340,45 @@ namespace {
         return plugin_dir.parent_path().parent_path().parent_path() / "deps";
     }
 
+    // Sideload basenames: must NOT match game-resident libGLESv2.dll / libEGL.dll.
+    // Engine already loads bin64 copies before EarlyNative; same-name deps bind to those
+    // modules (egl_err=127). Unique names allow our shared ANGLE to coexist; game IAT
+    // still rebinds import module names "libEGL.dll"/"libGLESv2.dll" to our exports.
+    static constexpr const wchar_t *kSideloadGlesName = L"ds_GLESv2.dll";
+    static constexpr const wchar_t *kSideloadEglName = L"ds_libEGL.dll";
+
+    static std::string ModulePathString(HMODULE mod) {
+        if (!mod) {
+            return {};
+        }
+        wchar_t path[MAX_PATH]{};
+        if (GetModuleFileNameW(mod, path, MAX_PATH) == 0) {
+            return {};
+        }
+        return std::filesystem::path(path).string();
+    }
+
     static bool TryLoadAnglePair(const std::filesystem::path &dir) {
         if (dir.empty()) {
             return false;
         }
 
         std::error_code ec;
-        const auto gles = dir / L"libGLESv2.dll";
-        const auto egl = dir / L"libEGL.dll";
+        const auto gles = dir / kSideloadGlesName;
+        const auto egl = dir / kSideloadEglName;
         if (!std::filesystem::is_regular_file(gles, ec) || !std::filesystem::is_regular_file(egl, ec)) {
             return false;
         }
 
+        // Load GLESv2 first so ds_libEGL's import of ds_GLESv2.dll resolves in this dir.
         HMODULE gles_mod = LoadLibraryExW(gles.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
         const DWORD gles_err = GetLastError();
-        HMODULE egl_mod = LoadLibraryExW(egl.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+        HMODULE egl_mod = gles_mod
+                                  ? LoadLibraryExW(egl.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH)
+                                  : nullptr;
         const DWORD egl_err = GetLastError();
         if (!gles_mod || !egl_mod) {
-            spdlog::error("ANGLE DLL load failed gles={} egl={} gles_err={} egl_err={}",
+            spdlog::error("ANGLE sideload failed gles={} egl={} gles_err={} egl_err={}",
                           gles.string(),
                           egl.string(),
                           gles_mod ? 0u : static_cast<unsigned>(gles_err),
@@ -371,9 +392,21 @@ namespace {
             return false;
         }
 
+        // Refuse if loader still bound us to game basenames (should not happen with sideload names).
+        const auto gles_path = ModulePathString(gles_mod);
+        const auto egl_path = ModulePathString(egl_mod);
+        const auto gles_leaf = std::filesystem::path(gles_path).filename().string();
+        const auto egl_leaf = std::filesystem::path(egl_path).filename().string();
+        if (!EqualsIgnoreCase(gles_leaf, "ds_GLESv2.dll") || !EqualsIgnoreCase(egl_leaf, "ds_libEGL.dll")) {
+            spdlog::error("ANGLE sideload resolved unexpected modules gles={} egl={}", gles_path, egl_path);
+            FreeLibrary(gles_mod);
+            FreeLibrary(egl_mod);
+            return false;
+        }
+
         g_angle_glesv2 = gles_mod;
         g_angle_egl = egl_mod;
-        spdlog::info("ANGLE DLLs loaded from {}", dir.string());
+        spdlog::info("ANGLE sideload loaded gles={} egl={}", gles_path, egl_path);
         return true;
     }
 
@@ -382,7 +415,7 @@ namespace {
             return true;
         }
 
-        // Search order: plugin dir (co-located) → Mod/deps helpers → bare LoadLibrary names.
+        // Never fall back to bare LoadLibrary("libGLESv2.dll") — game already owns those names.
         if (TryLoadAnglePair(ThisPluginDir())) {
             return true;
         }
@@ -390,27 +423,11 @@ namespace {
             return true;
         }
 
-        HMODULE gles_mod = LoadLibraryW(L"libGLESv2.dll");
-        const DWORD gles_err = GetLastError();
-        HMODULE egl_mod = LoadLibraryW(L"libEGL.dll");
-        const DWORD egl_err = GetLastError();
-        if (!gles_mod || !egl_mod) {
-            spdlog::error("ANGLE DLL load failed (default search) gles_err={} egl_err={}",
-                          gles_mod ? 0u : static_cast<unsigned>(gles_err),
-                          egl_mod ? 0u : static_cast<unsigned>(egl_err));
-            if (gles_mod) {
-                FreeLibrary(gles_mod);
-            }
-            if (egl_mod) {
-                FreeLibrary(egl_mod);
-            }
-            return false;
-        }
-
-        g_angle_glesv2 = gles_mod;
-        g_angle_egl = egl_mod;
-        spdlog::info("ANGLE DLLs loaded via default module search");
-        return true;
+        spdlog::error("ANGLE sideload missing: need {} and {} under plugin dir or Mod/deps "
+                      "(game-resident libGLESv2/libEGL are not used for rebind)",
+                      std::filesystem::path(kSideloadGlesName).string(),
+                      std::filesystem::path(kSideloadEglName).string());
+        return false;
     }
 
     static EGLDisplay EGLAPIENTRY MyEglGetDisplay(EGLNativeDisplayType native_display) {
@@ -639,8 +656,22 @@ namespace {
             return;
         }
 
-        RebindModuleImports(main_module, "libEGL.dll", &ResolveGameEglSymbol, g_angle_egl);
-        RebindModuleImports(main_module, "libGLESv2.dll", &ResolveGameGlesSymbol, g_angle_glesv2);
+        // Game imports ANGLE by ordinal. Ordinal tables differ between stock bin64 ANGLE
+        // and our shared build — map ordinals from the *game-resident* modules, then resolve
+        // replacement procs by name from the sideload modules (g_angle_*).
+        HMODULE ordinal_egl = GetModuleHandleW(L"libEGL.dll");
+        HMODULE ordinal_gles = GetModuleHandleW(L"libGLESv2.dll");
+        if (!ordinal_egl) {
+            spdlog::warn("game-resident libEGL.dll not found; ordinal IAT map may be wrong");
+            ordinal_egl = g_angle_egl;
+        }
+        if (!ordinal_gles) {
+            spdlog::warn("game-resident libGLESv2.dll not found; ordinal IAT map may be wrong");
+            ordinal_gles = g_angle_glesv2;
+        }
+
+        RebindModuleImports(main_module, "libEGL.dll", &ResolveGameEglSymbol, ordinal_egl);
+        RebindModuleImports(main_module, "libGLESv2.dll", &ResolveGameGlesSymbol, ordinal_gles);
     }
 
 }// namespace

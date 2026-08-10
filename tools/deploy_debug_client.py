@@ -79,7 +79,8 @@ def main() -> int:
                 if WS.exists():
                     cp(f, WS / "deps" / f.name)
 
-    for name in ("libGLESv2.dll", "libEGL.dll", "vulkan-1.dll"):
+    for name in ("libGLESv2.dll", "libEGL.dll", "vulkan-1.dll",
+                 "ds_GLESv2.dll", "ds_libEGL.dll"):
         src = ANGLE_BIN / name
         if src.is_file():
             cp(src, MOD / "deps" / name)

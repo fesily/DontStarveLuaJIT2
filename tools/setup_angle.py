@@ -2,6 +2,14 @@
 """Build ANGLE (and its link deps) via an isolated vcpkg manifest and stage
 them under 3rd/angle so the main project no longer rebuilds ANGLE on every
 vcpkg cache miss.
+
+On Windows, also emits sideload runtime DLLs next to the canonical pair:
+
+  bin/ds_GLESv2.dll   — copy of libGLESv2.dll (unique basename)
+  bin/ds_libEGL.dll   — libEGL.dll with import libGLESv2.dll -> ds_GLESv2.dll
+
+plugin_render_angle loads these after the game already mapped bin64 ANGLE;
+same-name deps would bind to the game modules (LoadLibrary egl_err=127).
 """
 
 from __future__ import annotations
@@ -26,6 +34,14 @@ TRIPLET_DIR = ROOT / "cmake" / "custom-triplets"
 OUTPUT_DIR = ROOT / "3rd" / "angle"
 INSTALL_ROOT = ANGLE_TOOLS / "vcpkg_installed"
 DEFAULT_TRIPLET = "x64-windows-custom"
+
+# Sideload basenames (same-length PE import patch: libGLESv2.dll -> ds_GLESv2.dll).
+# Must stay unique vs game-resident libGLESv2.dll / libEGL.dll.
+SIDELOAD_GLES_DLL = "ds_GLESv2.dll"
+SIDELOAD_EGL_DLL = "ds_libEGL.dll"
+_ANGLE_GLES_IMPORT_OLD = b"libGLESv2.dll"
+_ANGLE_GLES_IMPORT_NEW = b"ds_GLESv2.dll"
+assert len(_ANGLE_GLES_IMPORT_OLD) == len(_ANGLE_GLES_IMPORT_NEW) == 13
 
 
 def die(message: str) -> None:
@@ -133,6 +149,8 @@ def is_staged(stage_dir: Path, fp: str, release_only: bool) -> bool:
         stage_dir / "include" / "GLES2" / "gl2.h",
         stage_dir / "bin" / "libGLESv2.dll",
         stage_dir / "bin" / "libEGL.dll",
+        stage_dir / "bin" / SIDELOAD_GLES_DLL,
+        stage_dir / "bin" / SIDELOAD_EGL_DLL,
         stage_dir / "lib" / "libGLESv2.lib",
         stage_dir / "lib" / "libEGL.lib",
         stage_dir / "lib" / "vulkan-1.lib",
@@ -154,6 +172,43 @@ def copy_file(src: Path, dst: Path) -> None:
         die(f"missing source file: {src}")
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
+
+
+def write_sideload_angle_dlls(bin_dir: Path) -> None:
+    """Emit unique-basename ANGLE DLLs for post-game-load IAT rebind.
+
+    Game already maps bin64 libGLESv2/libEGL before EarlyNative. Loading our
+    libs under the same basenames binds libEGL's import of libGLESv2.dll to the
+    game module (ERROR_PROC_NOT_FOUND / 127). Sideload names avoid that collision;
+    plugin_render_angle rebinds the game's libEGL.dll/libGLESv2.dll IAT slots to
+    exports from these modules.
+    """
+    src_gles = bin_dir / "libGLESv2.dll"
+    src_egl = bin_dir / "libEGL.dll"
+    if not src_gles.is_file() or not src_egl.is_file():
+        die(f"cannot write sideload ANGLE DLLs; missing {src_gles.name} or {src_egl.name} in {bin_dir}")
+
+    dst_gles = bin_dir / SIDELOAD_GLES_DLL
+    dst_egl = bin_dir / SIDELOAD_EGL_DLL
+    shutil.copy2(src_gles, dst_gles)
+
+    data = bytearray(src_egl.read_bytes())
+    count = data.count(_ANGLE_GLES_IMPORT_OLD)
+    if count < 1:
+        die(
+            f"{src_egl} has no import string {_ANGLE_GLES_IMPORT_OLD!r}; "
+            f"cannot patch to {_ANGLE_GLES_IMPORT_NEW!r}"
+        )
+    data = data.replace(_ANGLE_GLES_IMPORT_OLD, _ANGLE_GLES_IMPORT_NEW)
+    if _ANGLE_GLES_IMPORT_OLD in data:
+        die(f"failed to fully patch {_ANGLE_GLES_IMPORT_OLD!r} in {src_egl}")
+    if data.count(_ANGLE_GLES_IMPORT_NEW) < 1:
+        die(f"patch produced no {_ANGLE_GLES_IMPORT_NEW!r} in sideload EGL")
+    dst_egl.write_bytes(data)
+    print(
+        f"sideload ANGLE: {dst_gles.name} + {dst_egl.name} "
+        f"(patched libGLESv2 import x{count}) -> {bin_dir}"
+    )
 
 
 def stage_from_install(install_prefix: Path, stage_dir: Path, release_only: bool) -> None:
@@ -218,6 +273,9 @@ def stage_from_install(install_prefix: Path, stage_dir: Path, release_only: bool
     vulkan_dll = install_prefix / "bin" / "vulkan-1.dll"
     if vulkan_dll.is_file():
         copy_file(vulkan_dll, stage_dir / "bin" / "vulkan-1.dll")
+
+    # Unique basenames for runtime rebind after game-resident ANGLE is mapped.
+    write_sideload_angle_dlls(stage_dir / "bin")
 
 
 def ensure_dir(path: Path) -> Path:
@@ -363,6 +421,24 @@ def main() -> int:
     if not args.force and is_staged(stage_dir, fp, release_only):
         print(f"use cached {staged_marker(stage_dir)}")
         return 0
+
+    # Fingerprint match but sideload missing (pre-sideload stage): repair in place.
+    marker = staged_marker(stage_dir)
+    if (
+        not args.force
+        and marker.is_file()
+        and (stage_dir / "bin" / "libGLESv2.dll").is_file()
+        and (stage_dir / "bin" / "libEGL.dll").is_file()
+    ):
+        try:
+            data = json.loads(marker.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = {}
+        if data.get("fingerprint") == fp and bool(data.get("release_only")) == release_only:
+            write_sideload_angle_dlls(stage_dir / "bin")
+            if is_staged(stage_dir, fp, release_only):
+                print(f"repaired sideload DLLs under {stage_dir / 'bin'}")
+                return 0
 
     prefix = resolve_prefix(args, release_only)
     stage_from_install(prefix, stage_dir, release_only)
