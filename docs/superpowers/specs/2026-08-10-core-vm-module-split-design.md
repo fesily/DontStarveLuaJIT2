@@ -1,7 +1,7 @@
 # Core.vm 模块拆分设计（包内整理 + 纯 VM 外置库）
 
 **Date:** 2026-08-10  
-**Status:** Partially Implemented (S0–S3 code + docs; full `plugin_core_vm` link / L-G not proven in worktree)  
+**Status:** Implemented (RelWithDebInfo link of `plugin_core_vm` + peers + `test_lua_event_bus` PASS; L-G / missing-lib runtime negative not run)
 **Plugin id:** `core.vm`（不变）  
 **MODULE:** `plugin_core_vm`（不变）
 
