@@ -17,7 +17,7 @@ namespace ds::core_vm::detail {
 GameLuaContextImpl *GetContextForType(GameLuaType type);
 const char *GetDefaultModuleName(GameLuaType type);
 
-// VM switch / lifecycle (definitions remain in GameLua.cpp for Task 3)
+// VM switch / lifecycle (definitions in game/VmSwitch.cpp)
 void RequestVmType(GameLuaType type, const char *moduleName, std::string_view reason);
 bool ReinitializeCurrentVm(std::string_view reason);
 void ApplyVmType(GameLuaType type, const std::optional<std::string> &moduleName, std::string_view reason);
@@ -46,7 +46,7 @@ const char *DefaultLua51LibraryName();
 const char *DefaultLuajitLibraryName();
 const char *DefaultLuajitGenLibraryName();
 
-// Used by ReplaceLuaModule while it still lives in GameLua.cpp (Task 5 moves it)
+// Used by ReplaceLuaModule (game/ReplaceLuaModule.cpp)
 void NoteGameLuaExport(const std::string &name, GumAddress addr);
 void NoteGameLuaExportsForDebugSymbols();
 

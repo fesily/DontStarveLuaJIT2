@@ -32,11 +32,13 @@ set(PLUGIN_CORE_VM_IO_SOURCES
 )
 
 set(PLUGIN_CORE_VM_GAME_SOURCES
-    GameLua.cpp
     game/GameLuaContext.cpp
     game/GameLuaContextGame.cpp
     game/GameLuaContextJit.cpp
     game/GameLuaContextLua51.cpp
+    game/VmSwitch.cpp
+    game/ReplaceLuaModule.cpp
+    game/GameDbgExports.cpp
 )
 set(PLUGIN_CORE_VM_INJECTOR_SOURCES
     GameLuaModule.cpp
