@@ -197,7 +197,21 @@ bool ReinitializeCurrentVm(std::string_view reason) {
         return false;
     }
     if (!currentCtx->LoadLuaModule()) {
-        return false;
+        // Pure VM lib missing — degrade to embedded game Lua (spec M8).
+        if (currentCtx->luaType != GameLuaType::game) {
+            spdlog::warn(
+                "VM library '{}' missing — degrade to game context ({})",
+                currentCtx->GetLibraryName(), reason);
+            ApplyVmType(GameLuaType::game, std::nullopt, "degrade after LoadLuaModule failure");
+            currentCtx = GameLuaContextImpl::currentCtx;
+            if (currentCtx == nullptr || !currentCtx->LoadLuaModule()) {
+                spdlog::error("Degrade to game failed: {}", reason);
+                return false;
+            }
+        } else {
+            spdlog::error("Game context LoadLuaModule failed: {}", reason);
+            return false;
+        }
     }
     currentCtx->LoadAllInterfaces();
     currentCtx->LoadMyLuaApi();
