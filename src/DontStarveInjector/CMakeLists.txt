@@ -182,6 +182,19 @@ if (DEFINED FRIDA_GUM_RUNTIME)
     install(FILES "${FRIDA_GUM_RUNTIME}" DESTINATION deps COMPONENT deps)
 endif()
 
+if (WIN32)
+    set(_ds_angle_bin "${PROJECT_SOURCE_DIR}/3rd/angle/win64/bin")
+    set(_ds_angle_deps "")
+    foreach(_ds_angle_dll IN ITEMS libGLESv2.dll libEGL.dll vulkan-1.dll)
+        if (EXISTS "${_ds_angle_bin}/${_ds_angle_dll}")
+            list(APPEND _ds_angle_deps "${_ds_angle_bin}/${_ds_angle_dll}")
+        endif()
+    endforeach()
+    if (_ds_angle_deps)
+        install(FILES ${_ds_angle_deps} DESTINATION deps COMPONENT deps)
+    endif()
+endif()
+
 add_subdirectory(loader/bootstrap)
 
 # POSIX game-side shell (libInjector.so/.dylib). Windows uses Winmm.

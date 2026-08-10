@@ -505,7 +505,7 @@ EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`, �
 | `plugin_debug_profiler` | **mod** `plugins/` | **Optional (Tracy/FullGC/FrameGC)** | Independent of core.vm |
 | `plugin_manager` | **mod** `plugins/` | **Optional (package manager)** | Missing ⇒ manual install only; UI soft-degrades. See **§13** |
 | other `plugin_*` | **mod** `plugins/` | Per feature | `network_*`, `render_*`, `save_fork`, `sim_lagcomp`, `dummy`, … |
-| third-party runtime deps | **mod** `deps/` | As needed | Shared DLL/SO search for Injector + plugins |
+| third-party runtime deps | **mod** `deps/` | As needed | Shared DLL/SO search for Injector + plugins. Win client ANGLE: `libGLESv2.dll`, `libEGL.dll`, `vulkan-1.dll` from `3rd/angle/win64/bin` (also staged by `tools/deploy_debug_client.py`) |
 
 Override paths: `DS_LUAJIT_INJECTOR` / `DS_LUAJIT_INJECTOR_DIR` (real Injector); `DS_LUAJIT_PLUGIN_DIR` (plugins). Marker: `data/unsafedata/ds_luajit_injector.path`.
 

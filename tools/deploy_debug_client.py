@@ -3,12 +3,8 @@
 
 Rules:
 - Winmm/Injector/function_relocation/plugins use Debug (/MDd, ucrtbased).
-- plugin_render_angle is built Debug-config as /MD+IDL0 so it can *statically*
-  link release_only ANGLE (IAT rebind needs static egl/gles in this DLL).
-  It must NOT be loaded into a /MDd Injector process: register_option_schema
-  moves std::string across the CRT boundary and AVs (cdb:
-  Injector!std::string::_Take_contents <- plugin_render_angle!ds_plugin_module_init).
-  Deploy therefore skips plugin_render_angle until the host/plugin CRT is unified.
+- Shared ANGLE (libGLESv2/libEGL/vulkan-1) is staged into Mod/deps from
+  3rd/angle/win64/bin so plugin_render_angle can LoadLibrary at runtime.
 - Stage to Mod/ and workshop content 3444078585; shell to game bin64.
 
 Usage (repo root):
@@ -29,8 +25,7 @@ LOADER = ROOT / "builds/ninja-multi-vcpkg/src/DontStarveInjector/loader/Debug"
 MOD = ROOT / "Mod"
 WS = Path(r"C:\Program Files (x86)\Steam\steamapps\workshop\content\322330\3444078585")
 BIN64 = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Don't Starve Together\bin64")
-# Runtime skip: /MD static-ANGLE DLL cannot share std::string with /MDd Injector.
-SKIP_PLUGINS = {"plugin_render_angle"}
+ANGLE_BIN = ROOT / "3rd" / "angle" / "win64" / "bin"
 
 
 def cp(src: Path, dst: Path) -> None:
@@ -84,17 +79,17 @@ def main() -> int:
                 if WS.exists():
                     cp(f, WS / "deps" / f.name)
 
+    for name in ("libGLESv2.dll", "libEGL.dll", "vulkan-1.dll"):
+        src = ANGLE_BIN / name
+        if src.is_file():
+            cp(src, MOD / "deps" / name)
+            if WS.exists():
+                cp(src, WS / "deps" / name)
+
     plugins_root = BUILD / "plugins"
     if plugins_root.is_dir():
         for pkg in sorted(plugins_root.iterdir()):
             if not pkg.is_dir() or not pkg.name.startswith("plugin_"):
-                continue
-            if pkg.name in SKIP_PLUGINS:
-                print(
-                    "SKIP",
-                    pkg.name,
-                    "(/MD static ANGLE; cannot load into /MDd Injector — C++ ABI)",
-                )
                 continue
             dll = pkg / f"{pkg.name}.dll"
             if not dll.is_file():
@@ -108,15 +103,6 @@ def main() -> int:
                 pdb = dll.with_suffix(".pdb")
                 if pdb.is_file():
                     cp(pdb, dest / pdb.name)
-
-    # Remove stale angle package from Debug deploy trees
-    for root in (MOD / "plugins", WS / "plugins" if WS.exists() else None):
-        if root is None:
-            continue
-        ang = root / "plugin_render_angle"
-        if ang.exists():
-            shutil.rmtree(ang, ignore_errors=True)
-            print("REMOVED", ang)
 
     print("Debug deploy complete. Launch VS '(Windows) 启动' or:")
     print(f'  "{BIN64 / "dontstarve_steam_x64.exe"}" -offline')
