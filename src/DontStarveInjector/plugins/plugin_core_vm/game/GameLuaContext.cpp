@@ -130,7 +130,7 @@ static std::string decompress_embedded_lua_buffer(
 
 void GameLuaInjectorFramework::init(GameLuaContext &ctx, lua_State *L) {
         LuaStackGuard guard(ctx, L);
-#include "../GameLuaInjectFramework.c"
+#include "../injector/GameLuaInjectFramework.c"
         auto buffer = decompress_embedded_lua_buffer(
             GameLuaInjectFramework,
             GameLuaInjectFramework_len,

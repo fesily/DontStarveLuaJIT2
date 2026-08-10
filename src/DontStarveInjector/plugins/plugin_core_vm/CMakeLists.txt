@@ -14,14 +14,14 @@ set(PLUGIN_CORE_VM_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_subdirectory(signature_load)
 
-add_custom_command(OUTPUT ${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.c
+add_custom_command(OUTPUT ${PLUGIN_CORE_VM_DIR}/injector/GameLuaInjectFramework.c
         COMMAND ${PYTHON_EXECUTABLE_NAME} "${PROJECT_SOURCE_DIR}/tools/lua2c.py"
-                "${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.lua"
-                "${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.c"
-        DEPENDS ${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.lua
-        WORKING_DIRECTORY ${PLUGIN_CORE_VM_DIR}
+                "${PLUGIN_CORE_VM_DIR}/injector/GameLuaInjectFramework.lua"
+                "${PLUGIN_CORE_VM_DIR}/injector/GameLuaInjectFramework.c"
+        DEPENDS ${PLUGIN_CORE_VM_DIR}/injector/GameLuaInjectFramework.lua
+        WORKING_DIRECTORY ${PLUGIN_CORE_VM_DIR}/injector
 )
-add_custom_target(GameLuaInjectFramework DEPENDS ${PLUGIN_CORE_VM_DIR}/GameLuaInjectFramework.c)
+add_custom_target(GameLuaInjectFramework DEPENDS ${PLUGIN_CORE_VM_DIR}/injector/GameLuaInjectFramework.c)
 
 # --- I/O face (same MODULE, grouped under io/) ---
 set(PLUGIN_CORE_VM_IO_SOURCES
@@ -41,16 +41,16 @@ set(PLUGIN_CORE_VM_GAME_SOURCES
     game/GameDbgExports.cpp
 )
 set(PLUGIN_CORE_VM_INJECTOR_SOURCES
-    GameLuaModule.cpp
-    GameLuaInjectFramework.c
-    GameInjectorApply.cpp
+    injector/GameLuaModule.cpp
+    injector/GameLuaInjectFramework.c
+    injector/GameInjectorApply.cpp
 )
 set(PLUGIN_CORE_VM_EVENT_SOURCES
-    LuaEventBus.cpp
+    event/LuaEventBus.cpp
 )
 set(PLUGIN_CORE_VM_OPTIONAL_SOURCES
-    lua_debugger_helper.cpp
-    lua_fake.cpp
+    optional/lua_debugger_helper.cpp
+    optional/lua_fake.cpp
 )
 set(PLUGIN_CORE_VM_ENTRY_SOURCES
     plugin_core_vm.cpp

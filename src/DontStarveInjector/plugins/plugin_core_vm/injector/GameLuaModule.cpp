@@ -1227,7 +1227,7 @@ char luajit_ds_check_slowtailcall(lua_State *L, const char *chunkname) {
     }
 }
 
-#include "GameInjectorApply.hpp"
+#include "injector/GameInjectorApply.hpp"
 
 int luaopen_GameInjector(lua_State* L) {
     sol::state_view lua(L);
