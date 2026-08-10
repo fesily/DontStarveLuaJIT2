@@ -1,8 +1,16 @@
 # Finds a prebuilt ANGLE package staged under 3rd/angle by tools/setup_angle.py.
 # Provides the same imported targets as the vcpkg unofficial-angle package:
-#   unofficial::angle::libEGL
-#   unofficial::angle::libGLESv2
-#   unofficial::angle::libANGLE
+#   unofficial::angle::libEGL      (SHARED IMPORTED — implib + DLL)
+#   unofficial::angle::libGLESv2   (SHARED IMPORTED — implib + DLL)
+#   unofficial::angle::libANGLE    (STATIC IMPORTED — optional, tools only)
+#
+# Shared GLESv2/EGL already contain the ANGLE implementation. Consumers of those
+# targets must not pull static ANGLE/SPIRV/KHRONOS_STATIC via INTERFACE.
+# libANGLE remains available only when staged for tools that still need it.
+#
+# Note: configure requires 3rd/angle/win64/bin/libGLESv2.dll and libEGL.dll.
+# Until tools/setup_angle.py stages those (after a shared ANGLE rebuild),
+# find_package(unofficial-angle) will fail with a clear message.
 
 if(TARGET unofficial::angle::libEGL AND TARGET unofficial::angle::libGLESv2)
     set(unofficial-angle_FOUND TRUE)
@@ -54,6 +62,17 @@ find_library(UNOFFICIAL_ANGLE_VULKAN_LIBRARY_RELEASE
     NO_DEFAULT_PATH
 )
 
+find_file(UNOFFICIAL_ANGLE_GLESv2_DLL_RELEASE
+    NAMES libGLESv2.dll
+    PATHS "${_ANGLE_ROOT}/bin"
+    NO_DEFAULT_PATH
+)
+find_file(UNOFFICIAL_ANGLE_EGL_DLL_RELEASE
+    NAMES libEGL.dll
+    PATHS "${_ANGLE_ROOT}/bin"
+    NO_DEFAULT_PATH
+)
+
 find_library(UNOFFICIAL_ANGLE_EGL_LIBRARY_DEBUG
     NAMES libEGL
     PATHS "${_ANGLE_ROOT}/debug/lib"
@@ -80,12 +99,9 @@ find_library(UNOFFICIAL_ANGLE_VULKAN_LIBRARY_DEBUG
     NO_DEFAULT_PATH
 )
 
-
-# release_only ANGLE stages only ship lib/ (no debug/lib). Stale CMake cache can
-# still point DEBUG locations at missing debug/lib/*.lib and break multi-config
-# Debug builds. Drop non-existent debug paths so imported targets map Debug→Release.
-# release_only ANGLE stages only ship lib/ (no debug/lib). Clear missing/NOTFOUND
-# debug locations so consumers can fall back to release CRT + release libs.
+# release_only ANGLE stages only ship lib/ + bin/ (no debug/lib). Stale CMake
+# cache can still point DEBUG locations at missing debug/lib/*.lib. Drop
+# non-existent debug paths so imported targets map Debug→Release.
 set(_ds_angle_has_debug_libs TRUE)
 foreach(_ds_angle_dbg_var IN ITEMS
         UNOFFICIAL_ANGLE_EGL_LIBRARY_DEBUG
@@ -108,128 +124,131 @@ find_package_handle_standard_args(unofficial-angle
         UNOFFICIAL_ANGLE_INCLUDE_DIR
         UNOFFICIAL_ANGLE_EGL_LIBRARY_RELEASE
         UNOFFICIAL_ANGLE_GLESv2_LIBRARY_RELEASE
-        UNOFFICIAL_ANGLE_ANGLE_LIBRARY_RELEASE
-        UNOFFICIAL_ANGLE_SPIRV_TOOLS_LIBRARY_RELEASE
-        UNOFFICIAL_ANGLE_VULKAN_LIBRARY_RELEASE
+        UNOFFICIAL_ANGLE_EGL_DLL_RELEASE
+        UNOFFICIAL_ANGLE_GLESv2_DLL_RELEASE
 )
 
 if(NOT unofficial-angle_FOUND)
     if(unofficial-angle_FIND_REQUIRED)
         message(FATAL_ERROR
             "unofficial-angle not found under ${_ANGLE_ROOT}.\n"
+            "Need shared stage artifacts:\n"
+            "  lib/libEGL.lib, lib/libGLESv2.lib\n"
+            "  bin/libEGL.dll, bin/libGLESv2.dll\n"
+            "  include/EGL/egl.h, include/GLES2/gl2.h\n"
             "Run: python tools/setup_angle.py\n"
             "Or stage from an existing install:\n"
-            "  python tools/setup_angle.py --from-prefix <vcpkg_installed/x64-windows-custom>"
+            "  python tools/setup_angle.py --from-prefix <vcpkg_installed/x64-windows-custom>\n"
+            "Note: configure fails until setup_angle stages the shared DLLs after rebuild."
         )
     endif()
     return()
 endif()
 
-if(NOT TARGET ZLIB::ZLIB)
-    find_package(ZLIB REQUIRED)
-endif()
-
-if(NOT TARGET unofficial::angle::libANGLE)
-    add_library(unofficial::angle::libANGLE STATIC IMPORTED)
-    set_target_properties(unofficial::angle::libANGLE PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${UNOFFICIAL_ANGLE_INCLUDE_DIR}"
-        INTERFACE_COMPILE_DEFINITIONS
-            "ANGLE_ENABLE_ESSL;ANGLE_ENABLE_GLSL;ANGLE_CAPTURE_ENABLED=0;ANGLE_VK_MOCK_ICD_JSON=\"VkICD_mock_icd.json\";ANGLE_VK_LAYERS_DIR=\".\";ANGLE_PROGRAM_LINK_VALIDATE_UNIFORM_PRECISION=0;VK_USE_PLATFORM_WIN32_KHR;GL_APICALL=;GL_API=;NOMINMAX;ANGLE_ENABLE_D3D11;ANGLE_ENABLE_HLSL;ANGLE_PRELOADED_D3DCOMPILER_MODULE_NAMES={ \"d3dcompiler_47.dll\", \"d3dcompiler_46.dll\", \"d3dcompiler_43.dll\" };ANGLE_ENABLE_D3D9;ANGLE_ENABLE_D3D11_COMPOSITOR_NATIVE_WINDOW;ANGLE_ENABLE_GLSL;ANGLE_ENABLE_OPENGL;ANGLE_ENABLE_GL_DESKTOP_BACKEND;ANGLE_ENABLE_VULKAN;ANGLE_ENABLE_CRC_FOR_PIPELINE_CACHE;ANGLE_USE_CUSTOM_VULKAN_OUTSIDE_RENDER_PASS_CMD_BUFFERS=1;ANGLE_USE_CUSTOM_VULKAN_RENDER_PASS_CMD_BUFFERS=1;KHRONOS_STATIC"
-        IMPORTED_LOCATION_RELEASE "${UNOFFICIAL_ANGLE_ANGLE_LIBRARY_RELEASE}"
-        IMPORTED_CONFIGURATIONS "RELEASE"
-    )
-    if(UNOFFICIAL_ANGLE_ANGLE_LIBRARY_DEBUG)
-        set_property(TARGET unofficial::angle::libANGLE APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
-        set_target_properties(unofficial::angle::libANGLE PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_ANGLE_LIBRARY_DEBUG}"
-        )
-    else()
-        # release_only stage: use release libs for Debug configs (multi-config MSVC).
-        set_property(TARGET unofficial::angle::libANGLE APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
-        set_target_properties(unofficial::angle::libANGLE PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_ANGLE_LIBRARY_RELEASE}"
-            MAP_IMPORTED_CONFIG_DEBUG RELEASE
-        )
-    endif()
-    set_target_properties(unofficial::angle::libANGLE PROPERTIES
-        MAP_IMPORTED_CONFIG_RELWITHDEBINFO RELEASE
-        MAP_IMPORTED_CONFIG_MINSIZEREL RELEASE
-    )
-
-    set(_angle_vulkan_lib "${UNOFFICIAL_ANGLE_VULKAN_LIBRARY_RELEASE}")
-    if(UNOFFICIAL_ANGLE_VULKAN_LIBRARY_DEBUG)
-        set(_angle_vulkan_lib
-            "$<$<CONFIG:Debug>:${UNOFFICIAL_ANGLE_VULKAN_LIBRARY_DEBUG}>$<$<NOT:$<CONFIG:Debug>>:${UNOFFICIAL_ANGLE_VULKAN_LIBRARY_RELEASE}>"
-        )
-    endif()
-    set(_angle_spirv_lib "${UNOFFICIAL_ANGLE_SPIRV_TOOLS_LIBRARY_RELEASE}")
-    if(UNOFFICIAL_ANGLE_SPIRV_TOOLS_LIBRARY_DEBUG)
-        set(_angle_spirv_lib
-            "$<$<CONFIG:Debug>:${UNOFFICIAL_ANGLE_SPIRV_TOOLS_LIBRARY_DEBUG}>$<$<NOT:$<CONFIG:Debug>>:${UNOFFICIAL_ANGLE_SPIRV_TOOLS_LIBRARY_RELEASE}>"
-        )
-    endif()
-
-    set(_angle_vma_include "${_ANGLE_ROOT}/include/vma")
-    target_link_libraries(unofficial::angle::libANGLE INTERFACE
-        $<LINK_ONLY:ZLIB::ZLIB>
-        $<LINK_ONLY:${_angle_vulkan_lib}>
-        $<LINK_ONLY:${_angle_spirv_lib}>
-    )
-    if(EXISTS "${_angle_vma_include}")
-        target_include_directories(unofficial::angle::libANGLE INTERFACE "${_angle_vma_include}")
-    endif()
-endif()
+# --- Shared GLESv2 / EGL (primary consumer targets) ---
+# IMPORTED_IMPLIB → import .lib; IMPORTED_LOCATION → runtime .dll.
+# No KHRONOS_STATIC (headers use dllimport). No INTERFACE link to static libANGLE
+# (implementation lives inside the DLLs).
 
 if(NOT TARGET unofficial::angle::libGLESv2)
-    add_library(unofficial::angle::libGLESv2 STATIC IMPORTED)
+    add_library(unofficial::angle::libGLESv2 SHARED IMPORTED)
     set_target_properties(unofficial::angle::libGLESv2 PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${UNOFFICIAL_ANGLE_INCLUDE_DIR}"
-        INTERFACE_COMPILE_DEFINITIONS "KHRONOS_STATIC"
-        INTERFACE_LINK_LIBRARIES
-            "$<LINK_ONLY:unofficial::angle::libANGLE>;$<LINK_ONLY:dxguid>;$<LINK_ONLY:dxgi>;$<LINK_ONLY:synchronization>;$<LINK_ONLY:d3d9>"
-        IMPORTED_LOCATION_RELEASE "${UNOFFICIAL_ANGLE_GLESv2_LIBRARY_RELEASE}"
+        IMPORTED_IMPLIB_RELEASE "${UNOFFICIAL_ANGLE_GLESv2_LIBRARY_RELEASE}"
+        IMPORTED_LOCATION_RELEASE "${UNOFFICIAL_ANGLE_GLESv2_DLL_RELEASE}"
         IMPORTED_CONFIGURATIONS "RELEASE"
         MAP_IMPORTED_CONFIG_RELWITHDEBINFO RELEASE
         MAP_IMPORTED_CONFIG_MINSIZEREL RELEASE
+        MAP_IMPORTED_CONFIG_DEBUG RELEASE
     )
-    if(UNOFFICIAL_ANGLE_GLESv2_LIBRARY_DEBUG)
-        set_property(TARGET unofficial::angle::libGLESv2 APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
-        set_target_properties(unofficial::angle::libGLESv2 PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_GLESv2_LIBRARY_DEBUG}"
-        )
-    else()
-        # release_only stage: use release libs for Debug configs (multi-config MSVC).
-        set_property(TARGET unofficial::angle::libGLESv2 APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
-        set_target_properties(unofficial::angle::libGLESv2 PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_GLESv2_LIBRARY_RELEASE}"
-            MAP_IMPORTED_CONFIG_DEBUG RELEASE
-        )
-    endif()
+    # Debug config of consumers uses Release ANGLE DLL (release_only stage).
+    set_property(TARGET unofficial::angle::libGLESv2 APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
+    set_target_properties(unofficial::angle::libGLESv2 PROPERTIES
+        IMPORTED_IMPLIB_DEBUG "${UNOFFICIAL_ANGLE_GLESv2_LIBRARY_RELEASE}"
+        IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_GLESv2_DLL_RELEASE}"
+    )
 endif()
 
 if(NOT TARGET unofficial::angle::libEGL)
-    add_library(unofficial::angle::libEGL STATIC IMPORTED)
+    add_library(unofficial::angle::libEGL SHARED IMPORTED)
     set_target_properties(unofficial::angle::libEGL PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${UNOFFICIAL_ANGLE_INCLUDE_DIR}"
-        INTERFACE_COMPILE_DEFINITIONS "KHRONOS_STATIC"
+        # Link order only: EGL import lib often needs GLESv2 symbols at link time.
         INTERFACE_LINK_LIBRARIES "$<LINK_ONLY:unofficial::angle::libGLESv2>"
-        IMPORTED_LOCATION_RELEASE "${UNOFFICIAL_ANGLE_EGL_LIBRARY_RELEASE}"
+        IMPORTED_IMPLIB_RELEASE "${UNOFFICIAL_ANGLE_EGL_LIBRARY_RELEASE}"
+        IMPORTED_LOCATION_RELEASE "${UNOFFICIAL_ANGLE_EGL_DLL_RELEASE}"
         IMPORTED_CONFIGURATIONS "RELEASE"
         MAP_IMPORTED_CONFIG_RELWITHDEBINFO RELEASE
         MAP_IMPORTED_CONFIG_MINSIZEREL RELEASE
+        MAP_IMPORTED_CONFIG_DEBUG RELEASE
     )
-    if(UNOFFICIAL_ANGLE_EGL_LIBRARY_DEBUG)
-        set_property(TARGET unofficial::angle::libEGL APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
-        set_target_properties(unofficial::angle::libEGL PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_EGL_LIBRARY_DEBUG}"
+    set_property(TARGET unofficial::angle::libEGL APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
+    set_target_properties(unofficial::angle::libEGL PROPERTIES
+        IMPORTED_IMPLIB_DEBUG "${UNOFFICIAL_ANGLE_EGL_LIBRARY_RELEASE}"
+        IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_EGL_DLL_RELEASE}"
+    )
+endif()
+
+# --- Optional static libANGLE for tools (not for plugin_render_angle) ---
+# Only created when ANGLE.lib is present in the stage. Shared GLESv2/EGL
+# consumers must not link this target.
+
+if(UNOFFICIAL_ANGLE_ANGLE_LIBRARY_RELEASE AND EXISTS "${UNOFFICIAL_ANGLE_ANGLE_LIBRARY_RELEASE}")
+    if(NOT TARGET ZLIB::ZLIB)
+        find_package(ZLIB REQUIRED)
+    endif()
+
+    if(NOT TARGET unofficial::angle::libANGLE)
+        add_library(unofficial::angle::libANGLE STATIC IMPORTED)
+        set_target_properties(unofficial::angle::libANGLE PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${UNOFFICIAL_ANGLE_INCLUDE_DIR}"
+            INTERFACE_COMPILE_DEFINITIONS
+                "ANGLE_ENABLE_ESSL;ANGLE_ENABLE_GLSL;ANGLE_CAPTURE_ENABLED=0;ANGLE_VK_MOCK_ICD_JSON=\"VkICD_mock_icd.json\";ANGLE_VK_LAYERS_DIR=\".\";ANGLE_PROGRAM_LINK_VALIDATE_UNIFORM_PRECISION=0;VK_USE_PLATFORM_WIN32_KHR;GL_APICALL=;GL_API=;NOMINMAX;ANGLE_ENABLE_D3D11;ANGLE_ENABLE_HLSL;ANGLE_PRELOADED_D3DCOMPILER_MODULE_NAMES={ \"d3dcompiler_47.dll\", \"d3dcompiler_46.dll\", \"d3dcompiler_43.dll\" };ANGLE_ENABLE_D3D9;ANGLE_ENABLE_D3D11_COMPOSITOR_NATIVE_WINDOW;ANGLE_ENABLE_GLSL;ANGLE_ENABLE_OPENGL;ANGLE_ENABLE_GL_DESKTOP_BACKEND;ANGLE_ENABLE_VULKAN;ANGLE_ENABLE_CRC_FOR_PIPELINE_CACHE;ANGLE_USE_CUSTOM_VULKAN_OUTSIDE_RENDER_PASS_CMD_BUFFERS=1;ANGLE_USE_CUSTOM_VULKAN_RENDER_PASS_CMD_BUFFERS=1;KHRONOS_STATIC"
+            IMPORTED_LOCATION_RELEASE "${UNOFFICIAL_ANGLE_ANGLE_LIBRARY_RELEASE}"
+            IMPORTED_CONFIGURATIONS "RELEASE"
         )
-    else()
-        # release_only stage: use release libs for Debug configs (multi-config MSVC).
-        set_property(TARGET unofficial::angle::libEGL APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
-        set_target_properties(unofficial::angle::libEGL PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_EGL_LIBRARY_RELEASE}"
-            MAP_IMPORTED_CONFIG_DEBUG RELEASE
+        if(UNOFFICIAL_ANGLE_ANGLE_LIBRARY_DEBUG)
+            set_property(TARGET unofficial::angle::libANGLE APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
+            set_target_properties(unofficial::angle::libANGLE PROPERTIES
+                IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_ANGLE_LIBRARY_DEBUG}"
+            )
+        else()
+            set_property(TARGET unofficial::angle::libANGLE APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
+            set_target_properties(unofficial::angle::libANGLE PROPERTIES
+                IMPORTED_LOCATION_DEBUG "${UNOFFICIAL_ANGLE_ANGLE_LIBRARY_RELEASE}"
+                MAP_IMPORTED_CONFIG_DEBUG RELEASE
+            )
+        endif()
+        set_target_properties(unofficial::angle::libANGLE PROPERTIES
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO RELEASE
+            MAP_IMPORTED_CONFIG_MINSIZEREL RELEASE
         )
+
+        set(_angle_vulkan_lib "${UNOFFICIAL_ANGLE_VULKAN_LIBRARY_RELEASE}")
+        if(UNOFFICIAL_ANGLE_VULKAN_LIBRARY_DEBUG)
+            set(_angle_vulkan_lib
+                "$<$<CONFIG:Debug>:${UNOFFICIAL_ANGLE_VULKAN_LIBRARY_DEBUG}>$<$<NOT:$<CONFIG:Debug>>:${UNOFFICIAL_ANGLE_VULKAN_LIBRARY_RELEASE}>"
+            )
+        endif()
+        set(_angle_spirv_lib "${UNOFFICIAL_ANGLE_SPIRV_TOOLS_LIBRARY_RELEASE}")
+        if(UNOFFICIAL_ANGLE_SPIRV_TOOLS_LIBRARY_DEBUG)
+            set(_angle_spirv_lib
+                "$<$<CONFIG:Debug>:${UNOFFICIAL_ANGLE_SPIRV_TOOLS_LIBRARY_DEBUG}>$<$<NOT:$<CONFIG:Debug>>:${UNOFFICIAL_ANGLE_SPIRV_TOOLS_LIBRARY_RELEASE}>"
+            )
+        endif()
+
+        set(_angle_vma_include "${_ANGLE_ROOT}/include/vma")
+        set(_angle_libangle_link_libs "$<LINK_ONLY:ZLIB::ZLIB>")
+        if(_angle_vulkan_lib)
+            list(APPEND _angle_libangle_link_libs "$<LINK_ONLY:${_angle_vulkan_lib}>")
+        endif()
+        if(_angle_spirv_lib)
+            list(APPEND _angle_libangle_link_libs "$<LINK_ONLY:${_angle_spirv_lib}>")
+        endif()
+        target_link_libraries(unofficial::angle::libANGLE INTERFACE ${_angle_libangle_link_libs})
+        if(EXISTS "${_angle_vma_include}")
+            target_include_directories(unofficial::angle::libANGLE INTERFACE "${_angle_vma_include}")
+        endif()
     endif()
 endif()
 
@@ -240,6 +259,8 @@ mark_as_advanced(
     UNOFFICIAL_ANGLE_ANGLE_LIBRARY_RELEASE
     UNOFFICIAL_ANGLE_SPIRV_TOOLS_LIBRARY_RELEASE
     UNOFFICIAL_ANGLE_VULKAN_LIBRARY_RELEASE
+    UNOFFICIAL_ANGLE_EGL_DLL_RELEASE
+    UNOFFICIAL_ANGLE_GLESv2_DLL_RELEASE
     UNOFFICIAL_ANGLE_EGL_LIBRARY_DEBUG
     UNOFFICIAL_ANGLE_GLESv2_LIBRARY_DEBUG
     UNOFFICIAL_ANGLE_ANGLE_LIBRARY_DEBUG
