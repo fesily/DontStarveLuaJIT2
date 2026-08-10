@@ -1,10 +1,14 @@
-# core.vm — required Signature + GameLua + game I/O (force-loaded at inject). All platforms.
+# core.vm — optional Host plugin id core.vm + pure VM libs staged by stage_core_vm_deps.cmake. All platforms.
 # Gum symbols from Frida::Gum shared (linked explicitly on this gum-using plugin).
 #
-# Layout:
-#   signature_load/  → STATIC ds_signature (scan/json/progress)
-#   io/              → gameio + GameSteam (workshop path + lj_* I/O)
-#   this dir         → MODULE plugin_core_vm (VM replace, GameInjector open)
+# Layout (design 2026-08-10):
+#   signature_load/ → STATIC ds_signature
+#   io/             → gameio + GameSteam
+#   game/           → VM contexts + Replace + switch (files land in later tasks)
+#   injector/       → GameInjector open
+#   event/          → LuaEventBus
+#   optional/       → debugger / fake
+# External pure VM libs: lua51DS / lua51DS_gengc / lua51Original (Mod/deps) — not plugins.
 
 set(PLUGIN_CORE_VM_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -27,20 +31,30 @@ set(PLUGIN_CORE_VM_IO_SOURCES
     ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
 )
 
-# --- VM replace + GameInjector ---
-set(PLUGIN_CORE_VM_VM_SOURCES
-    plugin_core_vm.cpp
+set(PLUGIN_CORE_VM_GAME_SOURCES
     GameLua.cpp
+)
+set(PLUGIN_CORE_VM_INJECTOR_SOURCES
     GameLuaModule.cpp
     GameLuaInjectFramework.c
-    lua_debugger_helper.cpp
-    LuaEventBus.cpp
     GameInjectorApply.cpp
+)
+set(PLUGIN_CORE_VM_EVENT_SOURCES
+    LuaEventBus.cpp
+)
+set(PLUGIN_CORE_VM_OPTIONAL_SOURCES
+    lua_debugger_helper.cpp
     lua_fake.cpp
 )
-
+set(PLUGIN_CORE_VM_ENTRY_SOURCES
+    plugin_core_vm.cpp
+)
 set(PLUGIN_CORE_VM_SOURCES
-    ${PLUGIN_CORE_VM_VM_SOURCES}
+    ${PLUGIN_CORE_VM_ENTRY_SOURCES}
+    ${PLUGIN_CORE_VM_GAME_SOURCES}
+    ${PLUGIN_CORE_VM_INJECTOR_SOURCES}
+    ${PLUGIN_CORE_VM_EVENT_SOURCES}
+    ${PLUGIN_CORE_VM_OPTIONAL_SOURCES}
     ${PLUGIN_CORE_VM_IO_SOURCES}
 )
 if (MSVC)
