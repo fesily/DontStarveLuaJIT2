@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-struct GameLuaContextImpl; // defined in GameLua.cpp (Task 4: GameLuaContextImpl.hpp)
+struct GameLuaContextImpl; // defined in game/GameLuaContextImpl.hpp
 
 namespace ds::core_vm::detail {
 
@@ -40,5 +40,14 @@ GameLuaContextImpl *ctx_lua51();
 GameLuaContextImpl *ctx_jit();
 GameLuaContextImpl *ctx_jit_gen();
 GameLuaContextImpl *ctx_game();
+
+// Platform full library filenames for VM variants (defined in GameLuaContext.cpp)
+const char *DefaultLua51LibraryName();
+const char *DefaultLuajitLibraryName();
+const char *DefaultLuajitGenLibraryName();
+
+// Used by ReplaceLuaModule while it still lives in GameLua.cpp (Task 5 moves it)
+void NoteGameLuaExport(const std::string &name, GumAddress addr);
+void NoteGameLuaExportsForDebugSymbols();
 
 } // namespace ds::core_vm::detail

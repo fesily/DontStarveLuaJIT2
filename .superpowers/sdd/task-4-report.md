@@ -1,130 +1,128 @@
-# Task 4 Report: signature_updater regen + critical-symbol verify
+# Task 4 Report: Split GameLua contexts into game/* TUs
 
-**Branch:** `feature/nucleus-function-body`  
-**Worktree:** `C:/Users/fesil/DontStarveLuaJIT2/.worktrees/nucleus-function-body`  
-**Base:** Task 3 at `ea0d97d`  
-**Date:** 2026-08-07  
+**Status:** DONE_WITH_CONCERNS  
+**Branch:** `feature/core-vm-module-split`  
+**Worktree:** `C:/Users/fesil/DontStarveLuaJIT2/.worktrees/core-vm-module-split`  
+**Date:** 2026-08-10
 
-## Summary
+---
 
-Wired optional pdata cross-check logging into `update_signatures` (Nucleus remains sole body authority). Fixed nested-span lookup in `FunctionTable::span_containing` so exports nested inside a larger Nucleus span (e.g. `lua_resume` inside `lua_yield`) get a non-zero body size. Built `signature_updater` against worktree sources via `builds/ninja-nucleus`, regenerated client/server signatures for game version `740477`, and verified **lua_getstack** entry is the body prologue `4c 8b 49 28…` (not stub `0f b6 41 64 c3`).
+## What changed
 
-## Acceptance
+| Path | Action |
+|------|--------|
+| `game/GameLuaContextImpl.hpp` | **Created** — full `GameLuaContextImpl` + shared helpers decls (`LuaStackGuard`, framework, macros) |
+| `game/GameLuaContext.cpp` | **Created** — GAME_IO detail helpers, framework, library names, `currentCtx`, `GetGameLuaContext`, `ds_core_vm_get_game_lua_context`, `wrapper_game_main_buffer` |
+| `game/GameLuaContextLua51.hpp` | **Created** — `GameLua51Context` (needed as base for Game context TU) |
+| `game/GameLuaContextLua51.cpp` | **Created** — `gameLua51Ctx` + `ctx_lua51()` |
+| `game/GameLuaContextJit.cpp` | **Created** — `GameLuaContextJit`, **both** `gameLuajitCtx` / `gameLuajitGenCtx`, `ctx_jit` / `ctx_jit_gen`, out-of-line `LoadMyLuaApi` |
+| `game/GameLuaContextGame.cpp` | **Created** — `GameLuaContextGame`, `gameLuaGameCtx`, `ctx_game`, `NoteGameLuaExport*`, `GameFindExportByName` |
+| `game/GameLuaInternal.hpp` | **Modified** — Default* library name decls + NoteGame export helpers; Impl forward comment |
+| `GameLua.cpp` | **Modified** — residual VmSwitch + Replace + GameDbg only; contexts removed |
+| `CMakeLists.txt` | **Modified** — `PLUGIN_CORE_VM_GAME_SOURCES` lists four new game/*.cpp |
 
-| Criterion | Status |
-|-----------|--------|
-| Update path uses Nucleus tables (Task 3) | PASS (already in `DontStarveSignature.cpp`; re-verified at runtime) |
-| Optional pdata cross-check log only | PASS (`enumerate_function_ranges_win` compare ends; warn only) |
-| Rebuild `signature_updater` (worktree) | PASS (`builds/ninja-nucleus` RelWithDebInfo) |
-| Regen `signatures_client.json` / `signatures_server.json` | PASS (version 740477, 102 funcs) |
-| getstack body entry `4c 8b 49 28…` | **PASS** |
-| getinfo has `80 3a 3e` nearby | PASS |
-| luaopen_io prologue `48 89 5c 24 08…` | PASS |
-| Copy into `Mod/deps` | PASS |
-| Report + commit | PASS (this file) |
+### Layout after Task 4
 
-## Changes
-
-### `DontStarveSignature.cpp`
-
-After `apply_nucleus_function_table` for lua51 + game:
-
-- Windows: `enumerate_function_ranges_win(moduleMain, pdata_ranges)`
-- For each Nucleus span with a unique overlapping pdata range, compare ends
-- `spdlog::warn` when `|delta| >= 0x20`
-- Summary: `pdata cross-check: compared=… mismatches=… (Nucleus not overridden)`
-- Does **not** override Nucleus ends/sizes
-
-### `FunctionTable.hpp` (nested containing)
-
-Root cause of updater abort:
-
-- Nucleus emits a large outer span for `lua_yield` `[0x18000ad60, 0x18000b5ae)` that **wholly contains** `lua_resume` export `@0x18000b4f0`
-- Old `span_containing` only checked the rightmost `start <= addr` span; intermediate sibling starts (e.g. `0x18000ae30`) that do **not** contain the address made lookup return null → `func[lua_resume] has size 0`
-
-Fix:
-
-- Walk all spans with `start <= addr` and pick the **tightest** container (smallest `end-start`; ties keep rightmost start)
-- Nested unit test + `lua_resume` live check in `test_nucleus_adapter`
-
-### Smoke build (`builds/nucleus-only`, gitignored)
-
-Extended Task 1–3 smoke CMake to link full `signature_updater` + `ds_signature` against worktree sources with:
-
-- `GAMEDIR` = Steam DST install
-- `LUA51_PATH` = worktree `Mod/deps/lua51.dll`
-- `WORKER_DIR` = worktree `Mod`
-
-(Full product multi-vcpkg tree not reconfigured; smoke tree is sufficient for regen.)
-
-## Build & run evidence
-
-```text
-ninja -C builds/ninja-nucleus -f build-RelWithDebInfo.ninja \
-  test_nucleus_adapter probe_exports signature_updater -j 8
-# link OK
-
-test_nucleus_adapter.exe
-# lua_getstack: va=0x1800090f0 entry=0x1800090f0 end=0x18000916a size=0x7a functions=887
-# lua_resume: va=0x18000b4f0 entry=0x18000ad60 end=0x18000b5ae size=0x84e
-# test_nucleus_adapter: ok
-
-# From Mod/deps with PATH including lua51.dll:
-builds/ninja-nucleus/RelWithDebInfo/signature_updater.exe
-# rc=0 ~19s
-# pdata cross-check: compared=13701 mismatches=2401 (Nucleus not overridden)  # client PE
-# pdata cross-check: compared=14765 mismatches=2582 (Nucleus not overridden)  # server PE
-# update signatures to file:[.../Mod/signatures_client.json], version: 740477
-# (server similarly)
+```
+plugin_core_vm/
+  GameLua.cpp                 # VmSwitch, ReplaceLuaModule, GameDbg_* (Task 5)
+  game/
+    GameLuaContext.hpp        # public types (Task 2)
+    GameLuaInternal.hpp       # detail helpers (Task 3 + Task 4 decls)
+    GameLuaContextImpl.hpp    # base impl complete type
+    GameLuaContext.cpp
+    GameLuaContextLua51.hpp / .cpp
+    GameLuaContextJit.cpp     # jit + jit_gen share one class, two static instances
+    GameLuaContextGame.cpp
 ```
 
-Outputs written under `Mod/` (cwd absolute path; tool not mapping Injector/plugin deps dir). Copied to `Mod/deps/`.
+### Key design points
 
-## Critical symbol verification (client PE)
+1. **jit / jit_gen share implementation** — single `GameLuaContextJit` type, two static instances + `ctx_jit` / `ctx_jit_gen`.
+2. **`GetGameLuaContext`** uses `ctx_jit()` instead of a same-TU static, so it can live in `GameLuaContext.cpp`.
+3. **`ReplaceLuaModule`** (still in `GameLua.cpp`) records game exports via `NoteGameLuaExport` / `NoteGameLuaExportsForDebugSymbols` so it does not need the `GameLuaContextGame` complete type yet.
+4. **`GameLua51Context` header** — required because `GameLuaContextGame` inherits it across TUs.
+5. Framework embed include path: `#include "../GameLuaInjectFramework.c"` from `game/GameLuaContext.cpp`.
 
-Game:  
-`C:/Program Files (x86)/Steam/steamapps/common/Don't Starve Together/bin64/dontstarve_steam_x64.exe`  
-Version: `740477`
+### CMake
 
-Lua module base recovered via `luaModuleSignature` pattern (`41 B8 EE D8 FF FF…`, po `-0x37`) → RVA `0x4e8d1f`.
+```cmake
+set(PLUGIN_CORE_VM_GAME_SOURCES
+    GameLua.cpp
+    game/GameLuaContext.cpp
+    game/GameLuaContextGame.cpp
+    game/GameLuaContextJit.cpp
+    game/GameLuaContextLua51.cpp
+)
+```
 
-| Symbol | offset | pattern_offset | entry RVA | entry first bytes | Gate |
-|--------|--------|----------------|-----------|-------------------|------|
-| lua_getstack | 12624 (0x3150) | -61 | 0x4ebe6f | **`4c 8b 49 28`** 4c 8b d9 85… | BODY |
-| lua_getinfo | 16816 (0x41b0) | -11 | 0x4ececf | `48 89 5c 24 08 48 89 6c…` | has `80 3a 3e` in first 0x200 |
-| luaopen_io | 110176 (0x1ae60) | -8 | 0x503b7f | **`48 89 5c 24 08`** 48 89 74… | PASS |
+---
 
-Pre-Task-4 client getstack (for contrast):
+## Verification
 
-- offset 12752, pattern_offset -175
-- entry bytes at old offset: `48 89 5c 24 08…` (different function / not body gate)
+### Full target build
 
-Stub signature `0f b6 41 64 c3` appears once in the PE but is **not** the regenerated getstack entry.
+```bash
+cmake --build builds/ninja-multi-vcpkg --config RelWithDebInfo --target plugin_core_vm -j 8
+```
 
-Pattern uniqueness on PE (raw search):
+**Result:** Worktree configure incomplete — `setup_angle()` rebuilds ANGLE via vcpkg and fails on `spirv-tools` (same class of env limit as Tasks 2–3). Junctioned `3rd/angle` from main; still not enough for full preset configure.
 
-- getstack pattern: 1 hit → unique entry `0x4ebe6f` with body bytes
-- luaopen_io pattern: 1 hit → unique entry with prologue
+### Compile proof (accepted substitute)
 
-## Nested resume note
+Reused **main** tree `compile_commands.json` flags for `plugin_core_vm` (Debug), retargeted `-I` and sources to this worktree. Compiled all five TUs with MSVC `cl`:
 
-`lua_resume` and `lua_yield` currently share the same resolved entry offset (`26480`) because Nucleus’s tightest container for the resume export is the large outer yield span (no dedicated resume span in the 887-function table). That is a Nucleus CFG granularity issue, **not** a silent heuristic override:
+| TU | Object | Result |
+|----|--------|--------|
+| `GameLua.cpp` | `_verify_GameLua.obj` | OK |
+| `game/GameLuaContext.cpp` | `_verify_Context.obj` | OK (after `../GameLuaInjectFramework.c`) |
+| `game/GameLuaContextLua51.cpp` | `_verify_Lua51.obj` | OK |
+| `game/GameLuaContextJit.cpp` | `_verify_Jit.obj` | OK |
+| `game/GameLuaContextGame.cpp` | `_verify_Game.obj` | OK |
 
-- Updater no longer aborts on size 0
-- Target resolve still uses `function_table.containing`
-- Optional later slice: improve Nucleus entry discovery for nested exports (out of Task 4 gate)
+Only pre-existing `LUA_GCCYCLE` macro redefinition warning from luajit headers. **No C errors.**  
+Not a full link of `plugin_core_vm.dll` (new sources not in main ninja graph).
 
-## Files touched
+### Static checks
 
-- Modify: `src/DontStarveInjector/plugins/plugin_core_vm/signature_load/DontStarveSignature.cpp`
-- Modify: `src/FunctionRelocation/FunctionTable.hpp`
-- Modify: `tests/function_relocation/test_nucleus_adapter.cpp`
-- Create: `.superpowers/sdd/task-4-report.md`
-- Regen (tracked if not ignored): `Mod/signatures_*.json`, `Mod/deps/signatures_*.json`
-- Local only (gitignored smoke): `builds/nucleus-only/*`, `builds/ninja-nucleus/*`
+- Exactly one definition each for: `currentCtx`, `GetGameLuaContext`, `ds_core_vm_*`, `ctx_*`, `Default*LibraryName`, `NoteGame*`, `GetContextForType`, `ReplaceLuaModule`, `wrapper_game_main_buffer`, Jit `LoadMyLuaApi`, Game `GameFindExportByName`, framework instance.
+- `GameLua.cpp` has **zero** remaining `gameLua*Ctx` / context struct definitions.
+- Did **not** start Task 5 (VmSwitch/Replace/GameDbg still in `GameLua.cpp`).
+
+---
+
+## Self-review
+
+| Check | Result |
+|-------|--------|
+| `GameLuaContextImpl.hpp` complete type | Pass |
+| Context TUs + statics + `ctx_*` | Pass |
+| jit + jit_gen share class / two instances | Pass |
+| CMake game sources updated | Pass |
+| Replace/Switch/Dbg left in GameLua.cpp | Pass |
+| Consumes Task 3 Internal helpers | Pass |
+| No main checkout edits | Pass |
+
+**Concerns**
+
+1. No full `plugin_core_vm` link in worktree (ANGLE/configure). Per-TU `cl /c` only.
+2. `GameLuaContextImpl` / `GameLua51Context` methods remain header-inline (large headers; acceptable for this split).
+3. Historical `HOOK_LUA_API` macro (`decltype(&#name)`) preserved as in longstanding sources.
+4. Temporary worktree junction `3rd/angle` → main for configure attempts; not committed.
+
+---
 
 ## Commit
 
-```text
-fix(signature): nested FunctionTable containing; pdata log; regen JSON
 ```
+refactor(core.vm): split GameLua contexts into game/* TUs
+```
+
+Staged: `game/*` new sources + headers, `GameLua.cpp`, `CMakeLists.txt`, `GameLuaInternal.hpp`.
+
+---
+
+## Follow-ups (Task 5)
+
+- Move VmSwitch / ReplaceLuaModule / GameDbgExports out of `GameLua.cpp` and delete residual root TU.
+- Optionally demote `NoteGameLuaExport*` once Replace lives next to `gameLuaGameCtx`.
