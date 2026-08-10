@@ -1,4 +1,4 @@
-#include "event/LuaEvent.hpp"
+#include "LuaEvent.hpp"
 
 #include <mutex>
 #include <vector>
