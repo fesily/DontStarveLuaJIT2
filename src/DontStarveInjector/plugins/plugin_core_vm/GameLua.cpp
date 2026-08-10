@@ -1,4 +1,5 @@
 #include "GameLua.hpp"
+#include "game/GameLuaInternal.hpp"
 #include "VmConfig.hpp"
 #include "LuajitVariantNames.hpp"
 #include "config/ResolvedConfig.hpp"
@@ -27,13 +28,19 @@
 #include <zlib.h>
 #include <cassert>
 using namespace std::literals;
-
-static void PrepareForLuaStateCreate(std::string_view entryName);
-static void MarkLuaStateCreated(lua_State *L, std::string_view entryName);
-static void MarkLuaStateClosed(lua_State *L, std::string_view entryName);
-static void RequestVmType(GameLuaType type, const char *moduleName, std::string_view reason);
-static bool ReinitializeCurrentVm(std::string_view reason);
-static lua_State *CreateLuaStateForCurrentVm(lua_Alloc f, void *ud, std::string_view entryName);
+using ds::core_vm::detail::PrepareForLuaStateCreate;
+using ds::core_vm::detail::MarkLuaStateCreated;
+using ds::core_vm::detail::MarkLuaStateClosed;
+using ds::core_vm::detail::RequestVmType;
+using ds::core_vm::detail::ReinitializeCurrentVm;
+using ds::core_vm::detail::CreateLuaStateForCurrentVm;
+using ds::core_vm::detail::UseGameIO;
+using ds::core_vm::detail::load_game_fn_io_open;
+using ds::core_vm::detail::replace_game_io_open;
+using ds::core_vm::detail::CacheRuntimeSetup;
+using ds::core_vm::detail::GetContextForType;
+using ds::core_vm::detail::GetDefaultModuleName;
+using ds::core_vm::detail::ApplyVmType;
 
 #ifndef _WIN32
 #include <dlfcn.h>
@@ -86,10 +93,14 @@ static int split_string(const std::string_view &str, std::vector<std::string_vie
 }
 
 #pragma region GAME_IO
+int (*luaopen_game_io)(lua_State *L);
+
+namespace ds::core_vm::detail {
+
 bool UseGameIO() {
     return !InjectorConfig::instance()->DisableGameIO;
 }
-int (*luaopen_game_io)(lua_State *L);
+
 void load_game_fn_io_open(const Signatures &signatures) {
     auto offset = signatures.funcs.at("luaopen_io").offset;
     auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
@@ -103,6 +114,8 @@ void replace_game_io_open(GameLuaContext &ctx, lua_State *L) {
         ctx.api._lua_call(L, 1, 0);
     }
 }
+
+} // namespace ds::core_vm::detail
 
 #pragma endregion GAME_IO
 
@@ -1029,6 +1042,7 @@ static __attribute__((constructor)) void initialize_all_so() {
 }
 #endif
 
+// Context instances stay file-static for Task 3; Task 4 moves them to context TUs.
 static GameLua51Context gameLua51Ctx{
         DefaultLua51LibraryName(),
         GameLuaType::_51};
@@ -1043,6 +1057,15 @@ static GameLuaContextJit gameLuajitGenCtx{
 
 static GameLuaContextGame gameLuaGameCtx{
         GameLuaType::game};
+
+namespace ds::core_vm::detail {
+
+GameLuaContextImpl *ctx_lua51() { return &gameLua51Ctx; }
+GameLuaContextImpl *ctx_jit() { return &gameLuajitCtx; }
+GameLuaContextImpl *ctx_jit_gen() { return &gameLuajitGenCtx; }
+GameLuaContextImpl *ctx_game() { return &gameLuaGameCtx; }
+
+} // namespace ds::core_vm::detail
 
 
 void GameLuaContextJit::LoadMyLuaApi() {
@@ -1112,27 +1135,47 @@ struct VmSwitchCoordinator {
 
 VmSwitchCoordinator vmSwitchCoordinator;
 
-static GameLuaType GetCurrentVmType() {
+GameLuaType GetCurrentVmType() {
     auto *currentCtx = GameLuaContextImpl::currentCtx;
     return currentCtx ? currentCtx->luaType : GameLuaType::jit;
 }
 
-static GameLuaContextImpl *GetContextForType(GameLuaType type) {
+std::optional<std::string> NormalizeModuleName(const char *moduleName) {
+    if (moduleName == nullptr || moduleName[0] == '\0') {
+        return std::nullopt;
+    }
+    if (!std::filesystem::exists(moduleName)) {
+        spdlog::warn("Ignore Lua VM module override because file does not exist: {}", moduleName);
+        return std::nullopt;
+    }
+    return std::string{moduleName};
+}
+
+void ApplyPendingVmType(std::string_view reason);
+
+GameLuaType GetNextVmType() {
+    return vmSwitchCoordinator.hasPendingSwitch ? vmSwitchCoordinator.pendingType : GetCurrentVmType();
+}
+} // namespace
+
+namespace ds::core_vm::detail {
+
+GameLuaContextImpl *GetContextForType(GameLuaType type) {
     switch (type) {
         case GameLuaType::_51:
-            return &gameLua51Ctx;
+            return ctx_lua51();
         case GameLuaType::jit:
-            return &gameLuajitCtx;
+            return ctx_jit();
         case GameLuaType::jit_gen:
-            return &gameLuajitGenCtx;
+            return ctx_jit_gen();
         case GameLuaType::game:
-            return &gameLuaGameCtx;
+            return ctx_game();
         default:
-            return &gameLuajitCtx;
+            return ctx_jit();
     }
 }
 
-static const char *GetDefaultModuleName(GameLuaType type) {
+const char *GetDefaultModuleName(GameLuaType type) {
     // GameLuaType::game and ::unknown have no shared library.
     if (type == GameLuaType::game || type == GameLuaType::unknown) {
         return "";
@@ -1151,18 +1194,7 @@ static const char *GetDefaultModuleName(GameLuaType type) {
     }
 }
 
-static std::optional<std::string> NormalizeModuleName(const char *moduleName) {
-    if (moduleName == nullptr || moduleName[0] == '\0') {
-        return std::nullopt;
-    }
-    if (!std::filesystem::exists(moduleName)) {
-        spdlog::warn("Ignore Lua VM module override because file does not exist: {}", moduleName);
-        return std::nullopt;
-    }
-    return std::string{moduleName};
-}
-
-static void ApplyVmType(GameLuaType type, const std::optional<std::string> &moduleName, std::string_view reason) {
+void ApplyVmType(GameLuaType type, const std::optional<std::string> &moduleName, std::string_view reason) {
     GameLuaContextImpl::currentCtx = GetContextForType(type);
     auto *targetCtx = GameLuaContextImpl::currentCtx;
     targetCtx->SetLibraryName(moduleName.value_or(GetDefaultModuleName(type)).c_str());
@@ -1172,49 +1204,14 @@ static void ApplyVmType(GameLuaType type, const std::optional<std::string> &modu
                  targetCtx->GetLibraryName());
 }
 
-static void ApplyPendingVmType(std::string_view reason) {
-    if (!vmSwitchCoordinator.hasPendingSwitch) {
-        return;
-    }
-    auto *previousCtx = GameLuaContextImpl::currentCtx;
-    auto pendingType = vmSwitchCoordinator.pendingType;
-    auto pendingModuleName = vmSwitchCoordinator.pendingModuleName;
-    vmSwitchCoordinator.hasPendingSwitch = false;
-    vmSwitchCoordinator.pendingModuleName.reset();
-    if (previousCtx != nullptr && vmSwitchCoordinator.hasRuntimeSetup) {
-        previousCtx->ResetApis(vmSwitchCoordinator.signatures, vmSwitchCoordinator.exports);
-    }
-    ApplyVmType(pendingType, pendingModuleName, reason);
-    ReinitializeCurrentVm(reason);
-}
-
-static void CacheRuntimeSetup(const std::string &mainPath, const Signatures &signatures, const ListExports_t &exports) {
+void CacheRuntimeSetup(const std::string &mainPath, const Signatures &signatures, const ListExports_t &exports) {
     vmSwitchCoordinator.hasRuntimeSetup = true;
     vmSwitchCoordinator.mainPath = mainPath;
     vmSwitchCoordinator.signatures = signatures;
     vmSwitchCoordinator.exports = exports;
 }
 
-static GameLuaType GetNextVmType() {
-    return vmSwitchCoordinator.hasPendingSwitch ? vmSwitchCoordinator.pendingType : GetCurrentVmType();
-}
-}
-
-static
-void set_vm_type(GameLuaType type, const char *moduleName) {
-    RequestVmType(type, moduleName, "set_vm_type");
-}
-
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(const char *type, const char *moduleName) {
-    set_vm_type(GameLuaTypeFromString(type), moduleName);
-}
-
-
-DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_vm_type_name(int next) {
-    return GameLuaTypeToString(next ? GetNextVmType() : GetCurrentVmType()).data();
-}
-
-static void RequestVmType(GameLuaType type, const char *moduleName, std::string_view reason) {
+void RequestVmType(GameLuaType type, const char *moduleName, std::string_view reason) {
     auto currentType = GetCurrentVmType();
     if (GameLuaContextImpl::currentCtx != nullptr && type == currentType) {
         if (vmSwitchCoordinator.hasPendingSwitch) {
@@ -1244,7 +1241,7 @@ static void RequestVmType(GameLuaType type, const char *moduleName, std::string_
     ApplyVmType(type, normalizedModuleName, reason);
 }
 
-static bool ReinitializeCurrentVm(std::string_view reason) {
+bool ReinitializeCurrentVm(std::string_view reason) {
     if (!vmSwitchCoordinator.hasRuntimeSetup) {
         spdlog::warn("Skip Lua VM runtime initialization because setup cache is not ready: {}", reason);
         return false;
@@ -1270,7 +1267,7 @@ static bool ReinitializeCurrentVm(std::string_view reason) {
     return true;
 }
 
-static lua_State *CreateLuaStateForCurrentVm(lua_Alloc f, void *ud, std::string_view entryName) {
+lua_State *CreateLuaStateForCurrentVm(lua_Alloc f, void *ud, std::string_view entryName) {
     PrepareForLuaStateCreate(entryName);
     auto &ctx = GetGameLuaContext();
     lua_event_notifyer(LUA_EVENT::new_state, nullptr);
@@ -1287,13 +1284,13 @@ static lua_State *CreateLuaStateForCurrentVm(lua_Alloc f, void *ud, std::string_
     return L;
 }
 
-static void PrepareForLuaStateCreate(std::string_view entryName) {
+void PrepareForLuaStateCreate(std::string_view entryName) {
     if (vmSwitchCoordinator.liveState == nullptr) {
         ApplyPendingVmType(entryName);
     }
 }
 
-static void MarkLuaStateCreated(lua_State *L, std::string_view entryName) {
+void MarkLuaStateCreated(lua_State *L, std::string_view entryName) {
     vmSwitchCoordinator.liveState = L;
     auto ctx = GameLuaContextImpl::currentCtx;
     if (ctx != nullptr) {
@@ -1305,7 +1302,7 @@ static void MarkLuaStateCreated(lua_State *L, std::string_view entryName) {
     }
 }
 
-static void MarkLuaStateClosed(lua_State *L, std::string_view entryName) {
+void MarkLuaStateClosed(lua_State *L, std::string_view entryName) {
     auto ctx = GameLuaContextImpl::currentCtx;
     if (ctx != nullptr && ctx->luaState == L) {
         ctx->luaState = nullptr;
@@ -1315,6 +1312,40 @@ static void MarkLuaStateClosed(lua_State *L, std::string_view entryName) {
                  entryName,
                  (void *) L,
                  ctx ? GameLuaTypeToString(ctx->luaType) : "unknown"sv);
+}
+
+} // namespace ds::core_vm::detail
+
+namespace {
+void ApplyPendingVmType(std::string_view reason) {
+    if (!vmSwitchCoordinator.hasPendingSwitch) {
+        return;
+    }
+    auto *previousCtx = GameLuaContextImpl::currentCtx;
+    auto pendingType = vmSwitchCoordinator.pendingType;
+    auto pendingModuleName = vmSwitchCoordinator.pendingModuleName;
+    vmSwitchCoordinator.hasPendingSwitch = false;
+    vmSwitchCoordinator.pendingModuleName.reset();
+    if (previousCtx != nullptr && vmSwitchCoordinator.hasRuntimeSetup) {
+        previousCtx->ResetApis(vmSwitchCoordinator.signatures, vmSwitchCoordinator.exports);
+    }
+    ds::core_vm::detail::ApplyVmType(pendingType, pendingModuleName, reason);
+    ds::core_vm::detail::ReinitializeCurrentVm(reason);
+}
+} // namespace
+
+static
+void set_vm_type(GameLuaType type, const char *moduleName) {
+    RequestVmType(type, moduleName, "set_vm_type");
+}
+
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(const char *type, const char *moduleName) {
+    set_vm_type(GameLuaTypeFromString(type), moduleName);
+}
+
+
+DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_vm_type_name(int next) {
+    return GameLuaTypeToString(next ? GetNextVmType() : GetCurrentVmType()).data();
 }
 
 
