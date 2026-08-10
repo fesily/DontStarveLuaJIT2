@@ -69,6 +69,8 @@ def die(msg: str) -> None:
 
 def run(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(cmd), flush=True)
+    # Frida's configure/meson may emit non-UTF8 on Windows (OEM/MBCS logs).
+    # Do not force text=UTF-8; inherit console encoding / bytes-safe default.
     subprocess.check_call(cmd, cwd=str(cwd) if cwd else None, env=env)
 
 
@@ -212,14 +214,15 @@ def meson_build_static(src: Path, build_dir: Path, prefix: Path, version: str) -
         configure = src / "configure.bat"
         if not configure.is_file():
             die(f"missing {configure}")
-        # --prefix, static library, gum devkit. Exact flags may need adjustment at tag.
+        # Frida 17.x configure: static is default; use --with-devkits (not
+        # --default-library=static / --enable-devkits, which are rejected).
         cmd = [
             "cmd",
             "/c",
             str(configure),
             f"--prefix={prefix}",
-            "--default-library=static",
-            "--enable-devkits=gum",
+            "--with-devkits=gum",
+            "--disable-tests",
         ]
         run(cmd, cwd=src)
         # Frida windows build uses make.bat after configure (or ninja via make wrapper).
@@ -237,8 +240,8 @@ def meson_build_static(src: Path, build_dir: Path, prefix: Path, version: str) -
                 "bash",
                 str(configure),
                 f"--prefix={prefix}",
-                "--default-library=static",
-                "--enable-devkits=gum",
+                "--with-devkits=gum",
+                "--disable-tests",
             ],
             cwd=src,
         )
