@@ -253,7 +253,7 @@ add_test(NAME plugin_apply_offline COMMAND test_plugin_apply_offline)
 # L0 lua_event bus — no hard-coded plugin DLL forwarder
 add_executable(test_lua_event_bus
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_lua_event_bus.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/LuaEventBus.cpp)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/event/LuaEventBus.cpp)
 target_include_directories(test_lua_event_bus PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
 target_compile_features(test_lua_event_bus PRIVATE cxx_std_23)
