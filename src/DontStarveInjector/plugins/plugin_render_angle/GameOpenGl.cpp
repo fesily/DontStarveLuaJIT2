@@ -5,32 +5,49 @@
 
 #include "DstAngleBackend.hpp"
 #include "config/InjectorHostConfig.hpp"
-#include "util/module.hpp"
-#include "angle_iat_generated.hpp"
 #include "config/ResolvedConfig.hpp"
-
-
+#include "core/PluginPath.hpp"
+#include "util/module.hpp"
 
 #include <Windows.h>
 #include <spdlog/spdlog.h>
+
+#include <egl/egl.h>
+#include <GLES2/gl2.h>
+#include <egl/eglext.h>
+#include <egl/eglext_angle.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
-#include <optional>
-
-#include <egl/eglext.h>
-#include <egl/eglext_angle.h>
 
 namespace {
 
     using PFNEGLGETPLATFORMDISPLAYEXTPROC = EGLDisplay(EGLAPIENTRYP)(EGLenum platform,
                                                                      void *native_display,
                                                                      const EGLint *attrib_list);
+    using PFNEGLGETDISPLAYPROC = EGLDisplay(EGLAPIENTRYP)(EGLNativeDisplayType display_id);
+    using PFNEGLINITIALIZEPROC = EGLBoolean(EGLAPIENTRYP)(EGLDisplay dpy, EGLint *major, EGLint *minor);
+    using PFNEGLGETERRORPROC = EGLint(EGLAPIENTRYP)(void);
+    using PFNEGLQUERYSTRINGPROC = const char *(EGLAPIENTRYP)(EGLDisplay dpy, EGLint name);
+    using PFNEGLCREATEWINDOWSURFACEPROC = EGLSurface(EGLAPIENTRYP)(EGLDisplay dpy,
+                                                                   EGLConfig config,
+                                                                   EGLNativeWindowType win,
+                                                                   const EGLint *attrib_list);
+    using PFNEGLMAKECURRENTPROC = EGLBoolean(EGLAPIENTRYP)(EGLDisplay dpy,
+                                                           EGLSurface draw,
+                                                           EGLSurface read,
+                                                           EGLContext ctx);
+    using PFNEGLGETPROCADDRESSPROC = __eglMustCastToProperFunctionPointerType(EGLAPIENTRYP)(const char *procname);
+    using PFNGLGETSTRINGPROC = const GLubyte *(GL_APIENTRYP)(GLenum name);
 
     struct WrappedSymbol {
         const char *name;
@@ -38,6 +55,9 @@ namespace {
     };
 
     constexpr const char *kSteamOverlayLayerName = "VK_LAYER_VALVE_steam_overlay";
+
+    HMODULE g_angle_glesv2 = nullptr;
+    HMODULE g_angle_egl = nullptr;
 
     bool g_angle_egl_initialized{false};
     bool g_display_supports_post_sub_buffer{false};
@@ -54,6 +74,10 @@ namespace {
         return std::equal(left.begin(), left.end(), right.begin(), right.end(), [](char a, char b) {
             return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
         });
+    }
+
+    static bool PathLeafEqualsIgnoreCase(const std::filesystem::path &path, std::string_view leaf) {
+        return EqualsIgnoreCase(path.filename().string(), leaf);
     }
 
     static bool ContainsIgnoreCase(std::string_view text, std::string_view needle) {
@@ -113,8 +137,6 @@ namespace {
         }();
         return result;
     }
-
-
 
     static bool ContainsDisabledLayer(std::string_view disabled_layers, std::string_view layer_name) {
         std::size_t token_start = 0;
@@ -186,12 +208,46 @@ namespace {
         return requested_platform;
     }
 
+    static FARPROC ResolveDllExport(HMODULE mod, const char *name) {
+        if (!mod || !name || name[0] == '\0') {
+            return nullptr;
+        }
+        return GetProcAddress(mod, name);
+    }
+
+    static FARPROC ResolveGameGlesSymbol(const char *name) {
+        return ResolveDllExport(g_angle_glesv2, name);
+    }
+
+    static FARPROC ResolveGameEglSymbol(const char *name) {
+        if (auto wrapped = ResolveWrappedEglSymbol(name)) {
+            return wrapped;
+        }
+        if (auto p = ResolveDllExport(g_angle_egl, name)) {
+            return p;
+        }
+        // Some EGL entry points live in GLESv2 in ANGLE layouts.
+        return ResolveDllExport(g_angle_glesv2, name);
+    }
+
+    static FARPROC RealEglExport(const char *name) {
+        if (auto p = ResolveDllExport(g_angle_egl, name)) {
+            return p;
+        }
+        return ResolveDllExport(g_angle_glesv2, name);
+    }
+
     static void CaptureCurrentRenderBackend() {
         if (g_render_backend_captured.load(std::memory_order_acquire)) {
             return;
         }
 
-        const auto *renderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
+        auto glGetStringFn = reinterpret_cast<PFNGLGETSTRINGPROC>(ResolveGameGlesSymbol("glGetString"));
+        if (!glGetStringFn) {
+            return;
+        }
+
+        const auto *renderer = reinterpret_cast<const char *>(glGetStringFn(GL_RENDERER));
         if (renderer == nullptr || renderer[0] == '\0') {
             return;
         }
@@ -226,14 +282,154 @@ namespace {
         }
     }
 
-    static EGLDisplay EGLAPIENTRY MyEglGetDisplay(EGLNativeDisplayType native_display) {
-        if (!IsVulkanPlatformRequested()) {
-            return eglGetDisplay(native_display);
+    static std::filesystem::path ThisPluginDir() {
+        HMODULE self = nullptr;
+        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                reinterpret_cast<LPCWSTR>(&ThisPluginDir),
+                                &self) ||
+            !self) {
+            return {};
+        }
+        wchar_t path[MAX_PATH]{};
+        if (GetModuleFileNameW(self, path, MAX_PATH) == 0) {
+            return {};
+        }
+        return std::filesystem::path(path).parent_path();
+    }
+
+    static std::filesystem::path ModDepsDir() {
+        // Prefer Injector-owned PluginPath helpers (mod root / deps).
+        const auto inj = ds::plugin::injector_module_dir();
+        if (!inj.empty()) {
+            std::error_code ec;
+            // Canonical package: Injector.dll at mod root → mod/deps.
+            auto deps = ds::plugin::mod_deps_dir(inj);
+            if (!deps.empty() && std::filesystem::is_directory(deps, ec)) {
+                return deps;
+            }
+            // Legacy: Injector under bin64 — derive via plugins/ layout.
+            deps = ds::plugin::mod_deps_dir(
+                    ds::plugin::mod_root_from_plugins_dir(ds::plugin::plugins_dir_from_module_dir(inj)));
+            if (!deps.empty() && std::filesystem::is_directory(deps, ec)) {
+                return deps;
+            }
         }
 
-        auto get_platform_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(eglGetProcAddress("eglGetPlatformDisplayEXT"));
+        for (const auto &plugins_dir : ds::plugin::default_plugin_search_dirs()) {
+            const auto deps = ds::plugin::mod_deps_dir(ds::plugin::mod_root_from_plugins_dir(plugins_dir));
+            std::error_code ec;
+            if (!deps.empty() && std::filesystem::is_directory(deps, ec)) {
+                return deps;
+            }
+        }
+
+        // Fallback: walk from this plugin DLL toward Mod/deps.
+        // Canonical package: .../Mod/plugins/plugin_render_angle/plugin_render_angle.dll
+        // Flat plugins:      .../Mod/plugins/plugin_render_angle.dll
+        const auto plugin_dir = ThisPluginDir();
+        if (plugin_dir.empty()) {
+            return {};
+        }
+        if (PathLeafEqualsIgnoreCase(plugin_dir, "plugin_render_angle") &&
+            PathLeafEqualsIgnoreCase(plugin_dir.parent_path(), "plugins")) {
+            return plugin_dir.parent_path().parent_path() / "deps";
+        }
+        if (PathLeafEqualsIgnoreCase(plugin_dir, "plugins")) {
+            return plugin_dir.parent_path() / "deps";
+        }
+        return plugin_dir.parent_path().parent_path().parent_path() / "deps";
+    }
+
+    static bool TryLoadAnglePair(const std::filesystem::path &dir) {
+        if (dir.empty()) {
+            return false;
+        }
+
+        std::error_code ec;
+        const auto gles = dir / L"libGLESv2.dll";
+        const auto egl = dir / L"libEGL.dll";
+        if (!std::filesystem::is_regular_file(gles, ec) || !std::filesystem::is_regular_file(egl, ec)) {
+            return false;
+        }
+
+        HMODULE gles_mod = LoadLibraryExW(gles.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+        const DWORD gles_err = GetLastError();
+        HMODULE egl_mod = LoadLibraryExW(egl.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+        const DWORD egl_err = GetLastError();
+        if (!gles_mod || !egl_mod) {
+            spdlog::error("ANGLE DLL load failed gles={} egl={} gles_err={} egl_err={}",
+                          gles.string(),
+                          egl.string(),
+                          gles_mod ? 0u : static_cast<unsigned>(gles_err),
+                          egl_mod ? 0u : static_cast<unsigned>(egl_err));
+            if (gles_mod) {
+                FreeLibrary(gles_mod);
+            }
+            if (egl_mod) {
+                FreeLibrary(egl_mod);
+            }
+            return false;
+        }
+
+        g_angle_glesv2 = gles_mod;
+        g_angle_egl = egl_mod;
+        spdlog::info("ANGLE DLLs loaded from {}", dir.string());
+        return true;
+    }
+
+    static bool EnsureAngleDllsLoaded() {
+        if (g_angle_glesv2 && g_angle_egl) {
+            return true;
+        }
+
+        // Search order: plugin dir (co-located) → Mod/deps helpers → bare LoadLibrary names.
+        if (TryLoadAnglePair(ThisPluginDir())) {
+            return true;
+        }
+        if (TryLoadAnglePair(ModDepsDir())) {
+            return true;
+        }
+
+        HMODULE gles_mod = LoadLibraryW(L"libGLESv2.dll");
+        const DWORD gles_err = GetLastError();
+        HMODULE egl_mod = LoadLibraryW(L"libEGL.dll");
+        const DWORD egl_err = GetLastError();
+        if (!gles_mod || !egl_mod) {
+            spdlog::error("ANGLE DLL load failed (default search) gles_err={} egl_err={}",
+                          gles_mod ? 0u : static_cast<unsigned>(gles_err),
+                          egl_mod ? 0u : static_cast<unsigned>(egl_err));
+            if (gles_mod) {
+                FreeLibrary(gles_mod);
+            }
+            if (egl_mod) {
+                FreeLibrary(egl_mod);
+            }
+            return false;
+        }
+
+        g_angle_glesv2 = gles_mod;
+        g_angle_egl = egl_mod;
+        spdlog::info("ANGLE DLLs loaded via default module search");
+        return true;
+    }
+
+    static EGLDisplay EGLAPIENTRY MyEglGetDisplay(EGLNativeDisplayType native_display) {
+        auto real_get_display = reinterpret_cast<PFNEGLGETDISPLAYPROC>(RealEglExport("eglGetDisplay"));
+        if (!real_get_display) {
+            return EGL_NO_DISPLAY;
+        }
+
+        if (!IsVulkanPlatformRequested()) {
+            return real_get_display(native_display);
+        }
+
+        auto real_get_proc = reinterpret_cast<PFNEGLGETPROCADDRESSPROC>(RealEglExport("eglGetProcAddress"));
+        auto get_platform_display = real_get_proc
+                                            ? reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
+                                                      real_get_proc("eglGetPlatformDisplayEXT"))
+                                            : nullptr;
         if (get_platform_display == nullptr) {
-            return eglGetDisplay(native_display);
+            return real_get_display(native_display);
         }
 
         const EGLint platform_attribs[] = {
@@ -242,20 +438,27 @@ namespace {
         auto display = get_platform_display(EGL_PLATFORM_ANGLE_ANGLE,
                                             reinterpret_cast<void *>(native_display),
                                             platform_attribs);
-        return display != EGL_NO_DISPLAY ? display : eglGetDisplay(native_display);
+        return display != EGL_NO_DISPLAY ? display : real_get_display(native_display);
     }
 
     static EGLBoolean EGLAPIENTRY MyEglInitialize(EGLDisplay dpy, EGLint *major, EGLint *minor) {
-        const auto result = eglInitialize(dpy, major, minor);
+        auto real_initialize = reinterpret_cast<PFNEGLINITIALIZEPROC>(RealEglExport("eglInitialize"));
+        if (!real_initialize) {
+            return EGL_FALSE;
+        }
+
+        const auto result = real_initialize(dpy, major, minor);
         if (result == EGL_FALSE) {
-            const auto egl_error = eglGetError();
+            auto real_get_error = reinterpret_cast<PFNEGLGETERRORPROC>(RealEglExport("eglGetError"));
+            const auto egl_error = real_get_error ? real_get_error() : EGL_BAD_ALLOC;
             spdlog::error("eglInitialize failed: eglError=0x{:04X} angleDefaultPlatform={}",
                           static_cast<unsigned int>(egl_error),
                           IsVulkanPlatformRequested() ? "vulkan" : "<other>");
             return result;
         }
 
-        const auto *extensions = eglQueryString(dpy, EGL_EXTENSIONS);
+        auto real_query_string = reinterpret_cast<PFNEGLQUERYSTRINGPROC>(RealEglExport("eglQueryString"));
+        const auto *extensions = real_query_string ? real_query_string(dpy, EGL_EXTENSIONS) : nullptr;
         const bool supports_post_sub_buffer =
                 extensions != nullptr && strstr(extensions, "EGL_NV_post_sub_buffer") != nullptr;
         g_display_supports_post_sub_buffer = supports_post_sub_buffer;
@@ -267,6 +470,11 @@ namespace {
                                                            EGLConfig config,
                                                            EGLNativeWindowType win,
                                                            const EGLint *attrib_list) {
+        auto real_create = reinterpret_cast<PFNEGLCREATEWINDOWSURFACEPROC>(RealEglExport("eglCreateWindowSurface"));
+        if (!real_create) {
+            return EGL_NO_SURFACE;
+        }
+
         std::vector<EGLint> sanitized_attribs;
         const EGLint *effective_attribs = attrib_list;
         if (attrib_list != nullptr && !g_display_supports_post_sub_buffer) {
@@ -288,7 +496,7 @@ namespace {
             }
         }
 
-        auto surface = eglCreateWindowSurface(dpy, config, win, effective_attribs);
+        auto surface = real_create(dpy, config, win, effective_attribs);
         if (surface == EGL_NO_SURFACE) {
             spdlog::error("eglCreateWindowSurface failed");
         }
@@ -300,7 +508,12 @@ namespace {
                                                    EGLSurface draw,
                                                    EGLSurface read,
                                                    EGLContext ctx) {
-        const auto result = eglMakeCurrent(dpy, draw, read, ctx);
+        auto real_make_current = reinterpret_cast<PFNEGLMAKECURRENTPROC>(RealEglExport("eglMakeCurrent"));
+        if (!real_make_current) {
+            return EGL_FALSE;
+        }
+
+        const auto result = real_make_current(dpy, draw, read, ctx);
         if (result == EGL_TRUE && ctx != EGL_NO_CONTEXT) {
             CaptureCurrentRenderBackend();
         }
@@ -312,7 +525,12 @@ namespace {
             return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(wrapped_symbol);
         }
 
-        return eglGetProcAddress(procname);
+        auto real = reinterpret_cast<PFNEGLGETPROCADDRESSPROC>(
+                GetProcAddress(g_angle_egl ? g_angle_egl : g_angle_glesv2, "eglGetProcAddress"));
+        if (!real) {
+            return nullptr;
+        }
+        return real(procname);
     }
 
     FARPROC ResolveWrappedSymbol(const char *name, const WrappedSymbol *symbols, std::size_t symbol_count) {
@@ -373,15 +591,11 @@ namespace {
         return ResolveWrappedSymbol(name, kWrappedEglSymbols, sizeof(kWrappedEglSymbols) / sizeof(kWrappedEglSymbols[0]));
     }
 
-    FARPROC ResolveGameEglSymbol(const char *name) {
-        if (auto wrapped_symbol = ResolveWrappedEglSymbol(name)) {
-            return wrapped_symbol;
-        }
-        return angle_iat_generated::ResolveStaticEglSymbol(name);
-    }
-
-    void RebindModuleImports(HMODULE target_module, const char *import_module_name, FARPROC (*resolver)(const char *)) {
-        ImportRebindContext context{import_module_name, resolver, GetModuleHandleA(import_module_name), {}};
+    void RebindModuleImports(HMODULE target_module,
+                             const char *import_module_name,
+                             FARPROC (*resolver)(const char *),
+                             HMODULE original_module) {
+        ImportRebindContext context{import_module_name, resolver, original_module, {}};
         BuildOrdinalNameMap(&context);
 
         module_enumerate_imports(target_module, +[](const ImportDetails *details, void *user_data) -> bool {
@@ -425,8 +639,8 @@ namespace {
             return;
         }
 
-        RebindModuleImports(main_module, "libEGL.dll", &ResolveGameEglSymbol);
-        RebindModuleImports(main_module, "libGLESv2.dll", &angle_iat_generated::ResolveStaticGlesSymbol);
+        RebindModuleImports(main_module, "libEGL.dll", &ResolveGameEglSymbol, g_angle_egl);
+        RebindModuleImports(main_module, "libGLESv2.dll", &ResolveGameGlesSymbol, g_angle_glesv2);
     }
 
 }// namespace
@@ -454,6 +668,9 @@ DONTSTARVEINJECTOR_GAME_API void InitGameOpenGl() {
         return;
     }
 
+    if (!EnsureAngleDllsLoaded()) {
+        return;
+    }
     EnsureVulkanLayerDisableEnvironment();
     RebindMainModuleAngleImports();
     // VBPool resolves GL entry points via GetProcAddress(libGLESv2); do not
