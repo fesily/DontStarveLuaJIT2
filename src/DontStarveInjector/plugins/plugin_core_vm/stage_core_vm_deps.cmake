@@ -1,4 +1,6 @@
-# Stage lua51* into Injector/deps (build-tree analog of Mod/deps).
+# Stage pure Lua VM shared libraries into Injector/deps (build-tree analog of Mod/deps).
+# Artifacts: lua51DS / lua51DS_gengc / lua51Original (+ training lua51 PE).
+# These are pure VMs only — no DS business logic, no ds_plugin_module_init, not plugin_*.
 # Signatures: only verified present at Mod/ root (not staged into deps).
 # Required -D vars: DS_OUT, DS_CFG, DS_SOURCE_DIR, DS_BINARY_DIR
 # (Do NOT use CMAKE_SOURCE_DIR in -P scripts — CMake overwrites it with CWD.)

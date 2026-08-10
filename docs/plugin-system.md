@@ -103,6 +103,21 @@ Shipped modules today:
 | `plugin_debug_profiler` | `debug.profiler` | **Optional.** Tracy / replace-profiler / FullGC / FrameGC. Soft no-op when missing; independent of `core.vm`. |
 | `plugin_dummy` | `debug.dummy` | log only |
 
+### core.vm internal modules
+
+Package layout under `src/DontStarveInjector/plugins/plugin_core_vm/` (single MODULE, id `core.vm`):
+
+- **signature** (`signature_load/` → STATIC `ds_signature`)
+- **game/** (contexts, `ReplaceLuaModule`, VM switch)
+- **io/** (gameio + Steam)
+- **injector/** (`luaopen_GameInjector` / apply)
+- **event/**, **optional/**
+
+External pure VM libs in `Mod/deps` (and build-tree staging via `stage_core_vm_deps.cmake`): `lua51DS`, `lua51DS_gengc`, `lua51Original`. These are **not** Host plugins (`plugin_*`): zero DS business logic, no `ds_plugin_module_init`. Missing the selected pure VM lib → **degrade to `game` context** (signature + replace still use embedded Lua). Missing `plugin_core_vm` itself still soft-skips the VM path (optional base).
+
+Design: `docs/superpowers/specs/2026-08-10-core-vm-module-split-design.md`.
+
+
 ### 3.1 Implement `IPlugin` in a module
 
 File pattern: `src/DontStarveInjector/plugins/plugin_my_feature/plugin_my_feature.cpp`
@@ -464,7 +479,7 @@ When adding a plugin:
 | `src/DontStarveInjector/core/DynamicPluginLoader.*` | Scan / load / isolate dynamic modules |
 | `src/DontStarveInjector/core/RegisterBuiltinPlugins.*` | Empty static extension point |
 | `src/DontStarveInjector/core/CoreVmBootstrap.*` | Optional load of `plugin_core_vm` + `ds_core_vm_run_signature_and_replace` |
-| `src/DontStarveInjector/plugins/plugin_core_vm/` | Optional `core.vm` (Signature + GameLua + GameInjector open; fullgc forwarder only) |
+| `src/DontStarveInjector/plugins/plugin_core_vm/` | Optional `core.vm` package: `signature_load` / `game` / `io` / `injector` / `event` / `optional` + pure VM deps stage; fullgc forwarder only |
 | `src/DontStarveInjector/plugins/plugin_debug_profiler/` | Optional `debug.profiler` (Tracy / FullGC / FrameGC) |
 | `src/DontStarveInjector/plugins/plugin_manager/` | Optional `plugin.manager` (channel/pin download; soft-absent) |
 | `src/DontStarveInjector/plugins/plugin_*/` | Dynamic native feature modules (rpc/sim/vbpool/angle/fork/lagcomp/dummy/…) |
@@ -481,6 +496,7 @@ When adding a plugin:
 | `tests/plugin_server/*` | L-G (+ `--scenario present\|absent\|vm_disabled`) |
 | `docs/superpowers/specs/2026-08-03-plugin-architecture-design.md` | Full architecture (D3: AlwaysEnableMod + VM path *gate* remain L0) |
 | `docs/superpowers/specs/2026-08-04-core-vm-plugin-design.md` | Optional core.vm (VM **implementation** ownership) |
+| `docs/superpowers/specs/2026-08-10-core-vm-module-split-design.md` | Package-internal modules + pure VM overlays (not Host plugins) |
 | `docs/superpowers/specs/2026-08-04-debug-profiler-plugin-design.md` | `debug.profiler` owns Tracy + FullGC + FrameGC |
 | `docs/superpowers/specs/2026-08-04-gamejitmodconfig-pluginization-design.md` | ConfigView SSOT design |
 
