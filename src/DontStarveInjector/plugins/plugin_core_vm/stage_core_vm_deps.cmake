@@ -21,14 +21,15 @@ if(NOT DEFINED DS_CFG OR DS_CFG STREQUAL "")
   set(DS_CFG RelWithDebInfo)
 endif()
 
-# Signatures: ONLY Mod/signatures_*.json (all platforms). No bin64/<plat>/, no deps/.
-# Runtime SignatureJson reads <mod>/signatures_*.json; install ships from Mod/.
+# Signatures: optional at Mod/ root only (all platforms). No bin64/<plat>/, no deps/.
+# Runtime SignatureJson reads <mod>/signatures_*.json; missing → SignatureUpdater
+# regenerates on first load. CI may pre-generate later via signature_updater.
 foreach(_sig IN ITEMS signatures_client.json signatures_server.json)
   set(_src "${DS_SOURCE_DIR}/Mod/${_sig}")
   if(NOT EXISTS "${_src}")
-    message(FATAL_ERROR
-      "stage_core_vm_deps: ${_sig} not found at ${_src}. "
-      "Regenerate with signature_updater (writes Mod/signatures_*.json).")
+    message(STATUS
+      "stage_core_vm_deps: ${_sig} not found at ${_src} "
+      "(optional; SignatureUpdater regenerates at runtime)")
   endif()
 endforeach()
 

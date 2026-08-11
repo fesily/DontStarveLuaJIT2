@@ -56,9 +56,9 @@ set(VCPKG_APPLOCAL_DEPS OFF CACHE BOOL
 option(DISABLE_TRACY_FUTURE "disable tray future" ON)
 
 # Package root = Mod/. All install destinations are relative to this prefix.
-#   .                      → Injector.* (all platforms)
+#   .                      → Injector.* + optional signatures_*.json
 #   plugins/               → plugin_*.dll
-#   deps/                  → third-party + lua51* + signatures_*.json
+#   deps/                  → third-party + lua51*
 #   bin64/<platform>/      → thin shell only (Winmm / InjectorStub)
 # Never use absolute DESTINATION with unset vars (install(CODE [[]]) won't expand them → /deps).
 set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod CACHE PATH "Mod package root" FORCE)
@@ -365,8 +365,10 @@ add_subdirectory("src/DontStarveInjector")
 
 # core.vm assets:
 #   Mod/deps/              → lua51* VMs + third-party shared runtimes
-#   Mod/signatures_*.json  → signature DBs at mod root (all platforms)
+#   Mod/signatures_*.json  → optional signature DBs at mod root (all platforms)
 # (sibling of plugins/; loadlib resolves deps; SignatureJson resolves mod root).
+# Missing signatures are OK: SignatureUpdater::create_or_update regenerates them
+# at runtime / via tools/Creater signature_updater (CI may pre-generate later).
 set(DS_CORE_VM_DEPS_DEST "deps")  # under DS_MOD_ROOT_ABS
 if (TARGET liblua)
     # lua51Original already installed by src/lua51original; ensure dest matches.
@@ -375,19 +377,19 @@ endif()
 if (TARGET libluajit OR TARGET luajit)
     # Targets vary by luajit CMake; install known output names from build tree.
 endif()
-# Signatures: ONLY Mod/signatures_{client,server}.json → install to mod root.
+# Signatures: optional Mod/signatures_{client,server}.json → install to mod root.
 # No bin64/<plat>/ or deps/ fallbacks (Windows/Linux/macOS same).
 set(_ds_sig_client "${CMAKE_SOURCE_DIR}/Mod/signatures_client.json")
 set(_ds_sig_server "${CMAKE_SOURCE_DIR}/Mod/signatures_server.json")
 if (EXISTS "${_ds_sig_client}")
     install(FILES "${_ds_sig_client}" DESTINATION . COMPONENT plugins)
 else()
-    message(FATAL_ERROR "Mod/signatures_client.json missing — regenerate with signature_updater")
+    message(STATUS "Mod/signatures_client.json missing — runtime/CI will regenerate via SignatureUpdater")
 endif()
 if (EXISTS "${_ds_sig_server}")
     install(FILES "${_ds_sig_server}" DESTINATION . COMPONENT plugins)
 else()
-    message(FATAL_ERROR "Mod/signatures_server.json missing — regenerate with signature_updater")
+    message(STATUS "Mod/signatures_server.json missing — runtime/CI will regenerate via SignatureUpdater")
 endif()
 
 # Install lua VM shared libs into Mod/deps when targets exist.
@@ -472,9 +474,9 @@ endif ()
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX}
 #install(FILES ${LUA_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})
 # Package staging (CMAKE_INSTALL_PREFIX = Mod/):
-#   .                 → Injector.*
+#   .                 → Injector.* + optional signatures_*.json
 #   plugins/          → plugin_*.dll
-#   deps/             → third-party + lua51* + signatures_*.json
+#   deps/             → third-party + lua51*
 #   bin64/<plat>/     → thin shell only (Winmm / InjectorStub)
 # Live game install: ONLY the inject shell (Winmm / POSIX InjectorStub).
 #
