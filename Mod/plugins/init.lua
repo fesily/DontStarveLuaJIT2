@@ -117,5 +117,6 @@ return {
     load_package("plugin_save_fork"),
     load_package("plugin_sim_lagcomp"),
     load_package("plugin_network_sim"),
+    load_package("plugin_client_smooth"),
     load_flat("jit_runtime"),
 }

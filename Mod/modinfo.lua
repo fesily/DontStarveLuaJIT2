@@ -447,5 +447,15 @@ configuration_options = {
         disabled_value = false,
         disabled_by = disable_by_non_win,
     },
+    {
+        name = "EnableClientSmooth",
+        label = translate({ en = "Client Smooth (Pred OFF)", zh = "客户端平滑(关预测)" }),
+        hover = translate({
+            en = "Display-only extrapolation for local player when movement prediction is OFF (experimental).",
+            zh = "关闭移动预测时，仅对本地玩家做显示层外推（实验性）。",
+        }),
+        options = toggle,
+        default = false,
+    },
 }
 --restart_required = true
