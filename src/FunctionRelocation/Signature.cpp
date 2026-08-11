@@ -22,9 +22,36 @@
 #include "ctx.hpp"
 #include "disasm.h"
 #include "config.hpp"
+#include "MatchPolicy.hpp"
+#include "MicroWindow.hpp"
 
+#include <cstring>
 #include <numeric>
 #include <set>
+#include <unordered_set>
+
+// Soft-match accept policy primitives (plan: function-relocation-match-v2
+// todo 1). Constants and accept_candidates live in match_policy; bring them
+// into file scope so the soft path can call them and so the locked values
+// are pinned at compile time. Scores are never serialized to SignatureInfo.
+namespace {
+    using namespace function_relocation::match_policy;
+    using function_relocation::match_policy::MatchCandidate;
+    using function_relocation::match_policy::AcceptResult;
+    using function_relocation::match_policy::accept_candidates;
+    // Compile-time pin of the locked accept constants. If the plan values
+    // drift, this static_assert fires and forces an explicit plan update.
+    static_assert(SCORE_T == 3.0f, "SCORE_T locked by plan");
+    static_assert(SCORE_M == 1.5f, "SCORE_M locked by plan");
+    static_assert(W_CONST == 10.0f, "W_CONST locked by plan");
+    static_assert(W_IMM == 4.0f, "W_IMM locked by plan");
+    static_assert(W_SIZE == 2.0f, "W_SIZE locked by plan");
+    static_assert(W_VOTE_CAP == 8.0f, "W_VOTE_CAP locked by plan");
+    static_assert(W_VOTE_PER_WINDOW == 1.0f, "W_VOTE_PER_WINDOW locked by plan");
+    static_assert(W_CALL_STILL == 1.0f, "W_CALL_STILL locked by plan");
+    static_assert(W_CALL_INLINED == 0.8f, "W_CALL_INLINED locked by plan");
+    static_assert(W_CALL_MISSING == -0.5f, "W_CALL_MISSING locked by plan");
+} // namespace
 
 static gboolean
 gum_memory_is_execute(gconstpointer address,
@@ -73,6 +100,10 @@ namespace function_relocation {
         }
         return true;
     }
+
+    // Forward declaration: calcBlockScore is defined after Creator but used by
+    // the micro-window generator to weight windows by their containing block.
+    static float calcBlockScore(CodeBlock *l);
 
     static auto regx1 = std::regex(R"(\[r(.)x \+ rax\*(\d+) (\+\-) 0x([0-9a-z]+)\])");
     static auto regx2 = std::regex("0x[0-9a-z]+");
@@ -255,6 +286,8 @@ namespace function_relocation {
                             auto bytes = insn.bytes;
                             auto size = insn.size;
 #if defined(__linux__)
+                            // LEA rxx,[rip+disp] → treat like relocatable imm (ASLR).
+                            // MOV rxx,[rip+disp] also appears in training code; only mask disp.
                             if (insn.id == X86_INS_LEA) {
                                 std::string reg{std::string_view{insn.op_str}.substr(0, 3)};
                                 if (reg[0] == 'r') {
@@ -273,11 +306,13 @@ namespace function_relocation {
                                 }
                             }
 #endif
+                            // Mask RIP-relative displacement (typical 7-byte encoding).
                             if (size >= 4) {
                                 signature.asm_codes.push_back(
                                         to_hex(bytes, bytes + 3) + make_unknown_string(size - 3));
                                 continue;
                             }
+                            break;
                         }
                         break;
                 }
@@ -298,6 +333,8 @@ namespace function_relocation {
             }
 
             // Validate pattern uniqueness on training module against original entry.
+            // Scan .text only: full module range on ELF includes PROT_NONE gaps that
+            // SIGSEGV under gum_memory_scan (seen on signature_updater create luaL_openlibs).
             MemorySignature scan1{signature.c_str(), signature_offset, false};
             scan1.log = !nolog;
             const auto &train_text = original->module->text;
@@ -316,6 +353,7 @@ namespace function_relocation {
                 if (training_hit != original->address) {
                     return nullptr;
                 }
+                // match_addr = training_hit - signature_offset must sit in Nucleus body.
                 const intptr_t train_match =
                         static_cast<intptr_t>(training_hit) - static_cast<intptr_t>(signature_offset);
                 if (train_match < static_cast<intptr_t>(original->address) ||
@@ -495,6 +533,647 @@ namespace function_relocation {
             return nullptr;
         }
 
+        // Decode the Nucleus-clamped body into a MicroInsn stream for the core
+        // micro-window generator. Reuses create_signature's per-insn wildcard
+        // rules (RIP-relative, call imm, external, module-imm mov) WITHOUT the
+        // recursive callee-prologue embed path. CALL and unconditional JMP are
+        // marked splits=true so the generator drops them as segment boundaries.
+        std::vector<micro_window::MicroInsn>
+        generate_micro_window_insns(const Function &fn) {
+            std::vector<micro_window::MicroInsn> out;
+            const uint64_t body_begin = fn.address;
+            const uint64_t body_end = fn.address + fn.size;
+            if (body_end <= body_begin) return out;
+
+            struct BlockRange {
+                uint64_t start;
+                uint64_t end;
+                float score;
+            };
+            std::vector<BlockRange> ranges;
+            for (auto ba : fn.blocks) {
+                auto *blk = fn.module->address_blocks[ba];
+                if (!blk) continue;
+                ranges.push_back({blk->address, blk->address + blk->size,
+                                  calcBlockScore(blk)});
+            }
+            std::sort(ranges.begin(), ranges.end(),
+                      [](const auto &a, const auto &b) { return a.start < b.start; });
+
+            struct InsnInfo {
+                uint64_t address;
+                size_t size;
+                x86_insn id;
+            };
+            std::vector<InsnInfo> infos;
+            disasm ds{reinterpret_cast<uint8_t *>(body_begin),
+                      static_cast<size_t>(body_end - body_begin)};
+            for (const auto &insn : ds) {
+                infos.push_back({insn.address, insn.size,
+                                 static_cast<x86_insn>(insn.id)});
+            }
+            if (infos.empty()) return out;
+
+            auto [sig, real_addr] = create_signature(
+                    fn.module, reinterpret_cast<uint8_t *>(body_begin),
+                    static_cast<size_t>(body_end - body_begin), infos.size(), 0);
+            (void) real_addr;
+
+            out.reserve(infos.size());
+            for (size_t k = 0; k < infos.size(); ++k) {
+                micro_window::MicroInsn m;
+                m.address = infos[k].address;
+                m.size = infos[k].size;
+                m.splits = (infos[k].id == X86_INS_CALL ||
+                            infos[k].id == X86_INS_JMP);
+                if (k < sig.asm_codes.size()) {
+                    m.hex = sig.asm_codes[k];
+                    if (!m.hex.empty() && m.hex.back() != ' ') m.hex += ' ';
+                }
+                auto it = std::upper_bound(
+                        ranges.begin(), ranges.end(), infos[k].address,
+                        [](uint64_t a, const BlockRange &r) { return a < r.start; });
+                if (it != ranges.begin()) {
+                    --it;
+                    if (infos[k].address >= it->start && infos[k].address < it->end)
+                        m.weight = it->score;
+                }
+                out.push_back(std::move(m));
+            }
+            return out;
+        }
+
+        // Extract FunctionFeatures (consts, stable imms, size) from a Function
+        // by aggregating over its CodeBlocks. Used for both train (original)
+        // and target (candidate entry) feature vectors.
+        match_policy::FunctionFeatures extract_features(const Function &fn) {
+            match_policy::FunctionFeatures feat;
+            feat.size = fn.size;
+            for (auto ba : fn.blocks) {
+                auto *blk = fn.module->address_blocks[ba];
+                if (!blk) continue;
+                for (const auto &s : blk->consts)
+                    feat.consts.push_back(s);
+                for (auto v : blk->const_numbers) {
+                    if (match_policy::is_stable_imm(v))
+                        feat.imms.push_back(v);
+                }
+                for (auto v : blk->const_offset_numbers) {
+                    if (match_policy::is_stable_imm(v))
+                        feat.imms.push_back(v);
+                }
+            }
+            return feat;
+        }
+
+        // Check whether a Function is in the module's export known_functions list.
+        bool is_known_function(const Function &fn) const {
+            if (fn.name.empty()) return false;
+            auto it = fn.module->known_functions.find(fn.name);
+            return it != fn.module->known_functions.end() && it->second == &fn;
+        }
+
+        // Collect eligible direct helper callees of the original (train) function
+        // and return their features (plan todo 4 flatten1).
+        // Eligibility: callee in same module text, Function size > 0,
+        // size <= 256 OR not in export known_functions, depth exactly 1.
+        std::vector<match_policy::FunctionFeatures> extract_helper_edges() {
+            std::vector<match_policy::FunctionFeatures> helpers;
+            std::set<uint64_t> seen;
+            for (auto ba : original->blocks) {
+                auto *blk = original->module->address_blocks[ba];
+                if (!blk) continue;
+                for (uint64_t callee : blk->call_functions) {
+                    if (!seen.insert(callee).second) continue;
+                    if (!original->module->in_text(callee)) continue;
+                    auto *fn = original->module->find_function(callee);
+                    if (!fn || fn->size == 0) continue;
+                    if (fn->size > 256 && is_known_function(*fn)) continue;
+                    helpers.push_back(extract_features(*fn));
+                }
+            }
+            return helpers;
+        }
+
+        // Collect callee features for one target candidate entry's direct call
+        // edges (for StillCall fingerprinting in the call-edit label).
+        std::vector<match_policy::FunctionFeatures>
+        extract_target_call_callees(const Function &entry) {
+            std::vector<match_policy::FunctionFeatures> callees;
+            std::set<uint64_t> seen;
+            for (auto ba : entry.blocks) {
+                auto *blk = entry.module->address_blocks[ba];
+                if (!blk) continue;
+                for (uint64_t callee : blk->call_functions) {
+                    if (!seen.insert(callee).second) continue;
+                    auto *fn = target->find_function(callee);
+                    if (!fn) continue;
+                    callees.push_back(extract_features(*fn));
+                }
+            }
+            return callees;
+        }
+
+        // Soft path (plan todo 2/3/4): generate all micro-windows for the
+        // original body, validate each on the training module, scan the
+        // target, collect (raw_match, entry) votes across all windows, and
+        // resolve via accept_candidates with feature-based scores.
+        // Returns the winning entry VA or nullptr.
+        // Match via train-body LEA string unique in both modules + single RIP xref.
+        void *scan_by_unique_const() {
+            if (!original || original->size == 0 || !original->module) return nullptr;
+            if (target->function_table.empty()) return nullptr;
+            if (target->text.base_address == 0 || target->text.size == 0) return nullptr;
+
+            auto find_c_string = [](uintptr_t base, size_t size,
+                                    const std::string &s) -> std::vector<uintptr_t> {
+                std::vector<uintptr_t> hits;
+                if (base == 0 || size <= s.size()) return hits;
+                const auto *p = reinterpret_cast<const char *>(base);
+                const auto *end = p + (size - s.size());
+                for (const char *q = p; q < end; ++q) {
+                    if (std::memcmp(q, s.data(), s.size()) == 0 && q[s.size()] == '\0') {
+                        hits.push_back(reinterpret_cast<uintptr_t>(q));
+                    }
+                }
+                return hits;
+            };
+
+            auto count_c_string = [&](ModuleSections &mod, const std::string &s) -> size_t {
+                size_t n = 0;
+                if (mod.rodata.base_address && mod.rodata.size) {
+                    n += find_c_string(mod.rodata.base_address, mod.rodata.size, s).size();
+                }
+                if (n == 0 && mod.details.range.base_address && mod.details.range.size) {
+                    n = find_c_string(mod.details.range.base_address, mod.details.range.size, s)
+                                .size();
+                }
+                return n;
+            };
+
+            std::vector<std::string> body_strs;
+            std::unordered_set<std::string> seen;
+            {
+                disasm ds{std::span{reinterpret_cast<uint8_t *>(original->address),
+                                    original->size}};
+                for (auto &insn: ds) {
+                    const auto &x86 = insn.detail->x86;
+                    if (x86.op_count != 2 || x86.operands[0].type != X86_OP_REG) continue;
+                    const char *str = nullptr;
+                    if (insn.id == X86_INS_LEA) {
+                        const auto &op = x86.operands[1];
+                        if (op.type == X86_OP_MEM && reg_is_ip(op.mem.base) &&
+                            op.mem.index == X86_REG_INVALID) {
+                            const auto tgt = insn.address + insn.size + op.mem.disp;
+                            if (original->module->in_module(tgt) &&
+                                !original->module->in_text(tgt)) {
+                                str = reinterpret_cast<const char *>(tgt);
+                            }
+                        }
+                    } else if (insn.id == X86_INS_MOV &&
+                               x86.operands[1].type == X86_OP_IMM) {
+                        const auto tgt = static_cast<uintptr_t>(x86.operands[1].imm);
+                        if (original->module->in_module(tgt) &&
+                            !original->module->in_text(tgt)) {
+                            str = reinterpret_cast<const char *>(tgt);
+                        }
+                    }
+                    if (!str) continue;
+                    size_t len = 0;
+                    bool ok = true;
+                    while (len < 256 && str[len] != '\0') {
+                        const unsigned char c = static_cast<unsigned char>(str[len]);
+                        if (c < 0x20 || c > 0x7e) {
+                            ok = false;
+                            break;
+                        }
+                        ++len;
+                    }
+                    if (!ok || len < 3 || str[len] != '\0') continue;
+                    std::string s(str, len);
+                    if (!seen.insert(s).second) continue;
+                    body_strs.push_back(std::move(s));
+                }
+            }
+            if (body_strs.empty()) {
+                if (auto logger = spdlog::get(logger_name)) {
+                    logger->info("scan_by_unique_const: {} no LEA strings in train body",
+                                 original->name);
+                }
+                return nullptr;
+            }
+
+            auto scan_str_xrefs = [&](uint64_t str_va) -> std::unordered_map<uint64_t, uintptr_t> {
+                std::unordered_map<uint64_t, uintptr_t> entry_earliest;
+                const auto *text = reinterpret_cast<const uint8_t *>(target->text.base_address);
+                const size_t tsz = target->text.size;
+                const auto note = [&](uint64_t insn_va) {
+                    if (insn_va < limit_address) return;
+                    const uint64_t e = target->function_table.containing(insn_va);
+                    if (e == 0 || e < limit_address) return;
+                    auto it = entry_earliest.find(e);
+                    if (it == entry_earliest.end() || insn_va < it->second) {
+                        entry_earliest[e] = insn_va;
+                    }
+                };
+                for (size_t i = 0; i + 5 <= tsz; ++i) {
+                    const uint8_t b0 = text[i];
+                    const uint64_t insn_va = target->text.base_address + i;
+                    // PIC: REX + LEA/MOV r64,[rip+disp32] (7 bytes)
+                    if (i + 7 <= tsz && (b0 >= 0x40 && b0 <= 0x4f) &&
+                        (text[i + 1] == 0x8d || text[i + 1] == 0x8b) &&
+                        (text[i + 2] & 0xC7) == 0x05) {
+                        int32_t disp = 0;
+                        std::memcpy(&disp, text + i + 3, sizeof(disp));
+                        if (static_cast<uint64_t>(static_cast<int64_t>(insn_va + 7) + disp) ==
+                            str_va) {
+                            note(insn_va);
+                        }
+                    }
+                    // Non-PIC / large-code: mov r32, imm32 (B8+rd id) — game open_io style
+                    // e.g. be 00 c9 87 00  => mov esi, 0x87c900
+                    if (b0 >= 0xB8 && b0 <= 0xBF) {
+                        uint32_t imm = 0;
+                        std::memcpy(&imm, text + i + 1, sizeof(imm));
+                        if (static_cast<uint64_t>(imm) == (str_va & 0xffffffffull) &&
+                            (str_va >> 32) == 0) {
+                            note(insn_va);
+                        }
+                    }
+                }
+                return entry_earliest;
+            };
+
+            std::ranges::sort(body_strs, [](const auto &a, const auto &b) {
+                return a.size() > b.size();
+            });
+
+            for (const auto &s: body_strs) {
+                if (count_c_string(*original->module, s) != 1) {
+                    if (auto logger = spdlog::get(logger_name)) {
+                        logger->info("scan_by_unique_const: {} train '{}' not unique",
+                                     original->name, s);
+                    }
+                    continue;
+                }
+                std::vector<uintptr_t> hits;
+                if (target->rodata.base_address != 0 && target->rodata.size != 0) {
+                    hits = find_c_string(target->rodata.base_address, target->rodata.size, s);
+                }
+                if (hits.empty() && target->details.range.base_address != 0) {
+                    hits = find_c_string(target->details.range.base_address,
+                                         target->details.range.size, s);
+                }
+                if (hits.size() != 1) {
+                    if (auto logger = spdlog::get(logger_name)) {
+                        logger->info("scan_by_unique_const: {} target '{}' hits={}",
+                                     original->name, s, hits.size());
+                    }
+                    continue;
+                }
+                auto entry_earliest = scan_str_xrefs(hits[0]);
+                // Prefer entries where the xref is near the prologue (first 24B) —
+                // openers like open_io load their key string immediately.
+                // Fall back to size-ratio filter when multiple xrefs exist.
+                std::vector<std::pair<uint64_t, uintptr_t>> candidates;
+                candidates.reserve(entry_earliest.size());
+                for (const auto &[e, m]: entry_earliest) {
+                    if (auto *fn = target->find_function(e); fn && fn->size > 0 && original->size > 0) {
+                        const double ratio = static_cast<double>(fn->size) /
+                                            static_cast<double>(original->size);
+                        if (ratio < 0.25 || ratio > 6.0) continue;
+                    }
+                    candidates.emplace_back(e, m);
+                }
+                if (candidates.empty()) {
+                    if (auto logger = spdlog::get(logger_name)) {
+                        logger->info("scan_by_unique_const: {} '{}' no size-ok xrefs (raw={})",
+                                     original->name, s, entry_earliest.size());
+                    }
+                    continue;
+                }
+                if (candidates.size() > 1) {
+                    std::vector<std::pair<uint64_t, uintptr_t>> near;
+                    for (const auto &[e, m]: candidates) {
+                        if (m >= e && m - e < 24) near.emplace_back(e, m);
+                    }
+                    if (near.size() == 1) {
+                        candidates = std::move(near);
+                    } else {
+                        if (auto logger = spdlog::get(logger_name)) {
+                            logger->info("scan_by_unique_const: {} '{}' xref_entries={}",
+                                         original->name, s, candidates.size());
+                        }
+                        continue;
+                    }
+                }
+                const auto [entry, match] = candidates.front();
+                last_training_offset = 0;
+                if (signature_info) {
+                    signature_info->pattern.clear();
+                    signature_info->pattern_offset = 0;
+                }
+                soft_path_active = false;
+                if (auto logger = spdlog::get(logger_name)) {
+                    logger->info("scan_by_unique_const: {} via '{}' -> {:#x} (xref {:#x})",
+                                 original->name, s, entry, match);
+                }
+                return reinterpret_cast<void *>(entry);
+            }
+            return nullptr;
+        }
+
+        // Bytes from entry to first RET / external JMP (max 128). Nucleus spans
+        // often overshoot small leaf exports (loadbuffer ~33B inside larger span).
+        static size_t effective_leaf_size(const Function &fn) {
+            if (fn.size == 0) return 0;
+            const size_t cap = std::min(fn.size, size_t{128});
+            disasm ds{std::span{reinterpret_cast<uint8_t *>(fn.address), cap}};
+            for (auto &insn: ds) {
+                if (insn.id == X86_INS_RET || insn.id == X86_INS_RETF ||
+                    insn.id == X86_INS_RETFQ) {
+                    return static_cast<size_t>(insn.address + insn.size - fn.address);
+                }
+                if (insn.id == X86_INS_JMP) {
+                    const auto &op = insn.detail->x86.operands[0];
+                    if (op.type == X86_OP_IMM) {
+                        const uint64_t t = static_cast<uint64_t>(op.imm);
+                        if (t < fn.address || t >= fn.address + fn.size) {
+                            return static_cast<size_t>(insn.address + insn.size - fn.address);
+                        }
+                    }
+                }
+            }
+            return cap;
+        }
+
+        // Short / distinctive bodies: whole-body hex pattern (same wildcards as
+        // create_signature). Accept only when train hits stay inside original and
+        // target hits collapse to a single Nucleus entry. Covers tiny exports
+        // (e.g. lua_pushnil 17B) where micro-windows lack SCORE_T signal.
+        void *scan_by_short_body() {
+            if (!original || original->size == 0) return nullptr;
+            if (target->function_table.empty()) return nullptr;
+            if (!original->module) return nullptr;
+            const size_t leaf = effective_leaf_size(*original);
+            if (leaf == 0 || leaf > 96) return nullptr;
+
+            auto [sig, real_addr] = create_signature(
+                    original->module, reinterpret_cast<uint8_t *>(original->address),
+                    leaf, static_cast<size_t>(-1), 0);
+            auto pattern = trim(sig.to_string(false));
+            if (pattern.empty()) return nullptr;
+            // Need some fixed bytes (not all wildcards).
+            bool any_fixed = false;
+            for (char c: pattern) {
+                if (c != '?' && c != ' ') {
+                    any_fixed = true;
+                    break;
+                }
+            }
+            if (!any_fixed) return nullptr;
+
+            const int train_po = static_cast<int>(
+                    static_cast<intptr_t>(original->address) -
+                    static_cast<intptr_t>(real_addr));
+
+            const auto &train_text = original->module->text;
+            if (train_text.base_address == 0 || train_text.size == 0) return nullptr;
+            MemorySignature train_scan(pattern.c_str(), train_po, false);
+            train_scan.log = !nolog;
+            train_scan.scan(train_text.base_address, train_text.size);
+            if (train_scan.targets.empty()) return nullptr;
+            for (auto t: train_scan.targets) {
+                if (!original->in_function(t)) return nullptr;
+            }
+
+            MemorySignature tgt_scan(pattern.c_str(), 0, false);
+            tgt_scan.log = !nolog;
+            if (limit_address <= target->text.base_address) return nullptr;
+            tgt_scan.scan(limit_address,
+                          target->text.size - (limit_address - target->text.base_address));
+            if (tgt_scan.targets.empty()) return nullptr;
+
+            std::unordered_map<uint64_t, uintptr_t> entry_earliest;
+            for (auto m: tgt_scan.targets) {
+                if (m < limit_address) continue;
+                const uint64_t e = target->function_table.containing(m);
+                if (e == 0 || e < limit_address) continue;
+                auto it = entry_earliest.find(e);
+                if (it == entry_earliest.end() || m < it->second) {
+                    entry_earliest[e] = m;
+                }
+            }
+            if (entry_earliest.size() != 1) return nullptr;
+
+            const auto [entry, match] = *entry_earliest.begin();
+            // Size gate uses leaf length (not overshot Nucleus span).
+            if (auto *fn = target->find_function(entry); fn && fn->size > 0) {
+                const size_t tgt_leaf = effective_leaf_size(*fn);
+                if (tgt_leaf > 0 && leaf > 0) {
+                    const double ratio = static_cast<double>(tgt_leaf) /
+                                        static_cast<double>(leaf);
+                    if (ratio < 0.5 || ratio > 2.0) return nullptr;
+                }
+            }
+
+            const int target_po = static_cast<int>(
+                    static_cast<intptr_t>(entry) - static_cast<intptr_t>(match));
+            last_training_offset = train_po;
+            if (signature_info) {
+                signature_info->pattern = pattern;
+                signature_info->pattern_offset = target_po;
+            }
+            soft_path_active = false;
+            if (auto logger = spdlog::get(logger_name)) {
+                logger->info("scan_by_short_body: {} -> {:#x} (train_size={})",
+                             original->name, entry, original->size);
+            }
+            return reinterpret_cast<void *>(entry);
+        }
+
+        void *scan_by_micro_windows() {
+            if (!original || original->size == 0) return nullptr;
+            if (target->function_table.empty()) return nullptr;
+
+            auto insns = generate_micro_window_insns(*original);
+            auto windows = micro_window::generate_micro_windows(insns,
+                                                                 original->address);
+            if (windows.empty()) return nullptr;
+
+            struct VoteExt {
+                uintptr_t raw_match;
+                uint64_t entry;
+                size_t window_idx;
+            };
+            std::vector<VoteExt> votes_ext;
+
+            for (size_t wi = 0; wi < windows.size(); ++wi) {
+                const auto &w = windows[wi];
+
+                MemorySignature train_scan(w.pattern.c_str(),
+                                           w.train_signature_offset, false);
+                train_scan.log = !nolog;
+                const auto &train_text = original->module->text;
+                if (train_text.base_address == 0 || train_text.size == 0) continue;
+                train_scan.scan(train_text.base_address, train_text.size);
+                if (train_scan.targets.empty()) continue;
+                bool ok = true;
+                for (auto t : train_scan.targets) {
+                    if (!original->in_function(t)) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok) continue;
+
+                MemorySignature tgt_scan(w.pattern.c_str(), 0, false);
+                tgt_scan.log = !nolog;
+                assert(limit_address > target->text.base_address);
+                tgt_scan.scan(limit_address,
+                              target->text.size -
+                                      (limit_address - target->text.base_address));
+                for (auto m : tgt_scan.targets) {
+                    if (m < limit_address) continue;
+                    uint64_t e = target->function_table.containing(m);
+                    if (e == 0 || e < limit_address) continue;
+                    votes_ext.push_back({m, e, wi});
+                }
+            }
+
+            if (votes_ext.empty()) return nullptr;
+
+            std::vector<micro_window::HitVote> votes;
+            votes.reserve(votes_ext.size());
+            for (const auto &v : votes_ext)
+                votes.push_back({v.raw_match, v.entry});
+
+            // Extract train features from the original function body.
+            const auto train_own = extract_features(*original);
+
+            // Collect eligible helper edges and build flatten1 train features.
+            auto helper_edges = extract_helper_edges();
+            const auto train_flat = match_policy::flatten1_features(train_own, helper_edges);
+
+            // Extract per-entry target features and call-edge callees.
+            std::unordered_map<uint64_t, match_policy::FunctionFeatures> target_feats;
+            std::unordered_map<uint64_t, std::vector<match_policy::FunctionFeatures>> target_callees;
+            for (const auto &v : votes_ext) {
+                if (target_feats.count(v.entry)) continue;
+                auto *fn = target->find_function(v.entry);
+                if (!fn) continue;
+                target_feats[v.entry] = extract_features(*fn);
+                target_callees[v.entry] = extract_target_call_callees(*fn);
+            }
+
+            auto candidates = micro_window::build_feature_candidates(
+                    votes, train_own, train_flat, helper_edges,
+                    target_feats, target_callees);
+            auto candidates_for_log = candidates; // copy for fail-closed logging
+            auto result = match_policy::accept_candidates(std::move(candidates));
+            if (!result) {
+                if (auto logger = spdlog::get(logger_name)) {
+                    const auto s = micro_window::summarize_candidates(candidates_for_log);
+                    if (s.count == 0) {
+                        logger->warn("scan_by_micro_windows: fail-closed for {} (no candidates)",
+                                     original->name);
+                    } else if (!s.has_second) {
+                        logger->warn("scan_by_micro_windows: fail-closed for {} "
+                                     "sole entry={:#x} score={:.3f} (<SCORE_T or disagree)",
+                                     original->name, s.best_entry, s.best_score);
+                    } else {
+                        logger->warn("scan_by_micro_windows: fail-closed for {} "
+                                     "best entry={:#x} score={:.3f} "
+                                     "second entry={:#x} score={:.3f} margin={:.3f} entries={}",
+                                     original->name, s.best_entry, s.best_score,
+                                     s.second_entry, s.second_score, s.margin, s.count);
+                    }
+                }
+                return nullptr;
+            }
+
+            std::string chosen_pattern;
+            int chosen_train_offset = 0;
+            size_t chosen_len = 0;
+            bool found = false;
+            for (const auto &v : votes_ext) {
+                if (v.raw_match != result->chosen_raw_match ||
+                    v.entry != result->entry)
+                    continue;
+                const auto &w = windows[v.window_idx];
+                if (!found || w.pattern.size() > chosen_len) {
+                    chosen_pattern = w.pattern;
+                    chosen_train_offset = w.train_signature_offset;
+                    chosen_len = w.pattern.size();
+                    found = true;
+                }
+            }
+            if (!found) return nullptr;
+
+            const int target_po = static_cast<int>(
+                    static_cast<intptr_t>(result->entry) -
+                    static_cast<intptr_t>(result->chosen_raw_match));
+            last_training_offset = chosen_train_offset;
+            if (signature_info) {
+                signature_info->pattern = chosen_pattern;
+                signature_info->pattern_offset = target_po;
+            }
+            // Cache the soft-path context so limit_signature can re-validate
+            // shortened patterns against the SAME vote+margin+feature accept
+            // policy without re-extracting features or re-scanning micro-windows.
+            soft_path_active = true;
+            soft_winning_entry = result->entry;
+            soft_train_own = train_own;
+            soft_train_flat = train_flat;
+            soft_helper_edges = helper_edges;
+            soft_target_feats = target_feats;
+            soft_target_callees = target_callees;
+            return reinterpret_cast<void *>(result->entry);
+        }
+
+        // Re-validate a single shortened pattern against the cached soft-path
+        // context (vote+margin+feature accept policy). Used by limit_signature
+        // so that pattern shortening never falls back to unique-byte-only
+        // scan_by_signature, which would reintroduce pick-first. Returns true
+        // and updates signature_info when the shortened pattern soft-accepts to
+        // the SAME entry previously chosen by scan_by_micro_windows.
+        bool soft_revalidate_pattern(const std::string &pattern, int train_offset) {
+            if (!soft_path_active) return false;
+            if (target->function_table.empty()) return false;
+
+            MemorySignature scan(pattern.c_str(), /*pattern_offset=*/0, false);
+            scan.log = !nolog;
+            assert(limit_address > target->text.base_address);
+            scan.scan(limit_address, target->text.size -
+                                             (limit_address - target->text.base_address));
+
+            std::vector<micro_window::HitVote> votes;
+            for (auto m : scan.targets) {
+                if (m < limit_address) continue;
+                const uint64_t e = target->function_table.containing(m);
+                if (e == 0 || e < limit_address) continue;
+                votes.push_back({m, e});
+            }
+            if (votes.empty()) return false;
+
+            auto candidates = micro_window::build_feature_candidates(
+                    votes, soft_train_own, soft_train_flat, soft_helper_edges,
+                    soft_target_feats, soft_target_callees);
+            auto result = match_policy::accept_candidates(std::move(candidates));
+            if (!result) return false;
+            if (result->entry != soft_winning_entry) return false;
+
+            const int target_po = static_cast<int>(
+                    static_cast<intptr_t>(result->entry) -
+                    static_cast<intptr_t>(result->chosen_raw_match));
+            last_training_offset = train_offset;
+            if (signature_info) {
+                signature_info->pattern = pattern;
+                signature_info->pattern_offset = target_po;
+            }
+            return true;
+        }
+
         bool limit_signature() {
             nolog = true;
             struct S{
@@ -507,7 +1186,8 @@ namespace function_relocation {
             if (signature.size() <= 8 * 2 + 7)
                 return true;
             // Shorten using training-module offset (byte units). Target-local po is
-            // rewritten by scan_by_signature on each successful candidate.
+            // rewritten by scan_by_signature (legacy) or soft_revalidate_pattern
+            // (soft path) on each successful candidate.
             const int train_po = last_training_offset;
             for (size_t length = 8 * 2 + 7; length < signature.size(); length += 3) {
                 for (size_t begin = 0; begin < length; begin += 3) {
@@ -515,7 +1195,11 @@ namespace function_relocation {
                     // begin is hex-string index ("xx " * n); convert to byte offset.
                     const int byte_begin = static_cast<int>(begin / 3);
                     const int offset = train_po - byte_begin;
-                    if (scan_by_signature(new_s, offset)) {
+                    if (soft_path_active) {
+                        if (soft_revalidate_pattern(new_s, offset)) {
+                            return true;
+                        }
+                    } else if (scan_by_signature(new_s, offset)) {
                         return true;
                     }
                 }
@@ -534,6 +1218,18 @@ namespace function_relocation {
         // Last training-module pattern_offset used for validation (entry - match).
         // Distinct from signature_info->pattern_offset which is target-local after resolve.
         int last_training_offset = 0;
+
+        // Soft-path context cached by scan_by_micro_windows on a successful
+        // accept, so limit_signature can re-validate shortened patterns via
+        // the SAME vote+margin+feature accept policy (soft_revalidate_pattern)
+        // instead of falling back to scan_by_signature uniqueness.
+        bool soft_path_active = false;
+        uint64_t soft_winning_entry = 0;
+        match_policy::FunctionFeatures soft_train_own;
+        match_policy::FunctionFeatures soft_train_flat;
+        std::vector<match_policy::FunctionFeatures> soft_helper_edges;
+        std::unordered_map<uint64_t, match_policy::FunctionFeatures> soft_target_feats;
+        std::unordered_map<uint64_t, std::vector<match_policy::FunctionFeatures>> soft_target_callees;
     };
 
 
@@ -598,35 +1294,29 @@ namespace function_relocation {
     void *
     fix_func_address_by_signature(ModuleSections &target, const Function &original, uintptr_t limit_address,
                                   SignatureInfo *signature) {
-        static std::unordered_map<std::string, SignatureInfo> knowns_signature = {
-#ifdef __linux__
-                {"lua_pushvalue"s, {0, "48 89 0A 8B 40 08 89 42  08 48 83 43 10 10 5B C3"s, -0x10}},
-                {"lua_insert"s, {0, "48 89 D1 48 83 EA 10 4C  29 C9 4C 8B 04 31 4C 89"s, -0x20}},
-                {"lua_xmove"s, {0, "48 8B 4F 10 48 8B 56 10  48 01 C1 48 83 C0 10 4C"s, -0x30}},
-                {"lua_remove"s, {0, "48 83 E9 10  48 89 4B 10 5B C3"s, -0x44}},
-                {"lua_pushnil"s, {0, "48 8B 47 10 C7 40 08 00 00 00 00 48 83 47 10 10 C3"s, 0x0}},
-                {"lua_replace"s, {0, "48 8B 53 10 81 FD EE D8"s, -0x18}},
-                {"lua_pushvfstring"s, {0, "C7 44 24 0C 30 00 00 00 48 89 44 24 18 E8 ?? ?? ?? ?? 48  81 C4 D8 00 00 00 C3"s, -0x75}},
-                {"luaopen_io"s, {0, "48 89 FB E8 ?? ?? ?? ?? 48 89 DF BE FF FF FF FF"s, -0x6}},
-                {"luaL_openlib"s, {0, "41 57 41 56 49 89 F6 41 55 49 89 D5 41 54"s, 0}},
-                {"luaL_loadbuffer"s, {0, "48 83 ec 18 48 89 34 24 48 89 54"s, 0}},
-#elifdef __APPLE__
-                //season： use different register
-                {"lua_rawset"s, {0, "49 89 C6 49 8B 5F 10 48 8B 30 48 8D 53 E0 4C 89 FF E8"s, -0xD}},
-                {"luaL_loadbuffer"s, {0, "48 83 EC 18 48 8D 44 24 08 48 89 30 48 89 50 08 48 8D 35 0D 00 00 00"s, 0x0}},
-                {"lua_concat"s, {0, "7C 44  41 80 BE C0 00 00 00 00"s, -0xc}},
-                {"lua_rawgeti"s, {0, "89 41 08 48 83 43 10 10 48 83 C4 08"s, -0x24}},
-                {"lua_getfield"s, {0, "C7 42 08 04 00 00 00 48 8B 4B 10 48 89 DF"s, -0x33}},
-                {"lua_pushvfstring"s, {0, "48 3B 48 70 72 08 48 89 DF E8 ?? ?? ?? ?? 48 89 DF 4C 89 FE"s, -0x1f}},
-                {"lua_pushstring"s, {0, "49 8B 46 10 C7 40 08 00 00 00 00 48 83 C0 10 49 89 46 10 48 83 C4 08"s, -0x2c}},
-                {"luaopen_io"s, {0, "31 F6 E8 ?? ?? ?? ?? 48 89 DF BE 02 00 00 00 BA 01 00 00 00 E8"s, -0x3e}}
-#endif
-        };
+        // knowns_signature table intentionally empty: soft micro-window +
+        // Nucleus FunctionTable only (no hardcoded seed patterns).
         spdlog::get(logger_name)->warn("fix_func_address_by_signature: {}", original.name);
         Creator creator{&target, &original, limit_address, signature};
-        if (knowns_signature.contains(original.name)) {
-            const auto &pattern = knowns_signature[original.name];
-            if (auto ptr = creator.scan_by_signature(pattern.pattern, pattern.pattern_offset, true); ptr) return ptr;
+        // Soft path (FunctionTable present): micro-window generator splits at
+        // CALL/JMP and resolves multi-hit raw matches by entry voting. This
+        // replaces the scan_by_block sliding that could span CALL and embed
+        // callee prologues. When the FunctionTable is empty, fall through to
+        // the legacy scan_by_block + LCS path.
+        if (!target.function_table.empty()) {
+            if (auto ptr = creator.scan_by_unique_const(); ptr) {
+                creator.limit_signature();
+                return ptr;
+            }
+            if (auto ptr = creator.scan_by_short_body(); ptr) {
+                creator.limit_signature();
+                return ptr;
+            }
+            if (auto ptr = creator.scan_by_micro_windows(); ptr) {
+                creator.limit_signature();
+                return ptr;
+            }
+            return nullptr;
         }
         // find the block to signature
         auto blocks = original.blocks;
@@ -660,6 +1350,15 @@ namespace function_relocation {
                 }
             }
         }
+#ifdef __linux__
+        assert(false);
+        return nullptr;
+#else
+        // LCS is a last-resort heuristic that compares entry-aligned asm windows.
+        // When a target FunctionTable is present, signatures must come from
+        // scan_by_block/scan_by_signature so pattern_offset is target-local.
+        // Accepting LCS would return an entry (or raw match site) without rewriting
+        // training pattern_offset — forbidden under the Nucleus contract.
         if (!target.function_table.empty()) {
             if (auto logger = spdlog::get(logger_name)) {
                 logger->error(
@@ -669,9 +1368,6 @@ namespace function_relocation {
             }
             return nullptr;
         }
-#ifdef __linux__
-        return nullptr;
-#else
 
         auto &function_address = creator.function_address;
         if (function_address.empty() && !target.functions.empty()) {
