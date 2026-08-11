@@ -15,7 +15,6 @@ set(SOURCE
         ctx.cpp
         disasm.h
         ScanCtx.cpp
-        ExectuableSignature.cpp
         FunctionRanges.cpp
         NucleusAdapter.cpp
 )

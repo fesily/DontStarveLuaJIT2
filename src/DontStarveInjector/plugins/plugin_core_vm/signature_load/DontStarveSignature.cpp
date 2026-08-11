@@ -20,7 +20,6 @@
 #include "NucleusAdapter.hpp"
 #include "missfunc.h"
 #include "range/v3/range/conversion.hpp"
-#include "ExectuableSignature.hpp"
 #include "util/gum_platform.hpp"
 
 #include <ranges>
@@ -137,9 +136,13 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(uintptr_t 
 }
 
 std::expected<SignatureUpdater, std::string>
-SignatureUpdater::create_or_update(bool isClient, uintptr_t luaModuleBaseAddress) {
+SignatureUpdater::create_or_update(bool isClient, uintptr_t luaModuleBaseAddress,
+                                   std::string signatures_path) {
     SignatureUpdater updater;
     SignatureJson json{isClient};
+    if (!signatures_path.empty()) {
+        json.file_path = std::move(signatures_path);
+    }
     auto signatures = json.read_from_signatures();
     if (!signatures) {
         auto res = create_signature(luaModuleBaseAddress, [&json](auto &v) { json.update_signatures(v); });
@@ -173,12 +176,6 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
     const auto &game_path = get_module_path(game_name, targetLuaModuleBase);
     function_relocation::ModuleSections modulelua51{}, moduleMain{};
 
-#ifndef _WIN32
-    auto fileSignature = function_relocation::FileSignature::read_file_signature(
-            function_relocation::FileSignature::file_path);
-    if (fileSignature)
-        fileSignature->fix_ptr();
-#endif
     if (!init_module_signature(lua51_path.c_str(), 0, modulelua51) ||
         !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain)
             ) {
@@ -318,17 +315,6 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                 }
             }
         }
-#ifndef _WIN32
-        if (target == 0 || target < targetLuaModuleBase) {
-            if (fileSignature) {
-                auto iter = fileSignature->section.known_functions.find(name);
-                if (iter != fileSignature->section.known_functions.end()) {
-                    auto fn = iter->second;
-                    target = moduleMain.try_fix_func_address(*fn, &signature, targetLuaModuleBase);
-                }
-            }
-        }
-#endif
         if (target == 0 || target < targetLuaModuleBase)
             target = moduleMain.try_fix_func_address(*originalFunc,
                                                      &signature, targetLuaModuleBase);

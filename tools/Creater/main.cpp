@@ -40,12 +40,20 @@ int update(bool isClient, const char *path) {
         return 1;
     }
 
-    auto updater = SignatureUpdater::create(luaModuleSignature.target_address);
+    // Tools: no plugin_core_vm → pass Mod/signatures_*.json explicitly (no CWD/bin64).
+    using namespace std::literals;
+    const auto sig_path =
+            (std::filesystem::path{worker_dir} /
+             ("signatures_"s + (isClient ? "client"s : "server"s) + ".json"))
+                    .string();
+    auto updater = SignatureUpdater::create_or_update(isClient, luaModuleSignature.target_address,
+                                                      sig_path);
     if (!updater) {
         fprintf(stderr, "%s", updater.error().c_str());
         return 1;
     }
     SignatureJson json{isClient};
+    json.file_path = sig_path;
     json.update_signatures(updater->signatures);
     return 0;
 }
@@ -69,15 +77,7 @@ int main()
 
 #include <dlfcn.h>
 #include <chrono>
-#include "ExectuableSignature.hpp"
 #include "ctx.hpp"
-
-static void create_signature() {
-    function_relocation::init_ctx();
-    auto succcess = function_relocation::FileSignature::create_file_signature(gum_module_get_path(gum_process_get_main_module()));
-    spdlog::info("create_signature:{}", succcess);
-    exit(!succcess);
-}
 
 static bool (*orgin)(uint32_t unOwnAppID);
 
@@ -124,11 +124,7 @@ __attribute__((constructor)) void init() {
     gum_init_embedded();
     auto path = std::filesystem::path(gum_module_get_path(gum_process_get_main_module())).filename().string();
     if (!path.contains("dontstarve")) {
-        if (path.contains("lua51")) {
-            std::thread(create_signature).detach();
-        } else {
-            gum_deinit_embedded();
-        }
+        gum_deinit_embedded();
         return;
     }
 

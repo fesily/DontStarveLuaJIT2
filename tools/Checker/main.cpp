@@ -34,7 +34,11 @@ bool loadModule(const char *path) {
 }
 
 int check(const char *path, bool isClient) {
+    using namespace std::literals;
     SignatureJson sj{isClient};
+    sj.file_path = (std::filesystem::path{worker_dir} /
+                    ("signatures_"s + (isClient ? "client"s : "server"s) + ".json"))
+                           .string();
     auto signatures = sj.read_from_signatures().value();
     fprintf(stderr, "game_path:\t%s\n", path);
     if (!loadModule(path))
