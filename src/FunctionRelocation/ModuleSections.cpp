@@ -219,16 +219,17 @@ namespace function_relocation {
                                       uint64_t image_base) {
         sections.function_table.clear();
         auto log = spdlog::get(logger_name);
-        if (image_base == 0 || image_table.empty()) {
+        // ELF ET_DYN uses image_base=0 (RVA-like section VMAs). Only empty tables are invalid.
+        if (image_table.empty()) {
             if (log) {
-                log->error("apply_nucleus_function_table: empty table or image_base=0 for {}",
+                log->error("apply_nucleus_function_table: empty table for {}",
                            sections.details.path);
             }
             return false;
         }
 
         const auto process_base = sections.details.range.base_address;
-        // process_va = process_base + (image_va - image_base)
+        // process_va = process_base + (image_va - image_base); image_base may be 0 on ELF
         for (const auto &sp: image_table.spans()) {
             if (sp.end <= sp.start) {
                 continue;

@@ -138,7 +138,8 @@ namespace function_relocation {
     // Remap Nucleus image-VA table into process VA, store on sections.function_table,
     // and set Function::size from span_containing (authoritative body size).
     // Functions without a containing Nucleus span get size 0 (no residual heuristics).
-    // Returns false if image_base is 0 or no sizes could be applied.
+    // Returns false if image_table is empty or no sizes could be applied.
+    // image_base may be 0 (ELF ET_DYN RVA space).
     FUNCTION_RELOCATION_API bool apply_nucleus_function_table(ModuleSections &sections,
                                                              const FunctionTable &image_table,
                                                              uint64_t image_base);
