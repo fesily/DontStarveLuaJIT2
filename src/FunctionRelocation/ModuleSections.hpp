@@ -115,7 +115,12 @@ namespace function_relocation {
 
         // Process-VA Nucleus spans (preferred ImageBase remapped to load base).
         // Empty until apply_nucleus_function_table runs for this module.
+        // THIS is the sole authority for function start|end|size.
         FunctionTable function_table;
+
+        // Symbol names collected during init (before Nucleus rebuild). address -> name.
+        // Used only to label Function objects after FunctionTable is applied.
+        std::unordered_map<uintptr_t, std::string> symbol_names;
 
         void set_known_function(uintptr_t addr, const char* name) {
             if (auto func = find_function(addr); func) {
@@ -132,15 +137,22 @@ namespace function_relocation {
         FUNCTION_RELOCATION_API uintptr_t try_fix_func_address(const Function &original, SignatureInfo* maybe_addr, uintptr_t limit_address);
     };
 
+    // Load section ranges + symbol name map only. Does NOT invent function
+    // boundaries (no CALL/FDE/ret heuristics). Call apply_nucleus_function_table
+    // then scan_module_function_features to populate Function bodies.
     FUNCTION_RELOCATION_API bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections);
     FUNCTION_RELOCATION_API bool get_module_sections(const char *path, ModuleSections &sections);
 
-    // Remap Nucleus image-VA table into process VA, store on sections.function_table,
-    // and set Function::size from span_containing (authoritative body size).
-    // Functions without a containing Nucleus span get size 0 (no residual heuristics).
-    // Returns false if image_table is empty or no sizes could be applied.
+    // Remap Nucleus image-VA table into process VA (sole start|end authority).
+    // Rebuilds sections.functions from spans (one Function per span start).
+    // Labels known exports via symbol_names. Does NOT split on ScanCtx heuristics.
     // image_base may be 0 (ELF ET_DYN RVA space).
+    // Returns false if image_table is empty after remap.
     FUNCTION_RELOCATION_API bool apply_nucleus_function_table(ModuleSections &sections,
                                                              const FunctionTable &image_table,
                                                              uint64_t image_base);
+
+    // Disasm each Function with size>0 for feature blocks (consts/calls/imms).
+    // Requires apply_nucleus_function_table first. Does not invent starts.
+    FUNCTION_RELOCATION_API bool scan_module_function_features(ModuleSections &sections);
 }
