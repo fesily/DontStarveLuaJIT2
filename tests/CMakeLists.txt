@@ -486,3 +486,66 @@ if (WIN32)
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif()
 
+# Soft-match accept policy primitives (plan function-relocation-match-v2 todo 1).
+# Header-only: depends only on MatchPolicy.hpp + the C++23 standard library, so
+# the test is portable across all platforms that build function_relocation.
+add_executable(test_match_accept_policy
+    ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_match_accept_policy.cpp)
+target_include_directories(test_match_accept_policy PRIVATE
+    ${FUNCTION_RELOCATION_INCLUDE_DIR})
+target_compile_features(test_match_accept_policy PRIVATE cxx_std_23)
+add_test(NAME match_accept_policy COMMAND test_match_accept_policy)
+
+# Micro-window pattern generator + multi-hit same-entry resolver (plan todo 2).
+# Header-only: depends on MatchPolicy.hpp + MicroWindow.hpp + the C++23 stdlib.
+add_executable(test_micro_windows
+    ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_micro_windows.cpp)
+target_include_directories(test_micro_windows PRIVATE
+    ${FUNCTION_RELOCATION_INCLUDE_DIR})
+target_compile_features(test_micro_windows PRIVATE cxx_std_23)
+add_test(NAME micro_windows COMMAND test_micro_windows)
+
+# Soft multi-feature scoring + twin fail-closed (plan todo 3).
+# Header-only: depends on MatchPolicy.hpp + MicroWindow.hpp + the C++23 stdlib.
+add_executable(test_soft_score
+    ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_soft_score.cpp)
+target_include_directories(test_soft_score PRIVATE
+    ${FUNCTION_RELOCATION_INCLUDE_DIR})
+target_compile_features(test_soft_score PRIVATE cxx_std_23)
+add_test(NAME soft_score COMMAND test_soft_score)
+
+# Virtual flatten1 + call-edit StillCall|Inlined|Missing + dual-channel agree
+# (plan function-relocation-match-v2 todo 4). Header-only.
+add_executable(test_virtual_flatten
+    ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_virtual_flatten.cpp)
+target_include_directories(test_virtual_flatten PRIVATE
+    ${FUNCTION_RELOCATION_INCLUDE_DIR})
+target_compile_features(test_virtual_flatten PRIVATE cxx_std_23)
+add_test(NAME virtual_flatten COMMAND test_virtual_flatten)
+
+# limit_signature + knowns isolation + fix_func_address_by_signature
+# orchestration (plan function-relocation-match-v2 todo 5). Header-only.
+add_executable(test_orchestration
+    ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_orchestration.cpp)
+target_include_directories(test_orchestration PRIVATE
+    ${FUNCTION_RELOCATION_INCLUDE_DIR})
+target_compile_features(test_orchestration PRIVATE cxx_std_23)
+add_test(NAME orchestration COMMAND test_orchestration)
+
+# SignatureInfo schema freeze (plan function-relocation-match-v2 todo 7).
+# Header-only: structured binding fails to compile if a fourth field is added.
+add_executable(test_schema_freeze
+    ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_schema_freeze.cpp)
+target_include_directories(test_schema_freeze PRIVATE
+    ${FUNCTION_RELOCATION_INCLUDE_DIR})
+target_compile_features(test_schema_freeze PRIVATE cxx_std_23)
+add_test(NAME schema_freeze COMMAND test_schema_freeze)
+
+set_tests_properties(
+    match_accept_policy
+    micro_windows
+    soft_score
+    virtual_flatten
+    orchestration
+    schema_freeze
+    PROPERTIES LABELS match_v2)
