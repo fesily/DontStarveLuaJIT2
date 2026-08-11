@@ -76,6 +76,8 @@ local function attach(inst)
         blend_from_x = 0,
         blend_from_z = 0,
         active = false,
+        disabled = false,
+
     }
 
     local function reanchor(x, y, z, now, blend)
@@ -139,6 +141,10 @@ local function attach(inst)
             end
 
             local ok, err = pcall(function()
+                if st.disabled then
+                    return
+                end
+
                 if not should_run(inst) then
                     if st.active then
                         hard_restore()
@@ -216,6 +222,7 @@ local function attach(inst)
             if not ok then
                 print("[client.smooth] error: " .. tostring(err))
                 hard_restore()
+                st.disabled = true
             end
         end
     end
