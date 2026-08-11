@@ -5,7 +5,6 @@ if TheNet and TheNet:IsDedicated() then
 end
 
 local MAX_EXTRAP_DIST = 1.2
-local MAX_EXTRAP_DIST_SQ = MAX_EXTRAP_DIST * MAX_EXTRAP_DIST
 local SNAP_EPS = 0.05
 local SNAP_EPS_SQ = SNAP_EPS * SNAP_EPS
 local TELEPORT_EPS = 3.0
@@ -14,7 +13,7 @@ local BLEND_TIME = 0.08
 local DIR_DEADZONE = 1e-3
 local EPSILON_DISP = 1e-3
 local EPSILON_DISP_SQ = EPSILON_DISP * EPSILON_DISP
-local WRITE_EPS_SQ = 1e-8 -- skip Transform write if displacement tiny
+local WRITE_EPS_SQ = 1e-8
 
 local sqrt = math.sqrt
 local abs = math.abs
@@ -40,6 +39,14 @@ local function dist2_xz(ax, az, bx, bz)
     return dx * dx + dz * dz
 end
 
+-- Wall clock for display age. GetTime() is sim-tick based and freezes between ticks.
+local function wall_now()
+    if GetTimeRealSeconds ~= nil then
+        return GetTimeRealSeconds()
+    end
+    return GetTime()
+end
+
 local function pred_on()
     return Profile ~= nil
         and Profile.GetMovementPredictionEnabled ~= nil
@@ -57,7 +64,6 @@ local function get_speed(inst)
     return (TUNING and TUNING.WILSON_RUN_SPEED) or 6
 end
 
--- Cheap gates first; platform/tag only when likely active.
 local function should_run(inst)
     if ThePlayer == nil or inst ~= ThePlayer then
         return false
@@ -77,8 +83,17 @@ local function should_run(inst)
     return true
 end
 
+-- Characters with Physics: engine net apply uses Physics:Teleport; Transform alone can be
+-- overwritten by the rigid body on the next physics step.
+local function write_world_pos(inst, x, y, z)
+    if inst.Physics ~= nil then
+        inst.Physics:Teleport(x, y, z)
+    else
+        inst.Transform:SetPosition(x, y, z)
+    end
+end
+
 local function attach(inst)
-    -- Prevent stacked OnWallUpdate wraps (respawn / re-Activate).
     if inst._client_smooth_attached then
         return
     end
@@ -100,6 +115,7 @@ local function attach(inst)
         blend_from_z = 0,
         active = false,
         disabled = false,
+        announced = false,
     }
 
     local function reanchor(x, y, z, now, blend)
@@ -116,7 +132,7 @@ local function attach(inst)
 
     local function hard_restore()
         if st.active then
-            inst.Transform:SetPosition(st.auth_x, st.auth_y, st.auth_z)
+            write_world_pos(inst, st.auth_x, st.auth_y, st.auth_z)
         end
         st.wrote = false
         st.walking = false
@@ -129,14 +145,14 @@ local function attach(inst)
         if st.wrote and d2 < WRITE_EPS_SQ then
             return
         end
-        inst.Transform:SetPosition(x, y, z)
+        write_world_pos(inst, x, y, z)
         st.disp_x, st.disp_z = x, z
         st.wrote = true
     end
 
     do
         local x, y, z = inst.Transform:GetWorldPosition()
-        reanchor(x, y, z, GetTime(), false)
+        reanchor(x, y, z, wall_now(), false)
     end
 
     local pc = inst.components.playercontroller
@@ -167,7 +183,6 @@ local function attach(inst)
         end
     end
 
-    -- Fixed body (no per-frame closure allocation).
     local function wall_body(dt)
         if st.disabled then
             return
@@ -180,11 +195,15 @@ local function attach(inst)
             return
         end
 
+        if not st.announced then
+            st.announced = true
+            print("[client.smooth] active (pred OFF display extrap)")
+        end
+
         st.active = true
-        local now = GetTime()
+        local now = wall_now()
         local cx, cy, cz = inst.Transform:GetWorldPosition()
 
-        -- Teleport / large external move: hard re-anchor, no blend.
         local d_auth2 = dist2_xz(cx, cz, st.auth_x, st.auth_z)
         if d_auth2 > TELEPORT_EPS_SQ then
             reanchor(cx, cy, cz, now, false)
@@ -192,7 +211,6 @@ local function attach(inst)
             return
         end
 
-        -- Snap detection: engine kept our display write, or new authority.
         local d_exp2 = dist2_xz(cx, cz, st.disp_x, st.disp_z)
         if st.wrote and d_exp2 < EPSILON_DISP_SQ then
             -- still our display write
@@ -200,7 +218,6 @@ local function attach(inst)
             reanchor(cx, cy, cz, now, true)
         end
 
-        -- Not walking: finish any soft blend toward auth, then hold.
         if not st.walking then
             if st.blend_t > 0 then
                 st.blend_t = max(0, st.blend_t - dt)
@@ -242,7 +259,6 @@ local function attach(inst)
             ez = lerp(st.blend_from_z, ez, u)
         end
 
-        -- Y always from last auth; never extrapolate vertical.
         set_display(ex, st.auth_y, ez)
     end
 
@@ -254,7 +270,6 @@ local function attach(inst)
             return
         end
 
-        -- pcall the fixed function — no closure alloc per frame.
         local ok, err = pcall(wall_body, dt)
         if not ok then
             print("[client.smooth] error: " .. tostring(err))
@@ -271,8 +286,8 @@ local function attach(inst)
 
     inst:ListenForEvent("playerdeactivated", function()
         hard_restore()
-        -- Allow re-attach after deactivate/activate cycle.
         inst._client_smooth_attached = nil
+        st.announced = false
     end)
 end
 
@@ -281,8 +296,6 @@ AddPlayerPostInit(function(inst)
         if ThePlayer ~= inst then
             return
         end
-        -- Always attach wrappers so mid-session pred OFF still works.
-        -- should_run gates the wall loop until prediction is actually off.
         attach(inst)
     end)
 end)
