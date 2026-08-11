@@ -15,28 +15,21 @@ function_relocation::MemorySignature luaModuleSignature{
 #endif
 };
 
+// Targets debug_getsize entry (via mid-body match + offset on Win/Linux; entry
+// bytes on macOS x86_64). HotfixApis writes `ret` there so later GC-layout
+// loads never run under LuaJIT.
 function_relocation::MemorySignature luaRegisterDebugGetsizeSignature
         {
 #ifdef _WIN32
                 "4C 8B 5B 18 48 8B CB 49 8B",
-#elif defined(__linux__)
-                "48 8B 43 18 48 89 DF 48 8B 40 10",
-#elif defined(__APPLE__)
-                "48 8B 43 18 48 8B 40 10 48 8B 70 20",
-#else
-#error "not support"
-#endif
-#if DEBUG_GETSIZE_PATCH == 1
-                0x7
-#else
-#ifdef _WIN32
                 -0x27
 #elif defined(__linux__)
+                "48 8B 43 18 48 89 DF 48 8B 40 10",
                 -0x1f
 #elif defined(__APPLE__)
-                0x4
+                "53 48 8B 47 18 8B 48 08 FF C9 83 F9 08",
+                0
 #else
 #error "not support"
-#endif
 #endif
         };
