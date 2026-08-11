@@ -738,7 +738,9 @@ local function main()
 				print("[luajit][plugin] AfterModMain load reported failures")
 			end
 			for _, ev in ipairs(host:events_list()) do
-				if ev.status == PluginHost.Status.Failed then
+				if ev.status == PluginHost.Status.Failed
+					or ev.status == PluginHost.Status.Disabled
+					or ev.status == PluginHost.Status.Loaded then
 					print(string.format(
 						"[luajit][plugin] plugin=%s phase=%s status=%s reason=%s detail=%s",
 						tostring(ev.plugin_id), tostring(ev.phase), tostring(ev.status),
