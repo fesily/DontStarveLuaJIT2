@@ -318,7 +318,7 @@ static bool install_posix_startup_hook() {
         gum_initialized = true;
     }
     auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
-    gum_interceptor_replace_fast(interceptor, api, (void *) &chdir_hook, (void **) &origin, nullptr);
+    gum_interceptor_replace_fast(interceptor, api, (void *) &chdir_hook, (void **) &origin);
     if (!origin) {
         posix_startup_hook_installed = false;
         return false;
@@ -402,8 +402,7 @@ DONTSTARVEINJECTOR_API bool HookStartupEntry() {
         interceptor,
         set_current_directory_w,
         reinterpret_cast<void *>(&SetCurrentDirectoryW_hook),
-        reinterpret_cast<void **>(&original_SetCurrentDirectoryW),
-        nullptr);
+        reinterpret_cast<void **>(&original_SetCurrentDirectoryW));
 
     return original_SetCurrentDirectoryW != nullptr;
 }
