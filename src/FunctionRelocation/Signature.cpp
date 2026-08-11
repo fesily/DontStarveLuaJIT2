@@ -255,28 +255,29 @@ namespace function_relocation {
                             auto bytes = insn.bytes;
                             auto size = insn.size;
 #if defined(__linux__)
-
-                            //"need transform so `lea rxx [rip + 0x??]` to `mov rxx 0xxxxxx`
-                            assert(insn.id == X86_INS_LEA);
-                            std::string reg{std::string_view{insn.op_str}.substr(0, 3)};
-                            if (reg[0] == 'r') {
-                                reg[0] = 'e';
-                            }
-                            // reg 64 to 32
-                            std::string new_one = std::format("mov {}, 0xffffff", reg);
-                            const auto new_bytes = AsmX86(new_one.c_str());
-                            assert(!new_bytes.empty());
-                            bytes = new_bytes.data();
-                            size = new_bytes.size();
-                            if (size == 5) {
-                                signature.asm_codes.push_back(to_hex(bytes, bytes + 1) + make_unknown_string(size - 1));
-                                continue;
+                            if (insn.id == X86_INS_LEA) {
+                                std::string reg{std::string_view{insn.op_str}.substr(0, 3)};
+                                if (reg[0] == 'r') {
+                                    reg[0] = 'e';
+                                }
+                                std::string new_one = std::format("mov {}, 0xffffff", reg);
+                                const auto new_bytes = AsmX86(new_one.c_str());
+                                if (!new_bytes.empty()) {
+                                    bytes = new_bytes.data();
+                                    size = new_bytes.size();
+                                    if (size == 5) {
+                                        signature.asm_codes.push_back(
+                                                to_hex(bytes, bytes + 1) + make_unknown_string(size - 1));
+                                        continue;
+                                    }
+                                }
                             }
 #endif
-                            assert(size == 7);
-                            // transform [rip+0x??] to [rip+0x??]
-                            signature.asm_codes.push_back(to_hex(bytes, bytes + 3) + make_unknown_string(size - 3));
-                            continue;
+                            if (size >= 4) {
+                                signature.asm_codes.push_back(
+                                        to_hex(bytes, bytes + 3) + make_unknown_string(size - 3));
+                                continue;
+                            }
                         }
                         break;
                 }
@@ -299,27 +300,37 @@ namespace function_relocation {
             // Validate pattern uniqueness on training module against original entry.
             MemorySignature scan1{signature.c_str(), signature_offset, false};
             scan1.log = !nolog;
-            scan1.scan(original->module->details.range.base_address, original->module->details.range.size);
+            const auto &train_text = original->module->text;
+            if (train_text.base_address == 0 || train_text.size == 0) {
+                if (auto logger = spdlog::get(logger_name)) {
+                    logger->error("scan_by_signature: training module has empty .text");
+                }
+                return nullptr;
+            }
+            scan1.scan(train_text.base_address, train_text.size);
             if (!skip_check && scan1.targets.size() != 1) return nullptr;
 
             const auto training_hit = scan1.target_address;
-            // training MemorySignature already applied signature_offset to targets.
-            // Accept when the resolved address is the original entry.
-            if (!(skip_check || training_hit == original->address)) {
-                return nullptr;
-            }
-
-            // Training pattern bytes must live inside Nucleus body:
-            // match_addr = training_hit - signature_offset  (raw match start).
-            const intptr_t train_match =
-                    static_cast<intptr_t>(training_hit) - static_cast<intptr_t>(signature_offset);
-            if (train_match < static_cast<intptr_t>(original->address) ||
-                train_match >= static_cast<intptr_t>(original->address + original->size)) {
-                if (auto logger = spdlog::get(logger_name)) {
-                    logger->warn("scan_by_signature: training match {:#x} outside body [{:#x},{:#x})",
-                                 train_match, original->address, original->address + original->size);
+            const bool train_ok = !scan1.targets.empty();
+            if (!skip_check) {
+                if (training_hit != original->address) {
+                    return nullptr;
                 }
-                return nullptr;
+                const intptr_t train_match =
+                        static_cast<intptr_t>(training_hit) - static_cast<intptr_t>(signature_offset);
+                if (train_match < static_cast<intptr_t>(original->address) ||
+                    train_match >= static_cast<intptr_t>(original->address + original->size)) {
+                    if (auto logger = spdlog::get(logger_name)) {
+                        logger->warn("scan_by_signature: training match {:#x} outside body [{:#x},{:#x})",
+                                     train_match, original->address, original->address + original->size);
+                    }
+                    return nullptr;
+                }
+            } else if (train_ok && training_hit != 0 && training_hit != original->address) {
+                if (auto logger = spdlog::get(logger_name)) {
+                    logger->debug("scan_by_signature: skip_check training hit {:#x} != entry {:#x}",
+                                  training_hit, original->address);
+                }
             }
 
             if (target->function_table.empty()) {
@@ -597,6 +608,8 @@ namespace function_relocation {
                 {"lua_replace"s, {0, "48 8B 53 10 81 FD EE D8"s, -0x18}},
                 {"lua_pushvfstring"s, {0, "C7 44 24 0C 30 00 00 00 48 89 44 24 18 E8 ?? ?? ?? ?? 48  81 C4 D8 00 00 00 C3"s, -0x75}},
                 {"luaopen_io"s, {0, "48 89 FB E8 ?? ?? ?? ?? 48 89 DF BE FF FF FF FF"s, -0x6}},
+                {"luaL_openlib"s, {0, "41 57 41 56 49 89 F6 41 55 49 89 D5 41 54"s, 0}},
+                {"luaL_loadbuffer"s, {0, "48 83 ec 18 48 89 34 24 48 89 54"s, 0}},
 #elifdef __APPLE__
                 //season： use different register
                 {"lua_rawset"s, {0, "49 89 C6 49 8B 5F 10 48 8B 30 48 8D 53 E0 4C 89 FF E8"s, -0xD}},
@@ -647,15 +660,6 @@ namespace function_relocation {
                 }
             }
         }
-#ifdef __linux__
-        assert(false);
-        return nullptr;
-#else
-        // LCS is a last-resort heuristic that compares entry-aligned asm windows.
-        // When a target FunctionTable is present, signatures must come from
-        // scan_by_block/scan_by_signature so pattern_offset is target-local.
-        // Accepting LCS would return an entry (or raw match site) without rewriting
-        // training pattern_offset — forbidden under the Nucleus contract.
         if (!target.function_table.empty()) {
             if (auto logger = spdlog::get(logger_name)) {
                 logger->error(
@@ -665,6 +669,9 @@ namespace function_relocation {
             }
             return nullptr;
         }
+#ifdef __linux__
+        return nullptr;
+#else
 
         auto &function_address = creator.function_address;
         if (function_address.empty() && !target.functions.empty()) {
