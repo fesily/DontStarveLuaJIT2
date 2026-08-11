@@ -149,7 +149,7 @@ jobs:
           VERSION=$(python -c "import re, pathlib; t=pathlib.Path('CMakeLists.txt').read_text(encoding='utf-8'); m=re.search(r'project\\([^)]*VERSION\\s+([0-9]+\\.[0-9]+\\.[0-9]+)', t); assert m, 'version not found'; print(m.group(1))")
           TAG="${GITHUB_REF_NAME:-}"
           if [[ "${GITHUB_REF:-}" == refs/heads/master ]]; then
-            TAG="preview-${{ github.run_id }}"
+            TAG="preview-${{ github.run_id }}-${GITHUB_SHA:0:7}"
           fi
           mkdir -p dist
           python tools/gen_plugins_manifest.py \
@@ -289,6 +289,7 @@ jobs:
         run: |
           version=$(grep -oP 'project\([^)]*VERSION\s+\K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Download packaged mods
         uses: actions/download-artifact@v4
@@ -305,6 +306,6 @@ jobs:
           allowUpdates: true
           prerelease: true
           makeLatest: false
-          tag: preview-${{ github.run_id }}
-          name: Preview v${{ steps.project-version.outputs.version }}
+          tag: preview-${{ github.run_id }}-${{ steps.project-version.outputs.short_sha }}
+          name: Preview v${{ steps.project-version.outputs.version }} (${{ steps.project-version.outputs.short_sha }})
           commit: ${{ github.sha }}
