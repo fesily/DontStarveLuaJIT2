@@ -301,18 +301,16 @@ static function_relocation::MemorySignature animstate_deserialize_sig{
     "48 8B F1",
     0};
 
-// cAnimStateComponent offsets (Win x64, from disasm)
-static constexpr int ASC_ENTITY = 0x18;       // cEntity* back-ref
-static constexpr int ASC_FL_ANIM_TIME = 0x28;  // float flAnimTime
-static constexpr int ASC_P_ANIM_NODE = 0xF0;   // AnimNode*
-static constexpr int ANIMNODE_FL_TIME = 0xF8;  // AnimNode::flTime (Win x64, macOS=0xBC+0x3C shift)
+// cAnimStateComponent offsets (Win x64, from dontstarve_steam_x64 Deserialize disasm)
+//   entity@+0x18, flAnimTime@+0x28, dwAnimHash@+0x30, nEPlayMode@+0x90
+static constexpr int ASC_ENTITY = 0x18;
+static constexpr int ASC_FL_ANIM_TIME = 0x28;
+static constexpr int ASC_DW_ANIM_HASH = 0x30;
+static constexpr int ASC_P_ANIM_NODE = 0xF0;   // AnimNode* (best-effort)
+static constexpr int ANIMNODE_FL_TIME = 0xF8;  // AnimNode::flTime
 
 using AnimStateDeserialize_t = void(__fastcall *)(void *self, void *bitstream);
 AnimStateDeserialize_t original_AnimStateDeserialize = nullptr;
-// Inline patch state: force local_a0=true for local player in Deserialize.
-// Attach AFTER XOR BL,BL (function+0x47 merge). Gum re-executes the hooked insn
-// in on_invoke_trampoline — attaching on XOR itself would clear BL again.
-static uintptr_t g_local_a0_patch_addr = 0;
 
 // Local player entity pointer (set from Lua via set_track_entity).
 // When non-null, flAnimTime is preserved across Deserialize for this entity.
@@ -437,36 +435,58 @@ void __fastcall hooked_DrawCache(void *self, float *cache) {
         push_marker(Op::DrawCache, self, ms, 1.f, 0.f); // end
     }
 }
+// Hook cAnimStateComponent::Deserialize for pred-OFF clients.
+//
+// dst-scripts (player_common.EnableMovementPrediction(false)):
+//   removes locomotor + ClearStateGraph → NO local PlayAnimation.
+//   Animation is 100% server-driven via this Deserialize.
+//
+// pred ON (local_a0): engine already skips PlayMode/AnimHash/AnimTime; client SG owns anim.
+// pred OFF: network must apply PlayMode/AnimHash; only flAnimTime rewinds cause jitter.
+//
+// Strategy: allow hash/mode writes; if same AnimHash and time went backward, restore local time.
+void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
+    g_anim_deserialize_calls.fetch_add(1, std::memory_order_relaxed);
 
-// Hook cAnimStateComponent::Deserialize: preserve flAnimTime for local player.
-// Server overwrites flAnimTime on every incremental frame when prediction is OFF
-// (ignoreApply=0 because IsPredictingMovement returns false). This causes visible
-// animation "rewinds" ~0.35/s. We save flAnimTime before calling original, then
-// restore it after, so anim hash/bank changes still apply but time stays local.
+    float saved_time = 0.f;
+    uint32_t saved_hash = 0;
+    bool is_local = false;
 
+    if (g_enabled.load(std::memory_order_relaxed) && self) {
+        auto *anim = static_cast<char *>(self);
+        void *entity = *reinterpret_cast<void **>(anim + ASC_ENTITY);
+        const uint64_t local = g_local_player_entity.load(std::memory_order_relaxed);
+        if (local != 0 && reinterpret_cast<uint64_t>(entity) == local) {
+            is_local = true;
+            g_anim_entity_matches.fetch_add(1, std::memory_order_relaxed);
+            saved_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
+            saved_hash = *reinterpret_cast<uint32_t *>(anim + ASC_DW_ANIM_HASH);
+        }
+    }
 
+    if (original_AnimStateDeserialize) {
+        original_AnimStateDeserialize(self, bitstream);
+    }
 
+    if (!is_local || !self) {
+        return;
+    }
 
-// local_a0 via gum_interceptor_attach at Deserialize+0x47 (post local_a0 compute).
-// Layout: +0x41 MOV BL,1; +0x43 JMP +2; +0x45 XOR BL,BL; +0x47 merge.
-// on_enter: if RSI (cAnimStateComponent*) is local player, set BL=1 after both paths.
-static std::atomic_uint64_t g_a0_enter_count{0};
-static std::atomic_uint64_t g_a0_match_count{0};
-static void local_a0_on_enter(GumInvocationContext *context, gpointer) {
-    g_a0_enter_count.fetch_add(1, std::memory_order_relaxed);
-    if (!g_enabled.load(std::memory_order_relaxed)) return;
-    if (!context || !context->cpu_context) return;
-    auto *cpu = context->cpu_context;
-    auto *anim = reinterpret_cast<char *>(cpu->rsi);
-    if (!anim) return;
-    void *entity = *reinterpret_cast<void **>(anim + ASC_ENTITY);
-    const uint64_t local = g_local_player_entity.load(std::memory_order_relaxed);
-    if (local != 0 && reinterpret_cast<uint64_t>(entity) == local) {
-        g_a0_match_count.fetch_add(1, std::memory_order_relaxed);
-        cpu->rbx |= 1;  // BL=1: skip anim state writes
+    auto *anim = static_cast<char *>(self);
+    const uint32_t new_hash = *reinterpret_cast<uint32_t *>(anim + ASC_DW_ANIM_HASH);
+    const float new_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
+
+    // Anim switch (hash change): accept server time (usually 0 for new anim).
+    // Same anim + rewind: keep local progressive time.
+    if (new_hash == saved_hash && new_time + 1e-4f < saved_time) {
+        *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME) = saved_time;
+        if (void *node = *reinterpret_cast<void **>(anim + ASC_P_ANIM_NODE)) {
+            *reinterpret_cast<float *>(static_cast<char *>(node) + ANIMNODE_FL_TIME) = saved_time;
+        }
+        g_anim_time_preserved.fetch_add(1, std::memory_order_relaxed);
+        push(Op::AnimPreserve, self, saved_time, new_time, saved_time - new_time, 0, 0, 0, 0, -1);
     }
 }
-static GumInvocationListener *g_local_a0_listener = nullptr;
 
 static void debug_log(const char *fmt, ...) {
     FILE *f = std::fopen("jitter_probe_install.log", "a");
@@ -545,32 +565,16 @@ bool install_hooks() {
                      reinterpret_cast<void **>(&original_DrawCache), "DrawCacheRender")) {
         std::fprintf(stderr, "[JitterProbe] DrawCacheRender probe unavailable\n");
     }
-    // Inline patch: force local_a0=true for local player in Deserialize.
-    // Skips PlayMode/AnimHash/AnimTime writes entirely — no save/restore.
-    {
-        // Scan for Deserialize signature to get the function address.
-        animstate_deserialize_sig.only_one = true;
-        animstate_deserialize_sig.log = true;
-        uintptr_t deserial_addr = animstate_deserialize_sig.scan(nullptr);
-        if (deserial_addr == 0 && setpos_sig.target_address != 0) {
-            deserial_addr = setpos_sig.target_address + 0x10120;
-        }
-        if (deserial_addr != 0) {
-            g_local_a0_patch_addr = deserial_addr + 0x47;
-            g_local_a0_listener = gum_make_call_listener(
-                &local_a0_on_enter, nullptr, nullptr, nullptr);
-            auto r = gum_interceptor_attach(interceptor,
-                reinterpret_cast<void *>(g_local_a0_patch_addr),
-                g_local_a0_listener, nullptr);
-            if (r == GUM_ATTACH_OK) {
-                debug_log("[install] local_a0 patch at 0x%llx\n",
-                          static_cast<unsigned long long>(g_local_a0_patch_addr));
-                std::fprintf(stderr, "[JitterProbe] local_a0 patch at %p\n",
-                             reinterpret_cast<void *>(g_local_a0_patch_addr));
-            } else {
-                debug_log("[install] local_a0 attach failed: %d\n", static_cast<int>(r));
-            }
-        }
+
+    // AnimState Deserialize: preserve flAnimTime on same-anim rewinds only.
+    // Do NOT force local_a0 — that skips AnimHash and freezes pred-OFF clients
+    // (no SGwilson_client / no local PlayAnimation).
+    if (!install_one(interceptor, animstate_deserialize_sig,
+                     reinterpret_cast<void *>(&hooked_AnimStateDeserialize),
+                     reinterpret_cast<void **>(&original_AnimStateDeserialize),
+                     "AnimStateDeserialize")) {
+        std::fprintf(stderr, "[JitterProbe] AnimStateDeserialize hook unavailable\n");
+        ok = false;
     }
 
     return ok;
@@ -792,13 +796,14 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_preserve_count()
     return static_cast<int>(g_anim_time_preserved.load(std::memory_order_relaxed));
 }
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_local_a0_patched() {
-    return g_local_a0_patch_addr != 0 ? 1 : 0;
+    // Legacy diagnostic: local_a0 force-path removed (breaks pred-OFF animation).
+    return 0;
 }
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_a0_enter_count() {
-    return static_cast<int>(g_a0_enter_count.load(std::memory_order_relaxed));
+    return 0;
 }
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_a0_match_count() {
-    return static_cast<int>(g_a0_match_count.load(std::memory_order_relaxed));
+    return 0;
 }
 
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool on) {
@@ -848,5 +853,8 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_hook_status() { 
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_call_count() { return 0; }
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_match_count() { return 0; }
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_preserve_count() { return 0; }
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_local_a0_patched() { return 0; }
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_a0_enter_count() { return 0; }
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_a0_match_count() { return 0; }
 
 #endif
