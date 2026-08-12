@@ -305,6 +305,7 @@ static function_relocation::MemorySignature animstate_deserialize_sig{
 static constexpr int ASC_ENTITY = 0x18;       // cEntity* back-ref
 static constexpr int ASC_FL_ANIM_TIME = 0x28;  // float flAnimTime
 static constexpr int ASC_P_ANIM_NODE = 0xF0;   // AnimNode*
+static constexpr int ANIMNODE_FL_TIME = 0xF8;  // AnimNode::flTime (Win x64, macOS=0xBC+0x3C shift)
 
 using AnimStateDeserialize_t = void(__fastcall *)(void *self, void *bitstream);
 AnimStateDeserialize_t original_AnimStateDeserialize = nullptr;
@@ -465,12 +466,21 @@ void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
     const uint64_t local_entity = g_local_player_entity.load(std::memory_order_relaxed);
     bool preserve_time = false;
     float saved_time = 0.f;
+    float saved_animnode_time = 0.f;
+    void *anim_node = nullptr;
     if (local_entity != 0) {
         auto *anim = static_cast<char *>(self);
         void *entity = *reinterpret_cast<void **>(anim + ASC_ENTITY);
         if (reinterpret_cast<uint64_t>(entity) == local_entity) {
             preserve_time = true;
             saved_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
+            // Also save AnimNode::flTime — OnAnimChanged inside Deserialize
+            // resets it to 0 on full-sync, causing visual animation rewind.
+            anim_node = *reinterpret_cast<void **>(anim + ASC_P_ANIM_NODE);
+            if (anim_node) {
+                saved_animnode_time = *reinterpret_cast<float *>(
+                    static_cast<char *>(anim_node) + ANIMNODE_FL_TIME);
+            }
             g_anim_entity_matches.fetch_add(1, std::memory_order_relaxed);
         }
     }
@@ -480,13 +490,17 @@ void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
         original_AnimStateDeserialize(self, bitstream);
     }
 
-    // Restore flAnimTime for local player — server's value is discarded.
+    // Restore flAnimTime AND AnimNode::flTime for local player.
     if (preserve_time && self) {
         auto *anim = static_cast<char *>(self);
         float server_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
         *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME) = saved_time;
+        // Restore AnimNode::flTime so render reads the preserved (not reset) time.
+        if (anim_node) {
+            *reinterpret_cast<float *>(
+                static_cast<char *>(anim_node) + ANIMNODE_FL_TIME) = saved_animnode_time;
+        }
         g_anim_time_preserved.fetch_add(1, std::memory_order_relaxed);
-        // Push to ring buffer so dump shows preserve events.
         push_marker(Op::AnimPreserve, self, saved_time, server_time,
                    server_time - saved_time);
     }
