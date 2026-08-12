@@ -11,8 +11,8 @@
 -- residual stays small. Compare game VM vs JIT on the same route with smooth OFF.
 --
 -- Files:
---   native dump: data/unsafedata/jitter_probe_dump.txt
---   display CSV:  data/unsafedata/jitter_display_<phase>_<vm>.csv  (best-effort)
+--   native dump: data/unsafedata/jitter_probe_dump.txt  (C fopen)
+--   display dump: unsafedata/jitter_display_<phase>_<vm>.txt  (Lua io/io2)
 
 if TheNet and TheNet:IsDedicated() then
     return
@@ -118,14 +118,37 @@ local function stats_of(list)
 end
 
 local function write_display_csv(phase, steps, jerks, dts)
-    -- DST sandboxed io: only unsafedata/ is writable (no data/ prefix, no abs paths).
-    local path = string.format("unsafedata/jitter_display_%s_%s.csv", tostring(phase), vm_tag())
-    local ok, f_or_err = pcall(io.open, path, "w")
-    if not ok or not f_or_err then
-        JLog("display", "csv open failed path=%s err=%s", path, tostring(f_or_err))
+    -- DST sandboxed `io` only allows certain paths under unsafedata/.
+    -- Prefer unrestricted io2 (Injector); fall back to game io.
+    -- Use .txt (same family as profiler.txt / luajit_config.json); .csv is rejected.
+    local iolib = rawget(_G, "io2") or io
+    if type(iolib) ~= "table" or type(iolib.open) ~= "function" then
+        JLog("display", "csv skip: no io/io2.open")
         return
     end
-    local f = f_or_err
+    local tag = tostring(phase or "na") .. "_" .. tostring(vm_tag() or "na")
+    tag = tag:gsub("[^%w_%-]", "_")
+    local candidates = {
+        "unsafedata/jitter_display_" .. tag .. ".txt",
+        "unsafedata/jitter_display.txt",
+    }
+    local f, path, last_err
+    for i = 1, #candidates do
+        path = candidates[i]
+        local ok, a, b = pcall(iolib.open, path, "w")
+        if ok and a then
+            f = a
+            break
+        end
+        -- pcall caught error, or open returned nil,err
+        last_err = (not ok) and tostring(a) or tostring(b or a)
+        f = nil
+    end
+    if not f then
+        JLog("display", "csv open failed last=%s err=%s io=%s",
+            tostring(path), tostring(last_err), rawget(_G, "io2") and "io2" or "io")
+        return
+    end
     local okw, err = pcall(function()
         f:write("# phase=" .. tostring(phase) .. " vm=" .. vm_tag() .. " n=" .. tostring(#steps) .. "\n")
         f:write("i,dt_ms,step,jerk\n")
@@ -137,10 +160,10 @@ local function write_display_csv(phase, steps, jerks, dts)
     end)
     if not okw then
         pcall(function() f:close() end)
-        JLog("display", "csv write failed path=%s err=%s", path, tostring(err))
+        JLog("display", "csv write failed path=%s err=%s", tostring(path), tostring(err))
         return
     end
-    JLog("display", "csv wrote %s n=%d", path, #steps)
+    JLog("display", "csv wrote %s n=%d", tostring(path), #steps)
 end
 
 AddPlayerPostInit(function(inst)
