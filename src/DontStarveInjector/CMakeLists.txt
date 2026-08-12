@@ -59,6 +59,10 @@ find_package(Tracy CONFIG REQUIRED)
 find_package(mimalloc CONFIG REQUIRED)
 find_package(Boost REQUIRED COMPONENTS pfr)
 find_package(slikenet CONFIG REQUIRED)
+# SLikeNet find_dependency(OpenSSL): vcpkg MODULE pins a single debug/lib
+# IMPORTED_LOCATION on multi-config → RPATH cycle with libzip's lib/ vs debug/lib.
+include(DsFixOpenSSLMultiConfig)
+ds_fix_openssl_multiconfig()
 
 find_path(SOL2_INCLUDE_DIRS "sol/abort.hpp")
 find_path(PLF_HIVE_INCLUDE_DIRS "plf_hive.h")
