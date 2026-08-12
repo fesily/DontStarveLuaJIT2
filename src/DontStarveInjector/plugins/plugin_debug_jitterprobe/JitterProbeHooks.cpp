@@ -310,7 +310,8 @@ static constexpr int ANIMNODE_FL_TIME = 0xF8;  // AnimNode::flTime (Win x64, mac
 using AnimStateDeserialize_t = void(__fastcall *)(void *self, void *bitstream);
 AnimStateDeserialize_t original_AnimStateDeserialize = nullptr;
 // Inline patch state: force local_a0=true for local player in Deserialize.
-// At function+0x45 (XOR BL,BL), gum_interceptor_attach intercepts and sets BL.
+// Attach AFTER XOR BL,BL (function+0x47 merge). Gum re-executes the hooked insn
+// in on_invoke_trampoline — attaching on XOR itself would clear BL again.
 static uintptr_t g_local_a0_patch_addr = 0;
 
 // Local player entity pointer (set from Lua via set_track_entity).
@@ -446,9 +447,9 @@ void __fastcall hooked_DrawCache(void *self, float *cache) {
 
 
 
-// local_a0 inline patch via gum_interceptor_attach.
-// on_enter callback: check if RSI (cAnimStateComponent*) belongs to local player.
-// If yes, set BL=1 (skip anim state writes). If no, leave BL=0.
+// local_a0 via gum_interceptor_attach at Deserialize+0x47 (post local_a0 compute).
+// Layout: +0x41 MOV BL,1; +0x43 JMP +2; +0x45 XOR BL,BL; +0x47 merge.
+// on_enter: if RSI (cAnimStateComponent*) is local player, set BL=1 after both paths.
 static std::atomic_uint64_t g_a0_enter_count{0};
 static std::atomic_uint64_t g_a0_match_count{0};
 static void local_a0_on_enter(GumInvocationContext *context, gpointer) {
@@ -555,7 +556,7 @@ bool install_hooks() {
             deserial_addr = setpos_sig.target_address + 0x10120;
         }
         if (deserial_addr != 0) {
-            g_local_a0_patch_addr = deserial_addr + 0x45;
+            g_local_a0_patch_addr = deserial_addr + 0x47;
             g_local_a0_listener = gum_make_call_listener(
                 &local_a0_on_enter, nullptr, nullptr, nullptr);
             auto r = gum_interceptor_attach(interceptor,
