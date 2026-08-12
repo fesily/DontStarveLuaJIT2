@@ -45,7 +45,12 @@ function(_function_relocation_common_config target)
     if (MSVC)
         target_link_libraries(${target} PRIVATE pe-parse::pe-parse)
     else()
-        target_link_libraries(${target} PRIVATE ${KEYSTONE_LIBRARIES})
+        # Prefer multi-config IMPORTED target (avoids lib/debug/lib RPATH cycles).
+        if (TARGET keystone::keystone)
+            target_link_libraries(${target} PRIVATE keystone::keystone)
+        else()
+            target_link_libraries(${target} PRIVATE ${KEYSTONE_LIBRARIES})
+        endif()
         target_link_libraries(${target} PRIVATE libdwarf::dwarf)
     endif()
     # Nucleus PE/CFG stack for NucleusAdapter (do not re-export Nucleus types).
