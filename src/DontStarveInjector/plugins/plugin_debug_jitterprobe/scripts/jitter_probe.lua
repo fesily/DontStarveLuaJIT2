@@ -5,7 +5,8 @@
 --   Frame:     FrameBegin (dt_s) / FrameEnd (wall_ms, cache_ms, draw_ms)
 --   Render:    CacheRender (ActualCacheRender) / DrawCache (DrawCacheRender)
 -- Flush: ThePlayer:PushEvent("jitter_probe_flush")
---        -> data/unsafedata/jitter_probe_dump.txt
+--        -> data/unsafedata/jitter_probe_dump_<vm>_<timestamp>.txt
+--        -> data/unsafedata/jitter_probe_dump_latest.txt (alias)
 --
 -- Lua wall display metrics removed (non-discriminating). Sparse pos/mode only.
 if TheNet and TheNet:IsDedicated() then
@@ -28,7 +29,29 @@ enable_fn(true)
 if GameInjector.DS_LUAJIT_jitter_probe_set_local_only then
     GameInjector.DS_LUAJIT_jitter_probe_set_local_only(true)
 end
-print("[JITTER][LUA] probe on (native authority ring only; no wall display metrics)")
+
+local function set_vm_tag()
+    local tag = "run"
+    if GameInjector.DS_LUAJIT_get_vm_type_name then
+        local ok, name = pcall(GameInjector.DS_LUAJIT_get_vm_type_name, 0)
+        if ok and type(name) == "string" and name ~= "" then
+            tag = name
+        end
+    elseif jit and jit.version then
+        tag = "jit"
+    else
+        tag = "game"
+    end
+    -- sanitize for filename
+    tag = tostring(tag):gsub("[^%w_%-]", "_")
+    if GameInjector.DS_LUAJIT_jitter_probe_set_vm_tag then
+        GameInjector.DS_LUAJIT_jitter_probe_set_vm_tag(tag)
+        print("[JITTER][LUA] vm_tag=" .. tag)
+    end
+end
+set_vm_tag()
+
+print("[JITTER][LUA] probe on (native authority + frame/render; unique dump names)")
 
 local function JLog(tag, fmt, ...)
     print(string.format("[JITTER][LUA][t=%s][%s] " .. fmt,
@@ -40,6 +63,7 @@ local SAMPLE_EVERY = 10
 local POS_PRINT_MIN_D = 0.05
 
 local function do_flush(reason)
+    set_vm_tag()
     if GameInjector.DS_LUAJIT_jitter_probe_flush then
         print("[JITTER][LUA] flush requested: " .. tostring(reason))
         GameInjector.DS_LUAJIT_jitter_probe_flush()

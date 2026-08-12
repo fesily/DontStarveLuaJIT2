@@ -20,6 +20,7 @@ extern "C" bool DS_LUAJIT_jitter_probe_is_enabled();
 extern "C" void DS_LUAJIT_jitter_probe_set_track(void *transform);
 extern "C" void DS_LUAJIT_jitter_probe_set_local_only(bool on);
 extern "C" void DS_LUAJIT_jitter_probe_flush();
+extern "C" void DS_LUAJIT_jitter_probe_set_vm_tag(const char *tag);
 
 namespace {
 
@@ -98,6 +99,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
                                               &DS_LUAJIT_jitter_probe_set_local_only);
     (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_flush",
                                               &DS_LUAJIT_jitter_probe_flush);
+    (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_set_vm_tag",
+                                              &DS_LUAJIT_jitter_probe_set_vm_tag);
     host->register_plugin(&g_jitter_probe);
     std::fprintf(stderr, "[plugin_debug_jitterprobe] module init registered debug.jitterprobe\n");
     return true;

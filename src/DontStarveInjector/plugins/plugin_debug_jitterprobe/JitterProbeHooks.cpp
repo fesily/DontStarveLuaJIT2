@@ -18,6 +18,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <ctime>
 #include <cstring>
 #include <mutex>
 
@@ -60,6 +63,8 @@ static constexpr float kEps = 1e-4f; // ignore no-op SetPos
 std::atomic_bool g_enabled{false};
 std::atomic_bool g_hooks_installed{false};
 std::atomic_bool g_local_only{true};
+char g_vm_tag_buf[32]{"run"};
+std::mutex g_vm_tag_mu;
 std::atomic_uint64_t g_track_self{0}; // 0 = not set; when set, only this transform*
 std::atomic_uint64_t g_seq{0};
 std::atomic_uint64_t g_dropped{0};
@@ -470,27 +475,71 @@ static void flush_ring_unlocked(const char *reason) {
                  g_local_only.load(std::memory_order_relaxed) ? 1 : 0,
                  n);
 
-    // Binary-ish text dump off the hot path; open/close once.
-    // Path relative to CWD (game bin64 or mod working dir). Prefer unsafedata.
-    const char *paths[] = {
-        "data/unsafedata/jitter_probe_dump.txt",
-        "unsafedata/jitter_probe_dump.txt",
-        "jitter_probe_dump.txt",
-    };
+    // Unique dump path so game/jit runs do not overwrite each other.
+    //   data/unsafedata/jitter_probe_dump_<vm>_<YYYYMMDD_HHMMSS>.txt
+    // Plus jitter_probe_dump_latest.txt in the same directory.
+    const char *vm = "run";
+    {
+        std::lock_guard lock(g_vm_tag_mu);
+        if (g_vm_tag_buf[0] != '\0') {
+            vm = g_vm_tag_buf;
+        }
+    }
+    if (const char *env = std::getenv("JITTER_PROBE_VM_TAG")) {
+        if (env[0] != '\0') {
+            vm = env;
+        }
+    }
+    char vm_tag[32] = {};
+    {
+        size_t j = 0;
+        for (size_t i = 0; vm[i] != '\0' && j + 1 < sizeof(vm_tag); ++i) {
+            const char c = vm[i];
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == '_' || c == '-') {
+                vm_tag[j++] = c;
+            }
+        }
+        if (j == 0) {
+            vm_tag[0] = 'r';
+            vm_tag[1] = 'u';
+            vm_tag[2] = 'n';
+            vm_tag[3] = '\0';
+        }
+    }
+
+    std::time_t now = std::time(nullptr);
+    std::tm tm_buf{};
+#ifdef _WIN32
+    localtime_s(&tm_buf, &now);
+#else
+    localtime_r(&now, &tm_buf);
+#endif
+    char ts[32] = {};
+    std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm_buf);
+
+    const char *dirs[] = {"data/unsafedata/", "unsafedata/", ""};
     FILE *f = nullptr;
-    for (const char *p : paths) {
-        f = std::fopen(p, "w");
+    char primary_path[280] = {};
+    char latest_path[280] = {};
+    for (const char *dir : dirs) {
+        std::snprintf(primary_path, sizeof(primary_path),
+                      "%sjitter_probe_dump_%s_%s.txt", dir, vm_tag, ts);
+        f = std::fopen(primary_path, "w");
         if (f) {
-            std::fprintf(stderr, "[JitterProbe] writing %s\n", p);
+            std::snprintf(latest_path, sizeof(latest_path),
+                          "%sjitter_probe_dump_latest.txt", dir);
+            std::fprintf(stderr, "[JitterProbe] writing %s\n", primary_path);
             break;
         }
+        primary_path[0] = '\0';
     }
     if (!f) {
         std::fprintf(stderr, "[JitterProbe] could not open dump file\n");
         return;
     }
     std::fprintf(f,
-                 "# reason=%s seq=%llu seen=%llu track=%llx local_only=%d n=%u\n"
+                 "# reason=%s seq=%llu seen=%llu track=%llx local_only=%d n=%u vm=%s ts=%s\n"
                  "# ops: SetPos Teleport Deserialize DeserializePost EnablePred "
                  "FrameBegin(x=dt_s) FrameEnd(x=wall_ms,y=cache_ms,z=draw_ms) "
                  "CacheRender(x=ms,y=0begin/1end) DrawCache(x=ms,y=0begin/1end)\n",
@@ -498,25 +547,42 @@ static void flush_ring_unlocked(const char *reason) {
                  static_cast<unsigned long long>(seq),
                  static_cast<unsigned long long>(g_seen.load(std::memory_order_relaxed)),
                  static_cast<unsigned long long>(g_track_self.load(std::memory_order_relaxed)),
-                 g_local_only.load(std::memory_order_relaxed) ? 1 : 0, n);
+                 g_local_only.load(std::memory_order_relaxed) ? 1 : 0, n,
+                 vm_tag, ts);
     if (n == 0) {
         std::fclose(f);
-        return;
+    } else {
+        const uint32_t start = (head + kRing - n) % kRing;
+        for (uint32_t i = 0; i < n; ++i) {
+            const Event &e = g_ring[(start + i) % kRing];
+            std::fprintf(f,
+                         "%llu %s %llx %.5f %.5f %.5f %.5f %.5f %.5f %d %u %u\n",
+                         static_cast<unsigned long long>(e.t_ns),
+                         op_name(e.op),
+                         static_cast<unsigned long long>(e.self),
+                         e.x, e.y, e.z, e.ox, e.oy, e.oz,
+                         static_cast<int>(e.pred),
+                         static_cast<unsigned>(e.respect),
+                         static_cast<unsigned>(e.flags));
+        }
+        std::fclose(f);
     }
-    const uint32_t start = (head + kRing - n) % kRing;
-    for (uint32_t i = 0; i < n; ++i) {
-        const Event &e = g_ring[(start + i) % kRing];
-        std::fprintf(f,
-                     "%llu %s %llx %.5f %.5f %.5f %.5f %.5f %.5f %d %u %u\n",
-                     static_cast<unsigned long long>(e.t_ns),
-                     op_name(e.op),
-                     static_cast<unsigned long long>(e.self),
-                     e.x, e.y, e.z, e.ox, e.oy, e.oz,
-                     static_cast<int>(e.pred),
-                     static_cast<unsigned>(e.respect),
-                     static_cast<unsigned>(e.flags));
+
+    // Convenience alias for "last flush" without losing the unique primary.
+    if (primary_path[0] != '\0' && latest_path[0] != '\0') {
+        if (std::FILE *src = std::fopen(primary_path, "rb")) {
+            if (std::FILE *dst = std::fopen(latest_path, "wb")) {
+                char buf[8192];
+                size_t nread = 0;
+                while ((nread = std::fread(buf, 1, sizeof(buf), src)) > 0) {
+                    std::fwrite(buf, 1, nread, dst);
+                }
+                std::fclose(dst);
+                std::fprintf(stderr, "[JitterProbe] also %s\n", latest_path);
+            }
+            std::fclose(src);
+        }
     }
-    std::fclose(f);
 }
 
 } // namespace
@@ -559,6 +625,27 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_flush() {
     flush_ring_unlocked("manual");
 }
 
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_vm_tag(const char *tag) {
+    std::lock_guard lock(g_vm_tag_mu);
+    if (!tag || !tag[0]) {
+        std::snprintf(g_vm_tag_buf, sizeof(g_vm_tag_buf), "run");
+    } else {
+        size_t j = 0;
+        for (size_t i = 0; tag[i] != '\0' && j + 1 < sizeof(g_vm_tag_buf); ++i) {
+            const char c = tag[i];
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == '_' || c == '-') {
+                g_vm_tag_buf[j++] = c;
+            }
+        }
+        g_vm_tag_buf[j] = '\0';
+        if (j == 0) {
+            std::snprintf(g_vm_tag_buf, sizeof(g_vm_tag_buf), "run");
+        }
+    }
+    std::fprintf(stderr, "[JitterProbe] vm_tag=%s\n", g_vm_tag_buf);
+}
+
 #else // !_WIN32
 
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_enable(bool) {}
@@ -566,5 +653,6 @@ DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_jitter_probe_is_enabled() { return fa
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_track(void *) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_flush() {}
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_vm_tag(const char *) {}
 
 #endif
