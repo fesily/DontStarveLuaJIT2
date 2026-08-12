@@ -478,8 +478,6 @@ void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
         if (reinterpret_cast<uint64_t>(entity) == local_entity) {
             preserve_time = true;
             saved_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
-            // Also save AnimNode::flTime — OnAnimChanged inside Deserialize
-            // resets it to 0 on full-sync, causing visual animation rewind.
             anim_node = *reinterpret_cast<void **>(anim + ASC_P_ANIM_NODE);
             if (anim_node) {
                 saved_animnode_time = *reinterpret_cast<float *>(
@@ -494,17 +492,22 @@ void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
         original_AnimStateDeserialize(self, bitstream);
     }
 
-    // Restore flAnimTime AND AnimNode::flTime for local player.
+    // Only restore if the server's write was a RESET (server_time == 0).
+    // If the server sent a real time value (server_time > 0), it's a legitimate
+    // sync and we let it through. This prevents the feedback loop where
+    // preserved time accumulates forever.
     if (preserve_time && self) {
         auto *anim = static_cast<char *>(self);
         float server_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
-        *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME) = saved_time;
-        // Restore AnimNode::flTime so render reads the preserved (not reset) time.
-        if (anim_node) {
-            *reinterpret_cast<float *>(
-                static_cast<char *>(anim_node) + ANIMNODE_FL_TIME) = saved_animnode_time;
+        bool was_reset = (server_time < 0.001f);  // server reset to ~0
+        if (was_reset) {
+            *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME) = saved_time;
+            if (anim_node) {
+                *reinterpret_cast<float *>(
+                    static_cast<char *>(anim_node) + ANIMNODE_FL_TIME) = saved_animnode_time;
+            }
+            g_anim_time_preserved.fetch_add(1, std::memory_order_relaxed);
         }
-        g_anim_time_preserved.fetch_add(1, std::memory_order_relaxed);
         push_marker(Op::AnimPreserve, self, saved_time, server_time,
                    server_time - saved_time);
     }
@@ -678,8 +681,9 @@ bool install_hooks() {
                      reinterpret_cast<void **>(&original_DrawCache), "DrawCacheRender")) {
         std::fprintf(stderr, "[JitterProbe] DrawCacheRender probe unavailable\n");
     }
-    // Per-frame animation time advance — intercept return value for local player.
-    if (!install_one(interceptor, perframe_update_sig,
+    // Per-frame hook disabled: backward-jump prevention creates feedback loop
+    // where old_time accumulates forever (80s+). Removed per user feedback.
+    if (false && !install_one(interceptor, perframe_update_sig,
                      reinterpret_cast<void *>(&hooked_PerFrameUpdate),
                      reinterpret_cast<void **>(&original_PerFrameUpdate),
                      "PerFrameUpdate")) {
