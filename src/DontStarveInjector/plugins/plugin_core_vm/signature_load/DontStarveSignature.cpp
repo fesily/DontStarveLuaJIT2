@@ -338,30 +338,45 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
         }
         if (target == maybe_target)
             continue;
-        // fix the offset by module — prefer Nucleus target table over scan heuristics.
+        // Resolve to a Function* when possible. If soft/unique_const refined an
+        // entry that is not a Nucleus span start (coarse over-merge), keep it —
+        // do NOT snap back to containing() which can be thousands of bytes away.
         if (moduleMain.find_function(target) == nullptr) {
-            spdlog::info("can't find function at address: {}", (void *) target);
             if (!moduleMain.function_table.empty()) {
-                // pattern_offset is target-local after Creator resolve: entry - match.
-                // Recover match, then re-resolve entry via containing().
                 const auto pattern_address =
                         static_cast<uintptr_t>(static_cast<intptr_t>(target) -
                                                static_cast<intptr_t>(signature.pattern_offset));
                 const uint64_t entry = moduleMain.function_table.containing(
                         signature.pattern_offset == 0 ? target : pattern_address);
                 if (entry == 0) {
-                    throw update_signatures_exception{
-                            fmt::format("func[{}] match not in target FunctionTable", name)};
+                    // Refined entry outside table still allowed if in text.
+                    if (!moduleMain.in_text(target)) {
+                        throw update_signatures_exception{
+                                fmt::format("func[{}] match not in target FunctionTable", name)};
+                    }
+                    spdlog::info("keep refined entry [{}] outside Nucleus span starts",
+                                 (void *) target);
+                } else {
+                    const auto match = signature.pattern_offset == 0
+                                               ? target
+                                               : pattern_address;
+                    const auto dist = target >= entry ? target - entry : entry - target;
+                    // Only adopt Nucleus start when we are still in the prologue
+                    // region (pattern hit near entry). Far distances mean unique_const
+                    // / train-off recovered a real interior export start.
+                    if (dist <= 16) {
+                        const auto new_po =
+                                static_cast<intptr_t>(entry) - static_cast<intptr_t>(match);
+                        spdlog::info("refix signature via FunctionTable: [{}]->[{}] entry={}",
+                                     signature.pattern_offset, new_po, (void *) entry);
+                        signature.pattern_offset = static_cast<int>(new_po);
+                        target = static_cast<uintptr_t>(entry);
+                    } else {
+                        spdlog::info(
+                                "keep refined entry [{}] (Nucleus containing {:#x} dist={})",
+                                (void *) target, entry, dist);
+                    }
                 }
-                const auto match = signature.pattern_offset == 0
-                                           ? target
-                                           : pattern_address;
-                const auto new_po =
-                        static_cast<intptr_t>(entry) - static_cast<intptr_t>(match);
-                spdlog::info("refix signature via FunctionTable: [{}]->[{}] entry={}",
-                             signature.pattern_offset, new_po, (void *) entry);
-                signature.pattern_offset = static_cast<int>(new_po);
-                target = static_cast<uintptr_t>(entry);
             } else {
                 auto all_address =
                         moduleMain.address_functions | std::ranges::views::transform([](auto &p) { return p.first; }) |
@@ -382,23 +397,39 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                 signature.pattern_offset = pattern_offset;
             }
         }
-        // Prefer Nucleus FunctionTable over pdata for snap-to-entry (pdata is log-only authority).
+        // Snap only when target is a few bytes past a Nucleus start (mid-prologue
+        // hit). Never pull a refined far entry back into a coarse over-merged span.
         if (!moduleMain.function_table.empty()) {
             const uint64_t entry = moduleMain.function_table.containing(target);
             if (entry != 0 && entry != target) {
-                const auto pattern_address =
-                        static_cast<uintptr_t>(static_cast<intptr_t>(target) -
-                                               static_cast<intptr_t>(signature.pattern_offset));
-                const auto new_po =
-                        static_cast<intptr_t>(entry) - static_cast<intptr_t>(pattern_address);
-                spdlog::info("snap signature [{}] {} -> nucleus entry {} (pattern_offset {}->{})",
-                             name, (void *) target, (void *) entry,
-                             signature.pattern_offset, new_po);
-                signature.pattern_offset = static_cast<int>(new_po);
-                target = static_cast<uintptr_t>(entry);
+                const auto dist = target >= entry ? target - entry : entry - target;
+                if (dist <= 16) {
+                    const auto pattern_address =
+                            static_cast<uintptr_t>(static_cast<intptr_t>(target) -
+                                                   static_cast<intptr_t>(signature.pattern_offset));
+                    const auto new_po =
+                            static_cast<intptr_t>(entry) - static_cast<intptr_t>(pattern_address);
+                    spdlog::info("snap signature [{}] {} -> nucleus entry {} (pattern_offset {}->{})",
+                                 name, (void *) target, (void *) entry,
+                                 signature.pattern_offset, new_po);
+                    signature.pattern_offset = static_cast<int>(new_po);
+                    target = static_cast<uintptr_t>(entry);
+                }
             }
         }
         auto new_offset = target - targetLuaModuleBase;
+        // Reject two exports claiming the same RVA (equal-family collisions).
+        bool dup = false;
+        for (const auto &[other, osig]: funcs) {
+            if (other == name) continue;
+            if (osig.offset != 0 && osig.offset == static_cast<uintptr_t>(new_offset)) {
+                spdlog::error("func[{}] offset {} already claimed by [{}], keeping previous",
+                              name, new_offset, other);
+                dup = true;
+                break;
+            }
+        }
+        if (dup) continue;
         spdlog::info("update signatures [{}:{}]: {} to {}", name, (void *) target, old_offset, new_offset);
         signature.offset = new_offset;
         moduleMain.set_known_function(target, name.c_str());
@@ -412,9 +443,10 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
     // direct edge, pushnil is seeded. (Inlined callees need short-body instead.)
     {
         auto collect_named_callees =
-                [](const function_relocation::Function &fn,
+                [](function_relocation::Function &fn,
                    function_relocation::ModuleSections &mod)
                 -> std::vector<std::pair<std::string, uint64_t>> {
+            function_relocation::ensure_function_features(fn);
             std::vector<std::pair<std::string, uint64_t>> out;
             std::unordered_set<uint64_t> seen;
             for (const auto block_addr: fn.blocks) {
@@ -434,9 +466,10 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
         };
 
         auto collect_target_callees =
-                [](const function_relocation::Function &fn,
+                [](function_relocation::Function &fn,
                    function_relocation::ModuleSections &mod)
                 -> std::vector<uint64_t> {
+            function_relocation::ensure_function_features(fn);
             std::vector<uint64_t> out;
             std::unordered_set<uint64_t> seen;
             for (const auto block_addr: fn.blocks) {
@@ -530,6 +563,15 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                     if (chosen == 0 || chosen < targetLuaModuleBase) continue;
 
                     const auto new_offset = chosen - targetLuaModuleBase;
+                    bool claimed = false;
+                    for (const auto &[other, osig]: funcs) {
+                        if (other != name && osig.offset != 0 &&
+                            osig.offset == static_cast<uintptr_t>(new_offset)) {
+                            claimed = true;
+                            break;
+                        }
+                    }
+                    if (claimed) continue;
                     signature.offset = new_offset;
                     signature.pattern.clear();
                     signature.pattern_offset = 0;
@@ -595,56 +637,22 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                             }
                         }
                         if (claimed) continue;
-                        // Prefer leaf length: Nucleus parent span may be huge.
-                        size_t train_leaf = train_fn->size;
-                        if (train_leaf > 128) {
-                            // Approximate: if train body has few blocks, use sum.
-                            size_t approx = 0;
-                            for (const auto ba: train_fn->blocks) {
-                                auto *b = modulelua51.address_blocks.contains(ba)
-                                                  ? modulelua51.address_blocks.at(ba)
-                                                  : nullptr;
-                                if (b) approx += b->size;
-                            }
-                            if (approx > 0 && approx < train_leaf) train_leaf = approx;
-                        }
-                        size_t tgt_leaf = fn.size;
-                        if (tgt_leaf > 128) {
-                            size_t approx = 0;
-                            for (const auto ba: fn.blocks) {
-                                auto *b = moduleMain.address_blocks.contains(ba)
-                                                  ? moduleMain.address_blocks.at(ba)
-                                                  : nullptr;
-                                if (b) approx += b->size;
-                            }
-                            if (approx > 0 && approx < tgt_leaf) tgt_leaf = approx;
-                        }
+                        // Leaf for size ratio; walk min(span,128) for E8/E9 so
+                        // calls after short fall-through still count.
+                        const size_t train_leaf =
+                                function_relocation::function_leaf_size(*train_fn, 128);
+                        const size_t tgt_leaf =
+                                function_relocation::function_leaf_size(fn, 128);
                         const double ratio =
-                                static_cast<double>(tgt_leaf) /
+                                static_cast<double>(std::max<size_t>(1, tgt_leaf)) /
                                 static_cast<double>(std::max<size_t>(1, train_leaf));
                         if (ratio < 0.4 || ratio > 2.5) continue;
 
-                        bool calls_k = false;
-                        for (const auto block_addr: fn.blocks) {
-                            auto *block = moduleMain.address_blocks.contains(block_addr)
-                                                  ? moduleMain.address_blocks.at(block_addr)
-                                                  : nullptr;
-                            if (!block) continue;
-                            for (const auto ct: block->call_functions) {
-                                uint64_t entry = 0;
-                                if (auto *cf = moduleMain.find_function(ct); cf) {
-                                    entry = cf->address;
-                                } else if (!moduleMain.function_table.empty()) {
-                                    entry = moduleMain.function_table.containing(ct);
-                                }
-                                if (entry == tgt_callee || ct == tgt_callee) {
-                                    calls_k = true;
-                                    break;
-                                }
-                            }
-                            if (calls_k) break;
+                        const size_t walk = std::min(fn.size, size_t{128});
+                        if (function_relocation::body_calls_entry(
+                                    moduleMain, fn.address, walk, tgt_callee)) {
+                            candidates.push_back(fn.address);
                         }
-                        if (calls_k) candidates.push_back(fn.address);
                     }
                     uint64_t chosen = 0;
                     if (candidates.size() == 1) {
@@ -734,6 +742,15 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                         continue;
                     }
                     const auto new_offset = chosen - targetLuaModuleBase;
+                    bool claimed = false;
+                    for (const auto &[other, osig]: funcs) {
+                        if (other != name && osig.offset != 0 &&
+                            osig.offset == static_cast<uintptr_t>(new_offset)) {
+                            claimed = true;
+                            break;
+                        }
+                    }
+                    if (claimed) continue;
                     signature.offset = new_offset;
                     signature.pattern.clear();
                     signature.pattern_offset = 0;
