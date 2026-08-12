@@ -415,10 +415,16 @@ local function main()
 	end
 
 	function _M:SwitchVm(noreset)
+		---@type string
 		luavmType = GetModConfigData("LuaVmType")
 		if type(luavmType) ~= "string" then
 			return false
 		end
+
+		if luavmType:lower() == 'luajit' then
+			luavmType = 'jit'
+		end
+
 		print("current vm type: ",
 			GameInjector and GameInjector.DS_LUAJIT_get_vm_type_name and GameInjector.DS_LUAJIT_get_vm_type_name() or
 			"unknown",
