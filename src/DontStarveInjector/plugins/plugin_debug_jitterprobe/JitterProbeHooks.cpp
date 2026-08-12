@@ -526,10 +526,10 @@ void __fastcall hooked_PerFrameUpdate(void *self, int frame_count) {
     if (check_back && self) {
         auto *anim = static_cast<char *>(self);
         float new_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
-        // Only block significant backward jumps (>0.5s rewind).
-        // Allows legitimate anim switches (reset to 0) but prevents
-        // server-induced resync jitter (~0.35/s during walking).
-        if (old_time > 0.5f && new_time < old_time - 0.5f) {
+        // Block backward jumps > 0.1s. This catches server resync jitter
+        // (~0.35/s during walking) while allowing normal frame-to-frame
+        // advancement and small float noise.
+        if (old_time > 0.1f && new_time < old_time - 0.1f) {
             *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME) = old_time;
             g_perframe_blocked.fetch_add(1, std::memory_order_relaxed);
         }
