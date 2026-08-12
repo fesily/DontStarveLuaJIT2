@@ -309,24 +309,9 @@ static constexpr int ANIMNODE_FL_TIME = 0xF8;  // AnimNode::flTime (Win x64, mac
 
 using AnimStateDeserialize_t = void(__fastcall *)(void *self, void *bitstream);
 AnimStateDeserialize_t original_AnimStateDeserialize = nullptr;
-// cAnimStateComponent time advance (Win x64) — computes new flAnimTime from dt.
-// Returns new time in XMM0; caller writes to +0x28. Hook the RETURN VALUE.
-static function_relocation::MemorySignature perframe_update_sig{
-    "48 83 EC 38 "
-    "8B 81 90 00 00 00 "
-    "0F 29 74 24 20 "
-    "0F 28 D1",
-    0};
-
-using PerFrameUpdate_t = float(__fastcall *)(void *self, float dt);
-PerFrameUpdate_t original_PerFrameUpdate = nullptr;
-std::atomic_uint64_t g_perframe_calls{0};
-std::atomic_uint64_t g_perframe_blocked{0};
-// Proxy-based anim update (called via function pointer, bypasses 0x9B5E0 entry).
-using AnimUpdateProxy_t = void(__fastcall *)(void *proxy, void *arg2);
-AnimUpdateProxy_t original_AnimUpdateProxy = nullptr;
-std::atomic_uint64_t g_proxy_calls{0};
-std::atomic_uint64_t g_proxy_blocked{0};
+// Inline patch state: force local_a0=true for local player in Deserialize.
+// At function+0x45 (XOR BL,BL), gum_interceptor_attach intercepts and sets BL.
+static uintptr_t g_local_a0_patch_addr = 0;
 
 // Local player entity pointer (set from Lua via set_track_entity).
 // When non-null, flAnimTime is preserved across Deserialize for this entity.
@@ -512,97 +497,25 @@ void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
                    server_time - saved_time);
     }
 }
-// Time advance hook: intercept the return value of the per-frame time
-// computation function. The function computes new flAnimTime and returns it
-// in XMM0; the caller writes it to +0x28. For local player, we clamp the
-// return value to prevent backward jumps.
-float __fastcall hooked_PerFrameUpdate(void *self, float dt) {
-    if (!g_enabled.load(std::memory_order_relaxed) || !self) {
-        if (original_PerFrameUpdate) {
-            return original_PerFrameUpdate(self, dt);
-        }
-        return 0.f;
-    }
-    g_perframe_calls.fetch_add(1, std::memory_order_relaxed);
 
-    // Save old flAnimTime for local player.
-    const uint64_t local_entity = g_local_player_entity.load(std::memory_order_relaxed);
-    bool check_back = false;
-    float old_time = 0.f;
-    if (local_entity != 0) {
-        auto *anim = static_cast<char *>(self);
-        void *entity = *reinterpret_cast<void **>(anim + ASC_ENTITY);
-        if (reinterpret_cast<uint64_t>(entity) == local_entity) {
-            check_back = true;
-            old_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
-        }
-    }
 
-    // Call original time computation (returns new time in XMM0).
-    float new_time = original_PerFrameUpdate
-        ? original_PerFrameUpdate(self, dt)
-        : 0.f;
 
-    // For local player: if new time jumped backward, return old time instead.
-    // The caller writes our return value to +0x28, so returning old_time
-    // prevents the backward write.
-    if (check_back && old_time > 0.1f && new_time < old_time - 0.1f) {
-        g_perframe_blocked.fetch_add(1, std::memory_order_relaxed);
-        return old_time;
-    }
-    return new_time;
-}
-// Proxy-based anim update hook: called via function pointer, bypasses 0x9B5E0.
-// Takes a proxy object; component is at proxy+0x08.
-void __fastcall hooked_AnimUpdateProxy(void *proxy, void *arg2) {
-    if (!g_enabled.load(std::memory_order_relaxed) || !proxy) {
-        if (original_AnimUpdateProxy) {
-            original_AnimUpdateProxy(proxy, arg2);
-        }
-        return;
-    }
-    g_proxy_calls.fetch_add(1, std::memory_order_relaxed);
-
-    const uint64_t local_entity = g_local_player_entity.load(std::memory_order_relaxed);
-    bool check_back = false;
-    float old_time = 0.f;
-    void *anim_node = nullptr;
-    float old_animnode_time = 0.f;
-    if (local_entity != 0) {
-        void *component = *reinterpret_cast<void **>(static_cast<char *>(proxy) + 0x08);
-        if (component) {
-            void *entity = *reinterpret_cast<void **>(static_cast<char *>(component) + ASC_ENTITY);
-            if (reinterpret_cast<uint64_t>(entity) == local_entity) {
-                check_back = true;
-                old_time = *reinterpret_cast<float *>(static_cast<char *>(component) + ASC_FL_ANIM_TIME);
-                anim_node = *reinterpret_cast<void **>(static_cast<char *>(component) + ASC_P_ANIM_NODE);
-                if (anim_node) {
-                    old_animnode_time = *reinterpret_cast<float *>(
-                        static_cast<char *>(anim_node) + ANIMNODE_FL_TIME);
-                }
-            }
-        }
-    }
-
-    if (original_AnimUpdateProxy) {
-        original_AnimUpdateProxy(proxy, arg2);
-    }
-
-    if (check_back) {
-        void *component = *reinterpret_cast<void **>(static_cast<char *>(proxy) + 0x08);
-        if (component) {
-            float new_time = *reinterpret_cast<float *>(static_cast<char *>(component) + ASC_FL_ANIM_TIME);
-            if (old_time > 0.1f && new_time < old_time - 0.1f) {
-                *reinterpret_cast<float *>(static_cast<char *>(component) + ASC_FL_ANIM_TIME) = old_time;
-                if (anim_node) {
-                    *reinterpret_cast<float *>(
-                        static_cast<char *>(anim_node) + ANIMNODE_FL_TIME) = old_animnode_time;
-                }
-                g_proxy_blocked.fetch_add(1, std::memory_order_relaxed);
-            }
-        }
+// local_a0 inline patch via gum_interceptor_attach.
+// on_enter callback: check if RSI (cAnimStateComponent*) belongs to local player.
+// If yes, set BL=1 (skip anim state writes). If no, leave BL=0.
+static void local_a0_on_enter(GumInvocationContext *context, gpointer) {
+    if (!g_enabled.load(std::memory_order_relaxed)) return;
+    if (!context || !context->cpu_context) return;
+    auto *cpu = context->cpu_context;
+    auto *anim = reinterpret_cast<char *>(cpu->rsi);
+    if (!anim) return;
+    void *entity = *reinterpret_cast<void **>(anim + ASC_ENTITY);
+    const uint64_t local = g_local_player_entity.load(std::memory_order_relaxed);
+    if (local != 0 && reinterpret_cast<uint64_t>(entity) == local) {
+        cpu->rbx |= 1;  // BL=1: skip anim state writes
     }
 }
+static GumInvocationListener *g_local_a0_listener = nullptr;
 
 static void debug_log(const char *fmt, ...) {
     FILE *f = std::fopen("jitter_probe_install.log", "a");
@@ -681,25 +594,27 @@ bool install_hooks() {
                      reinterpret_cast<void **>(&original_DrawCache), "DrawCacheRender")) {
         std::fprintf(stderr, "[JitterProbe] DrawCacheRender probe unavailable\n");
     }
-    // Per-frame hook disabled: backward-jump prevention creates feedback loop
-    // where old_time accumulates forever (80s+). Removed per user feedback.
-    if (false && !install_one(interceptor, perframe_update_sig,
-                     reinterpret_cast<void *>(&hooked_PerFrameUpdate),
-                     reinterpret_cast<void **>(&original_PerFrameUpdate),
-                     "PerFrameUpdate")) {
-        std::fprintf(stderr, "[JitterProbe] PerFrameUpdate sig failed, trying fallback\n");
-        debug_log("[install] PerFrameUpdate sig failed, trying SetPosition+0x8430 fallback\n");
-        if (setpos_sig.target_address != 0) {
-            uintptr_t pf_addr = setpos_sig.target_address + 0x8430;
-            auto r = gum_interceptor_replace(
-                interceptor, reinterpret_cast<void *>(pf_addr),
-                reinterpret_cast<void *>(&hooked_PerFrameUpdate),
-                reinterpret_cast<void **>(&original_PerFrameUpdate), nullptr);
-            if (r == GUM_REPLACE_OK) {
-                debug_log("[install] FALLBACK HOOKED: PerFrameUpdate at 0x%llx\n",
-                          static_cast<unsigned long long>(pf_addr));
+    // Inline patch: force local_a0=true for local player in Deserialize.
+    // Skips PlayMode/AnimHash/AnimTime writes entirely — no save/restore.
+    {
+        uintptr_t deserial_addr = animstate_deserialize_sig.target_address;
+        if (deserial_addr == 0 && setpos_sig.target_address != 0) {
+            deserial_addr = setpos_sig.target_address + 0x10120;
+        }
+        if (deserial_addr != 0) {
+            g_local_a0_patch_addr = deserial_addr + 0x45;
+            g_local_a0_listener = gum_make_call_listener(
+                &local_a0_on_enter, nullptr, nullptr, nullptr);
+            auto r = gum_interceptor_attach(interceptor,
+                reinterpret_cast<void *>(g_local_a0_patch_addr),
+                g_local_a0_listener, nullptr);
+            if (r == GUM_ATTACH_OK) {
+                debug_log("[install] local_a0 patch at 0x%llx\n",
+                          static_cast<unsigned long long>(g_local_a0_patch_addr));
+                std::fprintf(stderr, "[JitterProbe] local_a0 patch at %p\n",
+                             reinterpret_cast<void *>(g_local_a0_patch_addr));
             } else {
-                debug_log("[install] PerFrameUpdate fallback failed: %d\n", static_cast<int>(r));
+                debug_log("[install] local_a0 attach failed: %d\n", static_cast<int>(r));
             }
         }
     }
@@ -955,17 +870,8 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_match_count() {
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_preserve_count() {
     return static_cast<int>(g_anim_time_preserved.load(std::memory_order_relaxed));
 }
-DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_perframe_calls() {
-    return static_cast<int>(g_perframe_calls.load(std::memory_order_relaxed));
-}
-DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_perframe_blocked() {
-    return static_cast<int>(g_perframe_blocked.load(std::memory_order_relaxed));
-}
-DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_proxy_calls() {
-    return static_cast<int>(g_proxy_calls.load(std::memory_order_relaxed));
-}
-DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_proxy_blocked() {
-    return static_cast<int>(g_proxy_blocked.load(std::memory_order_relaxed));
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_local_a0_patched() {
+    return g_local_a0_patch_addr != 0 ? 1 : 0;
 }
 
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool on) {
