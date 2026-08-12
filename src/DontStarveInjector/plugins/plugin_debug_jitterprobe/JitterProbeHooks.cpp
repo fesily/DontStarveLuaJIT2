@@ -689,7 +689,7 @@ bool install_hooks() {
                      reinterpret_cast<void **>(&original_PerFrameUpdate),
                      "PerFrameUpdate")) {
         std::fprintf(stderr, "[JitterProbe] PerFrameUpdate sig failed, trying fallback\n");
-        debug_log("[install] PerFrameUpdate sig failed, trying SetPosition+0xAA90 fallback\n");
+        debug_log("[install] PerFrameUpdate sig failed, trying SetPosition-0xDB60 fallback\n");
         if (setpos_sig.target_address != 0) {
             uintptr_t pf_addr = setpos_sig.target_address + 0xAA90;
             auto r = gum_interceptor_replace(
