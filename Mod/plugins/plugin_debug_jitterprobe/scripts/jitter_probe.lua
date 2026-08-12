@@ -87,9 +87,16 @@ local function do_flush(reason)
     if GameInjector.DS_LUAJIT_jitter_probe_get_local_a0_patched then
         a0_patched = GameInjector.DS_LUAJIT_jitter_probe_get_local_a0_patched() or 0
     end
-    print(string.format("[JITTER][LUA] anim_hook: installed=%s calls=%s matches=%s preserved=%s | local_a0_patched=%s",
+    local a0_enter, a0_match = 0, 0
+    if GameInjector.DS_LUAJIT_jitter_probe_get_a0_enter_count then
+        a0_enter = GameInjector.DS_LUAJIT_jitter_probe_get_a0_enter_count() or 0
+    end
+    if GameInjector.DS_LUAJIT_jitter_probe_get_a0_match_count then
+        a0_match = GameInjector.DS_LUAJIT_jitter_probe_get_a0_match_count() or 0
+    end
+    print(string.format("[JITTER][LUA] anim_hook: installed=%s calls=%s matches=%s preserved=%s | local_a0_patched=%s enter=%s match=%s",
         tostring(installed), tostring(calls), tostring(matches), tostring(preserved),
-        tostring(a0_patched)))
+        tostring(a0_patched), tostring(a0_enter), tostring(a0_match)))
     if GameInjector.DS_LUAJIT_jitter_probe_flush then
         print("[JITTER][LUA] flush requested: " .. tostring(reason))
         GameInjector.DS_LUAJIT_jitter_probe_flush()

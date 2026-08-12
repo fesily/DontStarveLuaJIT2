@@ -449,7 +449,10 @@ void __fastcall hooked_DrawCache(void *self, float *cache) {
 // local_a0 inline patch via gum_interceptor_attach.
 // on_enter callback: check if RSI (cAnimStateComponent*) belongs to local player.
 // If yes, set BL=1 (skip anim state writes). If no, leave BL=0.
+static std::atomic_uint64_t g_a0_enter_count{0};
+static std::atomic_uint64_t g_a0_match_count{0};
 static void local_a0_on_enter(GumInvocationContext *context, gpointer) {
+    g_a0_enter_count.fetch_add(1, std::memory_order_relaxed);
     if (!g_enabled.load(std::memory_order_relaxed)) return;
     if (!context || !context->cpu_context) return;
     auto *cpu = context->cpu_context;
@@ -458,6 +461,7 @@ static void local_a0_on_enter(GumInvocationContext *context, gpointer) {
     void *entity = *reinterpret_cast<void **>(anim + ASC_ENTITY);
     const uint64_t local = g_local_player_entity.load(std::memory_order_relaxed);
     if (local != 0 && reinterpret_cast<uint64_t>(entity) == local) {
+        g_a0_match_count.fetch_add(1, std::memory_order_relaxed);
         cpu->rbx |= 1;  // BL=1: skip anim state writes
     }
 }
@@ -788,6 +792,12 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_preserve_count()
 }
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_local_a0_patched() {
     return g_local_a0_patch_addr != 0 ? 1 : 0;
+}
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_a0_enter_count() {
+    return static_cast<int>(g_a0_enter_count.load(std::memory_order_relaxed));
+}
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_a0_match_count() {
+    return static_cast<int>(g_a0_match_count.load(std::memory_order_relaxed));
 }
 
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool on) {
