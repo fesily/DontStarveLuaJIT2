@@ -380,13 +380,3 @@ Hooks: SetPosition / Teleport / Deserialize / EnableMovementPrediction. Lua: Rem
 5. **First probes:** S2/S3 (prove loco nil) + S9/S11 + E1/E2/E9 + E11 + E14/E15; matrix A/B/C/E.
 
 Next: implement those probes on Win x64, run A–E, lock one hypothesis before any fix.
-
-## 10. Mitigation experiment (2026-08-11)
-
-- Package: `client.smooth` / option `EnableClientSmooth` (default **false**, opt-in)
-- Spec: `docs/superpowers/specs/2026-08-11-client-pred-off-display-smooth-design.md`
-- Plan: `docs/superpowers/plans/2026-08-11-client-pred-off-display-smooth.md`
-- Implementation: `Mod/plugins/plugin_client_smooth/` (`scripts/client_smooth.lua`)
-- Scope: **display-only** local-player extrapolation when movement prediction is **OFF**; does **not** replace full prediction (`SGwilson_client` / locomotor).
-- Human playtest still required for cases A–F (pred OFF/ON, option on/off, teleport, boat, leave world) before treating stair-step as fixed.
-

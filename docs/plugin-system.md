@@ -364,7 +364,6 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 | `network.rpc` | `all_of` NetworkOpt | 40 | — | — | — | — |
 | `network.entity` | `all_of` NetworkOptEntity | 40 | **`network.rpc`** | — | — | — |
 | `fps.render` | `option` TargetRenderFPS | 50 | — | — | — | not non-Windows |
-| `client.smooth` | `all_of` EnableClientSmooth | 55 | — | — | — | `has_luajit` + client; display-only pred-OFF local extrap |
 | `save.fork` | `all_of` EnableForkSave | 60 | — | — | — | `has_luajit` + dedicated |
 | `sim.lagcomp` | `all_of` EnableLagCompensation | 60 | — | — | — | `has_luajit` + Win + mastersim |
 | `network.sim` | `all_of` EnableNetSim | 60 | — | — | — | `has_luajit` + Win + not mastersim |
@@ -380,7 +379,6 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 | 20 | `debug.profiler` (owns former `gc.policy` FullGC/FrameGC) |
 | 40 | `network.rpc` (Lua), `network.entity` |
 | 50 | `fps.render` |
-| 55 | `client.smooth` (Lua-only; opt-in pred-OFF display smooth) |
 | 60 | `sim.lagcomp`, `network.sim`, `save.fork` |
 | 70 | `jit.runtime` (HideGlobalJIT last among jit-related) |
 
