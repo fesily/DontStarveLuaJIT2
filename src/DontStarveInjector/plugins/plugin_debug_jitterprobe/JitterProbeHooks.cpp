@@ -284,6 +284,30 @@ using AppFrame_t = bool(__fastcall *)(void *self, float dt);
 using ActualCache_t = void(__fastcall *)(void *self, void *cache, float dt);
 using DrawCache_t = void(__fastcall *)(void *self, float *cache);
 
+// cAnimStateComponent::Deserialize (Win x64) — FUN_14009fc60
+// Prevents server from overwriting local flAnimTime for tracked entity.
+static function_relocation::MemorySignature animstate_deserialize_sig{
+    "48 8B C4 "
+    "56 "
+    "57 "
+    "48 83 EC B8 "
+    "83 3A 00 "
+    "48 8B FA "
+    "48 8B F1",
+    0};
+
+// cAnimStateComponent offsets (Win x64, from disasm)
+static constexpr int ASC_ENTITY = 0x18;       // cEntity* back-ref
+static constexpr int ASC_FL_ANIM_TIME = 0x28;  // float flAnimTime
+static constexpr int ASC_P_ANIM_NODE = 0xF0;   // AnimNode*
+
+using AnimStateDeserialize_t = void(__fastcall *)(void *self, void *bitstream);
+AnimStateDeserialize_t original_AnimStateDeserialize = nullptr;
+
+// Local player entity pointer (set from Lua via set_track_entity).
+// When non-null, flAnimTime is preserved across Deserialize for this entity.
+std::atomic_uint64_t g_local_player_entity{0};
+
 SetPosition_t original_SetPosition = nullptr;
 Teleport_t original_Teleport = nullptr;
 Deserialize_t original_Deserialize = nullptr;
@@ -400,6 +424,44 @@ void __fastcall hooked_DrawCache(void *self, float *cache) {
     }
 }
 
+// Hook cAnimStateComponent::Deserialize: preserve flAnimTime for local player.
+// Server overwrites flAnimTime on every incremental frame when prediction is OFF
+// (ignoreApply=0 because IsPredictingMovement returns false). This causes visible
+// animation "rewinds" ~0.35/s. We save flAnimTime before calling original, then
+// restore it after, so anim hash/bank changes still apply but time stays local.
+void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
+    if (!g_enabled.load(std::memory_order_relaxed) || !self) {
+        if (original_AnimStateDeserialize) {
+            original_AnimStateDeserialize(self, bitstream);
+        }
+        return;
+    }
+
+    // Check if this anim component belongs to the local player entity.
+    const uint64_t local_entity = g_local_player_entity.load(std::memory_order_relaxed);
+    bool preserve_time = false;
+    float saved_time = 0.f;
+    if (local_entity != 0) {
+        auto *anim = static_cast<char *>(self);
+        void *entity = *reinterpret_cast<void **>(anim + ASC_ENTITY);
+        if (reinterpret_cast<uint64_t>(entity) == local_entity) {
+            preserve_time = true;
+            saved_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
+        }
+    }
+
+    // Call original Deserialize (applies all server state including flAnimTime).
+    if (original_AnimStateDeserialize) {
+        original_AnimStateDeserialize(self, bitstream);
+    }
+
+    // Restore flAnimTime for local player — server's value is discarded.
+    if (preserve_time && self) {
+        auto *anim = static_cast<char *>(self);
+        *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME) = saved_time;
+    }
+}
+
 bool install_one(GumInterceptor *interceptor, function_relocation::MemorySignature &sig,
                  void *hook, void **original_out, const char *name) {
     sig.only_one = true;
@@ -457,6 +519,13 @@ bool install_hooks() {
     if (!install_one(interceptor, draw_cache_sig, reinterpret_cast<void *>(&hooked_DrawCache),
                      reinterpret_cast<void **>(&original_DrawCache), "DrawCacheRender")) {
         std::fprintf(stderr, "[JitterProbe] DrawCacheRender probe unavailable\n");
+    }
+    // AnimState Deserialize — soft-fail; anim time preservation is optional.
+    if (!install_one(interceptor, animstate_deserialize_sig,
+                     reinterpret_cast<void *>(&hooked_AnimStateDeserialize),
+                     reinterpret_cast<void **>(&original_AnimStateDeserialize),
+                     "AnimStateDeserialize")) {
+        std::fprintf(stderr, "[JitterProbe] AnimStateDeserialize hook unavailable\n");
     }
     return ok;
 }
@@ -657,6 +726,11 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_track_entity(void *e
                                                                                                       : 0);
 }
 
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_player_entity(void *entity) {
+    g_local_player_entity.store(reinterpret_cast<uint64_t>(entity), std::memory_order_release);
+    std::fprintf(stderr, "[JitterProbe] local_player_entity=%p\n", entity);
+}
+
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool on) {
     g_local_only.store(on, std::memory_order_release);
     std::fprintf(stderr, "[JitterProbe] local_only=%d\n", on ? 1 : 0);
@@ -697,5 +771,6 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_flush() {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_vm_tag(const char *) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_track_entity(void *) {}
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_player_entity(void *) {}
 
 #endif

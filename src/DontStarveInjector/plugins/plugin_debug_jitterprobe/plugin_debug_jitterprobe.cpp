@@ -19,6 +19,7 @@ extern "C" void DS_LUAJIT_jitter_probe_enable(bool enable);
 extern "C" bool DS_LUAJIT_jitter_probe_is_enabled();
 extern "C" void DS_LUAJIT_jitter_probe_set_track(void *transform);
 extern "C" void DS_LUAJIT_jitter_probe_set_track_entity(void *entity);
+extern "C" void DS_LUAJIT_jitter_probe_set_local_player_entity(void *entity);
 extern "C" void DS_LUAJIT_jitter_probe_set_local_only(bool on);
 extern "C" void DS_LUAJIT_jitter_probe_flush();
 extern "C" void DS_LUAJIT_jitter_probe_set_vm_tag(const char *tag);
@@ -98,6 +99,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
                                               &DS_LUAJIT_jitter_probe_set_track);
     (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_set_track_entity",
                                               &DS_LUAJIT_jitter_probe_set_track_entity);
+    (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_set_local_player_entity",
+                                              &DS_LUAJIT_jitter_probe_set_local_player_entity);
     (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_set_local_only",
                                               &DS_LUAJIT_jitter_probe_set_local_only);
     (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_flush",

@@ -12,6 +12,8 @@
 -- should be local-driven. Stock engine still replicates AnimState (hash/bank/
 -- time on full-sync / anim switch). Probe samples Lua AnimState + binds
 -- native track_self to local Transform.
+-- FIX: hook cAnimStateComponent::Deserialize to preserve flAnimTime for local
+-- player — anim hash/bank changes still apply, only time stays local.
 if TheNet and TheNet:IsDedicated() then
     return
 end
@@ -90,16 +92,16 @@ local function bind_track_self(inst)
         local ok, raw = pcall(GameInjector.DS_LUAJIT_entity_get_raw_ptr, ent)
         if ok and raw and raw ~= 0 then
             GameInjector.DS_LUAJIT_jitter_probe_set_track_entity(raw)
-            -- dual print: JLog + plain (easier client_log search)
+            -- Also set local player entity for AnimState flAnimTime preservation.
+            if GameInjector.DS_LUAJIT_jitter_probe_set_local_player_entity then
+                GameInjector.DS_LUAJIT_jitter_probe_set_local_player_entity(raw)
+                print(string.format("[JITTER][LUA] local_player_entity=%s (anim time preserve ON)", tostring(raw)))
+            end
             print(string.format("[JITTER][LUA] track_entity bound raw=%s", tostring(raw)))
             JLog("track", "bound via entity_get_raw_ptr raw=%s", tostring(raw))
             return
         end
         JLog("track", "entity_get_raw_ptr failed ok=%s raw=%s", tostring(ok), tostring(raw))
-    end
-    -- Fallback: try passing entity userdata as opaque (may not match transform*)
-    if GameInjector.DS_LUAJIT_jitter_probe_set_track then
-        JLog("track", "fallback set_track with entity userdata (may miss filter)")
     end
 end
 
