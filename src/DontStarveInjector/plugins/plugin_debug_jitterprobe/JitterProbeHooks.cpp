@@ -286,11 +286,13 @@ using DrawCache_t = void(__fastcall *)(void *self, float *cache);
 
 // cAnimStateComponent::Deserialize (Win x64) — FUN_14009fc60
 // Prevents server from overwriting local flAnimTime for tracked entity.
+// cAnimStateComponent::Deserialize (Win x64)
+// SUB RSP,0xB8 uses 81 EC (32-bit imm) not 83 EC (8-bit, only for 0x00-0x7F).
 static function_relocation::MemorySignature animstate_deserialize_sig{
     "48 8B C4 "
     "56 "
     "57 "
-    "48 83 EC B8 "
+    "48 81 EC B8 00 00 00 "
     "83 3A 00 "
     "48 8B FA "
     "48 8B F1",
