@@ -7,6 +7,7 @@
 //     optionally only for a single tracked transform (local player).
 //
 // Path: pred OFF → Deserialize → Teleport/SetPosition. hist=null, pred=0.
+// Also: AppFrame dt + ActualCacheRender/DrawCacheRender wall timings (render phase).
 
 #include "config/InjectorHostConfig.hpp"
 #include "MemorySignature.hpp"
@@ -35,6 +36,11 @@ enum class Op : uint8_t {
     Deserialize = 3,
     DeserializePost = 4,
     EnablePred = 5,
+    // Frame / render probes (1+2)
+    FrameBegin = 6,   // application frame entry (dt in x)
+    FrameEnd = 7,     // application frame exit (dt wall in x, phases in y)
+    CacheRender = 8,  // ActualCacheRender begin/end (x=dt_ms of cache phase if end)
+    DrawCache = 9,    // DrawCacheRender begin/end
 };
 
 struct Event {
@@ -77,6 +83,10 @@ static const char *op_name(Op op) {
     case Op::Deserialize: return "Deserialize";
     case Op::DeserializePost: return "DeserializePost";
     case Op::EnablePred: return "EnablePred";
+    case Op::FrameBegin: return "FrameBegin";
+    case Op::FrameEnd: return "FrameEnd";
+    case Op::CacheRender: return "CacheRender";
+    case Op::DrawCache: return "DrawCache";
     }
     return "?";
 }
@@ -139,6 +149,52 @@ static void push(Op op, void *self, float x, float y, float z,
     g_seq.fetch_add(1, std::memory_order_relaxed);
 }
 
+// Lightweight marker event (frame/render). Uses Event.x/y/z for scalars:
+//   FrameBegin: x=dt_s (clamped), y=0, z=0
+//   FrameEnd:   x=frame_wall_ms, y=cache_ms, z=draw_ms
+//   CacheRender begin: x=0; end: x=cache_ms
+//   DrawCache begin: x=0; end: x=draw_ms
+// self pointer stores game/app object when available (may be 0).
+static void push_marker(Op op, void *self, float x, float y, float z) {
+    if (!g_enabled.load(std::memory_order_relaxed)) {
+        return;
+    }
+    g_seen.fetch_add(1, std::memory_order_relaxed);
+    Event e{};
+    e.t_ns = now_ns();
+    e.self = reinterpret_cast<uint64_t>(self);
+    e.x = x;
+    e.y = y;
+    e.z = z;
+    e.ox = e.oy = e.oz = 0;
+    e.op = op;
+    e.respect = 0;
+    e.pred = -1;
+    e.flags = 2; // marker bit
+    const uint32_t i = g_head.fetch_add(1, std::memory_order_relaxed) % kRing;
+    g_ring[i] = e;
+    g_seq.fetch_add(1, std::memory_order_relaxed);
+}
+
+// Per-frame wall timing (thread-local: main thread only in practice).
+struct FrameProbeState {
+    uint64_t frame_t0 = 0;
+    uint64_t cache_t0 = 0;
+    uint64_t draw_t0 = 0;
+    float last_dt_s = 0;
+    float last_cache_ms = 0;
+    float last_draw_ms = 0;
+    bool in_frame = false;
+};
+static thread_local FrameProbeState tls_frame{};
+
+static float ns_to_ms(uint64_t a, uint64_t b) {
+    if (b <= a) {
+        return 0.f;
+    }
+    return static_cast<float>(b - a) * 1e-6f;
+}
+
 // ---------------------------------------------------------------------------
 // Signatures
 // ---------------------------------------------------------------------------
@@ -180,15 +236,54 @@ static function_relocation::MemorySignature enable_pred_sig{
     "48 8B 89 98 01 00 00",
     0};
 
+// Application frame (MessagePump / CacheRender / DrawCacheRender host).
+// FUN_140004230: PUSH RBX; PUSH RDI; SUB RSP,0x68; MOVSS XMM0,[imm]; MOVAPS [RSP+50],XMM6
+static function_relocation::MemorySignature app_frame_sig{
+    "53 "
+    "57 "
+    "48 83 EC 68 "
+    "F3 0F 10 05 "
+    "0F 29 74 24 50",
+    0};
+
+// ActualCacheRender FUN_140013360:
+// MOV RAX,RSP; MOV [RAX+8],RBX; PUSH RDI; SUB RSP,0xC0; MOV RDI,RDX; MOV RBX,RCX
+static function_relocation::MemorySignature actual_cache_sig{
+    "48 8B C4 "
+    "48 89 58 08 "
+    "57 "
+    "48 81 EC C0 00 00 00 "
+    "48 8B FA "
+    "48 8B D9",
+    0};
+
+// DrawCacheRender FUN_140014a50:
+// MOV [RSP+18],RBX; MOV [RSP+20],RSI; PUSH RDI; SUB RSP,0x50; MOV RDI,RDX; MOV RBX,RCX
+static function_relocation::MemorySignature draw_cache_sig{
+    "48 89 5C 24 18 "
+    "48 89 74 24 20 "
+    "57 "
+    "48 83 EC 50 "
+    "48 8B FA "
+    "48 8B D9",
+    0};
+
 using SetPosition_t = void(__fastcall *)(void *self, const float *pos);
 using Teleport_t = void(__fastcall *)(void *self, const float *pos, uint8_t respect);
 using Deserialize_t = void(__fastcall *)(void *self, void *bitstream);
 using EnablePred_t = void(__fastcall *)(void *self, uint8_t enable);
+// MSVC x64: first float/double in XMM1 for member/thiscall-like free functions with float arg.
+using AppFrame_t = bool(__fastcall *)(void *self, float dt);
+using ActualCache_t = void(__fastcall *)(void *self, void *cache, float dt);
+using DrawCache_t = void(__fastcall *)(void *self, float *cache);
 
 SetPosition_t original_SetPosition = nullptr;
 Teleport_t original_Teleport = nullptr;
 Deserialize_t original_Deserialize = nullptr;
 EnablePred_t original_EnablePred = nullptr;
+AppFrame_t original_AppFrame = nullptr;
+ActualCache_t original_ActualCache = nullptr;
+DrawCache_t original_DrawCache = nullptr;
 
 void __fastcall hooked_SetPosition(void *self, const float *pos) {
     if (g_enabled.load(std::memory_order_relaxed) && self && pos) {
@@ -249,6 +344,55 @@ void __fastcall hooked_EnablePred(void *self, uint8_t enable) {
     original_EnablePred(self, enable);
 }
 
+bool __fastcall hooked_AppFrame(void *self, float dt) {
+    if (g_enabled.load(std::memory_order_relaxed)) {
+        tls_frame.frame_t0 = now_ns();
+        tls_frame.in_frame = true;
+        tls_frame.last_dt_s = dt;
+        tls_frame.last_cache_ms = 0;
+        tls_frame.last_draw_ms = 0;
+        push_marker(Op::FrameBegin, self, dt, 0.f, 0.f);
+    }
+    const bool ret = original_AppFrame ? original_AppFrame(self, dt) : true;
+    if (g_enabled.load(std::memory_order_relaxed) && tls_frame.in_frame) {
+        const uint64_t t1 = now_ns();
+        const float wall_ms = ns_to_ms(tls_frame.frame_t0, t1);
+        push_marker(Op::FrameEnd, self, wall_ms, tls_frame.last_cache_ms, tls_frame.last_draw_ms);
+        tls_frame.in_frame = false;
+    }
+    return ret;
+}
+
+void __fastcall hooked_ActualCache(void *self, void *cache, float dt) {
+    if (g_enabled.load(std::memory_order_relaxed)) {
+        tls_frame.cache_t0 = now_ns();
+        push_marker(Op::CacheRender, self, 0.f, dt, 0.f); // begin: y=dt
+    }
+    if (original_ActualCache) {
+        original_ActualCache(self, cache, dt);
+    }
+    if (g_enabled.load(std::memory_order_relaxed)) {
+        const float ms = ns_to_ms(tls_frame.cache_t0, now_ns());
+        tls_frame.last_cache_ms = ms;
+        push_marker(Op::CacheRender, self, ms, 1.f, 0.f); // end: x=ms, y=1 marks end
+    }
+}
+
+void __fastcall hooked_DrawCache(void *self, float *cache) {
+    if (g_enabled.load(std::memory_order_relaxed)) {
+        tls_frame.draw_t0 = now_ns();
+        push_marker(Op::DrawCache, self, 0.f, 0.f, 0.f); // begin
+    }
+    if (original_DrawCache) {
+        original_DrawCache(self, cache);
+    }
+    if (g_enabled.load(std::memory_order_relaxed)) {
+        const float ms = ns_to_ms(tls_frame.draw_t0, now_ns());
+        tls_frame.last_draw_ms = ms;
+        push_marker(Op::DrawCache, self, ms, 1.f, 0.f); // end
+    }
+}
+
 bool install_one(GumInterceptor *interceptor, function_relocation::MemorySignature &sig,
                  void *hook, void **original_out, const char *name) {
     sig.only_one = true;
@@ -294,6 +438,19 @@ bool install_hooks() {
                       reinterpret_cast<void **>(&original_Deserialize), "Deserialize");
     ok &= install_one(interceptor, enable_pred_sig, reinterpret_cast<void *>(&hooked_EnablePred),
                       reinterpret_cast<void **>(&original_EnablePred), "EnableMovementPrediction");
+    // Frame/render probes — soft-fail: authority hooks still useful if these miss.
+    if (!install_one(interceptor, app_frame_sig, reinterpret_cast<void *>(&hooked_AppFrame),
+                     reinterpret_cast<void **>(&original_AppFrame), "AppFrame")) {
+        std::fprintf(stderr, "[JitterProbe] AppFrame probe unavailable\n");
+    }
+    if (!install_one(interceptor, actual_cache_sig, reinterpret_cast<void *>(&hooked_ActualCache),
+                     reinterpret_cast<void **>(&original_ActualCache), "ActualCacheRender")) {
+        std::fprintf(stderr, "[JitterProbe] ActualCacheRender probe unavailable\n");
+    }
+    if (!install_one(interceptor, draw_cache_sig, reinterpret_cast<void *>(&hooked_DrawCache),
+                     reinterpret_cast<void **>(&original_DrawCache), "DrawCacheRender")) {
+        std::fprintf(stderr, "[JitterProbe] DrawCacheRender probe unavailable\n");
+    }
     return ok;
 }
 
@@ -332,7 +489,11 @@ static void flush_ring_unlocked(const char *reason) {
         std::fprintf(stderr, "[JitterProbe] could not open dump file\n");
         return;
     }
-    std::fprintf(f, "# reason=%s seq=%llu seen=%llu track=%llx local_only=%d n=%u\n",
+    std::fprintf(f,
+                 "# reason=%s seq=%llu seen=%llu track=%llx local_only=%d n=%u\n"
+                 "# ops: SetPos Teleport Deserialize DeserializePost EnablePred "
+                 "FrameBegin(x=dt_s) FrameEnd(x=wall_ms,y=cache_ms,z=draw_ms) "
+                 "CacheRender(x=ms,y=0begin/1end) DrawCache(x=ms,y=0begin/1end)\n",
                  reason,
                  static_cast<unsigned long long>(seq),
                  static_cast<unsigned long long>(g_seen.load(std::memory_order_relaxed)),

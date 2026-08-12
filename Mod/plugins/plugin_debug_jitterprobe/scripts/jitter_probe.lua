@@ -1,14 +1,13 @@
--- jitter_probe.lua — thin Lua face for native authority probe.
+-- jitter_probe.lua — thin Lua face for native authority + frame/render probe.
 --
--- Useful surface (kept):
---   Native Gum ring: Deserialize / SetPos / Teleport / EnablePred
---   Flush: ThePlayer:PushEvent("jitter_probe_flush")
---          -> data/unsafedata/jitter_probe_dump.txt
+-- Native Gum ring (Win x64):
+--   Authority: Deserialize / SetPos / Teleport / EnablePred
+--   Frame:     FrameBegin (dt_s) / FrameEnd (wall_ms, cache_ms, draw_ms)
+--   Render:    CacheRender (ActualCacheRender) / DrawCache (DrawCacheRender)
+-- Flush: ThePlayer:PushEvent("jitter_probe_flush")
+--        -> data/unsafedata/jitter_probe_dump.txt
 --
--- Removed (proven non-discriminating for game vs JIT display jitter):
---   wall-clock Transform step/jerk, facing, AnimState, camera, hitch CSV
--- Next investigation needs native render/frame probes, not more Lua wall metrics.
-
+-- Lua wall display metrics removed (non-discriminating). Sparse pos/mode only.
 if TheNet and TheNet:IsDedicated() then
     return
 end
