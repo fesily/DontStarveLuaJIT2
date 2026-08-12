@@ -2,6 +2,7 @@
 #include "game/GameLuaContextLua51.hpp"
 #include "game/GameLuaInternal.hpp"
 #include "util/lua51_object.hpp"
+#include "util/frida_gum_interceptor.hpp"
 #include "lua_debugger_helper.hpp"
 #include "config/InjectorHostConfig.hpp"
 #include <filesystem>
@@ -206,7 +207,7 @@ struct GameLuaContextGame : GameLua51Context {
                 return false;
             }
             void *original = nullptr;
-            if (gum_interceptor_replace(interceptor, *api, newaddr, (void **) &original, nullptr) == GumReplaceReturn::GUM_REPLACE_OK) {
+            if (ds::gum::replace(interceptor, *api, newaddr, (void **) &original) == GumReplaceReturn::GUM_REPLACE_OK) {
                 *api = original;
                 spdlog::info("Replaced game lua api {}: {} to {}", name, (void *) original, (void *) newaddr);
             }
