@@ -283,30 +283,12 @@ namespace function_relocation {
                         }
 #endif
                         if (operand1.type == X86_OP_MEM && details.disp != 0 && operand1.mem.base == X86_REG_RIP) {
+                            // Keep opcode/ModRM; only mask the RIP displacement so the
+                            // pattern still self-matches on train (LEA→MOV rewrite used
+                            // to produce `b8/b9 ??…` that never hits train's `48 8d …`).
+                            // Game absolute `mov reg, imm` is handled by unique_const xrefs.
                             auto bytes = insn.bytes;
                             auto size = insn.size;
-#if defined(__linux__)
-                            // LEA rxx,[rip+disp] → treat like relocatable imm (ASLR).
-                            // MOV rxx,[rip+disp] also appears in training code; only mask disp.
-                            if (insn.id == X86_INS_LEA) {
-                                std::string reg{std::string_view{insn.op_str}.substr(0, 3)};
-                                if (reg[0] == 'r') {
-                                    reg[0] = 'e';
-                                }
-                                std::string new_one = std::format("mov {}, 0xffffff", reg);
-                                const auto new_bytes = AsmX86(new_one.c_str());
-                                if (!new_bytes.empty()) {
-                                    bytes = new_bytes.data();
-                                    size = new_bytes.size();
-                                    if (size == 5) {
-                                        signature.asm_codes.push_back(
-                                                to_hex(bytes, bytes + 1) + make_unknown_string(size - 1));
-                                        continue;
-                                    }
-                                }
-                            }
-#endif
-                            // Mask RIP-relative displacement (typical 7-byte encoding).
                             if (size >= 4) {
                                 signature.asm_codes.push_back(
                                         to_hex(bytes, bytes + 3) + make_unknown_string(size - 3));
@@ -542,7 +524,10 @@ namespace function_relocation {
         generate_micro_window_insns(const Function &fn) {
             std::vector<micro_window::MicroInsn> out;
             const uint64_t body_begin = fn.address;
-            const uint64_t body_end = fn.address + fn.size;
+            // Clamp to leaf so overshot Nucleus spans do not explode windows.
+            const size_t leaf = function_leaf_size(fn, 256);
+            const size_t body_len = leaf > 0 ? leaf : std::min(fn.size, size_t{256});
+            const uint64_t body_end = fn.address + body_len;
             if (body_end <= body_begin) return out;
 
             struct BlockRange {
@@ -607,6 +592,8 @@ namespace function_relocation {
         // by aggregating over its CodeBlocks. Used for both train (original)
         // and target (candidate entry) feature vectors.
         match_policy::FunctionFeatures extract_features(const Function &fn) {
+            // P0: materialize leaf-clamped features on first use.
+            ensure_function_features(const_cast<Function &>(fn));
             match_policy::FunctionFeatures feat;
             feat.size = fn.size;
             for (auto ba : fn.blocks) {
@@ -832,16 +819,23 @@ namespace function_relocation {
                     continue;
                 }
                 auto entry_earliest = scan_str_xrefs(hits[0]);
-                // Prefer entries where the xref is near the prologue (first 24B) —
-                // openers like open_io load their key string immediately.
-                // Fall back to size-ratio filter when multiple xrefs exist.
+                // Prefer entries where the xref is near the prologue (first 24B).
+                // Unique string with a single xref is strong evidence — accept even
+                // when Nucleus span size ratios look wrong (over-merged spans).
                 std::vector<std::pair<uint64_t, uintptr_t>> candidates;
                 candidates.reserve(entry_earliest.size());
                 for (const auto &[e, m]: entry_earliest) {
-                    if (auto *fn = target->find_function(e); fn && fn->size > 0 && original->size > 0) {
-                        const double ratio = static_cast<double>(fn->size) /
-                                            static_cast<double>(original->size);
-                        if (ratio < 0.25 || ratio > 6.0) continue;
+                    if (entry_earliest.size() > 1) {
+                        if (auto *fn = target->find_function(e); fn && original->size > 0) {
+                            const size_t tgt_leaf = effective_leaf_size(*fn);
+                            const size_t src_leaf = effective_leaf_size(*original);
+                            const size_t a = tgt_leaf ? tgt_leaf : fn->size;
+                            const size_t b = src_leaf ? src_leaf : original->size;
+                            if (a > 0 && b > 0) {
+                                const double ratio = static_cast<double>(a) / static_cast<double>(b);
+                                if (ratio < 0.25 || ratio > 6.0) continue;
+                            }
+                        }
                     }
                     candidates.emplace_back(e, m);
                 }
@@ -867,7 +861,77 @@ namespace function_relocation {
                         continue;
                     }
                 }
-                const auto [entry, match] = candidates.front();
+                auto [entry, match] = candidates.front();
+                // If Nucleus over-merged (xref far from span start), recover entry
+                // from train-side string offset within the original body.
+                {
+                    uintptr_t train_str = 0;
+                    if (original->module->rodata.base_address != 0) {
+                        auto th = find_c_string(original->module->rodata.base_address,
+                                                original->module->rodata.size, s);
+                        if (th.size() == 1) train_str = th[0];
+                    }
+                    if (train_str == 0) {
+                        auto th = find_c_string(original->module->details.range.base_address,
+                                                original->module->details.range.size, s);
+                        if (th.size() == 1) train_str = th[0];
+                    }
+                    if (train_str != 0) {
+                        // Scan train .text for xref inside original body.
+                        const auto &tt = original->module->text;
+                        int train_off = -1;
+                        if (tt.base_address != 0 && tt.size > 0) {
+                            const auto *text = reinterpret_cast<const uint8_t *>(tt.base_address);
+                            for (size_t i = 0; i + 7 < tt.size; ++i) {
+                                const uint64_t iva = tt.base_address + i;
+                                if (iva < original->address ||
+                                    iva >= original->address + original->size) {
+                                    continue;
+                                }
+                                const uint8_t b0 = text[i];
+                                if ((b0 == 0x48 || b0 == 0x4C) && text[i + 1] == 0x8D) {
+                                    const uint8_t modrm = text[i + 2];
+                                    if ((modrm & 0xC7) == 0x05) {
+                                        int32_t rel = 0;
+                                        std::memcpy(&rel, text + i + 3, sizeof(rel));
+                                        if (static_cast<uint64_t>(iva + 7 + rel) == train_str) {
+                                            train_off = static_cast<int>(iva - original->address);
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (b0 >= 0xB8 && b0 <= 0xBF) {
+                                    uint32_t imm = 0;
+                                    std::memcpy(&imm, text + i + 1, sizeof(imm));
+                                    if (static_cast<uint64_t>(imm) == (train_str & 0xffffffffull)) {
+                                        train_off = static_cast<int>(iva - original->address);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (train_off >= 0) {
+                            const uint64_t guess =
+                                    static_cast<uint64_t>(static_cast<intptr_t>(match) - train_off);
+                            const auto span = entry;
+                            // Only override when Nucleus clearly over-merged
+                            // (xref far past a span that dwarfs the train body).
+                            const size_t far =
+                                    std::max<size_t>(256, original->size > 0 ? original->size : 256);
+                            if (guess != span && match >= span && (match - span) > far) {
+                                if (target->in_text(guess)) {
+                                    if (auto logger = spdlog::get(logger_name)) {
+                                        logger->info(
+                                                "scan_by_unique_const: {} '{}' Nucleus span {:#x} "
+                                                "too coarse; using train-off {} -> {:#x}",
+                                                original->name, s, span, train_off, guess);
+                                    }
+                                    entry = guess;
+                                }
+                            }
+                        }
+                    }
+                }
                 last_training_offset = 0;
                 if (signature_info) {
                     signature_info->pattern.clear();
@@ -883,28 +947,8 @@ namespace function_relocation {
             return nullptr;
         }
 
-        // Bytes from entry to first RET / external JMP (max 128). Nucleus spans
-        // often overshoot small leaf exports (loadbuffer ~33B inside larger span).
         static size_t effective_leaf_size(const Function &fn) {
-            if (fn.size == 0) return 0;
-            const size_t cap = std::min(fn.size, size_t{128});
-            disasm ds{std::span{reinterpret_cast<uint8_t *>(fn.address), cap}};
-            for (auto &insn: ds) {
-                if (insn.id == X86_INS_RET || insn.id == X86_INS_RETF ||
-                    insn.id == X86_INS_RETFQ) {
-                    return static_cast<size_t>(insn.address + insn.size - fn.address);
-                }
-                if (insn.id == X86_INS_JMP) {
-                    const auto &op = insn.detail->x86.operands[0];
-                    if (op.type == X86_OP_IMM) {
-                        const uint64_t t = static_cast<uint64_t>(op.imm);
-                        if (t < fn.address || t >= fn.address + fn.size) {
-                            return static_cast<size_t>(insn.address + insn.size - fn.address);
-                        }
-                    }
-                }
-            }
-            return cap;
+            return function_leaf_size(fn, 128);
         }
 
         // Short / distinctive bodies: whole-body hex pattern (same wildcards as
@@ -916,80 +960,261 @@ namespace function_relocation {
             if (target->function_table.empty()) return nullptr;
             if (!original->module) return nullptr;
             const size_t leaf = effective_leaf_size(*original);
-            if (leaf == 0 || leaf > 96) return nullptr;
-
-            auto [sig, real_addr] = create_signature(
-                    original->module, reinterpret_cast<uint8_t *>(original->address),
-                    leaf, static_cast<size_t>(-1), 0);
-            auto pattern = trim(sig.to_string(false));
-            if (pattern.empty()) return nullptr;
-            // Need some fixed bytes (not all wildcards).
-            bool any_fixed = false;
-            for (char c: pattern) {
-                if (c != '?' && c != ' ') {
-                    any_fixed = true;
-                    break;
+            auto log_skip = [&](const char *why) {
+                if (auto logger = spdlog::get(logger_name)) {
+                    logger->info("scan_by_short_body: {} skip ({}) leaf={} size={}",
+                                 original->name, why, leaf, original->size);
                 }
+            };
+            if (leaf == 0 || leaf > 128) {
+                log_skip("leaf_out_of_range");
+                return nullptr;
             }
-            if (!any_fixed) return nullptr;
-
-            const int train_po = static_cast<int>(
-                    static_cast<intptr_t>(original->address) -
-                    static_cast<intptr_t>(real_addr));
 
             const auto &train_text = original->module->text;
-            if (train_text.base_address == 0 || train_text.size == 0) return nullptr;
-            MemorySignature train_scan(pattern.c_str(), train_po, false);
-            train_scan.log = !nolog;
-            train_scan.scan(train_text.base_address, train_text.size);
-            if (train_scan.targets.empty()) return nullptr;
-            for (auto t: train_scan.targets) {
-                if (!original->in_function(t)) return nullptr;
+            if (train_text.base_address == 0 || train_text.size == 0) {
+                log_skip("no_train_text");
+                return nullptr;
+            }
+            if (limit_address <= target->text.base_address) {
+                log_skip("bad_limit");
+                return nullptr;
             }
 
-            MemorySignature tgt_scan(pattern.c_str(), 0, false);
-            tgt_scan.log = !nolog;
-            if (limit_address <= target->text.base_address) return nullptr;
-            tgt_scan.scan(limit_address,
-                          target->text.size - (limit_address - target->text.base_address));
-            if (tgt_scan.targets.empty()) return nullptr;
-
-            std::unordered_map<uint64_t, uintptr_t> entry_earliest;
-            for (auto m: tgt_scan.targets) {
-                if (m < limit_address) continue;
-                const uint64_t e = target->function_table.containing(m);
-                if (e == 0 || e < limit_address) continue;
-                auto it = entry_earliest.find(e);
-                if (it == entry_earliest.end() || m < it->second) {
-                    entry_earliest[e] = m;
+            // Build candidate (pattern, train_po, try_sz) pairs:
+            // 0) exact leaf bytes (no create_signature) — tiny leaves like dump
+            // 1) create_signature wildcards at leaf + shorter sizes
+            // 2) raw fixed-byte prologues (no reloc wildcards) for equal/topointer
+            struct PatTry {
+                std::string pattern;
+                int train_po;
+                size_t try_sz;
+            };
+            std::vector<PatTry> tries;
+            {
+                const auto *p = reinterpret_cast<const uint8_t *>(original->address);
+                std::string exact;
+                exact.reserve(leaf * 3);
+                for (size_t i = 0; i < leaf; ++i) {
+                    if (i) exact.push_back(' ');
+                    exact += fmt::format("{:02x}", p[i]);
+                }
+                if (!exact.empty()) {
+                    tries.push_back({std::move(exact), 0, leaf});
                 }
             }
-            if (entry_earliest.size() != 1) return nullptr;
-
-            const auto [entry, match] = *entry_earliest.begin();
-            // Size gate uses leaf length (not overshot Nucleus span).
-            if (auto *fn = target->find_function(entry); fn && fn->size > 0) {
-                const size_t tgt_leaf = effective_leaf_size(*fn);
-                if (tgt_leaf > 0 && leaf > 0) {
-                    const double ratio = static_cast<double>(tgt_leaf) /
-                                        static_cast<double>(leaf);
-                    if (ratio < 0.5 || ratio > 2.0) return nullptr;
+            std::vector<size_t> try_sizes{leaf};
+            for (size_t s: {size_t{32}, size_t{24}, size_t{16}, size_t{12}}) {
+                if (s < leaf && s >= 12) try_sizes.push_back(s);
+            }
+            for (const size_t try_sz: try_sizes) {
+                auto [sig, real_addr] = create_signature(
+                        original->module, reinterpret_cast<uint8_t *>(original->address),
+                        try_sz, static_cast<size_t>(-1), 0);
+                auto pattern = trim(sig.to_string(false));
+                if (pattern.empty()) continue;
+                const int train_po = static_cast<int>(
+                        static_cast<intptr_t>(original->address) -
+                        static_cast<intptr_t>(real_addr));
+                tries.push_back({std::move(pattern), train_po, try_sz});
+            }
+            // Raw fixed prologue: stop before first E8/E9 (call/jmp rel32).
+            {
+                const auto *bytes = reinterpret_cast<const uint8_t *>(original->address);
+                size_t fixed_len = 0;
+                while (fixed_len < leaf && fixed_len < 16) {
+                    if (bytes[fixed_len] == 0xE8 || bytes[fixed_len] == 0xE9) break;
+                    ++fixed_len;
+                }
+                if (fixed_len >= 8) {
+                    tries.push_back({to_hex(bytes, bytes + fixed_len), 0, fixed_len});
                 }
             }
 
-            const int target_po = static_cast<int>(
-                    static_cast<intptr_t>(entry) - static_cast<intptr_t>(match));
-            last_training_offset = train_po;
-            if (signature_info) {
-                signature_info->pattern = pattern;
-                signature_info->pattern_offset = target_po;
+            for (const auto &tr: tries) {
+                const auto &pattern = tr.pattern;
+                bool any_fixed = false;
+                for (char c: pattern) {
+                    if (c != '?' && c != ' ') {
+                        any_fixed = true;
+                        break;
+                    }
+                }
+                if (!any_fixed) continue;
+
+                MemorySignature train_scan(pattern.c_str(), tr.train_po, false);
+                train_scan.log = false;
+                train_scan.scan(train_text.base_address, train_text.size);
+                if (train_scan.targets.empty()) continue;
+                const uint64_t train_entry = original->address;
+                bool train_ok = true;
+                for (auto t: train_scan.targets) {
+                    const uint64_t e = original->module->function_table.empty()
+                                               ? (original->in_function(t) ? train_entry : 0)
+                                               : original->module->function_table.containing(t);
+                    if (e != train_entry) {
+                        train_ok = false;
+                        break;
+                    }
+                }
+                if (!train_ok) continue;
+
+                MemorySignature tgt_scan(pattern.c_str(), 0, false);
+                tgt_scan.log = false;
+                tgt_scan.scan(limit_address,
+                              target->text.size - (limit_address - target->text.base_address));
+                if (tgt_scan.targets.empty()) continue;
+
+                std::unordered_map<uint64_t, uintptr_t> entry_earliest;
+                for (auto m: tgt_scan.targets) {
+                    if (m < limit_address) continue;
+                    const uint64_t e = target->function_table.containing(m);
+                    if (e == 0 || e < limit_address) continue;
+                    bool claimed = false;
+                    for (const auto &[name, fn]: target->known_functions) {
+                        (void) name;
+                        if (fn && fn->address == e) {
+                            claimed = true;
+                            break;
+                        }
+                    }
+                    if (claimed) continue;
+                    auto it = entry_earliest.find(e);
+                    if (it == entry_earliest.end() || m < it->second) {
+                        entry_earliest[e] = m;
+                    }
+                }
+                if (entry_earliest.empty()) continue;
+
+                uint64_t entry = 0;
+                uintptr_t match = 0;
+                if (entry_earliest.size() == 1) {
+                    entry = entry_earliest.begin()->first;
+                    match = entry_earliest.begin()->second;
+                } else {
+                    int best_diff = std::numeric_limits<int>::max();
+                    int ties = 0;
+                    for (const auto &[e, m]: entry_earliest) {
+                        auto *fn = target->find_function(e);
+                        if (!fn || fn->size == 0) continue;
+                        const size_t tgt_leaf = effective_leaf_size(*fn);
+                        if (tgt_leaf == 0) continue;
+                        const int diff = std::abs(static_cast<int>(tgt_leaf) -
+                                                  static_cast<int>(leaf));
+                        if (diff < best_diff) {
+                            best_diff = diff;
+                            ties = 1;
+                            entry = e;
+                            match = m;
+                        } else if (diff == best_diff) {
+                            ++ties;
+                        }
+                    }
+                    if (entry == 0 || ties != 1 || best_diff > 32) continue;
+                }
+
+                if (auto *fn = target->find_function(entry); fn && fn->size > 0) {
+                    const size_t tgt_leaf = effective_leaf_size(*fn);
+                    if (tgt_leaf > 0 && leaf > 0) {
+                        const double ratio = static_cast<double>(tgt_leaf) /
+                                            static_cast<double>(leaf);
+                        if (ratio < 0.4 || ratio > 2.5) continue;
+                    }
+                }
+
+                const int target_po = static_cast<int>(
+                        static_cast<intptr_t>(entry) - static_cast<intptr_t>(match));
+                last_training_offset = tr.train_po;
+                if (signature_info) {
+                    signature_info->pattern = pattern;
+                    signature_info->pattern_offset = target_po;
+                }
+                soft_path_active = false;
+                if (auto logger = spdlog::get(logger_name)) {
+                    logger->info("scan_by_short_body: {} -> {:#x} (leaf={} try_sz={})",
+                                 original->name, entry, leaf, tr.try_sz);
+                }
+                return reinterpret_cast<void *>(entry);
             }
-            soft_path_active = false;
-            if (auto logger = spdlog::get(logger_name)) {
-                logger->info("scan_by_short_body: {} -> {:#x} (train_size={})",
-                             original->name, entry, original->size);
+
+            // Unique fixed mid-body needle for prologue-sharing families
+            // (equal/rawequal/lessthan). Strict: single raw hit on train and
+            // target; match must lie inside the resolved body.
+            {
+                const auto *bytes = reinterpret_cast<const uint8_t *>(original->address);
+                const size_t n = leaf;
+                for (size_t len = 12; len >= 6; --len) {
+                    // Prefer mid/late needles over shared prologues.
+                    for (size_t off = n - len + 1; off-- > 0; ) {
+                        size_t nonzero = 0;
+                        for (size_t k = 0; k < len; ++k) {
+                            if (bytes[off + k] != 0) ++nonzero;
+                        }
+                        if (nonzero < (len * 3) / 4) continue;
+                        // Shared equal-family prologues start with push r12; skip.
+                        if (off < 8) continue;
+
+                        auto pattern = trim(to_hex(bytes + off, bytes + off + len));
+                        MemorySignature train_scan(pattern.c_str(), 0, false);
+                        train_scan.log = false;
+                        train_scan.scan(train_text.base_address, train_text.size);
+                        if (train_scan.targets.size() != 1) continue;
+                        if (!original->in_function(train_scan.targets[0])) continue;
+
+                        MemorySignature tgt_scan(pattern.c_str(), 0, false);
+                        tgt_scan.log = false;
+                        tgt_scan.scan(limit_address,
+                                      target->text.size -
+                                              (limit_address - target->text.base_address));
+                        if (tgt_scan.targets.size() != 1) continue;
+                        const uintptr_t match = tgt_scan.targets[0];
+                        if (match < limit_address) continue;
+                        const uint64_t entry = target->function_table.containing(match);
+                        if (entry == 0 || entry < limit_address) continue;
+                        if (match < entry) continue;
+                        bool claimed = false;
+                        for (const auto &[name, fn]: target->known_functions) {
+                            (void) name;
+                            if (fn && fn->address == entry) {
+                                claimed = true;
+                                break;
+                            }
+                        }
+                        if (claimed) continue;
+                        auto *fn = target->find_function(entry);
+                        if (!fn || fn->size == 0) continue;
+                        if (match >= entry + fn->size) continue;
+                        // Train needle at +off must land at roughly +off on target
+                        // (rejects equal-family prologue collisions).
+                        const auto rel = static_cast<int64_t>(match - entry);
+                        if (std::abs(rel - static_cast<int64_t>(off)) > 24) continue;
+                        const size_t tgt_leaf = effective_leaf_size(*fn);
+                        if (tgt_leaf > 0) {
+                            const double ratio = static_cast<double>(tgt_leaf) /
+                                                static_cast<double>(leaf);
+                            if (ratio < 0.4 || ratio > 2.5) continue;
+                        }
+                        if (match >= entry + std::max(leaf * 2, size_t{256})) continue;
+
+                        const int target_po = static_cast<int>(
+                                static_cast<intptr_t>(entry) - static_cast<intptr_t>(match));
+                        last_training_offset = -static_cast<int>(off);
+                        if (signature_info) {
+                            signature_info->pattern = pattern;
+                            signature_info->pattern_offset = target_po;
+                        }
+                        soft_path_active = false;
+                        if (auto logger = spdlog::get(logger_name)) {
+                            logger->info("scan_by_short_body: {} -> {:#x} (unique_needle len={} off={})",
+                                         original->name, entry, len, off);
+                        }
+                        return reinterpret_cast<void *>(entry);
+                    }
+                }
             }
-            return reinterpret_cast<void *>(entry);
+
+            log_skip("all_sizes_failed");
+            return nullptr;
         }
 
         void *scan_by_micro_windows() {
@@ -1037,6 +1262,15 @@ namespace function_relocation {
                     if (m < limit_address) continue;
                     uint64_t e = target->function_table.containing(m);
                     if (e == 0 || e < limit_address) continue;
+                    bool claimed = false;
+                    for (const auto &[nm, fn]: target->known_functions) {
+                        (void) nm;
+                        if (fn && fn->address == e) {
+                            claimed = true;
+                            break;
+                        }
+                    }
+                    if (claimed) continue;
                     votes_ext.push_back({m, e, wi});
                 }
             }
