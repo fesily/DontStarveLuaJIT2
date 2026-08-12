@@ -93,6 +93,15 @@ local function do_flush(reason)
     print(string.format("[JITTER][LUA] anim_hook: installed=%s calls=%s matches=%s preserved=%s | perframe: calls=%s blocked=%s",
         tostring(installed), tostring(calls), tostring(matches), tostring(preserved),
         tostring(pf_calls), tostring(pf_blocked)))
+    local pxy_calls, pxy_blocked = 0, 0
+    if GameInjector.DS_LUAJIT_jitter_probe_get_proxy_calls then
+        pxy_calls = GameInjector.DS_LUAJIT_jitter_probe_get_proxy_calls() or 0
+    end
+    if GameInjector.DS_LUAJIT_jitter_probe_get_proxy_blocked then
+        pxy_blocked = GameInjector.DS_LUAJIT_jitter_probe_get_proxy_blocked() or 0
+    end
+    print(string.format("[JITTER][LUA] proxy_hook: calls=%s blocked=%s",
+        tostring(pxy_calls), tostring(pxy_blocked)))
     if GameInjector.DS_LUAJIT_jitter_probe_flush then
         print("[JITTER][LUA] flush requested: " .. tostring(reason))
         GameInjector.DS_LUAJIT_jitter_probe_flush()

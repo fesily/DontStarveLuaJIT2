@@ -323,6 +323,11 @@ using PerFrameUpdate_t = void(__fastcall *)(void *self, int frame_count);
 PerFrameUpdate_t original_PerFrameUpdate = nullptr;
 std::atomic_uint64_t g_perframe_calls{0};
 std::atomic_uint64_t g_perframe_blocked{0};
+// Proxy-based anim update (called via function pointer, bypasses 0x9B5E0 entry).
+using AnimUpdateProxy_t = void(__fastcall *)(void *proxy, void *arg2);
+AnimUpdateProxy_t original_AnimUpdateProxy = nullptr;
+std::atomic_uint64_t g_proxy_calls{0};
+std::atomic_uint64_t g_proxy_blocked{0};
 
 // Local player entity pointer (set from Lua via set_track_entity).
 // When non-null, flAnimTime is preserved across Deserialize for this entity.
@@ -546,6 +551,57 @@ void __fastcall hooked_PerFrameUpdate(void *self, int frame_count) {
         if (old_time > 0.1f && new_time < old_time - 0.1f) {
             *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME) = old_time;
             g_perframe_blocked.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+}
+// Proxy-based anim update hook: called via function pointer, bypasses 0x9B5E0.
+// Takes a proxy object; component is at proxy+0x08.
+void __fastcall hooked_AnimUpdateProxy(void *proxy, void *arg2) {
+    if (!g_enabled.load(std::memory_order_relaxed) || !proxy) {
+        if (original_AnimUpdateProxy) {
+            original_AnimUpdateProxy(proxy, arg2);
+        }
+        return;
+    }
+    g_proxy_calls.fetch_add(1, std::memory_order_relaxed);
+
+    const uint64_t local_entity = g_local_player_entity.load(std::memory_order_relaxed);
+    bool check_back = false;
+    float old_time = 0.f;
+    void *anim_node = nullptr;
+    float old_animnode_time = 0.f;
+    if (local_entity != 0) {
+        void *component = *reinterpret_cast<void **>(static_cast<char *>(proxy) + 0x08);
+        if (component) {
+            void *entity = *reinterpret_cast<void **>(static_cast<char *>(component) + ASC_ENTITY);
+            if (reinterpret_cast<uint64_t>(entity) == local_entity) {
+                check_back = true;
+                old_time = *reinterpret_cast<float *>(static_cast<char *>(component) + ASC_FL_ANIM_TIME);
+                anim_node = *reinterpret_cast<void **>(static_cast<char *>(component) + ASC_P_ANIM_NODE);
+                if (anim_node) {
+                    old_animnode_time = *reinterpret_cast<float *>(
+                        static_cast<char *>(anim_node) + ANIMNODE_FL_TIME);
+                }
+            }
+        }
+    }
+
+    if (original_AnimUpdateProxy) {
+        original_AnimUpdateProxy(proxy, arg2);
+    }
+
+    if (check_back) {
+        void *component = *reinterpret_cast<void **>(static_cast<char *>(proxy) + 0x08);
+        if (component) {
+            float new_time = *reinterpret_cast<float *>(static_cast<char *>(component) + ASC_FL_ANIM_TIME);
+            if (old_time > 0.1f && new_time < old_time - 0.1f) {
+                *reinterpret_cast<float *>(static_cast<char *>(component) + ASC_FL_ANIM_TIME) = old_time;
+                if (anim_node) {
+                    *reinterpret_cast<float *>(
+                        static_cast<char *>(anim_node) + ANIMNODE_FL_TIME) = old_animnode_time;
+                }
+                g_proxy_blocked.fetch_add(1, std::memory_order_relaxed);
+            }
         }
     }
 }
@@ -905,6 +961,12 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_perframe_calls() {
 }
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_perframe_blocked() {
     return static_cast<int>(g_perframe_blocked.load(std::memory_order_relaxed));
+}
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_proxy_calls() {
+    return static_cast<int>(g_proxy_calls.load(std::memory_order_relaxed));
+}
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_proxy_blocked() {
+    return static_cast<int>(g_proxy_blocked.load(std::memory_order_relaxed));
 }
 
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool on) {
