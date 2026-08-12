@@ -27,8 +27,6 @@ extern "C" int DS_LUAJIT_jitter_probe_get_anim_preserve_count();
 extern "C" int DS_LUAJIT_jitter_probe_get_local_a0_patched();
 extern "C" int DS_LUAJIT_jitter_probe_get_a0_enter_count();
 extern "C" int DS_LUAJIT_jitter_probe_get_a0_match_count();
-extern "C" void DS_LUAJIT_jitter_probe_set_local_anim_own(bool on);
-extern "C" int DS_LUAJIT_jitter_probe_get_local_anim_own();
 extern "C" void DS_LUAJIT_jitter_probe_set_local_only(bool on);
 extern "C" void DS_LUAJIT_jitter_probe_flush();
 extern "C" void DS_LUAJIT_jitter_probe_set_vm_tag(const char *tag);
@@ -123,12 +121,7 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_get_a0_enter_count",
                                               &DS_LUAJIT_jitter_probe_get_a0_enter_count);
     (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_get_a0_match_count",
-                                              &DS_LUAJIT_jitter_probe_get_a0_match_count);
-    (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_set_local_anim_own",
-                                              &DS_LUAJIT_jitter_probe_set_local_anim_own);
-    (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_get_local_anim_own",
-                                              &DS_LUAJIT_jitter_probe_get_local_anim_own);
-    (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_set_local_only",
+                                              &DS_LUAJIT_jitter_probe_get_a0_match_count);    (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_set_local_only",
                                               &DS_LUAJIT_jitter_probe_set_local_only);
     (void)host->register_game_injector_export("DS_LUAJIT_jitter_probe_flush",
                                               &DS_LUAJIT_jitter_probe_flush);

@@ -326,6 +326,7 @@ if (WIN32)
     add_subdirectory(plugins/plugin_fps_render)
     add_subdirectory(plugins/plugin_network_tick)
     add_subdirectory(plugins/plugin_debug_jitterprobe)
+    add_subdirectory(plugins/plugin_client_anim)
     # Gum-using plugins only — not dummy / manager / save_fork.
     foreach(_ds_gum_plugin IN ITEMS
             plugin_network_rpc
@@ -336,7 +337,8 @@ if (WIN32)
             plugin_debug_profiler
             plugin_fps_render
             plugin_network_tick
-            plugin_debug_jitterprobe)
+            plugin_debug_jitterprobe
+            plugin_client_anim)
         target_link_libraries(${_ds_gum_plugin} PRIVATE Frida::Gum)
     endforeach()
 else()
