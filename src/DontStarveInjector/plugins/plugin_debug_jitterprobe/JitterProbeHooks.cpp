@@ -243,11 +243,13 @@ static function_relocation::MemorySignature enable_pred_sig{
 
 // Application frame (MessagePump / CacheRender / DrawCacheRender host).
 // FUN_140004230: PUSH RBX; PUSH RDI; SUB RSP,0x68; MOVSS XMM0,[imm]; MOVAPS [RSP+50],XMM6
+// FUN_140004230 Application::OnFrame (MessagePump/CacheRender/DrawCache host).
+// MOVSS XMM0,[rip+disp32] needs 4-byte wildcard — previous pattern missed them.
 static function_relocation::MemorySignature app_frame_sig{
     "53 "
     "57 "
     "48 83 EC 68 "
-    "F3 0F 10 05 "
+    "F3 0F 10 05 ?? ?? ?? ?? "
     "0F 29 74 24 50",
     0};
 
@@ -615,6 +617,46 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_track(void *transfor
     std::fprintf(stderr, "[JitterProbe] track_self=%p\n", transform);
 }
 
+// Resolve cTransformComponent* from cEntity* (Win x64).
+// Preferred: entity+0xF0 (lag-comp table). Sanity: transform+0x18 back-ref == entity.
+// Fallback: entity+0x1E0 adjustor-style (-0x20) used by entity::EnableMovementPrediction.
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_track_entity(void *entity) {
+    if (!entity) {
+        g_track_self.store(0, std::memory_order_release);
+        std::fprintf(stderr, "[JitterProbe] track_entity=null -> track cleared\n");
+        return;
+    }
+    auto *ent = static_cast<char *>(entity);
+    void *candidates[2] = {
+        *reinterpret_cast<void **>(ent + 0xF0),
+        nullptr,
+    };
+    void *slot_1e0 = *reinterpret_cast<void **>(ent + 0x1E0);
+    if (slot_1e0) {
+        candidates[1] = static_cast<char *>(slot_1e0) - 0x20;
+    }
+    void *chosen = nullptr;
+    for (void *cand : candidates) {
+        if (!cand) {
+            continue;
+        }
+        void *back = *reinterpret_cast<void **>(static_cast<char *>(cand) + 0x18);
+        if (back == entity) {
+            chosen = cand;
+            break;
+        }
+        if (!chosen) {
+            chosen = cand; // keep first non-null as weak fallback
+        }
+    }
+    g_track_self.store(reinterpret_cast<uint64_t>(chosen), std::memory_order_release);
+    std::fprintf(stderr,
+                 "[JitterProbe] track_entity=%p transform=%p (f0=%p 1e0-20=%p back_ok=%d)\n",
+                 entity, chosen, candidates[0], candidates[1],
+                 (chosen && *reinterpret_cast<void **>(static_cast<char *>(chosen) + 0x18) == entity) ? 1
+                                                                                                      : 0);
+}
+
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool on) {
     g_local_only.store(on, std::memory_order_release);
     std::fprintf(stderr, "[JitterProbe] local_only=%d\n", on ? 1 : 0);
@@ -654,5 +696,6 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_track(void *) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_flush() {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_vm_tag(const char *) {}
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_track_entity(void *) {}
 
 #endif

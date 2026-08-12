@@ -8,7 +8,10 @@
 --        -> data/unsafedata/jitter_probe_dump_<vm>_<timestamp>.txt
 --        -> data/unsafedata/jitter_probe_dump_latest.txt (alias)
 --
--- Lua wall display metrics removed (non-discriminating). Sparse pos/mode only.
+-- Hypothesis (pred OFF): pos is server-authoritative (ok), but walk anim
+-- should be local-driven. Stock engine still replicates AnimState (hash/bank/
+-- time on full-sync / anim switch). Probe samples Lua AnimState + binds
+-- native track_self to local Transform.
 if TheNet and TheNet:IsDedicated() then
     return
 end
@@ -42,7 +45,6 @@ local function set_vm_tag()
     else
         tag = "game"
     end
-    -- sanitize for filename
     tag = tostring(tag):gsub("[^%w_%-]", "_")
     if GameInjector.DS_LUAJIT_jitter_probe_set_vm_tag then
         GameInjector.DS_LUAJIT_jitter_probe_set_vm_tag(tag)
@@ -61,6 +63,7 @@ end
 -- Sparse sim-tick pos samples: low rate, only large steps printed.
 local SAMPLE_EVERY = 10
 local POS_PRINT_MIN_D = 0.05
+local ANIM_SAMPLE_EVERY = 15 -- ~0.5s at 30Hz sim
 
 local function do_flush(reason)
     set_vm_tag()
@@ -70,11 +73,77 @@ local function do_flush(reason)
     end
 end
 
+local function bind_track_self(inst)
+    if not GameInjector.DS_LUAJIT_jitter_probe_set_track_entity
+        and not GameInjector.DS_LUAJIT_jitter_probe_set_track then
+        return
+    end
+    local ent = inst and inst.entity
+    if not ent then
+        JLog("track", "no inst.entity")
+        return
+    end
+    -- Prefer entity* -> transform* native resolve (Win x64 offsets).
+    if GameInjector.DS_LUAJIT_entity_get_raw_ptr
+        and GameInjector.DS_LUAJIT_jitter_probe_set_track_entity then
+        local ok, raw = pcall(GameInjector.DS_LUAJIT_entity_get_raw_ptr, ent)
+        if ok and raw and raw ~= 0 then
+            GameInjector.DS_LUAJIT_jitter_probe_set_track_entity(raw)
+            JLog("track", "bound via entity_get_raw_ptr raw=%s", tostring(raw))
+            return
+        end
+        JLog("track", "entity_get_raw_ptr failed ok=%s raw=%s", tostring(ok), tostring(raw))
+    end
+    -- Fallback: try passing entity userdata as opaque (may not match transform*)
+    if GameInjector.DS_LUAJIT_jitter_probe_set_track then
+        JLog("track", "fallback set_track with entity userdata (may miss filter)")
+    end
+end
+
+local function sample_anim(inst)
+    local as = inst.AnimState
+    if not as then
+        return
+    end
+    local bank, anim, time, facing
+    -- API surface differs slightly by build; pcall each.
+    if as.GetCurrentBankName then
+        local ok, v = pcall(function() return as:GetCurrentBankName() end)
+        if ok then bank = v end
+    end
+    if as.GetCurrentAnimationName then
+        local ok, v = pcall(function() return as:GetCurrentAnimationName() end)
+        if ok then anim = v end
+    elseif as.GetCurrentAnimation then
+        local ok, v = pcall(function() return as:GetCurrentAnimation() end)
+        if ok then anim = v end
+    end
+    if as.GetCurrentAnimationTime then
+        local ok, v = pcall(function() return as:GetCurrentAnimationTime() end)
+        if ok then time = v end
+    end
+    if as.GetCurrentFacing then
+        local ok, v = pcall(function() return as:GetCurrentFacing() end)
+        if ok then facing = v end
+    end
+    return bank, anim, time, facing
+end
+
 AddPlayerPostInit(function(inst)
     inst:DoTaskInTime(0, function(inst)
         if ThePlayer ~= inst then
             return
         end
+        bind_track_self(inst)
+        -- rebind a few times: entity/proxy can rebind after spawn
+        for _, delay in ipairs({0.5, 1.5, 3.0}) do
+            inst:DoTaskInTime(delay, function(i)
+                if ThePlayer == i then
+                    bind_track_self(i)
+                end
+            end)
+        end
+
         local loco = inst.components and inst.components.locomotor
         local pred = Profile and Profile.GetMovementPredictionEnabled and Profile:GetMovementPredictionEnabled()
         JLog("mode", "pred_profile=%s loco=%s sg=%s",
@@ -86,27 +155,50 @@ AddPlayerPostInit(function(inst)
         local tick_i = 0
         local sum_d, sum_d2, n_d, max_d = 0, 0, 0, 0
         local phase = pred and "on" or "off"
+        local last_bank, last_anim, last_time, last_facing
+        local anim_reset = 0
+        local anim_back = 0
+        local anim_n = 0
 
         inst:DoPeriodicTask(0, function()
             if not inst:IsValid() then
                 return
             end
             tick_i = tick_i + 1
-            if tick_i % SAMPLE_EVERY ~= 0 then
-                return
+            if tick_i % SAMPLE_EVERY == 0 then
+                local x, y, z = inst.Transform:GetWorldPosition()
+                local d = last_x and math.sqrt((x - last_x) * (x - last_x) + (z - last_z) * (z - last_z)) or 0
+                if last_x then
+                    sum_d = sum_d + d
+                    sum_d2 = sum_d2 + d * d
+                    n_d = n_d + 1
+                    if d > max_d then max_d = d end
+                end
+                if d >= POS_PRINT_MIN_D then
+                    JLog("pos", "xyz=%.4f,%.4f,%.4f d=%.5f phase=%s", x, y, z, d, phase)
+                end
+                last_x, last_z = x, z
             end
-            local x, y, z = inst.Transform:GetWorldPosition()
-            local d = last_x and math.sqrt((x - last_x) * (x - last_x) + (z - last_z) * (z - last_z)) or 0
-            if last_x then
-                sum_d = sum_d + d
-                sum_d2 = sum_d2 + d * d
-                n_d = n_d + 1
-                if d > max_d then max_d = d end
+
+            if tick_i % ANIM_SAMPLE_EVERY == 0 then
+                local bank, anim, time, facing = sample_anim(inst)
+                if anim ~= nil or bank ~= nil then
+                    anim_n = anim_n + 1
+                    local changed = (bank ~= last_bank) or (anim ~= last_anim)
+                    local tback = (type(time) == "number" and type(last_time) == "number"
+                        and time + 0.05 < last_time and not changed)
+                    if changed then
+                        anim_reset = anim_reset + 1
+                        JLog("anim", "chg bank=%s anim=%s t=%s face=%s",
+                            tostring(bank), tostring(anim), tostring(time), tostring(facing))
+                    elseif tback then
+                        anim_back = anim_back + 1
+                        JLog("anim", "time_back bank=%s anim=%s t=%.4f<-%.4f face=%s",
+                            tostring(bank), tostring(anim), time, last_time, tostring(facing))
+                    end
+                    last_bank, last_anim, last_time, last_facing = bank, anim, time, facing
+                end
             end
-            if d >= POS_PRINT_MIN_D then
-                JLog("pos", "xyz=%.4f,%.4f,%.4f d=%.5f phase=%s", x, y, z, d, phase)
-            end
-            last_x, last_z = x, z
         end)
 
         local last_pred = pred
@@ -139,6 +231,9 @@ AddPlayerPostInit(function(inst)
                 JLog("stats", "phase=%s n=%d mean_d=%.5f stdev_d=%.5f max_d=%.5f",
                     phase, n_d, mean, math.sqrt(var), max_d)
             end
+            JLog("anim_stats", "n=%d chg=%d time_back=%d last=%s/%s t=%s",
+                anim_n, anim_reset, anim_back,
+                tostring(last_bank), tostring(last_anim), tostring(last_time))
             do_flush("event")
         end)
 
@@ -148,4 +243,4 @@ AddPlayerPostInit(function(inst)
     end)
 end)
 
-print("[JITTER][LUA] loaded — native ring only; PushEvent('jitter_probe_flush') to dump")
+print("[JITTER][LUA] loaded — native ring + local track + anim samples; PushEvent('jitter_probe_flush')")
