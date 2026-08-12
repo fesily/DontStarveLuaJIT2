@@ -321,34 +321,46 @@ target_link_libraries(plugin_core_vm PRIVATE Frida::Gum)
 add_subdirectory(plugins/plugin_manager)
 
 # Gum plugins link Frida::Gum shared directly (no Injector re-export; selective).
-# Keep WIN32 gate until POSIX shared stage is verified in-tree.
-if (WIN32)
+# Stage layout is platform-agnostic (3rd/frida-gum/<plat>/lib + Frida::Gum).
+# Design 2026-08-07: enable on POSIX once the shared stage is present — do not
+# skip solely for missing Injector re-export.
+set(_ds_gum_stage_ok FALSE)
+if (TARGET Frida::Gum AND FRIDA_GUM_RUNTIME AND EXISTS "${FRIDA_GUM_RUNTIME}")
+    set(_ds_gum_stage_ok TRUE)
+endif()
+
+if (_ds_gum_stage_ok)
+    # Cross-platform gum plugins (Linux/macOS often stub until signatures land).
     add_subdirectory(plugins/plugin_network_rpc)
     add_subdirectory(plugins/plugin_network_sim)
     add_subdirectory(plugins/plugin_sim_lagcomp)
-    add_subdirectory(plugins/plugin_render_vbpool)
-    add_subdirectory(plugins/plugin_render_angle)
     add_subdirectory(plugins/plugin_debug_profiler)
     add_subdirectory(plugins/plugin_fps_render)
     add_subdirectory(plugins/plugin_network_tick)
-    # Gum-using plugins only — not dummy / manager / save_fork.
-    foreach(_ds_gum_plugin IN ITEMS
+    set(_ds_gum_plugins
             plugin_network_rpc
             plugin_network_sim
             plugin_sim_lagcomp
-            plugin_render_vbpool
-            plugin_render_angle
             plugin_debug_profiler
             plugin_fps_render
             plugin_network_tick)
+    # render.vbpool / render.angle need ANGLE stage (3rd/angle/win64) + GLES headers.
+    if (WIN32)
+        add_subdirectory(plugins/plugin_render_vbpool)
+        add_subdirectory(plugins/plugin_render_angle)
+        list(APPEND _ds_gum_plugins plugin_render_vbpool plugin_render_angle)
+    endif()
+    foreach(_ds_gum_plugin IN LISTS _ds_gum_plugins)
         target_link_libraries(${_ds_gum_plugin} PRIVATE Frida::Gum)
     endforeach()
+    unset(_ds_gum_plugins)
 else()
     message(WARNING
         "Skipping gum-using dynamic plugins (network.rpc / network.sim / sim.lagcomp / render.vbpool / render.angle / debug.profiler / fps.render / network.tick): "
-        "shared gum stage not available or unverified on Linux/macOS. "
-        "Plugins link Frida::Gum directly once the stage is ready.")
+        "shared gum stage not available (need 3rd/frida-gum/<plat> lib + Frida::Gum). "
+        "Run tools/setup_frida_gum.py, then reconfigure.")
 endif()
+unset(_ds_gum_stage_ok)
 
 # ---------------------------------------------------------------------------
 # Shared runtimes → Mod/deps (sibling of Mod/plugins; NOT under bin64/<plat>/)
