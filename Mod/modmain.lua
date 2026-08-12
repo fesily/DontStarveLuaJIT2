@@ -732,6 +732,13 @@ local function main()
 				jit = env.jit or jit,
 				mod_env = env,
 			}
+			print(string.format(
+				"[luajit][plugin] resolve has_luajit=%s is_client=%s EnableClientSmooth=%s EnableJitterProbe=%s LuaVmType=%s",
+				tostring(gate_ctx.has_luajit),
+				tostring(gate_ctx.is_client),
+				tostring(config_lookup("EnableClientSmooth")),
+				tostring(config_lookup("EnableJitterProbe")),
+				tostring(config_lookup("LuaVmType"))))
 			host:resolve(config_lookup, gate_ctx)
 			local lr = host:load_phase(PluginHost.Phase.AfterModMain)
 			if not lr.ok then

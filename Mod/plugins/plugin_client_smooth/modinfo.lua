@@ -30,7 +30,12 @@ support_reload = false
 options = { all_of = { "EnableClientSmooth" } }
 
 when = function(ctx)
-    if not ctx or not ctx.has_luajit then
+    -- Pure Lua display path: do not require require("jit") (LuaVmType=game has no jit).
+    -- Need client + Injector/mod host context.
+    if not ctx then
+        return false
+    end
+    if ctx.injector == nil and not ctx.has_luajit then
         return false
     end
     if ctx.is_client ~= nil then

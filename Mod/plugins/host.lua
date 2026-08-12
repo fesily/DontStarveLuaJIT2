@@ -349,12 +349,21 @@ function PluginHost:resolve(config, gate_ctx)
         local id = plugin_id(p)
         local options = plugin_field(p, "options", nil)
         e.option_enabled = eval_option_rule(options, config)
-        e.gate_ok = e.option_enabled and can_load_plugin(p, self.last_ctx)
-        if not e.option_enabled or not e.gate_ok then
+        local when_ok = can_load_plugin(p, self.last_ctx)
+        e.gate_ok = e.option_enabled and when_ok
+        if not e.option_enabled or not when_ok then
             e.status = STATUS.Disabled
             e.resolved = true
             result.disabled[#result.disabled + 1] = id
-            self:push_event(id, PHASE.None, STATUS.Disabled, FAIL.None, "options_or_gate")
+            local detail
+            if not e.option_enabled and not when_ok then
+                detail = "options_off+when_false"
+            elseif not e.option_enabled then
+                detail = "options_off"
+            else
+                detail = "when_false"
+            end
+            self:push_event(id, PHASE.None, STATUS.Disabled, FAIL.None, detail)
         else
             result.enabled[#result.enabled + 1] = id
         end
