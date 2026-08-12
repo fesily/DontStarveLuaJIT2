@@ -41,6 +41,7 @@
 
 
 #include <frida-gum.h>
+#include "util/frida_gum_interceptor.hpp"
 #include <spdlog/sinks/basic_file_sink.h>
 
 
@@ -318,7 +319,7 @@ static bool install_posix_startup_hook() {
         gum_initialized = true;
     }
     auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
-    gum_interceptor_replace_fast(interceptor, api, (void *) &chdir_hook, (void **) &origin);
+    ds::gum::replace_fast(interceptor, api, (void *) &chdir_hook, (void **) &origin);
     if (!origin) {
         posix_startup_hook_installed = false;
         return false;
@@ -398,7 +399,7 @@ DONTSTARVEINJECTOR_API bool HookStartupEntry() {
     }
 
     auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
-    gum_interceptor_replace_fast(
+    ds::gum::replace_fast(
         interceptor,
         set_current_directory_w,
         reinterpret_cast<void *>(&SetCurrentDirectoryW_hook),
