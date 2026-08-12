@@ -76,6 +76,7 @@ end
 local function bind_track_self(inst)
     if not GameInjector.DS_LUAJIT_jitter_probe_set_track_entity
         and not GameInjector.DS_LUAJIT_jitter_probe_set_track then
+        print("[JITTER][LUA][track] native set_track* missing — rebuild DLL")
         return
     end
     local ent = inst and inst.entity
@@ -89,6 +90,8 @@ local function bind_track_self(inst)
         local ok, raw = pcall(GameInjector.DS_LUAJIT_entity_get_raw_ptr, ent)
         if ok and raw and raw ~= 0 then
             GameInjector.DS_LUAJIT_jitter_probe_set_track_entity(raw)
+            -- dual print: JLog + plain (easier client_log search)
+            print(string.format("[JITTER][LUA] track_entity bound raw=%s", tostring(raw)))
             JLog("track", "bound via entity_get_raw_ptr raw=%s", tostring(raw))
             return
         end
@@ -105,28 +108,27 @@ local function sample_anim(inst)
     if not as then
         return
     end
-    local bank, anim, time, facing
-    -- API surface differs slightly by build; pcall each.
-    if as.GetCurrentBankName then
-        local ok, v = pcall(function() return as:GetCurrentBankName() end)
-        if ok then bank = v end
+    local bank, anim, time, facing, len
+    local function try(method, ...)
+        if type(as[method]) ~= "function" then
+            return nil
+        end
+        local ok, v = pcall(as[method], as, ...)
+        if ok then
+            return v
+        end
+        return nil
     end
-    if as.GetCurrentAnimationName then
-        local ok, v = pcall(function() return as:GetCurrentAnimationName() end)
-        if ok then anim = v end
-    elseif as.GetCurrentAnimation then
-        local ok, v = pcall(function() return as:GetCurrentAnimation() end)
-        if ok then anim = v end
-    end
-    if as.GetCurrentAnimationTime then
-        local ok, v = pcall(function() return as:GetCurrentAnimationTime() end)
-        if ok then time = v end
-    end
-    if as.GetCurrentFacing then
-        local ok, v = pcall(function() return as:GetCurrentFacing() end)
-        if ok then facing = v end
-    end
-    return bank, anim, time, facing
+    bank = try("GetCurrentBankName") or try("GetBank")
+    -- DST often lacks GetCurrentAnimationName; probe several.
+    anim = try("GetCurrentAnimationName")
+        or try("GetCurrentAnimation")
+        or try("GetAnimState")
+    -- Some builds expose only IsCurrentAnimation; leave anim nil then.
+    time = try("GetCurrentAnimationTime")
+    len = try("GetCurrentAnimationLength")
+    facing = try("GetCurrentFacing") or try("GetFacing")
+    return bank, anim, time, facing, len
 end
 
 AddPlayerPostInit(function(inst)
@@ -181,20 +183,28 @@ AddPlayerPostInit(function(inst)
             end
 
             if tick_i % ANIM_SAMPLE_EVERY == 0 then
-                local bank, anim, time, facing = sample_anim(inst)
-                if anim ~= nil or bank ~= nil then
+                local bank, anim, time, facing, alen = sample_anim(inst)
+                if anim ~= nil or bank ~= nil or type(time) == "number" then
                     anim_n = anim_n + 1
-                    local changed = (bank ~= last_bank) or (anim ~= last_anim)
+                    local changed = (bank ~= last_bank) or (anim ~= last_anim and anim ~= nil and last_anim ~= nil)
+                    -- Loop wrap: time restarts near 0 after progressing. Not authority rewind.
+                    local loop_wrap = (type(time) == "number" and type(last_time) == "number"
+                        and last_time > 0.2 and time < 0.15
+                        and (alen == nil or last_time + 0.05 >= (alen * 0.7)))
                     local tback = (type(time) == "number" and type(last_time) == "number"
-                        and time + 0.05 < last_time and not changed)
+                        and time + 0.05 < last_time and not changed and not loop_wrap
+                        -- ignore tiny float noise; require meaningful rewind
+                        and (last_time - time) > 0.2)
                     if changed then
                         anim_reset = anim_reset + 1
-                        JLog("anim", "chg bank=%s anim=%s t=%s face=%s",
-                            tostring(bank), tostring(anim), tostring(time), tostring(facing))
+                        JLog("anim", "chg bank=%s anim=%s t=%s len=%s face=%s",
+                            tostring(bank), tostring(anim), tostring(time), tostring(alen), tostring(facing))
+                    elseif loop_wrap then
+                        -- keep quiet unless debugging; still count via sample continuity
                     elseif tback then
                         anim_back = anim_back + 1
-                        JLog("anim", "time_back bank=%s anim=%s t=%.4f<-%.4f face=%s",
-                            tostring(bank), tostring(anim), time, last_time, tostring(facing))
+                        JLog("anim", "time_back bank=%s anim=%s t=%.4f<-%.4f len=%s face=%s",
+                            tostring(bank), tostring(anim), time, last_time, tostring(alen), tostring(facing))
                     end
                     last_bank, last_anim, last_time, last_facing = bank, anim, time, facing
                 end
