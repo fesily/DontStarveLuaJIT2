@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdarg>
 #include <cstdlib>
 #include <string>
 #include <ctime>
@@ -471,14 +472,28 @@ void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
     }
 }
 
+static void debug_log(const char *fmt, ...) {
+    FILE *f = std::fopen("jitter_probe_install.log", "a");
+    if (!f) return;
+    va_list ap;
+    va_start(ap, fmt);
+    std::vfprintf(f, fmt, ap);
+    va_end(ap);
+    std::fclose(f);
+}
+
 bool install_one(GumInterceptor *interceptor, function_relocation::MemorySignature &sig,
                  void *hook, void **original_out, const char *name) {
     sig.only_one = true;
     sig.log = true;
+    debug_log("[install_one] name=%s pattern=\"%s\" offset=%d\n", name, sig.pattern, sig.pattern_offset);
     if (!sig.scan(nullptr)) {
+        debug_log("[install_one] SCAN FAILED: %s pattern=\"%s\"\n", name, sig.pattern);
         std::fprintf(stderr, "[JitterProbe] signature not found: %s\n", name);
         return false;
     }
+    debug_log("[install_one] scan OK: %s target=0x%llx\n", name,
+              static_cast<unsigned long long>(sig.target_address));
     auto r = gum_interceptor_replace(
         interceptor,
         reinterpret_cast<void *>(sig.target_address),
@@ -486,9 +501,14 @@ bool install_one(GumInterceptor *interceptor, function_relocation::MemorySignatu
         original_out,
         nullptr);
     if (r != GUM_REPLACE_OK) {
+        debug_log("[install_one] REPLACE FAILED: %s rc=%d addr=0x%llx\n", name,
+                  static_cast<int>(r),
+                  static_cast<unsigned long long>(sig.target_address));
         std::fprintf(stderr, "[JitterProbe] replace failed %s: %d\n", name, static_cast<int>(r));
         return false;
     }
+    debug_log("[install_one] HOOKED: %s at 0x%llx\n", name,
+              static_cast<unsigned long long>(sig.target_address));
     std::fprintf(stderr, "[JitterProbe] hooked %s at %p\n", name,
                  reinterpret_cast<void *>(sig.target_address));
     return true;
