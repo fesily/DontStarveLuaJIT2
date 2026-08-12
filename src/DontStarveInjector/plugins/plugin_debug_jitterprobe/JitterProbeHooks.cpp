@@ -308,6 +308,20 @@ static constexpr int ASC_P_ANIM_NODE = 0xF0;   // AnimNode*
 
 using AnimStateDeserialize_t = void(__fastcall *)(void *self, void *bitstream);
 AnimStateDeserialize_t original_AnimStateDeserialize = nullptr;
+// cAnimStateComponent per-frame update (Win x64) — writes computed flAnimTime.
+// For local player: prevent backward time jumps (new_time < old_time → keep old).
+static function_relocation::MemorySignature perframe_update_sig{
+    "40 53 "
+    "48 83 EC 20 "
+    "48 8B D9 "
+    "E8 ?? ?? ?? ?? "
+    "83 8B A0 00 00 00 04",
+    0};
+
+using PerFrameUpdate_t = void(__fastcall *)(void *self, int frame_count);
+PerFrameUpdate_t original_PerFrameUpdate = nullptr;
+std::atomic_uint64_t g_perframe_calls{0};
+std::atomic_uint64_t g_perframe_blocked{0};
 
 // Local player entity pointer (set from Lua via set_track_entity).
 // When non-null, flAnimTime is preserved across Deserialize for this entity.
@@ -477,6 +491,50 @@ void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
                    server_time - saved_time);
     }
 }
+// Per-frame animation update hook: for local player, prevent backward time jumps.
+// The per-frame update recomputes flAnimTime from a frame counter. After a full-sync
+// anim switch, the counter resets, causing a small time to overwrite the old value.
+// We detect this and keep the old (larger) value for smooth local animation.
+void __fastcall hooked_PerFrameUpdate(void *self, int frame_count) {
+    if (!g_enabled.load(std::memory_order_relaxed) || !self) {
+        if (original_PerFrameUpdate) {
+            original_PerFrameUpdate(self, frame_count);
+        }
+        return;
+    }
+    g_perframe_calls.fetch_add(1, std::memory_order_relaxed);
+
+    // Save old flAnimTime for local player.
+    const uint64_t local_entity = g_local_player_entity.load(std::memory_order_relaxed);
+    bool check_back = false;
+    float old_time = 0.f;
+    if (local_entity != 0) {
+        auto *anim = static_cast<char *>(self);
+        void *entity = *reinterpret_cast<void **>(anim + ASC_ENTITY);
+        if (reinterpret_cast<uint64_t>(entity) == local_entity) {
+            check_back = true;
+            old_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
+        }
+    }
+
+    // Call original per-frame update (may write new flAnimTime).
+    if (original_PerFrameUpdate) {
+        original_PerFrameUpdate(self, frame_count);
+    }
+
+    // For local player: if new time jumped backward, restore old time.
+    if (check_back && self) {
+        auto *anim = static_cast<char *>(self);
+        float new_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
+        // Only block significant backward jumps (>0.5s rewind).
+        // Allows legitimate anim switches (reset to 0) but prevents
+        // server-induced resync jitter (~0.35/s during walking).
+        if (old_time > 0.5f && new_time < old_time - 0.5f) {
+            *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME) = old_time;
+            g_perframe_blocked.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+}
 
 static void debug_log(const char *fmt, ...) {
     FILE *f = std::fopen("jitter_probe_install.log", "a");
@@ -554,6 +612,27 @@ bool install_hooks() {
     if (!install_one(interceptor, draw_cache_sig, reinterpret_cast<void *>(&hooked_DrawCache),
                      reinterpret_cast<void **>(&original_DrawCache), "DrawCacheRender")) {
         std::fprintf(stderr, "[JitterProbe] DrawCacheRender probe unavailable\n");
+    }
+    // Per-frame animation update — prevent backward time jumps for local player.
+    if (!install_one(interceptor, perframe_update_sig,
+                     reinterpret_cast<void *>(&hooked_PerFrameUpdate),
+                     reinterpret_cast<void **>(&original_PerFrameUpdate),
+                     "PerFrameUpdate")) {
+        std::fprintf(stderr, "[JitterProbe] PerFrameUpdate sig failed, trying fallback\n");
+        debug_log("[install] PerFrameUpdate sig failed, trying SetPosition+0xAA90 fallback\n");
+        if (setpos_sig.target_address != 0) {
+            uintptr_t pf_addr = setpos_sig.target_address + 0xAA90;
+            auto r = gum_interceptor_replace(
+                interceptor, reinterpret_cast<void *>(pf_addr),
+                reinterpret_cast<void *>(&hooked_PerFrameUpdate),
+                reinterpret_cast<void **>(&original_PerFrameUpdate), nullptr);
+            if (r == GUM_REPLACE_OK) {
+                debug_log("[install] FALLBACK HOOKED: PerFrameUpdate at 0x%llx\n",
+                          static_cast<unsigned long long>(pf_addr));
+            } else {
+                debug_log("[install] PerFrameUpdate fallback failed: %d\n", static_cast<int>(r));
+            }
+        }
     }
     // AnimState Deserialize — preserve flAnimTime for local player.
     // Primary: signature scan. Fallback: compute from SetPosition address (constant offset 0x10120).
@@ -807,6 +886,12 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_match_count() {
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_preserve_count() {
     return static_cast<int>(g_anim_time_preserved.load(std::memory_order_relaxed));
 }
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_perframe_calls() {
+    return static_cast<int>(g_perframe_calls.load(std::memory_order_relaxed));
+}
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_perframe_blocked() {
+    return static_cast<int>(g_perframe_blocked.load(std::memory_order_relaxed));
+}
 
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool on) {
     g_local_only.store(on, std::memory_order_release);
@@ -847,6 +932,8 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_track(void *) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_flush() {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_vm_tag(const char *) {}
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_perframe_calls() { return 0; }
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_perframe_blocked() { return 0; }
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_track_entity(void *) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_player_entity(void *) {}
 DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_hook_status() { return 0; }
