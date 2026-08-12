@@ -49,6 +49,8 @@ namespace function_relocation {
         uint64_t address = 0;
         size_t size = 0;
         size_t insn_count = 0;
+        // Set after ensure_function_features (lazy ScanCtx disasm).
+        bool features_ready = false;
 
         bool in_function(uint64_t addr) const {
             return address <= addr && addr < address + size;
@@ -152,7 +154,19 @@ namespace function_relocation {
                                                              const FunctionTable &image_table,
                                                              uint64_t image_base);
 
-    // Disasm each Function with size>0 for feature blocks (consts/calls/imms).
-    // Requires apply_nucleus_function_table first. Does not invent starts.
+    // Eager features for named exports (train); game modules stay lazy
+    // (Function shells only). Requires apply_nucleus_function_table first.
     FUNCTION_RELOCATION_API bool scan_module_function_features(ModuleSections &sections);
+
+    // P2: bytes from entry to first RET / external JMP (cap 256). Cheap.
+    FUNCTION_RELOCATION_API size_t function_leaf_size(const Function &fn, size_t cap = 256);
+
+    // P0: on-demand ScanCtx disasm for one body (leaf-clamped). Idempotent.
+    FUNCTION_RELOCATION_API bool ensure_function_features(Function &fn);
+
+    // True if [start,start+size) contains a direct CALL/JMP whose target
+    // resolves (via FunctionTable) to callee_entry. No full feature scan.
+    FUNCTION_RELOCATION_API bool body_calls_entry(const ModuleSections &mod,
+                                                  uint64_t start, size_t size,
+                                                  uint64_t callee_entry);
 }

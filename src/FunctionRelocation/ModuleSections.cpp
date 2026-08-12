@@ -280,6 +280,106 @@ namespace function_relocation {
         return !sections.functions.empty();
     }
 
+    size_t function_leaf_size(const Function &fn, size_t cap) {
+        if (fn.size == 0 || fn.address == 0) {
+            return 0;
+        }
+        const size_t limit = std::min(fn.size, cap == 0 ? fn.size : cap);
+        disasm ds{std::span{reinterpret_cast<uint8_t *>(fn.address), limit}};
+        for (auto &insn: ds) {
+            if (insn.id == X86_INS_RET || insn.id == X86_INS_RETF || insn.id == X86_INS_RETFQ) {
+                return static_cast<size_t>(insn.address + insn.size - fn.address);
+            }
+            if (insn.id == X86_INS_JMP) {
+                const auto &op = insn.detail->x86.operands[0];
+                if (op.type == X86_OP_IMM) {
+                    const uint64_t t = static_cast<uint64_t>(op.imm);
+                    if (t < fn.address || t >= fn.address + fn.size) {
+                        return static_cast<size_t>(insn.address + insn.size - fn.address);
+                    }
+                }
+            }
+        }
+        return limit;
+    }
+
+    static void finish_function_feature_hashes(Function &fn) {
+        if (!fn.module) {
+            return;
+        }
+        for (const auto &block_address: fn.blocks) {
+            auto *block = fn.module->address_blocks[block_address];
+            if (!block) {
+                continue;
+            }
+            for (const auto &c: block->consts) {
+                auto &constV = fn.module->Consts.at(c);
+                if (constV.ref == 1 &&
+                    (fn.const_key == nullptr || constV.value.size() > fn.const_key->size())) {
+                    fn.const_key = &constV.value;
+                }
+            }
+        }
+        fn.consts_hash = hash_vector(fn.blocks);
+    }
+
+    bool ensure_function_features(Function &fn) {
+        if (fn.features_ready) {
+            return true;
+        }
+        if (!fn.module || fn.address == 0 || fn.size == 0) {
+            fn.features_ready = true;
+            return true;
+        }
+        // P2: clamp ScanCtx walk to leaf (first RET / external JMP), max 256B.
+        const size_t leaf = function_leaf_size(fn, 256);
+        if (leaf == 0) {
+            fn.features_ready = true;
+            return true;
+        }
+        ScanCtx ctx{*fn.module, fn.module->text.base_address};
+        ctx.body_hard_end = fn.address + leaf;
+        ctx.function_limit = ctx.body_hard_end - 1;
+        ctx.cur = nullptr;
+        fn.blocks.clear();
+        fn.insn_count = 0;
+        fn.const_key = nullptr;
+        fn.consts_hash = 0;
+        ctx.scan_function(fn.address);
+        finish_function_feature_hashes(fn);
+        fn.features_ready = true;
+        return true;
+    }
+
+    bool body_calls_entry(const ModuleSections &mod, uint64_t start, size_t size,
+                          uint64_t callee_entry) {
+        if (start == 0 || size < 5 || callee_entry == 0) {
+            return false;
+        }
+        const auto *bytes = reinterpret_cast<const uint8_t *>(start);
+        for (size_t i = 0; i + 5 <= size; ) {
+            const uint8_t op = bytes[i];
+            if (op == 0xE8 || op == 0xE9) {
+                const int32_t rel = *reinterpret_cast<const int32_t *>(bytes + i + 1);
+                const uint64_t site = start + i;
+                const uint64_t target = site + 5 + static_cast<int64_t>(rel);
+                if (target == callee_entry) {
+                    return true;
+                }
+                if (!mod.function_table.empty()) {
+                    const uint64_t entry = mod.function_table.containing(target);
+                    if (entry == callee_entry) {
+                        return true;
+                    }
+                }
+                i += 5;
+                continue;
+            }
+            ++i;
+        }
+        return false;
+    }
+
     bool scan_module_function_features(ModuleSections &sections) {
         if (sections.function_table.empty()) {
             if (auto log = spdlog::get(logger_name)) {
@@ -288,19 +388,9 @@ namespace function_relocation {
             }
             return false;
         }
-        // Prefer named exports (train lib). For game binaries with few/no
-        // symbols, scan all text-clamped Nucleus bodies (already filtered).
-        ScanCtx ctx{sections, sections.text.base_address};
         const bool has_names = !sections.known_functions.empty();
         if (has_names) {
-            // Only disasm named bodies — enough for train-side soft features.
-            std::vector<std::pair<uintptr_t, size_t>> named;
-            for (const auto &[name, fn]: sections.known_functions) {
-                (void) name;
-                if (fn && fn->size > 0) {
-                    named.emplace_back(fn->address, fn->size);
-                }
-            }
+            // Train: eager leaf-clamped scan of named exports only.
             sections.blocks.clear();
             sections.address_blocks.clear();
             sections.Consts.clear();
@@ -309,37 +399,32 @@ namespace function_relocation {
                 fn.insn_count = 0;
                 fn.const_key = nullptr;
                 fn.consts_hash = 0;
+                fn.features_ready = false;
             }
-            for (const auto &[address, size]: named) {
-                ctx.body_hard_end = address + size;
-                ctx.function_limit = ctx.body_hard_end - 1;
-                ctx.cur = nullptr;
-                ctx.scan_function(address);
-                ctx.body_hard_end = 0;
+            size_t scanned = 0;
+            for (const auto &[name, fn]: sections.known_functions) {
+                (void) name;
+                if (fn && fn->size > 0) {
+                    ensure_function_features(*fn);
+                    ++scanned;
+                }
             }
-        } else {
-            ctx.scan_nucleus_bodies();
+            if (auto log = spdlog::get(logger_name)) {
+                log->info("scan_module_function_features: eager named {} / {} functions, {} blocks ({})",
+                          scanned, sections.functions.size(), sections.blocks.size(),
+                          sections.details.path);
+            }
+            return true;
         }
 
-        for (auto &func: sections.functions) {
-            for (const auto &block_address: func.blocks) {
-                auto *block = sections.address_blocks[block_address];
-                if (!block) {
-                    continue;
-                }
-                for (const auto &c: block->consts) {
-                    auto &constV = sections.Consts.at(c);
-                    if (constV.ref == 1 &&
-                        (func.const_key == nullptr || constV.value.size() > func.const_key->size())) {
-                        func.const_key = &constV.value;
-                    }
-                }
-            }
-            func.consts_hash = hash_vector(func.blocks);
+        // Game / no symbols: P0 lazy — Function shells only; soft/graph call
+        // ensure_function_features on demand.
+        for (auto &fn: sections.functions) {
+            fn.features_ready = false;
         }
         if (auto log = spdlog::get(logger_name)) {
-            log->info("scan_module_function_features: {} functions, {} blocks ({})",
-                      sections.functions.size(), sections.blocks.size(), sections.details.path);
+            log->info("scan_module_function_features: lazy mode, {} functions deferred ({})",
+                      sections.functions.size(), sections.details.path);
         }
         return true;
     }
