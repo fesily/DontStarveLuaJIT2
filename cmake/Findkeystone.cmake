@@ -13,8 +13,10 @@ find_path(FRIDA_GUM_INCLUDE_DIR
     PATHS "${INSTALLED_ROOT}/include" 
     REQUIRED)
 
+# Custom dynamic triplets ship libkeystone.so; MSVC/static host builds may use
+# keystone.lib / libkeystone.a. Accept all common basenames.
 find_library(KEYSTONE_LIBRARIES
-    NAMES keystone.lib libkeystone.a
+    NAMES keystone keystone.lib libkeystone.a libkeystone.so
     PATHS ${keystone_LIBRARY_DIRS}
     REQUIRED)
 
