@@ -442,61 +442,7 @@ void __fastcall hooked_DrawCache(void *self, float *cache) {
 // (ignoreApply=0 because IsPredictingMovement returns false). This causes visible
 // animation "rewinds" ~0.35/s. We save flAnimTime before calling original, then
 // restore it after, so anim hash/bank changes still apply but time stays local.
-void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
-    if (!g_enabled.load(std::memory_order_relaxed) || !self) {
-        if (original_AnimStateDeserialize) {
-            original_AnimStateDeserialize(self, bitstream);
-        }
-        return;
-    }
-    g_anim_deserialize_calls.fetch_add(1, std::memory_order_relaxed);
 
-    // Check if this anim component belongs to the local player entity.
-    const uint64_t local_entity = g_local_player_entity.load(std::memory_order_relaxed);
-    bool preserve_time = false;
-    float saved_time = 0.f;
-    float saved_animnode_time = 0.f;
-    void *anim_node = nullptr;
-    if (local_entity != 0) {
-        auto *anim = static_cast<char *>(self);
-        void *entity = *reinterpret_cast<void **>(anim + ASC_ENTITY);
-        if (reinterpret_cast<uint64_t>(entity) == local_entity) {
-            preserve_time = true;
-            saved_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
-            anim_node = *reinterpret_cast<void **>(anim + ASC_P_ANIM_NODE);
-            if (anim_node) {
-                saved_animnode_time = *reinterpret_cast<float *>(
-                    static_cast<char *>(anim_node) + ANIMNODE_FL_TIME);
-            }
-            g_anim_entity_matches.fetch_add(1, std::memory_order_relaxed);
-        }
-    }
-
-    // Call original Deserialize (applies all server state including flAnimTime).
-    if (original_AnimStateDeserialize) {
-        original_AnimStateDeserialize(self, bitstream);
-    }
-
-    // Only restore if the server's write was a RESET (server_time == 0).
-    // If the server sent a real time value (server_time > 0), it's a legitimate
-    // sync and we let it through. This prevents the feedback loop where
-    // preserved time accumulates forever.
-    if (preserve_time && self) {
-        auto *anim = static_cast<char *>(self);
-        float server_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
-        bool was_reset = (server_time < 0.001f);  // server reset to ~0
-        if (was_reset) {
-            *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME) = saved_time;
-            if (anim_node) {
-                *reinterpret_cast<float *>(
-                    static_cast<char *>(anim_node) + ANIMNODE_FL_TIME) = saved_animnode_time;
-            }
-            g_anim_time_preserved.fetch_add(1, std::memory_order_relaxed);
-        }
-        push_marker(Op::AnimPreserve, self, saved_time, server_time,
-                   server_time - saved_time);
-    }
-}
 
 
 
@@ -597,7 +543,10 @@ bool install_hooks() {
     // Inline patch: force local_a0=true for local player in Deserialize.
     // Skips PlayMode/AnimHash/AnimTime writes entirely — no save/restore.
     {
-        uintptr_t deserial_addr = animstate_deserialize_sig.target_address;
+        // Scan for Deserialize signature to get the function address.
+        animstate_deserialize_sig.only_one = true;
+        animstate_deserialize_sig.log = true;
+        uintptr_t deserial_addr = animstate_deserialize_sig.scan(nullptr);
         if (deserial_addr == 0 && setpos_sig.target_address != 0) {
             deserial_addr = setpos_sig.target_address + 0x10120;
         }
@@ -618,40 +567,7 @@ bool install_hooks() {
             }
         }
     }
-    // AnimState Deserialize — preserve flAnimTime for local player.
-    // Primary: signature scan. Fallback: compute from SetPosition address (constant offset 0x10120).
-    if (!install_one(interceptor, animstate_deserialize_sig,
-                     reinterpret_cast<void *>(&hooked_AnimStateDeserialize),
-                     reinterpret_cast<void **>(&original_AnimStateDeserialize),
-                     "AnimStateDeserialize")) {
-        std::fprintf(stderr, "[JitterProbe] AnimStateDeserialize sig scan failed, trying fallback\n");
-        debug_log("[install] AnimStateDeserialize sig failed, trying SetPosition+0x10120 fallback\n");
-        // Fallback: SetPosition and AnimStateDeserialize have a constant offset of 0x10120.
-        if (setpos_sig.target_address != 0) {
-            uintptr_t anim_addr = setpos_sig.target_address + 0x10120;
-            debug_log("[install] fallback addr=0x%llx (SetPosition=0x%llx)\n",
-                      static_cast<unsigned long long>(anim_addr),
-                      static_cast<unsigned long long>(setpos_sig.target_address));
-            auto r = gum_interceptor_replace(
-                interceptor,
-                reinterpret_cast<void *>(anim_addr),
-                reinterpret_cast<void *>(&hooked_AnimStateDeserialize),
-                reinterpret_cast<void **>(&original_AnimStateDeserialize),
-                nullptr);
-            if (r == GUM_REPLACE_OK) {
-                debug_log("[install] FALLBACK HOOKED: AnimStateDeserialize at 0x%llx\n",
-                          static_cast<unsigned long long>(anim_addr));
-                std::fprintf(stderr, "[JitterProbe] hooked AnimStateDeserialize (fallback) at %p\n",
-                             reinterpret_cast<void *>(anim_addr));
-            } else {
-                debug_log("[install] FALLBACK REPLACE FAILED: rc=%d\n", static_cast<int>(r));
-                std::fprintf(stderr, "[JitterProbe] AnimStateDeserialize fallback failed: %d\n",
-                             static_cast<int>(r));
-            }
-        } else {
-            debug_log("[install] SetPosition target_address is 0, cannot fallback\n");
-        }
-    }
+
     return ok;
 }
 
