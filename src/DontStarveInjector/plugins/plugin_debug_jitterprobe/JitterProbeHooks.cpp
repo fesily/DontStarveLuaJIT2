@@ -309,17 +309,16 @@ static constexpr int ANIMNODE_FL_TIME = 0xF8;  // AnimNode::flTime (Win x64, mac
 
 using AnimStateDeserialize_t = void(__fastcall *)(void *self, void *bitstream);
 AnimStateDeserialize_t original_AnimStateDeserialize = nullptr;
-// cAnimStateComponent per-frame update (Win x64) — writes computed flAnimTime.
-// For local player: prevent backward time jumps (new_time < old_time → keep old).
+// cAnimStateComponent time advance (Win x64) — computes new flAnimTime from dt.
+// Returns new time in XMM0; caller writes to +0x28. Hook the RETURN VALUE.
 static function_relocation::MemorySignature perframe_update_sig{
-    "40 53 "
-    "48 83 EC 20 "
-    "48 8B D9 "
-    "E8 ?? ?? ?? ?? "
-    "83 8B A0 00 00 00 04",
+    "48 83 EC 38 "
+    "8B 81 90 00 00 00 "
+    "0F 29 74 24 20 "
+    "0F 28 D1",
     0};
 
-using PerFrameUpdate_t = void(__fastcall *)(void *self, int frame_count);
+using PerFrameUpdate_t = float(__fastcall *)(void *self, float dt);
 PerFrameUpdate_t original_PerFrameUpdate = nullptr;
 std::atomic_uint64_t g_perframe_calls{0};
 std::atomic_uint64_t g_perframe_blocked{0};
@@ -510,16 +509,16 @@ void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
                    server_time - saved_time);
     }
 }
-// Per-frame animation update hook: for local player, prevent backward time jumps.
-// The per-frame update recomputes flAnimTime from a frame counter. After a full-sync
-// anim switch, the counter resets, causing a small time to overwrite the old value.
-// We detect this and keep the old (larger) value for smooth local animation.
-void __fastcall hooked_PerFrameUpdate(void *self, int frame_count) {
+// Time advance hook: intercept the return value of the per-frame time
+// computation function. The function computes new flAnimTime and returns it
+// in XMM0; the caller writes it to +0x28. For local player, we clamp the
+// return value to prevent backward jumps.
+float __fastcall hooked_PerFrameUpdate(void *self, float dt) {
     if (!g_enabled.load(std::memory_order_relaxed) || !self) {
         if (original_PerFrameUpdate) {
-            original_PerFrameUpdate(self, frame_count);
+            return original_PerFrameUpdate(self, dt);
         }
-        return;
+        return 0.f;
     }
     g_perframe_calls.fetch_add(1, std::memory_order_relaxed);
 
@@ -536,23 +535,19 @@ void __fastcall hooked_PerFrameUpdate(void *self, int frame_count) {
         }
     }
 
-    // Call original per-frame update (may write new flAnimTime).
-    if (original_PerFrameUpdate) {
-        original_PerFrameUpdate(self, frame_count);
-    }
+    // Call original time computation (returns new time in XMM0).
+    float new_time = original_PerFrameUpdate
+        ? original_PerFrameUpdate(self, dt)
+        : 0.f;
 
-    // For local player: if new time jumped backward, restore old time.
-    if (check_back && self) {
-        auto *anim = static_cast<char *>(self);
-        float new_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
-        // Block backward jumps > 0.1s. This catches server resync jitter
-        // (~0.35/s during walking) while allowing normal frame-to-frame
-        // advancement and small float noise.
-        if (old_time > 0.1f && new_time < old_time - 0.1f) {
-            *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME) = old_time;
-            g_perframe_blocked.fetch_add(1, std::memory_order_relaxed);
-        }
+    // For local player: if new time jumped backward, return old time instead.
+    // The caller writes our return value to +0x28, so returning old_time
+    // prevents the backward write.
+    if (check_back && old_time > 0.1f && new_time < old_time - 0.1f) {
+        g_perframe_blocked.fetch_add(1, std::memory_order_relaxed);
+        return old_time;
     }
+    return new_time;
 }
 // Proxy-based anim update hook: called via function pointer, bypasses 0x9B5E0.
 // Takes a proxy object; component is at proxy+0x08.
@@ -683,15 +678,15 @@ bool install_hooks() {
                      reinterpret_cast<void **>(&original_DrawCache), "DrawCacheRender")) {
         std::fprintf(stderr, "[JitterProbe] DrawCacheRender probe unavailable\n");
     }
-    // Per-frame animation update — prevent backward time jumps for local player.
+    // Per-frame animation time advance — intercept return value for local player.
     if (!install_one(interceptor, perframe_update_sig,
                      reinterpret_cast<void *>(&hooked_PerFrameUpdate),
                      reinterpret_cast<void **>(&original_PerFrameUpdate),
                      "PerFrameUpdate")) {
         std::fprintf(stderr, "[JitterProbe] PerFrameUpdate sig failed, trying fallback\n");
-        debug_log("[install] PerFrameUpdate sig failed, trying SetPosition-0xDB60 fallback\n");
+        debug_log("[install] PerFrameUpdate sig failed, trying SetPosition+0x8430 fallback\n");
         if (setpos_sig.target_address != 0) {
-            uintptr_t pf_addr = setpos_sig.target_address + 0xAA90;
+            uintptr_t pf_addr = setpos_sig.target_address + 0x8430;
             auto r = gum_interceptor_replace(
                 interceptor, reinterpret_cast<void *>(pf_addr),
                 reinterpret_cast<void *>(&hooked_PerFrameUpdate),
