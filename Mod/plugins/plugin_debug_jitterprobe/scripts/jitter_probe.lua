@@ -118,25 +118,29 @@ local function stats_of(list)
 end
 
 local function write_display_csv(phase, steps, jerks, dts)
-    -- Best-effort; IO only on flush / phase change, never per wall frame.
-    local path = string.format("data/unsafedata/jitter_display_%s_%s.csv", phase, vm_tag())
-    local f = io.open(path, "w")
-    if not f then
-        path = string.format("unsafedata/jitter_display_%s_%s.csv", phase, vm_tag())
-        f = io.open(path, "w")
-    end
-    if not f then
-        JLog("display", "csv open failed (cwd?) phase=%s", phase)
+    -- DST sandboxed io: only unsafedata/ is writable (no data/ prefix, no abs paths).
+    local path = string.format("unsafedata/jitter_display_%s_%s.csv", tostring(phase), vm_tag())
+    local ok, f_or_err = pcall(io.open, path, "w")
+    if not ok or not f_or_err then
+        JLog("display", "csv open failed path=%s err=%s", path, tostring(f_or_err))
         return
     end
-    f:write("# phase=" .. phase .. " vm=" .. vm_tag() .. " n=" .. tostring(#steps) .. "\n")
-    f:write("i,dt_ms,step,jerk\n")
-    local n = #steps
-    for i = 1, n do
-        f:write(string.format("%d,%.3f,%.6f,%.4f\n", i, (dts[i] or 0) * 1000, steps[i] or 0, jerks[i] or 0))
+    local f = f_or_err
+    local okw, err = pcall(function()
+        f:write("# phase=" .. tostring(phase) .. " vm=" .. vm_tag() .. " n=" .. tostring(#steps) .. "\n")
+        f:write("i,dt_ms,step,jerk\n")
+        local n = #steps
+        for i = 1, n do
+            f:write(string.format("%d,%.3f,%.6f,%.4f\n", i, (dts[i] or 0) * 1000, steps[i] or 0, jerks[i] or 0))
+        end
+        f:close()
+    end)
+    if not okw then
+        pcall(function() f:close() end)
+        JLog("display", "csv write failed path=%s err=%s", path, tostring(err))
+        return
     end
-    f:close()
-    JLog("display", "csv wrote %s n=%d", path, n)
+    JLog("display", "csv wrote %s n=%d", path, #steps)
 end
 
 AddPlayerPostInit(function(inst)
