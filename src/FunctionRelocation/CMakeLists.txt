@@ -89,6 +89,7 @@ else()
             CXX_VISIBILITY_PRESET hidden
             VISIBILITY_INLINES_HIDDEN ON
             INSTALL_RPATH "$ORIGIN"
+            BUILD_RPATH "$ORIGIN"
     )
     install(TARGETS function_relocation
             LIBRARY DESTINATION deps COMPONENT deps)

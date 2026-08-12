@@ -69,7 +69,9 @@ endif()
 
 set(CMAKE_SKIP_BUILD_RPATH  FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+# Never bake host absolute link dirs into installed RUNPATH (breaks other machines).
+# Portable layout uses INSTALL_RPATH=$ORIGIN[/deps|/../lib] + staged Mod/deps.
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
 
 add_library(Injector SHARED ${SOURCES})
 if (MSVC)
@@ -90,15 +92,12 @@ if (ENABLE_STEAM_SUPPORT)
     # target_link_libraries(GameSteamTest PRIVATE ${STEAM_LIBRARIES})
 endif()
 
-if (APPLE)
-    # Real Injector is at mod root; deps live at mod/deps → $ORIGIN/deps.
-    # Keep lib64 for any legacy shared layout still co-located with the module.
-    set_target_properties(Injector PROPERTIES INSTALL_RPATH "$ORIGIN/deps")
-    set_target_properties(Injector PROPERTIES BUILD_RPATH "$ORIGIN/deps")
-else()
-    set_target_properties(Injector PROPERTIES INSTALL_RPATH "$ORIGIN/deps")
-    set_target_properties(Injector PROPERTIES BUILD_RPATH "$ORIGIN/deps")
-endif()
+# Portable: only $ORIGIN (no host abs paths). BUILD==INSTALL so RPATH_CHANGE works.
+# Local debug: stage deps into Mod/deps (cmake --install) or set LD_LIBRARY_PATH.
+set_target_properties(Injector PROPERTIES
+    INSTALL_RPATH "$ORIGIN/deps"
+    BUILD_RPATH "$ORIGIN/deps"
+)
 
 add_dependencies(Injector create_missfuncs)
 add_dependencies(Injector create_modinfo_hpp)
@@ -258,9 +257,12 @@ function(ds_add_dynamic_plugin name)
     target_link_libraries(${name} PRIVATE Injector)
     # Multi-config generators (Ninja Multi-Config / VS) need per-config props;
     # bare RUNTIME_OUTPUT_DIRECTORY alone can leave stale flat plugins/plugin_*.dll.
+    # plugins/<name>/plugin.so → Mod/deps is $ORIGIN/../../deps (portable, no host paths).
     set_target_properties(${name} PROPERTIES
         PREFIX ""
         OUTPUT_NAME "${name}"
+        INSTALL_RPATH "$ORIGIN/../../deps"
+        BUILD_RPATH "$ORIGIN/../../deps"
         RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
         LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
         ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
@@ -385,9 +387,14 @@ if (DEFINED FRIDA_GUM_RUNTIME)
 elseif (DEFINED _FRIDA_GUM_ROOT)
     list(APPEND _ds_mod_deps_search_dirs "${_FRIDA_GUM_ROOT}/bin")
 endif()
-string(REPLACE ";" "\\;" _ds_mod_deps_search_dirs_code "${_ds_mod_deps_search_dirs}")
+set(_ds_mod_deps_search_dirs_code "")
+foreach(_ds_dir IN LISTS _ds_mod_deps_search_dirs)
+    string(APPEND _ds_mod_deps_search_dirs_code " \"${_ds_dir}\"")
+endforeach()
+string(STRIP "${_ds_mod_deps_search_dirs_code}" _ds_mod_deps_search_dirs_code)
 
 if (WIN32)
+    # Prefer [.] and character classes over backslash escapes — safer inside install(CODE).
     set(_ds_mod_deps_pre_exclude
         "api-ms-.*"
         "ext-ms-.*"
@@ -395,29 +402,30 @@ if (WIN32)
         "pdmutilities.*"
     )
     set(_ds_mod_deps_post_exclude
-        ".*[\\\\/][Ss]ystem32[\\\\/].*"
-        ".*[\\\\/][Ss]ysWOW64[\\\\/].*"
-        ".*[\\\\/]Windows[\\\\/]WinSxS[\\\\/].*"
-        ".*[\\\\/]MSVC[\\\\/].*"
-        "ucrtbase.*\\.dll"
-        "vcruntime.*\\.dll"
-        "msvcp.*\\.dll"
-        "concrt.*\\.dll"
-        "msvc.*\\.dll"
-        # Package-owned (bin64 / plugins), not third-party deps/
-        ".*[\\\\/]Injector\\.dll"
-        ".*[\\\\/]Winmm\\.dll"
-        ".*[\\\\/]plugin_.*\\.dll"
-        ".*[\\\\/]lua51.*\\.dll"
-        # Game / OS surface
-        ".*[\\\\/]steam_api64\\.dll"
-        ".*[\\\\/]steam_api\\.dll"
-        ".*[\\\\/]vulkan-1\\.dll"
-        ".*[\\\\/]d3d9\\.dll"
-        ".*[\\\\/]d3d11\\.dll"
-        ".*[\\\\/]dxgi\\.dll"
+        ".*[/\\\\][Ss]ystem32[/\\\\].*"
+        ".*[/\\\\][Ss]ysWOW64[/\\\\].*"
+        ".*[/\\\\]Windows[/\\\\]WinSxS[/\\\\].*"
+        ".*[/\\\\]MSVC[/\\\\].*"
+        "ucrtbase.*[.]dll"
+        "vcruntime.*[.]dll"
+        "msvcp.*[.]dll"
+        "concrt.*[.]dll"
+        "msvc.*[.]dll"
+        ".*[/\\\\]Injector[.]dll"
+        ".*[/\\\\]Winmm[.]dll"
+        ".*[/\\\\]plugin_.*[.]dll"
+        ".*[/\\\\]lua51.*[.]dll"
+        ".*[/\\\\]steam_api64[.]dll"
+        ".*[/\\\\]steam_api[.]dll"
+        ".*[/\\\\]vulkan-1[.]dll"
+        ".*[/\\\\]d3d9[.]dll"
+        ".*[/\\\\]d3d11[.]dll"
+        ".*[/\\\\]dxgi[.]dll"
     )
 else()
+    # Use [.] / [+] not backslash escapes — install(CODE) multi-layer quoting
+    # turns "\\." into invalid CMake escapes and breaks GET_RUNTIME_DEPENDENCIES
+    # ("file Paths to dependencies are not supported").
     set(_ds_mod_deps_pre_exclude
         "^/lib"
         "^/usr/lib"
@@ -425,23 +433,32 @@ else()
         "^/usr/lib64"
     )
     set(_ds_mod_deps_post_exclude
-        ".*/ld-linux.*\\.so.*"
-        ".*/libc\\.so.*"
-        ".*/libm\\.so.*"
-        ".*/libdl\\.so.*"
-        ".*/libpthread\\.so.*"
-        ".*/librt\\.so.*"
-        ".*/libresolv\\.so.*"
-        ".*/libgcc_s\\.so.*"
-        ".*/libstdc\\+\\+\\.so.*"
-        ".*/libsteam_api\\.so.*"
-        ".*/libInjector\\.so.*"
-        ".*/plugin_.*\\.so.*"
-        ".*/liblua51.*\\.so.*"
+        ".*/ld-linux.*[.]so.*"
+        ".*/libc[.]so.*"
+        ".*/libm[.]so.*"
+        ".*/libdl[.]so.*"
+        ".*/libpthread[.]so.*"
+        ".*/librt[.]so.*"
+        ".*/libresolv[.]so.*"
+        ".*/libgcc_s[.]so.*"
+        ".*/libstdc[+][+][.]so.*"
+        ".*/libsteam_api[.]so.*"
+        ".*/libInjector[.]so.*"
+        ".*/plugin_.*[.]so.*"
+        ".*/liblua51.*[.]so.*"
     )
 endif()
-string(REPLACE ";" "\\;" _ds_mod_deps_pre_exclude_code "${_ds_mod_deps_pre_exclude}")
-string(REPLACE ";" "\\;" _ds_mod_deps_post_exclude_code "${_ds_mod_deps_post_exclude}")
+# Embed list into install(CODE) as separate quoted items (no "\\;" join).
+set(_ds_mod_deps_pre_exclude_code "")
+foreach(_ds_re IN LISTS _ds_mod_deps_pre_exclude)
+    string(APPEND _ds_mod_deps_pre_exclude_code " \"${_ds_re}\"")
+endforeach()
+set(_ds_mod_deps_post_exclude_code "")
+foreach(_ds_re IN LISTS _ds_mod_deps_post_exclude)
+    string(APPEND _ds_mod_deps_post_exclude_code " \"${_ds_re}\"")
+endforeach()
+string(STRIP "${_ds_mod_deps_pre_exclude_code}" _ds_mod_deps_pre_exclude_code)
+string(STRIP "${_ds_mod_deps_post_exclude_code}" _ds_mod_deps_post_exclude_code)
 
 # Seeds: Injector + AlwaysOn / hard-import plugin MODULEs + optional reloc SHARED.
 # Prefer seeding plugin targets (not just imported Tracy/SLikeNet) so
@@ -462,7 +479,7 @@ foreach(_ds_seed_plugin IN ITEMS
         list(APPEND _ds_mod_deps_seed_targets ${_ds_seed_plugin})
     endif()
 endforeach()
-if (WIN32 AND TARGET function_relocation)
+if (TARGET function_relocation)
     get_target_property(_ds_fr_type function_relocation TYPE)
     if (_ds_fr_type STREQUAL "SHARED_LIBRARY")
         list(APPEND _ds_mod_deps_seed_targets function_relocation)
@@ -474,13 +491,20 @@ foreach(_ds_seed_tgt IN LISTS _ds_mod_deps_seed_targets)
 endforeach()
 string(STRIP "${_ds_mod_deps_seed_genex}" _ds_mod_deps_seed_genex)
 
+# Also search next to function_relocation (Linux Debug tree is not under Injector/).
+set(_ds_mod_deps_extra_dir_genex "")
+if (TARGET function_relocation)
+    set(_ds_mod_deps_extra_dir_genex "\"$<TARGET_FILE_DIR:function_relocation>\"")
+endif()
+
 install(CODE "
     if(POLICY CMP0207)
         cmake_policy(SET CMP0207 NEW)
     endif()
     set(_ds_seeds ${_ds_mod_deps_seed_genex})
-    set(_ds_dirs \"${_ds_mod_deps_search_dirs_code}\")
+    set(_ds_dirs ${_ds_mod_deps_search_dirs_code})
     list(APPEND _ds_dirs \"\$<TARGET_FILE_DIR:Injector>\")
+    list(APPEND _ds_dirs ${_ds_mod_deps_extra_dir_genex})
     list(REMOVE_DUPLICATES _ds_dirs)
     set(_ds_out \"\${CMAKE_INSTALL_PREFIX}/deps\")
     file(MAKE_DIRECTORY \"\${_ds_out}\")
@@ -495,7 +519,6 @@ install(CODE "
         PRE_EXCLUDE_REGEXES \${_ds_pre_exclude}
         POST_EXCLUDE_REGEXES \${_ds_post_exclude}
     )
-    # Conflicts: applocal copies next to Injector vs vcpkg_installed — prefer vcpkg.
     foreach(_ds_name IN LISTS _ds_conflict_FILENAMES)
         set(_ds_pick \"\")
         foreach(_ds_path IN LISTS _ds_conflict_\${_ds_name})
@@ -514,7 +537,7 @@ install(CODE "
     list(REMOVE_DUPLICATES _ds_resolved)
     foreach(_ds_dep IN LISTS _ds_resolved)
         get_filename_component(_ds_name \"\${_ds_dep}\" NAME)
-        if(_ds_name MATCHES \"^(Injector|libInjector|plugin_.*|lua51.*|Winmm)(\\\\.(dll|so|dylib)).*\")
+        if(_ds_name MATCHES \"^(Injector|libInjector|plugin_.*|lua51.*|Winmm)([.](dll|so|dylib)).*\")
             continue()
         endif()
         file(INSTALL \"\${_ds_dep}\" DESTINATION \"\${_ds_out}\" FOLLOW_SYMLINK_CHAIN)
