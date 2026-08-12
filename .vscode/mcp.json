@@ -1,0 +1,23 @@
+{
+  "servers": {
+    "idalib-mcp": {
+      "type": "http",
+      "url": "http://127.0.0.1:8745/mcp"
+    },
+    "ida-pro-mcp-gui": {
+      "type": "http",
+      "url": "http://127.0.0.1:13337/mcp"
+    },
+    "ghidra-mcp": {
+      "command": "python",
+      "args": [
+        "C:/Users/fesil/ghidra-mcp/bridge_mcp_ghidra.py",
+        "--no-lazy"
+      ],
+      "env": {
+        "GHIDRA_SERVER_URL": "http://127.0.0.1:8089/"
+      }
+    }
+  },
+  "inputs": []
+}

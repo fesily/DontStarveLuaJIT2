@@ -1,1 +1,3 @@
 *.meta.json
+signatures_client.json
+signatures_server.json

@@ -309,6 +309,10 @@ AnimStateDeserialize_t original_AnimStateDeserialize = nullptr;
 // Local player entity pointer (set from Lua via set_track_entity).
 // When non-null, flAnimTime is preserved across Deserialize for this entity.
 std::atomic_uint64_t g_local_player_entity{0};
+// Diagnostics: count hook calls, entity matches, time preservations.
+std::atomic_uint64_t g_anim_deserialize_calls{0};
+std::atomic_uint64_t g_anim_entity_matches{0};
+std::atomic_uint64_t g_anim_time_preserved{0};
 
 SetPosition_t original_SetPosition = nullptr;
 Teleport_t original_Teleport = nullptr;
@@ -438,6 +442,7 @@ void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
         }
         return;
     }
+    g_anim_deserialize_calls.fetch_add(1, std::memory_order_relaxed);
 
     // Check if this anim component belongs to the local player entity.
     const uint64_t local_entity = g_local_player_entity.load(std::memory_order_relaxed);
@@ -449,6 +454,7 @@ void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
         if (reinterpret_cast<uint64_t>(entity) == local_entity) {
             preserve_time = true;
             saved_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
+            g_anim_entity_matches.fetch_add(1, std::memory_order_relaxed);
         }
     }
 
@@ -461,6 +467,7 @@ void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
     if (preserve_time && self) {
         auto *anim = static_cast<char *>(self);
         *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME) = saved_time;
+        g_anim_time_preserved.fetch_add(1, std::memory_order_relaxed);
     }
 }
 
@@ -733,6 +740,15 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_player_entity(
     std::fprintf(stderr, "[JitterProbe] local_player_entity=%p\n", entity);
 }
 
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_get_anim_stats(
+    uint64_t *out_calls, uint64_t *out_matches, uint64_t *out_preserved,
+    uint64_t *out_hook_installed) {
+    if (out_calls) *out_calls = g_anim_deserialize_calls.load(std::memory_order_relaxed);
+    if (out_matches) *out_matches = g_anim_entity_matches.load(std::memory_order_relaxed);
+    if (out_preserved) *out_preserved = g_anim_time_preserved.load(std::memory_order_relaxed);
+    if (out_hook_installed) *out_hook_installed = original_AnimStateDeserialize ? 1 : 0;
+}
+
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool on) {
     g_local_only.store(on, std::memory_order_release);
     std::fprintf(stderr, "[JitterProbe] local_only=%d\n", on ? 1 : 0);
@@ -774,5 +790,7 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_flush() {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_vm_tag(const char *) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_track_entity(void *) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_player_entity(void *) {}
+DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_get_anim_stats(
+    uint64_t *, uint64_t *, uint64_t *, uint64_t *) {}
 
 #endif
