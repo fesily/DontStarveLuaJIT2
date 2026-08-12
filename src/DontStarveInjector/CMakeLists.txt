@@ -325,6 +325,7 @@ if (WIN32)
     add_subdirectory(plugins/plugin_debug_profiler)
     add_subdirectory(plugins/plugin_fps_render)
     add_subdirectory(plugins/plugin_network_tick)
+    add_subdirectory(plugins/plugin_debug_jitterprobe)
     # Gum-using plugins only — not dummy / manager / save_fork.
     foreach(_ds_gum_plugin IN ITEMS
             plugin_network_rpc
@@ -334,12 +335,13 @@ if (WIN32)
             plugin_render_angle
             plugin_debug_profiler
             plugin_fps_render
-            plugin_network_tick)
+            plugin_network_tick
+            plugin_debug_jitterprobe)
         target_link_libraries(${_ds_gum_plugin} PRIVATE Frida::Gum)
     endforeach()
 else()
     message(WARNING
-        "Skipping gum-using dynamic plugins (network.rpc / network.sim / sim.lagcomp / render.vbpool / render.angle / debug.profiler / fps.render / network.tick): "
+        "Skipping gum-using dynamic plugins (network.rpc / network.sim / sim.lagcomp / render.vbpool / render.angle / debug.profiler / fps.render / network.tick / debug.jitterprobe): "
         "shared gum stage not available or unverified on Linux/macOS. "
         "Plugins link Frida::Gum directly once the stage is ready.")
 endif()
