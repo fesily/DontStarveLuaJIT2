@@ -549,12 +549,39 @@ bool install_hooks() {
                      reinterpret_cast<void **>(&original_DrawCache), "DrawCacheRender")) {
         std::fprintf(stderr, "[JitterProbe] DrawCacheRender probe unavailable\n");
     }
-    // AnimState Deserialize — soft-fail; anim time preservation is optional.
+    // AnimState Deserialize — preserve flAnimTime for local player.
+    // Primary: signature scan. Fallback: compute from SetPosition address (constant offset 0x10120).
     if (!install_one(interceptor, animstate_deserialize_sig,
                      reinterpret_cast<void *>(&hooked_AnimStateDeserialize),
                      reinterpret_cast<void **>(&original_AnimStateDeserialize),
                      "AnimStateDeserialize")) {
-        std::fprintf(stderr, "[JitterProbe] AnimStateDeserialize hook unavailable\n");
+        std::fprintf(stderr, "[JitterProbe] AnimStateDeserialize sig scan failed, trying fallback\n");
+        debug_log("[install] AnimStateDeserialize sig failed, trying SetPosition+0x10120 fallback\n");
+        // Fallback: SetPosition and AnimStateDeserialize have a constant offset of 0x10120.
+        if (setpos_sig.target_address != 0) {
+            uintptr_t anim_addr = setpos_sig.target_address + 0x10120;
+            debug_log("[install] fallback addr=0x%llx (SetPosition=0x%llx)\n",
+                      static_cast<unsigned long long>(anim_addr),
+                      static_cast<unsigned long long>(setpos_sig.target_address));
+            auto r = gum_interceptor_replace(
+                interceptor,
+                reinterpret_cast<void *>(anim_addr),
+                reinterpret_cast<void *>(&hooked_AnimStateDeserialize),
+                reinterpret_cast<void **>(&original_AnimStateDeserialize),
+                nullptr);
+            if (r == GUM_REPLACE_OK) {
+                debug_log("[install] FALLBACK HOOKED: AnimStateDeserialize at 0x%llx\n",
+                          static_cast<unsigned long long>(anim_addr));
+                std::fprintf(stderr, "[JitterProbe] hooked AnimStateDeserialize (fallback) at %p\n",
+                             reinterpret_cast<void *>(anim_addr));
+            } else {
+                debug_log("[install] FALLBACK REPLACE FAILED: rc=%d\n", static_cast<int>(r));
+                std::fprintf(stderr, "[JitterProbe] AnimStateDeserialize fallback failed: %d\n",
+                             static_cast<int>(r));
+            }
+        } else {
+            debug_log("[install] SetPosition target_address is 0, cannot fallback\n");
+        }
     }
     return ok;
 }
