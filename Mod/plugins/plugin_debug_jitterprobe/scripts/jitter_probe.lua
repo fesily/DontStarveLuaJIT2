@@ -69,21 +69,22 @@ local ANIM_SAMPLE_EVERY = 15 -- ~0.5s at 30Hz sim
 
 local function do_flush(reason)
     set_vm_tag()
-    -- Print AnimState hook diagnostics before flushing.
-    if GameInjector.DS_LUAJIT_jitter_probe_get_anim_stats then
-        local ffi = require("ffi")
-        local p_calls = ffi.new("uint64_t[1]")
-        local p_matches = ffi.new("uint64_t[1]")
-        local p_preserved = ffi.new("uint64_t[1]")
-        local p_hook = ffi.new("uint64_t[1]")
-        GameInjector.DS_LUAJIT_jitter_probe_get_anim_stats(
-            p_calls, p_matches, p_preserved, p_hook)
-        print(string.format("[JITTER][LUA] anim_hook: installed=%s calls=%d matches=%d preserved=%d",
-            tostring(p_hook[0] ~= 0),
-            tonumber(p_calls[0]),
-            tonumber(p_matches[0]),
-            tonumber(p_preserved[0])))
+    -- Print AnimState hook diagnostics (Lua 5.1 compatible: int returns, no FFI).
+    local installed, calls, matches, preserved = 0, 0, 0, 0
+    if GameInjector.DS_LUAJIT_jitter_probe_get_anim_hook_status then
+        installed = GameInjector.DS_LUAJIT_jitter_probe_get_anim_hook_status() or 0
     end
+    if GameInjector.DS_LUAJIT_jitter_probe_get_anim_call_count then
+        calls = GameInjector.DS_LUAJIT_jitter_probe_get_anim_call_count() or 0
+    end
+    if GameInjector.DS_LUAJIT_jitter_probe_get_anim_match_count then
+        matches = GameInjector.DS_LUAJIT_jitter_probe_get_anim_match_count() or 0
+    end
+    if GameInjector.DS_LUAJIT_jitter_probe_get_anim_preserve_count then
+        preserved = GameInjector.DS_LUAJIT_jitter_probe_get_anim_preserve_count() or 0
+    end
+    print(string.format("[JITTER][LUA] anim_hook: installed=%s calls=%s matches=%s preserved=%s",
+        tostring(installed), tostring(calls), tostring(matches), tostring(preserved)))
     if GameInjector.DS_LUAJIT_jitter_probe_flush then
         print("[JITTER][LUA] flush requested: " .. tostring(reason))
         GameInjector.DS_LUAJIT_jitter_probe_flush()

@@ -45,6 +45,7 @@ enum class Op : uint8_t {
     FrameEnd = 7,     // application frame exit (dt wall in x, phases in y)
     CacheRender = 8,  // ActualCacheRender begin/end (x=dt_ms of cache phase if end)
     DrawCache = 9,    // DrawCacheRender begin/end
+    AnimPreserve = 10, // flAnimTime preserved (x=saved_time, y=server_time, z=delta)
 };
 
 struct Event {
@@ -93,6 +94,7 @@ static const char *op_name(Op op) {
     case Op::FrameEnd: return "FrameEnd";
     case Op::CacheRender: return "CacheRender";
     case Op::DrawCache: return "DrawCache";
+    case Op::AnimPreserve: return "AnimPreserve";
     }
     return "?";
 }
@@ -467,8 +469,12 @@ void __fastcall hooked_AnimStateDeserialize(void *self, void *bitstream) {
     // Restore flAnimTime for local player — server's value is discarded.
     if (preserve_time && self) {
         auto *anim = static_cast<char *>(self);
+        float server_time = *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME);
         *reinterpret_cast<float *>(anim + ASC_FL_ANIM_TIME) = saved_time;
         g_anim_time_preserved.fetch_add(1, std::memory_order_relaxed);
+        // Push to ring buffer so dump shows preserve events.
+        push_marker(Op::AnimPreserve, self, saved_time, server_time,
+                   server_time - saved_time);
     }
 }
 
@@ -787,13 +793,19 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_player_entity(
     std::fprintf(stderr, "[JitterProbe] local_player_entity=%p\n", entity);
 }
 
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_get_anim_stats(
-    uint64_t *out_calls, uint64_t *out_matches, uint64_t *out_preserved,
-    uint64_t *out_hook_installed) {
-    if (out_calls) *out_calls = g_anim_deserialize_calls.load(std::memory_order_relaxed);
-    if (out_matches) *out_matches = g_anim_entity_matches.load(std::memory_order_relaxed);
-    if (out_preserved) *out_preserved = g_anim_time_preserved.load(std::memory_order_relaxed);
-    if (out_hook_installed) *out_hook_installed = original_AnimStateDeserialize ? 1 : 0;
+// Lua 5.1 compatible: return int (no pointer/FFI out-params).
+// 0=not installed, 1=installed
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_hook_status() {
+    return original_AnimStateDeserialize ? 1 : 0;
+}
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_call_count() {
+    return static_cast<int>(g_anim_deserialize_calls.load(std::memory_order_relaxed));
+}
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_match_count() {
+    return static_cast<int>(g_anim_entity_matches.load(std::memory_order_relaxed));
+}
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_preserve_count() {
+    return static_cast<int>(g_anim_time_preserved.load(std::memory_order_relaxed));
 }
 
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_only(bool on) {
@@ -837,7 +849,9 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_flush() {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_vm_tag(const char *) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_track_entity(void *) {}
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_player_entity(void *) {}
-DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_get_anim_stats(
-    uint64_t *, uint64_t *, uint64_t *, uint64_t *) {}
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_hook_status() { return 0; }
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_call_count() { return 0; }
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_match_count() { return 0; }
+DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_jitter_probe_get_anim_preserve_count() { return 0; }
 
 #endif
