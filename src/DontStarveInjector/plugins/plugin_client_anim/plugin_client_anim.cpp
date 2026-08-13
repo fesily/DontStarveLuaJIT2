@@ -81,12 +81,13 @@ extern "C" int DS_LUAJIT_client_anim_bind_player(lua_State *L) {
     auto *ctx = ds::core_vm::TryGetGameLuaContext();
     if (!ctx) return 0;
     auto &api = ctx->api;
-    if (api._lua_type(L, 1) != 7 /* LUA_TUSERDATA */) {
-        api._lua_pushboolean(L, 0);
-        return 1;
+    const int ty = api._lua_type(L, 1);
+    char *ent = nullptr;
+    if (ty == 2 /* LUA_TLIGHTUSERDATA */) {
+        ent = static_cast<char *>(api._lua_touserdata(L, 1));
+    } else if (ty == 7 /* LUA_TUSERDATA */) {
+        ent = UnwrapEntity(api._lua_touserdata(L, 1));
     }
-    void *ud = api._lua_touserdata(L, 1);
-    char *ent = UnwrapEntity(ud);
     client_anim_set_local_player_entity(ent);
     api._lua_pushboolean(L, ent ? 1 : 0);
     return 1;

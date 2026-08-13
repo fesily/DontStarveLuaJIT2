@@ -26,17 +26,37 @@ end
 
 local function bind_player(inst)
     local ent = inst and inst.entity
-    if not ent or not GameInjector.DS_LUAJIT_client_anim_bind_player then
+    if not ent then
         return false
     end
-    local ok, res = pcall(GameInjector.DS_LUAJIT_client_anim_bind_player, ent)
+    local raw = ent
+    if GameInjector.DS_LUAJIT_entity_get_raw_ptr then
+        local ok_raw, ptr = pcall(GameInjector.DS_LUAJIT_entity_get_raw_ptr, ent)
+        if ok_raw and ptr then
+            raw = ptr
+        end
+    end
+    if not GameInjector.DS_LUAJIT_client_anim_bind_player then
+        return false
+    end
+    local ok, res = pcall(GameInjector.DS_LUAJIT_client_anim_bind_player, raw)
+    if not (ok and res) and raw ~= ent then
+        ok, res = pcall(GameInjector.DS_LUAJIT_client_anim_bind_player, ent)
+        raw = ent
+    end
     if ok and res then
-        print(string.format("[client.anim] bound local player (installed=%s)",
+        print(string.format(
+            "[client.anim] bound raw=%s installed=%s enter=%s match=%s native_own=%s",
+            tostring(raw),
             tostring(GameInjector.DS_LUAJIT_client_anim_is_installed
-                and GameInjector.DS_LUAJIT_client_anim_is_installed() or 0)))
+                and GameInjector.DS_LUAJIT_client_anim_is_installed() or 0),
+            tostring(enter), tostring(match),
+            tostring(GameInjector.DS_LUAJIT_client_anim_get_own
+                and GameInjector.DS_LUAJIT_client_anim_get_own() or -1)))
         return true
     end
-    print(string.format("[client.anim] bind failed ok=%s res=%s", tostring(ok), tostring(res)))
+    print(string.format("[client.anim] bind failed ok=%s res=%s raw=%s",
+        tostring(ok), tostring(res), tostring(raw)))
     return false
 end
 
@@ -137,11 +157,13 @@ AddPlayerPostInit(function(inst)
         end
 
         local last_own = false
+        local tick_i = 0
         inst:DoPeriodicTask(0, function()
             if not inst:IsValid() or ThePlayer ~= inst then
                 set_own(false)
                 return
             end
+            tick_i = tick_i + 1
             local pred = Profile and Profile.GetMovementPredictionEnabled
                 and Profile:GetMovementPredictionEnabled()
             local has_loco = inst.components and inst.components.locomotor ~= nil
@@ -152,8 +174,6 @@ AddPlayerPostInit(function(inst)
                 moving = true
             end
             local busy = is_busy_for_anim(inst)
-            -- own follows pred-OFF + no client SG, not analog moving.
-            -- moving only selects run vs idle.
             local want_own = (not pred) and (not has_loco) and (not busy)
 
             if want_own ~= last_own then
@@ -164,6 +184,18 @@ AddPlayerPostInit(function(inst)
             set_own(want_own)
             if want_own then
                 drive_local_locomote(inst, moving, dir)
+            end
+            if tick_i % 60 == 0 then
+                local enter = GameInjector.DS_LUAJIT_client_anim_enter_count
+                    and GameInjector.DS_LUAJIT_client_anim_enter_count() or -1
+                local match = GameInjector.DS_LUAJIT_client_anim_match_count
+                    and GameInjector.DS_LUAJIT_client_anim_match_count() or -1
+                print(string.format(
+                    "[client.anim] stats enter=%s match=%s native_own=%s moving=%s",
+                    tostring(enter), tostring(match),
+                    tostring(GameInjector.DS_LUAJIT_client_anim_get_own
+                        and GameInjector.DS_LUAJIT_client_anim_get_own() or -1),
+                    tostring(moving)))
             end
         end)
 
