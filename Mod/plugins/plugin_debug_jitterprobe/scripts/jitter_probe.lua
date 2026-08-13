@@ -6,7 +6,9 @@
 --   Render:    CacheRender (ActualCacheRender) / DrawCache (DrawCacheRender)
 -- Flush: ThePlayer:PushEvent("jitter_probe_flush")
 --
--- Pred-OFF local run/idle ownership lives in client.anim (plugin_client_anim).
+-- Pred-OFF local run/idle ownership was removed (spec 2026-08-13 pred-ON).
+-- This file is measurement only. Lua time_back on looping anims is wrap+fmod,
+-- not a network AnimTime fault.
 if TheNet and TheNet:IsDedicated() then
     return
 end
@@ -42,7 +44,7 @@ local function set_vm_tag()
 end
 set_vm_tag()
 
-print("[JITTER][LUA] probe on (authority + frame/render; anim own → client.anim)")
+print("[JITTER][LUA] probe on (authority + frame/render)")
 
 local function JLog(tag, fmt, ...)
     print(string.format("[JITTER][LUA][t=%s][%s] " .. fmt,
@@ -222,4 +224,4 @@ AddPlayerPostInit(function(inst)
     end)
 end)
 
-print("[JITTER][LUA] loaded — probe only; anim own is client.anim")
+print("[JITTER][LUA] loaded — probe only")

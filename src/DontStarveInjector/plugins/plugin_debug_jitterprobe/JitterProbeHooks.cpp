@@ -682,7 +682,7 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_track_entity(void *e
 }
 
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_jitter_probe_set_local_player_entity(void *entity) {
-    // Moved to client.anim (DS_LUAJIT_client_anim_bind_player).
+    // No-op. Local-player filter is Lua track_entity / native track pointer.
     (void)entity;
 }
 
