@@ -628,6 +628,7 @@ Env/cmd angle overrides write **strings** into `business_options["AngleBackend"]
 | `NetworkOpt` | Bool | `true` | `network.rpc` | `AllOf` |
 | `EnableNetSim` | Bool | `false` | `network.sim` | `AllOf` |
 | `EnableVBPool` | Bool | `false` | `render.vbpool` | `AllOf` |
+| `AngleBackend` | String | `auto` (`auto,vulkan,d3d11,d3d9`) | `render.angle` | AlwaysOn (parameter) |
 | `ShadowSunDrive` | Bool | `false` | `render.shadow` | AlwaysOn native; Lua applies |
 | `ShadowLengthBoost` | Number | `1.0` | `render.shadow` | AlwaysOn native; Lua applies |
 | `EnableProfiler` | String | `off` (`off,fzvp,Gz`) | `debug.profiler` | AlwaysOn native; Lua `any_of` |
