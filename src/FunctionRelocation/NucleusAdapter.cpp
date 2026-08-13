@@ -19,10 +19,12 @@ namespace function_relocation {
 namespace {
 
 // Infer preferred ImageBase from a loaded Nucleus Binary.
-// PE sections/symbols already use image VA (image_base + rva). For PE we recover
-// ImageBase as the greatest power-of-two base that is a lower bound of every
-// section VMA and entry; for the DST lua51 path ImageBase is 0x180000000.
-// Simpler + exact: re-read PE optional header via pe_image_base when type is PE.
+// PE: sections/symbols use image VA (ImageBase + rva). Prefer optional-header
+// ImageBase (DST lua51 PE is typically 0x180000000).
+// ELF ET_DYN (shared libs / PIE): section VMAs are already load-bias-relative
+// (often near 0). process_va = process_base + (image_va - image_base) requires
+// image_base == 0; page-aligning the lowest section VMA breaks remapping and
+// leaves apply_nucleus_function_table with sized==0.
 uint64_t infer_image_base_from_binary(const Binary &bin,
                                       const std::filesystem::path &path) {
   if (bin.type == Binary::BIN_TYPE_PE) {
@@ -30,8 +32,21 @@ uint64_t infer_image_base_from_binary(const Binary &bin,
     if (base) {
       return *base;
     }
+    // PE fallback only: page-align lowest section VMA (already ImageBase+RVA).
+    if (!bin.sections.empty()) {
+      uint64_t lo = bin.sections.front().vma;
+      for (const auto &s : bin.sections) {
+        if (s.vma < lo) {
+          lo = s.vma;
+        }
+      }
+      return lo & ~uint64_t{0xFFF};
+    }
   }
-  // Fallback: lowest section VMA rounded down is unreliable; use 0 for RVA space.
+  // ELF: ET_DYN section VMAs are load-bias relative (near 0) → image_base 0.
+  // ET_EXEC uses absolute preferred base (DST server is typically 0x400000).
+  // process_va = process_base + (image_va - image_base); wrong base empties
+  // containing() for many spans and breaks knowns/create (e.g. lua_close).
   if (!bin.sections.empty()) {
     uint64_t lo = bin.sections.front().vma;
     for (const auto &s : bin.sections) {
@@ -39,8 +54,10 @@ uint64_t infer_image_base_from_binary(const Binary &bin,
         lo = s.vma;
       }
     }
-    // Common PE preferred bases: if entry and sections share a high base, keep it.
-    return lo & ~uint64_t{0xFFF}; // page-align down of lowest section (best effort)
+    // Heuristic: absolute preferred bases are page-aligned and not near 0.
+    if (lo >= 0x10000) {
+      return lo & ~uint64_t{0xFFF};
+    }
   }
   return 0;
 }

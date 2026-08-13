@@ -33,6 +33,7 @@
 #include <algorithm>
 
 #include <frida-gum.h>
+#include "util/frida_gum_interceptor.hpp"
 #include <spdlog/spdlog.h>
 
 #ifdef _WIN32
@@ -396,12 +397,11 @@ void GameNetworkSimInstallHook(GumInterceptor* interceptor) {
     send_sig.log      = true;
 
     if (send_sig.scan(nullptr)) {
-        auto r = gum_interceptor_replace(
+        auto r = ds::gum::replace(
             interceptor,
             reinterpret_cast<void*>(send_sig.target_address),
             reinterpret_cast<void*>(&hooked_SendBitStream),
-            reinterpret_cast<void**>(&original_SendBitStream),
-            nullptr);
+            reinterpret_cast<void**>(&original_SendBitStream));
         if (r == GUM_REPLACE_OK) {
             spdlog::info("[NetSim] hooked SendBitStream at {:x}",
                          send_sig.target_address);
@@ -455,12 +455,11 @@ void GameNetworkSimInstallHook(GumInterceptor* interceptor) {
     dtor_sig.log      = true;
 
     if (dtor_sig.scan(nullptr)) {
-        auto r = gum_interceptor_replace(
+        auto r = ds::gum::replace(
             interceptor,
             reinterpret_cast<void*>(dtor_sig.target_address),
             reinterpret_cast<void*>(&hooked_ReliabilityLayerDtor),
-            reinterpret_cast<void**>(&original_ReliabilityLayerDtor),
-            nullptr);
+            reinterpret_cast<void**>(&original_ReliabilityLayerDtor));
         if (r == GUM_REPLACE_OK) {
             spdlog::info("[NetSim] hooked ~ReliabilityLayer at {:x}",
                          dtor_sig.target_address);

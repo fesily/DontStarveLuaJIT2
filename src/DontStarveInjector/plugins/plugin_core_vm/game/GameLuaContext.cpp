@@ -16,13 +16,12 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <spdlog/spdlog.h>
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 
 #ifndef _WIN32
 #include <dlfcn.h>
-#else
-#include <Windows.h>
 #endif
 
 #ifdef _WIN32
@@ -78,11 +77,12 @@ void load_game_fn_io_open(const Signatures &signatures) {
 }
 
 void replace_game_io_open(GameLuaContext &ctx, lua_State *L) {
-    if (luaopen_game_io) {
-        ctx.api._lua_pushcclosure(L, (luaopen_game_io), 0);
-        ctx.api._lua_pushstring(L, LUA_IOLIBNAME);
-        ctx.api._lua_call(L, 1, 0);
-    }
+    assert(luaopen_game_io);
+    const int top = ctx.api._lua_gettop(L);
+    ctx.api._lua_pushcclosure(L, luaopen_game_io, 0);
+    ctx.api._lua_pushstring(L, LUA_IOLIBNAME);
+    ctx.api._lua_call(L, 1, 0);
+    assert(ctx.api._lua_gettop(L) == top);
 }
 
 } // namespace ds::core_vm::detail

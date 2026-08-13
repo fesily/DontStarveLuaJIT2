@@ -555,6 +555,7 @@ namespace function_relocation {
     }
 
     void ScanCtx::scan() {
+        // Legacy heuristic path (CALL/FDE/ret). Prefer scan_nucleus_bodies().
         const auto functions = pre_function();
         for (size_t i = 0; i < functions.size(); i++) {
             const auto address = functions[i];
@@ -574,14 +575,12 @@ namespace function_relocation {
                     assert(func.size + func.address == function_limit);
             }
 #endif
-            // maybe function_limit has some data
             if (!known_functions.contains(address)) {
                 disasm dis{
                         std::span{(uint8_t *) address, function_limit - address}};
                 auto max_function_limit = address;
                 for (auto iter = dis.begin(), end = dis.end(); iter != end; ++iter) {
                     const auto &insn = *iter;
-                    // break when data
                     if (rodatas.contains(insn.address)) {
                         max_function_limit = insn.address;
                         break;
@@ -590,16 +589,50 @@ namespace function_relocation {
                 }
                 function_limit = std::min(max_function_limit, function_limit);
             }
-            // function_limit is next function address
             function_limit--;
             scan_function(address);
+        }
+    }
+
+    void ScanCtx::scan_nucleus_bodies() {
+        // Snapshot (address, size) first — scan_function may not reallocate list
+        // nodes but we avoid concurrent mutation of the iteration source.
+        std::vector<std::pair<uintptr_t, size_t>> bodies;
+        bodies.reserve(m.functions.size());
+        for (const auto &fn: m.functions) {
+            if (fn.size > 0 && fn.address != 0) {
+                bodies.emplace_back(fn.address, fn.size);
+            }
+        }
+        m.blocks.clear();
+        m.address_blocks.clear();
+        m.Consts.clear();
+        for (auto &fn: m.functions) {
+            fn.blocks.clear();
+            fn.insn_count = 0;
+            fn.const_key = nullptr;
+            fn.consts_hash = 0;
+        }
+        for (const auto &[address, size]: bodies) {
+            body_hard_end = address + size;
+            function_limit = body_hard_end - 1;
+            cur = nullptr;
+            scan_function(address);
+            body_hard_end = 0;
         }
     }
 
     void ScanCtx::scan_function(uintptr_t address) {
         size_t index = 0;
         assert(cur == nullptr);
-        cur = &m.functions.emplace_back(Function{address});
+        // Reuse Function stub from apply_nucleus when present; else create.
+        cur = m.find_function(address);
+        if (!cur) {
+            cur = &m.functions.emplace_back(Function{address});
+        } else {
+            cur->blocks.clear();
+            cur->insn_count = 0;
+        }
         cur->module = &m;
         cur_block = createBlock(address);
         disasm ds{(uint8_t *) address, text.base_address + text.size - address};
@@ -609,9 +642,13 @@ namespace function_relocation {
             if (rodatas.contains(next_insn_address)) {
                 function_limit = next_insn_address - 1;
             }
+            if (!m.in_text(insn.address) ||
+                (body_hard_end != 0 && insn.address >= body_hard_end)) {
+                function_end(insn.address);
+                return;
+            }
             cur->insn_count++;
             cur_block->insn_count++;
-            assert(m.in_text(insn.address));
             const auto &x86_details = insn.detail->x86;
             switch (insn.id) {
                 case X86_INS_JMP:
@@ -706,10 +743,16 @@ namespace function_relocation {
                                x86_details.operands[0].type == x86_op_type::X86_OP_IMM);
                         auto addr = static_cast<uint64_t>(x86_details.operands[0].imm);
                         function_limit = std::max((uintptr_t) addr, function_limit);
-
+                        if (body_hard_end != 0 && function_limit >= body_hard_end) {
+                            function_limit = body_hard_end - 1;
+                        }
                         cur_block = createBlock(next_insn_address);
                     }
                     break;
+            }
+            if (body_hard_end != 0 && next_insn_address >= body_hard_end) {
+                function_end(body_hard_end);
+                return;
             }
         }
         fprintf(stderr, "%s\n",

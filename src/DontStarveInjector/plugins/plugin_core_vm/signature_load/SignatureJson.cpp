@@ -120,13 +120,14 @@ static std::filesystem::path mod_root_if_loaded() {
 
 static std::string get_signatures_filename(bool isClient) {
     const auto file = "signatures_"s + (isClient ? "client" : "server") + ".json";
-    // Prefer <mod>/signatures_*.json next to modmain. Fall back to CWD absolute
-    // path for tools / first-write creation (signature_updater uses WORKER_DIR=Mod/).
+    // Only <mod>/signatures_*.json. No CWD/bin64 fallback (stale game-dir copies).
+    // Tools must set SignatureJson::file_path or create_or_update(..., path).
     const auto root = mod_root_if_loaded();
-    if (!root.empty()) {
-        return (root / file).string();
+    if (root.empty()) {
+        spdlog::error("get_signatures_filename: mod root unresolved; set file_path for tools");
+        return {};
     }
-    return std::filesystem::absolute(file).string();
+    return (root / file).string();
 }
 
 const char *SignatureJson::version_path = "../version.txt";
@@ -174,6 +175,10 @@ intptr_t SignatureJson::current_version() {
 
 std::optional<Signatures> SignatureJson::read_from_signatures() {
     const auto output = file_path.empty() ? get_signatures_filename(isClient) : file_path;
+    if (output.empty()) {
+        spdlog::error("read_from_signatures: no signature path (mod root unresolved and file_path empty)");
+        return std::nullopt;
+    }
     spdlog::info("read signatures from file:[{}]", output);
     std::ifstream sf(output);
     if (!sf.is_open())
@@ -186,6 +191,10 @@ std::optional<Signatures> SignatureJson::read_from_signatures() {
 void SignatureJson::update_signatures(const Signatures &signatures) {
     assert(current_version() == signatures.version);
     const auto output = file_path.empty() ? get_signatures_filename(isClient) : file_path;
+    if (output.empty()) {
+        spdlog::error("update_signatures: no signature path (mod root unresolved and file_path empty)");
+        return;
+    }
     spdlog::info("update signatures to file:[{}], version: {}", output, signatures.version);
     std::ofstream sf(output);
     nlohmann::json j;

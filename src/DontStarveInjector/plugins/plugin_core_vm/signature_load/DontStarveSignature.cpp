@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <future>
 #include <coroutine>
+#include <unordered_set>
+#include <vector>
 
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
@@ -18,9 +20,9 @@
 #include "Signature.hpp"
 #include "SignatureJson.hpp"
 #include "NucleusAdapter.hpp"
+#include "disasm.h"
 #include "missfunc.h"
 #include "range/v3/range/conversion.hpp"
-#include "ExectuableSignature.hpp"
 #include "util/gum_platform.hpp"
 
 #include <ranges>
@@ -137,9 +139,13 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(uintptr_t 
 }
 
 std::expected<SignatureUpdater, std::string>
-SignatureUpdater::create_or_update(bool isClient, uintptr_t luaModuleBaseAddress) {
+SignatureUpdater::create_or_update(bool isClient, uintptr_t luaModuleBaseAddress,
+                                   std::string signatures_path) {
     SignatureUpdater updater;
     SignatureJson json{isClient};
+    if (!signatures_path.empty()) {
+        json.file_path = std::move(signatures_path);
+    }
     auto signatures = json.read_from_signatures();
     if (!signatures) {
         auto res = create_signature(luaModuleBaseAddress, [&json](auto &v) { json.update_signatures(v); });
@@ -173,20 +179,15 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
     const auto &game_path = get_module_path(game_name, targetLuaModuleBase);
     function_relocation::ModuleSections modulelua51{}, moduleMain{};
 
-#ifndef _WIN32
-    auto fileSignature = function_relocation::FileSignature::read_file_signature(
-            function_relocation::FileSignature::file_path);
-    if (fileSignature)
-        fileSignature->fix_ptr();
-#endif
+    // Phase 1: section ranges + symbol names only (no heuristic function starts).
     if (!init_module_signature(lua51_path.c_str(), 0, modulelua51) ||
         !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain)
             ) {
                 throw  update_signatures_exception{"init_module_signature failed!"};
             }
 
-    // Authoritative body sizes from Nucleus FunctionTable (image VA remapped to process VA).
-    // Fail visibly — do not invent sizes via next-export or ret heuristics.
+    // Phase 2: Nucleus is sole start|end|size authority (export split only inside
+    // nucleus_analyze_file for real SYM_TYPE_FUNC). No ScanCtx table cuts.
     {
         auto train_nt = function_relocation::nucleus_analyze_file(lua51_path);
         if (!train_nt) {
@@ -206,6 +207,12 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
         if (!function_relocation::apply_nucleus_function_table(moduleMain, target_nt->table,
                                                               target_nt->image_base)) {
             throw update_signatures_exception{"apply_nucleus_function_table(game) failed"};
+        }
+
+        // Phase 3: disasm each Nucleus body for soft-match features.
+        if (!function_relocation::scan_module_function_features(modulelua51) ||
+            !function_relocation::scan_module_function_features(moduleMain)) {
+            throw update_signatures_exception{"scan_module_function_features failed"};
         }
 
         // Optional pdata cross-check (log only; Nucleus remains authority).
@@ -318,50 +325,58 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                 }
             }
         }
-#ifndef _WIN32
-        if (target == 0 || target < targetLuaModuleBase) {
-            if (fileSignature) {
-                auto iter = fileSignature->section.known_functions.find(name);
-                if (iter != fileSignature->section.known_functions.end()) {
-                    auto fn = iter->second;
-                    target = moduleMain.try_fix_func_address(*fn, &signature, targetLuaModuleBase);
-                }
-            }
-        }
-#endif
         if (target == 0 || target < targetLuaModuleBase)
             target = moduleMain.try_fix_func_address(*originalFunc,
                                                      &signature, targetLuaModuleBase);
 
         if (!target || target < targetLuaModuleBase) {
-            throw update_signatures_exception{fmt::format("func[{}] can't fix address, wait for mod update", name)};
+            // Soft-match fail-closed / unique-byte miss: keep previous entry and continue
+            // so a single hard export does not abort the whole signature pass.
+            spdlog::error("func[{}] can't fix address, keeping previous signature (offset={})",
+                          name, old_offset);
+            continue;
         }
         if (target == maybe_target)
             continue;
-        // fix the offset by module — prefer Nucleus target table over scan heuristics.
+        // Resolve to a Function* when possible. If soft/unique_const refined an
+        // entry that is not a Nucleus span start (coarse over-merge), keep it —
+        // do NOT snap back to containing() which can be thousands of bytes away.
         if (moduleMain.find_function(target) == nullptr) {
-            spdlog::info("can't find function at address: {}", (void *) target);
             if (!moduleMain.function_table.empty()) {
-                // pattern_offset is target-local after Creator resolve: entry - match.
-                // Recover match, then re-resolve entry via containing().
                 const auto pattern_address =
                         static_cast<uintptr_t>(static_cast<intptr_t>(target) -
                                                static_cast<intptr_t>(signature.pattern_offset));
                 const uint64_t entry = moduleMain.function_table.containing(
                         signature.pattern_offset == 0 ? target : pattern_address);
                 if (entry == 0) {
-                    throw update_signatures_exception{
-                            fmt::format("func[{}] match not in target FunctionTable", name)};
+                    // Refined entry outside table still allowed if in text.
+                    if (!moduleMain.in_text(target)) {
+                        throw update_signatures_exception{
+                                fmt::format("func[{}] match not in target FunctionTable", name)};
+                    }
+                    spdlog::info("keep refined entry [{}] outside Nucleus span starts",
+                                 (void *) target);
+                } else {
+                    const auto match = signature.pattern_offset == 0
+                                               ? target
+                                               : pattern_address;
+                    const auto dist = target >= entry ? target - entry : entry - target;
+                    // Only adopt Nucleus start when we are still in the prologue
+                    // region (pattern hit near entry). Far distances mean unique_const
+                    // / train-off recovered a real interior export start.
+                    if (dist <= 16) {
+                        const auto new_po =
+                                static_cast<intptr_t>(entry) - static_cast<intptr_t>(match);
+                        spdlog::info("refix signature via FunctionTable: [{}]->[{}] entry={}",
+                                     signature.pattern_offset, new_po, (void *) entry);
+                        signature.pattern_offset = static_cast<int>(new_po);
+                        target = static_cast<uintptr_t>(entry);
+                    } else {
+                        spdlog::info(
+                                "keep refined entry [{}] (Nucleus containing {:#x} dist={})",
+                                (void *) target, entry, dist);
+                    }
                 }
-                const auto match = signature.pattern_offset == 0
-                                           ? target
-                                           : pattern_address;
-                const auto new_po =
-                        static_cast<intptr_t>(entry) - static_cast<intptr_t>(match);
-                spdlog::info("refix signature via FunctionTable: [{}]->[{}] entry={}",
-                             signature.pattern_offset, new_po, (void *) entry);
-                signature.pattern_offset = static_cast<int>(new_po);
-                target = static_cast<uintptr_t>(entry);
             } else {
                 auto all_address =
                         moduleMain.address_functions | std::ranges::views::transform([](auto &p) { return p.first; }) |
@@ -382,26 +397,375 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                 signature.pattern_offset = pattern_offset;
             }
         }
-        // Prefer Nucleus FunctionTable over pdata for snap-to-entry (pdata is log-only authority).
+        // Snap only when target is a few bytes past a Nucleus start (mid-prologue
+        // hit). Never pull a refined far entry back into a coarse over-merged span.
         if (!moduleMain.function_table.empty()) {
             const uint64_t entry = moduleMain.function_table.containing(target);
             if (entry != 0 && entry != target) {
-                const auto pattern_address =
-                        static_cast<uintptr_t>(static_cast<intptr_t>(target) -
-                                               static_cast<intptr_t>(signature.pattern_offset));
-                const auto new_po =
-                        static_cast<intptr_t>(entry) - static_cast<intptr_t>(pattern_address);
-                spdlog::info("snap signature [{}] {} -> nucleus entry {} (pattern_offset {}->{})",
-                             name, (void *) target, (void *) entry,
-                             signature.pattern_offset, new_po);
-                signature.pattern_offset = static_cast<int>(new_po);
-                target = static_cast<uintptr_t>(entry);
+                const auto dist = target >= entry ? target - entry : entry - target;
+                if (dist <= 16) {
+                    const auto pattern_address =
+                            static_cast<uintptr_t>(static_cast<intptr_t>(target) -
+                                                   static_cast<intptr_t>(signature.pattern_offset));
+                    const auto new_po =
+                            static_cast<intptr_t>(entry) - static_cast<intptr_t>(pattern_address);
+                    spdlog::info("snap signature [{}] {} -> nucleus entry {} (pattern_offset {}->{})",
+                                 name, (void *) target, (void *) entry,
+                                 signature.pattern_offset, new_po);
+                    signature.pattern_offset = static_cast<int>(new_po);
+                    target = static_cast<uintptr_t>(entry);
+                }
             }
         }
         auto new_offset = target - targetLuaModuleBase;
+        // Reject two exports claiming the same RVA (equal-family collisions).
+        bool dup = false;
+        for (const auto &[other, osig]: funcs) {
+            if (other == name) continue;
+            if (osig.offset != 0 && osig.offset == static_cast<uintptr_t>(new_offset)) {
+                spdlog::error("func[{}] offset {} already claimed by [{}], keeping previous",
+                              name, new_offset, other);
+                dup = true;
+                break;
+            }
+        }
+        if (dup) continue;
         spdlog::info("update signatures [{}:{}]: {} to {}", name, (void *) target, old_offset, new_offset);
         signature.offset = new_offset;
+        moduleMain.set_known_function(target, name.c_str());
     }
+
+    // --- Call-graph seed pass -------------------------------------------------
+    // After soft/short-body matching, unresolved exports can still be recovered
+    // when a *resolved* train caller has a CALL/JMP edge to them: map that edge
+    // onto the target caller's same-module call list (ordinal + size fingerprint).
+    // Example: train lua_pushstring tails to lua_pushnil; if game still has a
+    // direct edge, pushnil is seeded. (Inlined callees need short-body instead.)
+    {
+        auto collect_named_callees =
+                [](function_relocation::Function &fn,
+                   function_relocation::ModuleSections &mod)
+                -> std::vector<std::pair<std::string, uint64_t>> {
+            function_relocation::ensure_function_features(fn);
+            std::vector<std::pair<std::string, uint64_t>> out;
+            std::unordered_set<uint64_t> seen;
+            for (const auto block_addr: fn.blocks) {
+                auto *block = mod.address_blocks.contains(block_addr)
+                                      ? mod.address_blocks.at(block_addr)
+                                      : nullptr;
+                if (!block) continue;
+                for (const auto ct: block->call_functions) {
+                    if (!seen.insert(ct).second) continue;
+                    auto *cf = mod.find_function(ct);
+                    if (!cf || cf->name.empty()) continue;
+                    if (!mod.known_functions.contains(cf->name)) continue;
+                    out.emplace_back(cf->name, ct);
+                }
+            }
+            return out;
+        };
+
+        auto collect_target_callees =
+                [](function_relocation::Function &fn,
+                   function_relocation::ModuleSections &mod)
+                -> std::vector<uint64_t> {
+            function_relocation::ensure_function_features(fn);
+            std::vector<uint64_t> out;
+            std::unordered_set<uint64_t> seen;
+            for (const auto block_addr: fn.blocks) {
+                auto *block = mod.address_blocks.contains(block_addr)
+                                      ? mod.address_blocks.at(block_addr)
+                                      : nullptr;
+                if (!block) continue;
+                for (const auto ct: block->call_functions) {
+                    uint64_t entry = 0;
+                    if (auto *cf = mod.find_function(ct); cf) {
+                        entry = cf->address;
+                    } else if (!mod.function_table.empty()) {
+                        entry = mod.function_table.containing(ct);
+                    }
+                    if (entry == 0) continue;
+                    if (!seen.insert(entry).second) continue;
+                    out.push_back(entry);
+                }
+            }
+            return out;
+        };
+
+        for (int round = 0; round < 4; ++round) {
+            bool any = false;
+            for (size_t i = 0; i < exports.size(); i++) {
+                auto &name = exports[i].first;
+                auto &signature = funcs.at(name);
+                if (signature.offset != 0) continue;
+
+                auto *train_fn = modulelua51.known_functions.at(name);
+                if (!train_fn || train_fn->size == 0) continue;
+
+                // Find a resolved train caller that lists this export as a named callee.
+                for (size_t j = 0; j < exports.size(); j++) {
+                    auto &caller_name = exports[j].first;
+                    if (caller_name == name) continue;
+                    auto &caller_sig = funcs.at(caller_name);
+                    if (caller_sig.offset == 0) continue;
+
+                    auto *train_caller = modulelua51.known_functions.at(caller_name);
+                    if (!train_caller) continue;
+                    const auto train_callees = collect_named_callees(*train_caller, modulelua51);
+                    size_t ordinal = static_cast<size_t>(-1);
+                    for (size_t k = 0; k < train_callees.size(); ++k) {
+                        if (train_callees[k].first == name) {
+                            ordinal = k;
+                            break;
+                        }
+                    }
+                    if (ordinal == static_cast<size_t>(-1)) continue;
+
+                    const uintptr_t tgt_caller =
+                            targetLuaModuleBase + static_cast<uintptr_t>(caller_sig.offset);
+                    auto *target_caller = moduleMain.find_function(tgt_caller);
+                    if (!target_caller) continue;
+                    const auto tgt_callees = collect_target_callees(*target_caller, moduleMain);
+                    if (tgt_callees.empty()) continue;
+
+                    uint64_t chosen = 0;
+                    if (tgt_callees.size() == train_callees.size() &&
+                        ordinal < tgt_callees.size()) {
+                        // Same arity: take matching ordinal.
+                        chosen = tgt_callees[ordinal];
+                    } else {
+                        // Size fingerprint among target callees not yet claimed.
+                        std::vector<uint64_t> candidates;
+                        for (auto e: tgt_callees) {
+                            bool claimed = false;
+                            for (size_t k = 0; k < exports.size(); k++) {
+                                auto &os = funcs.at(exports[k].first);
+                                if (os.offset != 0 &&
+                                    targetLuaModuleBase + static_cast<uintptr_t>(os.offset) == e) {
+                                    claimed = true;
+                                    break;
+                                }
+                            }
+                            if (claimed) continue;
+                            auto *tf = moduleMain.find_function(e);
+                            if (!tf || tf->size == 0) continue;
+                            const double ratio =
+                                    static_cast<double>(tf->size) /
+                                    static_cast<double>(std::max<size_t>(1, train_fn->size));
+                            if (ratio >= 0.4 && ratio <= 3.0) {
+                                candidates.push_back(e);
+                            }
+                        }
+                        if (candidates.size() == 1) {
+                            chosen = candidates.front();
+                        }
+                    }
+                    if (chosen == 0 || chosen < targetLuaModuleBase) continue;
+
+                    const auto new_offset = chosen - targetLuaModuleBase;
+                    bool claimed = false;
+                    for (const auto &[other, osig]: funcs) {
+                        if (other != name && osig.offset != 0 &&
+                            osig.offset == static_cast<uintptr_t>(new_offset)) {
+                            claimed = true;
+                            break;
+                        }
+                    }
+                    if (claimed) continue;
+                    signature.offset = new_offset;
+                    signature.pattern.clear();
+                    signature.pattern_offset = 0;
+                    moduleMain.set_known_function(chosen, name.c_str());
+                    spdlog::info("graph-seed [{}] via caller [{}] ordinal={} -> {:#x} (offset={})",
+                                 name, caller_name, ordinal, chosen, new_offset);
+                    any = true;
+                    break;
+                }
+            }
+            if (!any) break;
+            spdlog::info("graph-seed round {} filled more exports", round);
+        }
+
+        // Reverse seed: unresolved E calls known K → find unclaimed target
+        // callers of K with size fingerprint (e.g. loadstring → loadbuffer,
+        // loadbuffer → lua_load, isstring → lua_type).
+        for (int round = 0; round < 4; ++round) {
+            bool any = false;
+            for (size_t i = 0; i < exports.size(); i++) {
+                auto &name = exports[i].first;
+                auto &signature = funcs.at(name);
+                if (signature.offset != 0) continue;
+                auto *train_fn = modulelua51.known_functions.at(name);
+                if (!train_fn || train_fn->size == 0) continue;
+
+                // Direct named callees, plus one-level transitive (target may
+                // inline a direct callee: train loadstring→JMP loadbuffer→lua_load
+                // becomes game loadstring→CALL lua_load).
+                std::vector<std::string> seed_callees;
+                {
+                    std::unordered_set<std::string> seen;
+                    const auto direct = collect_named_callees(*train_fn, modulelua51);
+                    for (const auto &[cn, _ct]: direct) {
+                        if (!funcs.contains(cn) || funcs.at(cn).offset == 0) continue;
+                        if (seen.insert(cn).second) seed_callees.push_back(cn);
+                        auto *cfn = modulelua51.known_functions.contains(cn)
+                                            ? modulelua51.known_functions.at(cn)
+                                            : nullptr;
+                        if (!cfn) continue;
+                        for (const auto &[cn2, _ct2]: collect_named_callees(*cfn, modulelua51)) {
+                            if (!funcs.contains(cn2) || funcs.at(cn2).offset == 0) continue;
+                            if (seen.insert(cn2).second) seed_callees.push_back(cn2);
+                        }
+                    }
+                }
+                for (const auto &callee_name: seed_callees) {
+                    auto &callee_sig = funcs.at(callee_name);
+                    const uintptr_t tgt_callee =
+                            targetLuaModuleBase + static_cast<uintptr_t>(callee_sig.offset);
+
+                    std::vector<uint64_t> candidates;
+                    for (auto &fn: moduleMain.functions) {
+                        if (fn.address < targetLuaModuleBase || fn.size == 0) continue;
+                        bool claimed = false;
+                        for (size_t k = 0; k < exports.size(); k++) {
+                            auto &os = funcs.at(exports[k].first);
+                            if (os.offset != 0 &&
+                                targetLuaModuleBase + static_cast<uintptr_t>(os.offset) ==
+                                        fn.address) {
+                                claimed = true;
+                                break;
+                            }
+                        }
+                        if (claimed) continue;
+                        // Leaf for size ratio; walk min(span,128) for E8/E9 so
+                        // calls after short fall-through still count.
+                        const size_t train_leaf =
+                                function_relocation::function_leaf_size(*train_fn, 128);
+                        const size_t tgt_leaf =
+                                function_relocation::function_leaf_size(fn, 128);
+                        const double ratio =
+                                static_cast<double>(std::max<size_t>(1, tgt_leaf)) /
+                                static_cast<double>(std::max<size_t>(1, train_leaf));
+                        if (ratio < 0.4 || ratio > 2.5) continue;
+
+                        const size_t walk = std::min(fn.size, size_t{128});
+                        if (function_relocation::body_calls_entry(
+                                    moduleMain, fn.address, walk, tgt_callee)) {
+                            candidates.push_back(fn.address);
+                        }
+                    }
+                    uint64_t chosen = 0;
+                    if (candidates.size() == 1) {
+                        chosen = candidates.front();
+                    } else if (candidates.size() > 1) {
+                        // Disambiguate: closest leaf length to train leaf.
+                        // Recompute train leaf via first RET within 128B.
+                        size_t want = train_fn->size;
+                        {
+                            const size_t cap = std::min(train_fn->size, size_t{128});
+                            function_relocation::disasm ds{
+                                    std::span{reinterpret_cast<uint8_t *>(train_fn->address), cap}};
+                            for (auto &insn: ds) {
+                                if (insn.id == X86_INS_RET || insn.id == X86_INS_RETF ||
+                                    insn.id == X86_INS_RETFQ) {
+                                    want = static_cast<size_t>(insn.address + insn.size -
+                                                               train_fn->address);
+                                    break;
+                                }
+                                if (insn.id == X86_INS_JMP) {
+                                    const auto &op = insn.detail->x86.operands[0];
+                                    if (op.type == X86_OP_IMM) {
+                                        const uint64_t t = static_cast<uint64_t>(op.imm);
+                                        if (t < train_fn->address ||
+                                            t >= train_fn->address + train_fn->size) {
+                                            want = static_cast<size_t>(
+                                                    insn.address + insn.size - train_fn->address);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        size_t best_diff = SIZE_MAX;
+                        uint64_t best = 0;
+                        size_t ties = 0;
+                        for (const auto cand: candidates) {
+                            auto *fn = moduleMain.find_function(cand);
+                            if (!fn) continue;
+                            size_t leaf = fn->size;
+                            const size_t cap = std::min(fn->size, size_t{128});
+                            function_relocation::disasm ds{
+                                    std::span{reinterpret_cast<uint8_t *>(fn->address), cap}};
+                            for (auto &insn: ds) {
+                                if (insn.id == X86_INS_RET || insn.id == X86_INS_RETF ||
+                                    insn.id == X86_INS_RETFQ) {
+                                    leaf = static_cast<size_t>(insn.address + insn.size -
+                                                               fn->address);
+                                    break;
+                                }
+                                if (insn.id == X86_INS_JMP) {
+                                    const auto &op = insn.detail->x86.operands[0];
+                                    if (op.type == X86_OP_IMM) {
+                                        const uint64_t t = static_cast<uint64_t>(op.imm);
+                                        if (t < fn->address || t >= fn->address + fn->size) {
+                                            leaf = static_cast<size_t>(insn.address + insn.size -
+                                                                       fn->address);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            const size_t diff = leaf > want ? leaf - want : want - leaf;
+                            if (diff < best_diff) {
+                                best_diff = diff;
+                                best = cand;
+                                ties = 1;
+                            } else if (diff == best_diff) {
+                                ties++;
+                            }
+                        }
+                        // Accept only unique closest and reasonably close (≤16B).
+                        if (ties == 1 && best != 0 && best_diff <= 16) {
+                            chosen = best;
+                            spdlog::info(
+                                    "graph-seed-rev [{}] via [{}] disambiguated by leaf "
+                                    "(diff={}, candidates={})",
+                                    name, callee_name, best_diff, candidates.size());
+                        } else {
+                            spdlog::info(
+                                    "graph-seed-rev [{}] via [{}] ambiguous candidates={} "
+                                    "(best_diff={} ties={})",
+                                    name, callee_name, candidates.size(), best_diff, ties);
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                    const auto new_offset = chosen - targetLuaModuleBase;
+                    bool claimed = false;
+                    for (const auto &[other, osig]: funcs) {
+                        if (other != name && osig.offset != 0 &&
+                            osig.offset == static_cast<uintptr_t>(new_offset)) {
+                            claimed = true;
+                            break;
+                        }
+                    }
+                    if (claimed) continue;
+                    signature.offset = new_offset;
+                    signature.pattern.clear();
+                    signature.pattern_offset = 0;
+                    moduleMain.set_known_function(chosen, name.c_str());
+                    spdlog::info("graph-seed-rev [{}] via callee [{}] -> {:#x} (offset={})",
+                                 name, callee_name, chosen, new_offset);
+                    any = true;
+                    break;
+                }
+            }
+            if (!any) break;
+            spdlog::info("graph-seed-rev round {} filled more exports", round);
+        }
+    }
+
     function_relocation::release_signature_cache();
     co_return;
 }

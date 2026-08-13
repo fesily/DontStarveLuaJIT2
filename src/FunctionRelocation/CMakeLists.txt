@@ -15,7 +15,6 @@ set(SOURCE
         ctx.cpp
         disasm.h
         ScanCtx.cpp
-        ExectuableSignature.cpp
         FunctionRanges.cpp
         NucleusAdapter.cpp
 )
@@ -46,7 +45,12 @@ function(_function_relocation_common_config target)
     if (MSVC)
         target_link_libraries(${target} PRIVATE pe-parse::pe-parse)
     else()
-        target_link_libraries(${target} PRIVATE ${KEYSTONE_LIBRARIES})
+        # Prefer multi-config IMPORTED target (avoids lib/debug/lib RPATH cycles).
+        if (TARGET keystone::keystone)
+            target_link_libraries(${target} PRIVATE keystone::keystone)
+        else()
+            target_link_libraries(${target} PRIVATE ${KEYSTONE_LIBRARIES})
+        endif()
         target_link_libraries(${target} PRIVATE libdwarf::dwarf)
     endif()
     # Nucleus PE/CFG stack for NucleusAdapter (do not re-export Nucleus types).
@@ -90,6 +94,7 @@ else()
             CXX_VISIBILITY_PRESET hidden
             VISIBILITY_INLINES_HIDDEN ON
             INSTALL_RPATH "$ORIGIN"
+            BUILD_RPATH "$ORIGIN"
     )
     install(TARGETS function_relocation
             LIBRARY DESTINATION deps COMPONENT deps)

@@ -142,14 +142,6 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h
 
 add_custom_target(create_missfuncs DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h)
 
-add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp
-        COMMAND $<TARGET_FILE:${LUAJIT_EXECUTABLE_TARGET}> "${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua"
-        DEPENDS ${LUAJIT_EXECUTABLE_TARGET} ${CMAKE_CURRENT_SOURCE_DIR}/Mod/modinfo.lua ${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-add_custom_target(create_modinfo_hpp DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp)
-
 set(lua51_root ${CMAKE_CURRENT_SOURCE_DIR}/src/lua51)
 set(Lua51_output_dir ${lua51_root}/$<IF:$<CONFIG:Debug>,debug,release>/)
 
@@ -161,6 +153,23 @@ add_custom_command(OUTPUT ${Lua51_output_dir}/lua51.dll ${Lua51_output_dir}/lua5
 add_custom_target(build_lua51 DEPENDS ${Lua51_output_dir}/lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
 
 add_subdirectory("luajit")
+
+# Host tool for codegen: prefer arenagc CLI AFTER add_subdirectory so the
+# target exists. Default-variant host currently crashes in lj_BC_FUNCCW when
+# used as a build tool; luajit-arenagc (HASGCMARK + good VM) is validated.
+if(TARGET luajit-arenagc)
+  set(LUAJIT_HOST_EXECUTABLE_TARGET luajit-arenagc)
+else()
+  set(LUAJIT_HOST_EXECUTABLE_TARGET ${LUAJIT_EXECUTABLE_TARGET})
+endif()
+
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp
+        COMMAND $<TARGET_FILE:${LUAJIT_HOST_EXECUTABLE_TARGET}> "${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua"
+        DEPENDS ${LUAJIT_HOST_EXECUTABLE_TARGET} ${CMAKE_CURRENT_SOURCE_DIR}/Mod/modinfo.lua ${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_custom_target(create_modinfo_hpp DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp)
 
 # Bridge the reverted inner arenagc targets to the public gengc contract.
 if(TARGET luajit-5.1-arenagc)

@@ -39,9 +39,6 @@ struct GameLuaContextJit : GameLuaContextImpl {
 
     void LoadMyLuaApi() override;
 
-    void *lua_newstate_hooker(lua_Alloc f, void *ud) {
-        return CreateLuaStateForCurrentVm(f, ud, "lua_newstate");
-    }
     bool ReplaceApis(const Signatures &signatures, const ListExports_t &exports) override {
         if (!GameLuaContextImpl::ReplaceApis(signatures, exports)) return false;
         init_luajit_io(LuaModule);
@@ -66,13 +63,16 @@ GameLuaContextImpl *ctx_jit_gen() { return &gameLuajitGenCtx; }
 
 void GameLuaContextJit::LoadMyLuaApi() {
     GameLuaContextImpl::LoadMyLuaApi();
+    // Must use currentCtx: both classic jit and jit_gen share this method.
+    // Hardcoding gameLuajitCtx leaves gen-mode API pointers null and SEGV on
+    // the first lua_setfield during game io open (e.g. "__index").
     HOOK_LUA_API(lua_setfield) + [](lua_State *L, int idx, const char *k) {
-        auto &api = gameLuajitCtx.api;
+        auto &api = currentCtx->api;
         if (api._lua_gettop(L) == 0)
             api._lua_pushnil(L);
-        GetGameLuaContext()->_lua_setfield(L, idx, k);
+        api._lua_setfield(L, idx, k);
     };
     api._lua_newstate = (decltype(&lua_newstate)) +[](lua_Alloc f, void *ud) {
-        return gameLuajitCtx.lua_newstate_hooker(f, ud);
+        return CreateLuaStateForCurrentVm(f, ud, "lua_newstate");
     };
 }

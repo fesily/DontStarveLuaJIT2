@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <frida-gum.h>
+#include "util/frida_gum_interceptor.hpp"
 
 bool tracy_active = false;
 
@@ -38,10 +39,8 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
 #ifdef profiler_lua_gc
         auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
         static Gum::InvocationListenerProxy linstener{new Gum::InvocationListenerProfiler()};
-        GumAttachOptions attach_opts{};
-        attach_opts.listener_function_data = (void *) "lua_gc";
-        gum_interceptor_attach(interceptor, (void *) get_luajit_address("lua_gc"),
-                               GUM_INVOCATION_LISTENER(linstener.cproxy), &attach_opts);
+        ds::gum::attach(interceptor, (void *) get_luajit_address("lua_gc"),
+                        GUM_INVOCATION_LISTENER(linstener.cproxy), (void *) "lua_gc");
 #endif
         replaced = 1;
     }

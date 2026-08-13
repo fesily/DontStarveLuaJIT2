@@ -5,6 +5,7 @@
 #include "config/InjectorHostConfig.hpp"
 #include "MemorySignature.hpp"
 #include <frida-gum.h>
+#include "util/frida_gum_interceptor.hpp"
 #include <spdlog/spdlog.h>
 
 #include <cstdint>
@@ -285,12 +286,11 @@ static bool installPoolHooks() {
     bool dtorOk = false;
 
     if (HWBufferInit_sig.scan(mainPath)) {
-        auto r = gum_interceptor_replace(
+        auto r = ds::gum::replace(
             interceptor,
             reinterpret_cast<void*>(HWBufferInit_sig.target_address),
             reinterpret_cast<void*>(static_cast<void (*)(void*, const void*)>(&hooked_HWBufferInit)),
-            reinterpret_cast<void**>(&original_HWBufferInit),
-            nullptr);
+            reinterpret_cast<void**>(&original_HWBufferInit));
         if (r == GUM_REPLACE_OK) {
             spdlog::info("[RenderHook] hooked HWBuffer::Init at {:#x}", HWBufferInit_sig.target_address);
             initOk = true;
@@ -302,12 +302,11 @@ static bool installPoolHooks() {
     }
 
     if (HWBufferDtor_sig.scan(mainPath)) {
-        auto r = gum_interceptor_replace(
+        auto r = ds::gum::replace(
             interceptor,
             reinterpret_cast<void*>(HWBufferDtor_sig.target_address),
             reinterpret_cast<void*>(static_cast<void (*)(void*)>(&hooked_HWBufferDtor)),
-            reinterpret_cast<void**>(&original_HWBufferDtor),
-            nullptr);
+            reinterpret_cast<void**>(&original_HWBufferDtor));
         if (r == GUM_REPLACE_OK) {
             spdlog::info("[RenderHook] hooked HWBuffer::~HWBuffer at {:#x}", HWBufferDtor_sig.target_address);
             dtorOk = true;
@@ -364,12 +363,11 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable) {
             auto mainPath    = gum_module_get_path(gum_process_get_main_module());
             auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
             if (BatcherFlush_sig.scan(mainPath)) {
-                auto r = gum_interceptor_replace(
+                auto r = ds::gum::replace(
                     interceptor,
                     reinterpret_cast<void*>(BatcherFlush_sig.target_address),
                     reinterpret_cast<void*>(&hooked_BatcherFlush),
-                    reinterpret_cast<void**>(&original_BatcherFlush),
-                    nullptr);
+                    reinterpret_cast<void**>(&original_BatcherFlush));
                 if (r == GUM_REPLACE_OK)
                     spdlog::info("[RenderHook] hooked Batcher::Flush at {:#x}", BatcherFlush_sig.target_address);
                 else

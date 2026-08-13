@@ -56,9 +56,6 @@ struct GameLuaInjectorFramework {
 };
 extern GameLuaInjectorFramework gameLuaInjectorFramework;
 
-// Fallback target when DEBUG_GETSIZE_PATCH != 1
-inline void voidFunc() {}
-
 // Available to subclass TUs (also redefined inside some method bodies historically).
 #define HOOK_LUA_API(name) \
     overrideapis[#name] = (void *) (decltype(&#name))
@@ -110,10 +107,7 @@ struct GameLuaContextImpl : GameLuaContext {
     bool check_lua_io_lib(lua_State *L) {
         api._lua_getglobal(L, "io");
         const bool ok = api._lua_istable(L, -1);
-        if (!ok) {
-            spdlog::error("Lua io library is not a table");
-        }
-        api._lua_pop(L, 1);  // always balance the getglobal above
+        api._lua_pop(L, 1);
         return ok;
     }
 
@@ -329,21 +323,15 @@ struct GameLuaContextImpl : GameLuaContext {
         }
 
         std::list<uint8_t *> hookeds;
-        size_t skipped = 0;
         for (auto *_name: hookTargets) {
             auto &name = *_name;
             auto offset = signatures.funcs.at(name).offset;
             auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
-            // Signature scan can land on a 5-byte stub just before the real
-            // lua_getstack (`movzx eax,[rcx+imm]; ret` + INT3 pad). Hook the body.
+#ifdef _WIN32
             if (name == "lua_getstack"sv &&
                 target[0] == 0x0f && target[1] == 0xb6 && target[4] == 0xc3) {
-                spdlog::warn("lua_getstack signature hit 5-byte stub at {}; advancing +0x20",
-                             (void *) target);
                 target += 0x20;
             }
-            // Trust signature JSON for lua_getinfo. Wrong offsets must be fixed
-            // in signatures_*.json — no runtime retarget scan.
             if (name == "lua_getinfo"sv) {
                 bool has_gt = false;
                 for (int k = 0; k < 0x40; ++k) {
@@ -352,14 +340,9 @@ struct GameLuaContextImpl : GameLuaContext {
                         break;
                     }
                 }
-                if (!has_gt) {
-                    spdlog::error("lua_getinfo signature at {} lacks what[0]=='>' check; skip hook "
-                                  "(fix signatures_client.json offset/pattern)",
-                                  (void *) target);
-                    ++skipped;
-                    continue;
-                }
+                assert(has_gt);
             }
+#endif
             auto replacer = (uint8_t *) GetLuaExport(name);
             if (replacer == nullptr) {
                 spdlog::error("replace {} aborted: null replacer", name);
@@ -380,7 +363,7 @@ struct GameLuaContextImpl : GameLuaContext {
             }
         }
 
-        if (hookeds.size() + skipped != hookTargets.size()) {
+        if (hookeds.size() != hookTargets.size()) {
             for (auto target: hookeds) {
                 ResetHook(target);
             }
@@ -404,20 +387,20 @@ struct GameLuaContextImpl : GameLuaContext {
 
     virtual void HotfixApis(const std::string &mainPath) {
 #if DEBUG_GETSIZE_PATCH
-        // In the game code direct read the internal lua vm sturct offset, will crash here
+        // Game register_debug_getsize reads Lua 5.1 GC layout (base[1].value.gc->cl.c.f)
+        // then lua_setfield(..., "getsize"). That is invalid under LuaJIT/arenagc and
+        // the old mid-function "mov reg,0" patch left the following load live, so
+        // getsize still registered. Disable the whole function at entry (ret).
         if (luaRegisterDebugGetsizeSignature.scan(mainPath.c_str())) {
-#if DEBUG_GETSIZE_PATCH == 1
-            auto code = std::to_array<uint8_t>(
-#ifdef _WIN32
-                    {0x48, 0xc7, 0xc2, 0x00, 0x00, 0x00, 0x00, 0x90}
-#else
-                    {0x48, 0xC7, 0xC6, 0x00, 0x00, 0x00, 0x00, 0x90}
-#endif
-            );
-            HookWriteCode((uint8_t *) luaRegisterDebugGetsizeSignature.target_address, code.data(), code.size());
-#else
-            Hook((uint8_t *) luaRegisterDebugGetsizeSignature.target_address, (uint8_t *) &voidFunc);
-#endif
+            const auto ret = std::to_array<uint8_t>({0xC3});
+            const auto addr = (uint8_t *) luaRegisterDebugGetsizeSignature.target_address;
+            if (HookWriteCode(addr, ret.data(), ret.size())) {
+                spdlog::info("Disabled game register_debug_getsize at {}", (void *) addr);
+            } else {
+                spdlog::error("Failed to disable game register_debug_getsize at {}", (void *) addr);
+            }
+        } else {
+            spdlog::warn("register_debug_getsize signature not found; getsize may still register");
         }
 #endif
     }

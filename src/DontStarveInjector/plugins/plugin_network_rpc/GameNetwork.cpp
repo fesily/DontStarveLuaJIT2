@@ -3,6 +3,7 @@
 #include "GameNetwork.hpp"
 #include "core/GameInjectorLuaBind.hpp"
 #include "frida-gum.h"
+#include "util/frida_gum_interceptor.hpp"
 #include "config/InjectorHostConfig.hpp"
 #include "MemorySignature.hpp"
 #include <disasm.h>
@@ -296,7 +297,7 @@ mov dword ptr [rdi+134], 3  // pro->reliability = PacketReliability::RELIABLE_OR
 
     if (RakNet__RPC4__Signal.scan(nullptr)) {
         auto listener = gum_make_probe_listener(+[](GumInvocationContext *context, gpointer user_data) { ResetNextRpcInfo(context); }, nullptr, nullptr);
-        gum_interceptor_attach(interceptor, (uint8_t *) RakNet__RPC4__Signal.target_address, listener, nullptr);
+        ds::gum::attach(interceptor, (uint8_t *) RakNet__RPC4__Signal.target_address, listener);
     }
 
     // if (RakNet_Plugin2_SendUnified.scan(nullptr)) {
@@ -324,7 +325,7 @@ mov dword ptr [rdi+134], 3  // pro->reliability = PacketReliability::RELIABLE_OR
                 assert(sp->pro->sendReceipt == 0);
                 sp->pro->orderingChannel = entityNetworkExtensionVal->channel;
             } }, nullptr, nullptr);
-            gum_interceptor_attach(interceptor, (uint8_t *) cNetWorkComponent_serialize.target_address, listener, nullptr);
+            ds::gum::attach(interceptor, (uint8_t *) cNetWorkComponent_serialize.target_address, listener);
         }
     }
 }

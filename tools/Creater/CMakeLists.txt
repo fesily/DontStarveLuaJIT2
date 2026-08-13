@@ -64,8 +64,9 @@ target_include_directories(signature_updater PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
 target_link_libraries(signature_updater PRIVATE Frida::Gum)
 
 target_link_libraries(signature_updater PRIVATE nlohmann_json::nlohmann_json)
-target_link_libraries(signature_updater PRIVATE function_relocation_static)
-target_link_libraries(signature_updater PRIVATE ds_signature)
+# Order matters for static archives: dependents first, then providers.
+# ds_signature calls nucleus_analyze_file / apply_nucleus_* in function_relocation_static.
+target_link_libraries(signature_updater PRIVATE ds_signature function_relocation_static)
 target_include_directories(signature_updater PRIVATE ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/signature_load)
 target_include_directories(signature_updater PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
