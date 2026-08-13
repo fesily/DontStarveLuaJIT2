@@ -25,7 +25,9 @@ client_only_mod = false
 server_only_mod = true
 all_clients_require_mod = false
 plugin_id = "{plugin_id}"
-options = {{ all_of = {{ "{option_key}" }} }}
+configuration_options = {{
+  {{ name = "{option_key}", label = "X", options = {{ {{ description = "On", data = true }} }}, default = true, host_gate = true }},
+}}
 priority = 60
 phases = "AfterModMain"
 """

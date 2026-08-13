@@ -19,7 +19,6 @@ all_clients_require_mod = false
 
 -- Optional engine
 priority = 50
--- configuration_options = nil  -- embedded: UI on parent Mod; standalone may fill later
 
 -- Private Host fields (additive; Host invokes `when` later with real ctx)
 plugin_id = "fps.render"
@@ -28,9 +27,32 @@ depends = {}
 soft_depends = {}
 conflicts = {}
 support_reload = false
+
 -- Number options: host is_bool_on treats non-zero as on (default 60fps is enabled).
 -- Native OptionRuleKind is AlwaysOn (identity gate skips AllOf/AnyOf key match).
-options = { option = "TargetRenderFPS" }
+configuration_options = {
+    {
+        name = "TargetRenderFPS",
+        label = translate({ en = "Render FPS", zh = "渲染帧率" }),
+        hover = translate({
+            en = "Render FPS",
+            zh = "渲染帧率",
+        }),
+        options = {
+            { description = translate({ en = "off", zh = "禁用" }), data = 60 },
+            { description = "30fps", data = 30 },
+            { description = "60fps", data = 60 },
+            { description = "90fps", data = 90 },
+            { description = "120fps", data = 120 },
+            { description = "144fps", data = 144 },
+            { description = "165fps", data = 165 },
+            { description = "200fps", data = 200 },
+            { description = "240fps", data = 240 },
+        },
+        default = 60,
+        host_gate = true,
+    },
+}
 
 when = function(ctx)
     if ctx and ctx.is_windows == false then

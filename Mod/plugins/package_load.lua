@@ -43,13 +43,57 @@ end
 
 local function make_modinfo_env(stem, package_root, extras)
     extras = extras or {}
+    local locale = extras.locale or ""
+    local function translate(t)
+        if type(t) ~= "table" then
+            return t
+        end
+        t.zhr = t.zh
+        t.zht = t.zht or t.zh
+        return t[locale] or t.en
+    end
+    local toggle = {
+        { description = translate({ en = "On", zh = "启用" }), data = true },
+        { description = translate({ en = "Off", zh = "禁用" }), data = false },
+    }
+    local section_counter = 0
+    local function AddSection(label, hover)
+        section_counter = section_counter + 1
+        return {
+            section_start = true,
+            name = "SECTION_" .. section_counter,
+            label = label,
+            hover = hover,
+            options = { { description = "", data = "" } },
+            default = "",
+        }
+    end
+    local disable_by_gen_gc = {
+        option = "EnabledGenGC",
+        value = true,
+        reason = translate({ en = "Not compatible with generational GC", zh = "与分代GC不兼容" }),
+    }
+    local disable_by_lua51 = {
+        option = "LuaVmType",
+        values = { "lua51", "game" },
+        reason = translate({ en = "Not compatible with Lua 5.1 VM", zh = "与Lua 5.1虚拟机不兼容" }),
+    }
+    local platform_info = extras.platform_info
+    local disable_by_non_win = platform_info and not (platform_info.os == "Windows") or false
     local env = {
         folder_name = stem,
-        locale = extras.locale or "",
+        locale = locale,
         ChooseTranslationTable = extras.ChooseTranslationTable or default_choose_translation,
         ds_luajit_package_host = true,
         ds_luajit_package_root = package_root,
         ds_luajit_package_stem = stem,
+        translate = translate,
+        toggle = toggle,
+        AddSection = AddSection,
+        disable_by_gen_gc = disable_by_gen_gc,
+        disable_by_lua51 = disable_by_lua51,
+        disable_by_non_win = disable_by_non_win,
+        platform_info = platform_info,
     }
     -- Free globals (TheNet, TheWorld, _G, …) fall through to parent/_G for when().
     -- Host markers stay raw fields on env; assignments write into env (no __newindex).
@@ -83,6 +127,14 @@ end
 
 local function build_plugin_table(env, package_root, stem, api)
     api = api or {}
+    local cfg_name = api.config_modname
+    local cfg_for = api.config_for_mod
+    local config_lookup
+    if type(cfg_for) == "function" then
+        config_lookup = function(key)
+            return cfg_for(cfg_name, key)
+        end
+    end
     local plugin = {
         id = rawget(env, "plugin_id"),
         version = rawget(env, "version"),
@@ -90,7 +142,10 @@ local function build_plugin_table(env, package_root, stem, api)
         soft_depends = rawget(env, "soft_depends") or {},
         conflicts = rawget(env, "conflicts") or {},
         phases = rawget(env, "phases") or "AfterModMain",
-        options = rawget(env, "options"),
+        options = M.derive_option_rule(rawget(env, "configuration_options")),
+        configuration_options = rawget(env, "configuration_options"),
+        config_modname = cfg_name,
+        config_lookup = config_lookup,
         support_reload = rawget(env, "support_reload") and true or false,
         priority = rawget(env, "priority") or 100,
         when = rawget(env, "when"),  -- rawget: parent may be strict.lua (no bare when)
@@ -114,7 +169,7 @@ local function build_plugin_table(env, package_root, stem, api)
             end
             -- Host gate_ctx supplies injector/config; fall back to parent globals.
             local injector = (ctx and ctx.injector) or rawget(_G, "GameInjector")
-            local get_config = api.GetModConfigData
+            local get_config = config_lookup or api.GetModConfigData
             if type(get_config) ~= "function" and ctx and type(ctx.config) == "function" then
                 get_config = ctx.config
             elseif type(get_config) ~= "function" and ctx and type(ctx.config) == "table" then
@@ -168,6 +223,12 @@ function M.load_package_from_root(package_root, stem, api)
     local ok, err = M.validate_modinfo(env)
     if not ok then
         error("package " .. stem .. " modinfo: " .. err, 2)
+    end
+    if rawget(env, "options") ~= nil then
+        error("package " .. stem .. " modinfo: obsolete field options; use configuration_options + host_gate", 2)
+    end
+    if type(api.config_modname) ~= "string" or api.config_modname == "" then
+        error("package " .. stem .. " load: missing api.config_modname", 2)
     end
     return build_plugin_table(env, package_root, stem, api)
 end

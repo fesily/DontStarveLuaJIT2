@@ -70,7 +70,7 @@ plugin_id = "x.test"
 ]])
     write_fixture(dir, "modmain.lua", "print('hi')\n")
     local ok, err = pcall(function()
-        return PL.load_package_from_root(dir, "plugin_x")
+        return PL.load_package_from_root(dir, "plugin_x", { config_modname = "luajit2" })
     end)
     assert_true(not ok, "expected fail without api_version")
     assert_true(tostring(err):find("api_version", 1, true), tostring(err))
@@ -96,7 +96,7 @@ plugin_id = "test.marker"
 _G_TEST_MARKER = ds_luajit_package_host
 ]])
     write_fixture(dir, "modmain.lua", "-- empty\n")
-    local plugin = PL.load_package_from_root(dir, "plugin_test_marker")
+    local plugin = PL.load_package_from_root(dir, "plugin_test_marker", { config_modname = "luajit2" })
     assert_true(plugin.id == "test.marker", "id")
     assert_true(PL.last_modinfo_env and PL.last_modinfo_env.ds_luajit_package_host == true, "marker")
     print("PASS: host_marker_true")
@@ -146,7 +146,9 @@ client_only_mod = false
 server_only_mod = true
 all_clients_require_mod = false
 plugin_id = "test.rebind"
-options = { all_of = { "EnableForkSave" } }
+configuration_options = {
+  { name = "EnableForkSave", label = "F", options = { { description = "On", data = true } }, default = true, host_gate = true },
+}
 priority = 60
 phases = "AfterModMain"
 ]])
@@ -159,6 +161,7 @@ _G.BIZ_LOADED = true
     local imported = {}
     _G.BIZ_LOADED = nil
     local plugin = PL.load_package_from_root(dir, "plugin_test_rebind", {
+        config_modname = "luajit2",
         modimport = function(name)
             imported[#imported + 1] = name
             local path = dir .. "/" .. name .. ".lua"
@@ -205,7 +208,7 @@ end
         end,
     }
     local ok, err = pcall(function()
-        local plugin = PL.load_package_from_root(dir, "plugin_test_when_thenet")
+        local plugin = PL.load_package_from_root(dir, "plugin_test_when_thenet", { config_modname = "luajit2" })
         assert_true(type(plugin.when) == "function", "when present")
         -- Incomplete gate_ctx (no is_client) must fall through to TheNet, not error.
         local result = plugin.when({ has_luajit = true })
@@ -263,4 +266,61 @@ local function test_derive_option_rule()
 end
 
 test_derive_option_rule()
+
+local ENGINE = [[
+name = "T"
+description = "d"
+author = "a"
+version = "1.0.0"
+api_version = 10
+dont_starve_compatible = false
+reign_of_giants_compatible = false
+dst_compatible = true
+client_only_mod = false
+server_only_mod = false
+all_clients_require_mod = false
+plugin_id = "t.x"
+]]
+
+local function test_reject_obsolete_options()
+    local dir = tmp_dir("ds_pkg_obsolete_options")
+    write_fixture(dir, "modinfo.lua", ENGINE .. "\noptions = { all_of = { \"EnableForkSave\" } }\n")
+    write_fixture(dir, "modmain.lua", "--\n")
+    local ok, err = pcall(function()
+        return PL.load_package_from_root(dir, "plugin_x", { config_modname = "luajit2" })
+    end)
+    assert_true(not ok, "expected reject options")
+    assert_true(tostring(err):find("options", 1, true), tostring(err))
+    print("PASS: reject_obsolete_options")
+end
+
+local function test_require_config_modname()
+    local dir = tmp_dir("ds_pkg_need_modname")
+    write_fixture(dir, "modinfo.lua", ENGINE .. "\n")
+    write_fixture(dir, "modmain.lua", "--\n")
+    local ok, err = pcall(function()
+        return PL.load_package_from_root(dir, "plugin_x")
+    end)
+    assert_true(not ok, "expected missing config_modname")
+    assert_true(tostring(err):find("config_modname", 1, true), tostring(err))
+    print("PASS: require_config_modname")
+end
+
+local function test_derive_from_configuration_options()
+    local dir = tmp_dir("ds_pkg_cfg_opts")
+    write_fixture(dir, "modinfo.lua", ENGINE .. [[
+configuration_options = {
+  { name = "EnableForkSave", label = "F", options = { { description = "On", data = true } }, default = true, host_gate = true },
+}
+]])
+    write_fixture(dir, "modmain.lua", "--\n")
+    local plugin = PL.load_package_from_root(dir, "plugin_x", { config_modname = "luajit2" })
+    assert_true(plugin.config_modname == "luajit2", "config_modname")
+    assert_true(plugin.options and plugin.options.all_of and plugin.options.all_of[1] == "EnableForkSave", "derived all_of")
+    print("PASS: derive_from_configuration_options")
+end
+
+test_reject_obsolete_options()
+test_require_config_modname()
+test_derive_from_configuration_options()
 print("ALL PASS package_load_spec")

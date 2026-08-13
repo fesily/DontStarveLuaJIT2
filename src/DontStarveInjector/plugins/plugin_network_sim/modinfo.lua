@@ -18,7 +18,6 @@ all_clients_require_mod = false
 
 -- Optional engine
 priority = 60
--- configuration_options = nil  -- embedded: UI on parent Mod; standalone may fill later
 
 -- Private Host fields (additive; Host invokes `when` later with real ctx)
 plugin_id = "network.sim"
@@ -27,7 +26,22 @@ depends = {}
 soft_depends = {}
 conflicts = {}
 support_reload = false
-options = { all_of = { "EnableNetSim" } }
+
+configuration_options = {
+    {
+        name = "EnableNetSim",
+        label = translate({ en = "Enable Network Simulator", zh = "启用网络模拟器" }),
+        hover = translate({
+            en = "Simulate packet delay/jitter/loss (client-side, Win x64 only)",
+            zh = "模拟网络延迟/抖动/丢包（仅客户端，仅Win x64）",
+        }),
+        options = toggle,
+        default = false,
+        disabled_value = false,
+        disabled_by = disable_by_non_win,
+        host_gate = true,
+    },
+}
 
 when = function(ctx)
     -- Prefer gate_ctx from modmain; fall back to globals when absent.

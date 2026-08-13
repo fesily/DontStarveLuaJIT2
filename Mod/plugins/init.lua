@@ -22,6 +22,9 @@ local function get_api()
         modimport = modimport,
         parent_env = env,
         GetModConfigData = (type(env) == "table" and env.GetModConfigData) or GetModConfigData,
+        config_modname = (type(env) == "table" and (rawget(env, "modname") or env.modname))
+            or rawget(_G, "modname")
+            or "DontStarveLuaJit2",
         -- Late-bind so host tests can stub _G.AddGamePostInit after requiring init.
         AddGamePostInit = function(fn)
             local f = (type(env) == "table" and (rawget(env, "AddGamePostInit") or env.AddGamePostInit))

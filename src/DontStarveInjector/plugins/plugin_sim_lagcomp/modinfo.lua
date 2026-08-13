@@ -18,7 +18,6 @@ all_clients_require_mod = false
 
 -- Optional engine
 priority = 60
--- configuration_options = nil  -- embedded: UI on parent Mod; standalone may fill later
 
 -- Private Host fields (additive; Host invokes `when` later with real ctx)
 plugin_id = "sim.lagcomp"
@@ -27,7 +26,26 @@ depends = {}
 soft_depends = {}
 conflicts = {}
 support_reload = false
-options = { all_of = { "EnableLagCompensation" } }
+
+configuration_options = {
+    {
+        name = "EnableLagCompensation",
+        label = translate({ en = "Lag Compensation (Preview)", zh = "延迟补偿" }),
+        hover = translate({
+            en = "Extrapolate remote player positions before spatial queries. Server-side only, Win x64 only.",
+            zh = "在空间查询前外推远程玩家位置。仅服务端生效，仅支持 Win x64。",
+        }),
+        options = toggle,
+        default = false,
+        disabled_value = false,
+        disabled_by = {
+            option = "LuaVmType",
+            values = { "lua51", "game" },
+            reason = translate({ en = "Not compatible with Lua 5.1 VM", zh = "与Lua 5.1虚拟机不兼容" }),
+        },
+        host_gate = true,
+    },
+}
 
 when = function(ctx)
     -- Prefer gate_ctx from modmain; fall back to globals when absent.

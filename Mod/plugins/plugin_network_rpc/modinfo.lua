@@ -18,7 +18,6 @@ all_clients_require_mod = false
 
 -- Optional engine
 priority = 40
--- configuration_options = nil  -- embedded: UI on parent Mod; standalone may fill later
 
 -- Private Host fields (additive; Host invokes `when` later with real ctx)
 plugin_id = "network.rpc"
@@ -27,4 +26,19 @@ depends = {}
 soft_depends = {}
 conflicts = {}
 support_reload = false
-options = { all_of = { "NetworkOpt" } }
+
+configuration_options = {
+    {
+        name = "NetworkOpt",
+        label = translate({ en = "Network RPC Optimizations", zh = "网络RPC优化" }),
+        hover = translate({
+            en = "Optimize network rpc transmission, out-of-order sending of RPCs, may have unexpected situations",
+            zh = "优化网络RPC传输, 并行发送RPC, 可能导致意外的情况",
+        }),
+        options = toggle,
+        default = true,
+        disabled_value = false,
+        disabled_by = disable_by_non_win,
+        host_gate = true,
+    },
+}

@@ -26,19 +26,11 @@ DUAL_FACE = [
 
 PLUGIN_ID_RE = re.compile(r"""plugin_id\s*=\s*["']([^"']+)["']""")
 VERSION_RE = re.compile(r"""version\s*=\s*["']([^"']+)["']""")
-ALL_OF_RE = re.compile(
-    r"""all_of\s*=\s*\{([^{}]*)\}""",
-    re.DOTALL | re.IGNORECASE,
-)
-ANY_OF_RE = re.compile(
-    r"""any_of\s*=\s*\{([^{}]*)\}""",
-    re.DOTALL | re.IGNORECASE,
-)
-OPTION_SHORTHAND_RE = re.compile(
-    r"""options\s*=\s*\{\s*option\s*=\s*["']([^"']+)["']""",
+HOST_GATE_RE = re.compile(
+    r"""host_gate\s*=\s*(true|["']all_of["']|["']any_of["'])""",
     re.IGNORECASE,
 )
-STRING_LIT_RE = re.compile(r"""["']([^"']+)["']""")
+NAME_ASSIGN_RE = re.compile(r"""name\s*=\s*["']([^"']+)["']""")
 
 MAN_ID_RE = re.compile(r"""man\.id\s*=\s*["']([^"']+)["']""")
 MAN_VERSION_RE = re.compile(r"""man\.version\s*=\s*["']([^"']+)["']""")
@@ -83,6 +75,23 @@ def package_dir(source_root: Path, stem: str) -> Path:
     return plugins_root(source_root) / stem
 
 
+def parse_host_gate_keys(text: str) -> tuple[set[str], set[str]]:
+    all_of: set[str] = set()
+    any_of: set[str] = set()
+    for m in HOST_GATE_RE.finditer(text):
+        kind = m.group(1).strip("'\"")
+        before = text[: m.start()]
+        names = NAME_ASSIGN_RE.findall(before)
+        if not names:
+            continue
+        name = names[-1]
+        if kind.lower() == "any_of":
+            any_of.add(name)
+        else:
+            all_of.add(name)
+    return all_of, any_of
+
+
 def parse_modinfo(text: str) -> ModinfoIdentity:
     out = ModinfoIdentity()
     m = PLUGIN_ID_RE.search(text)
@@ -93,22 +102,14 @@ def parse_modinfo(text: str) -> ModinfoIdentity:
     if m:
         out.version = m.group(1)
 
-    keys: set[str] = set()
-    rule: str | None = None
-    m = ALL_OF_RE.search(text)
-    if m:
-        rule = "all_of"
-        keys.update(STRING_LIT_RE.findall(m.group(1)))
-    m = ANY_OF_RE.search(text)
-    if m:
-        rule = "any_of"
-        keys.update(STRING_LIT_RE.findall(m.group(1)))
-    m = OPTION_SHORTHAND_RE.search(text)
-    if m:
-        rule = "option"
-        keys.add(m.group(1))
-    out.option_keys = keys
-    out.option_rule = rule
+    all_of, any_of = parse_host_gate_keys(text)
+    out.option_keys = all_of | any_of
+    if any_of:
+        out.option_rule = "any_of"
+    elif all_of:
+        out.option_rule = "all_of"
+    else:
+        out.option_rule = None
     return out
 
 
