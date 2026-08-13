@@ -137,6 +137,7 @@ std::optional<std::string> logical_id_for_module_stem(std::string_view stem) {
         {"plugin_network_tick", "network.tick"},
         {"plugin_render_vbpool", "render.vbpool"},
         {"plugin_render_angle", "render.angle"},
+        {"plugin_render_shadow", "render.shadow"},
         {"plugin_save_fork", "save.fork"},
         {"plugin_sim_lagcomp", "sim.lagcomp"},
         {"plugin_debug_profiler", "debug.profiler"},

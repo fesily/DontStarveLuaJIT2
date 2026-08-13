@@ -115,6 +115,7 @@ return {
     load_package("plugin_network_rpc"),
     load_flat("network_entity"),
     load_package("plugin_fps_render"),
+    load_package("plugin_render_shadow"),
     load_package("plugin_save_fork"),
     load_package("plugin_sim_lagcomp"),
     load_package("plugin_network_sim"),
