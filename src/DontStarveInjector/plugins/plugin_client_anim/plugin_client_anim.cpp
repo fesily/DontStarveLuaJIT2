@@ -111,6 +111,21 @@ extern "C" int DS_LUAJIT_client_anim_match_count() {
 extern "C" int DS_LUAJIT_client_anim_xor_patched() {
     return client_anim_xor_patched();
 }
+extern "C" int DS_LUAJIT_client_anim_watch_armed() {
+    return client_anim_watch_armed();
+}
+extern "C" int DS_LUAJIT_client_anim_watch_hits() {
+    return client_anim_watch_hits();
+}
+extern "C" int DS_LUAJIT_client_anim_watch_writes() {
+    return client_anim_watch_writes();
+}
+extern "C" int DS_LUAJIT_client_anim_watch_last(lua_State *L) {
+    auto *ctx = ds::core_vm::TryGetGameLuaContext();
+    if (!ctx) return 0;
+    ctx->api._lua_pushstring(L, client_anim_watch_last());
+    return 1;
+}
 
 DS_PLUGIN_MODULE_EXPORT const char *ds_plugin_module_abi_version() {
     return DS_PLUGIN_ABI_VERSION;
@@ -147,6 +162,14 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
                                               &DS_LUAJIT_client_anim_match_count);
     (void)host->register_game_injector_export("DS_LUAJIT_client_anim_xor_patched",
                                               &DS_LUAJIT_client_anim_xor_patched);
+    (void)host->register_game_injector_export("DS_LUAJIT_client_anim_watch_armed",
+                                              &DS_LUAJIT_client_anim_watch_armed);
+    (void)host->register_game_injector_export("DS_LUAJIT_client_anim_watch_hits",
+                                              &DS_LUAJIT_client_anim_watch_hits);
+    (void)host->register_game_injector_export("DS_LUAJIT_client_anim_watch_writes",
+                                              &DS_LUAJIT_client_anim_watch_writes);
+    (void)host->register_game_injector_export("DS_LUAJIT_client_anim_watch_last",
+                                              &DS_LUAJIT_client_anim_watch_last);
 
     host->register_plugin(&g_client_anim);
     std::fprintf(stderr, "[plugin_client_anim] module init registered client.anim\n");

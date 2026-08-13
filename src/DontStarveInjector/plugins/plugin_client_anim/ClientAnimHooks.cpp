@@ -1,9 +1,10 @@
 // ClientAnimHooks.cpp — pred-OFF local anim ownership (Win x64).
 //
-// DIAGNOSTIC: unconditionally rewrite Deserialize+0x45 XOR BL,BL → MOV BL,1
-// so local_a0 is true for EVERY entity. Isolates "does BL=1 skip AnimTime?"
-// from the entity-match / cpu_context writeback questions.
-// Attach at +0x47 stays for enter/match counters only.
+// DIAGNOSTIC:
+//   1) XOR BL,BL → MOV BL,1 (all entities) — still in place from prior test.
+//   2) Hardware write-watch on local cAnimStateComponent+0x28 (flAnimTime).
+//      GetCurrentAnimationTime reads that float (fmod when looping).
+//      Filter: ignore +dt Update; log rewinds with exe+RVA + 3 stack slots.
 
 #include "ClientAnimHooks.hpp"
 #include "MemorySignature.hpp"
@@ -18,10 +19,11 @@
 #include <frida-gum.h>
 
 #ifdef _WIN32
+#include <Windows.h>
+#include <intrin.h>
 
 namespace {
 
-// cAnimStateComponent::Deserialize (Win x64)
 static function_relocation::MemorySignature animstate_deserialize_sig{
     "48 8B C4 "
     "56 "
@@ -32,20 +34,15 @@ static function_relocation::MemorySignature animstate_deserialize_sig{
     "48 8B F1",
     0};
 
-// Win x64 offsets (from dontstarve_steam_x64 disasm)
 static constexpr int ASC_ENTITY = 0x18;
-// local_a0 tail at Deserialize+0x41..+0x49:
-//   B3 01        MOV BL,1
-//   EB 02        JMP +2
-//   32 DB        XOR BL,BL   ← patched to B3 01
-//   48 8B CF     MOV RCX,RDI <-- attach site (counters)
+static constexpr int ASC_FL_ANIM_TIME = 0x28;
 static constexpr std::size_t kLocalA0TailOff = 0x41;
 static constexpr unsigned char kLocalA0TailExpected[] = {
     0xB3, 0x01, 0xEB, 0x02, 0x32, 0xDB, 0x48, 0x8B, 0xCF,
 };
 static constexpr std::size_t kXorInsnOff = 0x45;
 static constexpr unsigned char kMovBl1[] = {0xB3, 0x01};
-static constexpr std::size_t kAttachInsnOff = 0x47; // within function
+static constexpr std::size_t kAttachInsnOff = 0x47;
 
 static std::atomic_bool g_own{false};
 static std::atomic_uint64_t g_local_player_entity{0};
@@ -56,19 +53,132 @@ static GumInvocationListener *g_listener = nullptr;
 static bool g_installed = false;
 static bool g_xor_patched = false;
 
+static std::atomic_uint64_t g_watch_addr{0};
+static std::atomic_uint32_t g_watch_hits{0};
+static std::atomic_uint32_t g_watch_writes{0};
+static std::atomic<float> g_last_time{0.f};
+static char g_watch_last[256] = "none";
+static guint64 g_mod_base = 0;
+static gsize g_mod_size = 0;
+static bool g_exceptor_on = false;
+static bool g_watch_armed = false;
+
+static void fmt_mod(char *out, size_t n, guint64 addr) {
+    if (g_mod_size != 0 && addr >= g_mod_base && addr < g_mod_base + g_mod_size) {
+        std::snprintf(out, n, "exe+0x%llX",
+                      static_cast<unsigned long long>(addr - g_mod_base));
+    } else {
+        std::snprintf(out, n, "0x%llX", static_cast<unsigned long long>(addr));
+    }
+}
+
+static gboolean on_watch_exception(GumExceptionDetails *details, gpointer) {
+    if (!details || details->type != GUM_EXCEPTION_SINGLE_STEP) {
+        return FALSE;
+    }
+    const uint64_t watched = g_watch_addr.load(std::memory_order_relaxed);
+    if (watched == 0) {
+        return FALSE;
+    }
+    auto *winctx = static_cast<CONTEXT *>(details->native_context);
+    if (winctx && (winctx->Dr6 & 1u) == 0) {
+        return FALSE;
+    }
+
+    const float now = *reinterpret_cast<const float *>(watched);
+    const float prev = g_last_time.load(std::memory_order_relaxed);
+    g_last_time.store(now, std::memory_order_relaxed);
+    g_watch_writes.fetch_add(1, std::memory_order_relaxed);
+
+    const float delta = now - prev;
+    const bool rewind = (prev - now) > 0.2f;
+    const bool unusual = !rewind && !(delta >= 0.f && delta <= 0.05f);
+    if (!rewind && !(unusual && g_watch_hits.load(std::memory_order_relaxed) < 8)) {
+        return TRUE;
+    }
+
+    char rip[32], a0[32], a1[32], a2[32];
+    fmt_mod(rip, sizeof(rip), details->context.rip);
+    const auto *rsp = reinterpret_cast<const guint64 *>(details->context.rsp);
+    fmt_mod(a0, sizeof(a0), rsp ? rsp[0] : 0);
+    fmt_mod(a1, sizeof(a1), rsp ? rsp[1] : 0);
+    fmt_mod(a2, sizeof(a2), rsp ? rsp[2] : 0);
+
+    const unsigned hit = g_watch_hits.fetch_add(1, std::memory_order_relaxed) + 1;
+    std::snprintf(g_watch_last, sizeof(g_watch_last),
+                  "hit=%u %s %.4f<-%.4f rip=%s ret=%s,%s,%s",
+                  hit, rewind ? "REWIND" : "write", now, prev, rip, a0, a1, a2);
+    std::fprintf(stderr, "[client.anim] watch %s\n", g_watch_last);
+    return TRUE;
+}
+
+static gboolean set_wp_on_thread(const GumThreadDetails *td, gpointer user_data) {
+    const auto addr = *static_cast<GumAddress *>(user_data);
+    GError *err = nullptr;
+    gum_thread_set_hardware_watchpoint(td->id, 0, addr, 4, GUM_WATCH_WRITE, &err);
+    if (err) {
+        std::fprintf(stderr, "[client.anim] watch tid=%u fail: %s\n",
+                     static_cast<unsigned>(td->id), err->message);
+        g_error_free(err);
+    }
+    return TRUE;
+}
+
+static void arm_watch(char *anim) {
+    const uint64_t addr =
+        reinterpret_cast<uint64_t>(anim + ASC_FL_ANIM_TIME);
+    const uint64_t prev = g_watch_addr.load(std::memory_order_relaxed);
+    if (prev == addr && g_watch_armed) {
+        return;
+    }
+    g_watch_addr.store(addr, std::memory_order_release);
+    g_last_time.store(*reinterpret_cast<float *>(addr), std::memory_order_relaxed);
+
+    if (!g_exceptor_on) {
+        GumExceptor *ex = gum_exceptor_obtain();
+        if (ex) {
+            gum_exceptor_add(ex, &on_watch_exception, nullptr);
+            g_exceptor_on = true;
+        }
+    }
+    if (g_mod_base == 0) {
+        GumModule *mod = gum_process_get_main_module();
+        if (mod) {
+            const GumMemoryRange *r = gum_module_get_range(mod);
+            if (r) {
+                g_mod_base = r->base_address;
+                g_mod_size = r->size;
+            }
+        }
+    }
+
+    GumAddress ga = addr;
+    gum_process_enumerate_threads(&set_wp_on_thread, &ga, GUM_THREAD_FLAGS_NONE);
+    __writedr(0, addr);
+    unsigned long long dr7 = __readdr(7);
+    dr7 &= ~0xF0003ull;
+    dr7 |= 0xD0001ull;
+    __writedr(7, dr7);
+
+    g_watch_armed = true;
+    std::fprintf(stderr, "[client.anim] watch armed flAnimTime=%p exe_base=%p\n",
+                 reinterpret_cast<void *>(addr),
+                 reinterpret_cast<void *>(g_mod_base));
+}
+
 static void on_enter(GumInvocationContext *context, gpointer) {
     g_enter_count.fetch_add(1, std::memory_order_relaxed);
     if (!g_own.load(std::memory_order_relaxed)) return;
     if (!context || !context->cpu_context) return;
     auto *cpu = context->cpu_context;
-    // At +0x47, RSI still holds cAnimStateComponent* (entry: MOV RSI,RCX).
     auto *anim = reinterpret_cast<char *>(cpu->rsi);
     if (!anim) return;
     void *entity = *reinterpret_cast<void **>(anim + ASC_ENTITY);
     const uint64_t local = g_local_player_entity.load(std::memory_order_relaxed);
     if (local != 0 && reinterpret_cast<uint64_t>(entity) == local) {
         g_match_count.fetch_add(1, std::memory_order_relaxed);
-        cpu->rbx |= 1; // belt: BL=1 already from patched MOV
+        cpu->rbx |= 1;
+        arm_watch(anim);
     }
 }
 
@@ -97,7 +207,6 @@ bool client_anim_install_hooks() {
         std::fprintf(stderr, "[client.anim] AnimStateDeserialize signature not found\n");
         return false;
     }
-    // Layout: +0x41 MOV BL,1; +0x43 JMP +2; +0x45 XOR BL,BL; +0x47 MOV RCX,RDI.
     const auto *tail = reinterpret_cast<const unsigned char *>(deserial_addr + kLocalA0TailOff);
     if (std::memcmp(tail, kLocalA0TailExpected, sizeof(kLocalA0TailExpected)) != 0) {
         std::fprintf(stderr,
@@ -138,9 +247,7 @@ bool client_anim_install_hooks() {
     }
     g_xor_patched = true;
     std::fprintf(stderr,
-                 "[client.anim] DIAG: XOR BL,BL -> MOV BL,1 at %p "
-                 "(ALL entities skip PlayMode/AnimHash/AnimTime)\n",
-                 xor_site);
+                 "[client.anim] DIAG: XOR BL,BL -> MOV BL,1 at %p\n", xor_site);
 
     g_attach_addr = deserial_addr + kAttachInsnOff;
     g_listener = gum_make_call_listener(&on_enter, nullptr, nullptr, nullptr);
@@ -154,8 +261,7 @@ bool client_anim_install_hooks() {
         return false;
     }
     std::fprintf(stderr,
-                 "[client.anim] local_a0 attach at %p (Deserialize+0x47; "
-                 "xor_patched=%d)\n",
+                 "[client.anim] local_a0 attach at %p xor_patched=%d\n",
                  reinterpret_cast<void *>(g_attach_addr),
                  g_xor_patched ? 1 : 0);
     return true;
@@ -189,6 +295,22 @@ int client_anim_xor_patched() {
     return g_xor_patched ? 1 : 0;
 }
 
+int client_anim_watch_armed() {
+    return g_watch_armed ? 1 : 0;
+}
+
+int client_anim_watch_hits() {
+    return static_cast<int>(g_watch_hits.load(std::memory_order_relaxed));
+}
+
+int client_anim_watch_writes() {
+    return static_cast<int>(g_watch_writes.load(std::memory_order_relaxed));
+}
+
+const char *client_anim_watch_last() {
+    return g_watch_last;
+}
+
 #else // !_WIN32
 
 bool client_anim_install_hooks() { return false; }
@@ -199,5 +321,9 @@ bool client_anim_is_installed() { return false; }
 int client_anim_enter_count() { return 0; }
 int client_anim_match_count() { return 0; }
 int client_anim_xor_patched() { return 0; }
+int client_anim_watch_armed() { return 0; }
+int client_anim_watch_hits() { return 0; }
+int client_anim_watch_writes() { return 0; }
+const char *client_anim_watch_last() { return "n/a"; }
 
 #endif

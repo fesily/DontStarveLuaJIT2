@@ -161,6 +161,7 @@ AddPlayerPostInit(function(inst)
                 end
             end)
         end
+        local last_watch_hits = -1
 
         local last_own = false
         local tick_i = 0
@@ -191,19 +192,39 @@ AddPlayerPostInit(function(inst)
             if want_own then
                 drive_local_locomote(inst, moving, dir)
             end
+            local w_hits = GameInjector.DS_LUAJIT_client_anim_watch_hits
+                and GameInjector.DS_LUAJIT_client_anim_watch_hits() or 0
+            if w_hits ~= last_watch_hits then
+                last_watch_hits = w_hits
+                local w_last = "?"
+                if GameInjector.DS_LUAJIT_client_anim_watch_last then
+                    local ok_w, msg = pcall(GameInjector.DS_LUAJIT_client_anim_watch_last)
+                    if ok_w and msg then
+                        w_last = tostring(msg)
+                    end
+                end
+                print(string.format(
+                    "[client.anim] watch armed=%s writes=%s last=%s",
+                    tostring(GameInjector.DS_LUAJIT_client_anim_watch_armed
+                        and GameInjector.DS_LUAJIT_client_anim_watch_armed() or 0),
+                    tostring(GameInjector.DS_LUAJIT_client_anim_watch_writes
+                        and GameInjector.DS_LUAJIT_client_anim_watch_writes() or 0),
+                    w_last))
+            end
             if tick_i % 60 == 0 then
                 local a0_enter = GameInjector.DS_LUAJIT_client_anim_enter_count
                     and GameInjector.DS_LUAJIT_client_anim_enter_count() or -1
                 local a0_match = GameInjector.DS_LUAJIT_client_anim_match_count
                     and GameInjector.DS_LUAJIT_client_anim_match_count() or -1
                 print(string.format(
-                    "[client.anim] stats xor_patch=%s enter=%s match=%s native_own=%s moving=%s",
+                    "[client.anim] stats xor_patch=%s enter=%s match=%s native_own=%s moving=%s watch=%s",
                     tostring(GameInjector.DS_LUAJIT_client_anim_xor_patched
                         and GameInjector.DS_LUAJIT_client_anim_xor_patched() or 0),
                     tostring(a0_enter), tostring(a0_match),
                     tostring(GameInjector.DS_LUAJIT_client_anim_get_own
                         and GameInjector.DS_LUAJIT_client_anim_get_own() or -1),
-                    tostring(moving)))
+                    tostring(moving),
+                    tostring(w_hits)))
             end
         end)
 

@@ -9,3 +9,7 @@ bool client_anim_is_installed();
 int client_anim_enter_count();
 int client_anim_xor_patched();
 int client_anim_match_count();
+int client_anim_watch_armed();
+int client_anim_watch_hits();
+int client_anim_watch_writes();
+const char *client_anim_watch_last();
