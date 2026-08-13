@@ -17,13 +17,16 @@ World-time fields are **not** required in native for v1. Lua feeds `DS_LUAJIT_sh
 | VA | `0x14008ba10` |
 | RVA | `0x8BA10` |
 | Body | `14008ba10` – `14008bbe9` |
-| Callers | `FUN_14008bf20` (GenerateStaticVB), `FUN_14008c000` (DrawCacheRender dynamic path) |
+| Returns | **`uint32_t` VB handle** (`CreateVB` EAX) or `0xFFFFFFFF` if no verts |
+| Callers | `FUN_14008bf20` (GenerateStaticVB → store @ manager+0x30), `FUN_14008c000` (DrawCacheRender → store @ manager+0x34) |
 
 **MSVC x64 thiscall:**
 
 ```text
-void GenerateVB(ShadowManagerComponent *this,  // rcx
-                vector<cEntityComponent*> *list); // rdx
+uint32_t GenerateVB(ShadowManagerComponent *this,  // rcx
+                    vector<cEntityComponent*> *list); // rdx
+// EAX must be the CreateVB handle (or -1). A gum replacement that
+// forgets to return it leaves static/dynamic splat handles garbage.
 ```
 
 `std::vector` (MSVC): `begin` @ `+0x08`, `end` @ `+0x10` (8-byte pointers).
@@ -57,7 +60,7 @@ angle = (cam->heading@+0x30 + C1) * C2
 dir = { cosf(angle), sinf(angle) }  ; stack local_res8 / local_resc
 ```
 
-`GetCurrentCameraInfo` = `FUN_1400fd240`.
+`GetCurrentCameraInfo` = `FUN_1400fd240`. C1=90.0 @ `140518704`, C2=π/180 @ `14061a520`.
 
 ---
 
@@ -112,15 +115,16 @@ Skip if `fEnabled == 0` **or** `entity+0x1B4 != 0` (culled / hidden).
 
 **Entity position:** `float xyz` at `entity+0x1F0`, `+0x1F4`, `+0x1F8`.
 
----
-
 ## Size axes (O3)
 
-Stock `SetSize(width, height)` → `{flSizeX, flSizeY}` both become ellipse radii, then rotated by `dir`.
+PopulateQuad treats `size = {flSizeX, flSizeY}` as local radii, then rotates by `dir=(cos θ, sin θ)`:
 
-**v1 length_scale multiplies `flSizeY` (+0x24) only** — second `SetSize` argument is the conventional depth/length of the blob. Width (`flSizeX`) stays.
+- **`flSizeX` (+0x20) lies along `dir`** (stretch / length)
+- **`flSizeY` (+0x24) is perpendicular to `dir`** (width)
 
-If FE shows stretch on the wrong axis, flip to `flSizeX` (one-line change). Do **not** multiply both.
+Stock θ is camera-derived `(heading + 90°) * π/180` (`C1` @ `140518704` = 90.0, `C2` @ `14061a520` = π/180), so in the *stock* frame Y looks like “length toward camera look.” That does **not** apply once `dir` is sun yaw.
+
+**v1 pin:** set `dir = {cos(sun_yaw), sin(sun_yaw)}` and multiply **`flSizeX` only** by `length_scale`. Do not multiply both. Do not keep Y-as-length unless `dir` is also rotated −90°.
 
 ---
 
