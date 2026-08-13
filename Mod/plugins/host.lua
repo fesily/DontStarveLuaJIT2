@@ -147,28 +147,33 @@ local function eval_option_rule(rule, config)
         all_of = { rule.option }
     end
 
-    if all_of ~= nil then
-        if #all_of == 0 then
-            return true
-        end
-        for i = 1, #all_of do
-            if not is_bool_on(config, all_of[i]) then
-                return false
+    local has_all = all_of ~= nil
+    local has_any = any_of ~= nil
+    if has_all or has_any then
+        local all_ok = true
+        if has_all and #all_of > 0 then
+            for i = 1, #all_of do
+                if not is_bool_on(config, all_of[i]) then
+                    all_ok = false
+                    break
+                end
             end
         end
-        return true
-    end
-
-    if any_of ~= nil then
-        if #any_of == 0 then
-            return false
-        end
-        for i = 1, #any_of do
-            if is_bool_on(config, any_of[i]) then
-                return true
+        local any_ok = true
+        if has_any then
+            if #any_of == 0 then
+                any_ok = false
+            else
+                any_ok = false
+                for i = 1, #any_of do
+                    if is_bool_on(config, any_of[i]) then
+                        any_ok = true
+                        break
+                    end
+                end
             end
         end
-        return false
+        return all_ok and any_ok
     end
 
     local neq = rule.neq or rule.string_ne or rule.string_neq

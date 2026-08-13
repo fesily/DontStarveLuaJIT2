@@ -226,4 +226,41 @@ test_host_marker_true()
 test_engine_safe_without_marker()
 test_modimport_rebind_on_load()
 test_when_sees_thenet_from_g()
+
+local function test_derive_option_rule()
+    local d = PL.derive_option_rule
+    assert_true(type(d) == "function", "derive exported")
+
+    local always = d(nil)
+    assert_true(always.always == true, "nil → always")
+
+    local all = d({
+        { section_start = true, name = "SECTION_1", label = "S", options = { { description = "", data = "" } }, default = "" },
+        { name = "EnableForkSave", host_gate = true, label = "x", options = { { description = "On", data = true } }, default = true },
+    })
+    assert_true(all.all_of and all.all_of[1] == "EnableForkSave", "host_gate true → all_of")
+    assert_true(all.any_of == nil, "no any_of")
+
+    local any = d({
+        { name = "EnableProfiler", host_gate = "any_of" },
+        { name = "EnableTracy", host_gate = "any_of" },
+    })
+    assert_true(any.any_of and #any.any_of == 2, "any_of group")
+    assert_true(any.all_of == nil, "no all_of")
+
+    local both = d({
+        { name = "Need", host_gate = "all_of" },
+        { name = "OptA", host_gate = "any_of" },
+        { name = "SkipMe" }, -- display only
+    })
+    assert_true(both.all_of[1] == "Need" and both.any_of[1] == "OptA", "mixed groups")
+
+    local ok, err = pcall(function()
+        d({ { name = "X", host_gate = "nope" } })
+    end)
+    assert_true(not ok and tostring(err):find("host_gate", 1, true), "unknown host_gate")
+    print("PASS: derive_option_rule")
+end
+
+test_derive_option_rule()
 print("ALL PASS package_load_spec")

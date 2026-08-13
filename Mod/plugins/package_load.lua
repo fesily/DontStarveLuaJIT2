@@ -190,4 +190,38 @@ function M.load_flat(name, api)
     return result
 end
 
+function M.derive_option_rule(configuration_options)
+    if type(configuration_options) ~= "table" then
+        return { always = true }
+    end
+    local all_of, any_of = {}, {}
+    for i = 1, #configuration_options do
+        local row = configuration_options[i]
+        if type(row) == "table" and row.section_start ~= true then
+            local name = row.name
+            if type(name) == "string" and name ~= "" then
+                local g = row.host_gate
+                if g == true or g == "all_of" then
+                    all_of[#all_of + 1] = name
+                elseif g == "any_of" then
+                    any_of[#any_of + 1] = name
+                elseif g ~= nil and g ~= false then
+                    error("unknown host_gate: " .. tostring(g), 2)
+                end
+            end
+        end
+    end
+    if #all_of == 0 and #any_of == 0 then
+        return { always = true }
+    end
+    local rule = {}
+    if #all_of > 0 then
+        rule.all_of = all_of
+    end
+    if #any_of > 0 then
+        rule.any_of = any_of
+    end
+    return rule
+end
+
 return M
