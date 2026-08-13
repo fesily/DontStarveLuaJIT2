@@ -70,6 +70,13 @@ static void fmt_mod(char *out, size_t n, guint64 addr) {
     }
 }
 
+static const char *classify_rva(guint64 rva) {
+    // FUN_14009fc60 stores to flAnimTime; SINGLE_STEP RIP is often the next insn.
+    if (rva == 0x9FDD6 || rva == 0x9FDDA) return "deser_zero";
+    if (rva == 0x9FE5E || rva == 0x9FE63) return "deser_time";
+    return "";
+}
+
 static gboolean on_watch_exception(GumExceptionDetails *details, gpointer) {
     if (!details || details->type != GUM_EXCEPTION_SINGLE_STEP) {
         return FALSE;
@@ -95,17 +102,29 @@ static gboolean on_watch_exception(GumExceptionDetails *details, gpointer) {
         return TRUE;
     }
 
-    char rip[32], a0[32], a1[32], a2[32];
-    fmt_mod(rip, sizeof(rip), details->context.rip);
-    const auto *rsp = reinterpret_cast<const guint64 *>(details->context.rsp);
-    fmt_mod(a0, sizeof(a0), rsp ? rsp[0] : 0);
-    fmt_mod(a1, sizeof(a1), rsp ? rsp[1] : 0);
-    fmt_mod(a2, sizeof(a2), rsp ? rsp[2] : 0);
+    const guint64 ea = reinterpret_cast<guint64>(details->address);
+    const guint64 crip = winctx ? static_cast<guint64>(winctx->Rip) : 0;
+    char ea_s[32], rip_s[32], r0[32], r1[32];
+    fmt_mod(ea_s, sizeof(ea_s), ea);
+    fmt_mod(rip_s, sizeof(rip_s), crip);
+    const guint64 *rsp = winctx ? reinterpret_cast<const guint64 *>(winctx->Rsp) : nullptr;
+    fmt_mod(r0, sizeof(r0), rsp ? rsp[0] : 0);
+    fmt_mod(r1, sizeof(r1), rsp ? rsp[1] : 0);
+
+    const guint64 rva = (g_mod_size && ea >= g_mod_base && ea < g_mod_base + g_mod_size)
+                            ? (ea - g_mod_base)
+                            : (g_mod_size && crip >= g_mod_base && crip < g_mod_base + g_mod_size
+                                   ? (crip - g_mod_base)
+                                   : 0);
+    const char *tag = classify_rva(rva);
+    if (!tag[0] && g_mod_size && crip >= g_mod_base) {
+        tag = classify_rva(crip - g_mod_base);
+    }
 
     const unsigned hit = g_watch_hits.fetch_add(1, std::memory_order_relaxed) + 1;
     std::snprintf(g_watch_last, sizeof(g_watch_last),
-                  "hit=%u %s %.4f<-%.4f rip=%s ret=%s,%s,%s",
-                  hit, rewind ? "REWIND" : "write", now, prev, rip, a0, a1, a2);
+                  "hit=%u %s %.4f<-%.4f ea=%s rip=%s %s ret=%s,%s",
+                  hit, rewind ? "REWIND" : "write", now, prev, ea_s, rip_s, tag, r0, r1);
     std::fprintf(stderr, "[client.anim] watch %s\n", g_watch_last);
     return TRUE;
 }
