@@ -154,14 +154,11 @@ add_custom_target(build_lua51 DEPENDS ${Lua51_output_dir}/lua51${CMAKE_SHARED_LI
 
 add_subdirectory("luajit")
 
-# Host tool for codegen: prefer arenagc CLI AFTER add_subdirectory so the
-# target exists. Default-variant host currently crashes in lj_BC_FUNCCW when
-# used as a build tool; luajit-arenagc (HASGCMARK + good VM) is validated.
-if(TARGET luajit-arenagc)
-  set(LUAJIT_HOST_EXECUTABLE_TARGET luajit-arenagc)
-else()
-  set(LUAJIT_HOST_EXECUTABLE_TARGET ${LUAJIT_EXECUTABLE_TARGET})
-endif()
+# Host tool for codegen: default-variant CLI.
+# luajit-arenagc currently AVs on tools/modinfo2cpp.lua (Windows c0000005 /
+# ninja code 3221225477) even with -joff. Default luajit.exe runs the same
+# script successfully. Do not prefer arenagc as a build-time interpreter.
+set(LUAJIT_HOST_EXECUTABLE_TARGET ${LUAJIT_EXECUTABLE_TARGET})
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp
         COMMAND $<TARGET_FILE:${LUAJIT_HOST_EXECUTABLE_TARGET}> "${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua"
