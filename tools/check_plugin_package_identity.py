@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Gate dual-face package identity: modinfo.lua vs native PluginManifest.
 
-Compares plugin_id / version / option keys between package modinfo and
-native man.* when both faces exist. Stems without modinfo.lua are skipped
-(exit 0) until package migration tasks add them.
+Compares plugin_id / version / host_gate keys between package modinfo and
+native man.* when both faces exist. When Mod/plugins/<stem>/modinfo.lua
+exists, it must be byte-identical to the src copy. Stems without
+modinfo.lua are skipped (exit 0).
 """
 
 from __future__ import annotations
@@ -246,6 +247,13 @@ def check_stem(source_root: Path, stem: str) -> list[str]:
                 f"!= man.options.keys={sorted(native.option_keys)!r} "
                 f"(kind={native.option_kind})"
             )
+
+    installed = source_root / "Mod" / "plugins" / stem / "modinfo.lua"
+    if installed.is_file():
+        src_bytes = modinfo_path.read_bytes()
+        dst_bytes = installed.read_bytes()
+        if src_bytes != dst_bytes:
+            errors.append(f"{stem}: Mod/plugins/{stem}/modinfo.lua differs from src")
     return errors
 
 

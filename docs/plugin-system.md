@@ -195,7 +195,11 @@ resolve → load_phase(EarlyNative)
 EarlyNative resolve uses a **schema-driven `ConfigView`**, not a hand-maintained
 field list on `GameJitModConfig`. See **§12 ConfigView SSOT** for the full model.
 
-User-facing config remains **`Mod/modinfo.lua` `configuration_options` only** (D5).
+**D5 (option export):** Author packaged-feature widgets on that package's
+`configuration_options` + `host_gate`. Built-in: `tools/bake_plugin_options.lua`
+projects those rows into parent `Mod/modinfo.lua`. External: the marked pack's
+own `modinfo`; Host binds `config_modname`. L0 / core.vm / flat-Lua /
+C-only-without-modinfo widgets stay hand-authored on parent.
 
 ### 3.4 Dual-face native + Lua (package layout)
 
@@ -210,8 +214,10 @@ Dual-face features live as a **DST mini-mod package** under one directory, not a
 3. Register the Lua face in `Mod/plugins/init.lua` via
    `load_package("plugin_<stem>")` (not `load_flat` for dual-face).
 4. Keep identity SSOT in package `modinfo`; native `PluginManifest` must match
-   (`python tools/check_plugin_package_identity.py --source-root .`). Prefer regenerating
-   native constants later via optional identity codegen; hand-sync is fine until then.
+   (`python tools/check_plugin_package_identity.py --source-root .`). The same
+   gate requires `Mod/plugins/<stem>/modinfo.lua` to be byte-identical to src.
+   Prefer regenerating native constants later via optional identity codegen;
+   hand-sync is fine until then.
 5. **Do not** add a flat dual-face face at `Mod/plugins/<face>.lua` or park business
    scripts only under `Mod/scripts/` — they belong in the package directory.
 
@@ -449,7 +455,7 @@ When adding a plugin:
 
 ## 9. Checklist: new feature as plugin
 
-1. Add parent `Mod/modinfo` option(s) if user-facing (D5 UI SSOT).
+1. Author widgets on package `configuration_options` + `host_gate` (D5 authoring SSOT). Built-in bake projects into parent; do not hand-copy plugin rows.
 2. **Native hooks needed at inject time?** → dynamic module under
    `src/DontStarveInjector/plugins/plugin_<stem>/` + `ds_add_dynamic_plugin`.
    Register option schema in `ds_plugin_module_init` **before** `register_plugin`. If cascade must parse the key before Host load, also add it to `RegisterBuiltinBusinessOptionSchema` (or the plugin's cascade seed). **Do not** add a new field on `GameJitModConfig`.

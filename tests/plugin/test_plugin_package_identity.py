@@ -142,6 +142,16 @@ class PluginPackageIdentityTest(unittest.TestCase):
                 msg=f"stdout={result.stdout!r} stderr={result.stderr!r}",
             )
 
+    def test_detects_mod_copy_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as td_raw:
+            td = Path(td_raw)
+            _write_package(td)
+            dest = td / "Mod" / "plugins" / "plugin_save_fork"
+            dest.mkdir(parents=True)
+            (dest / "modinfo.lua").write_text("plugin_id = 'nope'\n", encoding="utf-8")
+            result = _run(td, "--stem", "plugin_save_fork")
+            self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+
     def test_skips_stem_without_modinfo(self) -> None:
         with tempfile.TemporaryDirectory() as td_raw:
             td = Path(td_raw)
@@ -154,7 +164,7 @@ class PluginPackageIdentityTest(unittest.TestCase):
             )
 
     def test_repo_source_root_currently_skips_or_passes(self) -> None:
-        """Until Task 6+ packages exist, real dual-face stems have no modinfo → skip."""
+        """Repo dual-face stems must pass native identity and src/Mod copy checks."""
         result = _run(ROOT)
         self.assertEqual(
             result.returncode,

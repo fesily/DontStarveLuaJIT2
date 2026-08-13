@@ -282,6 +282,14 @@ Tests must include:
 
 ### 6.2 D5 embedding rule
 
+**Authoring SSOT moved:** packaged-feature widgets are authored on package
+`configuration_options` + `host_gate`. See
+`docs/superpowers/specs/2026-08-13-plugin-option-export-design.md` §3.
+Parent `Mod/modinfo.lua` is the **embedded projection** (bake), not the
+authoring surface for those rows.
+
+Historical embedding notes (pre option-export):
+
 - User toggles and defaults remain authored only in parent `Mod/modinfo.lua` `configuration_options` when the package is embedded.
 - Package private `options` **names keys** consumed by that package; it does not own the UI rows when embedded.
 - `host:resolve` continues to use parent `GetModConfigData` / config lookup.
