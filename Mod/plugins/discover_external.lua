@@ -129,7 +129,9 @@ end
 
 --- api fields:
 ---   this_modname, is_client, package_load, MODROOT, kleiloadlua, parent_env,
+---   config_for_mod?, GetModConfigData?,
 ---   mod_root_for(modname)?, list_dir(path)?, package_dirs_for_mod(mod_root)?
+--- Per-pack clone sets config_modname to the enabled folder name.
 function M.run(api)
     api = api or {}
     local out = {}
@@ -170,7 +172,12 @@ function M.run(api)
                     else
                         for _, package_root in ipairs(dirs) do
                             local stem = package_root:match("([^/]+)/?$") or "plugin_unknown"
-                            local plugin, err = try_load_package(api, package_root, stem)
+                            local pack_api = {}
+                            for k, v in pairs(api) do
+                                pack_api[k] = v
+                            end
+                            pack_api.config_modname = modname
+                            local plugin, err = try_load_package(pack_api, package_root, stem)
                             if plugin then
                                 out[#out + 1] = plugin
                                 print("[luajit][plugin-discover] load mod=" .. tostring(modname) ..

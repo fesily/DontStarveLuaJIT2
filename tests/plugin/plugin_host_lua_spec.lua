@@ -54,6 +54,8 @@ local function fake(opts)
         conflicts = opts.conflicts or {},
         phases = opts.phases or PHASE.AfterModMain,
         options = opts.options, -- nil => always on
+        config_lookup = opts.config_lookup,
+        config_modname = opts.config_modname,
         support_reload = opts.support_reload or false,
         priority = opts.priority or 100,
         allow = opts.allow ~= false,
@@ -929,6 +931,37 @@ local function test_option_rules_unit()
     print("PASS: option_rules_unit")
 end
 
+local function test_resolve_uses_plugin_config_lookup()
+    local a = fake({
+        id = "ext.a",
+        options = { all_of = { "PackKey" } },
+        config_lookup = function(key)
+            if key == "PackKey" then return true end
+            return nil
+        end,
+    })
+    local host = PluginHost.new()
+    host:register(a)
+    -- Parent table has PackKey off; plugin lookup has it on.
+    host:resolve({ PackKey = false }, {})
+    assert_eq(host:status("ext.a"), STATUS.Registered, "uses plugin lookup not parent")
+    print("PASS: resolve_uses_plugin_config_lookup")
+end
+
+local function test_resolve_config_for_mod()
+    local a = fake({ id = "ext.b", options = { all_of = { "K" } }, config_modname = "pack_x" })
+    local host = PluginHost.new()
+    host:register(a)
+    host:resolve({ K = false }, {
+        config_for_mod = function(modname, key)
+            assert_eq(modname, "pack_x", "modname")
+            return key == "K"
+        end,
+    })
+    assert_eq(host:status("ext.b"), STATUS.Registered, "config_for_mod")
+    print("PASS: resolve_config_for_mod")
+end
+
 local function fresh_m4_injector()
     local inj = {
         fullgc = nil,
@@ -1537,6 +1570,8 @@ test_when_false()
 test_sticky_and_reload()
 test_config_function_getmodconfigdata()
 test_option_rules_unit()
+test_resolve_uses_plugin_config_lookup()
+test_resolve_config_for_mod()
 test_save_fork_enable_matrix()
 test_sim_lagcomp_enable_matrix()
 test_network_sim_enable_matrix()

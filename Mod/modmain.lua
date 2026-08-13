@@ -677,6 +677,30 @@ local function main()
 				setfenv(chunk, plugin_env)
 				return chunk()
 			end
+			local function config_for_mod(owning_modname, key)
+				if owning_modname == nil or owning_modname == modname then
+					return GetModConfigData(key)
+				end
+				if type(KnownModIndex) ~= "table"
+					or type(KnownModIndex.GetModConfigurationOptions_Internal) ~= "function" then
+					return nil
+				end
+				local ok, cfg = pcall(function()
+					return KnownModIndex:GetModConfigurationOptions_Internal(owning_modname)
+				end)
+				if not ok or type(cfg) ~= "table" then
+					return nil
+				end
+				for _, option in pairs(cfg) do
+					if type(option) == "table" and option.name == key then
+						if option.saved ~= nil then
+							return option.saved
+						end
+						return option.default
+					end
+				end
+				return nil
+			end
 			local PluginHost = run_mod_chunk("plugins/host.lua")
 			local registry = run_mod_chunk("plugins/init.lua") or {}
 			-- External enabled luajit_plugin_pack mods (faces only; native via C EarlyNative).
@@ -692,6 +716,7 @@ local function main()
 						modimport = modimport,
 						parent_env = main_fenv,
 						GetModConfigData = GetModConfigData,
+						config_for_mod = config_for_mod,
 						package_load = package_load,
 						mod_root_for = function(m)
 							local root = rawget(_G, "MODS_ROOT") or "../mods/"
@@ -722,10 +747,6 @@ local function main()
 			end
 			local host = PluginHost.new()
 			host:register_all(registry)
-			-- Resolve against already-hooked GetModConfigData when available; raw otherwise.
-			local function config_lookup(key)
-				return GetModConfigData(key)
-			end
 			local gate_ctx = {
 				injector = GameInjector,
 				has_luajit = hasluajit,
@@ -737,14 +758,15 @@ local function main()
 				-- jit.runtime HideGlobalJIT needs the real jit table + this mod env.
 				jit = env.jit or jit,
 				mod_env = env,
+				config_for_mod = config_for_mod,
 			}
 			print(string.format(
 				"[luajit][plugin] resolve has_luajit=%s is_client=%s EnableJitterProbe=%s LuaVmType=%s",
 				tostring(gate_ctx.has_luajit),
 				tostring(gate_ctx.is_client),
-				tostring(config_lookup("EnableJitterProbe")),
-				tostring(config_lookup("LuaVmType"))))
-			host:resolve(config_lookup, gate_ctx)
+				tostring(GetModConfigData("EnableJitterProbe")),
+				tostring(GetModConfigData("LuaVmType"))))
+			host:resolve(function(key) return GetModConfigData(key) end, gate_ctx)
 			local lr = host:load_phase(PluginHost.Phase.AfterModMain)
 			if not lr.ok then
 				print("[luajit][plugin] AfterModMain load reported failures")

@@ -168,9 +168,40 @@ local function test_skips_this_mod()
     print("PASS: skips_this_mod")
 end
 
+local function test_forwards_pack_config_modname()
+    mods = {
+        pack_x = {
+            enabled = true,
+            info = { luajit_plugin_pack = true, plugin_id = "vendor.x" },
+        },
+    }
+    local seen = {}
+    discover.run({
+        this_modname = "DontStarveLuaJit2",
+        is_client = true,
+        config_modname = "DontStarveLuaJit2",
+        mod_root_for = function()
+            return "/tmp/pack_x/"
+        end,
+        package_dirs_for_mod = function()
+            return { "/tmp/pack_x/plugins/plugin_x/" }
+        end,
+        package_load = {
+            load_package_from_root = function(_, _, api)
+                seen[#seen + 1] = api and api.config_modname
+                return { id = "vendor.x" }
+            end,
+        },
+    })
+    assert_true(#seen == 1, "expected one load")
+    assert_true(seen[1] == "pack_x", "pack folder not this_modname: " .. tostring(seen[1]))
+    print("PASS: forwards_pack_config_modname")
+end
+
 test_skips_unmarked()
 test_skips_disabled()
 test_loads_marked_enabled()
 test_skips_missing_plugin_id()
+test_forwards_pack_config_modname()
 test_skips_this_mod()
 print("ALL PASS discover_external_spec")

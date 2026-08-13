@@ -353,7 +353,18 @@ function PluginHost:resolve(config, gate_ctx)
         local p = e.plugin
         local id = plugin_id(p)
         local options = plugin_field(p, "options", nil)
-        e.option_enabled = eval_option_rule(options, config)
+        local lookup = config
+        if type(p.config_lookup) == "function" then
+            lookup = p.config_lookup
+        elseif type(p.config_modname) == "string"
+            and type(self.last_ctx) == "table"
+            and type(self.last_ctx.config_for_mod) == "function" then
+            local modname = p.config_modname
+            lookup = function(key)
+                return self.last_ctx.config_for_mod(modname, key)
+            end
+        end
+        e.option_enabled = eval_option_rule(options, lookup)
         local when_ok = can_load_plugin(p, self.last_ctx)
         e.gate_ok = e.option_enabled and when_ok
         if not e.option_enabled or not when_ok then
