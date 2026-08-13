@@ -163,9 +163,19 @@ else()
   set(LUAJIT_HOST_EXECUTABLE_TARGET ${LUAJIT_EXECUTABLE_TARGET})
 endif()
 
+file(GLOB DS_PLUGIN_MODINFO_LUA
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_*/modinfo.lua")
+
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp
-        COMMAND $<TARGET_FILE:${LUAJIT_HOST_EXECUTABLE_TARGET}> "${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua"
-        DEPENDS ${LUAJIT_HOST_EXECUTABLE_TARGET} ${CMAKE_CURRENT_SOURCE_DIR}/Mod/modinfo.lua ${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua
+        COMMAND $<TARGET_FILE:${LUAJIT_HOST_EXECUTABLE_TARGET}>
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_plugin_options.lua" --write
+        COMMAND $<TARGET_FILE:${LUAJIT_HOST_EXECUTABLE_TARGET}>
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua"
+        DEPENDS ${LUAJIT_HOST_EXECUTABLE_TARGET}
+            ${CMAKE_CURRENT_SOURCE_DIR}/Mod/modinfo.lua
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_plugin_options.lua
+            ${DS_PLUGIN_MODINFO_LUA}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
