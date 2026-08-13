@@ -229,7 +229,7 @@ namespace function_relocation {
             fn.address = sp.start;
             // Clamp size to remaining .text so feature scan cannot walk off.
             const uint64_t text_end = sections.text.base_address + sections.text.size;
-            const uint64_t clamped_end = std::min(sp.end, text_end);
+            const uint64_t clamped_end = (std::min)(sp.end, text_end);
             if (clamped_end <= sp.start) {
                 continue;
             }
@@ -284,7 +284,7 @@ namespace function_relocation {
         if (fn.size == 0 || fn.address == 0) {
             return 0;
         }
-        const size_t limit = std::min(fn.size, cap == 0 ? fn.size : cap);
+        const size_t limit = (std::min)(fn.size, cap == 0 ? fn.size : cap);
         disasm ds{std::span{reinterpret_cast<uint8_t *>(fn.address), limit}};
         for (auto &insn: ds) {
             if (insn.id == X86_INS_RET || insn.id == X86_INS_RETF || insn.id == X86_INS_RETFQ) {
