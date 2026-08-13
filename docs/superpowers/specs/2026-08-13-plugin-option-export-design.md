@@ -264,7 +264,6 @@ These rows are deleted from the hand-written parent block and authored on the sr
 | `EnableForkSave` | `plugin_save_fork` |
 | `EnableProfiler`, `EnableTracy`, `DisableForceFullGC`, `EnableFrameGC` | `plugin_debug_profiler` |
 | `EnableNetSim` | `plugin_network_sim` |
-| `EnableJitterProbe` | `plugin_debug_jitterprobe` |
 
 Stay hand-written: `AlwaysEnableMod`, `AllowLocalNewerWorkshopVersion`, `LuaVmType`, `EnabledGenGC`, `DisableJITWhenServer`, `EnabledJIT`, `HideGlobalJIT`, `ModBlackList`, `SlowTailCall`, `AnyModDisableTailCall`, `AutoDetectEncryptedMod`, `ForceDisableTailCall`, `NetworkOptEntity`, `EnableVBPool`, `AngleBackend`, and existing sections that still have remaining rows.
 

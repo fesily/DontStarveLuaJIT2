@@ -761,10 +761,9 @@ local function main()
 				config_for_mod = config_for_mod,
 			}
 			print(string.format(
-				"[luajit][plugin] resolve has_luajit=%s is_client=%s EnableJitterProbe=%s LuaVmType=%s",
+				"[luajit][plugin] resolve has_luajit=%s is_client=%s LuaVmType=%s",
 				tostring(gate_ctx.has_luajit),
 				tostring(gate_ctx.is_client),
-				tostring(GetModConfigData("EnableJitterProbe")),
 				tostring(GetModConfigData("LuaVmType"))))
 			host:resolve(function(key) return GetModConfigData(key) end, gate_ctx)
 			local lr = host:load_phase(PluginHost.Phase.AfterModMain)

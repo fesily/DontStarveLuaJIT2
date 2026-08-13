@@ -141,7 +141,6 @@ std::optional<std::string> logical_id_for_module_stem(std::string_view stem) {
         {"plugin_sim_lagcomp", "sim.lagcomp"},
         {"plugin_debug_profiler", "debug.profiler"},
         {"plugin_fps_render", "fps.render"},
-        {"plugin_debug_jitterprobe", "debug.jitterprobe"},
         {"plugin_manager", "plugin.manager"},
     };
     auto it = kMap.find(std::string(stem));

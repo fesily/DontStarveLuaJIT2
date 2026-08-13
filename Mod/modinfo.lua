@@ -333,17 +333,6 @@ configuration_options = {
     },
     -- BEGIN GENERATED PLUGIN OPTIONS
     {
-        name = "EnableJitterProbe",
-        label = translate({ en = "Jitter Probe", zh = "抖动探测" }),
-        hover = translate({ en = "Client prediction-OFF movement jitter logs (Win x64)", zh = "客户端预测关闭时的移动抖动日志（仅Win x64）" }),
-        options = {
-            { description = translate({ en = "Disabled", zh = "关闭" }), data = false },
-            { description = translate({ en = "Enabled", zh = "开启" }), data = true },
-        },
-        default = false,
-        host_gate = true,
-    },
-    {
         name = "DisableForceFullGC",
         label = translate({ en = "GC Incremental Only", zh = "禁用强制完全gc,仅gc小部分" }),
         hover = translate({ en = "Enabling this feature will result in a larger memory footprint, and will alleviate occasional lagging issues", zh = "启用该选项会导致更大的内存占用,将缓解偶发卡顿问题" }),
