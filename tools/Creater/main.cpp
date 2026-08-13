@@ -4,6 +4,7 @@
 #include <filesystem>
 
 #include "platform.hpp"
+#include "frida_gum_interceptor.hpp"
 #include "SignatureJson.hpp"
 #include "GameSignature.hpp"
 #include "DontStarveSignature.hpp"
@@ -113,9 +114,11 @@ static void HookGame(const char *api_name, bool isClient) {
         return;
     }
     auto interceptor = gum_interceptor_obtain();
-    auto ret = gum_interceptor_replace(interceptor, api, isClient ? (void *) &SteamAPI_RestartAppIfNecessary_hook
-                                                                  : (void *) &SteamGameServer_Init_hook, nullptr,
-                                       isClient ? (void **) &orgin : (void **) &orgin1);
+    auto *replacement = isClient ? (void *) &SteamAPI_RestartAppIfNecessary_hook
+                                 : (void *) &SteamGameServer_Init_hook;
+    auto **original = isClient ? (void **) &orgin : (void **) &orgin1;
+    // New Frida interceptor API: original** before options (not replacement_data).
+    auto ret = ds::gum::replace(interceptor, api, replacement, original);
     if (ret != GumReplaceReturn::GUM_REPLACE_OK)
         exit(ret);
 }
