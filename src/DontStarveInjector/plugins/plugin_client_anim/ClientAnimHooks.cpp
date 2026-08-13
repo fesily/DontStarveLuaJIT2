@@ -15,12 +15,10 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
-
 #include <frida-gum.h>
 
 #ifdef _WIN32
 #include <Windows.h>
-#include <intrin.h>
 
 namespace {
 
@@ -124,11 +122,24 @@ static gboolean set_wp_on_thread(const GumThreadDetails *td, gpointer user_data)
     return TRUE;
 }
 
+static std::atomic_bool g_arming{false};
+static GumAddress g_arm_addr = 0;
+
+static DWORD WINAPI arm_watch_thread(LPVOID) {
+    GumAddress addr = g_arm_addr;
+    gum_process_enumerate_threads(&set_wp_on_thread, &addr, GUM_THREAD_FLAGS_NONE);
+    g_watch_armed = true;
+    std::fprintf(stderr, "[client.anim] watch armed flAnimTime=%p exe_base=%p\n",
+                 reinterpret_cast<void *>(addr),
+                 reinterpret_cast<void *>(g_mod_base));
+    return 0;
+}
+
 static void arm_watch(char *anim) {
     const uint64_t addr =
         reinterpret_cast<uint64_t>(anim + ASC_FL_ANIM_TIME);
     const uint64_t prev = g_watch_addr.load(std::memory_order_relaxed);
-    if (prev == addr && g_watch_armed) {
+    if ((prev == addr && g_watch_armed) || g_arming.load(std::memory_order_relaxed)) {
         return;
     }
     g_watch_addr.store(addr, std::memory_order_release);
@@ -152,18 +163,18 @@ static void arm_watch(char *anim) {
         }
     }
 
-    GumAddress ga = addr;
-    gum_process_enumerate_threads(&set_wp_on_thread, &ga, GUM_THREAD_FLAGS_NONE);
-    __writedr(0, addr);
-    unsigned long long dr7 = __readdr(7);
-    dr7 &= ~0xF0003ull;
-    dr7 |= 0xD0001ull;
-    __writedr(7, dr7);
-
-    g_watch_armed = true;
-    std::fprintf(stderr, "[client.anim] watch armed flAnimTime=%p exe_base=%p\n",
-                 reinterpret_cast<void *>(addr),
-                 reinterpret_cast<void *>(g_mod_base));
+    // __writedr is ring-0; SetThreadContext(self) is unreliable inside a hook.
+    // Apply Dr0 from a helper thread via gum_thread_set_hardware_watchpoint.
+    g_arm_addr = addr;
+    g_arming.store(true, std::memory_order_release);
+    HANDLE th = CreateThread(nullptr, 0, &arm_watch_thread, nullptr, 0, nullptr);
+    if (th) {
+        CloseHandle(th);
+    } else {
+        g_arming.store(false, std::memory_order_release);
+        std::fprintf(stderr, "[client.anim] watch helper thread failed err=%lu\n",
+                     GetLastError());
+    }
 }
 
 static void on_enter(GumInvocationContext *context, gpointer) {
