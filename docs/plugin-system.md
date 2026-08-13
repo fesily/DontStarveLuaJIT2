@@ -99,6 +99,7 @@ Shipped modules today:
 | `plugin_save_fork` | `save.fork` | clone/fork save path |
 | `plugin_sim_lagcomp` | `sim.lagcomp` | lagcomp entity snapshot (needs GameLua context from core.vm when available) |
 | `plugin_render_vbpool` | `render.vbpool` | `DS_LUAJIT_set_vbpool_enabled` |
+| `plugin_render_shadow` | `render.shadow` | Sun-driven DynamicShadow (`GenerateVB`); Lua AfterModMain applies config |
 | `plugin_render_angle` | `render.angle` | `InitGameOpenGl` |
 | `plugin_debug_profiler` | `debug.profiler` | **Optional.** Tracy / replace-profiler / FullGC / FrameGC. Soft no-op when missing; independent of `core.vm`. |
 | `plugin_dummy` | `debug.dummy` | log only |
@@ -346,6 +347,7 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 |---|---|---|---|---:|---|---|---|
 | `core.vm` | `plugin_core_vm` | AlwaysOn | EarlyNative | 10 | — | — | always (optional DLL; missing ⇒ soft skip VM) |
 | `render.vbpool` | `plugin_render_vbpool` | `all_of` `EnableVBPool` | EarlyNative | 20 | — | — | Win client |
+| `render.shadow` | `plugin_render_shadow` | AlwaysOn native; Lua applies `ShadowSunDrive` | EarlyNative + AfterModMain | 35 | — | — | Win client |
 | `render.angle` | `plugin_render_angle` | `AlwaysOn` (`AngleBackend` is a parameter) | EarlyNative | 30 | — | — | Win client |
 | `network.rpc` | `plugin_network_rpc` | `all_of` `NetworkOpt` | EarlyNative | 40 | — | — | always |
 | `network.sim` | `plugin_network_sim` | `all_of` `EnableNetSim` | EarlyNative | 60 | — | — | Win (DLL always maps; load gated) |
@@ -404,10 +406,11 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 - Lua-only peer: `Mod/plugins/network_entity.lua` — `depends = { "network.rpc" }`, option `NetworkOptEntity`
 - Entity on + rpc off → `MissingHardDep`, entity `load` not called
 
-### `render.vbpool` / `render.angle` (EarlyNative only, dynamic)
+### `render.vbpool` / `render.angle` / `render.shadow`
 
 - VBPool: `plugin_render_vbpool` — `EnableVBPool` + Win client → `DS_LUAJIT_set_vbpool_enabled(true)`
 - Angle: `plugin_render_angle` — AlwaysOn + Win client → `InitGameOpenGl()` (backend string from ConfigView / `business_options`)
+- Shadow: `plugin_render_shadow` — native AlwaysOn EarlyNative maps exports; Lua AfterModMain (`Mod/plugins/plugin_render_shadow/`) calls `DS_LUAJIT_shadow_set_enabled` / `_set_length_boost` / `_set_state`. Hook installs on enable, before first in-world `GenerateVB`. Options: `ShadowSunDrive` (bool, default false), `ShadowLengthBoost` (0.5–2.0, default 1.0).
 
 ### `debug.profiler` (package dual-face: Tracy + FullGC + FrameGC)
 
@@ -625,7 +628,8 @@ Env/cmd angle overrides write **strings** into `business_options["AngleBackend"]
 | `NetworkOpt` | Bool | `true` | `network.rpc` | `AllOf` |
 | `EnableNetSim` | Bool | `false` | `network.sim` | `AllOf` |
 | `EnableVBPool` | Bool | `false` | `render.vbpool` | `AllOf` |
-| `AngleBackend` | String | `auto` (`auto,vulkan,d3d11,d3d9`) | `render.angle` | AlwaysOn (parameter) |
+| `ShadowSunDrive` | Bool | `false` | `render.shadow` | AlwaysOn native; Lua applies |
+| `ShadowLengthBoost` | Number | `1.0` | `render.shadow` | AlwaysOn native; Lua applies |
 | `EnableProfiler` | String | `off` (`off,fzvp,Gz`) | `debug.profiler` | AlwaysOn native; Lua `any_of` |
 | `EnableTracy` | String | `off` (`off,on`) | `debug.profiler` | AlwaysOn native; Lua `any_of` |
 | `DisableForceFullGC` | Bool | `true` | `debug.profiler` | AlwaysOn native; Lua `any_of` |
