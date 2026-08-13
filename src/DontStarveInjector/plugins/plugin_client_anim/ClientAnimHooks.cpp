@@ -1,11 +1,9 @@
 // ClientAnimHooks.cpp — pred-OFF local anim ownership (Win x64).
 //
-// When Lua sets own=true for the local player, force cAnimStateComponent::Deserialize
-// local_a0=true (skip PlayMode/AnimHash/AnimTime) so network does not stomp local
-// run/idle. Position remains server-authoritative (no EnableMovementPrediction).
-//
-// Attach AFTER XOR BL,BL (function+0x47). Gum re-executes the hooked insn in
-// on_invoke_trampoline; attaching on XOR itself would clear BL again.
+// DIAGNOSTIC: unconditionally rewrite Deserialize+0x45 XOR BL,BL → MOV BL,1
+// so local_a0 is true for EVERY entity. Isolates "does BL=1 skip AnimTime?"
+// from the entity-match / cpu_context writeback questions.
+// Attach at +0x47 stays for enter/match counters only.
 
 #include "ClientAnimHooks.hpp"
 #include "MemorySignature.hpp"
@@ -36,17 +34,18 @@ static function_relocation::MemorySignature animstate_deserialize_sig{
 
 // Win x64 offsets (from dontstarve_steam_x64 disasm)
 static constexpr int ASC_ENTITY = 0x18;
-// local_a0 tail at Deserialize+0x41..+0x49 (attach at +0x47):
+// local_a0 tail at Deserialize+0x41..+0x49:
 //   B3 01        MOV BL,1
 //   EB 02        JMP +2
-//   32 DB        XOR BL,BL
-//   48 8B CF     MOV RCX,RDI   <-- attach site
+//   32 DB        XOR BL,BL   ← patched to B3 01
+//   48 8B CF     MOV RCX,RDI <-- attach site (counters)
 static constexpr std::size_t kLocalA0TailOff = 0x41;
 static constexpr unsigned char kLocalA0TailExpected[] = {
     0xB3, 0x01, 0xEB, 0x02, 0x32, 0xDB, 0x48, 0x8B, 0xCF,
 };
+static constexpr std::size_t kXorInsnOff = 0x45;
+static constexpr unsigned char kMovBl1[] = {0xB3, 0x01};
 static constexpr std::size_t kAttachInsnOff = 0x47; // within function
-static constexpr std::size_t kAttachInsnLen = 3;    // MOV RCX,RDI
 
 static std::atomic_bool g_own{false};
 static std::atomic_uint64_t g_local_player_entity{0};
@@ -55,6 +54,7 @@ static std::atomic_uint64_t g_match_count{0};
 static uintptr_t g_attach_addr = 0;
 static GumInvocationListener *g_listener = nullptr;
 static bool g_installed = false;
+static bool g_xor_patched = false;
 
 static void on_enter(GumInvocationContext *context, gpointer) {
     g_enter_count.fetch_add(1, std::memory_order_relaxed);
@@ -68,7 +68,7 @@ static void on_enter(GumInvocationContext *context, gpointer) {
     const uint64_t local = g_local_player_entity.load(std::memory_order_relaxed);
     if (local != 0 && reinterpret_cast<uint64_t>(entity) == local) {
         g_match_count.fetch_add(1, std::memory_order_relaxed);
-        cpu->rbx |= 1; // BL=1 → skip PlayMode/AnimHash/AnimTime
+        cpu->rbx |= 1; // belt: BL=1 already from patched MOV
     }
 }
 
@@ -97,8 +97,7 @@ bool client_anim_install_hooks() {
         std::fprintf(stderr, "[client.anim] AnimStateDeserialize signature not found\n");
         return false;
     }
-    // Layout: +0x41 MOV BL,1; +0x43 JMP +2; +0x45 XOR BL,BL; +0x47 MOV RCX,RDI (merge).
-    // Refuse to attach if the binary no longer matches (game update / wrong hit).
+    // Layout: +0x41 MOV BL,1; +0x43 JMP +2; +0x45 XOR BL,BL; +0x47 MOV RCX,RDI.
     const auto *tail = reinterpret_cast<const unsigned char *>(deserial_addr + kLocalA0TailOff);
     if (std::memcmp(tail, kLocalA0TailExpected, sizeof(kLocalA0TailExpected)) != 0) {
         std::fprintf(stderr,
@@ -115,7 +114,6 @@ bool client_anim_install_hooks() {
         std::fprintf(stderr, "\n");
         return false;
     }
-    // Double-check attach insn alone (MOV RCX,RDI @ +0x47).
     const auto *attach_bytes =
         reinterpret_cast<const unsigned char *>(deserial_addr + kAttachInsnOff);
     if (attach_bytes[0] != 0x48 || attach_bytes[1] != 0x8B || attach_bytes[2] != 0xCF) {
@@ -125,6 +123,24 @@ bool client_anim_install_hooks() {
                      attach_bytes[0], attach_bytes[1], attach_bytes[2]);
         return false;
     }
+
+    auto *xor_site = reinterpret_cast<guint8 *>(deserial_addr + kXorInsnOff);
+    if (!gum_memory_write(xor_site, kMovBl1, sizeof(kMovBl1))) {
+        std::fprintf(stderr, "[client.anim] XOR->MOV BL,1 write failed at %p\n",
+                     xor_site);
+        return false;
+    }
+    if (xor_site[0] != 0xB3 || xor_site[1] != 0x01) {
+        std::fprintf(stderr,
+                     "[client.anim] XOR->MOV BL,1 verify failed: %02X %02X\n",
+                     xor_site[0], xor_site[1]);
+        return false;
+    }
+    g_xor_patched = true;
+    std::fprintf(stderr,
+                 "[client.anim] DIAG: XOR BL,BL -> MOV BL,1 at %p "
+                 "(ALL entities skip PlayMode/AnimHash/AnimTime)\n",
+                 xor_site);
 
     g_attach_addr = deserial_addr + kAttachInsnOff;
     g_listener = gum_make_call_listener(&on_enter, nullptr, nullptr, nullptr);
@@ -138,15 +154,15 @@ bool client_anim_install_hooks() {
         return false;
     }
     std::fprintf(stderr,
-                 "[client.anim] local_a0 attach at %p (Deserialize+0x47 MOV RCX,RDI ok; "
-                 "tail B3 01 EB 02 32 DB 48 8B CF verified)\n",
-                 reinterpret_cast<void *>(g_attach_addr));
+                 "[client.anim] local_a0 attach at %p (Deserialize+0x47; "
+                 "xor_patched=%d)\n",
+                 reinterpret_cast<void *>(g_attach_addr),
+                 g_xor_patched ? 1 : 0);
     return true;
 }
 
 void client_anim_set_local_player_entity(void *entity) {
     g_local_player_entity.store(reinterpret_cast<uint64_t>(entity), std::memory_order_release);
-    std::fprintf(stderr, "[client.anim] local_player_entity=%p\n", entity);
 }
 
 void client_anim_set_own(bool on) {
@@ -169,6 +185,10 @@ int client_anim_match_count() {
     return static_cast<int>(g_match_count.load(std::memory_order_relaxed));
 }
 
+int client_anim_xor_patched() {
+    return g_xor_patched ? 1 : 0;
+}
+
 #else // !_WIN32
 
 bool client_anim_install_hooks() { return false; }
@@ -178,5 +198,6 @@ bool client_anim_get_own() { return false; }
 bool client_anim_is_installed() { return false; }
 int client_anim_enter_count() { return 0; }
 int client_anim_match_count() { return 0; }
+int client_anim_xor_patched() { return 0; }
 
 #endif

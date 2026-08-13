@@ -50,10 +50,12 @@ local function bind_player(inst)
         local a0_match = GameInjector.DS_LUAJIT_client_anim_match_count
             and GameInjector.DS_LUAJIT_client_anim_match_count() or -1
         print(string.format(
-            "[client.anim] bound raw=%s installed=%s enter=%s match=%s native_own=%s",
+            "[client.anim] bound raw=%s installed=%s xor_patch=%s enter=%s match=%s native_own=%s",
             tostring(raw),
             tostring(GameInjector.DS_LUAJIT_client_anim_is_installed
                 and GameInjector.DS_LUAJIT_client_anim_is_installed() or 0),
+            tostring(GameInjector.DS_LUAJIT_client_anim_xor_patched
+                and GameInjector.DS_LUAJIT_client_anim_xor_patched() or 0),
             tostring(a0_enter), tostring(a0_match),
             tostring(GameInjector.DS_LUAJIT_client_anim_get_own
                 and GameInjector.DS_LUAJIT_client_anim_get_own() or -1)))
@@ -195,7 +197,9 @@ AddPlayerPostInit(function(inst)
                 local a0_match = GameInjector.DS_LUAJIT_client_anim_match_count
                     and GameInjector.DS_LUAJIT_client_anim_match_count() or -1
                 print(string.format(
-                    "[client.anim] stats enter=%s match=%s native_own=%s moving=%s",
+                    "[client.anim] stats xor_patch=%s enter=%s match=%s native_own=%s moving=%s",
+                    tostring(GameInjector.DS_LUAJIT_client_anim_xor_patched
+                        and GameInjector.DS_LUAJIT_client_anim_xor_patched() or 0),
                     tostring(a0_enter), tostring(a0_match),
                     tostring(GameInjector.DS_LUAJIT_client_anim_get_own
                         and GameInjector.DS_LUAJIT_client_anim_get_own() or -1),

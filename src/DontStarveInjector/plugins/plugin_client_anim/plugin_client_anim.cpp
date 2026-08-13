@@ -108,6 +108,9 @@ extern "C" int DS_LUAJIT_client_anim_enter_count() {
 extern "C" int DS_LUAJIT_client_anim_match_count() {
     return client_anim_match_count();
 }
+extern "C" int DS_LUAJIT_client_anim_xor_patched() {
+    return client_anim_xor_patched();
+}
 
 DS_PLUGIN_MODULE_EXPORT const char *ds_plugin_module_abi_version() {
     return DS_PLUGIN_ABI_VERSION;
@@ -142,6 +145,8 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
                                               &DS_LUAJIT_client_anim_enter_count);
     (void)host->register_game_injector_export("DS_LUAJIT_client_anim_match_count",
                                               &DS_LUAJIT_client_anim_match_count);
+    (void)host->register_game_injector_export("DS_LUAJIT_client_anim_xor_patched",
+                                              &DS_LUAJIT_client_anim_xor_patched);
 
     host->register_plugin(&g_client_anim);
     std::fprintf(stderr, "[plugin_client_anim] module init registered client.anim\n");
