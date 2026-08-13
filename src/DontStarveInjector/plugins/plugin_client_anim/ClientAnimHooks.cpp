@@ -1,10 +1,8 @@
 // ClientAnimHooks.cpp — pred-OFF local anim ownership (Win x64).
 //
-// DIAGNOSTIC:
-//   1) XOR BL,BL → MOV BL,1 (all entities) — still in place from prior test.
-//   2) Hardware write-watch on local cAnimStateComponent+0x28 (flAnimTime).
-//      GetCurrentAnimationTime reads that float (fmod when looping).
-//      Filter: ignore +dt Update; log rewinds with exe+RVA + 3 stack slots.
+// Deserialize+0x47: set BL=1 for the local player only (skip PlayMode/AnimHash/AnimTime).
+// Hardware write-watch on +0x28 remains so deser_time (0x9FE5E) would still show if
+// the gate fails. Loop wrap (FUN_140098860) is render-seamless (GetFrame fmods).
 
 #include "ClientAnimHooks.hpp"
 #include "MemorySignature.hpp"
@@ -38,10 +36,7 @@ static constexpr std::size_t kLocalA0TailOff = 0x41;
 static constexpr unsigned char kLocalA0TailExpected[] = {
     0xB3, 0x01, 0xEB, 0x02, 0x32, 0xDB, 0x48, 0x8B, 0xCF,
 };
-static constexpr std::size_t kXorInsnOff = 0x45;
-static constexpr unsigned char kMovBl1[] = {0xB3, 0x01};
-static constexpr std::size_t kAttachInsnOff = 0x47;
-
+static constexpr std::size_t kAttachInsnOff = 0x47; // MOV RCX,RDI
 static std::atomic_bool g_own{false};
 static std::atomic_uint64_t g_local_player_entity{0};
 static std::atomic_uint64_t g_enter_count{0};
@@ -263,21 +258,8 @@ bool client_anim_install_hooks() {
         return false;
     }
 
-    auto *xor_site = reinterpret_cast<guint8 *>(deserial_addr + kXorInsnOff);
-    if (!gum_memory_write(xor_site, kMovBl1, sizeof(kMovBl1))) {
-        std::fprintf(stderr, "[client.anim] XOR->MOV BL,1 write failed at %p\n",
-                     xor_site);
-        return false;
-    }
-    if (xor_site[0] != 0xB3 || xor_site[1] != 0x01) {
-        std::fprintf(stderr,
-                     "[client.anim] XOR->MOV BL,1 verify failed: %02X %02X\n",
-                     xor_site[0], xor_site[1]);
-        return false;
-    }
-    g_xor_patched = true;
-    std::fprintf(stderr,
-                 "[client.anim] DIAG: XOR BL,BL -> MOV BL,1 at %p\n", xor_site);
+    // Do not rewrite XOR BL,BL — that forced local_a0 for every entity.
+    // Local player only: on_enter sets cpu->rbx |= 1 after entity match.
 
     g_attach_addr = deserial_addr + kAttachInsnOff;
     g_listener = gum_make_call_listener(&on_enter, nullptr, nullptr, nullptr);
