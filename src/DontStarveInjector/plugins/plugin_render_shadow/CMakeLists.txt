@@ -1,6 +1,7 @@
 # Sun-driven DynamicShadow (Tier A scaffold).
 ds_add_dynamic_plugin(plugin_render_shadow
-    plugin_render_shadow.cpp)
+    plugin_render_shadow.cpp
+    SunModel.cpp)
 target_link_libraries(plugin_render_shadow PRIVATE
     spdlog::spdlog
     function_relocation)
