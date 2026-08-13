@@ -1,10 +1,10 @@
 -- client_anim.lua — pred-OFF local run/idle (client.anim).
 --
 -- Stock EnableMovementPrediction(false) clears SG + locomotor → anim is 100%
--- network. While walking we:
---   1) native: force Deserialize local_a0 for local player (skip anim writes)
---   2) Lua: PlayAnimation(run_*) from input (no SetMotorVel / no position pred)
--- Idle / busy / actions: release ownership so network drives anims again.
+-- network. While pred OFF and not busy:
+--   1) native: force Deserialize local_a0 (skip PlayMode/AnimHash/AnimTime)
+--   2) Lua: PlayAnimation(run_* or idle) from input (no SetMotorVel)
+-- Busy / actions / pred ON: release ownership so network drives anims.
 if TheNet and TheNet:IsDedicated() then
     return
 end
@@ -82,26 +82,41 @@ local function pick_locomote_anims(inst)
     return "run_pre", "run_loop"
 end
 
-local function drive_local_locomote(inst, dir)
+local function pick_idle_anim(inst)
+    if inst:HasTag("playerghost") then
+        return "idle"
+    end
+    local inv = inst.replica and inst.replica.inventory
+    if inv and inv.IsHeavyLifting and inv:IsHeavyLifting() then
+        return "heavy_idle"
+    end
+    return "idle_loop"
+end
+
+local function drive_local_locomote(inst, moving, dir)
     local as = inst.AnimState
-    if not as then
+    if not as or not as.IsCurrentAnimation or not as.PlayAnimation then
         return
     end
-    local pre, loop = pick_locomote_anims(inst)
-    if dir and inst.Transform and inst.Transform.SetRotation then
-        local rot = -math.atan2(dir.z, dir.x) / DEGREES
-        inst.Transform:SetRotation(rot)
-    end
-    if not as.IsCurrentAnimation or not as.PlayAnimation then
-        return
-    end
-    if not (as:IsCurrentAnimation(loop) or as:IsCurrentAnimation(pre)) then
-        as:PlayAnimation(pre)
-        if as.PushAnimation then
-            as:PushAnimation(loop, true)
+    if moving then
+        local pre, loop = pick_locomote_anims(inst)
+        if dir and inst.Transform and inst.Transform.SetRotation then
+            local rot = -math.atan2(dir.z, dir.x) / DEGREES
+            inst.Transform:SetRotation(rot)
         end
-    elseif as:IsCurrentAnimation(pre) and as.AnimDone and as:AnimDone() then
-        as:PlayAnimation(loop, true)
+        if not (as:IsCurrentAnimation(loop) or as:IsCurrentAnimation(pre)) then
+            as:PlayAnimation(pre)
+            if as.PushAnimation then
+                as:PushAnimation(loop, true)
+            end
+        elseif as:IsCurrentAnimation(pre) and as.AnimDone and as:AnimDone() then
+            as:PlayAnimation(loop, true)
+        end
+        return
+    end
+    local idle = pick_idle_anim(inst)
+    if not as:IsCurrentAnimation(idle) then
+        as:PlayAnimation(idle, true)
     end
 end
 
@@ -137,7 +152,9 @@ AddPlayerPostInit(function(inst)
                 moving = true
             end
             local busy = is_busy_for_anim(inst)
-            local want_own = (not pred) and (not has_loco) and (not busy) and moving
+            -- own follows pred-OFF + no client SG, not analog moving.
+            -- moving only selects run vs idle.
+            local want_own = (not pred) and (not has_loco) and (not busy)
 
             if want_own ~= last_own then
                 print(string.format("[client.anim] own=%s moving=%s busy=%s pred=%s",
@@ -146,7 +163,7 @@ AddPlayerPostInit(function(inst)
             end
             set_own(want_own)
             if want_own then
-                drive_local_locomote(inst, dir)
+                drive_local_locomote(inst, moving, dir)
             end
         end)
 
