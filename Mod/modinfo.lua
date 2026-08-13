@@ -403,6 +403,26 @@ configuration_options = {
         host_gate = true,
     },
     {
+        name = "ShadowSunDrive",
+        label = "Sun-driven shadows",
+        options = {
+            { description = "Off", data = false },
+            { description = "On", data = true },
+        },
+        default = false,
+    },
+    {
+        name = "ShadowLengthBoost",
+        label = "Shadow length boost",
+        options = {
+            { description = "0.5", data = 0.5 },
+            { description = "1.0", data = 1 },
+            { description = "1.5", data = 1.5 },
+            { description = "2.0", data = 2 },
+        },
+        default = 1,
+    },
+    {
         name = "EnableNetSim",
         label = translate({ en = "Enable Network Simulator", zh = "启用网络模拟器" }),
         hover = translate({ en = "Simulate packet delay/jitter/loss (client-side, Win x64 only)", zh = "模拟网络延迟/抖动/丢包（仅客户端，仅Win x64）" }),

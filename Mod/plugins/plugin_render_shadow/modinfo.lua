@@ -27,8 +27,7 @@ depends = {}
 soft_depends = {}
 conflicts = {}
 support_reload = false
--- Native OptionRuleKind is AlwaysOn (identity gate skips AllOf/AnyOf key match).
-options = { always = true }
+-- Native OptionRuleKind is AlwaysOn; no host_gate (widgets display-only).
 
 configuration_options = {
     {
