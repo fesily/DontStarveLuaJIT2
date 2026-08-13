@@ -33,7 +33,6 @@ MODULE_TO_ID: dict[str, str] = {
     "plugin_sim_lagcomp": "sim.lagcomp",
     "plugin_debug_profiler": "debug.profiler",
     "plugin_fps_render": "fps.render",
-    "plugin_debug_jitterprobe": "debug.jitterprobe",
     "plugin_manager": "plugin.manager",
 }
 

@@ -21,7 +21,6 @@ DUAL_FACE = [
     "plugin_sim_lagcomp",
     "plugin_debug_profiler",
     "plugin_fps_render",
-    "plugin_debug_jitterprobe",
     "plugin_render_shadow",
 ]
 
