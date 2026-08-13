@@ -447,15 +447,5 @@ configuration_options = {
         disabled_value = false,
         disabled_by = disable_by_non_win,
     },
-    {
-        name = "EnableJitterProbe",
-        label = translate({ en = "Jitter Probe", zh = "抖动探测" }),
-        hover = translate({ en = "Client prediction-OFF movement jitter logs (Win x64)", zh = "客户端预测关闭时的移动抖动日志（仅Win x64）" }),
-        options = {
-            { description = translate({ en = "Disabled", zh = "关闭" }), data = false },
-            { description = translate({ en = "Enabled", zh = "开启" }), data = true },
-        },
-        default = false,
-    },
 }
 --restart_required = true
