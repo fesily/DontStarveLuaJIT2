@@ -134,14 +134,16 @@ jobs:
         run: |
           set -euo pipefail
           PLATFORM="${{ matrix.target }}"
+          # Portable install layout (CMAKE_INSTALL_PREFIX=Mod): plugins live at
+          # Mod/plugins/<name>/, not under bin64/<plat>/ (shell-only).
+          # See CMakeLists.txt / ds_add_dynamic_plugin install rules.
           case "$PLATFORM" in
-            windows) PDIR=Mod/bin64/windows/plugins ;;
-            linux)   PDIR=Mod/bin64/linux/plugins ;;
-            macos)   PDIR=Mod/bin64/osx/plugins ;;
+            windows|linux|macos) PDIR=Mod/plugins ;;
             *) echo "ERROR: unknown platform $PLATFORM"; exit 1 ;;
           esac
           if [ ! -d "$PDIR" ]; then
             echo "ERROR: plugins dir missing after install: $PDIR"
+            ls -la Mod || true
             ls -la Mod/bin64 || true
             exit 1
           fi
