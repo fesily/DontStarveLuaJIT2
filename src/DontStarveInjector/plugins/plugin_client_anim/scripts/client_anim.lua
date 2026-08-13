@@ -45,12 +45,16 @@ local function bind_player(inst)
         raw = ent
     end
     if ok and res then
+        local a0_enter = GameInjector.DS_LUAJIT_client_anim_enter_count
+            and GameInjector.DS_LUAJIT_client_anim_enter_count() or -1
+        local a0_match = GameInjector.DS_LUAJIT_client_anim_match_count
+            and GameInjector.DS_LUAJIT_client_anim_match_count() or -1
         print(string.format(
             "[client.anim] bound raw=%s installed=%s enter=%s match=%s native_own=%s",
             tostring(raw),
             tostring(GameInjector.DS_LUAJIT_client_anim_is_installed
                 and GameInjector.DS_LUAJIT_client_anim_is_installed() or 0),
-            tostring(enter), tostring(match),
+            tostring(a0_enter), tostring(a0_match),
             tostring(GameInjector.DS_LUAJIT_client_anim_get_own
                 and GameInjector.DS_LUAJIT_client_anim_get_own() or -1)))
         return true
@@ -186,13 +190,13 @@ AddPlayerPostInit(function(inst)
                 drive_local_locomote(inst, moving, dir)
             end
             if tick_i % 60 == 0 then
-                local enter = GameInjector.DS_LUAJIT_client_anim_enter_count
+                local a0_enter = GameInjector.DS_LUAJIT_client_anim_enter_count
                     and GameInjector.DS_LUAJIT_client_anim_enter_count() or -1
-                local match = GameInjector.DS_LUAJIT_client_anim_match_count
+                local a0_match = GameInjector.DS_LUAJIT_client_anim_match_count
                     and GameInjector.DS_LUAJIT_client_anim_match_count() or -1
                 print(string.format(
                     "[client.anim] stats enter=%s match=%s native_own=%s moving=%s",
-                    tostring(enter), tostring(match),
+                    tostring(a0_enter), tostring(a0_match),
                     tostring(GameInjector.DS_LUAJIT_client_anim_get_own
                         and GameInjector.DS_LUAJIT_client_anim_get_own() or -1),
                     tostring(moving)))
