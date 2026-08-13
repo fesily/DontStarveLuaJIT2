@@ -6,6 +6,8 @@
 #include "core/PluginTypes.hpp"
 #include "config/ConfigSource.hpp"
 #include "ShadowOptionKeys.hpp"
+#include "GenerateVBHook.hpp"
+#include "SunModel.hpp"
 
 #include "core/PluginServices.hpp"
 #include "ctx.hpp"
@@ -56,37 +58,39 @@ struct RenderShadowPlugin final : IPlugin {
 
 RenderShadowPlugin g_render_shadow;
 
-// Stubs until Task 3/4
-static bool g_enabled = false;
-static double g_boost = 1.0;
-static int g_phase_id = 0;
-static double g_progress = 0.0;
-static int g_fullmoon = 0;
-
 } // namespace
 
 extern "C" void DS_LUAJIT_shadow_set_enabled(bool enable) {
-    g_enabled = enable;
-    std::fprintf(stderr, "[plugin_render_shadow] set_enabled=%d\n", enable ? 1 : 0);
+    ds::shadow::SetSunDriveEnabled(enable);
+    std::fprintf(stderr, "[plugin_render_shadow] set_enabled=%d installed=%d\n", enable ? 1 : 0,
+                 ds::shadow::IsHookInstalled() ? 1 : 0);
 }
 
 extern "C" void DS_LUAJIT_shadow_set_length_boost(double boost) {
-    if (boost < 0.5) {
-        boost = 0.5;
-    }
-    if (boost > 2.0) {
-        boost = 2.0;
-    }
-    g_boost = boost;
-    std::fprintf(stderr, "[plugin_render_shadow] set_length_boost=%g\n", g_boost);
+    ds::shadow::SetLengthBoost(boost);
+    std::fprintf(stderr, "[plugin_render_shadow] set_length_boost=%g\n",
+                 ds::shadow::GetLengthBoost());
 }
 
 extern "C" void DS_LUAJIT_shadow_set_state(int phase_id, double progress, int fullmoon) {
-    g_phase_id = phase_id;
-    g_progress = progress;
-    g_fullmoon = fullmoon;
-    std::fprintf(stderr, "[plugin_render_shadow] set_state phase=%d progress=%g fullmoon=%d\n",
-                 phase_id, progress, fullmoon);
+    using ds::shadow::Phase;
+    Phase p = Phase::Day;
+    if (phase_id == 1) {
+        p = Phase::Dusk;
+    } else if (phase_id == 2) {
+        p = Phase::Night;
+    }
+    float prog = static_cast<float>(progress);
+    if (prog < 0.f) {
+        prog = 0.f;
+    }
+    if (prog > 1.f) {
+        prog = 1.f;
+    }
+    const auto sample =
+        ds::shadow::Evaluate(p, prog, fullmoon != 0,
+                             static_cast<float>(ds::shadow::GetLengthBoost()));
+    ds::shadow::Publish(sample);
 }
 
 DS_PLUGIN_MODULE_EXPORT const char *ds_plugin_module_abi_version() {
