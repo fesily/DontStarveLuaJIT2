@@ -91,6 +91,14 @@ target_include_directories(test_config_schema PRIVATE
 target_compile_features(test_config_schema PRIVATE cxx_std_23)
 add_test(NAME config_schema COMMAND test_config_schema)
 
+add_executable(test_sun_model
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_sun_model.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_render_shadow/SunModel.cpp)
+target_include_directories(test_sun_model PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_render_shadow)
+target_compile_features(test_sun_model PRIVATE cxx_std_23)
+add_test(NAME sun_model COMMAND test_sun_model)
+
 add_executable(test_config_source_whitelist
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_config_source_whitelist.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/CascadeEngine.cpp

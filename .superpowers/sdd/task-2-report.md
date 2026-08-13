@@ -1,155 +1,50 @@
-# Task 2 Report: FunctionTable + NucleusAdapter + lua51 regression
+# Task 2 report — scaffold render.shadow + dual-face package
 
-**Branch:** `feature/nucleus-function-body`  
-**Worktree:** `C:/Users/fesil/DontStarveLuaJIT2/.worktrees/nucleus-function-body`  
-**Base:** Task 1 at `4d0d9ad`  
-**Date:** 2026-08-07  
+**Worktree:** `.worktrees/render-shadow`  
+**Branch:** `feature/render-shadow`  
+**Commit:** `feat(shadow): scaffold render.shadow plugin + dual-face package`
 
-## Summary
+## Deliverables
 
-Implemented portable `FunctionTable` with binary-search `containing` / `span_containing`, and `NucleusAdapter` that runs the stock Nucleus pipeline (`load_binary` → `nucleus_disasm` linear strategy → `CFG::make_cfg`) and maps `Function::{start,end}` into half-open image-VA spans. Wired `nucleus_static` PRIVATE into FunctionRelocation targets. Regression test on `Mod/deps/lua51.dll` asserts non-empty table and that `lua_getstack` body span is `0x7a` (≪ `0x120` and ≪ next-export gap `0x150`).
+| Path | Role |
+|------|------|
+| `src/DontStarveInjector/plugins/plugin_render_shadow/ShadowOptionKeys.hpp` | `kShadowSunDrive`, `kShadowLengthBoost` |
+| `src/DontStarveInjector/plugins/plugin_render_shadow/plugin_render_shadow.cpp` | EarlyNative AlwaysOn module, schema, export stubs |
+| `src/DontStarveInjector/plugins/plugin_render_shadow/CMakeLists.txt` | `ds_add_dynamic_plugin` (cpp only) |
+| `src/DontStarveInjector/plugins/plugin_render_shadow/modinfo.lua` | Package SSOT (CMake install source) |
+| `src/DontStarveInjector/plugins/plugin_render_shadow/modmain.lua` | AfterModMain apply + `push_state` |
+| `Mod/plugins/plugin_render_shadow/modinfo.lua` | Runtime `load_package` copy (byte-identical) |
+| `Mod/plugins/plugin_render_shadow/modmain.lua` | Runtime copy (byte-identical) |
+| `src/DontStarveInjector/CMakeLists.txt` | WIN32 gum `add_subdirectory` + `_ds_gum_plugins` |
+| `src/DontStarveInjector/core/RegisterBuiltinPlugins.cpp` | Comment `plugin_render_shadow → render.shadow` |
+| `Mod/plugins/init.lua` | `load_package("plugin_render_shadow")` next to fps_render |
+| `src/DontStarveInjector/plugins/plugin_manager/PluginLocalInventory.cpp` | kMap stem |
+| `tools/check_plugin_package_identity.py` | `DUAL_FACE` stem |
+| `tools/gen_plugins_manifest.py` | `MODULE_TO_ID` stem |
 
-## Acceptance
+`RE_NOTES.md` left untouched (Task 1). No `SunModel.*` / `GenerateVBHook.*`.
 
-| Criterion | Status |
-|-----------|--------|
-| `nucleus_analyze_file(Mod/deps/lua51.dll)` non-empty | PASS (887 functions) |
-| `containing(getstack_va)` works | PASS (`entry == 0x1800090f0`) |
-| span size `< 0x120` | PASS (`size = 0x7a`) |
-| `ctest -R nucleus_adapter` | PASS |
-| Commit on feature branch | PASS (this commit) |
-| Report path | PASS (this file) |
+## Native face
 
-## VA convention (locked)
+- id `render.shadow`, version `1.0.0`, `EarlyNative`, `AlwaysOn`, priority `35`, `support_reload = false`
+- `can_load`: `_WIN32 && ctx.is_client`
+- `load`: `function_relocation::init_ctx()` + log
+- Schema: `ShadowSunDrive` bool false, `ShadowLengthBoost` number 1.0; sources ModinfoDefault|SaveFile|EnvOrCmd
+- Exports (stubs, globals + fprintf):
+  - `DS_LUAJIT_shadow_set_enabled(bool)`
+  - `DS_LUAJIT_shadow_set_length_boost(double)` clamp 0.5–2.0
+  - `DS_LUAJIT_shadow_set_state(int phase_id, double progress, int fullmoon)`
 
-- Spans and export lookups use **image VA** = preferred PE **ImageBase + RVA** (not process load address).
-- Nucleus PE loader already fills section `vma` / export `Symbol::addr` as image VAs (`pe-parse` IterSec / IterExpVA).
-- `FunctionSpan::{start,end}`: **half-open** `[start, end)` — Nucleus `Function::end` / `BB::end` are exclusive (first byte past last non-NOP insn).
-- `NucleusAnalyzeResult` carries both `table` and `image_base` so callers can form `export_va = image_base + export_rva` without re-parsing PE.
-- Convenience: `nucleus_analyze_file_table(...)` returns only `FunctionTable` (plan-shaped); `pe_image_base(path)` for standalone base reads.
+## Lua face
 
-## API surface
+Mirrors `plugin_fps_render` engine fields. `plugin_id = "render.shadow"`, `phases = "AfterModMain"`, `options = { always = true }`, `when` rejects non-Windows. Package `configuration_options` for both keys (defaults false / 1.0). `modmain` reads `GetModConfigData` and calls `GameInjector` / `_G` exports if present; `AddSimPostInit` periodic 0.5s `TheWorld.state` feed (day=0, dusk=1, night=2).
 
-```cpp
-// FunctionTable.hpp
-struct FunctionSpan { uint64_t start; uint64_t end; }; // [start,end)
-class FunctionTable {
-  void clear();
-  void add(FunctionSpan);
-  uint64_t containing(uint64_t) const;                 // start or 0
-  const FunctionSpan *span_containing(uint64_t) const;
-  const std::vector<FunctionSpan> &spans() const;
-  bool empty() const;
-};
+Package lives at `src/DontStarveInjector/plugins/plugin_render_shadow/` + `Mod/plugins/plugin_render_shadow/` — same dual-face layout as `plugin_fps_render` (there is no repo-root `plugins/` tree).
 
-// NucleusAdapter.hpp
-struct NucleusAnalyzeOptions { bool log_pdata_crosscheck = false; };
-struct NucleusAnalyzeResult { FunctionTable table; uint64_t image_base; };
-std::expected<NucleusAnalyzeResult, std::string>
-  nucleus_analyze_file(path, opt = {});
-std::expected<FunctionTable, std::string>
-  nucleus_analyze_file_table(path, opt = {});
-std::expected<uint64_t, std::string> pe_image_base(path);
-```
+## Verification
 
-No Nucleus types leak outside `NucleusAdapter.cpp`.
-
-## Adapter pipeline
-
-1. `gum_init_embedded()` + `cs_arch_register_x86()` once (Frida Gum modular Capstone; same pattern as `function_relocation::init_ctx`).
-2. Ensure `options.strategy_function.name = "linear"` (defaults from `options_defaults.cc`).
-3. `load_binary(fname, &bin, BIN_TYPE_AUTO)` — Windows PE path via pe-parse (Task 1).
-4. `nucleus_disasm(&bin, &disasm)` — stock linear strategy (no CFG rewrite).
-5. `cfg.make_cfg(&bin, &disasm)`.
-6. For each `cfg.functions`: `table.add({f.start, f.end})` if `end > start`.
-7. `unload_binary(&bin)`; empty table → error string (no silent success).
-
-## CMake
-
-- `src/FunctionRelocation/CMakeLists.txt`: add `NucleusAdapter.cpp`; `target_link_libraries(... PRIVATE nucleus_static)` in common config (SHARED + STATIC).
-- `3rd/nucleus/CMakeLists.txt`: promote Capstone shim include to **PUBLIC** so consumers of Nucleus headers (`insn.h` → `<capstone/capstone.h>`) compile without private shim.
-- `tests/CMakeLists.txt` (WIN32): `test_nucleus_adapter` → `function_relocation_static` + Frida Gum; ctest name `nucleus_adapter`, `WORKING_DIRECTORY` = source root so `Mod/deps/lua51.dll` resolves.
-- Smoke build (isolated, same as Task 1): `builds/nucleus-only` extended with `nucleus_adapter_smoke` + `test_nucleus_adapter` under `builds/ninja-nucleus` (gitignored under `builds/`).
-
-## Build & test evidence
-
-```text
-cmake -S builds/nucleus-only -B builds/ninja-nucleus \
-  -G "Ninja Multi-Config" \
-  -DCMAKE_TOOLCHAIN_FILE=<repo>/vcpkg/scripts/buildsystems/vcpkg.cmake \
-  -DVCPKG_TARGET_TRIPLET=x64-windows-custom \
-  -DVCPKG_INSTALLED_DIR=<master>/builds/ninja-multi-vcpkg/vcpkg_installed
-
-cmake --build builds/ninja-nucleus --config RelWithDebInfo --target test_nucleus_adapter -j 8
-ctest --test-dir builds/ninja-nucleus -C RelWithDebInfo -R nucleus_adapter --output-on-failure
-```
-
-Result:
-
-```text
-lua_getstack: va=0x1800090f0 entry=0x1800090f0 end=0x18000916a size=0x7a
-              functions=887 image_base=0x180000000
-test_nucleus_adapter: ok
-
-1/1 Test #1: nucleus_adapter ..................   Passed
-100% tests passed, 0 tests failed out of 1
-```
-
-Unit checks on synthetic spans also pass (`containing` boundaries / exclusive end).
-
-## Files touched
-
-- Create: `src/FunctionRelocation/FunctionTable.hpp`
-- Create: `src/FunctionRelocation/NucleusAdapter.hpp`
-- Create: `src/FunctionRelocation/NucleusAdapter.cpp`
-- Create: `tests/function_relocation/test_nucleus_adapter.cpp`
-- Modify: `src/FunctionRelocation/CMakeLists.txt`
-- Modify: `tests/CMakeLists.txt`
-- Modify: `3rd/nucleus/CMakeLists.txt` (PUBLIC capstone shim)
-- Create: `.superpowers/sdd/task-2-report.md`
-- Local only (gitignored): `builds/nucleus-only/CMakeLists.txt` smoke extension
-
-## Notes / follow-ups
-
-- Capstone via Frida Gum requires **arch registration** before `cs_open`; without `cs_arch_register_x86()` Nucleus disasm fails with `failed to initialize libcapstone`.
-- SHARED `function_relocation` still delay-loads Injector for gum; NucleusAdapter symbols resolve through that import surface at process runtime. Tools/tests use static + direct gum (verified path for this task).
-- Task 3+: consume `FunctionTable` in Signature / ScanCtx; no signature path changes in this task.
-- No per-symbol hardcoding; getstack is only a regression oracle via PE export name lookup in the test.
-
-## Fix: Important finding — second frida-gum via nucleus_static
-
-**Date:** 2026-08-07  
-**Commit message:** `fix(nucleus): do not link frida-gum into nucleus_static`
-
-### Finding
-
-`nucleus_static` used `target_link_libraries(... PRIVATE ${FRIDA_GUM_LIBRARIES})`.
-For **STATIC** libraries, CMake still propagates PRIVATE link deps into every
-final link unit that consumes the archive. Linking `nucleus_static` into SHARED
-`function_relocation` therefore re-pulled `frida-gum.lib` beside the intentional
-Injector gum import path (`InjectorGumImport.lib` + `/NODEFAULTLIB:frida-gum.lib`).
-
-### Fix
-
-- `3rd/nucleus/CMakeLists.txt`: keep Frida Gum / Capstone as **headers + `GUM_STATIC` only** on `nucleus_static`; remove `target_link_libraries` of `frida-gum` / Capstone.
-- Document ownership: final link units resolve gum (SHARED → Injector import; tools/tests → explicit `${FRIDA_GUM_LIBRARIES}`).
-- Comment on FunctionRelocation common config accordingly.
-
-### Verification
-
-```text
-cmake --build builds/ninja-nucleus --config RelWithDebInfo --target nucleus_static test_nucleus_adapter -j 8
-ctest --test-dir builds/ninja-nucleus -C RelWithDebInfo -R nucleus_adapter --output-on-failure
-```
-
-- `nucleus_adapter` **PASS**
-- Smoke test final `LINK_LIBRARIES` has **one** `frida-gum.lib` token (explicit tools link only); no second copy propagated from `nucleus_static` (was two tokens before).
-- SHARED product path: `nucleus_static` no longer carries gum in its link interface, so SHARED reloc keeps Injector import + `/NODEFAULTLIB:frida-gum.lib` as sole gum resolution (product tree on master lacks this branch's nucleus link; policy encoded in CMake).
-
-### Files touched (fix)
-
-- `3rd/nucleus/CMakeLists.txt`
-- `3rd/nucleus/VENDOR.md`
-- `3rd/nucleus/patches/README.md`
-- `src/FunctionRelocation/CMakeLists.txt`
-- `.superpowers/sdd/task-2-report.md` (this appendix)
+- `python tools/check_plugin_package_identity.py --source-root . --stem plugin_render_shadow` → `ok plugin_render_shadow`
+- Build **not run**: worktree `vcpkg/` is empty and `builds/ninja-multi-vcpkg` does not exist.
+  - `cmake --build --preset ninja-multi-vcpkg` fails: that name is a **configure** preset. Build presets are `ninja-vcpkg-release-dbg` (RelWithDebInfo), etc.
+  - `cmake --build --preset ninja-vcpkg-release-dbg --target plugin_render_shadow` fails: `builds/ninja-multi-vcpkg is not a directory`.
+  - cmake.exe + cl.exe are on PATH; configure/build needs a bootstrapped vcpkg (main tree has `C:/Users/fesil/DontStarveLuaJIT2/vcpkg` + cache). Sources follow `plugin_render_vbpool` and should compile once the worktree is configured.

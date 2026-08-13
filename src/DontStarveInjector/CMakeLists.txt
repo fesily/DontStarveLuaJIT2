@@ -344,11 +344,12 @@ if (_ds_gum_stage_ok)
             plugin_debug_profiler
             plugin_fps_render
             plugin_network_tick)
-    # render.vbpool / render.angle need ANGLE stage (3rd/angle/win64) + GLES headers.
+    # render.vbpool / render.angle / render.shadow need ANGLE stage (3rd/angle/win64) + GLES headers.
     if (WIN32)
         add_subdirectory(plugins/plugin_render_vbpool)
         add_subdirectory(plugins/plugin_render_angle)
-        list(APPEND _ds_gum_plugins plugin_render_vbpool plugin_render_angle)
+        add_subdirectory(plugins/plugin_render_shadow)
+        list(APPEND _ds_gum_plugins plugin_render_vbpool plugin_render_angle plugin_render_shadow)
     endif()
     foreach(_ds_gum_plugin IN LISTS _ds_gum_plugins)
         target_link_libraries(${_ds_gum_plugin} PRIVATE Frida::Gum)

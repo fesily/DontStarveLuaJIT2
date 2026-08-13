@@ -22,6 +22,7 @@ DUAL_FACE = [
     "plugin_sim_lagcomp",
     "plugin_debug_profiler",
     "plugin_fps_render",
+    "plugin_render_shadow",
 ]
 
 PLUGIN_ID_RE = re.compile(r"""plugin_id\s*=\s*["']([^"']+)["']""")

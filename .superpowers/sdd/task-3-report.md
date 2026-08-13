@@ -1,123 +1,41 @@
-# Task 3 Report: Signature body ⊆ Nucleus; target-local resolve
+# Task 3 report — SunModel math + unit tests
 
-**Branch:** `feature/nucleus-function-body`  
-**Worktree:** `C:/Users/fesil/DontStarveLuaJIT2/.worktrees/nucleus-function-body`  
-**Base:** Task 2 at `8ca6ebe`  
-**Date:** 2026-08-07  
+**Worktree:** `.worktrees/render-shadow`  
+**Branch:** `feature/render-shadow`  
+**Commit:** `feat(shadow): SunModel math + unit tests`
 
-## Summary
+## Deliverables
 
-Wired Nucleus `FunctionTable` into the signature-update path so training `Function::size` comes from Nucleus spans (not next-export gaps). Constrained `Creator::scan_by_block` to `[address, address+size)` and rewrote target-side `scan_by_signature` to scan with `pattern_offset = 0`, resolve via target `FunctionTable::containing`, and store **target-local** `pattern_offset = entry - match`. No `training_body_end` / magic `0x1000` retreat remains in `Signature.cpp` (none were present; contract enforced by body clamp + table resolve).
+| Path | Role |
+|------|------|
+| `src/DontStarveInjector/plugins/plugin_render_shadow/SunModel.hpp` | `ds::shadow` API: `Phase`, `SunSample`, `Evaluate` / `Publish` / `LoadPublished` |
+| `src/DontStarveInjector/plugins/plugin_render_shadow/SunModel.cpp` | Terminus-like yaw/length math + lock-free snapshot |
+| `tests/plugin/test_sun_model.cpp` | Plan Step 1 assertions (copied exactly) |
+| `tests/CMakeLists.txt` | `test_sun_model` next to `test_config_schema` |
+| `src/DontStarveInjector/plugins/plugin_render_shadow/CMakeLists.txt` | `SunModel.cpp` added to plugin sources |
 
-## Acceptance
+No `GenerateVBHook.*`.
 
-| Criterion | Status |
-|-----------|--------|
-| No `training_body_end` / `0x1000` magic in `Signature.cpp` | PASS (grep clean) |
-| Patterns constrained to `original->size` from Nucleus | PASS (`scan_by_block` clamp + size==0 fail) |
-| Target resolve uses `FunctionTable::containing` | PASS (`scan_by_signature` + update snap) |
-| `nucleus_adapter` tests pass | PASS |
-| Commit on feature branch | PASS (this commit) |
-| Report path | PASS (this file) |
+## Geometry
 
-## Changes
+- Day: `leg = 2*(progress-0.5)`, `yaw = atan2f(leg, 0.8)`, `length_scale = hypotf(leg,0.8)/0.8 * boost`, always visible. Noon (`progress=0.5`) is shortest.
+- Dusk: fixed `atan2f(1, 0.8)` / `hypotf(1,0.8)/0.8 * boost`; `visible = progress < 0.99`.
+- Night: hidden unless `fullmoon`; fullmoon reuses the day curve on `progress`.
+- Progress conceptually clamped to `[0,1]`; boost assumed pre-clamped.
+- Publish/Load: three `std::atomic<uint32_t>` (yaw bits, length bits, visible) with release/acquire.
 
-### `ModuleSections`
+## Verification
 
-- `ModuleSections::function_table` — process-VA Nucleus spans.
-- `apply_nucleus_function_table(sections, image_table, image_base)` remaps preferred ImageBase spans to process load base and sets each `Function::size` from `span_containing`.
+TDD:
 
-### `Signature.cpp` (`Creator`)
+1. Test + header only → `clang++` link fail: undefined `Evaluate` / `Publish` / `LoadPublished`.
+2. Implemented `SunModel.cpp`.
+3. `clang++ -std=c++23 -I …/plugin_render_shadow tests/plugin/test_sun_model.cpp …/SunModel.cpp`
+4. `cmd.exe /c tests\plugin\test_sun_model.exe` → `test_sun_model OK`
 
-- **`scan_by_block`:** requires `original->size != 0`; rejects blocks outside body; clamps window to body; rejects `real_address` outside body.
-- **`scan_by_signature`:**
-  1. Training validate with training `signature_offset` (unique hit at original entry; match ⊆ body).
-  2. Target scan with **offset 0**.
-  3. `entry = target->function_table.containing(match)`; unique entry required.
-  4. Store `signature_info->pattern_offset = entry - match` (target-local only).
-- **`limit_signature`:** shortens using last training offset; each candidate re-resolves target-local po via `scan_by_signature`.
+CMake preset build **not available** in this worktree:
 
-### `DontStarveSignature.cpp` (`update_signatures`)
+- `cmake --build --preset ninja-vcpkg-release-dbg --target test_sun_model` → `builds/ninja-multi-vcpkg is not a directory`.
+- Same gap as Task 2 (empty worktree `vcpkg/`, no configure). Sources are wired for when the tree is configured.
 
-- After `init_module_signature` for lua51 + game:
-  - `nucleus_analyze_file(lua51_path)` / `game_path`
-  - `apply_nucleus_function_table` for both (throw on failure — no silent heuristic).
-- Known exports with `size == 0` after Nucleus sizing → visible error.
-- Post-match snap prefers target `function_table.containing` over pdata (pdata remains optional; Nucleus wins).
-
-## Build & test evidence
-
-Smoke tree (Task 1–3, worktree-local, gitignored under `builds/`):
-
-```text
-cmake -S builds/nucleus-only -B builds/ninja-nucleus \
-  -G "Ninja Multi-Config" \
-  -DCMAKE_TOOLCHAIN_FILE=<repo>/vcpkg/scripts/buildsystems/vcpkg.cmake \
-  -DVCPKG_TARGET_TRIPLET=x64-windows-custom \
-  -DVCPKG_INSTALLED_DIR=<master>/builds/ninja-multi-vcpkg/vcpkg_installed
-
-cmake --build builds/ninja-nucleus --config RelWithDebInfo \
-  --target function_relocation_static test_nucleus_adapter test_signature_body_link -j 8
-
-ctest --test-dir builds/ninja-nucleus -C RelWithDebInfo --output-on-failure
-```
-
-Result:
-
-```text
-1/2 Test #1: nucleus_adapter ..................   Passed
-    lua_getstack: va=0x1800090f0 entry=0x1800090f0 end=0x18000916a size=0x7a
-2/2 Test #2: signature_body_link ..............   Passed
-    unit remap: process sizes 0x7a / 0x100 from image spans
-    lua51 nucleus spans=887 image_base=0x180000000
-100% tests passed, 0 tests failed out of 2
-```
-
-Notes:
-
-- Full product `signature_updater` needs the main multi-vcpkg tree configured for this worktree (Injector + plugins). Task 3 smoke builds `function_relocation_static` with Signature/ModuleSections/NucleusAdapter and verifies the new API link + remap unit.
-- Signature JSON regen is Task 4 (skipped per assignment).
-
-## Files touched
-
-- Modify: `src/FunctionRelocation/ModuleSections.hpp`
-- Modify: `src/FunctionRelocation/ModuleSections.cpp`
-- Modify: `src/FunctionRelocation/Signature.cpp`
-- Modify: `src/DontStarveInjector/plugins/plugin_core_vm/signature_load/DontStarveSignature.cpp`
-- Create: `.superpowers/sdd/task-3-report.md`
-- Local only (gitignored smoke): `builds/nucleus-only/CMakeLists.txt`, `builds/nucleus-only/test_signature_body_link.cpp`
-
-## Forbidden helpers
-
-```text
-rg training_body_end|0x1000|next_export src/FunctionRelocation/Signature.cpp
-# no matches
-```
-
-## Follow-ups (Task 4+)
-
-- Rebuild full `signature_updater` against worktree sources and regenerate `signatures_*.json`.
-- Verify getstack entry bytes are body prologue (`4c 8b 49 28…`), not stub.
-- Optional pdata cross-check log only (do not override Nucleus).
-
-## Fix: Important review findings
-
-**Date:** 2026-08-07  
-**Commit message:** `fix(signature): zero residual sizes; refuse LCS with FunctionTable`
-
-### Findings fixed
-
-| # | Severity | Finding | Fix |
-|---|----------|---------|-----|
-| 1 | P1 | `apply_nucleus_function_table` left ScanCtx/next-export sizes when no Nucleus span hit | Always set `fn.size = 0` when `span_containing` misses; scan paths already refuse size 0 |
-| 2 | P1 | LCS fallback could return entry while keeping training `pattern_offset` | When `target.function_table` is non-empty, refuse LCS and return null; legacy LCS (no table) forces `pattern_offset = 0` |
-
-### Verification
-
-```text
-cmake --build builds/ninja-nucleus --config RelWithDebInfo \
-  --target function_relocation_static test_nucleus_adapter test_signature_body_link -j 8
-ctest --test-dir builds/ninja-nucleus -C RelWithDebInfo --output-on-failure
-# 1/2 nucleus_adapter ........ Passed (getstack size=0x7a)
-# 2/2 signature_body_link .... Passed (residual size cleared to 0)
-```
+Standalone compile used only for this unit test; binary not committed.
