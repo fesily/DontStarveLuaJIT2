@@ -32,16 +32,16 @@ support_reload = false
 configuration_options = {
     {
         name = "ShadowSunDrive",
-        label = "Sun-driven shadows",
+        label = translate({ en = "Sun-driven shadows", zh = "太阳驱动的阴影" }),
         options = {
-            {description = "Off", data = false},
-            {description = "On", data = true},
+            {description = translate({ en = "Off", zh = "关闭" }), data = false},
+            {description = translate({ en = "On", zh = "开启" }), data = true},
         },
         default = false,
     },
     {
         name = "ShadowLengthBoost",
-        label = "Shadow length boost",
+        label = translate({ en = "Shadow length boost", zh = "阴影长度增强" }),
         options = {
             {description = "0.5", data = 0.5},
             {description = "1.0", data = 1.0},
@@ -49,6 +49,19 @@ configuration_options = {
             {description = "2.0", data = 2.0},
         },
         default = 1.0,
+    },
+    {
+        name = "ShadowHemisphere",
+        label = translate({ en = "Shadow hemisphere", zh = "阴影半球" }),
+        hover = translate({
+            en = "Northern: clockwise (default). Southern: counterclockwise.",
+            zh = "北半球：顺时针（默认）。南半球：逆时针。",
+        }),
+        options = {
+            {description = translate({ en = "Northern", zh = "北半球" }), data = "north"},
+            {description = translate({ en = "Southern", zh = "南半球" }), data = "south"},
+        },
+        default = "north",
     },
 }
 

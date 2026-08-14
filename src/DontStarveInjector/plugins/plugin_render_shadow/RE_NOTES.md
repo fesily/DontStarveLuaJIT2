@@ -52,15 +52,19 @@ mov  rsi, rcx                ; this
 mov  edx, [rax+0D4h]         ; vert-desc handle
 ```
 
-**Camera dir (stock, to replace):**
+**Camera dir (stock):**
 
 ```
-cam = GetCurrentCameraInfo(sim)   ; FUN_1400fd240
-angle = (cam->heading@+0x30 + C1) * C2
-dir = { cosf(angle), sinf(angle) }  ; stack local_res8 / local_resc
+cam = GetCurrentCameraInfo(sim)   ; FUN_1400fd240  (CALL @ GenerateVB+0x57)
+angle = (cam->heading@+0x30 + 90°) * π/180
+dir = { cosf(angle), sinf(angle) }
 ```
 
-`GetCurrentCameraInfo` = `FUN_1400fd240`. C1=90.0 @ `140518704`, C2=π/180 @ `14061a520`.
+**Hook (current):** do **not** reimplement the loop. Save `heading`, write
+`sun_yaw_deg - 90`, call **original GenerateVB**, restore. Length/visibility
+stay on Lua `SetSize` / `Enable`.
+
+Pointer chase (same as GenerateVB): `this+0x18` → entity; `entity+0xE0` → sim.
 
 ---
 
@@ -89,6 +93,19 @@ void PopulateQuad(ShadowManagerComponent *this, // rcx (unused in body)
 Half-extents: `sizeX * ±0.5`, `sizeY * ±0.5` (`0x3f000000` / `0xbf000000` at `140512098` / `140513480`). After each call GenerateVB advances dest by `0x78` (6 × `0x14`).
 
 ---
+
+## splat.ksh (dst-ksh-analyze / length-prefixed parse)
+
+Source: `Don't Starve Together/dst-scripts/shaders/splat.ksh` (1996B).
+
+Uniforms: `MatrixP/V/W` (mat4), `SAMPLER[4]` (sampler2D), `LIGHTMAP_WORLD_EXTENTS` (vec4).
+
+**VS** (`splat.vs`): `gl_Position = P*V*W * pos`; pass `TEXCOORD0` and world `MatrixW*pos`. No shear, no sun, no stretch.
+
+**PS** (`splat.ps`): `texture2D(SAMPLER[0], uv) * lightmap(world.xz)`. No geometry. Blob looks circular because the texture is a blob; lean/length is 100% in `PopulateQuad` verts (`flSizeX` along `dir`, `flSizeY` perpendicular).
+
+Implication: heading-only poke rotates a short ellipse — nearly invisible. Must multiply `flSizeX` by Terminus-like `length_scale` (noon 1.0, dawn/dusk ≈3.88).
+
 
 ## CreateVB
 

@@ -106,7 +106,8 @@ configuration_options = {
         label = translate({ en = "Allow Local Newer Than Workshop", zh = "允许本地版本新于工坊" }),
         hover = translate({
             zh = "本模组本地 version 不低于创意工坊时，不显示“模组过期/需要更新”警告（开发/未同步工坊时有用）",
-            en = "When this mod's local version is not older than the Steam Workshop version, suppress the out-of-date warning (useful while developing or before Workshop catches up)"
+            en =
+            "When this mod's local version is not older than the Steam Workshop version, suppress the out-of-date warning (useful while developing or before Workshop catches up)"
         }),
         options = toggle,
         default = true,
@@ -138,7 +139,8 @@ configuration_options = {
         name = "HideGlobalJIT",
         label = translate({ en = "Hide Global jit", zh = "隐藏全局jit变量" }),
         hover = translate({
-            en = "Hide the global jit variable from normal mods. Only inject jit into mods that declare luajit_compatible in modinfo.lua",
+            en =
+            "Hide the global jit variable from normal mods. Only inject jit into mods that declare luajit_compatible in modinfo.lua",
             zh = "隐藏全局jit变量。仅向在modinfo.lua中声明了luajit_compatible的mod注入jit"
         }),
         options = toggle,
@@ -331,6 +333,7 @@ configuration_options = {
         disabled_value = false,
         disabled_by = disable_by_lua51
     },
+    AddSection(translate({ zh = "插件配置", en = "Plugin Options" })),
     -- BEGIN GENERATED PLUGIN OPTIONS
     {
         name = "DisableForceFullGC",
@@ -404,16 +407,16 @@ configuration_options = {
     },
     {
         name = "ShadowSunDrive",
-        label = "Sun-driven shadows",
+        label = translate({ en = "Sun-driven shadows", zh = "太阳驱动的阴影" }),
         options = {
-            { description = "Off", data = false },
-            { description = "On", data = true },
+            { description = translate({ en = "Off", zh = "关闭" }), data = false },
+            { description = translate({ en = "On", zh = "开启" }), data = true },
         },
         default = false,
     },
     {
         name = "ShadowLengthBoost",
-        label = "Shadow length boost",
+        label = translate({ en = "Shadow length boost", zh = "阴影长度增强" }),
         options = {
             { description = "0.5", data = 0.5 },
             { description = "1.0", data = 1 },
@@ -421,6 +424,16 @@ configuration_options = {
             { description = "2.0", data = 2 },
         },
         default = 1,
+    },
+    {
+        name = "ShadowHemisphere",
+        label = translate({ en = "Shadow hemisphere", zh = "阴影半球" }),
+        hover = translate({ en = "Northern: clockwise (default). Southern: counterclockwise.", zh = "北半球：顺时针（默认）。南半球：逆时针。" }),
+        options = {
+            { description = translate({ en = "Northern", zh = "北半球" }), data = "north" },
+            { description = translate({ en = "Southern", zh = "南半球" }), data = "south" },
+        },
+        default = "north",
     },
     {
         name = "EnableNetSim",
