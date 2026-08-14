@@ -470,6 +470,7 @@ local function collect(plugins_root)
                         stem = name,
                         plugin_id = env.plugin_id or name,
                         priority = tonumber(env.priority) or 0,
+                        display_name = env.name,
                         rows = rows,
                     }
                 end
@@ -487,6 +488,16 @@ local function collect(plugins_root)
     end)
     local flat = {}
     for _, pkg in ipairs(pkgs) do
+        local label = pkg.display_name
+        if label == nil or label == "" then
+            label = pkg.stem
+        end
+        flat[#flat + 1] = {
+            __bake_section = true,
+            label = label,
+            __bake_stem = pkg.stem,
+            __bake_plugin_id = pkg.plugin_id,
+        }
         for _, row in ipairs(pkg.rows) do
             if type(row) == "table" then
                 row.__bake_stem = pkg.stem

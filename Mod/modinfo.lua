@@ -335,6 +335,7 @@ configuration_options = {
     },
     AddSection(translate({ zh = "插件配置", en = "Plugin Options" })),
     -- BEGIN GENERATED PLUGIN OPTIONS
+    AddSection("Debug Profiler"),
     {
         name = "DisableForceFullGC",
         label = translate({ en = "GC Incremental Only", zh = "禁用强制完全gc,仅gc小部分" }),
@@ -377,6 +378,7 @@ configuration_options = {
         default = "off",
         host_gate = "any_of",
     },
+    AddSection("Network RPC"),
     {
         name = "NetworkOpt",
         label = translate({ en = "Network RPC Optimizations", zh = "网络RPC优化" }),
@@ -387,6 +389,7 @@ configuration_options = {
         disabled_value = false,
         host_gate = true,
     },
+    AddSection("FPS Render"),
     {
         name = "TargetRenderFPS",
         label = translate({ en = "Render FPS", zh = "渲染帧率" }),
@@ -405,6 +408,7 @@ configuration_options = {
         default = 60,
         host_gate = true,
     },
+    AddSection("Render Shadow (Sun Drive)"),
     {
         name = "ShadowSunDrive",
         label = translate({ en = "Sun-driven shadows", zh = "太阳驱动的阴影" }),
@@ -435,6 +439,7 @@ configuration_options = {
         },
         default = "north",
     },
+    AddSection("Network Sim"),
     {
         name = "EnableNetSim",
         label = translate({ en = "Enable Network Simulator", zh = "启用网络模拟器" }),
@@ -445,6 +450,7 @@ configuration_options = {
         disabled_value = false,
         host_gate = true,
     },
+    AddSection("Save Fork"),
     {
         name = "EnableForkSave",
         label = translate({ en = "Fork Save (Preview)", zh = "分叉存档" }),
@@ -455,6 +461,7 @@ configuration_options = {
         disabled_value = false,
         host_gate = true,
     },
+    AddSection("Sim Lag Compensation"),
     {
         name = "EnableLagCompensation",
         label = translate({ en = "Lag Compensation (Preview)", zh = "延迟补偿" }),

@@ -395,6 +395,43 @@ local function test_reject_obsolete_options()
     print("PASS: reject_obsolete_options")
 end
 
+
+local function test_collect_prepends_plugin_name_section()
+    local root = tmp_dir("ds_bake_plugin_section")
+    local plugins = root .. "/src/DontStarveInjector/plugins"
+    write_file(plugins .. "/plugin_save_fork/modinfo.lua", package_modinfo({
+        name = "Save Fork",
+        plugin_id = "save.fork",
+        priority = 60,
+    }))
+    write_file(plugins .. "/plugin_net/modinfo.lua", package_modinfo({
+        name = "Network RPC",
+        plugin_id = "network.rpc",
+        priority = 10,
+        rows = [[
+    { name = "NetworkOpt", label = "N", options = toggle, default = true, host_gate = true },
+]],
+    }))
+    local rows = bake.collect(plugins)
+    assert_true(#rows == 4, "expected section+widget per package, got " .. tostring(#rows))
+    assert_true(rows[1].__bake_section == true, "first row should be AddSection")
+    assert_true(rows[1].label == "Network RPC", "expected Network RPC, got " .. tostring(rows[1].label))
+    assert_true(rows[2].name == "NetworkOpt", "expected NetworkOpt after its section")
+    assert_true(rows[3].__bake_section == true, "third row should be AddSection")
+    assert_true(rows[3].label == "Save Fork", "expected Save Fork, got " .. tostring(rows[3].label))
+    assert_true(rows[4].name == "EnableForkSave", "expected EnableForkSave after its section")
+    local text = bake.serialize_rows(rows)
+    assert_true(text:find('AddSection("Network RPC")', 1, true), text)
+    assert_true(text:find('AddSection("Save Fork")', 1, true), text)
+    local i_net_sec = text:find('AddSection("Network RPC")', 1, true)
+    local i_net = text:find("NetworkOpt", 1, true)
+    local i_fork_sec = text:find('AddSection("Save Fork")', 1, true)
+    local i_fork = text:find("EnableForkSave", 1, true)
+    assert_true(i_net_sec < i_net and i_net < i_fork_sec and i_fork_sec < i_fork, "section must precede that plugin's widgets")
+    print("PASS: collect_prepends_plugin_name_section")
+end
+
+
 test_serialize_keeps_translate_locales()
 test_serialize_toggle_identifier()
 test_serialize_addsection()
@@ -406,4 +443,5 @@ test_splice_idempotent()
 test_write_check_roundtrip()
 test_check_missing_markers()
 test_reject_obsolete_options()
+test_collect_prepends_plugin_name_section()
 print("ALL PASS bake_plugin_options_spec")
