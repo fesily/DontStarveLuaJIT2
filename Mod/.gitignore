@@ -1,4 +1,9 @@
 *.meta.json
+# Plugin packages are sourced from src/DontStarveInjector/plugins
+# and staged here by cmake --install. Do not commit copies.
+plugins/plugin_*/
+test.log
+
 signatures_client.json
 signatures_server.json
 *.so

@@ -1,5 +1,0 @@
-{
-  "id": "network.rpc",
-  "version": "1.0.0",
-  "module": "plugin_network_rpc.dll"
-}
