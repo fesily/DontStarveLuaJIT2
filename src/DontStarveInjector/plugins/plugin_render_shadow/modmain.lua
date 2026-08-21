@@ -1,6 +1,5 @@
 -- plugins/plugin_render_shadow/modmain.lua
--- Yaw integrates locally (FRAMES/TOTAL_DAY_TIME). Origin is locked once
--- from 3 stable clocktick data.time samples (HUD clock), not from p=0.
+-- Lua only pushes TheWorld.state. Native Evaluate is the sun formula.
 
 local injector = GameInjector
 
@@ -11,20 +10,13 @@ local function export(name)
     return rawget(_G, name)
 end
 
-local DAY = (TUNING and TUNING.TOTAL_DAY_TIME) or 480
-local DT = (FRAMES ~= nil and FRAMES) or (1 / 30)
-local MIN_STEP = 1 / 720
-local STATIC_STEP = 1 / 16
-
 local sun_enabled = false
-local last_pub = nil
+local length_boost = 1.0
+local northern = true
+local last_raw = nil
+local last_pid = nil
+local last_p = nil
 local last_static = nil
-local p = 0
-local ticks = 0
-local last_log = 0
-local clock_locked = false
-local clock_ring = nil
-local MAX_SEG = 2 / 16
 
 local function rebuild_static()
     local sm = TheWorld and TheWorld.ShadowManager
@@ -33,29 +25,8 @@ local function rebuild_static()
     end
 end
 
-local function phase_id(phase)
-    if phase == "dusk" then
-        return 1
-    end
-    if phase == "night" then
-        return 2
-    end
-    return 0
-end
-
 local function is_cave()
     return TheWorld ~= nil and TheWorld.HasTag ~= nil and TheWorld:HasTag("cave")
-end
-
-local function has_moonlight(st)
-    if not st then
-        return false
-    end
-    if st.isfullmoon then
-        return true
-    end
-    local mp = st.moonphase
-    return mp ~= nil and mp ~= "new"
 end
 
 local function apply()
@@ -64,108 +35,106 @@ local function apply()
         return
     end
     local en
-    local boost = 1.0
-    local hemi = "north"
+    length_boost = 1.0
+    northern = true
     if type(GetModConfigData) == "function" then
         en = GetModConfigData("ShadowSunDrive")
-        boost = GetModConfigData("ShadowLengthBoost") or 1.0
-        hemi = GetModConfigData("ShadowHemisphere") or "north"
+        length_boost = tonumber(GetModConfigData("ShadowLengthBoost")) or 1.0
+        northern = (GetModConfigData("ShadowHemisphere") or "north") ~= "south"
     end
     sun_enabled = en and true or false
-    last_pub = nil
+    last_raw = nil
+    last_pid = nil
+    last_p = nil
     last_static = nil
-    p = 0
-    ticks = 0
-    clock_locked = false
-    clock_ring = nil
+    local sil = false
+    if type(GetModConfigData) == "function" then
+        sil = GetModConfigData("ShadowSilhouetteBatch") and true or false
+    end
+    local set_sil = export("DS_LUAJIT_shadow_set_silhouette")
+    if set_sil then
+        set_sil(sil and 1 or 0)
+    end
+    local set_ellipse = export("DS_LUAJIT_shadow_set_ellipse")
+    if set_ellipse then
+        set_ellipse(sil and 0 or 1)
+    end
     local set_boost = export("DS_LUAJIT_shadow_set_length_boost")
     if set_boost then
-        set_boost(math.floor((tonumber(boost) or 1) * 100 + 0.5))
+        set_boost(length_boost)
     end
     local set_hemi = export("DS_LUAJIT_shadow_set_hemisphere")
     if set_hemi then
-        set_hemi(hemi == "south" and 0 or 1)
+        set_hemi(northern and 1 or 0)
     end
     local set_enabled = export("DS_LUAJIT_shadow_set_enabled")
     if set_enabled then
         set_enabled(sun_enabled)
     end
+    print(string.format("[render.shadow] apply sil=%s sun=%s ellipse=%s boost=%.2f hemi=%s",
+        tostring(sil), tostring(sun_enabled), sil and "off" or "on", length_boost,
+        northern and "north" or "south"))
+
+end
+
+local function world_flags(st)
+    local f = 0
+    if st.isfullmoon then
+        f = f + 1
+    end
+    if st.season == "winter" then
+        f = f + 2
+    elseif st.season == "summer" then
+        f = f + 4
+    end
+    local pr = st.precipitation
+    if pr == "rain" or pr == "snow" then
+        f = f + 8
+    end
+    return f
 end
 
 local function publish()
-    local set_state = export("DS_LUAJIT_shadow_set_state")
-    if not set_state then
+    local set_world = export("DS_LUAJIT_shadow_set_world")
+    if not set_world then
         return
     end
     if is_cave() then
-        if last_pub ~= "cave" then
-            last_pub = "cave"
-            set_state(2, 0, 0)
+        if last_raw ~= "cave" then
+            last_raw, last_pid, last_p = "cave", nil, nil
+            set_world(2, 0, 0, 0)
         end
-        return
-    end
-    if last_pub ~= nil and type(last_pub) == "number" and math.abs(p - last_pub) < MIN_STEP then
         return
     end
     local st = TheWorld and TheWorld.state
-    local phase = st and st.phase
-    local moon = has_moonlight(st) and 1 or 0
-    last_pub = p
-    set_state(phase_id(phase), math.floor(p * 1000 + 0.5), moon)
+    if not st then
+        return
+    end
+    local phase = st.phase
+    local pid = 0
+    if phase == "dusk" then
+        pid = 1
+    elseif phase == "night" then
+        pid = 2
+    end
+    local p = tonumber(st.timeinphase) or 0
+    local t = tonumber(st.time) or 0
+    if last_pid == pid and last_p and last_p > 0.9 and p < 0.1 then
+        p = 1
+    end
+    local flags = world_flags(st)
+    local raw = string.format("%d/%.4f/%.4f/%d", pid, p, t, flags)
+    if raw == last_raw then
+        return
+    end
+    last_raw, last_pid, last_p = raw, pid, p
+    set_world(pid, math.floor(p * 10000 + 0.5), math.floor(t * 10000 + 0.5), flags)
     if sun_enabled then
-        if last_static == nil or math.abs(p - last_static) >= STATIC_STEP then
-            last_static = p
+        local bucket = math.floor(p * 16)
+        if last_static ~= bucket then
+            last_static = bucket
             rebuild_static()
         end
-    end
-end
-
-local function circ_abs(a, b)
-    local d = math.abs(a - b)
-    if d > 0.5 then
-        d = 1 - d
-    end
-    return d
-end
-
-local function lock_to(sample, why)
-    p = sample
-    last_pub = nil
-    clock_locked = true
-    clock_ring = { sample }
-    print(string.format("[render.shadow] %s p=%.4f yaw=%.1f", why, p, -360 * p))
-end
-
--- data.time is HUD clock (elapsedsegs/16). Need 3 smooth ticks so we skip
--- the client's default-dawn frames and the 0↔1 net snap.
-local function consider_clock(raw)
-    raw = tonumber(raw)
-    if raw == nil then
-        return
-    end
-    if raw < 0 then
-        raw = 0
-    elseif raw > 1 then
-        raw = 1
-    end
-    clock_ring = clock_ring or {}
-    clock_ring[#clock_ring + 1] = raw
-    if #clock_ring > 3 then
-        table.remove(clock_ring, 1)
-    end
-    if #clock_ring < 3 then
-        return
-    end
-    if circ_abs(clock_ring[1], clock_ring[2]) > MAX_SEG
-        or circ_abs(clock_ring[2], clock_ring[3]) > MAX_SEG then
-        clock_ring = { clock_ring[2], clock_ring[3] }
-        return
-    end
-    local sample = clock_ring[3]
-    if not clock_locked then
-        lock_to(sample, "lock")
-    elseif circ_abs(p, sample) > MAX_SEG then
-        lock_to(sample, "retarget")
     end
 end
 
@@ -177,30 +146,9 @@ AddSimPostInit(function()
     if TheNet and TheNet.IsDedicated and TheNet:IsDedicated() then
         return
     end
-    TheWorld:ListenForEvent("clocktick", function(_, data)
-        if data then
-            consider_clock(data.time)
-        end
-    end)
-    TheWorld:DoPeriodicTask(DT, function()
-        ticks = ticks + 1
-        if not clock_locked then
-            if ticks >= 90 then
-                local st = TheWorld.state
-                lock_to((st and tonumber(st.time)) or 0, "fallback")
-            else
-                return
-            end
-        end
-        p = p + DT / DAY
-        if p >= 1 then
-            p = p - 1
-        end
+    TheWorld:ListenForEvent("clocktick", function()
         publish()
-        if ticks - last_log >= 150 then
-            last_log = ticks
-            print(string.format("[render.shadow] tick=%d p=%.4f yaw=%.1f locked=%s",
-                ticks, p, -360 * p, clock_locked and "1" or "0"))
-        end
     end)
+    local dt = (FRAMES ~= nil and FRAMES) or (1 / 30)
+    TheWorld:DoPeriodicTask(dt, publish)
 end)

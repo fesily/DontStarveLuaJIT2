@@ -1,11 +1,16 @@
 #pragma once
 
+#include <cstdint>
+
+
 namespace ds::shadow {
 
 bool InstallGenerateVBHook();
 bool IsHookInstalled() noexcept;
+uintptr_t GetGenerateVBAddress() noexcept;
 void SetSunDriveEnabled(bool on);
-void SetLengthBoost(double boost) noexcept;
-double GetLengthBoost() noexcept;
+void SetEllipseEnabled(bool on) noexcept;
+bool IsEllipseEnabled() noexcept;
+
 
 } // namespace ds::shadow

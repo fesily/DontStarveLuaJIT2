@@ -8,6 +8,8 @@
 #include "ShadowOptionKeys.hpp"
 #include "GenerateVBHook.hpp"
 #include "SunModel.hpp"
+#include "SilhouetteBatch.hpp"
+#include "AnimDrawHook.hpp"
 
 #include "core/PluginServices.hpp"
 #include "ctx.hpp"
@@ -17,9 +19,15 @@
 #include <spdlog/spdlog.h>
 
 extern "C" void DS_LUAJIT_shadow_set_enabled(bool enable);
-extern "C" void DS_LUAJIT_shadow_set_length_boost(int boost_centi);
+extern "C" void DS_LUAJIT_shadow_set_ellipse(int on);
+extern "C" void DS_LUAJIT_shadow_set_world(int phase_id, int timeinphase_centi, int time_centi,
+                                           int flags);
+extern "C" void DS_LUAJIT_shadow_set_length_boost(double boost);
 extern "C" void DS_LUAJIT_shadow_set_hemisphere(int northern);
-extern "C" void DS_LUAJIT_shadow_set_state(int phase_id, int progress_permille, int fullmoon);
+extern "C" void DS_LUAJIT_shadow_set_silhouette(int on);
+
+
+
 
 namespace {
 
@@ -65,55 +73,77 @@ RenderShadowPlugin g_render_shadow;
 
 extern "C" void DS_LUAJIT_shadow_set_enabled(bool enable) {
     ds::shadow::SetSunDriveEnabled(enable);
-    if (enable) {
-        // Atomically published sample starts invisible; without this, hook
-        // fail-opens to stock until the first Lua set_state.
-        const auto sample = ds::shadow::Evaluate(
-            ds::shadow::Phase::Day, 0.25f, false,
-            static_cast<float>(ds::shadow::GetLengthBoost()),
-            ds::shadow::IsNorthernHemisphere());
-        ds::shadow::Publish(sample);
-    }
     std::fprintf(stderr, "[plugin_render_shadow] set_enabled=%d installed=%d\n", enable ? 1 : 0,
                  ds::shadow::IsHookInstalled() ? 1 : 0);
 }
 
-extern "C" void DS_LUAJIT_shadow_set_length_boost(int boost_centi) {
-    double boost = static_cast<double>(boost_centi) / 100.0;
-    ds::shadow::SetLengthBoost(boost);
-    spdlog::info("[plugin_render_shadow] set_length_boost={} (centi={})",
-                 ds::shadow::GetLengthBoost(), boost_centi);
+extern "C" void DS_LUAJIT_shadow_set_ellipse(int on) {
+    ds::shadow::SetEllipseEnabled(on != 0);
+    std::fprintf(stderr, "[plugin_render_shadow] set_ellipse=%d\n", on != 0 ? 1 : 0);
+}
+
+
+extern "C" void DS_LUAJIT_shadow_set_world(int phase_id, int timeinphase_centi, int time_centi,
+                                           int flags) {
+    auto clamp_centi = [](int v) {
+        if (v < 0) {
+            return 0;
+        }
+        if (v > 10000) {
+            return 10000;
+        }
+        return v;
+    };
+    ds::shadow::SunInput in{};
+    if (phase_id == 0) {
+        in.phase = ds::shadow::Phase::Day;
+    } else if (phase_id == 1) {
+        in.phase = ds::shadow::Phase::Dusk;
+    } else {
+        in.phase = ds::shadow::Phase::Night;
+    }
+    in.timeinphase = static_cast<float>(clamp_centi(timeinphase_centi)) / 10000.f;
+    in.time = static_cast<float>(clamp_centi(time_centi)) / 10000.f;
+    in.moonlit = (flags & 1) != 0;
+    if (flags & 2) {
+        in.season = ds::shadow::Season::Winter;
+    } else if (flags & 4) {
+        in.season = ds::shadow::Season::Summer;
+    }
+    in.wet = (flags & 8) != 0;
+    in.length_boost = ds::shadow::LengthBoost();
+    in.northern = ds::shadow::IsNorthernHemisphere();
+    ds::shadow::Publish(ds::shadow::Evaluate(in));
+}
+
+extern "C" void DS_LUAJIT_shadow_set_length_boost(double boost) {
+    ds::shadow::SetLengthBoost(static_cast<float>(boost));
 }
 
 extern "C" void DS_LUAJIT_shadow_set_hemisphere(int northern) {
     ds::shadow::SetNorthernHemisphere(northern != 0);
-    spdlog::info("[plugin_render_shadow] set_hemisphere={}",
-                 ds::shadow::IsNorthernHemisphere() ? "north" : "south");
 }
 
-extern "C" void DS_LUAJIT_shadow_set_state(int phase_id, int progress_permille, int fullmoon) {
-    using ds::shadow::Phase;
-    Phase p = Phase::Day;
-    if (phase_id == 1) {
-        p = Phase::Dusk;
-    } else if (phase_id == 2) {
-        p = Phase::Night;
+
+
+extern "C" void DS_LUAJIT_shadow_set_silhouette(int on) {
+  ds::shadow::SetSilhouetteEnabled(on != 0);
+  if (on != 0) {
+    // Collect/flush only. Ellipse off is DS_LUAJIT_shadow_set_ellipse(0).
+    if (!ds::shadow::InstallGenerateVBHook() || !ds::shadow::IsHookInstalled()) {
+      ds::shadow::SetSilhouetteHealthy(false);
+    } else {
+      (void) ds::shadow::InstallSilhouetteHooks();
     }
-    if (progress_permille < 0) {
-        progress_permille = 0;
-    }
-    if (progress_permille > 1000) {
-        progress_permille = 1000;
-    }
-    const float prog = static_cast<float>(progress_permille) / 1000.f;
-    const auto sample = ds::shadow::Evaluate(
-        p, prog, fullmoon != 0, static_cast<float>(ds::shadow::GetLengthBoost()),
-        ds::shadow::IsNorthernHemisphere());
-    ds::shadow::Publish(sample);
-    spdlog::info("[plugin_render_shadow] state phase={} pmille={} p={:.3f} yaw={:.1f}deg vis={}",
-                 phase_id, progress_permille, prog, sample.yaw_rad * 57.2957795f,
-                 sample.visible ? 1 : 0);
+  } else {
+    ds::shadow::ClearSilhouetted();
+  }
+  std::fprintf(stderr, "[plugin_render_shadow] set_silhouette=%d healthy=%d gvb=%d\n",
+               on != 0, ds::shadow::IsSilhouetteHealthy() ? 1 : 0,
+               ds::shadow::IsHookInstalled() ? 1 : 0);
 }
+
+
 
 DS_PLUGIN_MODULE_EXPORT const char *ds_plugin_module_abi_version() {
     return DS_PLUGIN_ABI_VERSION;
@@ -169,17 +199,41 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
             return false;
         }
     }
-
+    {
+        OptionSchemaEntry e;
+        e.key = std::string{ds::config::keys::kShadowSilhouetteBatch};
+        e.type = ConfigValueType::Bool;
+        e.default_value = ConfigValue::boolean(false);
+        e.allowed_sources =
+            static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::ModinfoDefault) |
+            static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile) |
+            static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::EnvOrCmd);
+        if (!host->register_option_schema(std::move(e))) {
+            std::fprintf(stderr, "[plugin_render_shadow] schema conflict %s\n",
+                         std::string{ds::config::keys::kShadowSilhouetteBatch}.c_str());
+            return false;
+        }
+    }
 
     (void) host->register_game_injector_export("DS_LUAJIT_shadow_set_enabled",
                                                &DS_LUAJIT_shadow_set_enabled);
+    (void) host->register_game_injector_export("DS_LUAJIT_shadow_set_ellipse",
+                                               &DS_LUAJIT_shadow_set_ellipse);
+    (void) host->register_game_injector_export("DS_LUAJIT_shadow_set_world",
+                                               &DS_LUAJIT_shadow_set_world);
     (void) host->register_game_injector_export("DS_LUAJIT_shadow_set_length_boost",
                                                &DS_LUAJIT_shadow_set_length_boost);
     (void) host->register_game_injector_export("DS_LUAJIT_shadow_set_hemisphere",
                                                &DS_LUAJIT_shadow_set_hemisphere);
-    (void) host->register_game_injector_export("DS_LUAJIT_shadow_set_state",
-                                               &DS_LUAJIT_shadow_set_state);
+    (void) host->register_game_injector_export("DS_LUAJIT_shadow_set_silhouette",
+                                               &DS_LUAJIT_shadow_set_silhouette);
+
+
+
     host->register_plugin(&g_render_shadow);
-    std::fprintf(stderr, "[plugin_render_shadow] module init registered render.shadow\n");
+    std::fprintf(stderr, "[plugin_render_shadow] module init registered render.shadow dbg=sil-21\n");
+
+
+
     return true;
 }

@@ -10,50 +10,84 @@ static bool near_eq(float a, float b, float eps = 1e-3f) {
 int main() {
   using ds::shadow::Evaluate;
   using ds::shadow::Phase;
+  using ds::shadow::Season;
+  using ds::shadow::SunInput;
 
-  // Default northern: yaw = -2πp (clockwise). Southern is the opposite sign.
-  auto dawn = Evaluate(Phase::Day, 0.0f, false, 1.0f, true);
-  auto noon = Evaluate(Phase::Day, 0.25f, false, 1.0f, true);
-  auto dusk_day = Evaluate(Phase::Day, 0.50f, false, 1.0f, true);
-  assert(dawn.visible && noon.visible && dusk_day.visible);
-  assert(noon.length_scale < dawn.length_scale);
-  assert(noon.length_scale < dusk_day.length_scale);
-  assert(near_eq(dawn.yaw_rad, 0.0f));
-  assert(near_eq(noon.yaw_rad, -1.5707963f, 2e-2f));
-  assert(near_eq(dusk_day.yaw_rad, -3.14159265f, 2e-2f));
-  auto midn = Evaluate(Phase::Night, 0.75f, true, 1.0f, true);
-  assert(midn.visible);
-  assert(near_eq(midn.yaw_rad, -4.7123889f, 2e-2f));
+  SunInput base{};
+  base.phase = Phase::Day;
+  base.time = 1.f;
+  base.length_boost = 1.f;
+  base.northern = true;
 
-  auto noon_s = Evaluate(Phase::Day, 0.25f, false, 1.0f, false);
-  assert(near_eq(noon_s.yaw_rad, 1.5707963f, 2e-2f));
-  assert(near_eq(noon_s.length_scale, noon.length_scale));
+  base.timeinphase = 0.f;
+  auto dawn = Evaluate(base);
+  assert(dawn.visible);
+  assert(near_eq(dawn.length_scale, 3.8810f, 1e-3f));
+  assert(near_eq(dawn.yaw_rad, -1.3102f, 2e-2f));
+  assert(near_eq(dawn.alpha, 0.5f));
 
-  // Continuous: nearby times have nearby (not equal) yaw.
-  auto q0 = Evaluate(Phase::Day, 0.13f, false, 1.0f, true);
-  auto q1 = Evaluate(Phase::Day, 0.14f, false, 1.0f, true);
-  assert(!near_eq(q0.yaw_rad, q1.yaw_rad));
-  assert(q1.yaw_rad < q0.yaw_rad); // northern: more time → more negative
-  auto q2 = Evaluate(Phase::Day, 0.16f, false, 1.0f, true);
-  assert(q2.yaw_rad < q1.yaw_rad);
+  base.timeinphase = 0.5f;
+  auto noon = Evaluate(base);
+  assert(near_eq(noon.length_scale, 1.0f));
+  assert(near_eq(noon.yaw_rad, 0.f));
 
-  auto night = Evaluate(Phase::Night, 0.5f, false, 1.0f, true);
+  base.timeinphase = 1.f;
+  auto day_end = Evaluate(base);
+  assert(near_eq(day_end.length_scale, 3.8810f, 1e-3f));
+  assert(near_eq(day_end.yaw_rad, 1.3102f, 2e-2f));
+
+  base.phase = Phase::Dusk;
+  base.timeinphase = 0.3f;
+  auto dusk = Evaluate(base);
+  assert(near_eq(dusk.length_scale, 3.8810f, 1e-3f));
+  assert(near_eq(dusk.yaw_rad, 1.3102f, 2e-2f));
+  assert(near_eq(dusk.alpha, 0.5f * 0.7f));
+
+  base.phase = Phase::Night;
+  base.moonlit = false;
+  auto night = Evaluate(base);
   assert(!night.visible);
+  assert(night.alpha == 0.f);
 
-  auto moon = Evaluate(Phase::Night, 0.5f, true, 1.0f, true);
+  base.moonlit = true;
+  base.timeinphase = 0.5f;
+  auto moon = Evaluate(base);
   assert(moon.visible);
+  assert(near_eq(moon.length_scale, 1.0f));
+  assert(near_eq(moon.yaw_rad, 0.f));
 
-  auto b1 = Evaluate(Phase::Day, 0.25f, false, 1.0f, true);
-  auto b2 = Evaluate(Phase::Day, 0.25f, false, 2.0f, true);
-  assert(near_eq(b2.length_scale, b1.length_scale * 2.0f, 1e-3f));
+  base.phase = Phase::Day;
+  base.timeinphase = 0.5f;
+  base.northern = false;
+  auto noon_s = Evaluate(base);
+  assert(near_eq(noon_s.yaw_rad, 0.f));
+  base.timeinphase = 0.f;
+  auto dawn_s = Evaluate(base);
+  assert(near_eq(dawn_s.yaw_rad, 1.3102f, 2e-2f));
 
-  // Cast offset: noon (scale=1) stays centered on feet.
+  base.northern = true;
+  base.timeinphase = 0.5f;
+  base.season = Season::Winter;
+  assert(near_eq(Evaluate(base).alpha, 0.5f * 0.8f));
+  base.season = Season::None;
+  base.wet = true;
+  assert(near_eq(Evaluate(base).alpha, 0.5f * 0.8f));
+  base.wet = false;
+  base.length_boost = 2.f;
+  assert(near_eq(Evaluate(base).length_scale, 2.0f));
+
+  base.length_boost = 1.f;
+  base.time = 0.f;
+  base.timeinphase = 0.5f;
+  auto fade0 = Evaluate(base);
+  assert(near_eq(fade0.alpha, 0.f));
+  assert(fade0.visible);
+  assert(near_eq(fade0.length_scale, 1.0f));
+
   auto o_noon = ds::shadow::CastCenterOffset(2.0f, 1.0f, 0.0f);
   assert(near_eq(o_noon.x, 0.0f));
   assert(near_eq(o_noon.z, 0.0f));
 
-  // Extra length goes along +yaw; feet stay at near edge inset 0.5*unscaled.
-  // scale=3, size=2, yaw=0 → extra = 0.5*2*(3-1) = 2 along +X
   auto o_x = ds::shadow::CastCenterOffset(2.0f, 3.0f, 0.0f);
   assert(near_eq(o_x.x, 2.0f));
   assert(near_eq(o_x.z, 0.0f));
@@ -70,12 +104,16 @@ int main() {
   assert(near_eq(dir[0], 0.0f));
   assert(near_eq(dir[1], 1.0f));
 
-  // Publish/load
   ds::shadow::Publish(noon);
   auto loaded = ds::shadow::LoadPublished();
   assert(near_eq(loaded.yaw_rad, noon.yaw_rad));
   assert(near_eq(loaded.length_scale, noon.length_scale));
   assert(loaded.visible == noon.visible);
+  assert(near_eq(loaded.alpha, noon.alpha));
+
+  assert(near_eq(ds::shadow::HeadingDegreesFromSunYaw(0.0f), -90.0f));
+  assert(near_eq(ds::shadow::HeadingDegreesFromSunYaw(1.57079632679f), 0.0f));
+  assert(near_eq(ds::shadow::HeadingDegreesFromSunYaw(-1.57079632679f), -180.0f));
 
   std::puts("test_sun_model OK");
   return 0;

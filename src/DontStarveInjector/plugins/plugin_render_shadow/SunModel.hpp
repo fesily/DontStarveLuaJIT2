@@ -3,11 +3,24 @@
 namespace ds::shadow {
 
 enum class Phase : int { Day = 0, Dusk = 1, Night = 2 };
+enum class Season : int { None = 0, Winter = 1, Summer = 2 };
+
+struct SunInput {
+  Phase phase = Phase::Day;
+  float timeinphase = 0.f;
+  float time = 0.f;
+  bool moonlit = false;
+  float length_boost = 1.f;
+  bool northern = true;
+  Season season = Season::None;
+  bool wet = false;
+};
 
 struct SunSample {
-  float yaw_rad;       // world shadow stretch direction
-  float length_scale;  // >= 0; multiply length axis
-  bool visible;        // false → caller uses stock path or skips
+  float yaw_rad = 0.f;
+  float length_scale = 0.f;
+  float alpha = 0.f;
+  bool visible = false;
 };
 
 struct XZ {
@@ -22,12 +35,17 @@ XZ CastCenterOffset(float unscaled_size_x, float length_scale, float yaw_rad) no
 // dir[0]=cos(yaw), dir[1]=sin(yaw) — PopulateQuad stretch axis
 void FillSunDir(float dir[2], float yaw_rad) noexcept;
 
-// progress = full-day clock time ∈ [0,1], continuous. yaw = ±2πp.
-// northern: yaw = -2πp (clockwise from +X). southern: yaw = +2πp.
-// Night is visible when moonlit (not new moon). Cave should pass moonlit=false.
-SunSample Evaluate(Phase phase, float progress, bool moonlit, float length_boost,
-                   bool northern) noexcept;
+// Stock GenerateVB: angle = (heading_deg + 90) * pi/180.
+// Poke heading so that stock angle equals sun yaw.
+inline float HeadingDegreesFromSunYaw(float yaw_rad) noexcept {
+  return yaw_rad * 57.29577951308232f - 90.0f;
+}
 
+// Terminus Light right-triangle day cycle. Hooks only LoadPublished.
+SunSample Evaluate(const SunInput &in) noexcept;
+
+void SetLengthBoost(float boost) noexcept;
+float LengthBoost() noexcept;
 void SetNorthernHemisphere(bool northern) noexcept;
 bool IsNorthernHemisphere() noexcept;
 

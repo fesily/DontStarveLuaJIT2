@@ -99,6 +99,15 @@ target_include_directories(test_sun_model PRIVATE
 target_compile_features(test_sun_model PRIVATE cxx_std_23)
 add_test(NAME sun_model COMMAND test_sun_model)
 
+add_executable(test_shadow_matrix
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_shadow_matrix.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_render_shadow/SilhouetteMath.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_render_shadow/SunModel.cpp)
+target_include_directories(test_shadow_matrix PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_render_shadow)
+target_compile_features(test_shadow_matrix PRIVATE cxx_std_23)
+add_test(NAME shadow_matrix COMMAND test_shadow_matrix)
+
 add_executable(test_config_source_whitelist
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_config_source_whitelist.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/CascadeEngine.cpp
