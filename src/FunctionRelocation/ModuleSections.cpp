@@ -20,7 +20,13 @@
 #include "disasm.h"
 #include "ScanCtx.hpp"
 #include "config.hpp"
+#include "FunctionTable.hpp"
+#ifdef _WIN32
+#include <windows.h>
+#include <filesystem>
+#else
 #include "../DontStarveInjector/util/platform.hpp"
+#endif
 
 #include <thread>
 
@@ -134,75 +140,293 @@ namespace function_relocation {
     }
 
     bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections) {
+        (void) scan_start_address;
         if (!get_module_sections(path, sections)) {
             spdlog::get(logger_name)->error("cannot get_module_sections: {}", path);
             return false;
         }
-        ScanCtx ctx{sections, scan_start_address};
-        // try get the function name by debug info
+        // Sections + symbol names only. Function start|end come from Nucleus
+        // (apply_nucleus_function_table). Do not run CALL/FDE/ret heuristics.
 #ifdef _WIN32
         static auto loadflag = std::once_flag{};
-        std::call_once(loadflag, loadlib, "dbghelp.dll", 0);
-        //TODO: symbols is error, should special the pdb search path
+        std::call_once(loadflag, [] {
+            (void) LoadLibraryA("dbghelp.dll");
+        });
          gum_load_symbols(std::filesystem::path{path}.filename().string().c_str());
 #endif
-         const auto module = get_module(path);
-         gum_module_enumerate_symbols(module, +[](const GumSymbolDetails *details, gpointer data) -> gboolean {
+        const auto module = get_module(path);
+        sections.symbol_names.clear();
+        gum_module_enumerate_symbols(module, +[](const GumSymbolDetails *details, gpointer data) -> gboolean {
+            auto *secs = static_cast<ModuleSections *>(data);
             if (details->type == GUM_SYMBOL_FUNCTION || details->type == GUM_SYMBOL_OBJECT
-                #if defined(__MACH__) && defined(__APPLE__)
+#if defined(__MACH__) && defined(__APPLE__)
                 || details->type == GUM_SYMBOL_SECTION
 #endif
                     ) {
-                const auto ptr = (decltype(ctx) *) data;
-                if (ptr->m.in_text(details->address) && details->address >= ptr->text.base_address)
-                    ptr->known_functions.try_emplace(details->address,
-                                                     Function{.address=details->address, .size=(size_t) (
-                                                             details->size == -1 ? 0
-                                                                                 : details->size), .name=details->name});
-            }
-            return true;
-        }, &ctx);
-        ctx.scan();
-
-        {
-            const auto vec = sections.functions | std::ranges::views::transform(
-                    [](auto &func) { return std::make_pair(func.address, &func); }) | ranges::to<std::vector>;
-            sections.address_functions = {vec.begin(), vec.end()};
-        }
-        for (auto &[address, func]: ctx.known_functions) {
-            if (!sections.address_functions.contains(address)) {
-                assert(false);
-                continue;
-            }
-            sections.known_functions[func.name] = sections.address_functions[address];
-            sections.address_functions[address]->name = func.name;
-        }
-
-        for (auto &func: sections.functions) {
-#if 1
-            if (scan_start_address == 0 && func.name.empty())
-                fprintf(stderr, "unkown ptr: %p\n", (void *) func.address);
-#endif
-            for (const auto &block_address: func.blocks) {
-                auto block = sections.address_blocks[block_address];
-                for (const auto &c: block->consts) {
-                    auto &constV = sections.Consts.at(c);
-                    if (constV.ref == 1 &&
-                        (func.const_key == nullptr || constV.value.size() > func.const_key->size())) {
-                        func.const_key = &constV.value;
-                    }
+                if (secs->in_text(details->address) && details->name != nullptr && details->name[0] != '\0') {
+                    secs->symbol_names.try_emplace(details->address, details->name);
                 }
             }
-
-            func.consts_hash = hash_vector(func.blocks);
-        }
-
+            return true;
+        }, &sections);
         return true;
     }
 
     uintptr_t
     ModuleSections::try_fix_func_address(const Function &original, SignatureInfo *signature, uintptr_t limit_address) {
         return (uintptr_t) fix_func_address_by_signature(*this, original, limit_address, signature);
+    }
+
+    bool apply_nucleus_function_table(ModuleSections &sections,
+                                      const FunctionTable &image_table,
+                                      uint64_t image_base) {
+        sections.function_table.clear();
+        auto log = spdlog::get(logger_name);
+        if (image_table.empty()) {
+            if (log) {
+                log->error("apply_nucleus_function_table: empty table for {}",
+                           sections.details.path);
+            }
+            return false;
+        }
+
+        const auto process_base = sections.details.range.base_address;
+        for (const auto &sp: image_table.spans()) {
+            if (sp.end <= sp.start) {
+                continue;
+            }
+            const uint64_t start = process_base + (sp.start - image_base);
+            const uint64_t end = process_base + (sp.end - image_base);
+            sections.function_table.add(FunctionSpan{start, end});
+        }
+
+        if (sections.function_table.empty()) {
+            if (log) {
+                log->error("apply_nucleus_function_table: remapped table empty for {}",
+                           sections.details.path);
+            }
+            return false;
+        }
+
+        // Rebuild Function list strictly from Nucleus spans. No ScanCtx split.
+        sections.functions.clear();
+        sections.blocks.clear();
+        sections.Consts.clear();
+        sections.address_functions.clear();
+        sections.address_blocks.clear();
+        sections.known_functions.clear();
+
+        for (const auto &sp: sections.function_table.spans()) {
+            if (sp.end <= sp.start) {
+                continue;
+            }
+            // Only materialize bodies that start in .text (Nucleus may emit
+            // spans covering non-exec ranges on messy game binaries).
+            if (!sections.in_text(sp.start)) {
+                continue;
+            }
+            Function fn;
+            fn.address = sp.start;
+            // Clamp size to remaining .text so feature scan cannot walk off.
+            const uint64_t text_end = sections.text.base_address + sections.text.size;
+            const uint64_t clamped_end = (std::min)(sp.end, text_end);
+            if (clamped_end <= sp.start) {
+                continue;
+            }
+            fn.size = static_cast<size_t>(clamped_end - sp.start);
+            fn.module = &sections;
+            if (auto it = sections.symbol_names.find(sp.start); it != sections.symbol_names.end()) {
+                fn.name = it->second;
+            }
+            sections.functions.push_back(std::move(fn));
+        }
+
+        for (auto &func: sections.functions) {
+            sections.address_functions[func.address] = &func;
+            if (!func.name.empty()) {
+                sections.known_functions[func.name] = &func;
+            }
+        }
+
+        // Exports that sit strictly inside a parent span (rare on ELF after
+        // NucleusAdapter export split; still label for train-side lookup).
+        // Do NOT cut FunctionTable — entry for soft match is always span.start.
+        for (const auto &[addr, name]: sections.symbol_names) {
+            if (sections.address_functions.contains(addr)) {
+                continue;
+            }
+            const FunctionSpan *sp = sections.function_table.span_containing(addr);
+            if (!sp) {
+                continue;
+            }
+            // Named export interior to a span: keep a Function* at the export
+            // VA for train known_functions lookup, size = remaining parent body.
+            Function fn;
+            fn.address = addr;
+            fn.size = static_cast<size_t>(sp->end - addr);
+            fn.name = name;
+            fn.module = &sections;
+            sections.functions.push_back(std::move(fn));
+            auto *p = &sections.functions.back();
+            sections.address_functions[addr] = p;
+            sections.known_functions[name] = p;
+        }
+
+        if (log) {
+            log->info("apply_nucleus_function_table: {} spans, {} functions, {} named ({})",
+                      sections.function_table.size(), sections.functions.size(),
+                      sections.known_functions.size(), sections.details.path);
+        }
+        return !sections.functions.empty();
+    }
+
+    size_t function_leaf_size(const Function &fn, size_t cap) {
+        if (fn.size == 0 || fn.address == 0) {
+            return 0;
+        }
+        const size_t limit = (std::min)(fn.size, cap == 0 ? fn.size : cap);
+        disasm ds{std::span{reinterpret_cast<uint8_t *>(fn.address), limit}};
+        for (auto &insn: ds) {
+            if (insn.id == X86_INS_RET || insn.id == X86_INS_RETF || insn.id == X86_INS_RETFQ) {
+                return static_cast<size_t>(insn.address + insn.size - fn.address);
+            }
+            if (insn.id == X86_INS_JMP) {
+                const auto &op = insn.detail->x86.operands[0];
+                if (op.type == X86_OP_IMM) {
+                    const uint64_t t = static_cast<uint64_t>(op.imm);
+                    if (t < fn.address || t >= fn.address + fn.size) {
+                        return static_cast<size_t>(insn.address + insn.size - fn.address);
+                    }
+                }
+            }
+        }
+        return limit;
+    }
+
+    static void finish_function_feature_hashes(Function &fn) {
+        if (!fn.module) {
+            return;
+        }
+        for (const auto &block_address: fn.blocks) {
+            auto *block = fn.module->address_blocks[block_address];
+            if (!block) {
+                continue;
+            }
+            for (const auto &c: block->consts) {
+                auto &constV = fn.module->Consts.at(c);
+                if (constV.ref == 1 &&
+                    (fn.const_key == nullptr || constV.value.size() > fn.const_key->size())) {
+                    fn.const_key = &constV.value;
+                }
+            }
+        }
+        fn.consts_hash = hash_vector(fn.blocks);
+    }
+
+    bool ensure_function_features(Function &fn) {
+        if (fn.features_ready) {
+            return true;
+        }
+        if (!fn.module || fn.address == 0 || fn.size == 0) {
+            fn.features_ready = true;
+            return true;
+        }
+        // P2: clamp ScanCtx walk to leaf (first RET / external JMP), max 256B.
+        const size_t leaf = function_leaf_size(fn, 256);
+        if (leaf == 0) {
+            fn.features_ready = true;
+            return true;
+        }
+        ScanCtx ctx{*fn.module, fn.module->text.base_address};
+        ctx.body_hard_end = fn.address + leaf;
+        ctx.function_limit = ctx.body_hard_end - 1;
+        ctx.cur = nullptr;
+        fn.blocks.clear();
+        fn.insn_count = 0;
+        fn.const_key = nullptr;
+        fn.consts_hash = 0;
+        ctx.scan_function(fn.address);
+        finish_function_feature_hashes(fn);
+        fn.features_ready = true;
+        return true;
+    }
+
+    bool body_calls_entry(const ModuleSections &mod, uint64_t start, size_t size,
+                          uint64_t callee_entry) {
+        if (start == 0 || size < 5 || callee_entry == 0) {
+            return false;
+        }
+        const auto *bytes = reinterpret_cast<const uint8_t *>(start);
+        for (size_t i = 0; i + 5 <= size; ) {
+            const uint8_t op = bytes[i];
+            if (op == 0xE8 || op == 0xE9) {
+                const int32_t rel = *reinterpret_cast<const int32_t *>(bytes + i + 1);
+                const uint64_t site = start + i;
+                const uint64_t target = site + 5 + static_cast<int64_t>(rel);
+                if (target == callee_entry) {
+                    return true;
+                }
+                if (!mod.function_table.empty()) {
+                    const uint64_t entry = mod.function_table.containing(target);
+                    if (entry == callee_entry) {
+                        return true;
+                    }
+                }
+                i += 5;
+                continue;
+            }
+            ++i;
+        }
+        return false;
+    }
+
+    bool scan_module_function_features(ModuleSections &sections) {
+        if (sections.function_table.empty()) {
+            if (auto log = spdlog::get(logger_name)) {
+                log->error("scan_module_function_features: empty FunctionTable for {}",
+                           sections.details.path);
+            }
+            return false;
+        }
+        const bool has_names = !sections.known_functions.empty();
+        if (has_names) {
+            // Train: eager leaf-clamped scan of named exports only.
+            sections.blocks.clear();
+            sections.address_blocks.clear();
+            sections.Consts.clear();
+            for (auto &fn: sections.functions) {
+                fn.blocks.clear();
+                fn.insn_count = 0;
+                fn.const_key = nullptr;
+                fn.consts_hash = 0;
+                fn.features_ready = false;
+            }
+            size_t scanned = 0;
+            for (const auto &[name, fn]: sections.known_functions) {
+                (void) name;
+                if (fn && fn->size > 0) {
+                    ensure_function_features(*fn);
+                    ++scanned;
+                }
+            }
+            if (auto log = spdlog::get(logger_name)) {
+                log->info("scan_module_function_features: eager named {} / {} functions, {} blocks ({})",
+                          scanned, sections.functions.size(), sections.blocks.size(),
+                          sections.details.path);
+            }
+            return true;
+        }
+
+        // Game / no symbols: P0 lazy — Function shells only; soft/graph call
+        // ensure_function_features on demand.
+        for (auto &fn: sections.functions) {
+            fn.features_ready = false;
+        }
+        if (auto log = spdlog::get(logger_name)) {
+            log->info("scan_module_function_features: lazy mode, {} functions deferred ({})",
+                      sections.functions.size(), sections.details.path);
+        }
+        return true;
     }
 
     size_t Function::consts_count() const {

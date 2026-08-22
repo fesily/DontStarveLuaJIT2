@@ -2,6 +2,14 @@
 """Build ANGLE (and its link deps) via an isolated vcpkg manifest and stage
 them under 3rd/angle so the main project no longer rebuilds ANGLE on every
 vcpkg cache miss.
+
+On Windows, also emits sideload runtime DLLs next to the canonical pair:
+
+  bin/ds_GLESv2.dll   — copy of libGLESv2.dll (unique basename)
+  bin/ds_libEGL.dll   — libEGL.dll with import libGLESv2.dll -> ds_GLESv2.dll
+
+plugin_render_angle loads these after the game already mapped bin64 ANGLE;
+same-name deps would bind to the game modules (LoadLibrary egl_err=127).
 """
 
 from __future__ import annotations
@@ -26,6 +34,14 @@ TRIPLET_DIR = ROOT / "cmake" / "custom-triplets"
 OUTPUT_DIR = ROOT / "3rd" / "angle"
 INSTALL_ROOT = ANGLE_TOOLS / "vcpkg_installed"
 DEFAULT_TRIPLET = "x64-windows-custom"
+
+# Sideload basenames (same-length PE import patch: libGLESv2.dll -> ds_GLESv2.dll).
+# Must stay unique vs game-resident libGLESv2.dll / libEGL.dll.
+SIDELOAD_GLES_DLL = "ds_GLESv2.dll"
+SIDELOAD_EGL_DLL = "ds_libEGL.dll"
+_ANGLE_GLES_IMPORT_OLD = b"libGLESv2.dll"
+_ANGLE_GLES_IMPORT_NEW = b"ds_GLESv2.dll"
+assert len(_ANGLE_GLES_IMPORT_OLD) == len(_ANGLE_GLES_IMPORT_NEW) == 13
 
 
 def die(message: str) -> None:
@@ -131,10 +147,12 @@ def is_staged(stage_dir: Path, fp: str, release_only: bool) -> bool:
     required = [
         stage_dir / "include" / "EGL" / "egl.h",
         stage_dir / "include" / "GLES2" / "gl2.h",
-        stage_dir / "lib" / "libEGL.lib",
+        stage_dir / "bin" / "libGLESv2.dll",
+        stage_dir / "bin" / "libEGL.dll",
+        stage_dir / "bin" / SIDELOAD_GLES_DLL,
+        stage_dir / "bin" / SIDELOAD_EGL_DLL,
         stage_dir / "lib" / "libGLESv2.lib",
-        stage_dir / "lib" / "ANGLE.lib",
-        stage_dir / "lib" / "SPIRV-Tools.lib",
+        stage_dir / "lib" / "libEGL.lib",
         stage_dir / "lib" / "vulkan-1.lib",
         stage_dir / "include" / "vma" / "vk_mem_alloc.h",
     ]
@@ -156,7 +174,55 @@ def copy_file(src: Path, dst: Path) -> None:
     shutil.copy2(src, dst)
 
 
+def write_sideload_angle_dlls(bin_dir: Path) -> None:
+    """Emit unique-basename ANGLE DLLs for post-game-load IAT rebind.
+
+    Game already maps bin64 libGLESv2/libEGL before EarlyNative. Loading our
+    libs under the same basenames binds libEGL's import of libGLESv2.dll to the
+    game module (ERROR_PROC_NOT_FOUND / 127). Sideload names avoid that collision;
+    plugin_render_angle rebinds the game's libEGL.dll/libGLESv2.dll IAT slots to
+    exports from these modules.
+    """
+    src_gles = bin_dir / "libGLESv2.dll"
+    src_egl = bin_dir / "libEGL.dll"
+    if not src_gles.is_file() or not src_egl.is_file():
+        die(f"cannot write sideload ANGLE DLLs; missing {src_gles.name} or {src_egl.name} in {bin_dir}")
+
+    dst_gles = bin_dir / SIDELOAD_GLES_DLL
+    dst_egl = bin_dir / SIDELOAD_EGL_DLL
+    shutil.copy2(src_gles, dst_gles)
+
+    data = bytearray(src_egl.read_bytes())
+    count = data.count(_ANGLE_GLES_IMPORT_OLD)
+    if count < 1:
+        die(
+            f"{src_egl} has no import string {_ANGLE_GLES_IMPORT_OLD!r}; "
+            f"cannot patch to {_ANGLE_GLES_IMPORT_NEW!r}"
+        )
+    data = data.replace(_ANGLE_GLES_IMPORT_OLD, _ANGLE_GLES_IMPORT_NEW)
+    if _ANGLE_GLES_IMPORT_OLD in data:
+        die(f"failed to fully patch {_ANGLE_GLES_IMPORT_OLD!r} in {src_egl}")
+    if data.count(_ANGLE_GLES_IMPORT_NEW) < 1:
+        die(f"patch produced no {_ANGLE_GLES_IMPORT_NEW!r} in sideload EGL")
+    dst_egl.write_bytes(data)
+    print(
+        f"sideload ANGLE: {dst_gles.name} + {dst_egl.name} "
+        f"(patched libGLESv2 import x{count}) -> {bin_dir}"
+    )
+
+
 def stage_from_install(install_prefix: Path, stage_dir: Path, release_only: bool) -> None:
+    # Validate shared runtime first so a bad prefix never wipes a good stage tree.
+    for name in ("libGLESv2.dll", "libEGL.dll"):
+        src = install_prefix / "bin" / name
+        if not src.is_file():
+            die(
+                f"shared ANGLE missing DLL: {src}\n"
+                f"  install prefix has import libs but no shared runtime.\n"
+                f"  Rebuild ANGLE shared (python tools/setup_angle.py -f) or point "
+                f"--from-prefix at a prefix that contains bin/libGLESv2.dll."
+            )
+
     if stage_dir.exists():
         shutil.rmtree(stage_dir)
     stage_dir.mkdir(parents=True, exist_ok=True)
@@ -186,26 +252,41 @@ def stage_from_install(install_prefix: Path, stage_dir: Path, release_only: bool
     if vk_video.exists():
         copy_tree(vk_video, stage_dir / "include" / "vk_video")
 
-    lib_names = [
-        "libEGL.lib",
-        "libGLESv2.lib",
-        "ANGLE.lib",
-        "SPIRV-Tools.lib",
-        "vulkan-1.lib",
-    ]
+    # Consumer import libs for shared GLESv2/EGL (+ Vulkan loader).
+    lib_names = ["libEGL.lib", "libGLESv2.lib", "vulkan-1.lib"]
     for name in lib_names:
         copy_file(install_prefix / "lib" / name, stage_dir / "lib" / name)
+
+    # Optional static/helper libs kept for the generator / tooling when present.
+    for name in ("ANGLE.lib", "SPIRV-Tools.lib"):
+        src = install_prefix / "lib" / name
+        if src.is_file():
+            copy_file(src, stage_dir / "lib" / name)
 
     if not release_only:
         for name in lib_names:
             src = install_prefix / "debug" / "lib" / name
             if src.is_file():
                 copy_file(src, stage_dir / "debug" / "lib" / name)
+        for name in ("ANGLE.lib", "SPIRV-Tools.lib"):
+            src = install_prefix / "debug" / "lib" / name
+            if src.is_file():
+                copy_file(src, stage_dir / "debug" / "lib" / name)
+
+    # Shared runtime DLLs produced by the ANGLE port (required).
+    for name in ("libGLESv2.dll", "libEGL.dll"):
+        src = install_prefix / "bin" / name
+        if not src.is_file():
+            die(f"shared ANGLE missing DLL: {src}")
+        copy_file(src, stage_dir / "bin" / name)
 
     # Keep the import library companion DLL when present (loader).
     vulkan_dll = install_prefix / "bin" / "vulkan-1.dll"
     if vulkan_dll.is_file():
         copy_file(vulkan_dll, stage_dir / "bin" / "vulkan-1.dll")
+
+    # Unique basenames for runtime rebind after game-resident ANGLE is mapped.
+    write_sideload_angle_dlls(stage_dir / "bin")
 
 
 def ensure_dir(path: Path) -> Path:
@@ -271,6 +352,8 @@ def write_marker(stage_dir: Path, fp: str, release_only: bool, triplet: str) -> 
         "release_only": release_only,
         "triplet": triplet,
         "platform": map_target_dir(),
+        "shared": True,
+        "link": "glesv2_egl_dll",
     }
     marker.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     # Convenience pointer used by CMake / humans.
@@ -285,21 +368,44 @@ def default_from_prefix_candidates(triplet: str) -> list[Path]:
     ]
 
 
+def prefix_has_shared_angle_dlls(prefix: Path) -> bool:
+    """Shared ANGLE runtime required for plugin_render_angle sideload."""
+    return (prefix / "bin" / "libGLESv2.dll").is_file() and (prefix / "bin" / "libEGL.dll").is_file()
+
+
+def prefix_has_import_libs(prefix: Path) -> bool:
+    return (
+        (prefix / "lib" / "libEGL.lib").is_file()
+        and (prefix / "lib" / "libGLESv2.lib").is_file()
+        and (prefix / "lib" / "ANGLE.lib").is_file()
+    )
+
+
 def resolve_prefix(args: argparse.Namespace, release_only: bool) -> Path:
     if args.from_prefix:
         prefix = Path(args.from_prefix)
         if not prefix.is_dir():
             die(f"--from-prefix is not a directory: {prefix}")
+        if not prefix_has_shared_angle_dlls(prefix):
+            die(
+                f"--from-prefix missing shared ANGLE DLLs under bin/ "
+                f"(libGLESv2.dll / libEGL.dll): {prefix}"
+            )
         return prefix
 
     # Prefer an already-built install over recompiling ANGLE for hours.
+    # Import libs alone are not enough: older static-only prefixes have no bin/*.dll.
     for candidate in default_from_prefix_candidates(args.triplet):
-        egl = candidate / "lib" / "libEGL.lib"
-        gles = candidate / "lib" / "libGLESv2.lib"
-        angle = candidate / "lib" / "ANGLE.lib"
-        if egl.is_file() and gles.is_file() and angle.is_file():
+        if not candidate.is_dir():
+            continue
+        if prefix_has_import_libs(candidate) and prefix_has_shared_angle_dlls(candidate):
             print(f"reusing existing ANGLE install: {candidate}")
             return candidate
+        if prefix_has_import_libs(candidate) and not prefix_has_shared_angle_dlls(candidate):
+            print(
+                f"skip existing ANGLE install without shared DLLs: {candidate} "
+                f"(need bin/libGLESv2.dll + bin/libEGL.dll)"
+            )
 
     vcpkg = find_vcpkg(args.vcpkg)
     print(f"using vcpkg: {vcpkg}")
@@ -312,8 +418,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--release-only",
         action="store_true",
-        default=bool(os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS")),
-        help="Stage only Release libs (default on CI)",
+        default=True,
+        help="Stage only Release libs/DLL (default; shared ANGLE is release)",
     )
     parser.add_argument(
         "--with-debug",
@@ -349,6 +455,24 @@ def main() -> int:
     if not args.force and is_staged(stage_dir, fp, release_only):
         print(f"use cached {staged_marker(stage_dir)}")
         return 0
+
+    # Fingerprint match but sideload missing (pre-sideload stage): repair in place.
+    marker = staged_marker(stage_dir)
+    if (
+        not args.force
+        and marker.is_file()
+        and (stage_dir / "bin" / "libGLESv2.dll").is_file()
+        and (stage_dir / "bin" / "libEGL.dll").is_file()
+    ):
+        try:
+            data = json.loads(marker.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = {}
+        if data.get("fingerprint") == fp and bool(data.get("release_only")) == release_only:
+            write_sideload_angle_dlls(stage_dir / "bin")
+            if is_staged(stage_dir, fp, release_only):
+                print(f"repaired sideload DLLs under {stage_dir / 'bin'}")
+                return 0
 
     prefix = resolve_prefix(args, release_only)
     stage_from_install(prefix, stage_dir, release_only)

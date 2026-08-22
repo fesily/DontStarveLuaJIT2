@@ -1,17 +1,18 @@
+#include "config/InjectorHostConfig.hpp"
 extern "C" {
 #include "../../lua51/src/lstate.h"
 #include "../../lua51/src/ldebug.h"
 }
 
-void lua51_setallocf(lua_State *L, lua_Alloc f, void *ud) {
+DS_INJECTOR_CXX_API void lua51_setallocf(lua_State *L, lua_Alloc f, void *ud) {
     G(L)->ud = ud;
     G(L)->frealloc = f;
 }
-lua_Alloc lua51_getallocf(lua_State *L, void **ud) {
+DS_INJECTOR_CXX_API lua_Alloc lua51_getallocf(lua_State *L, void **ud) {
     if (ud) *ud = G(L)->ud;
     return G(L)->frealloc;
 }
-int lua51_sethook(lua_State *L, lua_Hook func, int mask, int count) {
+DS_INJECTOR_CXX_API int lua51_sethook(lua_State *L, lua_Hook func, int mask, int count) {
     if (func == NULL || mask == 0) { /* turn off hooks? */
         mask = 0;
         func = NULL;
@@ -22,7 +23,7 @@ int lua51_sethook(lua_State *L, lua_Hook func, int mask, int count) {
     L->hookmask = cast_byte(mask);
     return 1;
 }
-int lua51_gethookcount(lua_State *L) {
+DS_INJECTOR_CXX_API int lua51_gethookcount(lua_State *L) {
     return L->basehookcount;
 }
 
@@ -78,7 +79,7 @@ static const char *findlocal(lua_State *L, CallInfo *ci, int n) {
     }
 }
 
-const char *lua51_getlocal(lua_State *L, const lua_Debug *ar, int n) {
+DS_INJECTOR_CXX_API const char *lua51_getlocal(lua_State *L, const lua_Debug *ar, int n) {
     CallInfo *ci = L->base_ci + ar->i_ci;
     const char *name = findlocal(L, ci, n);
     lua_lock(L);
@@ -88,7 +89,7 @@ const char *lua51_getlocal(lua_State *L, const lua_Debug *ar, int n) {
     return name;
 }
 
-const char *lua51_setlocal(lua_State *L, const lua_Debug *ar, int n) {
+DS_INJECTOR_CXX_API const char *lua51_setlocal(lua_State *L, const lua_Debug *ar, int n) {
     CallInfo *ci = L->base_ci + ar->i_ci;
     const char *name = findlocal(L, ci, n);
     lua_lock(L);

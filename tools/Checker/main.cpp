@@ -21,7 +21,7 @@
 const char *game_path = GAMEDIR R"(\bin64\dontstarve_steam_x64.exe)";
 const char *game_server_path = GAMEDIR R"(\bin64\dontstarve_dedicated_server_nullrenderer_x64.exe)";
 const char *lua51_path = LUA51_PATH;
-const char *worker_dir = PROJECT_DIR "/Mod/bin64/windows";
+const char *worker_dir = PROJECT_DIR "/Mod";
 
 bool loadModule(const char *path) {
     GError *err = nullptr;
@@ -34,7 +34,11 @@ bool loadModule(const char *path) {
 }
 
 int check(const char *path, bool isClient) {
+    using namespace std::literals;
     SignatureJson sj{isClient};
+    sj.file_path = (std::filesystem::path{worker_dir} /
+                    ("signatures_"s + (isClient ? "client"s : "server"s) + ".json"))
+                           .string();
     auto signatures = sj.read_from_signatures().value();
     fprintf(stderr, "game_path:\t%s\n", path);
     if (!loadModule(path))

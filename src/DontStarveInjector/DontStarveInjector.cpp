@@ -1,21 +1,23 @@
 // DontStarveInjector.cpp : Defines the exported functions for the DLL application.
 //
 
-#include "config.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "util/inlinehook.hpp"
-#include "GameSignature.hpp"
-#include "DontStarveSignature.hpp"
 #include "util/platform.hpp"
 #include "ctx.hpp"
-#include "ModuleSections.hpp"
-#include "disasm.h"
-#include "ScanCtx.hpp"
-#include "ProcessMutex.hpp"
-#include "gameModConfig.hpp"
-#include "GameLua.hpp"
-#include "GameSteam.hpp"
-#include "GameNetwork.hpp"
-#include "GameRenderHook.hpp"
+#include "MemorySignature.hpp"
+#include "core/PluginHost.hpp"
+#include "core/PluginConfigBridge.hpp"
+#include "config/ConfigSchema.hpp"
+#include "config/ResolvedConfig.hpp"
+#include "core/RegisterBuiltinPlugins.hpp"
+#include "core/DynamicPluginLoader.hpp"
+#include "core/PluginPath.hpp"
+#include "core/CoreVmBootstrap.hpp"
+
+
+
+
 #include <spdlog/spdlog.h>
 
 #ifdef _WIN32
@@ -35,16 +37,18 @@
 #include <cstdint>
 #include <list>
 #include <atomic>
+#include <cstdio>
 
 
-#if USE_LISTENER
 #include <frida-gum.h>
-#endif
+#include "util/frida_gum_interceptor.hpp"
 #include <spdlog/sinks/basic_file_sink.h>
 
 
+#include "config/sources/LuajitConfigFile.hpp"
+
 #if !ONLY_LUA51
-#include <lua.hpp>
+#include <lua.h>
 #else
 extern "C" {
 #include <lua.h>
@@ -68,51 +72,6 @@ void wait_for_debugger_before_inject() {
 #endif
 }
 
-#ifdef _WIN32
-namespace {
-using GetBuildTypeFn = const char *(*)(void *self);
-GetBuildTypeFn original_get_build_type = nullptr;
-
-const char *forced_get_build_type(void *self) {
-    (void) self;
-    return "dev";
-}
-
-uintptr_t find_build_type_function(const function_relocation::ModuleSections &module_main) {
-    function_relocation::MemorySignature build_type_signature{"48 8B 05 ?? ?? ?? ?? C3", 0};
-    build_type_signature.only_one = false;
-    build_type_signature.log = false;
-    build_type_signature.prot_flag = GUM_PAGE_EXECUTE;
-    if (!build_type_signature.scan(module_main.text.base_address, module_main.text.size)) {
-        return 0;
-    }
-
-    for (const auto candidate : build_type_signature.targets) {
-        auto insn = function_relocation::disasm::get_insn(reinterpret_cast<void *>(candidate), 8);
-        if (!insn || insn->detail->x86.op_count != 2) {
-            continue;
-        }
-
-        const auto &x86 = insn->detail->x86;
-        if (x86.operands[0].type != X86_OP_REG || x86.operands[1].type != X86_OP_MEM) {
-            continue;
-        }
-
-        const auto string_ptr_address = function_relocation::read_operand_rip_mem(*insn, x86.operands[1]);
-        if (!string_ptr_address || !module_main.in_rodata(*reinterpret_cast<uintptr_t *>(string_ptr_address))) {
-            continue;
-        }
-
-        const auto build_type = reinterpret_cast<const char *>(*reinterpret_cast<uintptr_t *>(string_ptr_address));
-        if (build_type && std::string_view{build_type} == "release") {
-            return candidate;
-        }
-    }
-
-    return 0;
-}
-} // namespace
-#endif
 
 G_NORETURN void showError(const std::string_view &msg) {
 #ifdef _WIN32
@@ -123,46 +82,6 @@ G_NORETURN void showError(const std::string_view &msg) {
     std::exit(1);
 }
 
-
-void replace_game_branch_flag_to_dev(const std::string &mainPath) {
-#ifdef _WIN32
-    if (!InjectorConfig::instance()->AppVersionDevPatch) {
-        return;
-    }
-
-    static bool patched = false;
-    if (patched) {
-        return;
-    }
-
-    function_relocation::ModuleSections moduleMain{};
-    if (!function_relocation::get_module_sections(mainPath.c_str(), moduleMain)) {
-        spdlog::error("failed to get module sections for {}", mainPath);
-        return;
-    }
-
-    const auto target = find_build_type_function(moduleMain);
-    if (!target) {
-        spdlog::error("failed to locate GetBuildType function by binary signature");
-        return;
-    }
-
-    auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
-    auto replace_result = gum_interceptor_replace(
-        interceptor,
-        reinterpret_cast<void *>(target),
-        reinterpret_cast<void *>(&forced_get_build_type),
-        nullptr,
-        reinterpret_cast<void **>(&original_get_build_type));
-    if (replace_result != GUM_REPLACE_OK) {
-        spdlog::error("failed to replace GetBuildType at {}: {}", reinterpret_cast<void *>(target), static_cast<int>(replace_result));
-        return;
-    }
-
-    patched = true;
-    spdlog::info("patched GetBuildType at {} to force dev build type", reinterpret_cast<void *>(target));
-#endif
-}
 
 static bool server_is_master() {
     return std::string_view{get_cmd()}.contains("DST_Master");
@@ -221,6 +140,14 @@ void DisableScriptZip() {
     }
 }
 
+// VM soft-skip (DisableJITWhenServer / DS_LUAJIT_FORCE_DISABLE_VM) lives in
+// CoreVmBootstrap — L0 never aborts Inject for those flags (OB-S1).
+
+
+
+// VM signature/replace is owned by plugin_core_vm (ds_core_vm_run_signature_and_replace).
+// No in-process legacy fallback after Task 3.
+
 extern "C" void LoadGameModConfig();
 DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     auto ictx = InjectorCtx::instance();
@@ -234,12 +161,6 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     }
     auto defer = create_defer(&function_relocation::deinit_ctx);
 
-    if (!isClient) {
-        auto config = GameJitModConfig::instance();
-        if (config && config->DisableJITWhenServer) {
-            return;
-        }
-    }
 
     ictx->DontStarveInjectorIsClient = isClient;
 #ifdef _WIN32
@@ -271,38 +192,91 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         return;
     }
 
-    HookSteamGameServerInterface();
-
-    auto lua51 = loadlib(lua51_name);
-    if (!lua51) {
-        showError("can't load lua51");
-        return;
-    }
-    auto defer1 = create_defer([&lua51]() {
-        if (lua51)
-            unloadlib(lua51);
-    });
-
-    spdlog::info("main module base address:{}", (void *) gum_module_get_range(gum_process_get_main_module())->base_address);
-    auto mainPath = getExePath().string();
-    if (luaModuleSignature.scan(mainPath.c_str()) == 0) {
-        spdlog::error("can't find luamodule base address");
-        return;
-    }
-    ProcessMutex mtx("DontStarveInjectorSignature");
-    std::lock_guard guard{mtx};
-    auto res = SignatureUpdater::create_or_update(isClient, luaModuleSignature.target_address);
-    if (!res) {
-        showError(res.error());
-        return;
-    }
-    unloadlib(lua51);
-    auto &val = res.value();
-    ReplaceLuaModule(mainPath, val.signatures, val.exports);
-    replace_game_branch_flag_to_dev(mainPath);
+    // Steam UGC workshop path hook lives in plugin_core_vm (with gameio).
 
     LoadGameModConfig();
-    GameNetWorkHookRpc4();
+
+    // Production modmain path for shared plugin search (parent(modmain)/plugins).
+    // Must be registered before DynamicPluginLoader::load_all / default_plugin_search_dirs.
+    ds::plugin::set_modmain_path_provider([]() -> std::string {
+        if (auto cfg = luajit_config::read_from_file(); cfg) {
+            return cfg->modmain_path;
+        }
+        return {};
+    });
+
+    // PluginHost: static RegisterBuiltinPlugins (empty extension point) then
+    // DynamicPluginLoader (network.rpc / render.vbpool / render.angle / core.vm / …).
+    // OB-S2/S4: load modules (schema register) BEFORE full cascade resolve so
+    // save/env can apply VM + business keys registered in module_init.
+    {
+        using namespace ds::plugin;
+        static PluginHost g_plugin_host;
+        // L0 base schema must exist even with zero plugins (C-S6 / OB-S2).
+        // Business keys come only from plugins (OB-S4).
+        RegisterCoreOptionSchema(g_plugin_host.option_schema());
+        RegisterBuiltinPlugins(g_plugin_host);
+        {
+            static DynamicPluginLoader g_dyn_loader;
+            auto report = g_dyn_loader.load_all(g_plugin_host, isClient);
+            for (auto &p : report.loaded_modules) {
+                spdlog::info("dynamic plugin module loaded: {}", p);
+            }
+            for (auto &s : report.skipped) {
+                spdlog::warn("dynamic plugin module skipped: {}", s);
+            }
+            for (auto *e : g_plugin_host.option_schema().all()) {
+                const char *type_name = "None";
+                switch (e->type) {
+                case ConfigValueType::Bool:
+                    type_name = "Bool";
+                    break;
+                case ConfigValueType::String:
+                    type_name = "String";
+                    break;
+                case ConfigValueType::Number:
+                    type_name = "Number";
+                    break;
+                case ConfigValueType::None:
+                default:
+                    break;
+                }
+                spdlog::info("option schema: {} type={}", e->key, type_name);
+                // Default Injector log level is err; mirror to stderr so L-G/server capture sees keys.
+                std::fprintf(stderr, "option schema: %s type=%s\n", e->key.c_str(), type_name);
+            }
+        }
+
+        // Merge late keys (VM from core.vm, business from plugins) and re-resolve.
+        ds::config::refresh_cascade_after_plugins(g_plugin_host.option_schema());
+
+        // core.vm is required: force-load plugin_core_vm and run signature/replace.
+        // Missing module/export aborts inject. Soft skip only for intentional VM disable
+        // (server DisableJITWhenServer / DS_LUAJIT_FORCE_DISABLE_VM) or soft miss.
+        {
+            ds::core_vm::BootstrapArgs args{};
+            args.is_client = isClient;
+            args.lua_module_base = 0;
+            args.main_path = nullptr;
+            if (!ds::core_vm::ForceRunSignatureAndReplace(args)) {
+                spdlog::warn("core.vm signature/replace soft-skipped — continuing inject");
+                std::fprintf(stderr, "[core.vm] signature/replace soft-skipped — continuing inject\n");
+            }
+        }
+
+        // CF-S4: PluginHost gates from cascade ResolvedConfig.view SSOT.
+        ConfigView plugin_cfg;
+        if (auto *rc = ds::config::current()) {
+            plugin_cfg = BuildConfigView(g_plugin_host.option_schema(), rc->view);
+        }
+        PluginContext gate_ctx;
+        gate_ctx.injector = InjectorCtx::instance();
+        gate_ctx.is_client = isClient;
+        gate_ctx.config = &plugin_cfg;
+        (void) g_plugin_host.resolve(plugin_cfg, gate_ctx);
+        (void) g_plugin_host.load_phase(PluginPhase::EarlyNative);
+    }
+
     DisableScriptZip();
 }
 
@@ -325,19 +299,39 @@ int chdir_hook(const char *path) {
 
 extern char *__progname;
 static bool gum_initialized = false;
+static std::atomic_bool posix_startup_hook_installed = false;
+
+// Shared by constructor (LD_PRELOAD / direct load) and HookStartupEntry (bootstrap
+// stub after dlopen). Idempotent: only the first caller installs the chdir hook.
+static bool install_posix_startup_hook() {
+    bool expected = false;
+    if (!posix_startup_hook_installed.compare_exchange_strong(expected, true)) {
+        return true;
+    }
+
+    auto api = dlsym(RTLD_DEFAULT, "chdir");
+    if (!api) {
+        posix_startup_hook_installed = false;
+        return false;
+    }
+    if (!gum_initialized) {
+        gum_init_embedded();
+        gum_initialized = true;
+    }
+    auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
+    ds::gum::replace_fast(interceptor, api, (void *) &chdir_hook, (void **) &origin);
+    if (!origin) {
+        posix_startup_hook_installed = false;
+        return false;
+    }
+    return true;
+}
 
 __attribute__((constructor)) void init() {
     if (!getExePath().string().contains("dontstarve")) {
         return;
     }
-    auto api = dlsym(RTLD_DEFAULT, "chdir");
-    if (!api) {
-        return;
-    }
-    gum_init_embedded();
-    gum_initialized = true;
-    auto intercetor = InjectorCtx::instance()->GetGumInterceptor();
-    gum_interceptor_replace_fast(intercetor, api, (void *) &chdir_hook, (void **) &origin);
+    (void) install_posix_startup_hook();
 }
 
 __attribute__((destructor)) void fini() {
@@ -346,6 +340,16 @@ __attribute__((destructor)) void fini() {
     }
     _exit(0);
 }
+
+// Exported for shell bootstrap (InjectorStub) dlsym("HookStartupEntry").
+// Constructor may already have installed the chdir hook — return true when ready.
+DONTSTARVEINJECTOR_API bool HookStartupEntry() {
+    if (posix_startup_hook_installed.load(std::memory_order_acquire)) {
+        return true;
+    }
+    return install_posix_startup_hook();
+}
+
 #else
 using SetCurrentDirectoryWFn = BOOL(WINAPI *)(LPCWSTR);
 SetCurrentDirectoryWFn original_SetCurrentDirectoryW = nullptr;
@@ -395,7 +399,7 @@ DONTSTARVEINJECTOR_API bool HookStartupEntry() {
     }
 
     auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
-    gum_interceptor_replace_fast(
+    ds::gum::replace_fast(
         interceptor,
         set_current_directory_w,
         reinterpret_cast<void *>(&SetCurrentDirectoryW_hook),

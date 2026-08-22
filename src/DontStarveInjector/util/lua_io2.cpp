@@ -10,8 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../GameLua.hpp"
-#include "../gameio.h"
+#include "GameLua.hpp"
+#include "io/gameio.h"  // plugin_core_vm/io
 
 #undef LUA_FILEHANDLE
 #define LUA_FILEHANDLE "IO2FILE*"

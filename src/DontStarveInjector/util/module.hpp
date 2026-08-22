@@ -1,5 +1,6 @@
 #pragma once
 #ifdef _WIN32
+#include "config/InjectorHostConfig.hpp"
 #include <cstdint>
 #include <Windows.h>
 
@@ -28,11 +29,11 @@ struct ImportDetails {
 using FoundImportFunc = bool (*)(const ImportDetails *, void *);
 using FoundExportFunc = bool (*)(const ExportDetails *, void *);
 
-void module_enumerate_exports(HMODULE module,
+DS_INJECTOR_CXX_API void module_enumerate_exports(HMODULE module,
                               FoundExportFunc func,
                               void *user_data);
 
-void
+DS_INJECTOR_CXX_API void
 module_enumerate_imports(HMODULE module,
                          FoundImportFunc func,
                          void *user_data);

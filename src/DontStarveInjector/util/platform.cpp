@@ -12,6 +12,8 @@
 #endif
 
 #include <filesystem>
+#include <vector>
+#include <string>
 #include "platform.hpp"
 
 std::filesystem::path getExePath() {
@@ -35,26 +37,194 @@ module_handler_t loadlib(const char *name, int mode) {
     if (!name || !*name) {
         return nullptr;
     }
-    if (!std::filesystem::exists(name)) {
-        std::filesystem::path path;
-        if (auto p = getExePath().parent_path() / name; std::filesystem::exists(p))
-            path = p;
-        else if (auto p = std::filesystem::current_path() / name; std::filesystem::exists(p))
-            path = p;
-#if defined(__linux__)
-        else if (auto p = getExePath().parent_path() / "lib64"/ name; std::filesystem::exists(p))
-            path = p;
-        else if (auto p = std::filesystem::current_path() / "lib64" /name; std::filesystem::exists(p))
-            path = p;
-#endif
-        if (!path.empty())
-            return loadlib(path.string().c_str(), mode);
-    }
-    return
-#ifdef _WIN32
-        LoadLibraryA(name);
+
+    namespace fs = std::filesystem;
+    const fs::path input{name};
+
+    // Bare basenames (e.g. "lua51") must try the platform shared-library suffix.
+    // Otherwise exists(.../"lua51") fails and LoadLibraryA("lua51") only searches
+    // the game exe directory — missing mod-local VMs under plugins/deps.
+    auto with_platform_suffix = [](const fs::path &p) -> fs::path {
+        if (p.has_extension()) {
+            return p;
+        }
+#if defined(_WIN32)
+        return fs::path(p.string() + ".dll");
+#elif defined(__APPLE__)
+        return fs::path(p.string() + ".dylib");
 #else
-            dlopen(name, RTLD_NOW | mode);
+        return fs::path(p.string() + ".so");
+#endif
+    };
+
+    const auto try_load_path = [&](const fs::path &candidate) -> module_handler_t {
+        if (candidate.empty()) {
+            return nullptr;
+        }
+        std::error_code ec;
+        if (!fs::is_regular_file(candidate, ec)) {
+            return nullptr;
+        }
+        const auto s = candidate.string();
+#ifdef _WIN32
+        // Absolute path + DLL_LOAD_DIR: dependency dir is the VM's own folder (Mod/deps).
+        // Do NOT add USER_DIRS here unless AddDllDirectory was called — otherwise
+        // LoadLibraryEx can fail with ERROR_INVALID_PARAMETER (0x57) / 0x7E chain.
+        return LoadLibraryExA(s.c_str(), nullptr,
+                              LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+#else
+        return dlopen(s.c_str(), RTLD_NOW | mode);
+#endif
+    };
+
+    if (auto h = try_load_path(input)) {
+        return h;
+    }
+    if (auto h = try_load_path(with_platform_suffix(input))) {
+        return h;
+    }
+
+    // Search roots (priority):
+    // 1) plugins/deps next to already-mapped plugin_core_vm (canonical for lua51*).
+    // 2) plugins/deps derived from Injector: <injector_dir>/../plugins/deps
+    // 3) Injector directory (legacy dual-stage)
+    // 4) Game exe / cwd (legacy)
+    std::vector<fs::path> roots;
+    const auto push_root = [&](const fs::path &dir) {
+        if (dir.empty()) {
+            return;
+        }
+        std::error_code ec;
+        if (!fs::is_directory(dir, ec)) {
+            return;
+        }
+        for (const auto &existing : roots) {
+            if (existing == dir) {
+                return;
+            }
+        }
+        roots.push_back(dir);
+    };
+
+#ifdef _WIN32
+    auto module_dir = [](const wchar_t *wname, const char *aname) -> fs::path {
+        HMODULE mod = GetModuleHandleW(wname);
+        if (!mod && aname) {
+            mod = GetModuleHandleA(aname);
+        }
+        if (!mod) {
+            return {};
+        }
+        wchar_t buf[MAX_PATH];
+        const DWORD n = GetModuleFileNameW(mod, buf, MAX_PATH);
+        if (n == 0 || n >= MAX_PATH) {
+            return {};
+        }
+        return fs::path(buf).parent_path();
+    };
+    const auto core_dir = module_dir(L"plugin_core_vm", "plugin_core_vm.dll");
+    if (!core_dir.empty()) {
+        // core.vm lives in mod/plugins → mod/deps is the sibling deps tree
+        push_root(core_dir.parent_path() / "deps"); // <mod>/deps
+        push_root(core_dir / "deps");               // legacy plugins/deps (discarded)
+        push_root(core_dir);
+    }
+    const auto inj_dir = module_dir(L"Injector", "Injector.dll");
+    if (!inj_dir.empty()) {
+        // Canonical: <mod>/Injector.dll → <mod>/deps
+        push_root(inj_dir / "deps");
+        // Legacy: <mod>/bin64/Injector.dll → <mod>/deps
+        push_root(inj_dir.parent_path() / "deps");
+        push_root(inj_dir);
+    }
+#else
+    auto module_dir_from_path = [](const char *path) -> fs::path {
+        if (!path || !*path) {
+            return {};
+        }
+        return fs::path(path).parent_path();
+    };
+    Dl_info info{};
+    void *core_sym = dlsym(RTLD_DEFAULT, "ds_core_vm_run_signature_and_replace");
+    if (core_sym && dladdr(core_sym, &info) && info.dli_fname) {
+        const auto core_dir = module_dir_from_path(info.dli_fname);
+        push_root(core_dir / "deps");
+        push_root(core_dir);
+    }
+    void *inj_sym = dlsym(RTLD_DEFAULT, "HookStartupEntry");
+    if (inj_sym && dladdr(inj_sym, &info) && info.dli_fname) {
+        const auto inj_dir = module_dir_from_path(info.dli_fname);
+        // Canonical mod-root Injector → mod/deps
+        push_root(inj_dir / "deps");
+        // Legacy bin64 layouts
+        push_root(inj_dir.parent_path() / "deps");
+        push_root(inj_dir);
+#if defined(__linux__)
+        push_root(inj_dir / "lib64");
+#endif
+    }
+#endif
+
+    push_root(getExePath().parent_path());
+    {
+        std::error_code ec;
+        push_root(fs::current_path(ec));
+    }
+#if defined(__linux__)
+    push_root(getExePath().parent_path() / "lib64");
+#endif
+
+    const fs::path base = input.filename().empty() ? input : input.filename();
+    const fs::path base_suf = with_platform_suffix(base);
+#if !defined(_WIN32)
+    fs::path base_lib;
+    if (!base.has_extension()) {
+        const auto s = base.string();
+        if (s.rfind("lib", 0) != 0) {
+            base_lib = fs::path(std::string("lib") + s +
+#if defined(__APPLE__)
+                                ".dylib"
+#else
+                                ".so"
+#endif
+            );
+        }
+    }
+#endif
+
+    for (const auto &root : roots) {
+        if (auto h = try_load_path(root / base_suf)) {
+            return h;
+        }
+        if (auto h = try_load_path(root / base)) {
+            return h;
+        }
+#if !defined(_WIN32)
+        if (!base_lib.empty()) {
+            if (auto h = try_load_path(root / base_lib)) {
+                return h;
+            }
+        }
+#endif
+    }
+
+#ifdef _WIN32
+    if (auto h = LoadLibraryA(with_platform_suffix(input).string().c_str())) {
+        return h;
+    }
+    return LoadLibraryA(name);
+#else
+    if (auto h = dlopen(with_platform_suffix(input).string().c_str(), RTLD_NOW | mode)) {
+        return h;
+    }
+#if !defined(_WIN32)
+    if (!base_lib.empty()) {
+        if (auto h = dlopen(base_lib.string().c_str(), RTLD_NOW | mode)) {
+            return h;
+        }
+    }
+#endif
+    return dlopen(name, RTLD_NOW | mode);
 #endif
 }
 

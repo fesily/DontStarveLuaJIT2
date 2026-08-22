@@ -1,0 +1,7 @@
+#!/bin/bash
+
+CURRENT_PATH=${PWD##*/}
+DOCKER_IMAGE_NAME=$CURRENT_PATH
+
+docker build -t ${DOCKER_IMAGE_NAME} .
+docker run -it -v $PWD:/$CURRENT_PATH --security-opt seccomp=unconfined --workdir=/$CURRENT_PATH ${DOCKER_IMAGE_NAME} bash

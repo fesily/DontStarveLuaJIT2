@@ -9,6 +9,8 @@
 #include <frida-gum.h>
 #include <memory>
 #include <list>
+#include "export.hpp"
+#include "FunctionTable.hpp"
 
 
 struct Signature;
@@ -47,14 +49,16 @@ namespace function_relocation {
         uint64_t address = 0;
         size_t size = 0;
         size_t insn_count = 0;
+        // Set after ensure_function_features (lazy ScanCtx disasm).
+        bool features_ready = false;
 
         bool in_function(uint64_t addr) const {
             return address <= addr && addr < address + size;
         }
-        size_t consts_count() const;
-        size_t calls_count() const;
-        size_t const_count() const;
-        size_t const_offset_count() const;
+        FUNCTION_RELOCATION_API size_t consts_count() const;
+        FUNCTION_RELOCATION_API size_t calls_count() const;
+        FUNCTION_RELOCATION_API size_t const_count() const;
+        FUNCTION_RELOCATION_API size_t const_offset_count() const;
 
 
         std::vector<uintptr_t> blocks;
@@ -64,7 +68,7 @@ namespace function_relocation {
         size_t consts_hash = 0;
         ModuleSections *module = nullptr;
 
-        CodeBlock* get_block(size_t index) const;
+        FUNCTION_RELOCATION_API CodeBlock* get_block(size_t index) const;
     };
 
     struct ModuleDetials {
@@ -111,6 +115,15 @@ namespace function_relocation {
         std::unordered_map<uintptr_t, CodeBlock*> address_blocks;
         std::unordered_map<std::string, Function *> known_functions;
 
+        // Process-VA Nucleus spans (preferred ImageBase remapped to load base).
+        // Empty until apply_nucleus_function_table runs for this module.
+        // THIS is the sole authority for function start|end|size.
+        FunctionTable function_table;
+
+        // Symbol names collected during init (before Nucleus rebuild). address -> name.
+        // Used only to label Function objects after FunctionTable is applied.
+        std::unordered_map<uintptr_t, std::string> symbol_names;
+
         void set_known_function(uintptr_t addr, const char* name) {
             if (auto func = find_function(addr); func) {
                 func->name = name;
@@ -123,10 +136,37 @@ namespace function_relocation {
             return iter != functions.end() ? &(*iter) : nullptr;
         }
 
-        uintptr_t try_fix_func_address(const Function &original, SignatureInfo* maybe_addr, uintptr_t limit_address);
+        FUNCTION_RELOCATION_API uintptr_t try_fix_func_address(const Function &original, SignatureInfo* maybe_addr, uintptr_t limit_address);
     };
 
-    bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections);
-    bool get_module_sections(const char *path, ModuleSections &sections);
-}
+    // Load section ranges + symbol name map only. Does NOT invent function
+    // boundaries (no CALL/FDE/ret heuristics). Call apply_nucleus_function_table
+    // then scan_module_function_features to populate Function bodies.
+    FUNCTION_RELOCATION_API bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections);
+    FUNCTION_RELOCATION_API bool get_module_sections(const char *path, ModuleSections &sections);
 
+    // Remap Nucleus image-VA table into process VA (sole start|end authority).
+    // Rebuilds sections.functions from spans (one Function per span start).
+    // Labels known exports via symbol_names. Does NOT split on ScanCtx heuristics.
+    // image_base may be 0 (ELF ET_DYN RVA space).
+    // Returns false if image_table is empty after remap.
+    FUNCTION_RELOCATION_API bool apply_nucleus_function_table(ModuleSections &sections,
+                                                             const FunctionTable &image_table,
+                                                             uint64_t image_base);
+
+    // Eager features for named exports (train); game modules stay lazy
+    // (Function shells only). Requires apply_nucleus_function_table first.
+    FUNCTION_RELOCATION_API bool scan_module_function_features(ModuleSections &sections);
+
+    // P2: bytes from entry to first RET / external JMP (cap 256). Cheap.
+    FUNCTION_RELOCATION_API size_t function_leaf_size(const Function &fn, size_t cap = 256);
+
+    // P0: on-demand ScanCtx disasm for one body (leaf-clamped). Idempotent.
+    FUNCTION_RELOCATION_API bool ensure_function_features(Function &fn);
+
+    // True if [start,start+size) contains a direct CALL/JMP whose target
+    // resolves (via FunctionTable) to callee_entry. No full feature scan.
+    FUNCTION_RELOCATION_API bool body_calls_entry(const ModuleSections &mod,
+                                                  uint64_t start, size_t size,
+                                                  uint64_t callee_entry);
+}

@@ -44,6 +44,10 @@ for index, configuration_option in ipairs(configuration_options) do
         goto continue
     end
 
+    if configuration_option.section_start == true then
+        goto continue
+    end
+
     print("Configuration Option " .. index .. ":")
     print("  Name: " .. configuration_option.name)
     print("  Label: " .. configuration_option.label)

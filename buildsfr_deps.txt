@@ -1,0 +1,6 @@
+Microsoft (R) COFF/PE Dumper Version 14.51.36248.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file Moddepsfunction_relocation.dll
+LINK : fatal error LNK1181: 无法打开输入文件“Moddepsfunction_relocation.dll”

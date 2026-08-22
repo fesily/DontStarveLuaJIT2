@@ -147,6 +147,17 @@ endif ( )
 # Create static library, this is needed to compile luac in the 5.1.x Lua series
 add_library ( liblua_static STATIC ${SRC_LIB} )
 target_link_libraries ( liblua_static ${LIBS} )
+# When embedded into Injector.so, stock LUA_API is plain "extern" on non-Windows
+# (default ELF visibility). Hide all symbols so the host does not export a second
+# Lua C API next to game/core.vm. Shared target liblua (lua51Original) is unchanged.
+set_target_properties ( liblua_static PROPERTIES
+  C_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON
+  POSITION_INDEPENDENT_CODE ON
+)
+if (NOT MSVC)
+  target_compile_options ( liblua_static PRIVATE -fvisibility=hidden )
+endif ()
 
 add_executable ( lua ${SRC_LUA} ${LUA_RC} )
 target_link_libraries ( lua liblua )
@@ -161,4 +172,7 @@ endif ( )
 add_executable ( luac ${SRC_LUAC} ${LUAC_RC} )
 target_link_libraries ( luac liblua_static )
 
-install(TARGETS liblua RUNTIME DESTINATION .)
+install(TARGETS liblua
+    RUNTIME DESTINATION deps COMPONENT plugins
+    LIBRARY DESTINATION deps COMPONENT plugins
+    ARCHIVE DESTINATION deps COMPONENT plugins)

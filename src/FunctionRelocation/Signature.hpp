@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
+#include "export.hpp"
 
 namespace function_relocation {
     struct SignatureInfo {
@@ -16,9 +17,9 @@ namespace function_relocation {
     struct Signature {
         std::vector<std::string> asm_codes;
 
-        std::string to_string(bool lineMode = true) const;
+        FUNCTION_RELOCATION_API std::string to_string(bool lineMode = true) const;
 
-        bool operator==(const Signature &other) const;
+        FUNCTION_RELOCATION_API bool operator==(const Signature &other) const;
 
         inline size_t size() const { return asm_codes.size(); }
 
@@ -27,5 +28,5 @@ namespace function_relocation {
         const std::string &operator[](size_t index) const { return asm_codes[index]; }
     };
 
-    void release_signature_cache();
+    FUNCTION_RELOCATION_API void release_signature_cache();
 }

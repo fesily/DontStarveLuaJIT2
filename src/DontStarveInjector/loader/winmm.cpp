@@ -7,6 +7,9 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <atomic>
+#include <cstring>
+#include <cstdio>
+
 #include "module.hpp"
 
 #pragma comment(linker, "/EXPORT:Noname2=AheadLib_Unnamed2,@2,NONAME")
@@ -410,6 +413,19 @@ Load() {
 
 static bool GumFoundCb(const ExportDetails *details,
                        void *user_data) {
+    // Only rebind real winmm ABI exports. Internal helper symbols
+    // (e.g. module_enumerate_*) must never be treated as winmm APIs.
+    if (details == nullptr || details->name == nullptr) {
+        return true;
+    }
+    if (strncmp(details->name, "AheadLib_", 9) == 0) {
+        return true;
+    }
+    // C++ mangled / non-winmm exports accidentally present in this DLL.
+    if (details->name[0] == '?') {
+        return true;
+    }
+
     HMODULE mod = (HMODULE) user_data;
     void *fake = GetProcAddress(mod, details->name);
     void *real = GetProcAddress(g_OldModule, details->name);
@@ -447,11 +463,32 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, PVOID pvReserved) {
 
             wait_debugger();
 
-            module_enumerate_exports(hModule, GumFoundCb, hModule);
-            void *uname2_ptr = GetProcAddress(g_OldModule, (LPCSTR) 2);
-            Hook((uint8_t *) &AheadLib_Unnamed2, (uint8_t *) uname2_ptr);
+            // DS_LUAJIT_SHELL_MODE diagnostic:
+            //  0/default = full (hooks + injector)
+            //  1 = Load system winmm only
+            //  2 = hooks only (no injector)
+            //  3 = injector only (no export hooks)
+            char mode[8]{};
+            GetEnvironmentVariableA("DS_LUAJIT_SHELL_MODE", mode, sizeof(mode));
+            const char m = mode[0] ? mode[0] : '0';
+            std::fprintf(stderr, "[ds-shell] DllMain mode=%c\n", m);
+            std::fflush(stderr);
 
-            DontStarveInjectorStart();
+            if (m != '1' && m != '3') {
+                module_enumerate_exports(hModule, GumFoundCb, hModule);
+                // System winmm has no export at ordinal 2 on current Windows.
+                void *uname2_ptr = GetProcAddress(g_OldModule, (LPCSTR) 2);
+                if (uname2_ptr != nullptr) {
+                    Hook((uint8_t *) &AheadLib_Unnamed2, (uint8_t *) uname2_ptr);
+                }
+                std::fprintf(stderr, "[ds-shell] export hooks done\n");
+                std::fflush(stderr);
+            }
+            if (m != '1' && m != '2') {
+                DontStarveInjectorStart();
+            }
+            std::fprintf(stderr, "[ds-shell] DllMain complete\n");
+            std::fflush(stderr);
         }
     } else if (dwReason == DLL_PROCESS_DETACH) {
         Free();

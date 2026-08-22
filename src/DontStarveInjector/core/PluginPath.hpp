@@ -1,0 +1,67 @@
+#pragma once
+#include "config/InjectorHostConfig.hpp" // DS_INJECTOR_CXX_API
+#include <filesystem>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace ds::plugin {
+
+// Env override name (single source of truth).
+inline constexpr const char *kPluginDirEnv = "DS_LUAJIT_PLUGIN_DIR";
+
+// parent(modmain_path) / "plugins". Empty modmain_path → empty path.
+DS_INJECTOR_CXX_API std::filesystem::path plugins_dir_from_modmain(std::string_view modmain_path);
+
+// If module_dir already ends with "plugins", return it; else module_dir / "plugins".
+DS_INJECTOR_CXX_API std::filesystem::path plugins_dir_from_module_dir(const std::filesystem::path &module_dir);
+
+// Directory of the module containing this code (Injector or static test image).
+// When imported from a plugin DLL, this still resolves to Injector's directory
+// because the definition lives in Injector.dll (process-wide shared state).
+DS_INJECTOR_CXX_API std::filesystem::path injector_module_dir();
+
+// Resolve modmain_path: non-empty test override, optional provider, else empty.
+// Task 2 registers the production provider that reads luajit_config.
+DS_INJECTOR_CXX_API std::string resolve_modmain_path();
+
+// Optional production hook (Task 2). nullptr → empty when no test override.
+using ModmainPathProvider = std::string (*)();
+DS_INJECTOR_CXX_API void set_modmain_path_provider(ModmainPathProvider fn);
+
+// Test seam: empty clears override.
+DS_INJECTOR_CXX_API void set_modmain_path_override_for_test(std::string_view path_or_empty);
+
+// Search roots in priority order, existing dirs only, weakly-canonical deduped:
+//   1) DS_LUAJIT_PLUGIN_DIR if set and is a directory
+//   2) plugins_dir_from_modmain(resolve_modmain_path()) if non-empty and is dir
+//      OR, when modmain_path is empty: discovered known mod plugins root
+//      (workshop-3444078585 / aliases under game mods/ or Steam UGC content)
+//   3) plugins_dir_from_module_dir(injector_module_dir()) if non-empty and is dir
+// Logs once (stderr) when modmain is empty/missing and when injector fallback is used.
+//
+// Process-wide: provider/override/DLL-search bookkeeping live in Injector only.
+// Plugins (e.g. plugin_manager) must import these symbols — do not compile
+// PluginPath.cpp into another image or modmain registration is invisible.
+DS_INJECTOR_CXX_API std::vector<std::filesystem::path> default_plugin_search_dirs();
+
+// Derive mod root from a plugins directory: leaf "plugins" → parent,
+// otherwise treat plugins_dir itself as the root (env override may be bare).
+DS_INJECTOR_CXX_API std::filesystem::path mod_root_from_plugins_dir(const std::filesystem::path &plugins_dir);
+
+// Shared runtimes path: mod_root / "deps" (sibling of plugins/, not under it).
+DS_INJECTOR_CXX_API std::filesystem::path mod_deps_dir(const std::filesystem::path &mod_root);
+
+// Windows: for each plugins root, AddDllDirectory(mod_root/deps) if exists and
+// AddDllDirectory(plugins_root) for private side-by-side deps. Does NOT call
+// SetDefaultDllDirectories (process-wide); callers load with LoadLibraryEx
+// flags USER_DIRS | DLL_LOAD_DIR | DEFAULT_DIRS.
+// Idempotent: repeated calls with same absolute paths no-op.
+// Non-Windows: no-op success (RPATH is link-time).
+// Returns true if no hard failure; missing deps dir is OK (not an error).
+DS_INJECTOR_CXX_API bool configure_plugin_dll_search(const std::vector<std::filesystem::path> &plugins_roots);
+
+// Test seam: clear internal "already added" set (Windows) between tests.
+DS_INJECTOR_CXX_API void reset_plugin_dll_search_for_test();
+
+} // namespace ds::plugin

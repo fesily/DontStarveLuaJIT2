@@ -1,0 +1,10 @@
+name = "plugin_lc_probe"
+description = "L-C client inject smoke probe (test only)"
+author = "DontStarveLuaJIT2"
+version = "1.0.0"
+api_version = 10
+dst_compatible = true
+client_only_mod = true
+server_only_mod = false
+all_clients_require_mod = false
+priority = 2e52

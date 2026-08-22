@@ -2,10 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 
 set(SOURCES
         main.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/DontStarveSignature.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/SignatureJson.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/GameSignature.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/config.cpp
+        ${DONTSTARVEINJECTOR_ROOT}/config/InjectorHostConfig.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
@@ -64,13 +61,17 @@ target_link_libraries(signature_updater PRIVATE spdlog::spdlog)
 
 
 target_include_directories(signature_updater PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
-target_link_libraries(signature_updater PRIVATE ${FRIDA_GUM_LIBRARIES})
+target_link_libraries(signature_updater PRIVATE Frida::Gum)
 
 target_link_libraries(signature_updater PRIVATE nlohmann_json::nlohmann_json)
-target_link_libraries(signature_updater PRIVATE function_relocation)
+# Order matters for static archives: dependents first, then providers.
+# ds_signature calls nucleus_analyze_file / apply_nucleus_* in function_relocation_static.
+target_link_libraries(signature_updater PRIVATE ds_signature function_relocation_static)
+target_include_directories(signature_updater PRIVATE ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/signature_load)
 target_include_directories(signature_updater PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
 target_compile_definitions(signature_updater PUBLIC
+        DS_PLUGIN_HOST_STATIC
         GAMEDIR="${GAME_DIR}"
         LUA51_PATH="${LUA_LIBRARIES_PATH}"
         WORKER_DIR="${CMAKE_INSTALL_PREFIX}"
@@ -81,24 +82,39 @@ if (MSVC)
     target_link_options(signature_updater PUBLIC "/NODEFAULTLIB:LIBCMT")
 endif ()
 
+if (WIN32 AND DEFINED FRIDA_GUM_RUNTIME)
+    add_custom_command(TARGET signature_updater POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${FRIDA_GUM_RUNTIME}"
+            "$<TARGET_FILE_DIR:signature_updater>"
+        VERBATIM)
+endif()
+
 add_dependencies(signature_updater create_missfuncs)
 
 if (WIN32)
+    # Standalone tool: enumerates game EXE imports via util/module.cpp.
+    # module.hpp pulls config/InjectorHostConfig.hpp (export macros only).
     add_executable(angle_iat_api_generator
             angle_iat_api_generator.cpp
             ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
             ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
     )
 
-    target_include_directories(angle_iat_api_generator PUBLIC ${DONTSTARVEINJECTOR_UTIL_DIR})
-    target_include_directories(angle_iat_api_generator PUBLIC ${PROJECT_SOURCE_DIR}/src)
-    target_compile_definitions(angle_iat_api_generator PUBLIC
+    target_include_directories(angle_iat_api_generator PRIVATE
+            ${DONTSTARVEINJECTOR_UTIL_DIR}
+            ${DONTSTARVEINJECTOR_ROOT}
+            ${PROJECT_SOURCE_DIR}/src
+    )
+    # Compile util sources into this EXE — not dllimport from Injector.
+    target_compile_definitions(angle_iat_api_generator PRIVATE
+            DS_PLUGIN_HOST_STATIC
             GAMEDIR="${GAME_DIR}"
             EXECUTABLE_SUFFIX="${CMAKE_EXECUTABLE_SUFFIX}"
             OUTPUT_HPP_PATH="${PROJECT_SOURCE_DIR}/src/DontStarveInjector/angle_iat_generated.hpp"
     )
 
     if (MSVC)
-        target_link_options(angle_iat_api_generator PUBLIC "/NODEFAULTLIB:LIBCMT")
+        target_link_options(angle_iat_api_generator PRIVATE "/NODEFAULTLIB:LIBCMT")
     endif ()
 endif ()

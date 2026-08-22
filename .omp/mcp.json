@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
+  "mcpServers": {
+    "idalib-mcp": {
+      "type": "http",
+      "url": "http://127.0.0.1:8745/mcp"
+    },
+    "ghidra-mcp": {
+      "command": "C:/Users/fesil/AppData/Local/Microsoft/WindowsApps/python3.exe",
+      "args": [
+        "C:/Users/fesil/ghidra-mcp/bridge_mcp_ghidra.py",
+        "--no-lazy"
+      ],
+      "env": {
+        "GHIDRA_SERVER_URL": "http://127.0.0.1:8089/"
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "EnableVBPool": false,
+  "EnableNetSim": false,
+  "EnableLagCompensation": false,
+  "EnableForkSave": false,
+  "NetworkOpt": false,
+  "NetworkOptEntity": false,
+  "EnableProfiler": "off",
+  "EnableTracy": "off",
+  "EnabledGenGC": false,
+  "EnabledJIT": true,
+  "AlwaysEnableMod": true
+}

@@ -23,7 +23,7 @@ description                = translate(
 
 author                     = "fesil"
 
-version                    = "2.9.2"
+version                    = "3.0.0"
 
 --forumthread = "https://github.com/fesily/DontStarveLuaJit2"
 
@@ -92,51 +92,6 @@ local disable_by_non_win = platform_info and not (platform_info.os == "Windows")
 configuration_options = {
     AddSection(translate({ en = "General Options", zh = "通用选项" })),
     {
-        name = "DisableForceFullGC",
-        label = translate({ en = "GC Incremental Only", zh = "禁用强制完全gc,仅gc小部分" }),
-        hover = translate({
-            en =
-            "Enabling this feature will result in a larger memory footprint, and will alleviate occasional lagging issues",
-            zh = "启用该选项会导致更大的内存占用,将缓解偶发卡顿问题"
-        }),
-        options = toggle,
-        default = true,
-        disabled_value = false,
-        disabled_by = disable_by_gen_gc,
-    },
-    {
-        name = "EnableFrameGC",
-        label = translate({ en = "Frame GC", zh = "帧间gc" }),
-        hover = translate({
-            en = "GC during idle time between frames",
-            zh = "见缝插针地gc"
-        }),
-        options = toggle,
-        default = true,
-        disabled_value = false,
-        disabled_by = disable_by_gen_gc,
-    },
-    {
-        name = "TargetRenderFPS",
-        label = translate({ en = "Render FPS", zh = "渲染帧率" }),
-        hover = translate({
-            en = "Render FPS",
-            zh = "渲染帧率"
-        }),
-        options = {
-            { description = translate({ en = "off", zh = "禁用" }), data = 60 },
-            { description = "30fps", data = 30 },
-            { description = "60fps", data = 60 },
-            { description = "90fps", data = 90 },
-            { description = "120fps", data = 120 },
-            { description = "144fps", data = 144 },
-            { description = "165fps", data = 165 },
-            { description = "200fps", data = 200 },
-            { description = "240fps", data = 240 },
-        },
-        default = 60
-    },
-    {
         name = "AlwaysEnableMod",
         label = translate({ en = "Always Enable Mod", zh = "总是启用mod" }),
         hover = translate({
@@ -147,16 +102,15 @@ configuration_options = {
         default = true,
     },
     {
-        name = "NetworkOpt",
-        label = translate({ en = "Network RPC Optimizations", zh = "网络RPC优化" }),
+        name = "AllowLocalNewerWorkshopVersion",
+        label = translate({ en = "Allow Local Newer Than Workshop", zh = "允许本地版本新于工坊" }),
         hover = translate({
-            en = "Optimize network rpc transmission, out-of-order sending of RPCs, may have unexpected situations",
-            zh = "优化网络RPC传输, 并行发送RPC, 可能导致意外的情况"
+            zh = "本模组本地 version 不低于创意工坊时，不显示“模组过期/需要更新”警告（开发/未同步工坊时有用）",
+            en =
+            "When this mod's local version is not older than the Steam Workshop version, suppress the out-of-date warning (useful while developing or before Workshop catches up)"
         }),
         options = toggle,
         default = true,
-        disabled_value = false,
-        disabled_by = disable_by_non_win,
     },
     {
         name = "NetworkOptEntity",
@@ -185,7 +139,8 @@ configuration_options = {
         name = "HideGlobalJIT",
         label = translate({ en = "Hide Global jit", zh = "隐藏全局jit变量" }),
         hover = translate({
-            en = "Hide the global jit variable from normal mods. Only inject jit into mods that declare luajit_compatible in modinfo.lua",
+            en =
+            "Hide the global jit variable from normal mods. Only inject jit into mods that declare luajit_compatible in modinfo.lua",
             zh = "隐藏全局jit变量。仅向在modinfo.lua中声明了luajit_compatible的mod注入jit"
         }),
         options = toggle,
@@ -347,31 +302,6 @@ configuration_options = {
         disabled_by = disable_by_non_win,
     },
     {
-        name = "EnableLagCompensation",
-        label = translate({ en = "Lag Compensation (Preview)", zh = "延迟补偿" }),
-        hover = translate({
-            en = "Extrapolate remote player positions before spatial queries. Server-side only, Win x64 only.",
-            zh = "在空间查询前外推远程玩家位置。仅服务端生效，仅支持 Win x64。"
-        }),
-        options = toggle,
-        default = false,
-        disabled_value = false,
-        disabled_by = disable_by_non_win or disable_by_lua51,
-    },
-    {
-        name = "EnableForkSave",
-        label = translate({ en = "Fork Save (Preview)", zh = "分叉存档" }),
-        hover = translate({
-            en =
-            "Fork or clone a child process to save the game, reducing save lag. Supported on Linux, macOS, and Windows x64 preview builds.",
-            zh = "通过fork或克隆子进程保存游戏,存档不再卡顿.支持Linux、MacOS和Windows x64预览版"
-        }),
-        options = toggle,
-        default = true,
-        disabled_value = false,
-        disabled_by = disable_by_lua51,
-    },
-    {
         name = "AngleBackend",
         label = translate({ en = "Rendering Engine", zh = "渲染后端" }),
         hover = translate({
@@ -403,16 +333,40 @@ configuration_options = {
         disabled_value = false,
         disabled_by = disable_by_lua51
     },
+    AddSection(translate({ zh = "插件配置", en = "Plugin Options" })),
+    -- BEGIN GENERATED PLUGIN OPTIONS
+    AddSection("Debug Profiler"),
+    {
+        name = "DisableForceFullGC",
+        label = translate({ en = "GC Incremental Only", zh = "禁用强制完全gc,仅gc小部分" }),
+        hover = translate({ en = "Enabling this feature will result in a larger memory footprint, and will alleviate occasional lagging issues", zh = "启用该选项会导致更大的内存占用,将缓解偶发卡顿问题" }),
+        options = toggle,
+        default = true,
+        disabled_by = disable_by_gen_gc,
+        disabled_value = false,
+        host_gate = "any_of",
+    },
+    {
+        name = "EnableFrameGC",
+        label = translate({ en = "Frame GC", zh = "帧间gc" }),
+        hover = translate({ en = "GC during idle time between frames", zh = "见缝插针地gc" }),
+        options = toggle,
+        default = true,
+        disabled_by = disable_by_gen_gc,
+        disabled_value = false,
+        host_gate = "any_of",
+    },
     {
         name = "EnableProfiler",
         label = translate({ en = "Enable Profiler Command", zh = "启用性能分析控制台命令" }),
         hover = translate({ en = "ProfilerJit.start | ProfilerJit.stop", zh = "ProfilerJit.start | ProfilerJit.stop" }),
         options = {
             { description = translate({ en = "off", zh = "关闭" }), data = "off" },
-            { description = translate({ en = "Detailed Sampling Mode", zh = "详细采样模式" }), data = "fzvp" }, -- 会展示完整的代码路径和行数，以及虚拟机状态，还有模块zone采样点
-            { description = translate({ en = "Origin Sampling Mode", zh = "原始采样模式" }), data = "Gz" }, -- 等于EnableTracy，不过是luajit自带的分析器
+            { description = translate({ en = "Detailed Sampling Mode", zh = "详细采样模式" }), data = "fzvp" },
+            { description = translate({ en = "Origin Sampling Mode", zh = "原始采样模式" }), data = "Gz" },
         },
-        default = 'off'
+        default = "off",
+        host_gate = "any_of",
     },
     {
         name = "EnableTracy",
@@ -421,21 +375,106 @@ configuration_options = {
             { description = translate({ en = "off", zh = "关闭" }), data = "off" },
             { description = translate({ en = "on", zh = "开启" }), data = "on" },
         },
-        default = 'off'
+        default = "off",
+        host_gate = "any_of",
     },
-    AddSection(translate({ en = "Network Simulation", zh = "网络模拟" })),
+    AddSection("Network RPC"),
+    {
+        name = "NetworkOpt",
+        label = translate({ en = "Network RPC Optimizations", zh = "网络RPC优化" }),
+        hover = translate({ en = "Optimize network rpc transmission, out-of-order sending of RPCs, may have unexpected situations", zh = "优化网络RPC传输, 并行发送RPC, 可能导致意外的情况" }),
+        options = toggle,
+        default = true,
+        disabled_by = disable_by_non_win,
+        disabled_value = false,
+        host_gate = true,
+    },
+    AddSection("FPS Render"),
+    {
+        name = "TargetRenderFPS",
+        label = translate({ en = "Render FPS", zh = "渲染帧率" }),
+        hover = translate({ en = "Render FPS", zh = "渲染帧率" }),
+        options = {
+            { description = translate({ en = "off", zh = "禁用" }), data = 60 },
+            { description = "30fps", data = 30 },
+            { description = "60fps", data = 60 },
+            { description = "90fps", data = 90 },
+            { description = "120fps", data = 120 },
+            { description = "144fps", data = 144 },
+            { description = "165fps", data = 165 },
+            { description = "200fps", data = 200 },
+            { description = "240fps", data = 240 },
+        },
+        default = 60,
+        host_gate = true,
+    },
+    AddSection("Render Shadow (Sun Drive)"),
+    {
+        name = "ShadowSunDrive",
+        label = translate({ en = "Sun-driven shadows", zh = "太阳驱动的阴影" }),
+        options = {
+            { description = translate({ en = "Off", zh = "关闭" }), data = false },
+            { description = translate({ en = "On", zh = "开启" }), data = true },
+        },
+        default = false,
+    },
+    {
+        name = "ShadowLengthBoost",
+        label = translate({ en = "Shadow length boost", zh = "阴影长度增强" }),
+        options = {
+            { description = "0.5", data = 0.5 },
+            { description = "1.0", data = 1 },
+            { description = "1.5", data = 1.5 },
+            { description = "2.0", data = 2 },
+        },
+        default = 1,
+    },
+    {
+        name = "ShadowHemisphere",
+        label = translate({ en = "Shadow hemisphere", zh = "阴影半球" }),
+        hover = translate({ en = "Northern: clockwise (default). Southern: counterclockwise.", zh = "北半球：顺时针（默认）。南半球：逆时针。" }),
+        options = {
+            { description = translate({ en = "Northern", zh = "北半球" }), data = "north" },
+            { description = translate({ en = "Southern", zh = "南半球" }), data = "south" },
+        },
+        default = "north",
+    },
+    AddSection("Network Sim"),
     {
         name = "EnableNetSim",
         label = translate({ en = "Enable Network Simulator", zh = "启用网络模拟器" }),
-        hover = translate({
-            en = "Simulate packet delay/jitter/loss (client-side, Win x64 only)",
-            zh =
-            "模拟网络延迟/抖动/丢包（仅客户端，仅Win x64）"
-        }),
+        hover = translate({ en = "Simulate packet delay/jitter/loss (client-side, Win x64 only)", zh = "模拟网络延迟/抖动/丢包（仅客户端，仅Win x64）" }),
         options = toggle,
         default = false,
-        disabled_value = false,
         disabled_by = disable_by_non_win,
+        disabled_value = false,
+        host_gate = true,
     },
+    AddSection("Save Fork"),
+    {
+        name = "EnableForkSave",
+        label = translate({ en = "Fork Save (Preview)", zh = "分叉存档" }),
+        hover = translate({ en = "Fork or clone a child process to save the game, reducing save lag. Supported on Linux, macOS, and Windows x64 preview builds.", zh = "通过fork或克隆子进程保存游戏,存档不再卡顿.支持Linux、MacOS和Windows x64预览版" }),
+        options = toggle,
+        default = true,
+        disabled_by = disable_by_lua51,
+        disabled_value = false,
+        host_gate = true,
+    },
+    AddSection("Sim Lag Compensation"),
+    {
+        name = "EnableLagCompensation",
+        label = translate({ en = "Lag Compensation (Preview)", zh = "延迟补偿" }),
+        hover = translate({ en = "Extrapolate remote player positions before spatial queries. Server-side only, Win x64 only.", zh = "在空间查询前外推远程玩家位置。仅服务端生效，仅支持 Win x64。" }),
+        options = toggle,
+        default = false,
+        disabled_by = { option = "LuaVmType", reason = translate({ en = "Not compatible with Lua 5.1 VM", zh = "与Lua 5.1虚拟机不兼容" }), values = {
+    "lua51",
+    "game",
+} },
+        disabled_value = false,
+        host_gate = true,
+    },
+    -- END GENERATED PLUGIN OPTIONS
 }
 --restart_required = true

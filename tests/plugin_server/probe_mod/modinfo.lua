@@ -1,0 +1,10 @@
+name = "plugin_lg_probe"
+description = "L-G automated dedicated sim-pause probe (test only)"
+author = "DontStarveLuaJIT2"
+version = "1.0.0"
+api_version = 10
+dst_compatible = true
+client_only_mod = false
+server_only_mod = true
+all_clients_require_mod = false
+priority = 2e52

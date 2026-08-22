@@ -24,7 +24,7 @@ jobs:
         include:
           - { os: windows-2022, target: windows, platform: win32-x64 }
           - { os: ubuntu-24.04,   target: linux,   platform: linux-x64 }
-          - { os: macos-14,       target: macos,   platform: macos-x64 }
+          # - { os: macos-14,       target: macos,   platform: macos-x64 }
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -129,6 +129,51 @@ jobs:
           rm -rf ${{ github.workspace }}/Mod/bin64/windows
           rm -r ${{ github.workspace }}/Mod/bin64/linux
 
+      - name: Generate per-platform plugin packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLATFORM="${{ matrix.target }}"
+          # Portable install layout (CMAKE_INSTALL_PREFIX=Mod): plugins live at
+          # Mod/plugins/<name>/, not under bin64/<plat>/ (shell-only).
+          # See CMakeLists.txt / ds_add_dynamic_plugin install rules.
+          case "$PLATFORM" in
+            windows|linux|macos) PDIR=Mod/plugins ;;
+            *) echo "ERROR: unknown platform $PLATFORM"; exit 1 ;;
+          esac
+          if [ ! -d "$PDIR" ]; then
+            echo "ERROR: plugins dir missing after install: $PDIR"
+            ls -la Mod || true
+            ls -la Mod/bin64 || true
+            exit 1
+          fi
+          test -n "$(ls -A "$PDIR" 2>/dev/null)" || { echo "ERROR: empty plugins dir: $PDIR"; exit 1; }
+          VERSION=$(python -c "import re, pathlib; t=pathlib.Path('CMakeLists.txt').read_text(encoding='utf-8'); m=re.search(r'project\\([^)]*VERSION\\s+([0-9]+\\.[0-9]+\\.[0-9]+)', t); assert m, 'version not found'; print(m.group(1))")
+          TAG="${GITHUB_REF_NAME:-}"
+          if [[ "${GITHUB_REF:-}" == refs/heads/master ]]; then
+            TAG="preview-${{ github.run_id }}-${GITHUB_SHA:0:7}"
+          fi
+          mkdir -p dist
+          python tools/gen_plugins_manifest.py \
+            --plugins-dir "$PDIR" \
+            --platform "$PLATFORM" \
+            --repo fesily/DontStarveLuaJIT2 \
+            --release-tag "$TAG" \
+            --mod-version "$VERSION" \
+            --source-root . \
+            --out-manifest "dist/plugins-manifest.${PLATFORM}.json" \
+            --out-zips-dir dist \
+            --write-meta
+
+      - name: Upload plugin zips and partial manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-plugins
+          path: |
+            ${{ github.workspace }}/dist/plugin_*.zip
+            ${{ github.workspace }}/dist/plugins-manifest.${{ matrix.target }}.json
+          if-no-files-found: error
+
       - name: Archive Release
         uses: thedoctor0/zip-release@0.7.5
         with:
@@ -143,8 +188,54 @@ jobs:
           path: ${{ github.workspace }}/${{ matrix.target }}_Mod.zip
           if-no-files-found: error
 
-  publish-release:
+  merge-plugins-manifest:
     needs: compile
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ github.workspace }}/artifacts
+
+      - name: Merge plugin manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          PARTIALS=(artifacts/*-plugins/plugins-manifest.*.json)
+          if [ ${#PARTIALS[@]} -eq 0 ]; then
+            echo "ERROR: no partial plugins-manifest files found"
+            find artifacts -type f | head -200 || true
+            exit 1
+          fi
+          BUNDLES=(artifacts/*-mod-zip/*_Mod.zip)
+          EXTRA=()
+          if [ ${#BUNDLES[@]} -gt 0 ]; then
+            EXTRA=(--bundle-zips "${BUNDLES[@]}")
+          fi
+          python tools/gen_plugins_manifest.py --merge \
+            "${PARTIALS[@]}" \
+            "${EXTRA[@]}" \
+            --out plugins-manifest.json
+          echo "Merged plugins-manifest.json:"
+          python -c "import json; d=json.load(open('plugins-manifest.json',encoding='utf-8')); print('plugins', len(d.get('plugins',[])), 'bundle', list((d.get('bundle') or {}).keys()))"
+
+      - name: Upload plugins-manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugins-manifest
+          path: ${{ github.workspace }}/plugins-manifest.json
+          if-no-files-found: error
+
+  publish-release:
+    needs: [compile, merge-plugins-manifest]
     if: startsWith(github.ref, 'refs/tags/') && !startsWith(github.ref, 'refs/tags/preview-')
     strategy:
       fail-fast: false
@@ -166,14 +257,29 @@ jobs:
           name: ${{ matrix.target }}-mod-zip
           path: ${{ github.workspace }}
 
+      - name: Download platform plugin packages
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.target }}-plugins
+          path: ${{ github.workspace }}/plugin-assets
+
+      - name: Download plugins-manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: plugins-manifest
+          path: ${{ github.workspace }}
+
       - name: Publish release assets
         uses: ncipollo/release-action@v1.14.0
         with:
-          artifacts: ${{ github.workspace }}/${{ matrix.target }}_Mod.zip
+          artifacts: |
+            ${{ github.workspace }}/${{ matrix.target }}_Mod.zip
+            ${{ github.workspace }}/plugins-manifest.json
+            ${{ github.workspace }}/plugin-assets/*.zip
           allowUpdates: true
 
   publish-preview:
-    needs: compile
+    needs: [compile, merge-plugins-manifest]
     if: ${{ github.ref == 'refs/heads/master' }}
     runs-on: ubuntu-24.04
     steps:
@@ -185,6 +291,7 @@ jobs:
         run: |
           version=$(grep -oP 'project\([^)]*VERSION\s+\K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Download packaged mods
         uses: actions/download-artifact@v4
@@ -194,10 +301,13 @@ jobs:
       - name: Publish preview release
         uses: ncipollo/release-action@v1.14.0
         with:
-          artifacts: ${{ github.workspace }}/artifacts/*/*_Mod.zip
+          artifacts: |
+            ${{ github.workspace }}/artifacts/*/*_Mod.zip
+            ${{ github.workspace }}/artifacts/plugins-manifest/plugins-manifest.json
+            ${{ github.workspace }}/artifacts/*-plugins/*.zip
           allowUpdates: true
           prerelease: true
           makeLatest: false
-          tag: preview-${{ github.run_id }}
-          name: Preview v${{ steps.project-version.outputs.version }}
+          tag: preview-${{ github.run_id }}-${{ steps.project-version.outputs.short_sha }}
+          name: Preview v${{ steps.project-version.outputs.version }} (${{ steps.project-version.outputs.short_sha }})
           commit: ${{ github.sha }}

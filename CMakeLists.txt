@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.15)
 
 cmake_policy(SET CMP0091 NEW)
+# file(GET_RUNTIME_DEPENDENCIES): normalize paths before regex match (CMake 4.3+)
+if(POLICY CMP0207)
+    cmake_policy(SET CMP0207 NEW)
+endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,51 +20,66 @@ elseif (APPLE)
 endif ()
 include(cmake/GameDir.cmake OPTIONAL)
 enable_testing()
-set(FRIDA_GUM_VERSION "17.5.1")
+set(FRIDA_GUM_VERSION "17.17.0")
 set(VCPKG_INSTALL_OPTION "${VCPKG_INSTALL_OPTION} --x-abi-tools-use-exact-versions")
 
 file(REAL_PATH ${GAME_DIR} GAME_DIR)
 
 set(PYTHON_EXECUTABLE_NAME "python3")
-set(VCPKG_TARGET_TRIPLET "x64-linux-release")
+set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/custom-triplets")
 if (WIN32)
     set(PLATFORM_NAME "windows")
     set(PYTHON_EXECUTABLE_NAME "python")
-    set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/custom-triplets")
     set(VCPKG_TARGET_TRIPLET "x64-windows-custom")
 elseif (UNIX AND NOT APPLE)
     set(PLATFORM_NAME "linux")
+    set(VCPKG_TARGET_TRIPLET "x64-linux-custom")
 elseif (UNIX AND APPLE)
     set(PLATFORM_NAME "osx")
-    set(VCPKG_TARGET_TRIPLET "x64-osx-release")
+    set(VCPKG_TARGET_TRIPLET "x64-osx-custom")
 else ()
     message(FATAL_ERROR "Not supported platform")
 endif ()
 
-project(DontStarveLuaJIT VERSION 2.9.2)
+project(DontStarveLuaJIT VERSION 3.0.0)
 
 message(STATUS "CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
 message(STATUS "VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}")
 message(STATUS "VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR}")
 
+
+# Third-party shared runtimes are staged only under Mod/deps (bootstrap +
+# PluginPath AddDllDirectory). Disable vcpkg applocal so link does not dump
+# spdlog/fmt/zip/… next to Injector.dll or plugin_*.dll under plugins/.
+set(VCPKG_APPLOCAL_DEPS OFF CACHE BOOL
+    "Copy vcpkg DLLs next to targets (OFF: stage via Mod/deps only)" FORCE)
 option(DISABLE_TRACY_FUTURE "disable tray future" ON)
 
-set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod)
+# Package root = Mod/. All install destinations are relative to this prefix.
+#   .                      → Injector.* + optional signatures_*.json
+#   plugins/               → plugin_*.dll
+#   deps/                  → third-party + lua51*
+#   bin64/<platform>/      → thin shell only (Winmm / InjectorStub)
+# Never use absolute DESTINATION with unset vars (install(CODE [[]]) won't expand them → /deps).
+set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/Mod CACHE PATH "Mod package root" FORCE)
 set(TARGET_MOD_DIR ${CMAKE_INSTALL_PREFIX})
+set(DS_MOD_ROOT_ABS ${CMAKE_INSTALL_PREFIX})
+if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(DS_INSTALL_SHELL_DIR "bin64/${PLATFORM_NAME}")
+else ()
+    set(DS_INSTALL_SHELL_DIR "bin/${PLATFORM_NAME}")
+endif ()
 if (UNIX AND APPLE)
     set(GAME_INSTALL_PREFIX ${GAME_DIR}/MacOs)
-    set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/bin64)
 else ()
     if (CMAKE_SIZEOF_VOID_P EQUAL 8)
         set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin64)
-        set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/bin64)
     else ()
         set(GAME_INSTALL_PREFIX ${GAME_DIR}/bin)
-        set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/bin)
     endif ()
 endif ()
-
-set(CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX}/${PLATFORM_NAME})
+# Keep a cache-visible alias for scripts that still mention platform package dir.
+set(DS_INSTALL_SHELL_ABS "${CMAKE_INSTALL_PREFIX}/${DS_INSTALL_SHELL_DIR}")
 if (UNIX AND NOT APPLE)
     set(CMAKE_INSTALL_LIBDIR "lib64")
 elseif (UNIX AND APPLE)
@@ -123,14 +142,6 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h
 
 add_custom_target(create_missfuncs DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/missfunc.h)
 
-add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp
-        COMMAND $<TARGET_FILE:${LUAJIT_EXECUTABLE_TARGET}> "${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua"
-        DEPENDS ${LUAJIT_EXECUTABLE_TARGET} ${CMAKE_CURRENT_SOURCE_DIR}/Mod/modinfo.lua ${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-add_custom_target(create_modinfo_hpp DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp)
-
 set(lua51_root ${CMAKE_CURRENT_SOURCE_DIR}/src/lua51)
 set(Lua51_output_dir ${lua51_root}/$<IF:$<CONFIG:Debug>,debug,release>/)
 
@@ -142,6 +153,30 @@ add_custom_command(OUTPUT ${Lua51_output_dir}/lua51.dll ${Lua51_output_dir}/lua5
 add_custom_target(build_lua51 DEPENDS ${Lua51_output_dir}/lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
 
 add_subdirectory("luajit")
+
+# Host tool for codegen: default-variant CLI.
+# luajit-arenagc currently AVs on tools/modinfo2cpp.lua (Windows c0000005 /
+# ninja code 3221225477) even with -joff. Default luajit.exe runs the same
+# script successfully. Do not prefer arenagc as a build-time interpreter.
+set(LUAJIT_HOST_EXECUTABLE_TARGET ${LUAJIT_EXECUTABLE_TARGET})
+
+file(GLOB DS_PLUGIN_MODINFO_LUA
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_*/modinfo.lua")
+
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp
+        COMMAND $<TARGET_FILE:${LUAJIT_HOST_EXECUTABLE_TARGET}>
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_plugin_options.lua" --write
+        COMMAND $<TARGET_FILE:${LUAJIT_HOST_EXECUTABLE_TARGET}>
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua"
+        DEPENDS ${LUAJIT_HOST_EXECUTABLE_TARGET}
+            ${CMAKE_CURRENT_SOURCE_DIR}/Mod/modinfo.lua
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/modinfo2cpp.lua
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_plugin_options.lua
+            ${DS_PLUGIN_MODINFO_LUA}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_custom_target(create_modinfo_hpp DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/modinfo.hpp)
 
 # Bridge the reverted inner arenagc targets to the public gengc contract.
 if(TARGET luajit-5.1-arenagc)
@@ -196,26 +231,88 @@ else ()
     set(LUA_LIBRARIES_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/src)
 endif ()
 
-function(download_frida_gum version)
-    message(STATUS "Downloading Frida-Gum version ${version}...")
-    execute_process(
-            COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tools/download_frida_gum.py" "-v=${version}" 
-            RESULT_VARIABLE download_result 
-            OUTPUT_VARIABLE download_stdout
-            ERROR_VARIABLE download_stderr
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-    if(download_stdout)
-        message("${download_stdout}")
-    endif()
-    if(download_stderr)
-        message(STATUS "${download_stderr}")
-    endif()
-    if (NOT download_result EQUAL 0)
-        message(FATAL_ERROR "Failed to download Frida-Gum. Please check your internet connection or the version specified.")
+function(setup_frida_gum version)
+    message(STATUS "Setting up shared Frida-Gum version ${version}...")
+    set(_setup_args "-v=${version}")
+
+    # Platform stage dir (mirrors tools/setup_frida_gum.py map_plat).
+    if (WIN32)
+        set(_ds_gum_plat "win64")
+    elseif (APPLE)
+        set(_ds_gum_plat "osx")
     else()
-        message(STATUS "Frida-Gum downloaded successfully.")
-    endif ()
+        set(_ds_gum_plat "linux64")
+    endif()
+    set(_ds_gum_stage "${CMAKE_CURRENT_SOURCE_DIR}/3rd/frida-gum/${_ds_gum_plat}")
+    set(_ds_gum_legacy "${CMAKE_CURRENT_SOURCE_DIR}/3rd/frida-gum/_legacy_${_ds_gum_plat}")
+    set(_ds_gum_input "${CMAKE_CURRENT_SOURCE_DIR}/3rd/frida-gum-build/input")
+
+    set(_ds_gum_force_meson FALSE)
+    if (DEFINED ENV{DS_FRIDA_GUM_FORCE_MESON} AND NOT "$ENV{DS_FRIDA_GUM_FORCE_MESON}" STREQUAL "")
+        set(_ds_gum_force_meson TRUE)
+    endif()
+
+    set(_ds_gum_skip FALSE)
+    if (DEFINED ENV{DS_FRIDA_GUM_SKIP_MESON} AND NOT "$ENV{DS_FRIDA_GUM_SKIP_MESON}" STREQUAL "")
+        set(_ds_gum_skip TRUE)
+    endif()
+
+    # Auto skip when a valid stage marker already exists, or durable static inputs are present.
+    # Full meson only when forced or when no skip inputs exist.
+    if (NOT _ds_gum_force_meson)
+        if (EXISTS "${_ds_gum_stage}/version-${version}.txt")
+            set(_ds_gum_skip TRUE)
+            message(STATUS "Frida-Gum: stage marker present; using --skip-meson (set DS_FRIDA_GUM_FORCE_MESON=1 to rebuild via meson)")
+        elseif (
+            (EXISTS "${_ds_gum_legacy}/frida-gum.lib" OR EXISTS "${_ds_gum_legacy}/libfrida-gum.a")
+            AND (EXISTS "${_ds_gum_legacy}/frida-gum.h" OR EXISTS "${_ds_gum_legacy}/include/frida-gum.h")
+        )
+            set(_ds_gum_skip TRUE)
+            message(STATUS "Frida-Gum: durable legacy static archive found; using --skip-meson")
+        elseif (
+            (EXISTS "${_ds_gum_input}/frida-gum.lib" OR EXISTS "${_ds_gum_input}/libfrida-gum.a")
+            AND EXISTS "${_ds_gum_input}/frida-gum.h"
+        )
+            set(_ds_gum_skip TRUE)
+            message(STATUS "Frida-Gum: frida-gum-build/input static archive found; using --skip-meson")
+        elseif (
+            (EXISTS "${_ds_gum_stage}/frida-gum.lib" OR EXISTS "${_ds_gum_stage}/libfrida-gum.a")
+            AND (EXISTS "${_ds_gum_stage}/frida-gum.h")
+        )
+            # Pre-restage flat legacy under stage root (static, not import lib).
+            set(_ds_gum_skip TRUE)
+            message(STATUS "Frida-Gum: flat stage static archive found; using --skip-meson")
+        endif()
+    else()
+        message(STATUS "Frida-Gum: DS_FRIDA_GUM_FORCE_MESON set; full meson path")
+    endif()
+
+    if (_ds_gum_skip AND NOT _ds_gum_force_meson)
+        list(APPEND _setup_args "--skip-meson")
+    endif()
+
+    execute_process(
+        COMMAND ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/setup_frida_gum.py" ${_setup_args}
+        RESULT_VARIABLE setup_result
+        OUTPUT_VARIABLE setup_stdout
+        ERROR_VARIABLE setup_stderr
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    if (setup_stdout)
+        message("${setup_stdout}")
+    endif()
+    if (setup_stderr)
+        message(STATUS "${setup_stderr}")
+    endif()
+    if (NOT setup_result EQUAL 0)
+        message(FATAL_ERROR
+            "Failed to set up Frida-Gum. Run: ${PYTHON_EXECUTABLE_NAME} tools/setup_frida_gum.py -v ${version}\n"
+            "Or stage with --skip-meson using a durable static archive + header "
+            "(3rd/frida-gum/_legacy_<plat>/ or --static-lib), then reconfigure.\n"
+            "Set DS_FRIDA_GUM_FORCE_MESON=1 to force a full meson build.")
+    else()
+        message(STATUS "Frida-Gum setup completed.")
+    endif()
 endfunction()
 
 function(setup_angle)
@@ -250,19 +347,19 @@ function(setup_angle)
     endif ()
 endfunction()
 setup_angle()
-download_frida_gum(${FRIDA_GUM_VERSION})
+setup_frida_gum(${FRIDA_GUM_VERSION})
 
 
 set(LUA_INCLUDE_DIR ${lua51_root}/src)
 if (MSVC)
-    set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
-    set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/lua51)
+    set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/deps/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/deps/lua51)
 elseif (APPLE)
-    set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/lua51)
-    set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/deps/lua51)
+    set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/deps/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
 else ()
-    set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/lib64/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
-    set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/lib64/lua51)
+    set(LUA_LIBRARIES_PATH ${CMAKE_INSTALL_PREFIX}/deps/${CMAKE_SHARED_LIBRARY_PREFIX}lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/deps/lua51)
 endif ()
 set(LUA_CONFIG_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll)
 set(LUA_LIBRARIES lua51)
@@ -281,6 +378,99 @@ add_subdirectory("src/FunctionRelocation")
 set(FUNCTION_RELOCATION_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/FunctionRelocation)
 
 add_subdirectory("src/DontStarveInjector")
+
+# core.vm assets:
+#   Mod/deps/              → lua51* VMs + third-party shared runtimes
+#   Mod/signatures_*.json  → optional signature DBs at mod root (all platforms)
+# (sibling of plugins/; loadlib resolves deps; SignatureJson resolves mod root).
+# Missing signatures are OK: SignatureUpdater::create_or_update regenerates them
+# at runtime / via tools/Creater signature_updater (CI may pre-generate later).
+set(DS_CORE_VM_DEPS_DEST "deps")  # under DS_MOD_ROOT_ABS
+if (TARGET liblua)
+    # lua51Original already installed by src/lua51original; ensure dest matches.
+endif()
+# LuaJIT variants (lua51DS / gengc) — install runtime artifacts into Mod/deps.
+if (TARGET libluajit OR TARGET luajit)
+    # Targets vary by luajit CMake; install known output names from build tree.
+endif()
+# Signatures: optional Mod/signatures_{client,server}.json → install to mod root.
+# No bin64/<plat>/ or deps/ fallbacks (Windows/Linux/macOS same).
+set(_ds_sig_client "${CMAKE_SOURCE_DIR}/Mod/signatures_client.json")
+set(_ds_sig_server "${CMAKE_SOURCE_DIR}/Mod/signatures_server.json")
+if (EXISTS "${_ds_sig_client}")
+    install(FILES "${_ds_sig_client}" DESTINATION . COMPONENT plugins)
+else()
+    message(STATUS "Mod/signatures_client.json missing — runtime/CI will regenerate via SignatureUpdater")
+endif()
+if (EXISTS "${_ds_sig_server}")
+    install(FILES "${_ds_sig_server}" DESTINATION . COMPONENT plugins)
+else()
+    message(STATUS "Mod/signatures_server.json missing — runtime/CI will regenerate via SignatureUpdater")
+endif()
+
+# Install lua VM shared libs into Mod/deps when targets exist.
+foreach(_ds_lua_tgt IN ITEMS liblua lua51DS lua51DS_gengc lua51DS_arenagc)
+    if (TARGET ${_ds_lua_tgt})
+        install(TARGETS ${_ds_lua_tgt}
+            RUNTIME DESTINATION deps COMPONENT plugins
+            LIBRARY DESTINATION deps COMPONENT plugins)
+    endif()
+endforeach()
+# Training / stock lua51.dll + multi-config LuaJIT VMs → Mod/deps only.
+# IMPORTANT: only stage the *active* install config's VMs into Mod/deps.
+# Iterating Debug after RelWithDebInfo previously overwrote release lua51DS.dll
+# with a Debug-CRT binary (ucrtbased) → LoadLibrary 0x7E under normal game launch.
+if (WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/src/lua51")
+    install(CODE "
+      set(_ds_deps \"\${CMAKE_INSTALL_PREFIX}/deps\")
+      file(MAKE_DIRECTORY \"\${_ds_deps}\")
+      # Active multi-config name (Debug / Release / RelWithDebInfo / …)
+      set(_ds_cfg \"\${CMAKE_INSTALL_CONFIG_NAME}\")
+      if(NOT _ds_cfg)
+        set(_ds_cfg RelWithDebInfo)
+      endif()
+      # Map multi-config → src/lua51 batch folders (debug|release).
+      # Prefer matching config, then the other batch, then already-staged Mod/deps.
+      set(_ds_lua51_cfg \"release\")
+      if(_ds_cfg MATCHES \"^[Dd][Ee][Bb][Uu][Gg]$\")
+        set(_ds_lua51_cfg debug)
+      endif()
+      set(_ds_lua51_src \"\")
+      foreach(_cand IN ITEMS
+          \"${CMAKE_SOURCE_DIR}/src/lua51/\${_ds_lua51_cfg}/lua51.dll\"
+          \"${CMAKE_SOURCE_DIR}/src/lua51/release/lua51.dll\"
+          \"${CMAKE_SOURCE_DIR}/src/lua51/debug/lua51.dll\"
+          \"${CMAKE_SOURCE_DIR}/Mod/deps/lua51.dll\")
+        if(EXISTS \"\${_cand}\")
+          set(_ds_lua51_src \"\${_cand}\")
+          break()
+        endif()
+      endforeach()
+      if(_ds_lua51_src)
+        file(INSTALL \"\${_ds_lua51_src}\" DESTINATION \"\${_ds_deps}\")
+        message(STATUS \"ds_mod_deps: installed lua51.dll from \${_ds_lua51_src}\")
+      else()
+        message(FATAL_ERROR \"ds_mod_deps: lua51.dll not found under src/lua51/{debug,release} or Mod/deps. Build it first (target build_lua51 / src/lua51/build_lua51.bat).\")
+      endif()
+      # LuaJIT / original VMs for the active config only (no cross-config overwrite).
+      foreach(_name IN ITEMS lua51DS.dll lua51DS_gengc.dll lua51Original.dll)
+        set(_ds_picked \"\")
+        foreach(_root IN ITEMS
+            \"${CMAKE_BINARY_DIR}/luajit/\${_ds_cfg}\"
+            \"${CMAKE_BINARY_DIR}/src/lua51original/\${_ds_cfg}\")
+          if(EXISTS \"\${_root}/\${_name}\")
+            set(_ds_picked \"\${_root}/\${_name}\")
+            break()
+          endif()
+        endforeach()
+        if(_ds_picked)
+          file(INSTALL \"\${_ds_picked}\" DESTINATION \"\${_ds_deps}\")
+        endif()
+      endforeach()
+    " COMPONENT plugins)
+endif()
+
+
 if (MSVC)
     add_subdirectory("tools/Checker")
 endif ()
@@ -299,8 +489,40 @@ endif ()
 
 #install(FILES ${LUA_CONFIG_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX}
 #install(FILES ${LUA_LIBRARIES_PATH} DESTINATION ${CMAKE_INSTALL_PREFIX})
+# Package staging (CMAKE_INSTALL_PREFIX = Mod/):
+#   .                 → Injector.* + optional signatures_*.json
+#   plugins/          → plugin_*.dll
+#   deps/             → third-party + lua51*
+#   bin64/<plat>/     → thin shell only (Winmm / InjectorStub)
+# Live game install: ONLY the inject shell (Winmm / POSIX InjectorStub).
+#
+# Dual libInjector destinations (shell kept; real never mirrored to game):
+#   real → package root libInjector.so|.dylib
+#   Linux stub → package lib64/libInjector.so  (game PRELOAD path)
+#   macOS stub → package shell/libInjector.dylib
 if (GAME_DIR)
-    install(DIRECTORY ${CMAKE_INSTALL_PREFIX}/ DESTINATION ${GAME_INSTALL_PREFIX})
+    if (WIN32)
+        # Explicit shell only — never mirror the whole package into game bin64.
+        # Winmm target is defined under src/DontStarveInjector/loader (WIN32).
+        install(FILES $<TARGET_FILE:Winmm>
+                DESTINATION ${GAME_INSTALL_PREFIX}
+                COMPONENT injector_shell)
+    elseif (TARGET InjectorStub)
+        # Install the already-built stub into the live game tree only.
+        # Package-side stub install remains on the InjectorStub target rules
+        # (lib64/ or shell/) under CMAKE_INSTALL_PREFIX for mod packaging.
+        if (UNIX AND NOT APPLE)
+            install(FILES $<TARGET_FILE:InjectorStub>
+                    DESTINATION ${GAME_INSTALL_PREFIX}/lib64
+                    COMPONENT injector_shell
+                    RENAME libInjector.so)
+        elseif (APPLE)
+            install(FILES $<TARGET_FILE:InjectorStub>
+                    DESTINATION ${GAME_INSTALL_PREFIX}
+                    COMPONENT injector_shell
+                    RENAME libInjector.dylib)
+        endif ()
+    endif ()
 endif ()
 set(BUILD_CMD ${PYTHON_EXECUTABLE_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tools/update_version.py")
 execute_process(COMMAND ${CMAKE_COMMAND} -E env MOD_VERSION=${CMAKE_PROJECT_VERSION} ${BUILD_CMD}

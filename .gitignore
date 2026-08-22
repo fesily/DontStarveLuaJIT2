@@ -38,6 +38,7 @@ dist/
 *.ncb
 *.suo
 *.pdb
+!Mod/deps/lua51.pdb
 *.exp
 .idea/
 
@@ -52,5 +53,19 @@ Mod/scripts/jit
 .venv/
 cmake/GameDir.cmake
 Mod/**/*.dll
+!Mod/deps/lua51.dll
 Mod/mod.manifest
-dst-scripts/
+dst-scripts/tests/plugin_server/_markers/
+
+# Local reference checkouts with nested .git (never tracked; would be
+# recorded as gitlinks and break CI submodule checkout)
+/hercules-obfuscator/
+/reverse-skill/
+
+__pycache__/
+*.py[cod]
+.worktrees/
+.sisyphus/
+.superpowers/
+.omo/
+.angle-bincache/

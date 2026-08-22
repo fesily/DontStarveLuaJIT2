@@ -1,5 +1,6 @@
-find_package(spdlog CONFIG REQUIRED)
-
+# Thin Windows inject shell only. Must NOT dynamically link third-party
+# runtimes (spdlog/fmt/json/luajit/…). Real work lives in Injector.dll
+# loaded via injector_bootstrap.
 
 set(Winmm_SOURCES
         winmm.cpp
@@ -7,16 +8,18 @@ set(Winmm_SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/inlinehook.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
-        ../luajit_config.cpp
 )
 
 add_library(Winmm SHARED ${Winmm_SOURCES})
 
-target_include_directories(Winmm PUBLIC ${DONTSTARVEINJECTOR_UTIL_DIR})
+target_include_directories(Winmm PRIVATE
+    ${DONTSTARVEINJECTOR_UTIL_DIR}
+    ${DONTSTARVEINJECTOR_ROOT}
+)
 
-target_link_libraries(Winmm PRIVATE spdlog::spdlog)
-add_compile_definitions(NO_FRIDA_GUM=1)
+target_link_libraries(Winmm PRIVATE injector_bootstrap)
+# module.cpp / platform.cpp are compiled into this shell — not imported from Injector.
+target_compile_definitions(Winmm PRIVATE NO_FRIDA_GUM=1 DS_PLUGIN_HOST_STATIC)
 
-target_include_directories(Winmm PUBLIC ${LUAJIT_INCLUDE_DIR})
-target_link_libraries(Winmm PRIVATE ${LUAJIT_LIBRARIES})
-install(TARGETS Winmm RUNTIME DESTINATION .)
+# Shell must stay CRT-only + system libs. No vcpkg shared runtimes.
+install(TARGETS Winmm RUNTIME DESTINATION "${DS_INSTALL_SHELL_DIR}" COMPONENT injector_shell)

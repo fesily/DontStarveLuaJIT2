@@ -2,9 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 
 set(SOURCES
         main.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/SignatureJson.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/GameSignature.cpp
-        ${DONTSTARVEINJECTOR_ROOT}/config.cpp
+        ${DONTSTARVEINJECTOR_ROOT}/config/InjectorHostConfig.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
 )
 find_package(nlohmann_json CONFIG REQUIRED)
@@ -17,21 +15,31 @@ target_include_directories(signature_checker PUBLIC ${DONTSTARVEINJECTOR_UTIL_DI
 target_include_directories(signature_checker PUBLIC ${DONTSTARVEINJECTOR_ROOT})
 
 target_include_directories(signature_checker PUBLIC ${FRIDA_GUM_INCLUDE_DIR})
-target_link_libraries(signature_checker PRIVATE ${FRIDA_GUM_LIBRARIES})
+target_link_libraries(signature_checker PRIVATE Frida::Gum)
 
 target_link_libraries(signature_checker PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(signature_checker PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
-target_link_libraries(signature_checker PRIVATE function_relocation)
+target_link_libraries(signature_checker PRIVATE function_relocation_static)
+target_link_libraries(signature_checker PRIVATE ds_signature)
+target_include_directories(signature_checker PRIVATE ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/signature_load)
 target_link_libraries(signature_checker PRIVATE spdlog::spdlog)
 
 file(TO_NATIVE_PATH "${GAME_DIR}" GAMEDIR)
 string(REPLACE "\\" "\\\\" GAMEDIR ${GAMEDIR})
 file(TO_NATIVE_PATH "${LUA_LIBRARIES_PATH}" LUA51_PATH)
 string(REPLACE "\\" "\\\\" LUA51_PATH ${LUA51_PATH})
-target_compile_definitions(signature_checker PUBLIC GAMEDIR="${GAMEDIR}" LUA51_PATH="${LUA51_PATH}" PROJECT_DIR="${PROJECT_SOURCE_DIR}")
+target_compile_definitions(signature_checker PUBLIC GAMEDIR="${GAMEDIR}" LUA51_PATH="${LUA51_PATH}" PROJECT_DIR="${PROJECT_SOURCE_DIR}" DS_PLUGIN_HOST_STATIC)
 
 if (MSVC)
     target_link_options(signature_checker PUBLIC "/NODEFAULTLIB:LIBCMT")
 endif ()
 
 add_dependencies(signature_checker signature_updater)
+
+if (WIN32 AND DEFINED FRIDA_GUM_RUNTIME)
+    add_custom_command(TARGET signature_checker POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${FRIDA_GUM_RUNTIME}"
+            "$<TARGET_FILE_DIR:signature_checker>"
+        VERBATIM)
+endif()

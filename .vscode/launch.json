@@ -36,8 +36,8 @@
             "cwd": "${config:steam.game.root}/bin64",
             "environment": [
                 // {"name": "lua_vm_type", "value": "game"},
-                // {"name": "dump_lua_mods", "value": "workshop-2847908822"},
-                //{"name": "DontStarveInjectorDisable", "value": "1"}
+                // {"name": "dump_lua_mods", "value": "workshop-2130351510"},
+                // {"name": "DontStarveInjectorDisable", "value": "1"}
                 {"name": "AppVersionDevPatch", "value": "1"}
             ],
             "visualizerFile": "${workspaceFolder}/LuaJit.Natvis"
@@ -48,9 +48,9 @@
             "request": "launch",
             "program": "${config:steam.game.root}/bin64/dontstarve_steam_x64.exe",
             "args": [
-                "-e",
+                //"-e",
                 //"print 'hello'",
-                "dofile[[c:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.2.2-win32-x64/script/launch.lua]] DBG[[42128]]",
+                //"dofile[[c:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.2.2-win32-x64/script/launch.lua]] DBG[[42128]]",
                 "",
                 "-enable_lua_debugger"
             ],
@@ -94,9 +94,12 @@
           "-sigprefix",
           "DST_Master",
           //"-enable_lua_debugger"
+          "-tick",
+          "60"
         ],
         "cwd": "${config:steam.game.root}/bin64",
         "visualizerFile": "${workspaceFolder}/LuaJit.Natvis",
+        "console": "externalTerminal",
         //"environment": [{"name": "DontStarveInjectorDisable", "value": "1"}],
       },
         {
@@ -107,7 +110,7 @@
             // -persistent_storage_root APP:Klei/ -conf_dir DoNotStarveTogether -cluster Cluster_1 -ownernetid 76561198151751414 -ownerdir 191485686 -clouddir 191485686 -backup_log_count 25 -backup_log_period 0 -ugc_directory "C:\Program Files (x86)\Steam\steamapps\workshop" -shard Master -secondary_log_prefix master -sigprefix DST_Master
             "args": [
                 "-e",
-                "dofile[[c:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.2.2-win32-x64/script/launch.lua]] DBG[[77580]]",
+                "dofile[[c:/Users/fesil/.vscode/extensions/actboy168.lua-debug-2.2.6-win32-x64/script/launch.lua]] DBG[[77580]]",
                 //"-tick","60",
                 "-persistent_storage_root",
                 "APP:Klei/",
@@ -250,6 +253,10 @@
                 {
                     "name": "LD_PRELOAD",
                     "value": "./lib64/libInjector.so"
+                },
+                {
+                    "name": "DS_LUAJIT_INJECTOR",
+                    "value": "${workspaceFolder}/Mod/bin64/linux/libInjector.so"
                 }
                 //,{"name": "LD_DEBUG", "value": "libs"}
             ],
@@ -281,6 +288,10 @@
                 {
                     "name": "LD_LIBRARY_PATH",
                     "value": "./lib64"
+                },
+                {
+                    "name": "DS_LUAJIT_INJECTOR",
+                    "value": "${workspaceFolder}/Mod/bin64/linux/libInjector.so"
                 }
             ],
             "MIMode": "gdb",
@@ -418,6 +429,10 @@
                     "value": "./lib64"
                 },
                 {
+                    "name": "DS_LUAJIT_INJECTOR",
+                    "value": "${workspaceFolder}/Mod/bin64/linux/libInjector.so"
+                },
+                {
                     "name": "LUA_DEBUG_PLATFORM",
                     "value": "linux-x64"
                 },
@@ -492,6 +507,7 @@
                 //"LUAJIT_WAIT_DEBUGGER_ENABLE": "1",
                 "LD_PRELOAD": "${config:steam.game.root}/bin64/lib64/libInjector.so",
                 "LD_LIBRARY_PATH": "${config:steam.game.root}/bin64/lib64",
+                "DS_LUAJIT_INJECTOR": "${workspaceFolder}/Mod/bin64/linux/libInjector.so",
                 "LUA_DEBUG_PLATFORM": "linux-x64",
                 "GAME_INJECTOR_NO_DEFAULT_BEFORE": "1"
             },

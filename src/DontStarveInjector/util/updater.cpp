@@ -10,7 +10,7 @@
 #include "platform.hpp"
 #include "steam.hpp"
 #include "PersistentString.hpp"
-#include "../luajit_config.hpp"
+#include "config/sources/LuajitConfigFile.hpp"
 
 using namespace std::literals;
 

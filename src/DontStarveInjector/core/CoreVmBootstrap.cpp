@@ -1,0 +1,225 @@
+#include "CoreVmBootstrap.hpp"
+#include "PluginPath.hpp"
+
+#include "config/ResolvedConfig.hpp"
+#include "plugins/plugin_core_vm/VmConfig.hpp"
+#include "plugins/plugin_core_vm/VmOptionKeys.hpp"
+
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <mutex>
+#include <string>
+
+#if defined(_WIN32)
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <Windows.h>
+#else
+#  include <dlfcn.h>
+#  include <limits.h>
+#  include <unistd.h>
+#endif
+
+namespace ds::core_vm {
+namespace {
+
+#if defined(_WIN32)
+constexpr const char *kCoreVmModuleName = "plugin_core_vm.dll";
+#else
+#  if defined(__APPLE__)
+constexpr const char *kCoreVmModuleName = "plugin_core_vm.dylib";
+#  else
+constexpr const char *kCoreVmModuleName = "plugin_core_vm.so";
+#  endif
+#endif
+
+constexpr const char *kRunExportName = "ds_core_vm_run_signature_and_replace";
+
+void *load_core_vm_from_search_dirs() {
+    for (const auto &dir : ds::plugin::default_plugin_search_dirs()) {
+        // Package layout: plugins/plugin_core_vm/plugin_core_vm.dll
+        // Migration: also accept flat plugins/plugin_core_vm.dll
+        const std::filesystem::path candidates[] = {
+            dir / "plugin_core_vm" / kCoreVmModuleName,
+            dir / kCoreVmModuleName,
+        };
+        for (const auto &path : candidates) {
+            (void)ds::plugin::configure_plugin_dll_search({path.parent_path()});
+            std::error_code ec;
+            if (!std::filesystem::is_regular_file(path, ec)) {
+                continue;
+            }
+#if defined(_WIN32)
+            const UINT prev = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+            SetLastError(0);
+            HMODULE handle = LoadLibraryExW(path.wstring().c_str(), nullptr,
+                                            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+                                                LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
+                                                LOAD_LIBRARY_SEARCH_USER_DIRS);
+            if (!handle) {
+                SetLastError(0);
+                handle = LoadLibraryW(path.wstring().c_str());
+            }
+            SetErrorMode(prev);
+            if (handle) {
+                return static_cast<void *>(handle);
+            }
+#else
+            if (void *h = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL)) {
+                return h;
+            }
+#endif
+        }
+    }
+    return nullptr;
+}
+
+void *core_vm_module_handle() {
+#if defined(_WIN32)
+    return static_cast<void *>(GetModuleHandleA(kCoreVmModuleName));
+#else
+    // Prefer an already-mapped handle (DynamicPluginLoader or prior Ensure).
+    void *existing = dlopen(kCoreVmModuleName, RTLD_NOLOAD | RTLD_LAZY);
+    if (existing) {
+        // dlopen(RTLD_NOLOAD) bumps the refcount; drop the extra ref.
+        dlclose(existing);
+        return existing;
+    }
+    return nullptr;
+#endif
+}
+
+
+void *lookup_symbol(void *handle, const char *name) {
+    if (!handle || !name) {
+        return nullptr;
+    }
+#if defined(_WIN32)
+    return reinterpret_cast<void *>(GetProcAddress(static_cast<HMODULE>(handle), name));
+#else
+    return dlsym(handle, name);
+#endif
+}
+
+// One-shot load attempt; never FreeLibrary — module stays mapped for process life.
+void *ensure_handle_locked() {
+    if (void *h = core_vm_module_handle()) {
+        return h;
+    }
+    return load_core_vm_from_search_dirs();
+}
+
+} // namespace
+
+bool EnsureCoreVmModuleLoaded() {
+    static std::once_flag once;
+    static bool loaded = false;
+    std::call_once(once, [] {
+        // CI / harness only: pretend core.vm is absent without renaming the DLL.
+        if (const char *env = std::getenv("DS_LUAJIT_FORCE_NO_CORE_VM"); env && env[0] == '1') {
+            loaded = false;
+            std::fprintf(stderr,
+                         "[core.vm] FORCE_NO_CORE_VM=1 — treating module as absent (CI harness)\n");
+            return;
+        }
+        void *h = ensure_handle_locked();
+        loaded = h != nullptr;
+        if (loaded) {
+            std::fprintf(stderr, "[core.vm] module mapped (required): %s\n", kCoreVmModuleName);
+        } else {
+            std::fprintf(stderr, "[core.vm] REQUIRED module missing: %s\n", kCoreVmModuleName);
+        }
+    });
+    return loaded;
+}
+
+RunSigReplaceFn GetRunSignatureAndReplaceFn() {
+    if (!EnsureCoreVmModuleLoaded()) {
+        return nullptr;
+    }
+    void *h = core_vm_module_handle();
+    if (!h) {
+        // Ensure may have loaded via full path; re-resolve basename handle.
+        h = ensure_handle_locked();
+    }
+    if (!h) {
+        return nullptr;
+    }
+    return reinterpret_cast<RunSigReplaceFn>(lookup_symbol(h, kRunExportName));
+}
+
+[[noreturn]] static void hard_fail(const char *msg) {
+#ifdef _WIN32
+    MessageBoxA(NULL, msg, "core.vm required", 0);
+#else
+    std::fprintf(stderr, "[core.vm] FATAL: %s\n", msg);
+    std::fflush(stderr);
+#endif
+    std::exit(1);
+}
+
+bool ForceRunSignatureAndReplace(const BootstrapArgs &args) {
+    // Prefer calling after refresh_cascade_after_plugins so VM schema keys exist.
+    // Intentional soft-skip only: server VM disable flags.
+    if (!args.is_client) {
+        if (const char *env = std::getenv("DS_LUAJIT_FORCE_DISABLE_VM"); env && env[0] == '1') {
+            std::fprintf(stderr,
+                         "[core.vm] Lua VM path disabled — skipping signature/replace; native plugins continue\n");
+            return false;
+        }
+        (void) ds::config::ensure_resolved();
+        bool disable_on_server = false;
+        if (auto *rc = ds::config::current()) {
+            disable_on_server = ds::core_vm::disable_jit_when_server(*rc);
+        }
+        if (disable_on_server) {
+            std::fprintf(stderr,
+                         "[core.vm] Lua VM path disabled — skipping signature/replace; native plugins continue\n");
+            return false;
+        }
+    }
+
+    // Required module: CI may opt out with DS_LUAJIT_FORCE_NO_CORE_VM=1.
+    if (const char *env = std::getenv("DS_LUAJIT_FORCE_NO_CORE_VM"); env && env[0] == '1') {
+        std::fprintf(stderr,
+                     "[core.vm] FORCE_NO_CORE_VM=1 — skipping force load (CI harness)\n");
+        return false;
+    }
+
+    if (!EnsureCoreVmModuleLoaded()) {
+        hard_fail("required plugin_core_vm is missing or failed to load "
+                  "(expected under Mod/plugins/). Install RelWithDebInfo/Debug "
+                  "plugins component, or set DS_LUAJIT_FORCE_NO_CORE_VM=1 for CI.");
+    }
+
+    auto *fn = GetRunSignatureAndReplaceFn();
+    if (!fn) {
+        hard_fail("plugin_core_vm loaded but export "
+                  "ds_core_vm_run_signature_and_replace is missing");
+    }
+
+    std::fprintf(stderr, "[core.vm] force-running signature + ReplaceLuaModule\n");
+    std::fflush(stderr);
+    if (fn(&args)) {
+        std::fprintf(stderr, "[core.vm] signature + ReplaceLuaModule OK\n");
+        std::fflush(stderr);
+        return true;
+    }
+    // Soft miss inside plugin (e.g. no luamodule base) returns false without showError.
+    std::fprintf(stderr,
+                 "[core.vm] ds_core_vm_run_signature_and_replace returned false — "
+                 "soft miss; inject continues\n");
+    std::fflush(stderr);
+    return false;
+}
+
+bool TryRunSignatureAndReplace(const BootstrapArgs &args) {
+    return ForceRunSignatureAndReplace(args);
+}
+
+} // namespace ds::core_vm

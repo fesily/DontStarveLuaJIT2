@@ -1,4 +1,7 @@
 #include "ScanCtx.hpp"
+#include "FunctionRanges.hpp"
+#include <spdlog/spdlog.h>
+
 
 #include <stdio.h>
 #include <unordered_set>
@@ -318,26 +321,22 @@ namespace function_relocation {
             }
             ++ptr;
         }
-        auto module_base_address = ctx.m.details.range.base_address;
 #ifdef _WIN32
-        range = ctx.m.pdata;
-        std::vector<std::pair<RUNTIME_FUNCTION, std::vector<RUNTIME_FUNCTION>>> runtime_functions;
-        for (auto ptr = (uint8_t *) range.base_address, end = (uint8_t *) range.base_address + range.size;
-             ptr < end; ptr += 12) {
-            PRUNTIME_FUNCTION function = (PRUNTIME_FUNCTION) ptr;
-            if (function->BeginAddress == 0) break;
-            if (!runtime_functions.empty() && runtime_functions.back().first.EndAddress == function->BeginAddress) {
-                runtime_functions.back().second.emplace_back(*function);
+        {
+            std::vector<FuncRange> ranges;
+            if (enumerate_function_ranges_win(ctx.m, ranges)) {
+                constexpr size_t kPdataWeight = 2;
+                for (const auto& r : ranges) {
+                    if (r.end <= r.start) continue;
+                    ctx.sureFunctions[r.start] = std::max(ctx.sureFunctions[r.start], kPdataWeight);
+                    ctx.authoritative_sizes[r.start] = static_cast<size_t>(r.end - r.start);
+                }
             } else {
-                auto blockBeing = module_base_address + function->BeginAddress;
-                auto blockEnding = module_base_address + function->EndAddress;
-                assert(ctx.m.in_text(blockBeing) && ctx.m.in_text(blockEnding));
-                runtime_functions.emplace_back(*function, std::vector<RUNTIME_FUNCTION>{*function});
-                if (!ctx.sureFunctions.contains(blockBeing))
-                    ctx.sureFunctions[blockBeing] = 0;
+                // keep silent here; pre_function can log once if map empty after all seeds
             }
         }
 #else
+        auto module_base_address = ctx.m.details.range.base_address;
         if (gum_module_get_path(gum_process_get_main_module()) == ctx.m.details.path) {
             module_base_address = 0;
         }
@@ -394,6 +393,14 @@ namespace function_relocation {
 
     std::vector<uintptr_t> ScanCtx::pre_function() {
         std::unordered_map<uint64_t, std::unordered_set<uint64_t>> maybeFunctions = scan_pre_text_range(*this);
+#ifdef _WIN32
+        if (authoritative_sizes.empty()) {
+            spdlog::warn("function_ranges: fallback heuristic (no pdata ranges)");
+        } else {
+            spdlog::info("function_ranges: {} authoritative pdata ranges", authoritative_sizes.size());
+        }
+#endif
+
 
         for (const auto &[address, func]: known_functions) {
             if (address < text.base_address)
@@ -496,6 +503,14 @@ namespace function_relocation {
                 fprintf(stderr, "%p discard less base address the function\n", (void *) addr);
                 continue;
             }
+            bool inside_auth = false;
+            for (const auto& [start, size] : authoritative_sizes) {
+                if (addr >= start && addr < start + size) {
+                    inside_auth = true;
+                    break;
+                }
+            }
+            if (inside_auth) continue;
             const auto ref_count = ref_addrs.size();
             auto sureFuncs = sureFunctions | std::ranges::views::keys | ranges::to<std::vector>();
             std::ranges::sort(sureFuncs);
@@ -511,7 +526,11 @@ namespace function_relocation {
                 continue;
             }
             if (!function_sizes.contains(near_address)) {
-                function_sizes[near_address] = guess_function_size(near_address);
+                if (auto it = authoritative_sizes.find(near_address); it != authoritative_sizes.end()) {
+                    function_sizes[near_address] = it->second;
+                } else {
+                    function_sizes[near_address] = guess_function_size(near_address);
+                }
             }
             const auto length = function_sizes[near_address];
             if (addr >= near_address + length) {
@@ -536,26 +555,32 @@ namespace function_relocation {
     }
 
     void ScanCtx::scan() {
+        // Legacy heuristic path (CALL/FDE/ret). Prefer scan_nucleus_bodies().
         const auto functions = pre_function();
         for (size_t i = 0; i < functions.size(); i++) {
             const auto address = functions[i];
-            function_limit = known_functions.contains(address) && known_functions.at(address).size != 0 ? known_functions[address].size + address : (i + 1 == functions.size() ? 1 : functions[i + 1]);
+            const bool limit_from_auth = authoritative_sizes.contains(address);
+            if (limit_from_auth) {
+                function_limit = address + authoritative_sizes[address];
+            } else {
+                function_limit = known_functions.contains(address) && known_functions.at(address).size != 0
+                    ? known_functions[address].size + address
+                    : (i + 1 == functions.size() ? 1 : functions[i + 1]);
+            }
 
 #ifndef NDEBUG
-            if (function_limit && known_functions.contains(address)) {
+            if (!limit_from_auth && function_limit && known_functions.contains(address)) {
                 const auto &func = known_functions[address];
                 if (func.size)
                     assert(func.size + func.address == function_limit);
             }
 #endif
-            // maybe function_limit has some data
             if (!known_functions.contains(address)) {
                 disasm dis{
                         std::span{(uint8_t *) address, function_limit - address}};
                 auto max_function_limit = address;
                 for (auto iter = dis.begin(), end = dis.end(); iter != end; ++iter) {
                     const auto &insn = *iter;
-                    // break when data
                     if (rodatas.contains(insn.address)) {
                         max_function_limit = insn.address;
                         break;
@@ -564,16 +589,50 @@ namespace function_relocation {
                 }
                 function_limit = std::min(max_function_limit, function_limit);
             }
-            // function_limit is next function address
             function_limit--;
             scan_function(address);
+        }
+    }
+
+    void ScanCtx::scan_nucleus_bodies() {
+        // Snapshot (address, size) first — scan_function may not reallocate list
+        // nodes but we avoid concurrent mutation of the iteration source.
+        std::vector<std::pair<uintptr_t, size_t>> bodies;
+        bodies.reserve(m.functions.size());
+        for (const auto &fn: m.functions) {
+            if (fn.size > 0 && fn.address != 0) {
+                bodies.emplace_back(fn.address, fn.size);
+            }
+        }
+        m.blocks.clear();
+        m.address_blocks.clear();
+        m.Consts.clear();
+        for (auto &fn: m.functions) {
+            fn.blocks.clear();
+            fn.insn_count = 0;
+            fn.const_key = nullptr;
+            fn.consts_hash = 0;
+        }
+        for (const auto &[address, size]: bodies) {
+            body_hard_end = address + size;
+            function_limit = body_hard_end - 1;
+            cur = nullptr;
+            scan_function(address);
+            body_hard_end = 0;
         }
     }
 
     void ScanCtx::scan_function(uintptr_t address) {
         size_t index = 0;
         assert(cur == nullptr);
-        cur = &m.functions.emplace_back(Function{address});
+        // Reuse Function stub from apply_nucleus when present; else create.
+        cur = m.find_function(address);
+        if (!cur) {
+            cur = &m.functions.emplace_back(Function{address});
+        } else {
+            cur->blocks.clear();
+            cur->insn_count = 0;
+        }
         cur->module = &m;
         cur_block = createBlock(address);
         disasm ds{(uint8_t *) address, text.base_address + text.size - address};
@@ -583,9 +642,13 @@ namespace function_relocation {
             if (rodatas.contains(next_insn_address)) {
                 function_limit = next_insn_address - 1;
             }
+            if (!m.in_text(insn.address) ||
+                (body_hard_end != 0 && insn.address >= body_hard_end)) {
+                function_end(insn.address);
+                return;
+            }
             cur->insn_count++;
             cur_block->insn_count++;
-            assert(m.in_text(insn.address));
             const auto &x86_details = insn.detail->x86;
             switch (insn.id) {
                 case X86_INS_JMP:
@@ -680,10 +743,16 @@ namespace function_relocation {
                                x86_details.operands[0].type == x86_op_type::X86_OP_IMM);
                         auto addr = static_cast<uint64_t>(x86_details.operands[0].imm);
                         function_limit = std::max((uintptr_t) addr, function_limit);
-
+                        if (body_hard_end != 0 && function_limit >= body_hard_end) {
+                            function_limit = body_hard_end - 1;
+                        }
                         cur_block = createBlock(next_insn_address);
                     }
                     break;
+            }
+            if (body_hard_end != 0 && next_insn_address >= body_hard_end) {
+                function_end(body_hard_end);
+                return;
             }
         }
         fprintf(stderr, "%s\n",
