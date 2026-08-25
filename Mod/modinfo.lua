@@ -419,6 +419,16 @@ configuration_options = {
         default = false,
     },
     {
+        name = "ShadowSilhouetteBatch",
+        label = translate({ en = "Silhouette batch shadows", zh = "剪影批阴影" }),
+        hover = translate({ en = "Exclusive with sun-driven ellipses; both on → silhouette wins.", zh = "与太阳驱动椭圆互斥；同时开启时以剪影为准。" }),
+        options = {
+            { description = translate({ en = "Off", zh = "关闭" }), data = false },
+            { description = translate({ en = "On", zh = "开启" }), data = true },
+        },
+        default = false,
+    },
+    {
         name = "ShadowLengthBoost",
         label = translate({ en = "Shadow length boost", zh = "阴影长度增强" }),
         options = {
@@ -432,7 +442,7 @@ configuration_options = {
     {
         name = "ShadowHemisphere",
         label = translate({ en = "Shadow hemisphere", zh = "阴影半球" }),
-        hover = translate({ en = "Northern: clockwise (default). Southern: counterclockwise.", zh = "北半球：顺时针（默认）。南半球：逆时针。" }),
+        hover = translate({ en = "Northern: dawn shadow SE, dusk NW (TL). Southern: mirrored.", zh = "北半球：黎明影子朝东南、黄昏朝西北（晨昏线）。南半球取反。" }),
         options = {
             { description = translate({ en = "Northern", zh = "北半球" }), data = "north" },
             { description = translate({ en = "Southern", zh = "南半球" }), data = "south" },
