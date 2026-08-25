@@ -257,10 +257,40 @@ function(setup_frida_gum version)
         set(_ds_gum_skip TRUE)
     endif()
 
-    # Auto skip when a valid stage marker already exists, or durable static inputs are present.
-    # Full meson only when forced or when no skip inputs exist.
+    set(_ds_gum_extra_skip_args "")
+
+    # Auto skip when meson-prefix/devkits, a stage marker, or durable static
+    # inputs are present. Full meson only when forced or when no skip inputs exist.
+    # meson-prefix/devkits (amalgamated frida-gum.h from --with-devkits=gum) wins
+    # over a stale stage marker / frida-gum-build/input/ copy.
     if (NOT _ds_gum_force_meson)
-        if (EXISTS "${_ds_gum_stage}/version-${version}.txt")
+        file(GLOB_RECURSE _ds_gum_devkit_headers
+            LIST_DIRECTORIES FALSE
+            "${CMAKE_CURRENT_SOURCE_DIR}/3rd/frida-gum-build/meson-prefix/frida-gum.h")
+        set(_ds_gum_devkit_header "")
+        set(_ds_gum_devkit_lib "")
+        foreach (_h IN LISTS _ds_gum_devkit_headers)
+            if (_h MATCHES "[/\\\\]devkits[/\\\\]gum[/\\\\]frida-gum[.]h$")
+                get_filename_component(_ds_gum_devkit_dir "${_h}" DIRECTORY)
+                if (EXISTS "${_ds_gum_devkit_dir}/libfrida-gum.a")
+                    set(_ds_gum_devkit_header "${_h}")
+                    set(_ds_gum_devkit_lib "${_ds_gum_devkit_dir}/libfrida-gum.a")
+                    break()
+                elseif (EXISTS "${_ds_gum_devkit_dir}/frida-gum.lib")
+                    set(_ds_gum_devkit_header "${_h}")
+                    set(_ds_gum_devkit_lib "${_ds_gum_devkit_dir}/frida-gum.lib")
+                    break()
+                endif()
+            endif()
+        endforeach()
+
+        if (_ds_gum_devkit_header AND _ds_gum_devkit_lib)
+            set(_ds_gum_skip TRUE)
+            list(APPEND _ds_gum_extra_skip_args
+                "--static-lib=${_ds_gum_devkit_lib}"
+                "--header=${_ds_gum_devkit_header}")
+            message(STATUS "Frida-Gum: using meson-prefix/devkits amalgamated header (${_ds_gum_devkit_header})")
+        elseif (EXISTS "${_ds_gum_stage}/version-${version}.txt")
             set(_ds_gum_skip TRUE)
             message(STATUS "Frida-Gum: stage marker present; using --skip-meson (set DS_FRIDA_GUM_FORCE_MESON=1 to rebuild via meson)")
         elseif (
@@ -288,7 +318,7 @@ function(setup_frida_gum version)
     endif()
 
     if (_ds_gum_skip AND NOT _ds_gum_force_meson)
-        list(APPEND _setup_args "--skip-meson")
+        list(APPEND _setup_args "--skip-meson" ${_ds_gum_extra_skip_args})
     endif()
 
     execute_process(

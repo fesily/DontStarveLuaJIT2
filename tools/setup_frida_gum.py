@@ -12,10 +12,14 @@ Bootstrap / CI-fast path:
   python tools/setup_frida_gum.py --skip-meson
   python tools/setup_frida_gum.py --skip-meson \\
       --static-lib PATH/to/frida-gum.lib --header PATH/to/frida-gum.h
-Uses a durable static archive (prefer 3rd/frida-gum/_legacy_<plat>/, then
-3rd/frida-gum-build/input/) and only builds the shared shell. Never reuse the
-staged import lib for /WHOLEARCHIVE. Prefer this for first green; full meson
-may take hours.
+Uses a durable static archive + amalgamated header and only builds the shared
+shell. Preference order:
+  1. --static-lib / --header
+  2. 3rd/frida-gum-build/meson-prefix/**/devkits/gum/  (meson --with-devkits)
+  3. 3rd/frida-gum/_legacy_<plat>/
+  4. 3rd/frida-gum-build/input/
+Never reuse the staged import lib for /WHOLEARCHIVE. Prefer this for first
+green; full meson may take hours.
 """
 from __future__ import annotations
 
@@ -186,6 +190,17 @@ def ensure_source(src: Path, version: str) -> None:
         print("warn: could not describe source tag exactly", flush=True)
 
 
+def _is_devkit_gum_artifact(path: Path) -> bool:
+    return path.parent.name == "gum" and "devkits" in path.parts
+
+
+def _artifact_rank(path: Path) -> tuple[int, int]:
+    # Prefer amalgamated devkit output, then larger files (combined header / archive).
+    devkit = 0 if _is_devkit_gum_artifact(path) else 1
+    size = path.stat().st_size if path.is_file() else 0
+    return (devkit, -size)
+
+
 def _find_static_artifacts(search_roots: list[Path]) -> tuple[Path, Path]:
     candidates_lib: list[Path] = []
     candidates_h: list[Path] = []
@@ -195,8 +210,8 @@ def _find_static_artifacts(search_roots: list[Path]) -> tuple[Path, Path]:
         candidates_lib.extend(root.rglob("frida-gum.lib"))
         candidates_lib.extend(root.rglob("libfrida-gum.a"))
         candidates_h.extend(root.rglob("frida-gum.h"))
-    # Prefer devkit-style combined header (large amalgamation) over intermediate headers.
-    candidates_h.sort(key=lambda p: p.stat().st_size if p.is_file() else 0, reverse=True)
+    candidates_lib.sort(key=_artifact_rank)
+    candidates_h.sort(key=_artifact_rank)
     if not candidates_lib:
         die("meson build finished but static frida-gum archive not found")
     if not candidates_h:
@@ -468,6 +483,26 @@ def _looks_like_static_archive(path: Path) -> bool:
     return size >= MIN_STATIC_LIB_BYTES
 
 
+def find_meson_prefix_devkit() -> tuple[Path, Path] | None:
+    prefix = BUILD_ROOT / "meson-prefix"
+    if not prefix.is_dir():
+        return None
+    hits = [
+        p
+        for p in prefix.rglob("frida-gum.h")
+        if p.parent.name == "gum" and "devkits" in p.parts
+    ]
+    if not hits:
+        return None
+    hits.sort(key=lambda p: p.stat().st_size if p.is_file() else 0, reverse=True)
+    header = hits[0]
+    for name in ("libfrida-gum.a", "frida-gum.lib"):
+        lib = header.parent / name
+        if _looks_like_static_archive(lib):
+            return lib, header
+    return None
+
+
 def _legacy_plat_dirs(plat: str) -> list[Path]:
     """Durable static inputs outside the wipeable stage tree."""
     return [
@@ -483,6 +518,9 @@ def _candidate_static_paths(plat: str, explicit: Path | None) -> list[Path]:
     paths: list[Path] = []
     if explicit is not None:
         paths.append(Path(explicit))
+    devkit = find_meson_prefix_devkit()
+    if devkit is not None:
+        paths.append(devkit[0])
     for root in _legacy_plat_dirs(plat):
         paths.append(root / "frida-gum.lib")
         paths.append(root / "libfrida-gum.a")
@@ -514,6 +552,9 @@ def _candidate_header_paths(
         paths.append(Path(explicit))
     if static_lib is not None:
         paths.append(static_lib.parent / "frida-gum.h")
+    devkit = find_meson_prefix_devkit()
+    if devkit is not None:
+        paths.append(devkit[1])
     for root in _legacy_plat_dirs(plat):
         paths.append(root / "frida-gum.h")
         paths.append(root / "include" / "frida-gum.h")
@@ -537,9 +578,10 @@ def resolve_skip_meson_inputs(args: argparse.Namespace, plat: str) -> tuple[Path
 
     Preference order:
       1. --static-lib / --header (must still look like a static archive)
-      2. 3rd/frida-gum/_legacy_<plat>/
-      3. 3rd/frida-gum-build/input/
-      4. staged tree only if the .lib is clearly a large static archive
+      2. 3rd/frida-gum-build/meson-prefix/**/devkits/gum/ (meson --with-devkits)
+      3. 3rd/frida-gum/_legacy_<plat>/
+      4. 3rd/frida-gum-build/input/
+      5. staged tree only if the .lib is clearly a large static archive
 
     Never pick the staged import lib (~288KB after first shell stage).
     """
