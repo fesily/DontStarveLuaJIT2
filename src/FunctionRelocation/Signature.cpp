@@ -24,6 +24,7 @@
 #include "config.hpp"
 #include "MatchPolicy.hpp"
 #include "MicroWindow.hpp"
+#include "XrefPattern.hpp"
 
 #include <cstring>
 #include <numeric>
@@ -661,12 +662,9 @@ namespace function_relocation {
             return callees;
         }
 
-        // Soft path (plan todo 2/3/4): generate all micro-windows for the
-        // original body, validate each on the training module, scan the
-        // target, collect (raw_match, entry) votes across all windows, and
-        // resolve via accept_candidates with feature-based scores.
-        // Returns the winning entry VA or nullptr.
-        // Match via train-body LEA string unique in both modules + single RIP xref.
+        // PIC last-resort: unique train C string + single RIP/imm xref.
+        // After short_body/micro_windows so unique strings cannot steal a body
+        // pattern. containing() is the pdata span start.
         void *scan_by_unique_const() {
             if (!original || original->size == 0 || !original->module) return nullptr;
             if (target->function_table.empty()) return nullptr;
@@ -862,80 +860,25 @@ namespace function_relocation {
                     }
                 }
                 auto [entry, match] = candidates.front();
-                // If Nucleus over-merged (xref far from span start), recover entry
-                // from train-side string offset within the original body.
-                {
-                    uintptr_t train_str = 0;
-                    if (original->module->rodata.base_address != 0) {
-                        auto th = find_c_string(original->module->rodata.base_address,
-                                                original->module->rodata.size, s);
-                        if (th.size() == 1) train_str = th[0];
-                    }
-                    if (train_str == 0) {
-                        auto th = find_c_string(original->module->details.range.base_address,
-                                                original->module->details.range.size, s);
-                        if (th.size() == 1) train_str = th[0];
-                    }
-                    if (train_str != 0) {
-                        // Scan train .text for xref inside original body.
-                        const auto &tt = original->module->text;
-                        int train_off = -1;
-                        if (tt.base_address != 0 && tt.size > 0) {
-                            const auto *text = reinterpret_cast<const uint8_t *>(tt.base_address);
-                            for (size_t i = 0; i + 7 < tt.size; ++i) {
-                                const uint64_t iva = tt.base_address + i;
-                                if (iva < original->address ||
-                                    iva >= original->address + original->size) {
-                                    continue;
-                                }
-                                const uint8_t b0 = text[i];
-                                if ((b0 == 0x48 || b0 == 0x4C) && text[i + 1] == 0x8D) {
-                                    const uint8_t modrm = text[i + 2];
-                                    if ((modrm & 0xC7) == 0x05) {
-                                        int32_t rel = 0;
-                                        std::memcpy(&rel, text + i + 3, sizeof(rel));
-                                        if (static_cast<uint64_t>(iva + 7 + rel) == train_str) {
-                                            train_off = static_cast<int>(iva - original->address);
-                                            break;
-                                        }
-                                    }
-                                }
-                                if (b0 >= 0xB8 && b0 <= 0xBF) {
-                                    uint32_t imm = 0;
-                                    std::memcpy(&imm, text + i + 1, sizeof(imm));
-                                    if (static_cast<uint64_t>(imm) == (train_str & 0xffffffffull)) {
-                                        train_off = static_cast<int>(iva - original->address);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        if (train_off >= 0) {
-                            const uint64_t guess =
-                                    static_cast<uint64_t>(static_cast<intptr_t>(match) - train_off);
-                            const auto span = entry;
-                            // Only override when Nucleus clearly over-merged
-                            // (xref far past a span that dwarfs the train body).
-                            const size_t far =
-                                    std::max<size_t>(256, original->size > 0 ? original->size : 256);
-                            if (guess != span && match >= span && (match - span) > far) {
-                                if (target->in_text(guess)) {
-                                    if (auto logger = spdlog::get(logger_name)) {
-                                        logger->info(
-                                                "scan_by_unique_const: {} '{}' Nucleus span {:#x} "
-                                                "too coarse; using train-off {} -> {:#x}",
-                                                original->name, s, span, train_off, guess);
-                                    }
-                                    entry = guess;
-                                }
-                            }
-                        }
-                    }
-                }
                 last_training_offset = 0;
                 if (signature_info) {
-                    signature_info->pattern.clear();
-                    signature_info->pattern_offset = 0;
+                    const auto xref_off = static_cast<size_t>(
+                            match >= entry ? match - entry : 0);
+                    size_t body_len = 0;
+                    if (auto *fn = target->find_function(entry); fn && fn->size > 0) {
+                        body_len = fn->size;
+                    } else if (match >= entry) {
+                        body_len = static_cast<size_t>(match - entry) + 8;
+                    }
+                    if (body_len > xref_off) {
+                        const auto *base = reinterpret_cast<const uint8_t *>(entry);
+                        const auto xp = make_xref_wildcard_pattern(
+                                std::span<const uint8_t>{base, body_len}, xref_off);
+                        if (!xp.pattern.empty()) {
+                            signature_info->pattern = xp.pattern;
+                            signature_info->pattern_offset = xp.pattern_offset;
+                        }
+                    }
                 }
                 soft_path_active = false;
                 if (auto logger = spdlog::get(logger_name)) {
@@ -1217,6 +1160,7 @@ namespace function_relocation {
             return nullptr;
         }
 
+        // Soft path: sliding micro-windows + dual-channel accept (SCORE_T/M).
         void *scan_by_micro_windows() {
             if (!original || original->size == 0) return nullptr;
             if (target->function_table.empty()) return nullptr;
@@ -1532,21 +1476,19 @@ namespace function_relocation {
         // Nucleus FunctionTable only (no hardcoded seed patterns).
         spdlog::get(logger_name)->warn("fix_func_address_by_signature: {}", original.name);
         Creator creator{&target, &original, limit_address, signature};
-        // Soft path (FunctionTable present): micro-window generator splits at
-        // CALL/JMP and resolves multi-hit raw matches by entry voting. This
-        // replaces the scan_by_block sliding that could span CALL and embed
-        // callee prologues. When the FunctionTable is empty, fall through to
-        // the legacy scan_by_block + LCS path.
+        // Soft path: byte match first (short-body, micro-windows). unique_const
+        // is PIC last-resort (train LEA vs game mov-imm) after pdata spans.
+        // Unique strings must not preempt a body pattern.
         if (!target.function_table.empty()) {
-            if (auto ptr = creator.scan_by_unique_const(); ptr) {
-                creator.limit_signature();
-                return ptr;
-            }
             if (auto ptr = creator.scan_by_short_body(); ptr) {
                 creator.limit_signature();
                 return ptr;
             }
             if (auto ptr = creator.scan_by_micro_windows(); ptr) {
+                creator.limit_signature();
+                return ptr;
+            }
+            if (auto ptr = creator.scan_by_unique_const(); ptr) {
                 creator.limit_signature();
                 return ptr;
             }

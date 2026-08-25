@@ -181,6 +181,14 @@ target_compile_features(test_plugin_path PRIVATE cxx_std_23)
 target_compile_definitions(test_plugin_path PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME plugin_path COMMAND test_plugin_path)
 
+add_executable(test_signature_mod_root
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_signature_mod_root.cpp)
+target_include_directories(test_signature_mod_root PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/signature_load)
+target_compile_features(test_signature_mod_root PRIVATE cxx_std_23)
+add_test(NAME signature_mod_root COMMAND test_signature_mod_root)
+
+
 add_executable(test_injector_bootstrap
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_injector_bootstrap.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/loader/bootstrap/InjectorBootstrap.cpp)
@@ -539,6 +547,23 @@ target_include_directories(test_micro_windows PRIVATE
     ${FUNCTION_RELOCATION_INCLUDE_DIR})
 target_compile_features(test_micro_windows PRIVATE cxx_std_23)
 add_test(NAME micro_windows COMMAND test_micro_windows)
+
+# unique_const xref-site gum pattern (wildcard disp32/imm32). Header-only.
+add_executable(test_xref_pattern
+    ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_xref_pattern.cpp)
+target_include_directories(test_xref_pattern PRIVATE
+    ${FUNCTION_RELOCATION_INCLUDE_DIR})
+target_compile_features(test_xref_pattern PRIVATE cxx_std_23)
+add_test(NAME xref_pattern COMMAND test_xref_pattern)
+
+add_executable(test_graph_seed
+    ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_graph_seed.cpp)
+target_include_directories(test_graph_seed PRIVATE
+    ${FUNCTION_RELOCATION_INCLUDE_DIR})
+target_compile_features(test_graph_seed PRIVATE cxx_std_23)
+add_test(NAME graph_seed COMMAND test_graph_seed)
+
+
 
 # Soft multi-feature scoring + twin fail-closed (plan todo 3).
 # Header-only: depends on MatchPolicy.hpp + MicroWindow.hpp + the C++23 stdlib.

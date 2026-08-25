@@ -15,6 +15,7 @@
 #include "MemorySignature.hpp"
 #include "ModuleSections.hpp"
 #include <filesystem>
+#include "SignatureModRoot.hpp"
 #ifdef _WIN32
 #  ifndef NOMINMAX
 #    define NOMINMAX
@@ -71,48 +72,25 @@ static std::filesystem::path module_dir_if_loaded_sym(const char *sym_name) {
 #endif
 }
 
-// Walk up past platform package shells (bin64/windows|linux|osx, lib64).
-static std::filesystem::path strip_shell_dirs(std::filesystem::path p) {
-    while (!p.empty()) {
-        const auto leaf = p.filename();
-        if (leaf == "bin64" || leaf == "bin" || leaf == "windows" || leaf == "linux" ||
-            leaf == "osx" || leaf == "lib64" || leaf == "shell") {
-            p = p.parent_path();
-            continue;
-        }
-        break;
-    }
-    return p;
-}
-
 // Canonical: <mod>/  (sibling of plugins/ and deps/).
 static std::filesystem::path mod_root_if_loaded() {
 #ifdef _WIN32
     const auto core = module_dir_if_loaded_win(L"plugin_core_vm", "plugin_core_vm.dll");
     if (!core.empty()) {
-        // .../plugins/plugin_core_vm.dll → .../ (mod root)
-        if (core.filename() == "plugins") {
-            return core.parent_path();
-        }
-        return strip_shell_dirs(core.parent_path());
+        return signature_mod_root_from_module_dir(core);
     }
     const auto inj = module_dir_if_loaded_win(L"Injector", "Injector.dll");
     if (!inj.empty()) {
-        // .../Mod/Injector.dll → .../Mod
-        // legacy .../Mod/bin64[/windows]/Injector.dll → .../Mod
-        return strip_shell_dirs(inj);
+        return signature_mod_root_from_module_dir(inj);
     }
 #else
     const auto core = module_dir_if_loaded_sym("ds_core_vm_run_signature_and_replace");
     if (!core.empty()) {
-        if (core.filename() == "plugins") {
-            return core.parent_path();
-        }
-        return strip_shell_dirs(core.parent_path());
+        return signature_mod_root_from_module_dir(core);
     }
     const auto inj = module_dir_if_loaded_sym("HookStartupEntry");
     if (!inj.empty()) {
-        return strip_shell_dirs(inj);
+        return signature_mod_root_from_module_dir(inj);
     }
 #endif
     return {};

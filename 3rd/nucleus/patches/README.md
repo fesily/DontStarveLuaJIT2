@@ -19,6 +19,7 @@ surface only**. Do not use this directory for algorithm forks of `CFG::make_cfg`
 | Capstone shim | `cmake/capstone_shim/capstone/capstone.h` | Map `<capstone/capstone.h>` → Frida Gum Capstone surface |
 | Options defaults | `options_defaults.cc` | Library consumers need defaults without CLI `getopt` |
 | PE loader | `loader.cc` / `loader.h` | Fill `Binary`/`Section` via pe-parse; no libbfd on Windows |
+| PE pdata starts | `loader.cc` `pe_load_pdata_symbols` | x64 `.pdata` RUNTIME_FUNCTION BeginAddress → `SYM_TYPE_FUNC` (skip `UNW_FLAG_CHAININFO`). Windows analogue of ELF FUNC / eh_frame; existing `split_at_known_entries` consumes these. Not a CFG algorithm fork |
 | BFD section API | `loader.cc` `load_sections_bfd` | binutils 2.34+ single-arg `bfd_section_{flags,vma,size,name}(sec)`; keep `bfd_get_section_flags` ifdef for older hosts |
 | endian linkage | `endian.h` | `extern "C"` wrappers so defs match cfg calls after frida-gum open `extern "C"` regions |
 | util portability | `util.cc` | Replace POSIX `realpath`/`libgen` for MSVC; keep upstream-like `xorshift128plus` seed via `rand64()`/`random_device` |

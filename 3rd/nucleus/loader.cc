@@ -125,6 +125,83 @@ pe_export_cb(void *user, const peparse::VA &va, const std::string & /*mod*/,
 }
 
 static int
+pe_va_in_code(Binary *bin, uint64_t va)
+{
+  for (auto &sec: bin->sections) {
+    if (sec.type == Section::SEC_TYPE_CODE && sec.contains(va)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void
+pe_add_func_symbol(Binary *bin, uint64_t va, const char *name)
+{
+  if (va == 0) {
+    return;
+  }
+  for (auto &s: bin->symbols) {
+    if (s.addr == va && (s.type & Symbol::SYM_TYPE_FUNC)) {
+      return;
+    }
+  }
+  bin->symbols.push_back(Symbol());
+  Symbol *sym = &bin->symbols.back();
+  sym->type = Symbol::SYM_TYPE_FUNC;
+  if (name && *name) {
+    sym->name = name;
+  }
+  sym->addr = va;
+}
+
+/* x64 .pdata is the Windows analogue of ELF FUNC symbols / eh_frame starts.
+ * Recursive/linear CFG still groups by CALL; split_at_known_entries (and
+ * recursive BB seeds) consume these SYM_TYPE_FUNC addresses. Skip chained
+ * unwind fragments (UNW_FLAG_CHAININFO) — those are continuations, not entries. */
+static void
+pe_load_pdata_symbols(peparse::parsed_pe *pe, Binary *bin, uint64_t image_base)
+{
+  if (bin->bits != 64) {
+    return;
+  }
+  std::vector<std::uint8_t> raw;
+  if (!peparse::GetDataDirectoryEntry(pe, peparse::DIR_EXCEPTION, raw) ||
+      raw.size() < 12) {
+    return;
+  }
+  const size_t n = raw.size() / 12;
+  size_t added = 0;
+  for (size_t i = 0; i < n; ++i) {
+    std::uint32_t begin = 0, end = 0, unwind = 0;
+    std::memcpy(&begin, raw.data() + i * 12, 4);
+    std::memcpy(&end, raw.data() + i * 12 + 4, 4);
+    std::memcpy(&unwind, raw.data() + i * 12 + 8, 4);
+    if (begin == 0 || end <= begin) {
+      continue;
+    }
+    const uint64_t va = image_base + begin;
+    if (!pe_va_in_code(bin, va)) {
+      continue;
+    }
+    if (unwind != 0) {
+      std::uint8_t hdr = 0;
+      if (peparse::ReadByteAtVA(pe, image_base + unwind, hdr)) {
+        const unsigned flags = static_cast<unsigned>(hdr >> 3) & 0x1fu;
+        if (flags & 0x4u) { /* UNW_FLAG_CHAININFO */
+          continue;
+        }
+      }
+    }
+    pe_add_func_symbol(bin, va, "");
+    ++added;
+  }
+  verbose(2, "PE pdata function starts: %zu (symbols now %zu)", added,
+          bin->symbols.size());
+}
+
+
+static int
 load_binary_pe_parse(std::string &fname, Binary *bin, Binary::BinaryType /*type*/)
 {
   peparse::parsed_pe *pe = peparse::ParsePEFromFile(fname.c_str());
@@ -187,8 +264,8 @@ load_binary_pe_parse(std::string &fname, Binary *bin, Binary::BinaryType /*type*
     return -1;
   }
 
-  /* Optional exports as SYM_TYPE_FUNC (helps naming; not required for partition). */
   peparse::IterExpVA(pe, pe_export_cb, bin);
+  pe_load_pdata_symbols(pe, bin, image_base);
 
   if (bin->sections.empty()) {
     print_err("PE binary '%s' has no loadable sections", fname.c_str());

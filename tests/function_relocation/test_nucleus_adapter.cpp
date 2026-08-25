@@ -267,10 +267,130 @@ static void test_lua51_resume_containing() {
               static_cast<unsigned long long>(sp_yield->end - sp_yield->start));
 }
 
+// x64 .pdata BeginAddress RVAs that are real function starts (skip chained
+// unwind fragments). Linux Nucleus equivalent is ELF FUNC symbols / eh_frame.
+static std::vector<uint32_t> pe_pdata_begin_rvas(const std::filesystem::path &path) {
+  std::ifstream f(path, std::ios::binary);
+  REQUIRE(static_cast<bool>(f));
+  std::vector<char> data((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+  auto rd16 = [&](size_t off) -> uint16_t {
+    REQUIRE(off + 2 <= data.size());
+    uint16_t v;
+    std::memcpy(&v, data.data() + off, 2);
+    return v;
+  };
+  auto rd32 = [&](size_t off) -> uint32_t {
+    REQUIRE(off + 4 <= data.size());
+    uint32_t v;
+    std::memcpy(&v, data.data() + off, 4);
+    return v;
+  };
+  const uint32_t e_lfanew = rd32(0x3c);
+  REQUIRE(data[e_lfanew] == 'P' && data[e_lfanew + 1] == 'E');
+  const uint16_t magic = rd16(e_lfanew + 4 + 20);
+  REQUIRE(magic == 0x20b);
+  const uint32_t pdata_rva = rd32(e_lfanew + 4 + 20 + 112 + 3 * 8);
+  const uint32_t pdata_size = rd32(e_lfanew + 4 + 20 + 116 + 3 * 8);
+  REQUIRE(pdata_rva != 0);
+  REQUIRE(pdata_size >= 12);
+
+  const uint16_t nsec = rd16(e_lfanew + 4 + 2);
+  const uint16_t opt_size = rd16(e_lfanew + 4 + 16);
+  const size_t sec_off = static_cast<size_t>(e_lfanew) + 4 + 20 + opt_size;
+  auto rva_to_off = [&](uint32_t rva) -> size_t {
+    for (uint16_t i = 0; i < nsec; ++i) {
+      const size_t sh = sec_off + static_cast<size_t>(i) * 40;
+      const uint32_t vsize = rd32(sh + 8);
+      const uint32_t va = rd32(sh + 12);
+      const uint32_t raw_size = rd32(sh + 16);
+      const uint32_t raw_ptr = rd32(sh + 20);
+      const uint32_t span = vsize > raw_size ? vsize : raw_size;
+      if (rva >= va && rva < va + span) {
+        return static_cast<size_t>(raw_ptr) + (rva - va);
+      }
+    }
+    return static_cast<size_t>(-1);
+  };
+
+  const size_t pdata_off = rva_to_off(pdata_rva);
+  REQUIRE(pdata_off != static_cast<size_t>(-1));
+  const size_t n = pdata_size / 12;
+  std::vector<uint32_t> out;
+  out.reserve(n);
+  for (size_t i = 0; i < n; ++i) {
+    const size_t rec = pdata_off + i * 12;
+    if (rec + 12 > data.size()) {
+      break;
+    }
+    const uint32_t begin = rd32(rec);
+    const uint32_t end = rd32(rec + 4);
+    const uint32_t unwind = rd32(rec + 8);
+    if (begin == 0 || end <= begin) {
+      continue;
+    }
+    if (unwind != 0) {
+      const size_t uoff = rva_to_off(unwind);
+      if (uoff != static_cast<size_t>(-1) && uoff < data.size()) {
+        const unsigned flags = (static_cast<unsigned char>(data[uoff]) >> 3) & 0x1f;
+        if (flags & 0x4) {
+          continue; // UNW_FLAG_CHAININFO: continuation, not a function entry
+        }
+      }
+    }
+    out.push_back(begin);
+  }
+  REQUIRE(!out.empty());
+  return out;
+}
+
+static void test_lua51_pdata_starts_are_span_entries() {
+  auto path = repo_lua51();
+  REQUIRE(std::filesystem::exists(path));
+  auto res = nucleus_analyze_file(path);
+  if (!res) {
+    std::fprintf(stderr, "nucleus_analyze_file failed: %s\n", res.error().c_str());
+    std::abort();
+  }
+  uint64_t image_base = res->image_base;
+  if (image_base == 0) {
+    auto base = pe_image_base(path);
+    REQUIRE(base.has_value());
+    image_base = *base;
+  }
+  const auto begins = pe_pdata_begin_rvas(path);
+  size_t miss = 0;
+  uint32_t first_miss = 0;
+  for (uint32_t rva: begins) {
+    const uint64_t va = image_base + rva;
+    const uint64_t entry = res->table.containing(va);
+    if (entry != va) {
+      if (miss == 0) {
+        first_miss = rva;
+      }
+      ++miss;
+    }
+  }
+  const uint32_t isn = pe_export_rva(path, "lua_isnumber");
+  const uint32_t toi = pe_export_rva(path, "lua_tointeger");
+  REQUIRE(isn != 0);
+  REQUIRE(toi != 0);
+  REQUIRE(res->table.containing(image_base + isn) == image_base + isn);
+  REQUIRE(res->table.containing(image_base + toi) == image_base + toi);
+
+  std::printf("pdata starts=%zu nucleus_miss=%zu functions=%zu first_miss_rva=0x%x\n",
+              begins.size(), miss, res->table.size(), first_miss);
+  // Windows function starts live in .pdata, not PE exports. Every non-chained
+  // pdata BeginAddress must be a FunctionTable span start.
+  REQUIRE(miss == 0);
+}
+
+
 int main() {
   test_table_containing_unit();
   test_lua51_getstack_span();
   test_lua51_resume_containing();
+  test_lua51_pdata_starts_are_span_entries();
   std::puts("test_nucleus_adapter: ok");
   return 0;
 }

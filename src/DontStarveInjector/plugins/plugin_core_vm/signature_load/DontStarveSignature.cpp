@@ -5,6 +5,7 @@
 #include <coroutine>
 #include <unordered_set>
 #include <vector>
+#include <limits>
 
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
@@ -18,6 +19,7 @@
 #include "ModuleSections.hpp"
 #include "FunctionRanges.hpp"
 #include "Signature.hpp"
+#include "GraphSeed.hpp"
 #include "SignatureJson.hpp"
 #include "NucleusAdapter.hpp"
 #include "disasm.h"
@@ -436,11 +438,11 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
     }
 
     // --- Call-graph seed pass -------------------------------------------------
-    // After soft/short-body matching, unresolved exports can still be recovered
-    // when a *resolved* train caller has a CALL/JMP edge to them: map that edge
-    // onto the target caller's same-module call list (ordinal + size fingerprint).
-    // Example: train lua_pushstring tails to lua_pushnil; if game still has a
-    // direct edge, pushnil is seeded. (Inlined callees need short-body instead.)
+    // Recover unresolved exports from the deterministic Lua caller graph.
+    // Game Nucleus does not split at interior non-PE-export entries (lua_isnumber),
+    // so we intersect *raw* E8/E9 CALL targets of every resolved train-caller —
+    // not FunctionTable starts. Example: luaL_checknumber ∩ luaL_checkinteger
+    // unclaimed callees = lua_isnumber.
     {
         auto collect_named_callees =
                 [](function_relocation::Function &fn,
@@ -465,35 +467,106 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
             return out;
         };
 
-        auto collect_target_callees =
-                [](function_relocation::Function &fn,
-                   function_relocation::ModuleSections &mod)
-                -> std::vector<uint64_t> {
-            function_relocation::ensure_function_features(fn);
-            std::vector<uint64_t> out;
-            std::unordered_set<uint64_t> seen;
-            for (const auto block_addr: fn.blocks) {
-                auto *block = mod.address_blocks.contains(block_addr)
-                                      ? mod.address_blocks.at(block_addr)
-                                      : nullptr;
-                if (!block) continue;
-                for (const auto ct: block->call_functions) {
-                    uint64_t entry = 0;
-                    if (auto *cf = mod.find_function(ct); cf) {
-                        entry = cf->address;
-                    } else if (!mod.function_table.empty()) {
-                        entry = mod.function_table.containing(ct);
-                    }
-                    if (entry == 0) continue;
-                    if (!seen.insert(entry).second) continue;
-                    out.push_back(entry);
+        auto caller_walk = [](function_relocation::ModuleSections &mod,
+                              uintptr_t addr) -> std::pair<uint64_t, size_t> {
+            auto *fn = mod.find_function(addr);
+            if (!fn && !mod.function_table.empty()) {
+                const auto e = mod.function_table.containing(addr);
+                if (e) {
+                    fn = mod.find_function(e);
                 }
             }
-            return out;
+            if (fn && fn->size > 0) {
+                auto leaf = function_relocation::function_leaf_size(*fn, 128);
+                if (leaf == 0) {
+                    leaf = (std::min)(fn->size, size_t{128});
+                }
+                return {fn->address, leaf};
+            }
+            return {addr, 128};
+        };
+
+        auto fill_pattern_at = [](uint64_t entry, function_relocation::SignatureInfo &sig) {
+            if (entry == 0) {
+                return;
+            }
+            size_t n = 32;
+            function_relocation::disasm ds{
+                    std::span{reinterpret_cast<uint8_t *>(entry), n}};
+            std::string pat;
+            for (auto &insn: ds) {
+                const auto &x86 = insn.detail->x86;
+                bool wild = false;
+                size_t fixed = insn.size;
+                if ((insn.id == X86_INS_CALL || insn.id == X86_INS_JMP) &&
+                    x86.op_count >= 1 && x86.operands[0].type == X86_OP_IMM) {
+                    wild = true;
+                    fixed = 1;
+                } else if ((insn.id == X86_INS_LEA || insn.id == X86_INS_MOV) &&
+                           x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM &&
+                           function_relocation::reg_is_ip(x86.operands[1].mem.base) &&
+                           insn.size >= 7) {
+                    wild = true;
+                    fixed = 3;
+                } else if (insn.size >= 5 && insn.bytes[0] >= 0xB8 && insn.bytes[0] <= 0xBF) {
+                    wild = true;
+                    fixed = 1;
+                }
+                for (size_t i = 0; i < insn.size; ++i) {
+                    if (!pat.empty()) {
+                        pat.push_back(' ');
+                    }
+                    if (wild && i >= fixed) {
+                        pat += "??";
+                    } else {
+                        pat += fmt::format("{:02x}", insn.bytes[i]);
+                    }
+                }
+            }
+            if (!pat.empty()) {
+                sig.pattern = std::move(pat);
+                sig.pattern_offset = 0;
+            }
+        };
+
+        auto claimed_addrs = [&]() {
+            std::unordered_set<uint64_t> c;
+            for (size_t k = 0; k < exports.size(); ++k) {
+                auto &os = funcs.at(exports[k].first);
+                if (os.offset != 0) {
+                    c.insert(targetLuaModuleBase + static_cast<uintptr_t>(os.offset));
+                }
+            }
+            return c;
+        };
+
+        auto fingerprint_leaf = [](uint64_t addr, size_t train_leaf) -> int {
+            const size_t cap = 128;
+            function_relocation::disasm ds{
+                    std::span{reinterpret_cast<uint8_t *>(addr), cap}};
+            size_t leaf = cap;
+            for (auto &insn: ds) {
+                if (insn.id == X86_INS_RET || insn.id == X86_INS_RETF ||
+                    insn.id == X86_INS_RETFQ) {
+                    leaf = static_cast<size_t>(insn.address + insn.size - addr);
+                    break;
+                }
+                if (insn.id == X86_INS_JMP) {
+                    const auto &op = insn.detail->x86.operands[0];
+                    if (op.type == X86_OP_IMM) {
+                        leaf = static_cast<size_t>(insn.address + insn.size - addr);
+                        break;
+                    }
+                }
+            }
+            const int a = static_cast<int>(leaf);
+            const int b = static_cast<int>(std::max<size_t>(1, train_leaf));
+            return a > b ? a - b : b - a;
         };
 
         for (int round = 0; round < 4; ++round) {
             bool any = false;
+            const auto claimed = claimed_addrs();
             for (size_t i = 0; i < exports.size(); i++) {
                 auto &name = exports[i].first;
                 auto &signature = funcs.at(name);
@@ -501,86 +574,78 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
 
                 auto *train_fn = modulelua51.known_functions.at(name);
                 if (!train_fn || train_fn->size == 0) continue;
+                const size_t train_leaf =
+                        function_relocation::function_leaf_size(*train_fn, 128);
 
-                // Find a resolved train caller that lists this export as a named callee.
+                std::vector<std::unordered_set<uint64_t>> caller_sets;
+                std::vector<std::string> caller_names;
                 for (size_t j = 0; j < exports.size(); j++) {
                     auto &caller_name = exports[j].first;
                     if (caller_name == name) continue;
                     auto &caller_sig = funcs.at(caller_name);
                     if (caller_sig.offset == 0) continue;
-
                     auto *train_caller = modulelua51.known_functions.at(caller_name);
                     if (!train_caller) continue;
-                    const auto train_callees = collect_named_callees(*train_caller, modulelua51);
-                    size_t ordinal = static_cast<size_t>(-1);
-                    for (size_t k = 0; k < train_callees.size(); ++k) {
-                        if (train_callees[k].first == name) {
-                            ordinal = k;
-                            break;
-                        }
+                    const auto [ts, tlen] = caller_walk(modulelua51, train_caller->address);
+                    if (!function_relocation::body_calls_entry(modulelua51, ts, tlen,
+                                                               train_fn->address)) {
+                        continue;
                     }
-                    if (ordinal == static_cast<size_t>(-1)) continue;
-
                     const uintptr_t tgt_caller =
                             targetLuaModuleBase + static_cast<uintptr_t>(caller_sig.offset);
-                    auto *target_caller = moduleMain.find_function(tgt_caller);
-                    if (!target_caller) continue;
-                    const auto tgt_callees = collect_target_callees(*target_caller, moduleMain);
-                    if (tgt_callees.empty()) continue;
-
-                    uint64_t chosen = 0;
-                    if (tgt_callees.size() == train_callees.size() &&
-                        ordinal < tgt_callees.size()) {
-                        // Same arity: take matching ordinal.
-                        chosen = tgt_callees[ordinal];
-                    } else {
-                        // Size fingerprint among target callees not yet claimed.
-                        std::vector<uint64_t> candidates;
-                        for (auto e: tgt_callees) {
-                            bool claimed = false;
-                            for (size_t k = 0; k < exports.size(); k++) {
-                                auto &os = funcs.at(exports[k].first);
-                                if (os.offset != 0 &&
-                                    targetLuaModuleBase + static_cast<uintptr_t>(os.offset) == e) {
-                                    claimed = true;
-                                    break;
-                                }
-                            }
-                            if (claimed) continue;
-                            auto *tf = moduleMain.find_function(e);
-                            if (!tf || tf->size == 0) continue;
-                            const double ratio =
-                                    static_cast<double>(tf->size) /
-                                    static_cast<double>(std::max<size_t>(1, train_fn->size));
-                            if (ratio >= 0.4 && ratio <= 3.0) {
-                                candidates.push_back(e);
-                            }
-                        }
-                        if (candidates.size() == 1) {
-                            chosen = candidates.front();
-                        }
-                    }
-                    if (chosen == 0 || chosen < targetLuaModuleBase) continue;
-
-                    const auto new_offset = chosen - targetLuaModuleBase;
-                    bool claimed = false;
-                    for (const auto &[other, osig]: funcs) {
-                        if (other != name && osig.offset != 0 &&
-                            osig.offset == static_cast<uintptr_t>(new_offset)) {
-                            claimed = true;
-                            break;
-                        }
-                    }
-                    if (claimed) continue;
-                    signature.offset = new_offset;
-                    signature.pattern.clear();
-                    signature.pattern_offset = 0;
-                    moduleMain.set_known_function(chosen, name.c_str());
-                    spdlog::info("graph-seed [{}] via caller [{}] ordinal={} -> {:#x} (offset={})",
-                                 name, caller_name, ordinal, chosen, new_offset);
-                    any = true;
-                    break;
+                    const auto [gs, glen] = caller_walk(moduleMain, tgt_caller);
+                    auto raw = function_relocation::collect_rel32_call_targets(gs, glen);
+                    std::unordered_set<uint64_t> set(raw.begin(), raw.end());
+                    function_relocation::erase_claimed(set, claimed);
+                    if (set.empty()) continue;
+                    caller_sets.push_back(std::move(set));
+                    caller_names.push_back(caller_name);
                 }
+
+                std::vector<uint64_t> common;
+                if (caller_sets.size() >= 2) {
+                    common = function_relocation::intersect_callee_sets(caller_sets);
+                } else if (caller_sets.size() == 1) {
+                    common.assign(caller_sets.front().begin(), caller_sets.front().end());
+                } else {
+                    continue;
+                }
+
+                uint64_t chosen = 0;
+                if (common.size() == 1) {
+                    chosen = common.front();
+                } else if (common.size() > 1) {
+                    int best = std::numeric_limits<int>::max();
+                    int ties = 0;
+                    uint64_t best_addr = 0;
+                    for (auto cand: common) {
+                        if (cand < targetLuaModuleBase) continue;
+                        const int diff = fingerprint_leaf(cand, train_leaf);
+                        if (diff < best) {
+                            best = diff;
+                            best_addr = cand;
+                            ties = 1;
+                        } else if (diff == best) {
+                            ++ties;
+                        }
+                    }
+                    if (ties == 1 && best_addr != 0 && best <= 16) {
+                        chosen = best_addr;
+                    }
+                }
+                if (chosen == 0 || chosen < targetLuaModuleBase) continue;
+                const auto new_offset = chosen - targetLuaModuleBase;
+                if (claimed.contains(chosen)) continue;
+
+                signature.offset = new_offset;
+                fill_pattern_at(chosen, signature);
+                moduleMain.set_known_function(chosen, name.c_str());
+                spdlog::info(
+                        "graph-seed [{}] via {} callers [{}..] common={} -> {:#x} (offset={})",
+                        name, caller_names.size(),
+                        caller_names.empty() ? "" : caller_names.front(), common.size(), chosen,
+                        new_offset);
+                any = true;
             }
             if (!any) break;
             spdlog::info("graph-seed round {} filled more exports", round);
@@ -752,8 +817,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                     }
                     if (claimed) continue;
                     signature.offset = new_offset;
-                    signature.pattern.clear();
-                    signature.pattern_offset = 0;
+                    fill_pattern_at(chosen, signature);
                     moduleMain.set_known_function(chosen, name.c_str());
                     spdlog::info("graph-seed-rev [{}] via callee [{}] -> {:#x} (offset={})",
                                  name, callee_name, chosen, new_offset);
