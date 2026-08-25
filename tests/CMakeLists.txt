@@ -529,6 +529,19 @@ if (WIN32)
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif()
 
+if (UNIX AND NOT APPLE)
+  add_executable(test_eh_frame_starts
+      ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_eh_frame_starts.cpp)
+  target_include_directories(test_eh_frame_starts PRIVATE
+      ${FUNCTION_RELOCATION_INCLUDE_DIR}
+      ${FRIDA_GUM_INCLUDE_DIR})
+  target_compile_features(test_eh_frame_starts PRIVATE cxx_std_23)
+  target_link_libraries(test_eh_frame_starts PRIVATE function_relocation_static Frida::Gum)
+  add_test(NAME eh_frame_starts COMMAND test_eh_frame_starts)
+  set_tests_properties(eh_frame_starts PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+endif()
+
 # Soft-match accept policy primitives (plan function-relocation-match-v2 todo 1).
 # Header-only: depends only on MatchPolicy.hpp + the C++23 standard library, so
 # the test is portable across all platforms that build function_relocation.

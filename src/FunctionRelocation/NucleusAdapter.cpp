@@ -183,9 +183,10 @@ nucleus_analyze_file(const std::filesystem::path &path,
     out.table.add(FunctionSpan{f.start, f.end});
   }
 
-  // Export-aware refine: PE SYM_TYPE_FUNC (and any other FUNC symbols) that sit
+  // FUNC-symbol refine: PE .pdata / ELF .eh_frame_hdr / exports that sit
   // strictly inside a parent span become sub-span starts. Without this,
-  // containing(lua_resume) snaps to the outer lua_yield start.
+  // containing(lua_dump) snaps to a merged outer body (same class as
+  // lua_resume inside lua_yield on Windows).
   {
     std::vector<uint64_t> export_vas;
     export_vas.reserve(bin.symbols.size());

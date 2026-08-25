@@ -493,19 +493,23 @@ load_sections_bfd(bfd *bfd_h, Binary *bin)
     bfd_flags = bfd_section_flags(bfd_sec);
 #endif
 
+    vma     = bfd_section_vma(bfd_sec);
+    size    = bfd_section_size(bfd_sec);
+    secname = bfd_section_name(bfd_sec);
+    if(!secname) secname = "<unnamed>";
+
     sectype = Section::SEC_TYPE_NONE;
     if(bfd_flags & SEC_CODE) {
       sectype |= Section::SEC_TYPE_CODE;
     } else if(bfd_flags & SEC_DATA) {
       sectype |= Section::SEC_TYPE_DATA;
+    } else if(strcmp(secname, ".eh_frame_hdr") == 0) {
+      /* Always keep GNU eh_frame_hdr bytes for FDE start seeding, even if
+       * BFD did not tag the section SEC_DATA. */
+      sectype |= Section::SEC_TYPE_DATA;
     } else {
       continue;
     }
-
-    vma     = bfd_section_vma(bfd_sec);
-    size    = bfd_section_size(bfd_sec);
-    secname = bfd_section_name(bfd_sec);
-    if(!secname) secname = "<unnamed>";
 
     bin->sections.push_back(Section());
     sec = &bin->sections.back();
@@ -528,6 +532,155 @@ load_sections_bfd(bfd *bfd_h, Binary *bin)
   }
 
   return 0;
+}
+
+
+/* DWARF exception-header encodings used by GNU .eh_frame_hdr (LSB). */
+#define NUCLEUS_EH_PE_udata4  0x03
+#define NUCLEUS_EH_PE_sdata4  0x0b
+#define NUCLEUS_EH_PE_pcrel   0x10
+#define NUCLEUS_EH_PE_datarel 0x30
+#define NUCLEUS_EH_PE_omit    0xff
+
+static int
+elf_va_in_code(Binary *bin, uint64_t va)
+{
+  for(auto &sec: bin->sections) {
+    if(sec.type == Section::SEC_TYPE_CODE && sec.contains(va)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void
+elf_add_func_symbol(Binary *bin, uint64_t va)
+{
+  if(va == 0) {
+    return;
+  }
+  for(auto &s: bin->symbols) {
+    if(s.addr == va && (s.type & Symbol::SYM_TYPE_FUNC)) {
+      return;
+    }
+  }
+  bin->symbols.push_back(Symbol());
+  Symbol *sym = &bin->symbols.back();
+  sym->type = Symbol::SYM_TYPE_FUNC;
+  sym->addr = va;
+}
+
+/* Decode one GNU-encoded pointer at *off. field_va is the VA of the encoded
+ * value (needed for pcrel). datarel_base is the .eh_frame_hdr VMA. */
+static int
+eh_decode_ptr(unsigned enc, const uint8_t *buf, size_t size, size_t *off,
+              uint64_t field_va, uint64_t datarel_base, uint64_t *out)
+{
+  unsigned fmt;
+  unsigned app;
+  uint64_t v;
+  uint64_t fva;
+
+  if(enc == NUCLEUS_EH_PE_omit) {
+    return -1;
+  }
+  fmt = enc & 0x0fu;
+  app = enc & 0x70u;
+  fva = field_va;
+  v = 0;
+  if(fmt == NUCLEUS_EH_PE_udata4) {
+    uint32_t t;
+    if(*off + 4 > size) {
+      return -1;
+    }
+    memcpy(&t, buf + *off, 4);
+    *off += 4;
+    v = t;
+  } else if(fmt == NUCLEUS_EH_PE_sdata4) {
+    int32_t t;
+    if(*off + 4 > size) {
+      return -1;
+    }
+    memcpy(&t, buf + *off, 4);
+    *off += 4;
+    v = (uint64_t)(int64_t)t;
+  } else {
+    return -1;
+  }
+  if(app == NUCLEUS_EH_PE_pcrel) {
+    v = fva + (uint64_t)(int64_t)v;
+  } else if(app == NUCLEUS_EH_PE_datarel) {
+    v = datarel_base + (uint64_t)(int64_t)v;
+  } else if(app != 0) {
+    return -1;
+  }
+  *out = v;
+  return 0;
+}
+
+/* Linux analogue of pe_load_pdata_symbols: GNU .eh_frame_hdr binary-search
+ * table of FDE initial_location → SYM_TYPE_FUNC. Stripped DST ELF has no
+ * FUNC dynsyms for lua internals; FDE starts still split dump/yield-style
+ * over-merged Nucleus bodies via split_at_known_entries. */
+static void
+elf_load_eh_frame_symbols(Binary *bin)
+{
+  Section *hdr = NULL;
+  const uint8_t *buf;
+  size_t size;
+  size_t off;
+  unsigned ehenc, cntenc, tabenc;
+  uint64_t ehptr, count, loc, fde;
+  size_t added;
+  size_t i;
+
+  if(bin->type != Binary::BIN_TYPE_ELF || bin->bits != 64) {
+    return;
+  }
+  for(auto &sec: bin->sections) {
+    if(sec.name == ".eh_frame_hdr" && sec.bytes && sec.size >= 12) {
+      hdr = &sec;
+      break;
+    }
+  }
+  if(!hdr) {
+    return;
+  }
+  buf = hdr->bytes;
+  size = (size_t)hdr->size;
+  if(buf[0] != 1) {
+    return;
+  }
+  ehenc = buf[1];
+  cntenc = buf[2];
+  tabenc = buf[3];
+  off = 4;
+  if(eh_decode_ptr(ehenc, buf, size, &off, hdr->vma + 4, hdr->vma, &ehptr) < 0) {
+    return;
+  }
+  (void)ehptr;
+  if(eh_decode_ptr(cntenc, buf, size, &off, hdr->vma + off, hdr->vma, &count) < 0) {
+    return;
+  }
+  added = 0;
+  for(i = 0; i < (size_t)count; i++) {
+    uint64_t loc_field = hdr->vma + off;
+    if(eh_decode_ptr(tabenc, buf, size, &off, loc_field, hdr->vma, &loc) < 0) {
+      break;
+    }
+    uint64_t fde_field = hdr->vma + off;
+    if(eh_decode_ptr(tabenc, buf, size, &off, fde_field, hdr->vma, &fde) < 0) {
+      break;
+    }
+    (void)fde;
+    if(!elf_va_in_code(bin, loc)) {
+      continue;
+    }
+    elf_add_func_symbol(bin, loc);
+    ++added;
+  }
+  verbose(2, "ELF eh_frame_hdr function starts: %zu (symbols now %zu)", added,
+          bin->symbols.size());
 }
 
 
@@ -649,6 +802,9 @@ fail_arch:
   load_dynsym_bfd(bfd_h, bin);
 
   if(load_sections_bfd(bfd_h, bin) < 0) goto fail;
+  if(bin->type == Binary::BIN_TYPE_ELF) {
+    elf_load_eh_frame_symbols(bin);
+  }
 
   /* Apply relocations if necessary */
   if (bin->arch == Binary::ARCH_PPC) {
