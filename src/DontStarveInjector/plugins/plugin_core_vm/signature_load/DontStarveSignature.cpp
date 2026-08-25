@@ -719,10 +719,41 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                             candidates.push_back(fn.address);
                         }
                     }
+                    std::sort(candidates.begin(), candidates.end());
+                    candidates.erase(std::unique(candidates.begin(), candidates.end()),
+                                     candidates.end());
                     uint64_t chosen = 0;
-                    if (candidates.size() == 1) {
+                    if (candidates.size() > 1) {
+                        auto first = function_relocation::filter_by_first_rel32_callee(
+                                candidates, tgt_callee);
+                        if (first.size() == 1) {
+                            chosen = first.front();
+                            spdlog::info(
+                                    "graph-seed-rev [{}] via [{}] disambiguated by first-call "
+                                    "(candidates={})",
+                                    name, callee_name, candidates.size());
+                        } else if (!first.empty()) {
+                            candidates.swap(first);
+                        }
+                        if (chosen == 0 && candidates.size() > 1) {
+                            const auto *tb =
+                                    reinterpret_cast<const uint8_t *>(train_fn->address);
+                            auto pref = function_relocation::filter_by_reloc_free_prefix(
+                                    candidates, tb, train_fn->size);
+                            if (pref.size() == 1) {
+                                chosen = pref.front();
+                                spdlog::info(
+                                        "graph-seed-rev [{}] via [{}] disambiguated by prefix "
+                                        "(candidates={})",
+                                        name, callee_name, candidates.size());
+                            } else if (!pref.empty()) {
+                                candidates.swap(pref);
+                            }
+                        }
+                    }
+                    if (chosen == 0 && candidates.size() == 1) {
                         chosen = candidates.front();
-                    } else if (candidates.size() > 1) {
+                    } else if (chosen == 0 && candidates.size() > 1) {
                         // Disambiguate: closest leaf length to train leaf.
                         // Recompute train leaf via first RET within 128B.
                         size_t want = train_fn->size;
@@ -801,9 +832,9 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                                     "graph-seed-rev [{}] via [{}] ambiguous candidates={} "
                                     "(best_diff={} ties={})",
                                     name, callee_name, candidates.size(), best_diff, ties);
-                            continue;
+                             continue;
                         }
-                    } else {
+                    } else if (chosen == 0) {
                         continue;
                     }
                     const auto new_offset = chosen - targetLuaModuleBase;
