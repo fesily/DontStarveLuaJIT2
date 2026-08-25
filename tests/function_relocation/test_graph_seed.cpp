@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <unordered_set>
 #include <vector>
 
@@ -70,11 +71,51 @@ static void test_intersect_two_commons_need_fingerprint() {
     REQUIRE(hit[1] == 0x30);
 }
 
+static void test_reloc_free_prefix_stops_at_rip_lea() {
+    unsigned char loadbuffer[] = {
+            0x48, 0x83, 0xec, 0x18, 0x48, 0x89, 0x34, 0x24,
+            0x48, 0x8d, 0x35, 0x00, 0x00, 0x00, 0x00,
+    };
+    REQUIRE(function_relocation::reloc_free_prefix_len(loadbuffer, sizeof(loadbuffer)) == 8);
+}
+
+static void test_first_rel32_callee_picks_loadbuffer() {
+    unsigned char loadbuffer[32] = {};
+    unsigned char loadstring[32] = {};
+    loadbuffer[0] = 0x48;
+    loadbuffer[1] = 0x83;
+    loadbuffer[21] = 0xe8;
+    const auto lb = reinterpret_cast<uint64_t>(loadbuffer);
+    const int32_t rel = 0x10;
+    std::memcpy(loadbuffer + 22, &rel, 4);
+    const uint64_t lua_load = lb + 21 + 5 + rel;
+    loadstring[0] = 0x55;
+    loadstring[5] = 0xe8; // first call elsewhere
+    const int32_t rel2 = 0x20;
+    std::memcpy(loadstring + 6, &rel2, 4);
+    const auto hit = function_relocation::filter_by_first_rel32_callee(
+            {lb, reinterpret_cast<uint64_t>(loadstring)}, lua_load);
+    REQUIRE(hit.size() == 1);
+    REQUIRE(hit[0] == lb);
+}
+
+static void test_filter_prefix_picks_loadbuffer_shape() {
+    unsigned char a[] = {0x48, 0x83, 0xec, 0x18, 0x48, 0x89, 0x34, 0x24, 0x90};
+    unsigned char b[] = {0x55, 0x48, 0x89, 0xfd, 0x48, 0x89, 0xf7, 0x53, 0x90};
+    const auto hit = function_relocation::filter_by_reloc_free_prefix(
+            {reinterpret_cast<uint64_t>(a), reinterpret_cast<uint64_t>(b)}, a, sizeof(a));
+    REQUIRE(hit.size() == 1);
+    REQUIRE(hit[0] == reinterpret_cast<uint64_t>(a));
+}
+
 int main() {
     test_rel32_collects_call_target();
     test_intersect_unique_common_callee();
     test_intersect_empty_when_inlined();
     test_intersect_two_commons_need_fingerprint();
+    test_reloc_free_prefix_stops_at_rip_lea();
+    test_filter_prefix_picks_loadbuffer_shape();
+    test_first_rel32_callee_picks_loadbuffer();
     std::puts("test_graph_seed: ok");
     return 0;
 }
