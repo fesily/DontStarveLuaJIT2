@@ -11,6 +11,12 @@ void wait_debugger() {
     ::GetModuleFileName(NULL, filePath, MAX_PATH);
 
     if (_tcsstr(filePath, _T("dontstarve")) != NULL) {
+        const auto filename = "Debug.config";
+
+        if (::GetFileAttributesA(filename) != INVALID_FILE_ATTRIBUTES) {
+            ::AllocConsole();
+        }
+
         if (IsDebuggerPresent()) {
             return;
         }
