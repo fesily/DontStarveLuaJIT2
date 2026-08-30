@@ -243,7 +243,7 @@ jobs:
         include:
           - { os: windows-2022, target: windows, platform: win32-x64 }
           - { os: ubuntu-24.04,   target: linux,   platform: linux-x64 }
-          - { os: macos-14,       target: macos,   platform: macos-x64 }
+          # - { os: macos-14,       target: macos,   platform: macos-x64 }
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
