@@ -29,6 +29,9 @@ local function hash_string(data)
 end
 
 local function alloc_rpc_channel(namespace_or_code, id)
+    if not namespace_or_code then
+        return nil
+    end
     if type(namespace_or_code) == "number" then
         return namespace_or_code % 32
     end
@@ -100,36 +103,48 @@ end
 -- NetworkOpt on: wrap stock SendRPC* with channel selection via SetNextRpcInfo.
 function net_mt:SendRPCToServer(code, ...)
     local c_channel = alloc_rpc_channel(code)
-    injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+    if c_channel then
+        injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+    end
     return old_SendRPCToServer(self, code, ...)
 end
 
 function net_mt:SendRPCToClient(code, ...)
     local c_channel = alloc_rpc_channel(code)
-    injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+    if c_channel then
+        injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+    end
     return old_SendRPCToClient(self, code, ...)
 end
 
 function net_mt:SendRPCToShard(code, ...)
     local c_channel = alloc_rpc_channel(code)
-    injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+    if c_channel then
+        injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+    end
     return old_SendRPCToShard(self, code, ...)
 end
 
 function net_mt:SendModRPCToServer(namespace, id, ...)
     local c_channel = get_mod_channel(namespace, id)
-    injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+    if c_channel then
+        injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+    end
     return old_SendModRPCToServer(self, namespace, id, ...)
 end
 
 function net_mt:SendModRPCToClient(namespace, id, ...)
     local c_channel = get_mod_channel(namespace, id)
-    injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+    if c_channel then
+        injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+    end
     return old_SendModRPCToClient(self, namespace, id, ...)
 end
 
 function net_mt:SendModRPCToShard(namespace, id, ...)
     local c_channel = get_mod_channel(namespace, id)
-    injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+    if c_channel then
+        injector.DS_LUAJIT_SetNextRpcInfo(nil, nil, c_channel)
+    end
     return old_SendModRPCToShard(self, namespace, id, ...)
 end
