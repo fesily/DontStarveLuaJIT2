@@ -297,6 +297,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
     co_yield 1;
 
     auto &funcs = signatures.funcs;
+    std::unordered_map<std::string, uintptr_t> deferred_previous;
     // fix all signatures
     for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
@@ -332,10 +333,18 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                                                      &signature, targetLuaModuleBase);
 
         if (!target || target < targetLuaModuleBase) {
-            // Soft-match fail-closed / unique-byte miss: keep previous entry and continue
-            // so a single hard export does not abort the whole signature pass.
-            spdlog::error("func[{}] can't fix address, keeping previous signature (offset={})",
-                          name, old_offset);
+            if (old_offset != 0) {
+                // Zero the offset so the graph-seed passes below can re-infer this
+                // entry: both skip any entry whose offset is non-zero, which is how
+                // a stale offset used to survive every regeneration unchanged.
+                deferred_previous.emplace(name, static_cast<uintptr_t>(old_offset));
+                signature.offset = 0;
+                spdlog::warn("func[{}] can't fix address; re-entering inference (previous offset={})",
+                             name, old_offset);
+            } else {
+                spdlog::error("func[{}] can't fix address, keeping previous signature (offset={})",
+                              name, old_offset);
+            }
             continue;
         }
         if (target == maybe_target)
@@ -859,6 +868,66 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
             if (!any) break;
             spdlog::info("graph-seed-rev round {} filled more exports", round);
         }
+
+        // Last resort: a stored pattern that is unique in the current binary is
+        // still authoritative, but the update path never consults it (that scan is
+        // gated to fresh creation), so an entry missed by both soft-match and graph
+        // inference would otherwise keep its stale offset forever.
+        for (auto &[name, previous]: deferred_previous) {
+            auto &signature = funcs.at(name);
+            if (signature.offset != 0 || signature.pattern.empty()) continue;
+            function_relocation::MemorySignature scan{signature.pattern.c_str(),
+                                                      signature.pattern_offset, false};
+            // Scan the module's .text by address+size rather than by path: the
+            // path overload goes through gum_process_find_module_by_name(), which
+            // expects a module *name* (on Windows it is GetModuleHandleW, which
+            // does not accept a full path). Fall back to the whole module range
+            // if .text was not reported, as on some platforms it may be absent.
+            const auto text_range = moduleMain.text.size != 0 ? moduleMain.text
+                                                             : moduleMain.details.range;
+            scan.scan(text_range.base_address, text_range.size);
+            const auto found = scan.targets | std::ranges::views::filter(
+                                       [targetLuaModuleBase](auto addr) {
+                                           return addr > targetLuaModuleBase;
+                                       }) |
+                               ranges::to<std::vector>();
+            uintptr_t entry = 0;
+            if (found.size() == 1) {
+                entry = found.front();
+            } else if (found.size() > 1) {
+                auto *train_fn = modulelua51.known_functions.at(name);
+                if (!train_fn) continue;
+                const size_t want = function_relocation::function_leaf_size(*train_fn, 128);
+                int best = std::numeric_limits<int>::max();
+                int ties = 0;
+                for (auto cand: found) {
+                    const int diff = fingerprint_leaf(cand, want);
+                    if (diff < best) {
+                        best = diff;
+                        entry = cand;
+                        ties = 1;
+                    } else if (diff == best) {
+                        ++ties;
+                    }
+                }
+                if (ties != 1 || best > 16) continue;
+            } else {
+                continue;
+            }
+            signature.offset = entry - targetLuaModuleBase;
+            moduleMain.set_known_function(entry, name.c_str());
+            spdlog::warn("func[{}] recovered by stored pattern -> {:#x} (offset={})", name, entry,
+                         signature.offset);
+        }
+
+    }
+
+    for (auto &[name, previous]: deferred_previous) {
+        auto &signature = funcs.at(name);
+        if (signature.offset != 0) continue;
+        signature.offset = previous;
+        spdlog::error("func[{}] inference could not recover address; restored previous offset={}",
+                      name, previous);
     }
 
     function_relocation::release_signature_cache();
