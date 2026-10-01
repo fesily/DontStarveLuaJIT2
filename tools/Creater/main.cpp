@@ -2,6 +2,8 @@
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
 #include <filesystem>
+#include <cstdlib>
+#include <string_view>
 
 #include "platform.hpp"
 #include "frida_gum_interceptor.hpp"
@@ -27,9 +29,55 @@ const char *game_server_path = GAMEDIR R"(/bin64/dontstarve_dedicated_server_nul
 const char *lua51_path = LUA51_PATH;
 const char *worker_dir = WORKER_DIR;
 
+enum class ToolMode { Auto, Create, Update };
 
-int update(bool isClient, const char *path) {
+// "create" / "update" force one branch of SignatureUpdater::create_or_update().
+// Empty/null keeps the in-game Auto behaviour; anything else is rejected so a
+// typo cannot silently run the wrong branch.
+static bool parse_tool_mode(const char *arg, ToolMode &out) {
+    if (arg == nullptr || *arg == '\0') {
+        out = ToolMode::Auto;
+        return true;
+    }
+    const std::string_view s{arg};
+    if (s == "create" || s == "Create") {
+        out = ToolMode::Create;
+        return true;
+    }
+    if (s == "update" || s == "Update") {
+        out = ToolMode::Update;
+        return true;
+    }
+    fprintf(stderr, "unknown mode '%s' (expected 'create' or 'update')\n", arg);
+    return false;
+}
+
+static SignatureMode to_signature_mode(ToolMode mode) {
+    switch (mode) {
+        case ToolMode::Create:
+            return SignatureMode::Create;
+        case ToolMode::Update:
+            return SignatureMode::Update;
+        default:
+            return SignatureMode::Auto;
+    }
+}
+
+static const char *tool_mode_name(ToolMode mode) {
+    switch (mode) {
+        case ToolMode::Create:
+            return "create";
+        case ToolMode::Update:
+            return "update";
+        default:
+            return "auto";
+    }
+}
+
+
+int update(bool isClient, const char *path, ToolMode mode) {
     fprintf(stderr, "game_path:\t%s\n", path);
+    fprintf(stderr, "mode:\t%s (%s)\n", tool_mode_name(mode), isClient ? "client" : "server");
 #ifdef _WIN32
     if (!loadlib(path)){
         fprintf(stderr, "can't load %s\n", path);
@@ -48,7 +96,7 @@ int update(bool isClient, const char *path) {
              ("signatures_"s + (isClient ? "client"s : "server"s) + ".json"))
                     .string();
     auto updater = SignatureUpdater::create_or_update(isClient, luaModuleSignature.target_address,
-                                                      sig_path);
+                                                      sig_path, to_signature_mode(mode));
     if (!updater) {
         fprintf(stderr, "%s", updater.error().c_str());
         return 1;
@@ -67,11 +115,14 @@ bool pre_updater() {
 }
 
 #ifdef _WIN32
-int main()
+int main(int argc, char **argv)
 {
+    ToolMode mode = ToolMode::Auto;
+    if (!parse_tool_mode(argc > 1 ? argv[1] : nullptr, mode))
+        return 2;
     gum_init_embedded();
     if (pre_updater())
-        return update(true, game_path) + update(false, game_server_path);
+        return update(true, game_path, mode) + update(false, game_server_path, mode);
     return -1;
 }
 #else
@@ -131,6 +182,13 @@ __attribute__((constructor)) void init() {
         return;
     }
 
+    // Preloaded into the game here, so argv belongs to the game: the mode comes
+    // from the environment (the CMake create/update_signatures targets set it).
+    ToolMode mode = ToolMode::Auto;
+    if (!parse_tool_mode(std::getenv("SIGNATURE_TOOL_MODE"), mode)) {
+        exit(2);
+    }
+
     bool isClient = !path.contains("nullrenderer");
     const auto api_name = isClient ?
                           "SteamAPI_RestartAppIfNecessary"
@@ -141,9 +199,9 @@ __attribute__((constructor)) void init() {
     if (isClient)
         HookGame("SteamAPI_Init", isClient);
 #endif
-    std::thread([isClient] {
+    std::thread([isClient, mode] {
                     if (pre_updater()) {
-                        exit(update(isClient, gum_module_get_path(gum_process_get_main_module())));
+                        exit(update(isClient, gum_module_get_path(gum_process_get_main_module()), mode));
                     }
                     exit(-1);
                 }

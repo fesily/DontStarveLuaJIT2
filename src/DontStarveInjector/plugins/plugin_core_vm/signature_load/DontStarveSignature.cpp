@@ -1,5 +1,6 @@
 #include <string>
 #include <expected>
+#include <optional>
 #include <algorithm>
 #include <future>
 #include <coroutine>
@@ -100,13 +101,13 @@ create_signature(uintptr_t targetLuaModuleBase, const std::function<void(const S
 
 static std::expected<ListExports_t, std::string>
 get_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase,
-               const std::function<void(const Signatures &)> &updated) {
+               const std::function<void(const Signatures &)> &updated, bool force_update = false) {
     auto &funcs = signatures.funcs;
     auto exports = get_lua51_exports();
 
     // Stale signature DBs (or a richer lua51.dll export set) must refresh —
     // do not showError with a raw "name;name;..." list and abort the game.
-    bool need_update = SignatureJson::current_version() != signatures.version;
+    bool need_update = force_update || SignatureJson::current_version() != signatures.version;
     for (auto &[name, address] : exports) {
         (void)address;
         if (!funcs.contains(name)) {
@@ -117,7 +118,11 @@ get_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase,
     }
 
     if (need_update) {
-        spdlog::warn("try fix all signatures (version and/or export set changed)");
+        if (force_update) {
+            spdlog::warn("try fix all signatures (forced: re-resolve every stored entry)");
+        } else {
+            spdlog::warn("try fix all signatures (version and/or export set changed)");
+        }
         auto errormsg =
             update_signatures_from_disasm(signatures, targetLuaModuleBase, exports);
         if (!errormsg.empty()) {
@@ -142,14 +147,24 @@ std::expected<SignatureUpdater, std::string> SignatureUpdater::create(uintptr_t 
 
 std::expected<SignatureUpdater, std::string>
 SignatureUpdater::create_or_update(bool isClient, uintptr_t luaModuleBaseAddress,
-                                   std::string signatures_path) {
+                                   std::string signatures_path, SignatureMode mode) {
     SignatureUpdater updater;
     SignatureJson json{isClient};
     if (!signatures_path.empty()) {
         json.file_path = std::move(signatures_path);
     }
-    auto signatures = json.read_from_signatures();
-    if (!signatures) {
+    // Create ignores the stored DB on purpose: every entry is rebuilt from the
+    // live module, which is what the `create` tool target is for.
+    std::optional<Signatures> stored;
+    if (mode != SignatureMode::Create) {
+        stored = json.read_from_signatures();
+    }
+    if (!stored) {
+        if (mode == SignatureMode::Update) {
+            return std::unexpected(
+                    fmt::format("SignatureMode::Update needs an existing signature DB (nothing readable at {})",
+                                json.file_path.empty() ? "<default path>" : json.file_path));
+        }
         auto res = create_signature(luaModuleBaseAddress, [&json](auto &v) { json.update_signatures(v); });
         if (!res) {
             return std::unexpected(res.error());
@@ -157,13 +172,14 @@ SignatureUpdater::create_or_update(bool isClient, uintptr_t luaModuleBaseAddress
         updater.exports = std::move(std::get<0>(res.value()));
         updater.signatures = std::move(std::get<1>(res.value()));
     } else {
-        auto res = get_signatures(signatures.value(), luaModuleBaseAddress,
-                                  [&json](auto &v) { json.update_signatures(v); });
+        auto res = get_signatures(stored.value(), luaModuleBaseAddress,
+                                  [&json](auto &v) { json.update_signatures(v); },
+                                  /*force_update=*/mode == SignatureMode::Update);
         if (!res) {
             return std::unexpected(res.error());
         }
         updater.exports = std::move(res.value());
-        updater.signatures = std::move(signatures.value());
+        updater.signatures = std::move(stored.value());
     }
     return updater;
 }
