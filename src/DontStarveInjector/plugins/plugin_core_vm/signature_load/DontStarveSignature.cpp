@@ -298,6 +298,10 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
 
     auto &funcs = signatures.funcs;
     std::unordered_map<std::string, uintptr_t> deferred_previous;
+    // RVAs already produced by this pass. The duplicate guard below must not read
+    // the previous DB's RVAs as claims: every not-yet-processed entry still holds
+    // one, and those are precisely the stale values this pass is rewriting.
+    std::unordered_map<uintptr_t, std::string> claimed_this_pass;
     // fix all signatures
     for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
@@ -314,23 +318,13 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
 
         auto maybe_target = targetLuaModuleBase + old_offset;
 
-        uintptr_t target = 0;
-        if (!updated && !signature.pattern.empty()) {
-            function_relocation::MemorySignature scan{signature.pattern.c_str(), signature.pattern_offset, false};
-            if (scan.targets.size() == 1) {
-                target = scan.target_address;
-            } else {
-                const auto targets = scan.targets | std::ranges::views::filter(
-                        [targetLuaModuleBase](auto addr) { return addr > targetLuaModuleBase; }) |
-                                     ranges::to<std::vector>();
-                if (targets.size() == 1) {
-                    target = scan.scan(moduleMain.details.path.c_str());
-                }
-            }
-        }
-        if (target == 0 || target < targetLuaModuleBase)
-            target = moduleMain.try_fix_func_address(*originalFunc,
-                                                     &signature, targetLuaModuleBase);
+        // Resolution is train-feature driven (try_fix_func_address); a stored
+        // pattern is only consulted by the last-resort recovery at the end of
+        // this function. The probe that used to sit here read `targets` of a
+        // freshly constructed MemorySignature, which is empty until scan() runs,
+        // so it never executed on any platform.
+        auto target =
+                moduleMain.try_fix_func_address(*originalFunc, &signature, targetLuaModuleBase);
 
         if (!target || target < targetLuaModuleBase) {
             if (old_offset != 0) {
@@ -428,21 +422,22 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                 }
             }
         }
-        auto new_offset = target - targetLuaModuleBase;
-        // Reject two exports claiming the same RVA (equal-family collisions).
-        bool dup = false;
-        for (const auto &[other, osig]: funcs) {
-            if (other == name) continue;
-            if (osig.offset != 0 && osig.offset == static_cast<uintptr_t>(new_offset)) {
-                spdlog::error("func[{}] offset {} already claimed by [{}], keeping previous",
-                              name, new_offset, other);
-                dup = true;
-                break;
-            }
+        const auto new_offset = target - targetLuaModuleBase;
+        // Reject two exports claiming the same RVA (equal-family collisions), but
+        // only against RVAs this pass produced: an entry that has not been reached
+        // yet still carries the previous DB's RVA, so comparing against it rejected
+        // correct matches whenever the stale value happened to collide with a fresh
+        // one (Windows luaL_error / lua_dump / lua_gc / lua_getupvalue / lua_load
+        // kept wrong offsets that way).
+        if (const auto claimed = claimed_this_pass.find(new_offset);
+            claimed != claimed_this_pass.end()) {
+            spdlog::error("func[{}] offset {} already claimed by [{}], keeping previous", name,
+                          new_offset, claimed->second);
+            continue;
         }
-        if (dup) continue;
         spdlog::info("update signatures [{}:{}]: {} to {}", name, (void *) target, old_offset, new_offset);
         signature.offset = new_offset;
+        claimed_this_pass.emplace(new_offset, name);
         moduleMain.set_known_function(target, name.c_str());
     }
 
@@ -878,11 +873,14 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
             if (signature.offset != 0 || signature.pattern.empty()) continue;
             function_relocation::MemorySignature scan{signature.pattern.c_str(),
                                                       signature.pattern_offset, false};
-            // Scan the module's .text by address+size rather than by path: the
-            // path overload goes through gum_process_find_module_by_name(), which
-            // expects a module *name* (on Windows it is GetModuleHandleW, which
-            // does not accept a full path). Fall back to the whole module range
-            // if .text was not reported, as on some platforms it may be absent.
+            // Scan by address+size instead of by module path: the path overload
+            // enumerates the module's executable ranges through
+            // gum_process_find_module_by_name(), which on Windows resolves its
+            // argument with GetModuleHandleW (full paths and bare names both
+            // work, but the enumeration re-walks every exec range). Scanning the
+            // parsed .text window is cheaper and matches how soft_revalidate_pattern
+            // already validates stored patterns. Fall back to the whole module
+            // range if .text was not reported, as on some platforms it may be absent.
             const auto text_range = moduleMain.text.size != 0 ? moduleMain.text
                                                              : moduleMain.details.range;
             scan.scan(text_range.base_address, text_range.size);
