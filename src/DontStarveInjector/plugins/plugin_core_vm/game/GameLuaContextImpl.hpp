@@ -38,6 +38,19 @@ using ds::core_vm::detail::MarkLuaStateClosed;
 
 #define GameLuaInjectorName "GameLuaInjector"
 
+namespace ds::core_vm::detail {
+// Hijack of the engine's register_debug_getsize (implemented in GameLuaContext.cpp).
+// The replacement keeps the observable contract (fetch the global `debug` table and leave
+// it on the Lua stack, +1) and drops the Lua 5.1 GC-layout read that is invalid under
+// LuaJIT/arenagc. Installed unconditionally (every VM) with gum replace_fast; no revert.
+void register_debug_getsize_replacement(lua_State *L);
+void hook_register_debug_getsize(void *addr);
+// Port of Klei's debug.getsize (src/lua51/src/new.c) using only the public Lua API so it is
+// valid under both the game Lua 5.1 and LuaJIT; injected from our luaL_openlibs path so both
+// VMs expose the same debug.getsize (原版一致性).
+void install_debug_getsize(lua_State *L);
+} // namespace ds::core_vm::detail
+
 struct LuaStackGuard {
     GameLuaContext &ctx;
     lua_State *L;
@@ -115,6 +128,10 @@ struct GameLuaContextImpl : GameLuaContext {
 
     virtual void luaL_openlibs_hooker(lua_State *L) {
         api._luaL_openlibs(L);
+        // Both VMs run this hooker (the game context calls it through the chain), so both end
+        // up with the same debug.getsize (原版一致性). The engine's own register_debug_getsize
+        // step stays hijacked above; this only adds the function to the debug table.
+        ds::core_vm::detail::install_debug_getsize(L);
          if (InjectorCtx::instance()->config.DisableReplaceLuaIO) {
             spdlog::info("DISABLE_REPLACE_LUA_IO is set, skip replacing io module");
         } else if (UseGameIO()) {
@@ -432,18 +449,15 @@ struct GameLuaContextImpl : GameLuaContext {
 
     virtual void HotfixApis(const std::string &mainPath) {
 #if DEBUG_GETSIZE_PATCH
-        // Game register_debug_getsize reads Lua 5.1 GC layout (base[1].value.gc->cl.c.f)
-        // then lua_setfield(..., "getsize"). That is invalid under LuaJIT/arenagc and
-        // the old mid-function "mov reg,0" patch left the following load live, so
-        // getsize still registered. Disable the whole function at entry (ret).
+        // Game register_debug_getsize reads the Lua 5.1 GC layout
+        // (L->base[1].value.gc->cl.c.f) -- invalid under LuaJIT/arenagc -- and it leaves the
+        // global `debug` table on the Lua stack (+1), which the rest of the boot relies on.
+        // Replace the whole function with our own implementation (same observable contract,
+        // no GC-layout read) via frida-gum replace_fast instead of writing a one-way `ret`.
+        // Unconditional (every VM); there is deliberately no revert path.
         if (luaRegisterDebugGetsizeSignature.scan(mainPath.c_str())) {
-            const auto ret = std::to_array<uint8_t>({0xC3});
-            const auto addr = (uint8_t *) luaRegisterDebugGetsizeSignature.target_address;
-            if (HookWriteCode(addr, ret.data(), ret.size())) {
-                spdlog::info("Disabled game register_debug_getsize at {}", (void *) addr);
-            } else {
-                spdlog::error("Failed to disable game register_debug_getsize at {}", (void *) addr);
-            }
+            ds::core_vm::detail::hook_register_debug_getsize(
+                    (void *) luaRegisterDebugGetsizeSignature.target_address);
         } else {
             spdlog::warn("register_debug_getsize signature not found; getsize may still register");
         }

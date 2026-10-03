@@ -287,16 +287,22 @@ struct GameLuaContextGame : GameLua51Context {
             spdlog::warn("Game lua interceptor is not initialized, skip reverting game lua hooks");
             return;
         }
-        for (auto &[name, api]: name2apis) {
-            if (!api || !*api) {
+        // Revert exactly what ReplaceApis installed; name2apis may not cover the sites we
+        // replaced, and blindly reverting field values would target trampolines.
+        for (void *target: replacedTargets) {
+            if (std::find(anchorTargets.begin(), anchorTargets.end(), target) != anchorTargets.end()) {
+                spdlog::info("keep game VM anchor hook at {}", target);
                 continue;
             }
-            gum_interceptor_revert(interceptor, *api);
-            spdlog::info("Reverted game lua api {}: {}", name, (void *) *api);
+            gum_interceptor_revert(interceptor, target);
+            spdlog::info("Reverted game lua api target {}", target);
         }
+        for (auto &[field, value]: apiFieldOriginals) {
+            *field = value;
+        }
+        apiFieldOriginals.clear();
+        replacedTargets.clear();
     }
-
-    void HotfixApis(const std::string &mainPath) override {}
 
     static GumAddress GameFindExportByName(GumModule *self, const gchar *symbol_name);
     std::unordered_map<std::string, GumAddress> exports;

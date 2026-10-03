@@ -491,3 +491,156 @@ std::string wrapper_game_main_buffer(lua_State *L, std::string_view buffer) {
     //spdlog::info("New buffer:\n {}", new_buffer);
     return new_buffer;
 }
+
+namespace ds::core_vm::detail {
+
+namespace {
+gpointer g_getsize_target = nullptr;
+} // namespace
+
+// Replacement body for the engine's register_debug_getsize: keep the observable contract --
+// fetch the global `debug` table and leave it on the Lua stack (+1) -- and skip the Lua 5.1
+// GC-layout read (L->base[1].value.gc->cl.c.f) that is invalid under LuaJIT/arenagc.
+void register_debug_getsize_replacement(lua_State *L) {
+    auto *ctx = GameLuaContextImpl::currentCtx;
+    if (ctx == nullptr) {
+        return;
+    }
+    ctx->api._lua_getfield(L, LUA_GLOBALSINDEX, "debug");
+}
+
+// Unconditional hijack: installed for every VM (jit and game). No revert and no trampoline
+// (replace_fast patches the entry to branch straight to the replacement), so the engine's
+// own implementation is never reachable again.
+void hook_register_debug_getsize(void *addr) {
+    if (addr == nullptr) {
+        return;
+    }
+    if (g_getsize_target == addr) {
+        return; // already hijacked
+    }
+    auto *interceptor = InjectorCtx::instance()->GetGumInterceptor();
+    const auto rc = ds::gum::replace_fast(interceptor, addr, (gpointer) &register_debug_getsize_replacement,
+                                          nullptr);
+    if (rc == GUM_REPLACE_OK) {
+        g_getsize_target = addr;
+        spdlog::info("register_debug_getsize replaced at {} (gum replace_fast)", addr);
+    } else {
+        spdlog::error("Failed to replace register_debug_getsize at {} (rc={})", addr, (int) rc);
+    }
+}
+
+namespace {
+
+// Port of the engine's getsize closure (src/lua51/src/new.c — sub_7FF7D069AB60) using only
+// the public Lua API, so it is valid under both the game Lua 5.1 and LuaJIT. Same value-type
+// dispatch, same option letters (P/U/V/p/u/v) and same error text; tables return three
+// results (total bytes, array slots, hash slots), C closures count 16*nup+40 and userdata
+// uses its block size. The parts new.c reads straight out of the GC internals (hash-part
+// capacity, Proto sizes, thread stack fields) are approximated from public information --
+// reading them portably would repeat the very layout access that is invalid under LuaJIT.
+int ds_debug_getsize(lua_State *L) {
+    auto *ctx = GameLuaContextImpl::currentCtx;
+    if (ctx == nullptr) {
+        return 0;
+    }
+    auto &api = ctx->api;
+    bool calc_proto = false;
+    bool calc_upvalue = true;
+    bool use_v = true;
+    size_t len = 0;
+    const char *options = api._lua_tolstring(L, 2, &len);
+    if (options == nullptr) {
+        options = "";
+        len = 0;
+    }
+    for (size_t i = 0; i < len; ++i) {
+        switch (options[i]) {
+            case 'P': calc_proto = false; break;
+            case 'U': calc_upvalue = false; break;
+            case 'V': use_v = false; break;
+            case 'p': calc_proto = true; break;
+            case 'u': calc_upvalue = true; break;
+            case 'v': use_v = true; break;
+            default:
+                return api._luaL_error(L, "unknown option for 'getsize': %c", options[i]);
+        }
+    }
+    switch (api._lua_type(L, 1)) {
+        case LUA_TNIL:
+            api._lua_pushinteger(L, 0);
+            return 1;
+        case LUA_TBOOLEAN:
+            api._lua_pushinteger(L, use_v ? 4 : 0);
+            return 1;
+        case LUA_TLIGHTUSERDATA:
+        case LUA_TNUMBER:
+            api._lua_pushinteger(L, use_v ? 8 : 0);
+            return 1;
+        case LUA_TSTRING:
+            api._lua_pushinteger(L, (lua_Integer) api._lua_objlen(L, 1) + 25);
+            return 1;
+        case LUA_TTABLE: {
+            // new.c: 16 * (sizearray + 4) + 40 * (1 << lsizenode). sizearray -> the public
+            // border; the hash-part capacity is not exposed, so count hash-part pairs.
+            const lua_Integer arrayslots = (lua_Integer) api._lua_objlen(L, 1);
+            lua_Integer hashslots = 0;
+            api._lua_pushnil(L);
+            while (api._lua_next(L, 1) != 0) {
+                const bool inarray = (api._lua_type(L, -2) == LUA_TNUMBER) &&
+                                     (api._lua_tointeger(L, -2) >= 1) &&
+                                     (api._lua_tointeger(L, -2) <= arrayslots);
+                if (!inarray) {
+                    ++hashslots;
+                }
+                api._lua_pop(L, 1); // pop value, keep key for the next iteration
+            }
+            api._lua_pushinteger(L, 16 * (arrayslots + 4) + 40 * hashslots);
+            api._lua_pushinteger(L, arrayslots);
+            api._lua_pushinteger(L, hashslots);
+            return 3;
+        }
+        case LUA_TFUNCTION: {
+            const bool is_c = api._lua_iscfunction(L, 1) != 0;
+            lua_Integer nup = 0;
+            while (nup < 250 && api._lua_getupvalue(L, 1, (int) nup + 1) != nullptr) {
+                ++nup;
+                api._lua_pop(L, 1);
+            }
+            lua_Integer size = is_c ? 16 * nup + 40 : 8 * nup + 40 + (calc_upvalue ? 40 * nup : 0);
+            if (!is_c && calc_proto) {
+                size += 4 * 30; // Proto sizes are internal; keep new.c's constant term only.
+            }
+            api._lua_pushinteger(L, size);
+            return 1;
+        }
+        case LUA_TUSERDATA:
+            api._lua_pushinteger(L, (lua_Integer) api._lua_objlen(L, 1) + 40);
+            return 1;
+        case LUA_TTHREAD:
+            api._lua_pushinteger(L, 40); // thread stack fields are internal
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+} // namespace
+
+void install_debug_getsize(lua_State *L) {
+    auto *ctx = GameLuaContextImpl::currentCtx;
+    if (ctx == nullptr) {
+        return;
+    }
+    auto &api = ctx->api;
+    api._lua_getfield(L, LUA_GLOBALSINDEX, "debug");
+    if (api._lua_istable(L, -1)) {
+        api._lua_pushcclosure(L, ds_debug_getsize, 0);
+        api._lua_setfield(L, -2, "getsize");
+    } else {
+        spdlog::warn("debug table not found after openlibs; debug.getsize not installed (L={})", (void *) L);
+    }
+    api._lua_pop(L, 1); // drop the debug table; leave the stack as openlibs left it
+}
+
+} // namespace ds::core_vm::detail
