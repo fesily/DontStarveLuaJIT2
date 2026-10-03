@@ -298,6 +298,43 @@ LUA_API void lua_setallocf (lua_State *L, lua_Alloc f, void *ud);
 /* hack */
 LUA_API void lua_setlevel	(lua_State *from, lua_State *to);
 
+/*
+** Klei additions, each behind its own switch (see ldo.c / lgc.c).  All default
+** to on; build with -DLUA_KLEI_EXECERROR=0 -DLUA_KLEI_PCALL_ERRSTATUS=0
+** -DLUA_KLEI_TIMESLICE=0 to drop the corresponding entry point and behaviour.
+**   LUA_KLEI_EXECERROR        process-wide execution-error sink
+**   LUA_KLEI_PCALL_ERRSTATUS  protected calls report LUA_YIELD once the sink is
+**                             set (requires LUA_KLEI_EXECERROR)
+**   LUA_KLEI_TIMESLICE        lua_settimeslice stub (symbol compatibility only)
+** Provenance: macOS client lua51::_lua_getexecutionerror / _lua_clearexecutionerror
+** / _lua_setexecutionerror (0x0032e32a / 0x0032e337 / 0x0032e348) and
+** lua51::_lua_settimeslice (0x0032f037); the Android LuaJIT exports the trio.
+*/
+#ifndef LUA_KLEI_EXECERROR
+#define LUA_KLEI_EXECERROR		1
+#endif
+#ifndef LUA_KLEI_PCALL_ERRSTATUS
+#define LUA_KLEI_PCALL_ERRSTATUS	1
+#endif
+#ifndef LUA_KLEI_TIMESLICE
+#define LUA_KLEI_TIMESLICE		1
+#endif
+
+#if LUA_KLEI_EXECERROR
+LUA_API const char *lua_getexecutionerror	(void);
+LUA_API void        lua_clearexecutionerror	(void);
+LUA_API void        lua_setexecutionerror	(const char *msg);
+/* Engine-side execution-error storage, patched by the host at VM-swap time
+** (see ldo.c; NULL until wired, then the entry points above act on the engine's
+** own message block / flag and keep its error display in sync). */
+LUA_API char       *extern_error_message_buffer;
+LUA_API const char **extern_had_execution_error;
+#endif
+
+#if LUA_KLEI_TIMESLICE
+LUA_API void        lua_settimeslice		(float seconds);
+#endif
+
 
 /*
 ** {======================================================================

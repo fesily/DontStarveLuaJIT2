@@ -334,7 +334,7 @@ static int db_errorfb (lua_State *L) {
     lua_pushliteral(L, "");
   else if (!lua_isstring(L, arg+1)) return 1;  /* message is not a string */
   else lua_pushliteral(L, "\n");
-  lua_pushliteral(L, "stack traceback:");
+  lua_pushliteral(L, "LUA ERROR stack traceback:");
   while (lua_getstack(L1, level++, &ar)) {
     if (level > LEVELS1 && firstpart) {
       /* no more than `LEVELS2' more levels? */
@@ -350,9 +350,20 @@ static int db_errorfb (lua_State *L) {
     }
     lua_pushliteral(L, "\n        ");
     lua_getinfo(L1, "Snl", &ar);
-    lua_pushfstring(L, "(%d,1)", ar.short_src);
+    /* Engine-embedded Lua (win client/server, mac client, linux server -- all
+    ** four binaries): pushlstring("\n        ",9) then pushfstring("%s", the
+    ** chunk name ar.source with only a leading '@' dropped), then, when
+    ** currentline > 0, pushfstring("(%d,1)", currentline).  No "%d:" line.
+    ** macOS lua51::_db_errorfb @0x0032bf86 formats lua_Debug+0x10 = ar.source
+    ** (call site: `p = ar.source; if (*p=='@') p++;`), cross-checked against
+    ** _db_getinfo @0x0032b6a6 (local_6c -> "source" @+0x10, local_58 ->
+    ** "short_src" @+0x24).  short_src is NOT what the engine prints, so the raw
+    ** chunk name shows through: "=..." chunks keep the '=', paths are not
+    ** truncated to LUA_IDSIZE, string chunks print their source text, and C /
+    ** tail frames come out as "=[C]" / "=(tail call)". */
+    lua_pushfstring(L, "%s", *ar.source == '@' ? ar.source + 1 : ar.source);
     if (ar.currentline > 0)
-      lua_pushfstring(L, "%d:", ar.currentline);
+      lua_pushfstring(L, "(%d,1)", ar.currentline);
     if (*ar.namewhat != '\0')  /* is there a name? */
         lua_pushfstring(L, " in function " LUA_QS, ar.name);
     else {
@@ -369,6 +380,21 @@ static int db_errorfb (lua_State *L) {
     lua_concat(L, lua_gettop(L) - arg);
   }
   lua_concat(L, lua_gettop(L) - arg);
+#if LUA_KLEI_EXECERROR
+  /* DST fork addition: hand the finished traceback text to the process-wide
+  ** execution-error sink (string on top of the stack, else NULL), exactly as the
+  ** macOS client engine does (lua51::_db_errorfb @0x0032bf86, call site
+  ** 0x0032c2bb).  Of the four engine binaries only the macOS client carries the
+  ** trio (win client/server and linux server have none; Android's LuaJIT does).
+  ** The "message is not a string" early return above skips the call, as in the
+  ** client. */
+  {
+    const char *msg = NULL;
+    if (lua_type(L, -1) == LUA_TSTRING)
+      msg = lua_tolstring(L, -1, NULL);
+    lua_setexecutionerror(msg);
+  }
+#endif
   return 1;
 }
 

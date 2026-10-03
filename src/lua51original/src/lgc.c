@@ -607,6 +607,19 @@ static l_mem singlestep (lua_State *L) {
 }
 
 
+#if LUA_KLEI_TIMESLICE
+/*
+** Klei: GC time slice (client: lua51::_lua_settimeslice @0x0032f037 stores the
+** float _gc_timeSlice @0x004646a4, default 0x3a03126f = 0.0005s, consumed by the
+** client's time-bounded luaC_step).  Symbol-compatibility stub only here: the
+** value is dropped and the collector keeps the stock work-credit stepping.
+*/
+LUA_API void lua_settimeslice (float seconds) {
+  (void)seconds;
+}
+#endif
+
+
 void luaC_step (lua_State *L) {
   global_State *g = G(L);
   l_mem lim = (GCSTEPSIZE/100) * g->gcstepmul;

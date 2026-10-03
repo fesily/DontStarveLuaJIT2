@@ -368,6 +368,18 @@ static int db_errorfb (lua_State *L) {
     lua_concat(L, lua_gettop(L) - arg);
   }
   lua_concat(L, lua_gettop(L) - arg);
+#if LUA_KLEI_EXECERROR
+  /* Klei: hand the finished traceback text to the process-wide execution-error
+  ** sink (same hookup as src/lua51; the traceback text of this tree stays
+  ** stock).  Client: macOS lua51::_db_errorfb @ 0x0032bf86, call site
+  ** 0x0032c2bb. */
+  {
+    const char *msg = NULL;
+    if (lua_type(L, -1) == LUA_TSTRING)
+      msg = lua_tolstring(L, -1, NULL);
+    lua_setexecutionerror(msg);
+  }
+#endif
   return 1;
 }
 

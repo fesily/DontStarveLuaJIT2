@@ -129,3 +129,12 @@ EXPORTS
   luaF_newproto
   luaP_opmodes
   luaP_opnames
+  ; Klei compat API: enabled by default, dropped by
+  ; -DLUA_KLEI_EXECERROR=0 / -DLUA_KLEI_TIMESLICE=0
+  lua_getexecutionerror
+  lua_clearexecutionerror
+  lua_setexecutionerror
+  lua_settimeslice
+  ; Engine-side execution-error storage hooks (patched by the host; see ldo.c)
+  extern_error_message_buffer DATA
+  extern_had_execution_error DATA
