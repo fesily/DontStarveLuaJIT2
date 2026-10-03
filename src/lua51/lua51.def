@@ -121,3 +121,9 @@ luaopen_os
 luaopen_package
 luaopen_string
 luaopen_table
+; Klei compat API: enabled by default, dropped by
+; -DLUA_KLEI_EXECERROR=0 / -DLUA_KLEI_TIMESLICE=0
+lua_getexecutionerror
+lua_clearexecutionerror
+lua_setexecutionerror
+lua_settimeslice

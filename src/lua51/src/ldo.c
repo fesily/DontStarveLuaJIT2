@@ -452,6 +452,36 @@ LUA_API int lua_yield (lua_State *L, int nresults) {
 }
 
 
+#if LUA_KLEI_EXECERROR
+/*
+** Klei: process-wide execution-error sink.
+** The macOS client keeps the message in a 0x1000-byte buffer (0x00468000)
+** reached through a pointer variable (0x00450dbc); the "flag" 0x00467d68 holds
+** that pointer, so a non-NULL flag doubles as the message.  Only the first
+** error is kept; later ones are dropped.  Same shape in the Android LuaJIT
+** (lua_setexecutionerror @0x00c324bc).
+*/
+static char error_message_buffer[0x1000];
+static char *errormessage = error_message_buffer;
+static const char *g_had_execution_error = NULL;
+
+LUA_API void lua_setexecutionerror (const char *msg) {
+  if (g_had_execution_error != NULL)
+    return;  /* keep the first error reported */
+  strncpy(errormessage, msg, sizeof(error_message_buffer));
+  g_had_execution_error = errormessage;
+}
+
+LUA_API const char *lua_getexecutionerror (void) {
+  return g_had_execution_error;
+}
+
+LUA_API void lua_clearexecutionerror (void) {
+  g_had_execution_error = NULL;
+}
+#endif
+
+
 int luaD_pcall (lua_State *L, Pfunc func, void *u,
                 ptrdiff_t old_top, ptrdiff_t ef) {
   int status;
@@ -473,6 +503,13 @@ int luaD_pcall (lua_State *L, Pfunc func, void *u,
     restore_stack_limit(L);
   }
   L->errfunc = old_errfunc;
+#if LUA_KLEI_EXECERROR && LUA_KLEI_PCALL_ERRSTATUS
+  /* Klei: once an execution error is recorded, every protected call reports
+  ** LUA_YIELD (the client stores the literal 1) until the host clears the error
+  ** (macOS client 0x0032e440 in luaD_pcall; Android LuaJIT lua_pcall 0x00c3e510). */
+  if (g_had_execution_error != NULL)
+    status = LUA_YIELD;
+#endif
   return status;
 }
 
