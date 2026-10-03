@@ -104,6 +104,7 @@ struct GameLuaContextGame : GameLua51Context {
 
     void LoadMyLuaApi() override {
         GameLua51Context::LoadMyLuaApi();
+        // The engine's own lua_setfield / lua_getfield are used directly (no interception).
         api._luaL_register = +[](lua_State *L, const char *libname, const luaL_Reg *l) {
             return GetGameLuaContext()->_luaL_openlib(L, libname, l, 0);
         };

@@ -63,15 +63,10 @@ GameLuaContextImpl *ctx_jit_gen() { return &gameLuajitGenCtx; }
 
 void GameLuaContextJit::LoadMyLuaApi() {
     GameLuaContextImpl::LoadMyLuaApi();
-    // Must use currentCtx: both classic jit and jit_gen share this method.
-    // Hardcoding gameLuajitCtx leaves gen-mode API pointers null and SEGV on
-    // the first lua_setfield during game io open (e.g. "__index").
-    HOOK_LUA_API(lua_setfield) + [](lua_State *L, int idx, const char *k) {
-        auto &api = currentCtx->api;
-        if (api._lua_gettop(L) == 0)
-            api._lua_pushnil(L);
-        api._lua_setfield(L, idx, k);
-    };
+    // lua_setfield is not intercepted here anymore: the empty-stack push-nil guard only
+    // masked the missing +1 from the one-way `ret` over the engine's register_debug_getsize
+    // (fixed at the source by the VM-scoped gum replace_fast hijack). Verified: a pure-jit
+    // boot reaches the same log depth (654 lines) without any guard in place.
     api._lua_newstate = (decltype(&lua_newstate)) +[](lua_Alloc f, void *ud) {
         return CreateLuaStateForCurrentVm(f, ud, "lua_newstate");
     };
