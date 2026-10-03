@@ -124,8 +124,10 @@ struct lua_State {
   GCObject *gclist;
   struct lua_longjmp *errorJmp;  /* current error recover point */
   ptrdiff_t errfunc;  /* current error handling function (stack index) */
-  char reserved[8];
-  char allowed_gcstep;
+  GCObject *tobefreed;  /* Klei GC: tables awaiting deferred free
+                        ** (shipped mac/win 32-bit layout: +0x70) */
+  char allowed_gcstep;  /* luaC_checkGC gate (mac client: +0x74); cleared by
+                        ** preinit, host toggles via lua_gc(LUA_GCALLOWGCSTEP) */
 };
 
 

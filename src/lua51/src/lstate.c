@@ -98,6 +98,8 @@ static __forceinline void preinit_state (lua_State *L, global_State *g) {
   L->base_ci = L->ci = NULL;
   L->savedpc = NULL;
   L->errfunc = 0;
+  L->tobefreed = NULL;      /* mac client preinit also clears +0x70 */
+  L->allowed_gcstep = 0;    /* ... and +0x74 (luaC_checkGC gate) */
   setnilvalue(gt(L));
 }
 
@@ -201,7 +203,8 @@ LUA_API void lua_close (lua_State *L) {
   lua_lock(L);
   luaF_close(L, L->stack);  /* close all upvalues for this thread */
   luaC_separateudata(L, 1);  /* separate udata that have GC metamethods */
-  luaC_callGCTM(L);
+  /* Klei (mac client 0x0032f1ef): finalize + clear the udata metatables */
+  luaC_callGCTM_ForFinalizingUserData(L);
   L->errfunc = 0;  /* no error function during GC metamethods */
   do {  /* repeat until no more errors */
     L->ci = L->base_ci;

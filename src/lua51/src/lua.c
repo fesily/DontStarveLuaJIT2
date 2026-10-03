@@ -347,6 +347,11 @@ static int pmain (lua_State *L) {
   lua_gc(L, LUA_GCSTOP, 0);  /* stop collector during initialization */
   luaL_openlibs(L);  /* open libraries */
   lua_gc(L, LUA_GCRESTART, 0);
+  /* Klei gate (lstate.c preinit clears it): the game client drives GC from
+  ** its per-frame budget and only enables allocation-triggered steps in
+  ** emergency mode; the standalone interpreter is its own host, so restore
+  ** the stock behaviour here. */
+  lua_gc(L, LUA_GCALLOWGCSTEP, 1);
   s->status = handle_luainit(L);
   if (s->status != 0) return 0;
   script = collectargs(argv, &has_i, &has_v, &has_e);

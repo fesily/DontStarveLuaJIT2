@@ -442,7 +442,12 @@ static void checkSizes (lua_State *L) {
 }
 
 
-static void GCTM (lua_State *L) {
+/*
+** Klei (mac client 0x0032f1ef): with `clearmeta' the udata metatable is
+** cleared right after running __gc (sole caller there: lua_close), so a later
+** pass (callallgcTM -> luaC_callGCTM) cannot run the finalizer a second time.
+*/
+static void GCTM (lua_State *L, int clearmeta) {
   global_State *g = G(L);
   GCObject *o = g->tmudata->gch.next;  /* get first element */
   Udata *udata = rawgco2u(o);
@@ -467,6 +472,8 @@ static void GCTM (lua_State *L) {
     luaD_call(L, L->top - 2, 0);
     L->allowhook = oldah;  /* restore hooks */
     g->GCthreshold = oldt;  /* restore threshold */
+    if (clearmeta)
+      udata->uv.metatable = NULL;  /* Klei: no second run of the finalizer */
   }
 }
 
@@ -476,7 +483,17 @@ static void GCTM (lua_State *L) {
 */
 void luaC_callGCTM (lua_State *L) {
   while (G(L)->tmudata)
-    GCTM(L);
+    GCTM(L, 0);  /* keep metatables (normal collection) */
+}
+
+
+/*
+** Klei (mac client 0x0032f1ef): finalize all pending udata, clearing their
+** metatables; used by lua_close.
+*/
+void luaC_callGCTM_ForFinalizingUserData (lua_State *L) {
+  while (G(L)->tmudata)
+    GCTM(L, 1);
 }
 
 
@@ -591,7 +608,7 @@ static l_mem singlestep (lua_State *L) {
     }
     case GCSfinalize: {
       if (g->tmudata) {
-        GCTM(L);
+        GCTM(L, 0);  /* normal collection: keep metatables */
         if (g->estimate > GCFINALIZECOST)
           g->estimate -= GCFINALIZECOST;
         return GCFINALIZECOST;

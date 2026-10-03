@@ -97,6 +97,7 @@
 
 LUAI_FUNC size_t luaC_separateudata (lua_State *L, int all);
 LUAI_FUNC void luaC_callGCTM (lua_State *L);
+LUAI_FUNC void luaC_callGCTM_ForFinalizingUserData (lua_State *L);
 LUAI_FUNC void luaC_freeall (lua_State *L);
 LUAI_FUNC void luaC_step (lua_State *L);
 LUAI_FUNC void luaC_fullgc (lua_State *L);
