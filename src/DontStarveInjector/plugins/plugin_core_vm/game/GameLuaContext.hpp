@@ -3,6 +3,7 @@
 #include "LuaApi.hpp"
 #include "DontStarveSignature.hpp"
 #include <string>
+#include <vector>
 #include <string_view>
 #include <frida-gum.h>
 #include <lua.hpp>
@@ -90,6 +91,17 @@ struct LuaApis {
 };
 
 class GameLuaContext {
+public:
+    // Functions currently replaced through the Gum interceptor for this context. Reverting
+    // exactly this list is how a VM switch tears the previous VM's hooks down.
+    std::vector<void *> replacedTargets;
+    // Api fields this context replaced; pair = (field address, value before hooking).
+    std::vector<std::pair<void **, void *>> apiFieldOriginals;
+    // VM-identity anchors (lua_newstate): deliberately kept hooked across VM switches so the
+    // engine never sees the native entry in the middle of a switch.
+    std::vector<void *> anchorTargets;
+
+
 protected:
     std::string sharedlibraryName;
     GumModule *LuaModule = nullptr;

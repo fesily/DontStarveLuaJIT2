@@ -48,6 +48,14 @@ const char *DefaultLuajitGenLibraryName();
 
 // Used by ReplaceLuaModule (game/ReplaceLuaModule.cpp)
 void NoteGameLuaExport(const std::string &name, GumAddress addr);
+
+// Cached trampoline to the image's own lua_newstate. Gum hands out a trampoline only when it
+// actually installs a replacement, and the VM anchor is kept installed across switches, so
+// later installs cannot obtain one again -- this cache is what keeps the context's
+// lua_newstate field on the hook-free side for the whole process.
+using LuaNewStateFn = lua_State *(*)(lua_Alloc, void *);
+LuaNewStateFn native_new_state();
+void set_native_new_state(LuaNewStateFn fn);
 void NoteGameLuaExportsForDebugSymbols();
 
 } // namespace ds::core_vm::detail

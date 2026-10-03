@@ -6,6 +6,7 @@
 #include "DontStarveSignature.hpp"
 #include "GameSignature.hpp"
 #include "util/inlinehook.hpp"
+#include "util/frida_gum_interceptor.hpp"
 #include "util/platform.hpp"
 #include "util/lua_io2.hpp"
 #include "config/InjectorHostConfig.hpp"
@@ -18,6 +19,7 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <algorithm>
 #include <vector>
 #include <list>
 #include <array>
@@ -322,7 +324,9 @@ struct GameLuaContextImpl : GameLuaContext {
             hookTargets.emplace_back(&name);
         }
 
+        GumInterceptor *interceptor = InjectorCtx::instance()->GetGumInterceptor();
         std::list<uint8_t *> hookeds;
+        size_t skipped = 0;
         for (auto *_name: hookTargets) {
             auto &name = *_name;
             auto offset = signatures.funcs.at(name).offset;
@@ -343,46 +347,87 @@ struct GameLuaContextImpl : GameLuaContext {
                 assert(has_gt);
             }
 #endif
+            // Signature targets are the engine's own Lua entries (verified native prologues);
+            // any runtime `jmp` there is a previous Gum replacement, so hook this address only.
             auto replacer = (uint8_t *) GetLuaExport(name);
             if (replacer == nullptr) {
                 spdlog::error("replace {} aborted: null replacer", name);
                 break;
             }
-            if (!Hook(target, replacer)) {
-                spdlog::error("replace {} failed", name);
+            if (replacer == target) {
+                // Branching a function to itself would loop forever.
+                spdlog::info("skip replace {}: replacer equals target", name);
+                ++skipped;
+                continue;
+            }
+            const bool isVmAnchor = (name == "lua_newstate");
+            void *trampoline = nullptr;
+            auto rc = ds::gum::replace_fast(interceptor, target, replacer, isVmAnchor ? &trampoline : nullptr);
+            if (rc == GumReplaceReturn::GUM_REPLACE_ALREADY_REPLACED) {
+                // A previous VM left its replacement in place: drop it first, otherwise the
+                // new replacement would be layered on an already patched prologue.
+                gum_interceptor_revert(interceptor, target);
+                rc = ds::gum::replace_fast(interceptor, target, replacer, isVmAnchor ? &trampoline : nullptr);
+            }
+            const char *mechanism = "fast";
+            if (rc != GumReplaceReturn::GUM_REPLACE_OK) {
+                // replace_fast rejects prologues it cannot redirect without a trampoline;
+                // fall back to the regular variant on the same interceptor.
+                rc = ds::gum::replace(interceptor, target, replacer, isVmAnchor ? &trampoline : nullptr);
+                mechanism = "normal";
+            }
+            if (rc != GumReplaceReturn::GUM_REPLACE_OK) {
+                spdlog::error("replace {} failed: {}", name, (int) rc);
                 break;
             }
             hookeds.emplace_back(target);
-            // Verify trampoline (12-byte mov rax,imm64; jmp rax) actually landed.
-            const auto *b = reinterpret_cast<const uint8_t *>(target);
-            const bool looks_hooked = (b[0] == 0x48 && b[1] == 0xB8 && b[10] == 0xFF && b[11] == 0xE0);
-            if (!looks_hooked) {
-                spdlog::error("replace {} wrote but bytes not hooked at {}", name, (void *) target);
-            } else {
-                spdlog::info("replace {}: {} to {}", name, (void *) target, (void *) replacer);
+            if (isVmAnchor) {
+                // lua_newstate is the VM-identity anchor: keep its hook across switches and
+                // remember the trampoline to the image's own implementation for the creator.
+                anchorTargets.push_back(target);
+                ds::core_vm::detail::set_native_new_state((ds::core_vm::detail::LuaNewStateFn) trampoline);
+                spdlog::info("VM anchor {} ({}): {} -> {} native={}", name, mechanism, (void *) target,
+                             (void *) replacer, trampoline);
             }
+            spdlog::info("replace {} ({}): {} to {}", name, mechanism, (void *) target, (void *) replacer);
         }
 
-        if (hookeds.size() != hookTargets.size()) {
+        if (hookeds.size() + skipped != hookTargets.size()) {
             for (auto target: hookeds) {
-                ResetHook(target);
+                gum_interceptor_revert(interceptor, target);
             }
             spdlog::info("reset all hook");
             return false;
+        }
+        for (auto target: hookeds) {
+            replacedTargets.push_back(target);
         }
         return true;
     }
 
     virtual void ResetApis(const Signatures &signatures, const ListExports_t &exports) {
-        for (auto &[name, _]: exports) {
-            auto offsetIter = signatures.funcs.find(name);
-            if (offsetIter == signatures.funcs.end()) {
+        // Revert exactly what ReplaceApis installed (Gum replacements recorded per target).
+        (void) signatures;
+        (void) exports;
+        GumInterceptor *interceptor = InjectorCtx::instance()->GetGumInterceptor();
+        size_t reverted = 0;
+        size_t failed = 0;
+        for (void *target: replacedTargets) {
+            if (std::find(anchorTargets.begin(), anchorTargets.end(), target) != anchorTargets.end()) {
+                spdlog::info("keep VM anchor hook at {} (state creation must stay behind us)", target);
                 continue;
             }
-            auto offset = offsetIter->second.offset;
-            auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
-            ResetHook(target);
+            gum_interceptor_revert(interceptor, target);
+            ++reverted;
+            const auto *t = (const uint8_t *) target;
+            if (t != nullptr && t[0] == 0xe9) {
+                spdlog::error("lua api entry still hooked after revert (mixed-VM risk): {} bytes {:02x} {:02x} {:02x} {:02x}", target, t[0],
+                              t[1], t[2], t[3]);
+            }
         }
+        spdlog::info("Reverted {} base lua api targets for vm={} (failed={})", reverted, GameLuaTypeToString(luaType),
+                     failed);
+        replacedTargets.clear();
     }
 
     virtual void HotfixApis(const std::string &mainPath) {

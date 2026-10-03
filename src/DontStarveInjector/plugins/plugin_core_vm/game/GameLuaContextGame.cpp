@@ -9,6 +9,7 @@
 #include <fstream>
 #include <unordered_map>
 #include <list>
+#include <algorithm>
 #include <vector>
 #include <string>
 #include <spdlog/spdlog.h>
@@ -200,17 +201,65 @@ struct GameLuaContextGame : GameLua51Context {
     }
 
     bool ReplaceApis(const Signatures &signatures, const ListExports_t &exports) override {
+        (void) signatures;
+        (void) exports;
+        if (!interceptor) {
+            interceptor = InjectorCtx::instance()->GetGumInterceptor();
+        }
         for (auto &[name, newaddr]: overrideapis) {
             auto **api = name2apis.at(name);
-            if (!api) {
+            if (!api || *api == nullptr) {
                 spdlog::error("Cannot find api pointer for {}", name);
                 return false;
             }
-            void *original = nullptr;
-            if (ds::gum::replace(interceptor, *api, newaddr, (void **) &original) == GumReplaceReturn::GUM_REPLACE_OK) {
-                *api = original;
-                spdlog::info("Replaced game lua api {}: {} to {}", name, (void *) original, (void *) newaddr);
+            if ((void *) *api == newaddr) {
+                spdlog::info("skip replace {}: replacer equals target", name);
+                continue;
             }
+            // The field must hold a callable that bypasses this hook (Gum's trampoline): the
+            // engine's own native entry is the very address hooked here, so forwarding through
+            // the raw field would re-enter this replacement.
+            const bool isVmAnchor = (name == "lua_newstate");
+            if (!isVmAnchor) {
+                // Anchor fields are never restored: they must keep bypassing the hook for the
+                // whole process, across VM switches and ResetApis/ReplaceApis cycles.
+                apiFieldOriginals.emplace_back(api, *api);
+            }
+            void *original = nullptr;
+            auto rc = ds::gum::replace_fast(interceptor, *api, newaddr, (void **) &original);
+            if (rc == GumReplaceReturn::GUM_REPLACE_ALREADY_REPLACED && isVmAnchor) {
+                // The anchor is deliberately kept installed across VM switches: tearing it down
+                // would open a window where the engine calls the native entry directly. Refresh
+                // the field from the cached trampoline -- a previous VM may have left its own
+                // wrapper there, which would recurse into this replacement.
+                if (auto *native = ds::core_vm::detail::native_new_state()) {
+                    *api = (void *) native;
+                }
+                spdlog::info("keep VM anchor {} hook (already installed by a previous VM)", name);
+                continue;
+            }
+            if (rc == GumReplaceReturn::GUM_REPLACE_ALREADY_REPLACED) {
+                // A previous VM left its replacement in place: drop it first, otherwise the new
+                // replacement would be layered on an already patched prologue.
+                gum_interceptor_revert(interceptor, *api);
+                rc = ds::gum::replace_fast(interceptor, *api, newaddr, (void **) &original);
+            }
+            if (rc != GumReplaceReturn::GUM_REPLACE_OK) {
+                rc = ds::gum::replace(interceptor, *api, newaddr, (void **) &original);
+            }
+            if (rc != GumReplaceReturn::GUM_REPLACE_OK) {
+                spdlog::error("Replaced game lua api {} failed: {}", name, (int) rc);
+                return false;
+            }
+            replacedTargets.push_back(*api);
+            *api = original;
+            if (isVmAnchor) {
+                anchorTargets.push_back(*(replacedTargets.end() - 1));
+                ds::core_vm::detail::set_native_new_state((ds::core_vm::detail::LuaNewStateFn) original);
+            }
+            spdlog::info("Replaced game lua api {}: site={} field={} to {}{}", name,
+                         (void *) *(replacedTargets.end() - 1), (void *) *api, (void *) newaddr,
+                         isVmAnchor ? "  [VM anchor]" : "");
         }
         // for debug luaG_errormsg
         function_relocation::MemorySignature luaG_errormsg_signature{

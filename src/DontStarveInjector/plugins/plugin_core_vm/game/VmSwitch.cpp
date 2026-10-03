@@ -139,6 +139,19 @@ const char *GetDefaultModuleName(GameLuaType type) {
     }
 }
 
+namespace {
+LuaNewStateFn g_native_new_state = nullptr;
+}
+
+LuaNewStateFn native_new_state() { return g_native_new_state; }
+
+void set_native_new_state(LuaNewStateFn fn) {
+    if (g_native_new_state == nullptr && fn != nullptr) {
+        g_native_new_state = fn;
+        spdlog::info("native lua_newstate trampoline captured at {}", (void *) fn);
+    }
+}
+
 void ApplyVmType(GameLuaType type, const std::optional<std::string> &moduleName, std::string_view reason) {
     GameLuaContextImpl::currentCtx = GetContextForType(type);
     auto *targetCtx = GameLuaContextImpl::currentCtx;
@@ -235,6 +248,8 @@ lua_State *CreateLuaStateForCurrentVm(lua_Alloc f, void *ud, std::string_view en
     if (ctx.luaType == GameLuaType::jit || ctx.luaType == GameLuaType::jit_gen) {
         L = ctx.api._luaL_newstate();
     } else {
+        // The game VM creates its state through the engine's own lua_newstate: the entry stays
+        // redirected to us (VM anchor) while the api field always holds the trampoline past it.
         L = ctx.api._lua_newstate(f, ud);
     }
 
