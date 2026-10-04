@@ -12,6 +12,7 @@
 
 namespace ds::config::path {
 
+std::filesystem::path GetKleiSaveDataDir(std::string_view ownid);
 std::filesystem::path GetModConfigDataDir(std::string_view ownid,
                                           std::string_view cluster_name = "client_save");
 std::filesystem::path GetModConfigDataFileName(std::string_view modname);

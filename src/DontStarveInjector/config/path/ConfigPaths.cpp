@@ -102,19 +102,6 @@ std::string_view GetDefaultPersistentStorageRoot() {
 #endif
 }
 
-std::filesystem::path GetKleiSaveDataDir(std::string_view ownid) {
-    const auto klei_root = GetPlatformKleiRootDir();
-    if (klei_root.empty()) {
-        return {};
-    }
-    auto save_dir = klei_root / "DoNotStarveTogether";
-    if (!ownid.empty()) {
-        save_dir /= ownid;
-    }
-    spdlog::info("resolved Klei save data dir for ownid '{}' to {}", ownid, save_dir.string());
-    return save_dir;
-}
-
 std::filesystem::path GetPersistentStorageRootDir(std::string_view persist_root) {
     if (persist_root.empty()) {
         return {};
@@ -152,6 +139,19 @@ void add_path_candidate(std::vector<std::filesystem::path> &candidates,
 }
 
 } // namespace
+
+std::filesystem::path GetKleiSaveDataDir(std::string_view ownid) {
+    const auto klei_root = GetPlatformKleiRootDir();
+    if (klei_root.empty()) {
+        return {};
+    }
+    auto save_dir = klei_root / "DoNotStarveTogether";
+    if (!ownid.empty()) {
+        save_dir /= ownid;
+    }
+    spdlog::info("resolved Klei save data dir for ownid '{}' to {}", ownid, save_dir.string());
+    return save_dir;
+}
 
 std::filesystem::path GetModConfigDataDir(std::string_view ownid, std::string_view cluster_name) {
     auto save_dir = GetKleiSaveDataDir(ownid);

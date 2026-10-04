@@ -33,6 +33,49 @@ ConfigPartial SaveFileSource::read(CascadeContext &ctx) const {
 
     const auto ownid = std::to_string(ctx.steam_account_id);
     auto mod_config_data = path::GetModConfigDataDir(ownid);
+
+    // Fallback: when the account id is unknown (steam hook captured nothing yet) or
+    // the resolved directory simply does not exist, scan sibling user directories
+    // under DoNotStarveTogether for one that already holds a saved configuration for
+    // this mod, preferring the most recently modified file. This keeps per-mod
+    // settings (e.g. AngleBackend) working even when the primary lookup misses.
+    if (ctx.steam_account_id == 0 || !std::filesystem::is_directory(mod_config_data)) {
+        std::filesystem::path best_dir;
+        std::filesystem::file_time_type best_mtime{};
+        const auto dst_root = path::GetKleiSaveDataDir("");
+        std::error_code ec;
+        if (std::filesystem::is_directory(dst_root, ec)) {
+            for (const auto &entry : std::filesystem::directory_iterator(dst_root, ec)) {
+                if (!entry.is_directory()) {
+                    continue;
+                }
+                const auto candidate_dir =
+                    entry.path() / "client_save" / "mod_config_data";
+                if (!std::filesystem::is_directory(candidate_dir)) {
+                    continue;
+                }
+                for (const auto &alias : ctx.aliases) {
+                    const auto candidate =
+                        candidate_dir / path::GetModConfigDataFileName(alias);
+                    auto mtime = std::filesystem::last_write_time(candidate, ec);
+                    if (ec || !std::filesystem::exists(candidate)) {
+                        continue;
+                    }
+                    if (best_dir.empty() || mtime > best_mtime) {
+                        best_dir = candidate_dir;
+                        best_mtime = mtime;
+                    }
+                }
+            }
+        }
+        if (!best_dir.empty()) {
+            spdlog::info(
+                "client mod config data dir '{}' not usable; falling back to scanned dir '{}'",
+                mod_config_data.string(), best_dir.string());
+            mod_config_data = best_dir;
+        }
+    }
+
     auto canonical_save_path =
         mod_config_data / path::GetModConfigDataFileName(identity.canonical_modname);
     spdlog::info("resolved client mod config data dir to {}", mod_config_data.string());
