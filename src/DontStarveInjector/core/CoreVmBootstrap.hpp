@@ -18,6 +18,10 @@ bool EnsureCoreVmModuleLoaded();
 using RunSigReplaceFn = bool (*)(const BootstrapArgs *args);
 RunSigReplaceFn GetRunSignatureAndReplaceFn();
 
+// Capture the client steam account id via plugin_core_vm before the first
+// cascade resolve. Returns 0 when unavailable.
+uint32_t TryCaptureSteamAccountIdEarly();
+
 // Force-load core.vm and run signature/replace.
 // Module missing / export missing → hard fail (showError/exit) unless CI env
 // DS_LUAJIT_FORCE_NO_CORE_VM=1. Soft skip only when VM path is intentionally

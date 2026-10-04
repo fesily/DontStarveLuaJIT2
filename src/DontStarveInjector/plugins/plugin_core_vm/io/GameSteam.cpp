@@ -98,6 +98,18 @@ static void *SteamInternal_FindOrCreateGameServerInterface_hook(uint32_t hSteamU
     return obj;
 }
 
+// Best-effort client-side capture of the steam account id. Returns 0 when the
+// Steam client interface is not available yet (SteamAPI not initialized).
+uint32_t CaptureSteamAccountId() {
+    auto steamuser = SteamUser();
+    if (steamuser) {
+        auto id = steamuser->GetSteamID().GetAccountID();
+        InjectorCtx::instance()->steam_account_id = id;
+        return id;
+    }
+    return 0;
+}
+
 void HookSteamGameServerInterface() {
     auto path = get_module_path("steam_api");
     if (path.empty()) {
@@ -116,8 +128,5 @@ void HookSteamGameServerInterface() {
         hook_plt_ita(api_name, (void *) SteamInternal_FindOrCreateGameServerInterface_hook);
     }
     // get user account id
-    auto steamuser = SteamUser();
-    if (steamuser) {
-        InjectorCtx::instance()->steam_account_id = steamuser->GetSteamID().GetAccountID();
-    }
+    CaptureSteamAccountId();
 }

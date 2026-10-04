@@ -315,3 +315,11 @@ DS_PLUGIN_MODULE_EXPORT bool ds_core_vm_run_signature_and_replace(const ds::core
 
     return run_signature_and_replace(*args);
 }
+
+// Exported so the injector can capture the client steam account id before the
+// first config cascade resolve, letting SaveFileSource hit the real Klei user
+// directory directly. Returns the account id, or 0 when unavailable.
+extern uint32_t CaptureSteamAccountId(); // io/GameSteam.cpp
+DS_PLUGIN_MODULE_EXPORT uint32_t ds_core_vm_try_capture_steam_account_id() {
+    return CaptureSteamAccountId();
+}

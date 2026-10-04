@@ -163,6 +163,29 @@ RunSigReplaceFn GetRunSignatureAndReplaceFn() {
     std::exit(1);
 }
 
+// Best-effort capture of the client steam account id before the first cascade
+// resolve. Loads plugin_core_vm if needed and calls its
+// ds_core_vm_try_capture_steam_account_id export. Returns the captured id, or 0
+// when the module/export/Steam interface is unavailable.
+uint32_t TryCaptureSteamAccountIdEarly() {
+    if (!EnsureCoreVmModuleLoaded()) {
+        return 0;
+    }
+    void *h = core_vm_module_handle();
+    if (!h) {
+        h = ensure_handle_locked();
+    }
+    if (!h) {
+        return 0;
+    }
+    constexpr const char *kCaptureExportName = "ds_core_vm_try_capture_steam_account_id";
+    auto *fn = reinterpret_cast<uint32_t (*)()>(lookup_symbol(h, kCaptureExportName));
+    if (!fn) {
+        return 0;
+    }
+    return fn();
+}
+
 bool ForceRunSignatureAndReplace(const BootstrapArgs &args) {
     // Prefer calling after refresh_cascade_after_plugins so VM schema keys exist.
     // Intentional soft-skip only: server VM disable flags.

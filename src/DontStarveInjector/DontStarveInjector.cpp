@@ -247,6 +247,13 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
             }
         }
 
+        // Capture the steam account id before the first cascade resolve so
+        // SaveFileSource can hit the real Klei user directory directly instead of
+        // scanning sibling directories. Failure is non-fatal; the fallback scan
+        // in SaveFileSource still covers it.
+        const auto early_id = ds::core_vm::TryCaptureSteamAccountIdEarly();
+        spdlog::info("early steam account capture: {}", early_id);
+
         // Merge late keys (VM from core.vm, business from plugins) and re-resolve.
         ds::config::refresh_cascade_after_plugins(g_plugin_host.option_schema());
 
