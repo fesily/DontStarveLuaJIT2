@@ -523,6 +523,17 @@ foreach(_ds_vm_parity_case metamethod_name tailcall_lines)
         LABELS luajit_parity)
 endforeach()
 
+# Minimal repro for the one difference that is intentionally NOT aligned: a tail
+# call to a C function (DST's RunInEnvironment does `return xpcall(...)`). The
+# script prints the report and pins today's shape (elided caller frame) with the
+# engine's expected lines quoted in its header; see mac-lua51-parity-audit 5.2.
+add_test(NAME luajit_parity_xpcall_tailcall
+    COMMAND ${LUAJIT_HOST_EXECUTABLE_TARGET}
+        ${CMAKE_CURRENT_SOURCE_DIR}/lua_vm_parity/xpcall_tailcall.lua)
+set_tests_properties(luajit_parity_xpcall_tailcall PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    LABELS luajit_parity)
+
 
 # --- LuaJIT variant registry characterization test ---
 # Asserts that the generated variant contract file describes the registered

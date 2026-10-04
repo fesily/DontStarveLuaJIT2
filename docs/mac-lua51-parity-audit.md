@@ -196,6 +196,7 @@
 
 **剩余差异（LuaJIT 固有，不改）**：`return xpcall(fn, debug.traceback)`（**C 被调者**尾调用，util.lua:788）——引擎：`=[C] in function 'xpcall'` + `scripts/util.lua(788,1) in function 'RunInEnvironment'`（5.1 对 C 被调者做普通调用、按 `OP_TAILCALL` 取名）；LuaJIT：`=[C] ?` + `        =(tail call) ?`（帧被消除、C 帧无从取名）。行数相同、内容不同；对齐需改 `BC_CALLT` 对 C 被调者的语义（解释器 + JIT recorder + 帧布局），风险远大于收益。
 注：`jit.disabletailcall(true)`（`LUA_COMPAT_DYNAMIC_DISABLE_TAILCALL`）会让 parser 不再发 BC_CALLT，可让 C 情形对齐，但会同时让 **Lua** 情形失配（引擎确实消除 Lua 尾调用帧），故不是可行解。
+最小复现：`tests/lua_vm_parity/xpcall_tailcall.lua`（ctest `luajit_parity_xpcall_tailcall`）——4 行 `local function boom() ... end; local function wrapper() return xpcall(boom, debug.traceback) end`；脚本头部逐字记录两边输出（引擎：`=[C] in function 'xpcall'` + `<chunk>(5,1) in function 'wrapper'`；本 VM：`=[C] ?` + `        =(tail call) ?`），并对「当前形态」做特征化断言——一旦哪天对齐成功，该用例会以“caller frame is no longer elided”失败并提示更新本文档。
 
 **回归测试**（`ctest -C <cfg> -R luajit_parity`，无需游戏，直接用构建出的 `luajit.exe`）：
 
@@ -203,10 +204,12 @@
 |---|---|---|
 | `luajit_parity_metamethod_name` | `tests/lua_vm_parity/metamethod_name.lua` | metamethod 帧 `debug.getinfo().namewhat == ""`、traceback 该帧无 ` in function '...'` 后缀；同时正向校验普通调用帧仍带名字（防过度抑制） |
 | `luajit_parity_tailcall_lines` | `tests/lua_vm_parity/tailcall_lines.lua` | 每个被消除尾调用恰好一行 `        =(tail call) ?`、无 `(...tail calls...)`、保留 `LUA ERROR stack traceback:` 头、无 ` in function <src:line>` 回退、顺序为「最内层真实帧 → 依次消除帧」；**深层链（20 层）**：只允许一个 `\t...`、伪帧数落在「首 12 + 尾 10」结构内、同一报告内不得重复打印真实帧（守住压缩走法） |
+| `luajit_parity_xpcall_tailcall` | `tests/lua_vm_parity/xpcall_tailcall.lua` | 特征化用例（**非** parity）：`return xpcall(...)`（对 C 函数尾调用）时本 VM 消除 caller 帧 —— 断言 `=[C] ?` 后紧跟 `        =(tail call) ?`、且不出现 `in function 'wrapper'`；头部记录引擎侧对照输出 |
 
-变异校验（把 `LJ_DS_TRACEBACK_PATCH` 临时置 0 重编）：两用例分别以
-`metamethod frame namewhat must be empty (engine parity), got: metamethod` 与
-`expected 2 '        =(tail call) ?' lines, got 0`（伴随 `stack traceback:` + `(...tail calls...)`）失败 ✓；恢复后两者恢复 green。
+变异校验（把 `LJ_DS_TRACEBACK_PATCH` 临时置 0 重编）：三用例分别以
+`metamethod frame namewhat must be empty (engine parity), got: metamethod`、
+`expected 2 '        =(tail call) ?' lines, got 0`（伴随 `stack traceback:` + `(...tail calls...)`）与
+`engine traceback header missing:`（头部回退成 `stack traceback:`）失败 ✓；恢复后三者恢复 green。
 
 ## 6. 附：171 个"源码有 / 二进制无符号"分类
 
