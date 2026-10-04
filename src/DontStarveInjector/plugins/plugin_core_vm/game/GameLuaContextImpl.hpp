@@ -462,6 +462,38 @@ struct GameLuaContextImpl : GameLuaContext {
             spdlog::warn("register_debug_getsize signature not found; getsize may still register");
         }
 #endif
+
+        // Publish the engine's execution-error storage into the swapped-in VM: the engine's
+        // own error display reads its static message block / flag, so the VM's
+        // lua_setexecutionerror / getexecutionerror / clearexecutionerror must write through
+        // those same slots. Cross-platform note: those two slots are 64-bit engine globals,
+        // resolved from the pattern in GameSignature.cpp (docs/engine-execerror-slots.md).
+        // A missing window or a VM without the exports keeps the VM's private storage, i.e.
+        // the write-through stays disabled (hooks NULL).
+        luaSetExecutionErrorSignature.only_one = false;
+        luaSetExecutionErrorSignature.targets.clear();
+        luaSetExecutionErrorSignature.scan(mainPath.c_str());
+        if (luaSetExecutionErrorSignature.targets.size() == 1) {
+            const auto storage = ds::core_vm::detail::decode_execution_error_storage(
+                    luaSetExecutionErrorSignature.targets.front());
+            auto *const buffer = reinterpret_cast<char **>(
+                    find_export_by_name(LuaModule, "extern_error_message_buffer"));
+            auto *const flag = reinterpret_cast<const char ***>(
+                    find_export_by_name(LuaModule, "extern_had_execution_error"));
+            if (storage && buffer != nullptr && flag != nullptr) {
+                *buffer = reinterpret_cast<char *>(storage.buffer);
+                *flag = reinterpret_cast<const char **>(storage.flag);
+                spdlog::info("execution-error storage published to VM: flag={:#x} buffer={:#x}",
+                             storage.flag, storage.buffer);
+            } else {
+                spdlog::warn(
+                        "execution-error storage not published (storage={} buffer-export={} flag-export={})",
+                        static_cast<bool>(storage), buffer != nullptr, flag != nullptr);
+            }
+        } else {
+            spdlog::warn("execution-error storage: {} pattern hit(s) in {}; nothing written",
+                         luaSetExecutionErrorSignature.targets.size(), mainPath);
+        }
     }
 
     virtual ~GameLuaContextImpl() = default;
