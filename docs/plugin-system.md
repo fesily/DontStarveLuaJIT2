@@ -444,6 +444,7 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 | **L-D0** Dynamic loader | empty dir, noise file, bad library isolation | `ctest -R plugin_dynamic_loader --output-on-failure` |
 | **L-F** trunk surface | no feature entrypoints in Inject / LoadGameModConfig / modmain | `ctest -R plugin_trunk_surface --output-on-failure` (`tests/plugin/check_trunk_surface.py`) |
 | **L-G** dedicated sim pause | injector + plugins load → world ready → stable pause | `ctest -R plugin_dedicated_sim_pause` — skips without `DST_GAME_DIR`; require game for DoD (`tests/plugin_server/`) |
+| **L-H** game test harness | inject mod into `mods/<folder>` → force-enable from env → match stdout/log files → always clean the folder; fixture: `modmain` indexes a nil object (`local t = nil; GLOBAL.print(t.test)`) → `MOD ERROR` + `attempt to index local 't' (a nil value)` → engine fails startup (`Error loading main.lua` / `Error during game initialization!`) and the process exits fail-fast (0xC0000409) | `ctest -R harness_unit` (stdlib-only helpers, no game) / `ctest -R game_mod_throw_abort` — SKIP without a real CMake `GAME_DIR`, FAIL (exit 1) with `DS_REQUIRE_GAME=1` (`tests/harness/`, `tests/game_mods/`) |
 
 Unit binaries for Host graph/options **do not** link real `RegisterBuiltinPlugins` (it pulls Frida / game hooks). Use manifest-compatible stand-ins in tests.
 

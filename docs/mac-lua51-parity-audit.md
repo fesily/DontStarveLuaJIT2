@@ -163,6 +163,51 @@
 - 32 位字段偏移为解析推导（前置各字段偏移此前已在 32 位二进制上逐一对齐），如需实测请走项目自带 32 位构建（本机无 32 位工具链）。
 - 顺带观察（非本次引入；树与二进制同构）：`luaL_loadfile` 的两处 `errfile(L,"OLDFILEACCESSMETHOD",...)` 会把随后 `lua_load` 的 chunk 名留成该错误串（实测错误前缀即 `cannot OLDFILEACCESSMETHOD …`），是否需与官方行为进一步核对可另开一条。
 
+### 5.2 LuaJIT 侧 traceback/命名 parity 修补（2026-10-04）
+
+引擎嵌入的 Lua 5.1 与本项目 LuaJIT 变体（`lua51DS.dll`，`jit`/`jit_gen`）在**同一份 mod 报错**上输出的 traceback 曾不一致，逐行 diff 定位到四处，均在 `luajit/src/`：
+
+1. **metamethod 帧名（已修）**：5.1 `getfuncname`（ldebug.c:544-555）只在调用方指令是 `OP_CALL/OP_TAILCALL/OP_TFORLOOP` 时取名，metamethod（VM 直接调用的 `__index`/`__newindex`…）帧得到 `namewhat == ""`，`db_errorfb` 于是不打印后缀；LuaJIT `lj_debug_funcname`（lj_debug.c:365-369）对这些帧返回 `"metamethod"` + 事件名，于是打出 `in function '__index'`。
+   实测：`scripts/strict.lua(23,1) in function '__index'`（jit）vs `scripts/strict.lua(23,1)`（game VM）。
+   修法：新增宏 `LJ_DS_DEBUG_FUNCNAME_PATCH`（`lj_arch.h`，默认 `= LJ_DS_TRACEBACK_PATCH`），置位时跳过该分支（`#else` 保留原行为）。
+2. **`=(tail call)` 虚拟帧后缀（已修）**：引擎对 `what == 't'` 也打印 `" ?"`（mac `_db_errorfb` @0x0032bf86 反编译：`if ((what=='C')||(what=='t')) pushlstring(" ?")`，5.1 `info_tailcall` 设 `what="tail"`）；LuaJIT 的 patched 分支只匹配 `'C'`，`=(tail call)` 帧无后缀。
+   修法：`LJ_DS_TRACEBACK_PATCH` 分支改为 `'C' || 't'` → `" ?"`（tail 帧没有 C 函数指针，不能走 `at %p`）。
+3. **Lua 尾调用（帧消除）行文本（已修）**：5.1 对 **Lua** 被调者做真尾调用（`OP_TAILCALL` → `luaD_precall` 返回 PCRLUA，帧被替换、`ci->tailcalls++`），`db_errorfb` 对每个被消除帧打一行 `        =(tail call) ?`（`info_tailcall`：`what="tail"`、`source="=(tail call)"`、`namewhat=""`）。上游 LuaJIT 的 patched 打印器把同样多的虚拟层（`lj_debug_getinfo` 的 `i_ci == 0`）折叠成 `\t(...tail calls...)` 标记行。
+   修法：`lj_debug.c` 的 `LUA_COMPAT_TAILCALL_COUNT` 短路分支加 `&& !LJ_DS_TRACEBACK_PATCH` → 虚拟层落到常规渲染，输出 `        =(tail call) ?`（依赖第 2 条的 `'t'` → `" ?"`）。
+4. **深层尾调用的压缩走法（已修）**：超过 `TRACEBACK_LEVELS1(12)` 后进入压缩分支。上游 LuaJIT 用 `lua_getstack(L1, -10, &ar); level = ar.i_ci - TRACEBACK_LEVELS2;`——DS 的尾计数层给每个被消除帧造一个虚拟层，而**所有虚拟层的 `i_ci` 都是 0**，`level` 因此被算成负值并走回虚拟层：帧被重复打印、夹出幽灵 `=[C] ?`。5.1 `db_errorfb` 用数值走法（`while (lua_getstack(L1, level+LEVELS2, &ar)) level++;`），对虚拟层天然正确。
+   修法：`lj_debug.c` 压缩分支在 `LJ_DS_TRACEBACK_PATCH` 下改用 5.1 的 `while` 走法（`#else` 保留上游实现）。
+
+**深层实测**（mod 内 `loadstring` 生成 20 层纯 Lua 尾调用链，链尾报错；同一栈对比）：
+
+| | 帧数 | 伪帧行 |
+|---|---|---|
+| 修前 jit | 59 | 41（含重复 `chain(1,1)`、幽灵 `=[C] ?`） |
+| 修后 jit | 23 | 10 |
+| game VM（引擎） | 23 | 10 |
+
+修后 jit 与 game **逐行完全一致**（`diff` 为空）：首部 `chain(1,1)` + 10×`        =(tail call) ?` → 单个 `\t...` → 末尾 10 层真实帧；N=40 时同样稳定在「首 12 + 尾 10」结构。该缺陷是**既有**的（第 1–3 条修改只改行文本，压缩分支与其上游相同）；本次一并修掉。
+
+**复核（Ghidra，mac `dontstarve_steam` x86:LE:32）**：`_db_errorfb` 反编译确认 `local_74 = *namewhat`、`local_78 = name`、`local_7c/6c/68 = what/source/currentline`，与 §4.3 记录一致；`lj_debug.c` 的落点与 5.1 `getfuncname`/`info_tailcall` 语义差异一一对应。
+
+**实测验证**（`tests/game_mods/test_throw_abort`，win 专用服；重建 `luajit-5.1` → `Mod/deps/lua51DS.dll` + 游戏 `bin64/lua51DS.dll`）：
+- 含 `SetGlobalErrorWidget` 的 strict traceback：**jit 与 game VM 逐行完全一致**（此前仅差 `in function '__index'` 一行）。
+- 同一 mod 内 `top()→mid()→deep()` 两处 Lua 尾调用 + 深处报错：`(...tail calls...)` ×2 → `        =(tail call) ?` ×2，与 game VM **逐行一致**。
+- 两 VM 均 `PASS`；mod 报错链、`Error loading main.lua` / `Error during game initialization!` 全同（退出码可落在 `0xC0000409` / `0xC0000005` / `1`，属收尾竞态，测试只报告不断言）。
+
+**剩余差异（LuaJIT 固有，不改）**：`return xpcall(fn, debug.traceback)`（**C 被调者**尾调用，util.lua:788）——引擎：`=[C] in function 'xpcall'` + `scripts/util.lua(788,1) in function 'RunInEnvironment'`（5.1 对 C 被调者做普通调用、按 `OP_TAILCALL` 取名）；LuaJIT：`=[C] ?` + `        =(tail call) ?`（帧被消除、C 帧无从取名）。行数相同、内容不同；对齐需改 `BC_CALLT` 对 C 被调者的语义（解释器 + JIT recorder + 帧布局），风险远大于收益。
+注：`jit.disabletailcall(true)`（`LUA_COMPAT_DYNAMIC_DISABLE_TAILCALL`）会让 parser 不再发 BC_CALLT，可让 C 情形对齐，但会同时让 **Lua** 情形失配（引擎确实消除 Lua 尾调用帧），故不是可行解。
+
+**回归测试**（`ctest -C <cfg> -R luajit_parity`，无需游戏，直接用构建出的 `luajit.exe`）：
+
+| ctest | 文件 | 守住的性质 |
+|---|---|---|
+| `luajit_parity_metamethod_name` | `tests/lua_vm_parity/metamethod_name.lua` | metamethod 帧 `debug.getinfo().namewhat == ""`、traceback 该帧无 ` in function '...'` 后缀；同时正向校验普通调用帧仍带名字（防过度抑制） |
+| `luajit_parity_tailcall_lines` | `tests/lua_vm_parity/tailcall_lines.lua` | 每个被消除尾调用恰好一行 `        =(tail call) ?`、无 `(...tail calls...)`、保留 `LUA ERROR stack traceback:` 头、无 ` in function <src:line>` 回退、顺序为「最内层真实帧 → 依次消除帧」；**深层链（20 层）**：只允许一个 `\t...`、伪帧数落在「首 12 + 尾 10」结构内、同一报告内不得重复打印真实帧（守住压缩走法） |
+
+变异校验（把 `LJ_DS_TRACEBACK_PATCH` 临时置 0 重编）：两用例分别以
+`metamethod frame namewhat must be empty (engine parity), got: metamethod` 与
+`expected 2 '        =(tail call) ?' lines, got 0`（伴随 `stack traceback:` + `(...tail calls...)`）失败 ✓；恢复后两者恢复 green。
+
 ## 6. 附：171 个"源码有 / 二进制无符号"分类
 
 - **lparser.c (37)**：全部内联（statement/expr/exprstat/if/while/repeat/for 族→`_chunk`；enterblock/enterlevel→block/forbody/…；

@@ -1,0 +1,9 @@
+name = "ds_harness_throw_abort"
+description = "harness throw-abort fixture (test only)"
+author = "DontStarveLuaJIT2"
+version = "1.0.0"
+api_version = 10
+dst_compatible = true
+client_only_mod = false
+server_only_mod = true
+all_clients_require_mod = false

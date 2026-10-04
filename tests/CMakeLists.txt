@@ -33,6 +33,15 @@ add_test(
 set_tests_properties(fork_save_lua PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
+# Root CMakeLists sets GAME_DIR OFF on GITHUB_ACTIONS (after REAL_PATH), so the
+# test env value is resolved here once and forwarded to game ctests as both
+# GAME_DIR and DST_GAME_DIR ("" means unset for the harness).
+if(GAME_DIR)
+    set(DS_TEST_GAME_DIR "${GAME_DIR}")
+else()
+    set(DS_TEST_GAME_DIR "")
+endif()
+
 add_executable(test_buffer_name_pool
     ${CMAKE_CURRENT_SOURCE_DIR}/test_buffer_name_pool.cpp)
 target_include_directories(test_buffer_name_pool PRIVATE
@@ -442,7 +451,8 @@ set_tests_properties(plugin_package_identity PROPERTIES
 add_test(NAME plugin_dedicated_sim_pause
     COMMAND ${CMAKE_COMMAND} -E env
         REPO_ROOT=${CMAKE_SOURCE_DIR}
-        DST_GAME_DIR=$ENV{DST_GAME_DIR}
+        DST_GAME_DIR=${DS_TEST_GAME_DIR}
+        GAME_DIR=${DS_TEST_GAME_DIR}
         ${PYTHON_EXECUTABLE_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/plugin_server/run_dedicated_sim_pause.py)
 set_tests_properties(plugin_dedicated_sim_pause PROPERTIES
@@ -452,7 +462,8 @@ set_tests_properties(plugin_dedicated_sim_pause PROPERTIES
 add_test(NAME plugin_client_inject_smoke
     COMMAND ${CMAKE_COMMAND} -E env
         REPO_ROOT=${CMAKE_SOURCE_DIR}
-        DST_GAME_DIR=$ENV{DST_GAME_DIR}
+        DST_GAME_DIR=${DS_TEST_GAME_DIR}
+        GAME_DIR=${DS_TEST_GAME_DIR}
         ${PYTHON_EXECUTABLE_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/plugin_client/run_client_inject_smoke.py)
 set_tests_properties(plugin_client_inject_smoke PROPERTIES
@@ -462,7 +473,8 @@ set_tests_properties(plugin_client_inject_smoke PROPERTIES
 add_test(NAME plugin_client_host_smoke
     COMMAND ${CMAKE_COMMAND} -E env
         REPO_ROOT=${CMAKE_SOURCE_DIR}
-        DST_GAME_DIR=$ENV{DST_GAME_DIR}
+        DST_GAME_DIR=${DS_TEST_GAME_DIR}
+        GAME_DIR=${DS_TEST_GAME_DIR}
         LC_MODE=host
         ${PYTHON_EXECUTABLE_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/plugin_client/run_client_inject_smoke.py
@@ -470,6 +482,46 @@ add_test(NAME plugin_client_host_smoke
 set_tests_properties(plugin_client_host_smoke PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 900)
+
+# --- Game test harness ---
+# harness_unit: helper unit tests, no game needed.
+add_test(NAME harness_unit
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/harness/test_harness_unit.py)
+set_tests_properties(harness_unit PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    LABELS harness)
+
+# game_mod_throw_abort: dedicated + injected throwing mod; SKIP (exit 0) when
+# GAME_DIR is not a real install, FAIL when DS_REQUIRE_GAME=1.
+add_test(NAME game_mod_throw_abort
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+        GAME_DIR=${DS_TEST_GAME_DIR}
+        DST_GAME_DIR=${DS_TEST_GAME_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/game_mods/test_throw_abort.py)
+set_tests_properties(game_mod_throw_abort PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 180
+    LABELS "game;harness")
+
+# --- LuaJIT traceback engine-parity ---
+# The shipped DS VM must print what the engine-embedded Lua 5.1 db_errorfb
+# prints: unnamed metamethod frames (LJ_DS_DEBUG_FUNCNAME_PATCH) and one
+# "        =(tail call) ?" line per elided tail call instead of the upstream
+# "(...tail calls...)" marker (LJ_DS_TRACEBACK_PATCH). Both cases fail when the
+# corresponding switch in luajit/src/lj_arch.h is turned off.
+foreach(_ds_vm_parity_case metamethod_name tailcall_lines)
+    add_test(NAME luajit_parity_${_ds_vm_parity_case}
+        COMMAND ${LUAJIT_HOST_EXECUTABLE_TARGET}
+            ${CMAKE_CURRENT_SOURCE_DIR}/lua_vm_parity/${_ds_vm_parity_case}.lua)
+    set_tests_properties(luajit_parity_${_ds_vm_parity_case} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        LABELS luajit_parity)
+endforeach()
 
 
 # --- LuaJIT variant registry characterization test ---
