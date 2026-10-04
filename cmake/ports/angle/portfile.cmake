@@ -63,6 +63,7 @@ vcpkg_from_github(
         001-fix-builder-error.patch
       004-log-vulkan-submit-context.patch
       005-fix-uniform-sort-comparator.patch
+      006-ignore-precision-qualifiers-on-vulkan.patch
 )
 
 # Generate angle_commit.h

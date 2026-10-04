@@ -1,0 +1,25 @@
+diff --git a/src/libANGLE/renderer/vulkan/ShaderVk.cpp b/src/libANGLE/renderer/vulkan/ShaderVk.cpp
+index 48ea8cf..dec69de 100644
+--- a/src/libANGLE/renderer/vulkan/ShaderVk.cpp
++++ b/src/libANGLE/renderer/vulkan/ShaderVk.cpp
+@@ -70,10 +70,16 @@ std::shared_ptr<ShaderTranslateTask> ShaderVk::compile(const gl::Context *contex
+         options->addAdvancedBlendEquationsEmulation = true;
+     }
+ 
+-    if (!contextVk->getFeatures().enablePrecisionQualifiers.enabled)
+-    {
+-        options->ignorePrecisionQualifiers = true;
+-    }
++    // DST local build: ANGLE-Vulkan translates GLSL mediump/lowp into SPIR-V
++    // RelaxedPrecision decorations, and desktop Vulkan drivers (observed on
++    // NVIDIA 610.88) honor them with real fp16 varying interpolation. DST engine
++    // shaders tile ground UVs far beyond [0,1] at default mediump precision, so
++    // fp16 interpolation quantizes them into staircase-shaped blocks on the
++    // Vulkan backend only (the D3D9/11 backends promote to fp32 and are
++    // unaffected). Unconditionally compile every precision qualifier as highp:
++    // this is lossless on desktop GPUs and matches the effective behavior of
++    // the D3D backends. Verified in-game (ground tiles render clean).
++    options->ignorePrecisionQualifiers = true;
+ 
+     if (contextVk->getFeatures().forceFragmentShaderPrecisionHighpToMediump.enabled)
+     {
