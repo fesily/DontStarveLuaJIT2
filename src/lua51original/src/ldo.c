@@ -499,17 +499,27 @@ LUA_API int lua_yield (lua_State *L, int nresults) {
 */
 #define LUA_EXECERROR_MESSAGE_SIZE	0x1000
 
-/* Host-provided engine addresses (see the comment above). */
+/* Host-provided engine addresses (see the comment above).  Both are required:
+** the engine's own behaviour is flag + buffer (it strncpy()s the message into
+** the block and stores the block pointer into the flag, and luaD_pcall /
+** lua_getexecutionerror read that flag), so a swapped-in VM must publish both.
+** While either pointer is NULL the storage is not wired yet and the entry points
+** degrade to no-ops. */
 LUA_API char       *extern_error_message_buffer = NULL;
 LUA_API const char **extern_had_execution_error = NULL;
+
+/* Armed predicate: the flag slot is wired and holds the block pointer. */
+static int execerror_armed (void) {
+  return extern_had_execution_error != NULL && *extern_had_execution_error != NULL;
+}
 
 LUA_API void lua_setexecutionerror (const char *msg) {
   if (extern_error_message_buffer == NULL || extern_had_execution_error == NULL)
     return;  /* engine storage not wired up */
-  if (*extern_had_execution_error != NULL)
-    return;  /* keep the first error reported */
   if (msg == NULL)
     return;  /* nothing to record (the client would strncpy from NULL) */
+  if (*extern_had_execution_error != NULL)
+    return;  /* keep the first error reported */
   strncpy(extern_error_message_buffer, msg, LUA_EXECERROR_MESSAGE_SIZE);
   *extern_had_execution_error = extern_error_message_buffer;
 }
@@ -552,7 +562,7 @@ int luaD_pcall (lua_State *L, Pfunc func, void *u,
   ** LUA_YIELD (the client stores the literal 1) until the host clears the error
   ** (macOS client 0x0032e440 in luaD_pcall; Android LuaJIT lua_pcall 0x00c3e510).
   ** The flag lives in the engine's storage, hence the double indirection. */
-  if (extern_had_execution_error != NULL && *extern_had_execution_error != NULL)
+  if (execerror_armed())
     status = LUA_YIELD;
 #endif
   return status;
