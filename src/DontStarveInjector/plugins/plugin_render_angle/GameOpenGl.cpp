@@ -31,9 +31,9 @@
 
 namespace {
 
-    using PFNEGLGETPLATFORMDISPLAYEXTPROC = EGLDisplay(EGLAPIENTRYP)(EGLenum platform,
-                                                                     void *native_display,
-                                                                     const EGLint *attrib_list);
+    using PFNEGLGETPLATFORMDISPLAYPROC = EGLDisplay(EGLAPIENTRYP)(EGLenum platform,
+                                                                   void *native_display,
+                                                                   const EGLAttrib *attrib_list);
     using PFNEGLGETDISPLAYPROC = EGLDisplay(EGLAPIENTRYP)(EGLNativeDisplayType display_id);
     using PFNEGLINITIALIZEPROC = EGLBoolean(EGLAPIENTRYP)(EGLDisplay dpy, EGLint *major, EGLint *minor);
     using PFNEGLGETERRORPROC = EGLint(EGLAPIENTRYP)(void);
@@ -55,6 +55,11 @@ namespace {
     };
 
     constexpr const char *kSteamOverlayLayerName = "VK_LAYER_VALVE_steam_overlay";
+    // enablePrecisionQualifiers: ANGLE's Vulkan backend otherwise emits RelaxedPrecision for
+    // mediump/lowp (see ShaderVk.cpp), which lets drivers run DST's shaders at reduced precision.
+    constexpr const char *kPrecisionQualifiersFeatureName = "enablePrecisionQualifiers";
+    // Null-terminated payload for EGL_FEATURE_OVERRIDES_DISABLED_ANGLE.
+    constexpr const char *kDisabledFeatureOverrides[] = {kPrecisionQualifiersFeatureName, nullptr};
 
     HMODULE g_angle_glesv2 = nullptr;
     HMODULE g_angle_egl = nullptr;
@@ -440,22 +445,31 @@ namespace {
             return real_get_display(native_display);
         }
 
-        auto real_get_proc = reinterpret_cast<PFNEGLGETPROCADDRESSPROC>(RealEglExport("eglGetProcAddress"));
-        auto get_platform_display = real_get_proc
-                                            ? reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
-                                                      real_get_proc("eglGetPlatformDisplayEXT"))
-                                            : nullptr;
+        // eglGetPlatformDisplay (EGLAttrib, 64-bit) instead of the EXT variant: the override
+        // list is a pointer, and eglGetPlatformDisplayEXT passes EGLint values.
+        auto get_platform_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYPROC>(
+                RealEglExport("eglGetPlatformDisplay"));
         if (get_platform_display == nullptr) {
+            spdlog::warn("eglGetPlatformDisplay missing; ANGLE feature overrides not applied");
             return real_get_display(native_display);
         }
 
-        const EGLint platform_attribs[] = {
+        const EGLAttrib platform_attribs[] = {
                 EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE,
+                EGL_FEATURE_OVERRIDES_DISABLED_ANGLE,
+                reinterpret_cast<EGLAttrib>(kDisabledFeatureOverrides),
                 EGL_NONE};
         auto display = get_platform_display(EGL_PLATFORM_ANGLE_ANGLE,
                                             reinterpret_cast<void *>(native_display),
                                             platform_attribs);
-        return display != EGL_NO_DISPLAY ? display : real_get_display(native_display);
+        if (display == EGL_NO_DISPLAY) {
+            spdlog::warn("eglGetPlatformDisplay(vulkan) failed; falling back without feature overrides");
+            return real_get_display(native_display);
+        }
+
+        spdlog::info("ANGLE vulkan display requested with feature overrides: {} disabled",
+                     kPrecisionQualifiersFeatureName);
+        return display;
     }
 
     static EGLBoolean EGLAPIENTRY MyEglInitialize(EGLDisplay dpy, EGLint *major, EGLint *minor) {
