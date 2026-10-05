@@ -202,6 +202,8 @@
 - 不是这些原因：栈重分配（所有 `resizestack` 实测 `delta==0`，栈从未移动）、`jit_base`（崩点时 NULL，且 `lj_gc_step_jit` 每次取到的都在范围内）、JIT（关掉同样崩）。
 - 只在 arena 变体「崩」而非「歪」：同一处野指针读在默认变体落进已映射内存，退化成无害的「无名帧」；arena 的地址布局让它落进未映射页 → AV。
 - 尚未定位：第一个把 `L->base` 写成野值的写入点。下一步：对 `&L->base` 下条件硬件断点（cdb `ba w 8`，字段偏移 base=0x18 / stack=0x30 / stacksize=0x58），命中即抓写入者；之后按该写入者修复。
+- **2026-10-05 更新：已定位并修复。** 根因不是帧路径本身，而是 arena 变体 x64 的 `barrierback` 宏：它把 `RC/TMPR/ITYPE/RA/BASE` 用 `push` 保存在**被调 C 函数的 Win64 shadow space** 内，被 `lj_gc_barrierback_arena` 序言（`mov [rsp+10h],rbx`）覆盖 ⇒ 弹栈后 `RA` 变成 `rbx`(DISPATCH)，随后 `mov RB,[BASE+RA*8]` 读野地址（cdb：`lj_BC_TSETV+0x67`，fault = `rdx+rcx*8`）；ASan 构建里被调方把入参也 spill 进该区，`CARG1 = G(L)` 覆盖保存的 `BASE`，于是表现为“`L->base` = `G(L)`”，与上面观察到的“`L->base` 在栈外”一致（下游现象）。修复：改为 `sub rsp, 0x50` 预留 shadow space、用 `mov [rsp+0x20..0x40]` 保存/恢复（同时修正 call 时 16 字节对齐），落在 `luajit/src/vm_x64.dasc`；详见 `luajit/doc/arenagc-wild-base-crash.md` 追记 14。
+- 验证：cdb（release 构建）跑 `test_gc_invariants`、`white1_free_assert`、`udata_finalize_assert`、`c_tailcall_values`、`xpcall_tailcall`、`metamethod_name`、`tailcall_lines` 全部 0 次 AV（修复前三 gc 测试必崩）；ASan 三测试 0 报告、exit=0。
 
 **容量边界（2026-10-05 复核，可接受）**：`PROTO_FIXUP_RETURN`（函数在首个闭包之前就有大量 `return`）会把每个返回点复制到函数尾；本改动给每个 C/FF 尾调用多带一条 `BC_RETM`，因此同一 16 位前向跳转预算（`LJ_ERR_XFIXUP`）更早用尽：实测同一生成函数——开关开接受 4,500 个 `return math.abs(-i)` 站点（40,508 条字节码）、5,000 个即报 `function too long for return fixup`；开关关接受 5,000（35,007 条）、5,500 报错。两者都是**编译期明确报错**（非内存破坏），只影响「首个闭包前有数千个 return 点」的极端生成代码，按现状接受。
 
