@@ -1,4 +1,4 @@
--- Characterization repro: tail call to a C function (xpcall).
+-- Engine-parity repro: tail call to a C function (xpcall).
 --
 -- DST's mod loader does exactly this in scripts/util.lua:786-789:
 --     function RunInEnvironment(fn, fnenv)
@@ -14,18 +14,18 @@
 --         =[C] in function 'xpcall'
 --         <chunk>(5,1) in function 'wrapper'        -- caller frame, named
 --         <chunk>(6,1) in main chunk
--- LuaJIT reuses the frame for every BC_CALLT (vm_x86.dasc:4991, no PCRC split)
--- and books the lost frame through the DS tail-count layer, so this VM prints:
---         <chunk>(1,1)
---         =[C] ?                                    -- C frame, no caller to name it
---         =(tail call) ?                            -- the elided wrapper frame
---         <chunk>(3,1) in main chunk
---
--- This is a known, intentional difference (aligning it means changing
--- BC_CALLT-with-C-callee semantics: interpreter dispatch, lj_crecord/lj_record
--- and frame_tailcalls bookkeeping) - see docs/mac-lua51-parity-audit.md 5.2.
--- The script prints the whole report and pins the current shape, so any change
--- shows up as a failure instead of drifting silently.
+-- This VM now prints the same (LUA_COMPAT_TAILCALL_CFRAME, luajit/src/lj_arch.h):
+-- BC_CALLT splits on the callee's ffid, a C/FF callee runs as a normal call and
+-- the parser-appended BC_RETM forwards its results, so the frame survives and
+-- the C frame is named from the tail-call site:
+--         <chunk>(30,1)
+--         =[C] in function 'xpcall'
+--         <chunk>(31,1) in function 'wrapper'
+--         <chunk>(33,1) in main chunk
+--         =[C] ?
+-- The script prints the whole report and pins this shape, so a regression that
+-- re-elides the caller frame shows up as a failure instead of drifting
+-- silently.  See docs/mac-lua51-parity-audit.md 5.2.
 
 local function boom() local t = nil return t.x end
 local function wrapper() return xpcall(boom, debug.traceback) end
@@ -40,16 +40,16 @@ print(tb)
 if not tb:find("LUA ERROR stack traceback:", 1, true) then
   error("engine traceback header missing:\n" .. tb, 2)
 end
-local c_at = tb:find("        =[C] ?", 1, true)
+local c_at = tb:find("        =[C] in function 'xpcall'", 1, true)
 if not c_at then
-  error("expected the unnamed C frame (\"        =[C] ?\") in the report:\n" .. tb, 2)
+  error("expected the named xpcall C frame (\"        =[C] in function 'xpcall'\"):\n" .. tb, 2)
 end
-if not tb:find("\n        =(tail call) ?", c_at, true) then
-  error("expected the elided caller frame (\"        =(tail call) ?\") right after the C frame:\n" .. tb, 2)
+local w_at = tb:find("in function 'wrapper'", 1, true)
+if not w_at or w_at < c_at then
+  error("expected the caller frame (\"in function 'wrapper'\") after the xpcall frame:\n" .. tb, 2)
 end
-if tb:find("in function 'wrapper'", 1, true) then
-  error("the caller frame is no longer elided - the C-callee tail call was aligned; "
-        .. "update this script and docs/mac-lua51-parity-audit.md 5.2:\n" .. tb, 2)
+if tb:find("(tail call)", 1, true) then
+  error("a C callee must not report an elided frame:\n" .. tb, 2)
 end
 
-print("ok xpcall_tailcall (characterization: caller frame elided for a C callee, see 5.2)")
+print("ok xpcall_tailcall (C callee keeps the caller frame, see docs/mac-lua51-parity-audit.md 5.2)")

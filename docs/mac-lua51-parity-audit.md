@@ -194,9 +194,15 @@
 - 同一 mod 内 `top()→mid()→deep()` 两处 Lua 尾调用 + 深处报错：`(...tail calls...)` ×2 → `        =(tail call) ?` ×2，与 game VM **逐行一致**。
 - 两 VM 均 `PASS`；mod 报错链、`Error loading main.lua` / `Error during game initialization!` 全同（退出码可落在 `0xC0000409` / `0xC0000005` / `1`，属收尾竞态，测试只报告不断言）。
 
-**剩余差异（LuaJIT 固有，不改）**：`return xpcall(fn, debug.traceback)`（**C 被调者**尾调用，util.lua:788）——引擎：`=[C] in function 'xpcall'` + `scripts/util.lua(788,1) in function 'RunInEnvironment'`（5.1 对 C 被调者做普通调用、按 `OP_TAILCALL` 取名）；LuaJIT：`=[C] ?` + `        =(tail call) ?`（帧被消除、C 帧无从取名）。行数相同、内容不同；对齐需改 `BC_CALLT` 对 C 被调者的语义（解释器 + JIT recorder + 帧布局），风险远大于收益。
-注：`jit.disabletailcall(true)`（`LUA_COMPAT_DYNAMIC_DISABLE_TAILCALL`）会让 parser 不再发 BC_CALLT，可让 C 情形对齐，但会同时让 **Lua** 情形失配（引擎确实消除 Lua 尾调用帧），故不是可行解。
-最小复现：`tests/lua_vm_parity/xpcall_tailcall.lua`（ctest `luajit_parity_xpcall_tailcall`）——4 行 `local function boom() ... end; local function wrapper() return xpcall(boom, debug.traceback) end`；脚本头部逐字记录两边输出（引擎：`=[C] in function 'xpcall'` + `<chunk>(5,1) in function 'wrapper'`；本 VM：`=[C] ?` + `        =(tail call) ?`），并对「当前形态」做特征化断言——一旦哪天对齐成功，该用例会以“caller frame is no longer elided”失败并提示更新本文档。
+**已对齐（`LUA_COMPAT_TAILCALL_CFRAME`，2026-10-05）**：`return xpcall(fn, debug.traceback)`（C 被调者尾调用，util.lua:788）现在与引擎一致——`BC_CALLT` 按被调者 ffid 分流，C/FF 被调者按普通调用执行、parser 追加的 `BC_RETM` 把结果转交上层，故 traceback 为 error 站点 → `=[C] in function 'xpcall'` → `in function 'RunInEnvironment'` → 其余不变；`jit.disabletailcall(true)` 不再需要（它仍可用，但会让 Lua 情形失配）。新路径还从调用帧恢复 `KBASE`：`BC_CALLT` 序言把它改成旧 `BASE`，而 `fff_res` 假设“返回时 KBASE 已按调用帧设定”、`vmeta_call` 又用 `KBASE == BASE` 当“来自 CALLT”的标志——不恢复会让 FFH_TAILCALL→`__call` 的角落按旧语义误解（复帧、caller 帧被消除，且随栈布局变化）。门控 = `LJ_DS && LJ_TARGET_X64 && LJ_FR2`（仅 `vm_x64.dasc`）；x86、x64 非 GC64、arm 等后端保持 stock。
+**字节码格式（`BCDUMP_VERSION`，2026-10-05）**：CALLT 后跟随的 `BC_RETM` 属于字节码本身，改动前的 dump（stock CALLT、其后无指令）会让 C 返回落到原型之外，故按 `lj_bcdump.h` 的私有改动规则把 `BCDUMP_VERSION` 由 2 升到 `0x80`（宏关时仍为 2）——旧 chunk 现在在 load 时以 `cannot load incompatible bytecode` 拒绝，而不是越界执行；预编译产物（含构建期 `luajit -bg` 的 “Luajitted” 脚本）需用新 VM 重新生成（CMake 规则已把 VM 目标列为依赖，会自动重建）。
+**已知（与本改动无关，arenagc 变体既有缺陷）**：用 `luajit-arenagc.exe`/`lua51DS_gengc.dll` 跑 `tests/lua_vm_parity/c_tailcall_values.lua`（其 `check_shape` 的「报错→traceback→`__call`/tostring 元方法」循环即触发）会以退出码 5 静默死亡；把 `LUA_COMPAT_TAILCALL_CFRAME` 置 0 同样复现，说明是 arena GC 变体的既有问题，待独立排查（默认变体不受影响）。
+
+**容量边界（2026-10-05 复核，可接受）**：`PROTO_FIXUP_RETURN`（函数在首个闭包之前就有大量 `return`）会把每个返回点复制到函数尾；本改动给每个 C/FF 尾调用多带一条 `BC_RETM`，因此同一 16 位前向跳转预算（`LJ_ERR_XFIXUP`）更早用尽：实测同一生成函数——开关开接受 4,500 个 `return math.abs(-i)` 站点（40,508 条字节码）、5,000 个即报 `function too long for return fixup`；开关关接受 5,000（35,007 条）、5,500 报错。两者都是**编译期明确报错**（非内存破坏），只影响「首个闭包前有数千个 return 点」的极端生成代码，按现状接受。
+
+**剩余差异（LuaJIT 固有）**：快函数→元方法的 FFH_TAILCALL 路径（`lib_base.c:94/335` → `vm_call_tail`）仍替换快函数帧，`tostring`/`pairs` + `__tostring`/`__pairs` 的报错 traceback 会比引擎少一行 `=[C]`（引擎的 `tostring` 是嵌套普通调用，C 帧保留）；对齐它是独立改动（`vm_call_tail` 需改为"帧上叠加 + continuation 交付"），本次未做。
+**同处既有记账差异（2026-10-05 复核，开关显影）**：该 FFH 路径在 JIT 下还会多打一行 `        =(tail call) ?`——解释器进入元方法时（`vm_call_dispatch`→`ins_call`）会清掉该槽的尾计数，而 trace 里 `rec_tailcall` 的计数 IR 保留，于是同一形状（如 `ct() return tostring(obj)`、`obj.__tostring` 返回 `debug.traceback`）在 jit off 下无此行、jit on 下有；把开关置 0 后普通 CALL 版本仍复现（既有缺陷），仅 CALLT 版本不再复现（差异被显影）。修法并入上一条的 FFH 对齐，本次未做。
+最小复现：`tests/lua_vm_parity/xpcall_tailcall.lua`（ctest `luajit_parity_xpcall_tailcall`）——4 行 `local function boom() ... end; local function wrapper() return xpcall(boom, debug.traceback) end`；脚本头部逐字记录对齐后的输出（`=[C] in function 'xpcall'` + `<chunk>(31,1) in function 'wrapper'`），并对该形态做断言——若 caller 帧又被消除，用例会在“expected the named xpcall C frame”处失败并提示更新本文档。结果转发（0..N 值）、caller/caller's caller 帧存活与 JIT 一致性由 `tests/lua_vm_parity/c_tailcall_values.lua`（ctest `luajit_parity_c_tailcall_values`）覆盖。
 
 **回归测试**（`ctest -C <cfg> -R luajit_parity`，无需游戏，直接用构建出的 `luajit.exe`）：
 
@@ -204,7 +210,8 @@
 |---|---|---|
 | `luajit_parity_metamethod_name` | `tests/lua_vm_parity/metamethod_name.lua` | metamethod 帧 `debug.getinfo().namewhat == ""`、traceback 该帧无 ` in function '...'` 后缀；同时正向校验普通调用帧仍带名字（防过度抑制） |
 | `luajit_parity_tailcall_lines` | `tests/lua_vm_parity/tailcall_lines.lua` | 每个被消除尾调用恰好一行 `        =(tail call) ?`、无 `(...tail calls...)`、保留 `LUA ERROR stack traceback:` 头、无 ` in function <src:line>` 回退、顺序为「最内层真实帧 → 依次消除帧」；**深层链（20 层）**：只允许一个 `\t...`、伪帧数落在「首 12 + 尾 10」结构内、同一报告内不得重复打印真实帧（守住压缩走法） |
-| `luajit_parity_xpcall_tailcall` | `tests/lua_vm_parity/xpcall_tailcall.lua` | 特征化用例（**非** parity）：`return xpcall(...)`（对 C 函数尾调用）时本 VM 消除 caller 帧 —— 断言 `=[C] ?` 后紧跟 `        =(tail call) ?`、且不出现 `in function 'wrapper'`；头部记录引擎侧对照输出 |
+| `luajit_parity_xpcall_tailcall` | `tests/lua_vm_parity/xpcall_tailcall.lua` | `return xpcall(...)`（对 C 函数尾调用）保留 caller 帧、C 帧按 `OP_TAILCALL` 站点取名——断言 `=[C] in function 'xpcall'` 先于 `in function 'wrapper'`、且无 `(tail call)`；头部记录引擎侧对照输出 |
+| `luajit_parity_c_tailcall_values` | `tests/lua_vm_parity/c_tailcall_values.lua` | C 被调者尾调用的结果转发（0/1/2/3/**300** 值、`pcall` 值对、vararg 调用者 `BC_CALLMT`、Lua vararg 被调者、多余目标 nil 填充）、caller 与 caller's caller 帧存活、pcall 在 C 帧内报错时帧名正确、FF fallback 经 `__call` 交付时帧名/调用者帧正确（守 KBASE 恢复）、字节码格式边界（dump 版本必须 `0x80`、重载后仍要跑对、声称 stock 版本 2 的 chunk 必须以 `incompatible bytecode` 被拒）、Lua 尾调用仍消除（常数栈深）；**值与形状断言都在 jit off/on 两态跑，且断言热循环确实编出了 trace**（`jit.util.traceinfo`） |
 
 变异校验（把 `LJ_DS_TRACEBACK_PATCH` 临时置 0 重编）：三用例分别以
 `metamethod frame namewhat must be empty (engine parity), got: metamethod`、
