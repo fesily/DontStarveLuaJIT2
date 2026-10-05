@@ -18,8 +18,6 @@ typedef struct _GumModule GumModule;
 
 GAME_IO_API void init_luajit_io(GumModule *luaModule);
 
-DONTSTARVEINJECTOR_GAME_API void BInitWorkshopForGameServerHook(uint32_t unWorkshopDepotID, const char *pszFolder);
-
 GAME_IO_API FILE *lj_fopen(char const *f, const char *mode) noexcept;
 GAME_IO_API int lj_fclose(FILE *fp) noexcept;
 GAME_IO_API int lj_fscanf(FILE *const fp, char const *const format, ...) noexcept;

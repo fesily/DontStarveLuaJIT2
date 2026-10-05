@@ -15,6 +15,7 @@ set(SOURCES
         GameRuntimeApis.cpp
         config/sources/LuajitConfigFile.cpp
         game_info.cpp
+        sdk/steam/Workshop.cpp
         config/InjectorHostConfig.cpp
         core/PluginHost.cpp
         core/PluginServices.cpp
@@ -44,7 +45,7 @@ set(SOURCES
 
 
 if (ENABLE_STEAM_SUPPORT)
-    list(APPEND SOURCES ${DONTSTARVEINJECTOR_UTIL_DIR}/steam.cpp)
+    list(APPEND SOURCES sdk/steam/Steam.cpp)
     find_package(Steam REQUIRED)
 endif ()
 
@@ -87,13 +88,8 @@ target_include_directories(Injector PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 if (ENABLE_STEAM_SUPPORT)
     target_compile_definitions(Injector PRIVATE ENABLE_STEAM_SUPPORT)
-    target_include_directories(Injector PUBLIC ${STEAM_INCLUDE_DIR})
-    target_include_directories(Injector PUBLIC ${STEAM_SDK_INCLUDE_DIR})
+    target_include_directories(Injector PRIVATE ${STEAM_INCLUDE_DIR} ${STEAM_SDK_INCLUDE_DIR})
     target_link_libraries(Injector PRIVATE ${STEAM_LIBRARIES})
-    # add_library(GameSteamTest SHARED GameSteamTest.cpp)
-    # target_include_directories(GameSteamTest PUBLIC ${STEAM_INCLUDE_DIR})
-    # target_include_directories(GameSteamTest PUBLIC ${STEAM_SDK_INCLUDE_DIR})
-    # target_link_libraries(GameSteamTest PRIVATE ${STEAM_LIBRARIES})
 endif()
 
 # Portable: only $ORIGIN (no host abs paths). BUILD==INSTALL so RPATH_CHANGE works.

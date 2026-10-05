@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Moved Steam integration into host `sdk/steam/`: capture the client AccountID before config resolution and install dedicated Workshop hooks independently of VM enablement.
+- Centralized Workshop directory caching and queries in the host for VM file IO; removed the obsolete Steam utility layer and experimental library target.
+
 ## 2.8.0
 
 - Added LuaJIT Gen GC support (generational GC, frame GC, disabled Full GC).

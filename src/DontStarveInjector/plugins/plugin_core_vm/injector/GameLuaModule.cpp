@@ -1,4 +1,5 @@
 #include "config/InjectorHostConfig.hpp"
+#include "sdk/steam/Workshop.hpp"
 #include <cstdint>
 #include <string.h>
 #include <ctype.h>
@@ -1176,7 +1177,6 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 #include "util/PersistentString.hpp"
 
 
-DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_workshop_dir();
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_Fengxun_Decrypt(const char *filename) noexcept;
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vm_type(const char *type, const char *moduleName);
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_vm_type_name(int next);
@@ -1233,7 +1233,7 @@ int luaopen_GameInjector(lua_State* L) {
     sol::state_view lua(L);
     sol::table module = lua.create_table();
 
-    // core.vm-owned exports only.
+    // Host SDK/runtime APIs and core.vm exports.
     module.set_function("DS_LUAJIT_get_workshop_dir", &DS_LUAJIT_get_workshop_dir);
     module.set_function("DS_LUAJIT_Fengxun_Decrypt", &DS_LUAJIT_Fengxun_Decrypt);
     module.set_function("DS_LUAJIT_set_vm_type", &DS_LUAJIT_set_vm_type);

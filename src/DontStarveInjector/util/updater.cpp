@@ -8,7 +8,7 @@
 #include <fstream>
 #include <string>
 #include "platform.hpp"
-#include "steam.hpp"
+#include "config/InjectorHostConfig.hpp"
 #include "PersistentString.hpp"
 #include "config/sources/LuajitConfigFile.hpp"
 
@@ -200,9 +200,9 @@ std::filesystem::path getGameDir() {
 #ifdef ENABLE_STEAM_SUPPORT
 std::optional<std::filesystem::path> getGameUserDoctmentDir()
 {
-    auto userid = getUserId();
-    if (userid)
-        return getKleiGameDoctmentDir() / std::to_string(userid.value());
+    auto userid = InjectorCtx::instance()->steam_account_id;
+    if (userid != 0)
+        return getKleiGameDoctmentDir() / std::to_string(userid);
     return std::nullopt;
 }
 std::optional<std::filesystem::path> GetClientSaveDir()

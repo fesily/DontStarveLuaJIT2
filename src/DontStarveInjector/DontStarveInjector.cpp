@@ -14,6 +14,9 @@
 #include "core/DynamicPluginLoader.hpp"
 #include "core/PluginPath.hpp"
 #include "core/CoreVmBootstrap.hpp"
+#ifdef ENABLE_STEAM_SUPPORT
+#include "sdk/steam/Steam.hpp"
+#endif
 
 
 
@@ -192,7 +195,9 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         return;
     }
 
-    // Steam UGC workshop path hook lives in plugin_core_vm (with gameio).
+#ifdef ENABLE_STEAM_SUPPORT
+    ds::sdk::steam::Initialize(isClient);
+#endif
 
     LoadGameModConfig();
 

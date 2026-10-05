@@ -16,12 +16,15 @@ This guide maps **what is in code today** and how to extend it.
 | Capability | Config / trigger | Where |
 |---|---|---|
 | Process inject / Gum interceptor | — | `Inject()`, `InjectorCtx` |
+| Steam identity / Workshop directory | `ENABLE_STEAM_SUPPORT` for SDK hooks | Host `sdk/steam/`; independent of VM bootstrap |
 | Server VM-path gate | `DisableJITWhenServer` | **only** skips signature/ReplaceLuaModule; does **not** abort inject or plugin load |
 | Force-enable this mod | `AlwaysEnableMod` | force-enable path / `luajit_config` |
 | Config cascade | modinfo → json → save → env | `LoadGameModConfig` / `GameJitModConfig` |
 | Crash guard | internal | `check_crash` / modmain clear |
 | **PluginHost** | — | native: `core/PluginHost.*`; Lua: `Mod/plugins/host.lua` |
 | Core.vm bootstrap (optional load) | `VmPathEnabled` | `core/CoreVmBootstrap.*` — LoadLibrary/`GetProcAddress` only; never static-links the DLL |
+
+Steam integration belongs to the host, not `core.vm`. `sdk/steam/Steam.cpp` reads the client's already-initialized `SteamUser()->GetSteamID().GetAccountID()` before plugin loading and config resolution; dedicated servers install the UGC016 workshop hook without querying a client account. The host never calls `SteamAPI_Init` itself. `sdk/steam/Workshop.cpp` owns the directory cache and the `DS_LUAJIT_get_workshop_dir` export; VM file IO and the Lua binding consume this shared host state. Root precedence is `-ugc_directory` → Steam UGC callback → existing `../../../workshop`, followed by `content/322330`. A new SDK directory invalidates cached paths. `core.vm` no longer links Steam SDK libraries.
 
 L0 boots the host and always runs DynamicPluginLoader for feature modules. **AlwaysEnableMod** remains L0 so this mod can force-load. Without optional `plugin_core_vm` (or when the VM path is disabled), inject still works and most native feature plugins still load; JIT / `GameInjector` / Lua-facing inject APIs are unavailable.
 
@@ -48,14 +51,13 @@ Dual-face plugins share **one id**. Example: `network.rpc` has a native EarlyNat
 
 ```text
 [Inject]
-  → L0: gum, crash guard, Steam interface
-  → if VmPathEnabled:                // not DisableJITWhenServer / not FORCE_DISABLE_VM
-        CoreVmBootstrap::TryRun…     // optional plugins/plugin_core_vm.dll
-          → signature + ReplaceLuaModule   // soft-skip if DLL missing
-     else: skip VM path; plugins continue
-  → LoadGameModConfig()              // resolve only; no feature side effects
+  → L0: gum, crash guard
+  → sdk::steam::Initialize           // client account or dedicated UGC hook
+  → LoadGameModConfig()              // platform preparation
   → RegisterBuiltinPlugins(host)     // empty extension point
   → DynamicPluginLoader::load_all    // plugin_*.dll including core.vm if present
+  → refresh_cascade_after_plugins    // config uses captured account + plugin schema
+  → CoreVmBootstrap::ForceRun…       // VM gates do not gate SDK initialization
   → resolve(ConfigView, gate_ctx)
   → load_phase(EarlyNative)
 
@@ -110,7 +112,7 @@ Package layout under `src/DontStarveInjector/plugins/plugin_core_vm/` (single MO
 
 - **signature** (`signature_load/` → STATIC `ds_signature`)
 - **game/** (contexts, `ReplaceLuaModule`, VM switch)
-- **io/** (gameio + Steam)
+- **io/** (gameio; Workshop paths come from host `sdk/steam/`)
 - **injector/** (`luaopen_GameInjector` / apply)
 - **event/**, **optional/**
 

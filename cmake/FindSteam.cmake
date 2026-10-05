@@ -3,7 +3,7 @@
 # 1. In the system's default paths
 # 2. In additional paths specified by the user (e.g., CMAKE_PREFIX_PATH)
 
-set (STEAM_SDK_INCLUDE_DIR PATHS ${PROJECT_SOURCE_DIR}/3rd)
+set(STEAM_SDK_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/3rd)
 find_path(STEAM_INCLUDE_DIR 
     NAMES steam_api.h 
     PATHS ${PROJECT_SOURCE_DIR}/3rd/steam

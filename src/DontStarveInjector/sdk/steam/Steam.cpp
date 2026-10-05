@@ -1,15 +1,16 @@
-
-#include "util/steam_sdk.hpp"
-#include "util/steam.hpp"
+#include "Steam.hpp"
+#include "Workshop.hpp"
 #include "util/gum_platform.hpp"
-#include "config/InjectorHostConfig.hpp"
-#include "gameio.h"
+#include <steam_sdk/isteamuser.h>
 #include <bit>
 #include <cstdint>
 #include <string_view>
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
 using namespace std::string_view_literals;
+
+namespace ds::sdk::steam {
+namespace {
 
 static void *get_plt_ita_address(const std::string_view &target) {
     std::pair args = {target, (void *) 0};
@@ -49,8 +50,6 @@ static void hook_plt_ita(const std::string_view &target, void *new_func) {
 
 void *(*SteamInternal_FindOrCreateGameServerInterface_fn)(uint32_t hSteamUser, const char *pszVersion);
 
-namespace {
-
 // For this pure virtual interface, the vtable slot matches the declaration order in isteamugc016.h.
 // Deriving the slot from a member-function pointer is not portable across ABIs or compilers.
 constexpr size_t kISteamUGC016_BInitWorkshopForGameServerIndex = 73;
@@ -67,19 +66,15 @@ bool replace_vtable_function(void *obj, size_t index, Fn replacement) {
     return memory_protect_write(&vtable[index], std::bit_cast<std::uintptr_t>(replacement));
 }
 
-}
-
-
 bool (*BInitWorkshopForGameServer)(void *self, DepotId_t unWorkshopDepotID, const char *pszFolder);
 static bool BInitWorkshopForGameServer_hook(void *self, DepotId_t unWorkshopDepotID, const char *pszFolder) {
-    // Same DLL as gameio: update workshop path cache used by lj_fopen path rewrite.
-    BInitWorkshopForGameServerHook(unWorkshopDepotID, pszFolder);
+    SetWorkshopDirectory(pszFolder);
     return BInitWorkshopForGameServer(self, unWorkshopDepotID, pszFolder);
 }
 
 static void *SteamInternal_FindOrCreateGameServerInterface_hook(uint32_t hSteamUser, const char *pszVersion) {
     void *obj = SteamInternal_FindOrCreateGameServerInterface_fn(hSteamUser, pszVersion);
-    if (pszVersion == nullptr) return obj;
+    if (obj == nullptr || pszVersion == nullptr) return obj;
     constexpr auto ugc_interface_version_prefix = "STEAMUGC_INTERFACE_VERSION"sv;
     if (std::string_view{pszVersion}.starts_with(ugc_interface_version_prefix)) {
         auto version = std::string_view{pszVersion}.substr(ugc_interface_version_prefix.size());
@@ -98,14 +93,25 @@ static void *SteamInternal_FindOrCreateGameServerInterface_hook(uint32_t hSteamU
     return obj;
 }
 
-void HookSteamGameServerInterface() {
-    auto path = get_module_path("steam_api");
-    if (path.empty()) {
-        spdlog::error("Failed to find steam_api module");
-        return;
-    }
-    
-    if (!InjectorCtx::instance()->DontStarveInjectorIsClient) {
+} // namespace
+
+void Initialize(bool is_client) {
+    // SteamAPI_Init belongs to the game and has already run at the injection point.
+    // Capture identity before the host config cascade, independently of core.vm.
+    if (is_client) {
+        if (auto *steamuser = SteamUser()) {
+            InjectorCtx::instance()->steam_account_id = steamuser->GetSteamID().GetAccountID();
+            spdlog::info("Steam account captured before config resolve: {}",
+                         InjectorCtx::instance()->steam_account_id);
+        } else {
+            spdlog::warn("Steam client interface unavailable at injection");
+        }
+    } else {
+        auto path = get_module_path("steam_api");
+        if (path.empty()) {
+            spdlog::error("Failed to find steam_api module");
+            return;
+        }
         constexpr auto api_name = "SteamInternal_FindOrCreateGameServerInterface";
         auto m = gum_process_find_module_by_name(path.c_str());
         SteamInternal_FindOrCreateGameServerInterface_fn = (decltype(SteamInternal_FindOrCreateGameServerInterface_fn)) gum_module_find_export_by_name(m, api_name);
@@ -115,9 +121,6 @@ void HookSteamGameServerInterface() {
         }
         hook_plt_ita(api_name, (void *) SteamInternal_FindOrCreateGameServerInterface_hook);
     }
-    // get user account id
-    auto steamuser = SteamUser();
-    if (steamuser) {
-        InjectorCtx::instance()->steam_account_id = steamuser->GetSteamID().GetAccountID();
-    }
 }
+
+} // namespace ds::sdk::steam

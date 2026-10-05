@@ -3,7 +3,7 @@
 #
 # Layout (design 2026-08-10):
 #   signature_load/ → STATIC ds_signature
-#   io/             → gameio + GameSteam
+#   io/             → gameio (SDK integration belongs to the host)
 #   game/           → VM contexts + Replace + switch (files land in later tasks)
 #   injector/       → GameInjector open
 #   event/          → LuaEventBus
@@ -26,7 +26,6 @@ add_custom_target(GameLuaInjectFramework DEPENDS ${PLUGIN_CORE_VM_DIR}/injector/
 # --- I/O face (same MODULE, grouped under io/) ---
 set(PLUGIN_CORE_VM_IO_SOURCES
     io/gameio.cpp
-    io/GameSteam.cpp
     ${DONTSTARVEINJECTOR_UTIL_DIR}/lua_io2.cpp
     ${DONTSTARVEINJECTOR_UTIL_DIR}/zipfile.cpp
 )
@@ -102,13 +101,6 @@ target_include_directories(plugin_core_vm PRIVATE
     ${PROJECT_SOURCE_DIR}/3rd
 )
 
-if (ENABLE_STEAM_SUPPORT)
-    target_compile_definitions(plugin_core_vm PRIVATE ENABLE_STEAM_SUPPORT)
-    target_include_directories(plugin_core_vm PRIVATE ${STEAM_INCLUDE_DIR} ${STEAM_SDK_INCLUDE_DIR})
-    target_link_libraries(plugin_core_vm PRIVATE ${STEAM_LIBRARIES})
-    # SteamUser() accessors for GameSteam account id (io/GameSteam.cpp).
-    target_sources(plugin_core_vm PRIVATE ${DONTSTARVEINJECTOR_UTIL_DIR}/steam.cpp)
-endif()
 
 # Consumers (lagcomp, profiler, Injector) need GameLua.hpp + signature headers.
 target_include_directories(Injector PUBLIC

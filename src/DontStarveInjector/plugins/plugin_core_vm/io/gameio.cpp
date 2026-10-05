@@ -50,7 +50,7 @@
 #include <thread>
 #include <vector>
 
-#include "util/steam.hpp"
+#include "sdk/steam/Workshop.hpp"
 
 
 using namespace std::literals;
@@ -79,64 +79,9 @@ static std::filesystem::path to_path(const char *p) {
     }
 }
 
-static std::optional<std::filesystem::path> get_ugc_cmd() {
-    const auto cmd = get_cmd();
-    auto flag = "-ugc_directory";
-    if (cmd.contains(flag)) {
-        const auto cmds = get_cmds();
-        auto iter = std::find(cmds.begin(), cmds.end(), flag);
-        if (iter != cmds.end()) {
-            iter++;
-            if (iter != cmds.end()) {
-                const auto &value = *iter;
-                spdlog::info("workshop_dir ugc_directory: {}", value);
-                return value;
-            }
-        }
-    }
-    return std::nullopt;
-}
-static std::optional<std::filesystem::path> &get_steam_ugc() {
-    static std::optional<std::filesystem::path> workshop_dir;
-    return workshop_dir;
-}
-static std::optional<std::filesystem::path> get_workshop_dir() {
-    static auto wrk_ugc = []() -> std::optional<std::filesystem::path> {
-        auto p = std::filesystem::relative(std::filesystem::path("..") / ".." / ".." / "workshop");
-        if (std::filesystem::exists(p)) {
-            return p;
-        }
-        return std::nullopt;
-    }();
-    std::optional<std::filesystem::path> dir;
-    static auto ugc_cmd = get_ugc_cmd();
-    if (ugc_cmd)
-        dir = ugc_cmd;
-    else if (get_steam_ugc())
-        dir = get_steam_ugc();
-    else if (wrk_ugc)
-        dir = wrk_ugc;
-    if (dir)
-        return dir.value() / "content" / "322330";
-    return std::nullopt;
-}
-
-
-DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_workshop_dir() {
-    auto cache = get_workshop_dir();
-    if (cache) {
-        static auto path = std::filesystem::absolute(cache.value()).generic_string();
-        return path.c_str();
-    }
-    return nullptr;
-}
-static std::optional<std::filesystem::path> workshop_dir;
-
 
 static std::filesystem::path lj_fpath_format(std::filesystem::path const &path) {
-    if (!workshop_dir) {
-        workshop_dir = get_workshop_dir();
-    }
+    const auto &workshop_dir = ds::sdk::steam::GetWorkshopDirectory();
     auto path_s = path.string();
     constexpr auto mods_root = "../mods/workshop-"sv;
     if (path_s.starts_with(mods_root)) {
@@ -470,9 +415,3 @@ extern "C" void init_luajit_io(GumModule *luaModule) {
 #endif
 }
 
-extern "C" void BInitWorkshopForGameServerHook(uint32_t unWorkshopDepotID, const char *pszFolder) {
-    if (pszFolder != nullptr) {
-        get_steam_ugc() = pszFolder;
-        workshop_dir = std::nullopt;
-    }
-}
