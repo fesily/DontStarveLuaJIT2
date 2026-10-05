@@ -596,6 +596,16 @@ Field use in `FUN_1403dc520` / `Draw`: `renderer+0x1C` is looked up in the **ver
   Loose `data/shaders/` and `data/databundles/shaders/` do **not** exist. A file we own loads if passed as an **absolute** path; the zip-only relative name `shaders/*.ksh` is shipping content.
 
 - Pattern (unique prologue, ScanLowest): `40 53 55 56 57 41 54 41 55 41 56 48 81 EC 00 01 00 00` (1 hit @ `1403e2970`)
+- **2026-10 build (v756039, exe 2026-10-04): address moved.** New entry RVA **`0x12170`** (VA `0x140012170`); the old RVA `0x3e9f00` now lands mid-function. The bare prologue is unique again in this build, but it was not in older ones — pin by pattern instead of RVA (plugin `LoadShader_sig`):
+  ```text
+  40 53 55 56 57 41 54 41 55 41 56 48 81 EC 00 01 00 00
+  48 8B 05 ?? ?? ?? ??      ; mov rax, [rip+...] stack cookie
+  48 33 C4                  ; xor rax, rsp
+  48 89 84 24 D0 00 00 00   ; mov [rsp+0xD0], rax
+  48 8B F9                  ; mov rdi, rcx
+  ```
+  Confirmed against the new binary: same signature/container semantics, ctor `sub_14008DCE0` still calls it via `(*(a4+0x1B8) vtbl[+0x38])` = `vt[7]` and stores the handle at `ShadowRenderer+0xD8` (vert-desc handle at `+0xD4` from `*(a4+0x1A0)`), so `renderer+0x1A0` / `+0x1B8` / `+0x1C` / `+0x2C` offsets are unchanged.
+- Symptom when the pin is stale: no silhouette shader load, one `LoadShader prologue miss` warning per attempt (in-world ≈ 220k lines / 16 min), and — because the Lua face turns the engine ellipse shadow off (`set_ellipse(0)`) — **no shadows at all**.
 
 ### CreateVB fmt
 - GenerateVB call: `CreateVB(renderer, 10, vertCount, *(uint16_t*)(vertDesc+8), verts, 0)`
@@ -642,6 +652,12 @@ u32 ps_src_len + ps_src     ; includes trailing NUL
 u32 vs_index_count + vs_index_count * u32   ; indices into uniform table
 u32 ps_index_count + ps_index_count * u32
 ```
+
+**Gotcha (2026-10-05):** the engine hands `vs_src` / `ps_src` to the GLSL compiler as a
+C string, so the stored length **must include the trailing NUL** (shipping sources end
+`}\r\n\r\n\x00`). A hand-spliced shader without it reads one byte of the next record —
+observed as `<game client_log>: --- Error compiling shader sil.vs: ERROR: 0:18: '?' :
+syntax error`, then `LoadShader failed path=…` in the injector log.
 
 splat.ksh offsets (file start = 0):
 

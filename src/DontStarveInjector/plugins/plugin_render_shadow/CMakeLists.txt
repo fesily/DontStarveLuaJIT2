@@ -15,6 +15,12 @@ add_custom_command(TARGET plugin_render_shadow POST_BUILD
             "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sil.ksh"
             "$<TARGET_FILE_DIR:plugin_render_shadow>/shaders/sil.ksh")
 
+# Runtime shader asset: SilKshAbsolutePath() resolves <plugin-dir>/shaders/sil.ksh,
+# so the deployed package must carry it next to the module.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sil.ksh"
+    DESTINATION plugins/plugin_render_shadow/shaders
+    COMPONENT plugins)
+
 
 
 target_link_libraries(plugin_render_shadow PRIVATE

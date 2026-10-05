@@ -421,6 +421,7 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
   不再用 `GetModuleHandleA("libGLESv2.dll")`（那总是游戏自带模块，重绑后其上下文不活动，池调用会静默失效 → 花屏）。
 - Angle: `plugin_render_angle` — AlwaysOn + Win client → `InitGameOpenGl()` (backend string from ConfigView / `business_options`)
 - Shadow: `plugin_render_shadow` — native AlwaysOn EarlyNative maps exports; Lua AfterModMain (`Mod/plugins/plugin_render_shadow/`) calls `DS_LUAJIT_shadow_set_enabled` / `_set_length_boost` / `_set_state`. Hook installs on enable, before first in-world `GenerateVB`. Options: `ShadowSunDrive` (bool, default false), `ShadowLengthBoost` (0.5–2.0, default 1.0).
+  剪影批（`ShadowSilhouetteBatch`）的 GL 入口点同样经 `util/engine_gles.hpp` 从**引擎 IAT 槽**确定活动渲染器模块（`silhouette live GL module=<...>` 日志），只在 IAT 不可用时回退旧的 `ds_*` → `libGLESv2` 名字探测。
 
 ### `debug.profiler` (package dual-face: Tracy + FullGC + FrameGC)
 

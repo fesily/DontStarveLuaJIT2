@@ -1,6 +1,7 @@
 #include "SilhouetteBatch.hpp"
 #include "SilhouetteMath.hpp"
 #include "BuildBin.hpp"
+#include "MemorySignature.hpp"
 
 
 #include <spdlog/spdlog.h>
@@ -9,6 +10,7 @@
 #include <frida-gum.h>
 
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -27,6 +29,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Windows.h>
+#include "util/engine_gles.hpp"
 #endif
 
 
@@ -450,14 +453,23 @@ bool BindCoverageGl() {
     if (resolved) {
         return ok;
     }
-    HMODULE gles = ::GetModuleHandleA("ds_GLESv2.dll");
-    const char *mod = "ds_GLESv2.dll";
+    // Ownership of the live GL entry points comes from the engine's own IAT
+    // (render.angle rebinds it to the sideloaded ds_* build for explicit
+    // backends). Fall back to the legacy ds_*/libGLESv2 name probe when the
+    // engine IAT is not available.
+    engine_gles::LiveModuleInfo live = engine_gles::LiveModule();
+    HMODULE gles = live.module;
+    const char *mod = live.owner;
     if (gles == nullptr) {
-        gles = ::GetModuleHandleA("libGLESv2.dll");
-        mod = "libGLESv2.dll";
-    }
-    if (gles == nullptr) {
-        return false;
+        gles = ::GetModuleHandleA("ds_GLESv2.dll");
+        mod = "ds_GLESv2.dll";
+        if (gles == nullptr) {
+            gles = ::GetModuleHandleA("libGLESv2.dll");
+            mod = "libGLESv2.dll";
+        }
+        if (gles == nullptr) {
+            return false;
+        }
     }
     resolved = true;
     auto gp = [gles](const char *name) -> void * {
@@ -509,7 +521,8 @@ bool BindCoverageGl() {
          gl_clear != nullptr && gl_get_integerv != nullptr && gl_viewport != nullptr;
     char gles_path[MAX_PATH]{};
     (void)::GetModuleFileNameA(gles, gles_path, MAX_PATH);
-    SHADOW_TRACE("[render.shadow] coverage gles={} ok={} path={}", mod, ok ? 1 : 0, gles_path);
+    spdlog::info("[render.shadow] coverage GL resolved gles={} ok={} path={}", mod, ok ? 1 : 0,
+                 gles_path);
     return ok;
 }
 
@@ -1261,34 +1274,45 @@ int TryReleaseVb(void *rm, uint32_t vb) {
 #endif
 
 #ifdef _WIN32
-constexpr uint32_t kLoadShaderRva = 0x3e9f00;
+// ResourceManager::Load (= LoadShader). Previously pinned by RVA (0x3e9f00 in
+// the pre-2026-10 build); the current build moved it (RVA 0x12170), so pin by
+// pattern instead. The bare prologue is not unique across builds — include the
+// stack-cookie frame of the 0x100-byte path buffer.
+// Verified against dontstarve_steam_x64.exe (v756039, 2026-10-04):
+//   uint32_t LoadShader(EffectManager* this, const char* path, bool log_error,
+//                       bool do_fallback, uint32_t extra);
+function_relocation::MemorySignature LoadShader_sig{
+    "40 53 55 56 57 41 54 41 55 41 56 48 81 EC 00 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 "
+    "89 84 24 D0 00 00 00 48 8B F9",
+    0};
 
 bool BindSilLoadFns() noexcept {
-    GumModule *main = gum_process_get_main_module();
-    if (main == nullptr) {
+    if (load_shader != nullptr) {
+        return true;
+    }
+    // Called on every silhouette attempt: scan once per process lifetime.
+    static bool attempted = false;
+    if (attempted) {
+        return false;
+    }
+    attempted = true;
+
+    LoadShader_sig.only_one = false;
+    LoadShader_sig.log = false;
+    LoadShader_sig.prot_flag = GUM_PAGE_EXECUTE | GUM_PAGE_READ;
+    LoadShader_sig.target_address = 0;
+    LoadShader_sig.targets.clear();
+    const auto *mainPath = gum_module_get_path(gum_process_get_main_module());
+    if (mainPath == nullptr || LoadShader_sig.scan(mainPath) == 0 ||
+        LoadShader_sig.targets.empty()) {
+        spdlog::warn("[render.shadow] LoadShader signature miss — silhouette shader load disabled");
         load_shader = nullptr;
         return false;
     }
-    const GumMemoryRange *range = gum_module_get_range(main);
-    if (range == nullptr) {
-        load_shader = nullptr;
-        return false;
-    }
-    auto *base = reinterpret_cast<uint8_t *>(range->base_address);
-    static const uint8_t kPrologue[] = {0x40, 0x53, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55,
-                                        0x41, 0x56, 0x48, 0x81, 0xEC, 0x00, 0x01, 0x00, 0x00};
-    if (base == nullptr || kLoadShaderRva + sizeof(kPrologue) > range->size) {
-        load_shader = nullptr;
-        return false;
-    }
-    auto *ls = base + kLoadShaderRva;
-    if (std::memcmp(ls, kPrologue, sizeof(kPrologue)) != 0) {
-        spdlog::warn("[render.shadow] LoadShader prologue miss base={:#x}",
-                     reinterpret_cast<uintptr_t>(base));
-        load_shader = nullptr;
-        return false;
-    }
-    load_shader = reinterpret_cast<LoadShader_fn>(ls);
+    load_shader = reinterpret_cast<LoadShader_fn>(
+        *std::min_element(LoadShader_sig.targets.begin(), LoadShader_sig.targets.end()));
+    spdlog::info("[render.shadow] LoadShader = {:#x} (ResourceManager::Load)",
+                 reinterpret_cast<uintptr_t>(load_shader));
     return true;
 }
 

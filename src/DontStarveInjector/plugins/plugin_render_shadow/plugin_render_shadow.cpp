@@ -14,6 +14,10 @@
 #include "core/PluginServices.hpp"
 #include "ctx.hpp"
 
+#ifdef _WIN32
+#include "util/engine_gles.hpp"
+#endif
+
 #include <cstdio>
 
 #include <spdlog/spdlog.h>
@@ -135,6 +139,12 @@ extern "C" void DS_LUAJIT_shadow_set_silhouette(int on) {
     } else {
       (void) ds::shadow::InstallSilhouetteHooks();
     }
+#ifdef _WIN32
+    // Silhouette GL entry points resolve against the engine's own IAT slots;
+    // log which module currently owns them (ds_* sideload vs game-resident).
+    const engine_gles::LiveModuleInfo live = engine_gles::LiveModule();
+    spdlog::info("[render.shadow] silhouette live GL module={}", live.owner);
+#endif
   } else {
     ds::shadow::ClearSilhouetted();
   }

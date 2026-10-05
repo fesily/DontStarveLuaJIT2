@@ -104,6 +104,11 @@ def main() -> int:
                 pdb = dll.with_suffix(".pdb")
                 if pdb.is_file():
                     cp(pdb, dest / pdb.name)
+                # Runtime assets next to the module (plugin_render_shadow: shaders/sil.ksh).
+                shaders = pkg / "shaders"
+                if shaders.is_dir():
+                    for sh in sorted(shaders.glob("*.ksh")):
+                        cp(sh, dest / "shaders" / sh.name)
 
     print("Debug deploy complete. Launch VS '(Windows) 启动' or:")
     print(f'  "{BIN64 / "dontstarve_steam_x64.exe"}" -offline')
