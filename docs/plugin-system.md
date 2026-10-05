@@ -354,7 +354,7 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 | id | Module | Options | Phase | priority | depends | conflicts | `can_load` |
 |---|---|---|---|---:|---|---|---|
 | `core.vm` | `plugin_core_vm` | AlwaysOn | EarlyNative | 10 | — | — | always (optional DLL; missing ⇒ soft skip VM) |
-| `render.vbpool` | `plugin_render_vbpool` | `all_of` `EnableVBPool` | EarlyNative | 20 | — | — | Win client |
+| `render.vbpool` | `plugin_render_vbpool` | `all_of` `EnableVBPool` | EarlyNative | 36 | soft: `render.angle` | — | Win client |
 | `render.shadow` | `plugin_render_shadow` | AlwaysOn native; Lua applies `ShadowSunDrive` | EarlyNative + AfterModMain | 35 | — | — | Win client |
 | `render.angle` | `plugin_render_angle` | `AlwaysOn` (`AngleBackend` is a parameter) | EarlyNative | 30 | — | — | Win client |
 | `network.rpc` | `plugin_network_rpc` | `all_of` `NetworkOpt` | EarlyNative | 40 | — | — | always |
@@ -416,7 +416,9 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 
 ### `render.vbpool` / `render.angle` / `render.shadow`
 
-- VBPool: `plugin_render_vbpool` — `EnableVBPool` + Win client → `DS_LUAJIT_set_vbpool_enabled(true)`
+- VBPool: `plugin_render_vbpool` — `EnableVBPool` + Win client → `DS_LUAJIT_set_vbpool_enabled(true)`.
+  Soft dep `render.angle` + priority 36: GL 入口点从**引擎自身的 `libGLESv2.dll` IAT 槽**读取（`render.angle` 重绑后的活动渲染器；auto 时即游戏自带 ANGLE），
+  不再用 `GetModuleHandleA("libGLESv2.dll")`（那总是游戏自带模块，重绑后其上下文不活动，池调用会静默失效 → 花屏）。
 - Angle: `plugin_render_angle` — AlwaysOn + Win client → `InitGameOpenGl()` (backend string from ConfigView / `business_options`)
 - Shadow: `plugin_render_shadow` — native AlwaysOn EarlyNative maps exports; Lua AfterModMain (`Mod/plugins/plugin_render_shadow/`) calls `DS_LUAJIT_shadow_set_enabled` / `_set_length_boost` / `_set_state`. Hook installs on enable, before first in-world `GenerateVB`. Options: `ShadowSunDrive` (bool, default false), `ShadowLengthBoost` (0.5–2.0, default 1.0).
 

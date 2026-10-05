@@ -8,6 +8,13 @@ static constexpr uint32_t TARGET_ARRAY   = 0x8892u;
 static constexpr uint32_t TARGET_ELEMENT = 0x8893u;
 static constexpr uint32_t USAGE_STREAM   = 10u;
 
+// Expectations are expressed through the pool's own caps so they cannot go
+// stale when the caps change.
+static constexpr size_t kPerBucketCap = BufferNamePool::MAX_POOL_SIZE_PER_BUCKET;
+static constexpr size_t kTotalCap     = BufferNamePool::MAX_TOTAL_POOLED;
+static constexpr size_t kBytesCap     = BufferNamePool::MAX_TOTAL_BYTES;
+static constexpr uint32_t kBucket128  = 128u;
+
 static std::vector<uint32_t> g_deleted;
 
 static void mockDeleteBuffers(uint32_t count, const uint32_t* names) {
@@ -35,35 +42,55 @@ static void test_release_acquire_roundtrip() {
 
 static void test_per_bucket_overflow() {
     BufferNamePool pool;
-    for (uint32_t i = 1; i <= 32; ++i)
-        assert(pool.release(i, TARGET_ARRAY, USAGE_STREAM, 128));
+    for (uint32_t i = 1; i <= kPerBucketCap; ++i)
+        assert(pool.release(i, TARGET_ARRAY, USAGE_STREAM, kBucket128));
 
-    assert(!pool.release(100u, TARGET_ARRAY, USAGE_STREAM, 128));
+    // Bucket at cap: release() (no delete callback) must refuse and count it.
+    assert(!pool.release(static_cast<uint32_t>(kPerBucketCap) + 1u, TARGET_ARRAY, USAGE_STREAM,
+                         kBucket128));
+    assert(pool.totalPooled() == kPerBucketCap);
     assert(pool.stats().evictions >= 1);
     printf("PASS: test_per_bucket_overflow\n");
 }
 
 static void test_global_overflow() {
     BufferNamePool pool;
-    const uint32_t bucketSizes[] = {64, 128, 256, 512, 1024, 2048, 4096, 8192};
+    // Distinct usage values keep every (target, usage, bucket) group under the
+    // per-bucket cap while the total cap fills up.
+    const size_t buckets = (kTotalCap + kPerBucketCap - 1) / kPerBucketCap;
     uint32_t name = 1;
-    for (int b = 0; b < 8; ++b) {
-        for (int i = 0; i < 32; ++i, ++name)
-            assert(pool.release(name, TARGET_ARRAY, USAGE_STREAM, bucketSizes[b]));
+    size_t released = 0;
+    for (size_t b = 0; b < buckets && released < kTotalCap; ++b) {
+        const uint32_t usage = USAGE_STREAM + static_cast<uint32_t>(b);
+        for (size_t i = 0; i < kPerBucketCap && released < kTotalCap; ++i, ++name, ++released)
+            assert(pool.release(name, TARGET_ARRAY, usage, 128u));
     }
-    assert(pool.totalPooled() == 256);
-    assert(!pool.release(9999u, TARGET_ARRAY, USAGE_STREAM, 64u));
+    assert(released == kTotalCap);
+    assert(pool.totalPooled() == kTotalCap);
+
+    // Fresh, empty bucket: the total cap (not the per-bucket cap) must refuse.
+    assert(!pool.release(name, TARGET_ARRAY, USAGE_STREAM + static_cast<uint32_t>(buckets), 128u));
     printf("PASS: test_global_overflow\n");
 }
 
 static void test_bytes_budget_overflow() {
     BufferNamePool pool;
     const uint32_t oneMB = 1024u * 1024u;
-    for (uint32_t i = 1; i <= 16; ++i)
-        assert(pool.release(i, TARGET_ARRAY, USAGE_STREAM, oneMB));
+    const size_t needed = static_cast<size_t>(kBytesCap / oneMB);
+    assert(needed > 0 && needed <= kTotalCap);
 
-    assert(pool.totalBytes() == 16u * 1024u * 1024u);
-    assert(!pool.release(100u, TARGET_ARRAY, USAGE_STREAM, oneMB));
+    uint32_t name = 1;
+    size_t released = 0;
+    size_t buckets = 0;
+    while (released < needed) {
+        const uint32_t usage = USAGE_STREAM + static_cast<uint32_t>(buckets++);
+        for (size_t i = 0; i < kPerBucketCap && released < needed; ++i, ++name, ++released)
+            assert(pool.release(name, TARGET_ARRAY, usage, oneMB));
+    }
+    assert(pool.totalBytes() == static_cast<size_t>(needed) * oneMB);
+
+    // Fresh, empty bucket: the byte budget (not the bucket/total caps) must refuse.
+    assert(!pool.release(name, TARGET_ARRAY, USAGE_STREAM + static_cast<uint32_t>(buckets), oneMB));
     printf("PASS: test_bytes_budget_overflow\n");
 }
 
@@ -104,11 +131,11 @@ static void test_stats_counters() {
     assert(pool.stats().hits == 1);
     assert(pool.stats().genSaved == 1);
 
-    for (uint32_t i = 1; i <= 32; ++i)
-        pool.release(i, TARGET_ARRAY, USAGE_STREAM, 128u);
+    for (uint32_t i = 1; i <= kPerBucketCap; ++i)
+        pool.release(i, TARGET_ARRAY, USAGE_STREAM, kBucket128);
 
     const uint64_t evictionsBefore = pool.stats().evictions;
-    pool.release(99u, TARGET_ARRAY, USAGE_STREAM, 128u);
+    pool.release(static_cast<uint32_t>(kPerBucketCap) + 99u, TARGET_ARRAY, USAGE_STREAM, kBucket128);
     assert(pool.stats().evictions == evictionsBefore + 1);
 
     pool.resetStats();
@@ -142,15 +169,17 @@ static void test_eviction_on_full() {
     BufferNamePool pool;
     g_deleted.clear();
 
-    for (uint32_t i = 1; i <= 32; ++i)
-        assert(pool.release(i, TARGET_ARRAY, USAGE_STREAM, 128));
+    for (uint32_t i = 1; i <= kPerBucketCap; ++i)
+        assert(pool.release(i, TARGET_ARRAY, USAGE_STREAM, kBucket128));
 
-    assert(pool.releaseWithEvict(100u, TARGET_ARRAY, USAGE_STREAM, 128, mockDeleteBuffers));
-    assert(pool.totalPooled() == 32);
+    // Bucket full: releaseWithEvict frees the oldest entry and admits the new name.
+    const uint32_t fresh = static_cast<uint32_t>(kPerBucketCap) + 100u;
+    assert(pool.releaseWithEvict(fresh, TARGET_ARRAY, USAGE_STREAM, kBucket128, mockDeleteBuffers));
+    assert(pool.totalPooled() == kPerBucketCap);
     assert(g_deleted.size() == 1);
     assert(g_deleted[0] == 1u);
 
-    assert(pool.acquire(TARGET_ARRAY, USAGE_STREAM, 128) == 100u);
+    assert(pool.acquire(TARGET_ARRAY, USAGE_STREAM, kBucket128) == fresh);
     printf("PASS: test_eviction_on_full\n");
 }
 

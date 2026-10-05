@@ -9,12 +9,15 @@
 #include <spdlog/spdlog.h>
 
 #include <cstdint>
+#include <cstring>
+#include <string>
 #include <vector>
 #include <unordered_map>
 #include <egl/egl.h>
 #include <GLES2/gl2.h>
 
 #ifdef _WIN32
+#include "util/engine_gles.hpp"
 #include <Windows.h>
 #endif
 
@@ -125,14 +128,13 @@ inline BufferNamePool g_bufferNamePool;
 
 #ifdef _WIN32
 void SetRenderHookGlFunctionsWithNew() {
-    // ANGLE lives in plugin_render_angle; resolve GL via GetProcAddress(libGLESv2).
-    // ensureGlFunctions() is defined below — just invalidate cache so next use reloads.
+    // Invalidate the cache; the next ensureGlFunctions() re-reads the engine IAT.
     g_glFunctionsResolved = false;
     g_glGenBuffers = nullptr;
     g_glDeleteBuffers = nullptr;
     g_glBindBuffer = nullptr;
     g_glBufferData = nullptr;
-    spdlog::info("[RenderHook] GL function cache invalidated (will resolve from libGLESv2)");
+    spdlog::info("[RenderHook] GL entry point cache invalidated (will resolve from engine IAT)");
 }
 
 inline bool ensureGlFunctions() {
@@ -140,19 +142,22 @@ inline bool ensureGlFunctions() {
         return g_glGenBuffers && g_glDeleteBuffers && g_glBindBuffer && g_glBufferData;
     }
     g_glFunctionsResolved = true;
-    auto hGLESv2 = GetModuleHandleA("libGLESv2.dll");
-    if (hGLESv2) {
-        g_glGenBuffers    = reinterpret_cast<glGenBuffers_t>(GetProcAddress(hGLESv2, "glGenBuffers"));
-        g_glDeleteBuffers = reinterpret_cast<glDeleteBuffers_t>(GetProcAddress(hGLESv2, "glDeleteBuffers"));
-        g_glBindBuffer    = reinterpret_cast<glBindBuffer_t>(GetProcAddress(hGLESv2, "glBindBuffer"));
-        g_glBufferData    = reinterpret_cast<glBufferData_t>(GetProcAddress(hGLESv2, "glBufferData"));
-    }
+
+    // Plugins load after render.angle (soft dep + priority), so the engine IAT
+    // already points at the live renderer: game-resident ANGLE for
+    // AngleBackend=auto, otherwise the sideloaded ds_* build.
+    g_glGenBuffers    = reinterpret_cast<glGenBuffers_t>(engine_gles::ResolveEntry("glGenBuffers"));
+    g_glDeleteBuffers = reinterpret_cast<glDeleteBuffers_t>(engine_gles::ResolveEntry("glDeleteBuffers"));
+    g_glBindBuffer    = reinterpret_cast<glBindBuffer_t>(engine_gles::ResolveEntry("glBindBuffer"));
+    g_glBufferData    = reinterpret_cast<glBufferData_t>(engine_gles::ResolveEntry("glBufferData"));
+
     if (!g_glGenBuffers || !g_glDeleteBuffers || !g_glBindBuffer || !g_glBufferData) {
-        spdlog::warn("[RenderHook] could not resolve GL functions — pool disabled");
+        spdlog::warn("[RenderHook] engine GL imports not found in ANGLE IAT slots — pool disabled");
         g_enableBufferPool = false;
         return false;
     }
-    spdlog::info("[RenderHook] GL functions resolved from libGLESv2.dll");
+    spdlog::info("[RenderHook] GL entry points resolved from engine IAT (glBindBuffer -> {})",
+                 engine_gles::EntryOwner("glBindBuffer", reinterpret_cast<const void *>(g_glBindBuffer)));
     return true;
 }
 #endif

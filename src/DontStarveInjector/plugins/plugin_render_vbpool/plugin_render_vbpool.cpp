@@ -27,8 +27,12 @@ struct RenderVbpoolPlugin final : IPlugin {
         man.version = "1.0.0";
         man.phases = PluginPhase::EarlyNative;
         man.support_reload = false;
-        // Before network.rpc; matches former LoadGameModConfig order (vbpool then angle).
-        man.priority = 20;
+        // render.angle sideloads ds_* ANGLE and rebinds the engine's GL IAT slots;
+        // GL entry points must be resolved after that rebind. Soft dep: when the
+        // angle plugin is absent the engine keeps its own ANGLE module and the
+        // IAT still resolves to the live renderer.
+        man.soft_depends = {"render.angle"};
+        man.priority = 36; // after render.angle (30) / render.shadow (35), before network.rpc (40)
         man.options.kind = OptionRuleKind::AllOf;
         man.options.keys = {std::string{ds::config::keys::kEnableVBPool}};
     }
