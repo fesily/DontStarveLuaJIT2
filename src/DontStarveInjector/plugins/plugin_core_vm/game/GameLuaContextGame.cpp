@@ -67,14 +67,16 @@ struct GameLuaContextGame : GameLua51Context {
 
     struct LuaReaderWrapper {
         lua_Reader reader;
+        void *data;                 // caller's reader data (must be forwarded)
         const char *chunkname;
+        const char *mode;
         GameLuaContextGame *ctx;
         std::list<std::string> buffers;
     };
 
     static const char *myReader(lua_State *L, void *ud, size_t *sz) {
         LuaReaderWrapper *wrapper = (LuaReaderWrapper *) ud;
-        auto buf = wrapper->reader(L, nullptr, sz);
+        auto buf = wrapper->reader(L, wrapper->data, sz);
         if (buf && *sz > 0) {
             wrapper->buffers.emplace_back(buf, *sz);
         } else {
@@ -165,17 +167,22 @@ struct GameLuaContextGame : GameLua51Context {
         //     return ctx->api._lua_load(L, reader, data, chunkname);
         // };
         if (dump_mod_names.empty()) return;
+        // game mode (engine 5.1): every buffer/file load funnels into lua_load.
+        // The wrapper carries the caller's reader data (non-null for the engine's
+        // lauxlib paths), so buffer/file loads are dumped too, not just reader-less ones.
         HOOK_LUA_API(lua_load) + [](lua_State *L, lua_Reader reader, void *data,
                                     const char *chunkname) {
             auto ctx = static_cast<GameLuaContextGame *>(&GetGameLuaContext());
-            if (data == nullptr && ctx->ShouldDumpMod(chunkname)) {
+            if (ctx->ShouldDumpMod(chunkname)) {
                 thread_local LuaReaderWrapper wrapper;
-                data = &wrapper;
                 wrapper.reader = reader;
+                wrapper.data = data;              // caller's data, captured before reassigning
                 wrapper.chunkname = chunkname;
+                wrapper.mode = nullptr;
                 wrapper.buffers.clear();
                 wrapper.ctx = ctx;
                 reader = &myReader;
+                data = &wrapper;
             }
             return ctx->api._lua_load(L, reader, data, chunkname);
         };

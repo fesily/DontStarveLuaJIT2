@@ -10,7 +10,6 @@
 #include "io/gameio.h"
 #include "lua_debugger_helper.hpp"
 #include <zlib.h>
-#include <fstream>
 #include <filesystem>
 #include <vector>
 #include <fmt/format.h>
