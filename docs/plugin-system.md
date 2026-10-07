@@ -434,6 +434,12 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 - Soft peers: missing `plugin_core_vm` → FrameGC / lua_gc path degrades; profiler DLL still loads
 - **L0 has no fullgc reverse dep** (`ds_core_vm_fullgc_*` removed)
 
+### `modworldgenmain.lua`（世界生成阶段隐藏 jit）
+
+- `scripts/mods.lua:579` 的 worldgen 状态只加载 `modworldgenmain.lua`，`jit.runtime` 的 `HideGlobalJIT`（modmain 阶段）不会在那里执行 → 该状态里 `jit` 是暴露的。
+- 加密模组加载器（风雪/daxsg 家族）会探测 `require("jit")`：取到就走进坏路径（其字节码 VM 报 `attempt to index local 'K'` 或死循环 `lj_BC_TGETV`），把 worldgen 状态带坏（地表世界生成卡在海洋 pass）。
+- 本模组在 `Mod/modworldgenmain.lua` 里补一次隐藏：`rawset(_G, "jit", nil)` + 清 `package.loaded.jit`；只作用于**真正的世界生成状态**（`WORLDGEN_MAIN` 由 `scripts/worldgen_main.lua` 在 `ModManager:LoadMods(true)` 前设置，客户端前端/自定义界面等加载路径没有它 → 不受影响），受 `HideGlobalJIT` 选项控制（默认开）。mod env 无白名单外全局（`pcall`/`debug`/`package` 一律走 `GLOBAL`）。
+
 
 ---
 
