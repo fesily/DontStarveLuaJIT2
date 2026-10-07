@@ -523,6 +523,19 @@ foreach(_ds_vm_parity_case metamethod_name tailcall_lines)
         LABELS luajit_parity)
 endforeach()
 
+# Main-chunk top-level tail calls: the chunk is called from C, so its frame
+# carries a C-caller marker; an in-place tail call must still leave one 5.1
+# "tail" level per elided frame.  The repro ships in tests/lua_vm_parity/
+# (fork-side copy in luajit/test/compat51/); details in
+# luajit/doc/tailcall-level-parity.md.  Fails when LUA_COMPAT_TAILCALL_COUNT
+# is switched off.
+add_test(NAME luajit_parity_mainchunk_tailcall
+    COMMAND ${LUAJIT_HOST_EXECUTABLE_TARGET}
+        ${CMAKE_CURRENT_SOURCE_DIR}/lua_vm_parity/mainchunk_tailcall.lua)
+set_tests_properties(luajit_parity_mainchunk_tailcall PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    LABELS luajit_parity)
+
 # Engine-parity repro for a tail call to a C function (DST's RunInEnvironment
 # does `return xpcall(...)`): LUA_COMPAT_TAILCALL_CFRAME keeps the caller frame
 # and names the C frame, so the report matches the engine's. The script prints
