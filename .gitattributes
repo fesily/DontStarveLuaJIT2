@@ -21,6 +21,8 @@
 *.cmake text eol=lf
 CMakeLists.txt text eol=lf
 *.sh text eol=lf
+# Git hooks run through sh on every platform; keep them LF (no CRLF shebangs)
+.githooks/* text eol=lf
 *.py text eol=lf
 *.md text eol=lf
 *.yml text eol=lf

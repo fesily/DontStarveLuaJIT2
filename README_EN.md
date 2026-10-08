@@ -50,18 +50,18 @@ Run `install.bat` (Windows) or `./install_linux.sh` (Linux) inside the mod's fol
 
 `./install_linux.sh` may need `chmod +x install_linux.sh`.
 
-The installer stages **only the inject shell** into game `bin64`, copies the real Injector into the **mod** `bin64/`, and writes `data/unsafedata/ds_luajit_injector.path`.
+The installer stages **only the inject shell** into game `bin64`, copies the real Injector into the **mod root**, and writes `data/unsafedata/ds_luajit_injector.path`.
 
 ## 2. Injector
 
-Deploy model (from 2026-08-06): **shell only** in game `bin64`; real **Injector** under **mod** `bin64/`.
+Deploy model (from 2026-08-06): **shell only** in game `bin64`; real **Injector** at the **mod root**.
 
 ### Windows (manual)
 
 - Copy **only** `Winmm.dll` into the game `bin64` folder (DLL-search hijack shell).
   - Example: `C:\steamapps\common\Don't Starve Together\bin64\Winmm.dll`
-- Copy real **`Injector.dll`** into the **mod** `bin64\` (next to the mod tree that holds `modmain.lua`).
-  - Example: `…/mods/luajit_mod/bin64/Injector.dll`
+- Copy real **`Injector.dll`** into the **mod root** (next to `modmain.lua`).
+  - Example: `…/mods/luajit_mod/Injector.dll`
 - Optional: write one UTF-8 line (absolute path to the real Injector) to  
   `data/unsafedata/ds_luajit_injector.path` under the game root.
 - **Do not** copy the entire `bin64/windows` package into game `bin64`.
@@ -77,7 +77,7 @@ print(jit)
 I've only tested it on Ubuntu, but I can also test it on SteamOS if someone can help me with the SteamOS environment.
 
 - Copy the **stub** to game `bin64/lib64/libInjector.so` (`LD_PRELOAD` still points at this game-side stub).
-- Copy the **real** module to mod `bin64/libInjector.so` (scan also accepts `bin64/lib64/libInjector.so` under the mod).
+- Copy the **real** module to the **mod root** (`libInjector.so`).
 - Rename original game executable `dontstarve_steam_x64` to `dontstarve_steam_x64_1`.
 - Create new file `dontstarve_steam_x64` with the content:
 

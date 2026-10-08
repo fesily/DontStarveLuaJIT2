@@ -6,10 +6,8 @@
 (``ensure_injector``): the real Injector stays mod-local, the game bin64 only
 receives the thin shell (``Winmm.dll`` / POSIX stub).
 
-Real-Injector discovery follows the package install layout
-(``install(TARGETS Injector ... DESTINATION .)`` → package root) and the runtime
-resolution order (``DS_LUAJIT_INJECTOR`` → ``DS_LUAJIT_INJECTOR_DIR`` →
-package/legacy paths).
+Real-Injector discovery matches the runtime resolution order
+(``DS_LUAJIT_INJECTOR`` → ``DS_LUAJIT_INJECTOR_DIR`` → mod root).
 """
 
 from __future__ import annotations
@@ -36,16 +34,13 @@ def _env_path(name: str) -> Optional[Path]:
 
 
 def _real_injector(game_dir: Path) -> Optional[Path]:
-    """Real Injector module: env override, package layout, then legacy game dir."""
+    """Real Injector module: env override, then the mod root (current layout)."""
     if sys.platform.startswith("win"):
         names = ["Injector.dll"]
-        package_dirs = [Path("bin64/windows"), Path("bin64")]
     elif sys.platform.startswith("linux"):
         names = ["libInjector.so"]
-        package_dirs = [Path("bin64/linux"), Path("bin64")]
     elif sys.platform == "darwin":
         names = ["libInjector.dylib"]
-        package_dirs = [Path("bin64/osx"), Path("bin64")]
     else:
         return None
 
@@ -58,9 +53,6 @@ def _real_injector(game_dir: Path) -> Optional[Path]:
     if override_dir is not None:
         candidates.extend(override_dir / name for name in names)
     candidates.extend(root / "Mod" / name for name in names)
-    for package_dir in package_dirs:
-        candidates.extend(root / "Mod" / package_dir / name for name in names)
-    candidates.append(game_dir / "bin64" / names[0])  # legacy install only
     return _first_existing(candidates)
 
 
@@ -128,7 +120,7 @@ def build_inject_env(game_dir: Path, extra: Optional[dict] = None) -> dict:
             env["DS_LUAJIT_INJECTOR"] = str(real)
             print(f"[harness] DS_LUAJIT_INJECTOR={real}")
         else:
-            print("[harness] WARN: Injector.dll not found under mod/game bin64; inject may be missing")
+            print("[harness] WARN: Injector.dll not found at the mod root; inject may be missing")
 
     if extra:
         env.update(extra)
@@ -166,7 +158,7 @@ def stage_inject_shell(game_dir: Path) -> bool:
 
         real = _real_injector(game_dir)
         if real is None:
-            print("[harness] Injector.dll missing under Mod package (mod-local layout)")
+            print("[harness] Injector.dll missing at the mod root")
             return False
 
         # Drop stale game-dir real Injector so Winmm + DS_LUAJIT_INJECTOR is the path.

@@ -626,6 +626,14 @@ if (WIN32)
   target_compile_features(test_nucleus_adapter PRIVATE cxx_std_23)
   # Static reloc: tools/tests link frida-gum directly (no Injector delay-load).
   target_link_libraries(test_nucleus_adapter PRIVATE function_relocation_static ${FRIDA_GUM_LIBRARIES})
+  # Stage imported runtime DLLs (frida-gum.dll, pe-parse.dll) next to the exe;
+  # a clean build otherwise fails with 0xc0000135 (DLL not found).
+  add_custom_command(TARGET test_nucleus_adapter POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          $<TARGET_RUNTIME_DLLS:test_nucleus_adapter>
+          "$<TARGET_FILE_DIR:test_nucleus_adapter>"
+      COMMAND_EXPAND_LISTS
+      VERBATIM)
   add_test(NAME nucleus_adapter COMMAND test_nucleus_adapter)
   set_tests_properties(nucleus_adapter PROPERTIES
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

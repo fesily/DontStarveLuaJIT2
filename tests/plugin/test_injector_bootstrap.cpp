@@ -38,12 +38,12 @@ static void clear_env_and_state() {
     reset_for_test();
 }
 
-// Layout helper: fake game + mod with real module under mod/bin64/<name>
+// Layout helper: fake game + mod with the real module at the mod root.
 static fs::path plant_mod_injector(const fs::path &game_root,
                                    const fs::path &mods_base,
                                    const char *alias) {
     auto mod = mods_base / alias;
-    auto module = mod / "bin64" / injector_module_filename();
+    auto module = mod / injector_module_filename();
     touch_file(module);
     touch_file(mod / "modmain.lua");
     return module;
@@ -207,14 +207,9 @@ static void test_fail_when_nothing() {
 }
 
 static void test_mod_root_from_module_path() {
-    auto p = fs::path("C:/mods/luajit/bin64") / injector_module_filename();
+    auto p = fs::path("C:/mods/luajit") / injector_module_filename();
     auto root = mod_root_from_injector_module(p);
-    assert(root.filename() == "luajit" || root.generic_string().ends_with("luajit"));
-#if !defined(_WIN32) && !defined(__APPLE__)
-    auto p2 = fs::path("/m/luajit/bin64/lib64") / injector_module_filename();
-    auto root2 = mod_root_from_injector_module(p2);
-    assert(root2.filename() == "luajit");
-#endif
+    assert(root.filename() == "luajit");
     printf("PASS: mod_root_from_module_path\n");
 }
 

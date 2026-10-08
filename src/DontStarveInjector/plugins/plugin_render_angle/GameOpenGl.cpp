@@ -307,14 +307,8 @@ namespace {
         const auto inj = ds::plugin::injector_module_dir();
         if (!inj.empty()) {
             std::error_code ec;
-            // Canonical package: Injector.dll at mod root → mod/deps.
+            // Injector.dll at the mod root → mod/deps.
             auto deps = ds::plugin::mod_deps_dir(inj);
-            if (!deps.empty() && std::filesystem::is_directory(deps, ec)) {
-                return deps;
-            }
-            // Legacy: Injector under bin64 — derive via plugins/ layout.
-            deps = ds::plugin::mod_deps_dir(
-                    ds::plugin::mod_root_from_plugins_dir(ds::plugin::plugins_dir_from_module_dir(inj)));
             if (!deps.empty() && std::filesystem::is_directory(deps, ec)) {
                 return deps;
             }

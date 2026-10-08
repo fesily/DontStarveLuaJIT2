@@ -9,7 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SELF_DIR = Path(__file__).resolve().parent
 DEFAULT_BUILD_DIR = ROOT / "builds" / "ninja-multi-vcpkg"
-DEFAULT_BUILD_CONFIG = os.environ.get("LUA51_SYNC_CONFIG") or os.environ.get("CTEST_CONFIGURATION_TYPE") or "RelWithDebInfo"
+REQUESTED_BUILD_CONFIG = os.environ.get("LUA51_SYNC_CONFIG") or os.environ.get("CTEST_CONFIGURATION_TYPE")
+CONFIG_FALLBACKS = ("Debug", "RelWithDebInfo", "Release", "MinSizeRel")
 
 
 def default_build_dir() -> Path:
@@ -17,8 +18,27 @@ def default_build_dir() -> Path:
     return Path(value) if value else DEFAULT_BUILD_DIR
 
 
+def build_configs() -> list[str]:
+    """Configs to probe for artifacts: the one under test first, then the rest.
+
+    A multi-config tree may have only some configs built (Debug or
+    RelWithDebInfo), so fall back to whichever config has the artifact instead
+    of hardcoding one.
+    """
+    order = [REQUESTED_BUILD_CONFIG] if REQUESTED_BUILD_CONFIG else []
+    for config in CONFIG_FALLBACKS:
+        if config not in order:
+            order.append(config)
+    return order
+
+
 def default_runtime_path(*parts: str) -> Path:
-    return default_build_dir().joinpath(*parts[:-1], DEFAULT_BUILD_CONFIG, parts[-1])
+    build_dir = default_build_dir()
+    for config in build_configs():
+        path = build_dir.joinpath(*parts[:-1], config, parts[-1])
+        if path.exists():
+            return path
+    return build_dir.joinpath(*parts[:-1], build_configs()[0], parts[-1])
 
 
 DEFAULT_LUA51 = default_runtime_path("src", "lua51original", "lua.exe")
@@ -176,9 +196,9 @@ def run_lua_test(
     return 0
 
 
-def run_python_test(python_exe: Path, script: Path) -> int:
+def run_python_test(python_exe: Path, script: Path, env: dict[str, str]) -> int:
     print(f"[lua51-sync] {script.name}")
-    result = run_command([str(python_exe), str(script)])
+    result = run_command([str(python_exe), str(script)], env=env)
     print_output(result)
     if result.returncode != 0:
         print(f"python test failed: {script.name}", file=sys.stderr)
@@ -203,8 +223,11 @@ def main() -> int:
         if status != 0:
             return status
 
+    python_env = os.environ.copy()
+    python_env["LUA51_EXE"] = str(lua51)
+    python_env["LUAJIT_EXE"] = str(luajit)
     for script in PYTHON_TESTS:
-        status = run_python_test(python_exe, script)
+        status = run_python_test(python_exe, script, python_env)
         if status != 0:
             return status
 

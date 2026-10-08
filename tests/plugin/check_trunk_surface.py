@@ -257,27 +257,30 @@ def check_inject(root: Path) -> list[str]:
 
 
 def check_load_game_mod_config(root: Path) -> list[str]:
-    path = root / "src" / "DontStarveInjector" / "config" / "ConfigSession.cpp"
-    if not path.is_file():
-        return [f"missing file: {path}"]
+    """Locate LoadGameModConfig() wherever its definition lives (it moved out of
+    config/ConfigSession.cpp), then assert its body has no VBPool/OpenGL side effects."""
+    src_root = root / "src" / "DontStarveInjector"
+    signature = r'(?:extern\s+"C"\s+)?void\s+LoadGameModConfig\s*\(\s*\)\s*\{'
 
-    source = path.read_text(encoding="utf-8")
-    body = extract_function_body(
-        source,
-        r'(?:extern\s+"C"\s+)?void\s+LoadGameModConfig\s*\(\s*\)\s*\{',
-    )
-    if body is None:
-        return [f"could not locate LoadGameModConfig() body in {path}"]
+    for path in sorted(src_root.rglob("*.cpp")):
+        body = extract_function_body(
+            path.read_text(encoding="utf-8", errors="replace"),
+            signature,
+        )
+        if body is None:
+            continue
 
-    code = strip_comments_and_strings(body)
-    errors: list[str] = []
-    for name in LOAD_CONFIG_FORBIDDEN:
-        if identifier_present(code, name):
-            errors.append(
-                f"LoadGameModConfig() must not call {name} "
-                f"(VBPool/OpenGL side effects belong to render plugins) [{path}]"
-            )
-    return errors
+        code = strip_comments_and_strings(body)
+        errors: list[str] = []
+        for name in LOAD_CONFIG_FORBIDDEN:
+            if identifier_present(code, name):
+                errors.append(
+                    f"LoadGameModConfig() must not call {name} "
+                    f"(VBPool/OpenGL side effects belong to render plugins) [{path}]"
+                )
+        return errors
+
+    return [f"could not locate LoadGameModConfig() body under {src_root}"]
 
 
 def extract_modmain_main_body(source: str) -> str | None:

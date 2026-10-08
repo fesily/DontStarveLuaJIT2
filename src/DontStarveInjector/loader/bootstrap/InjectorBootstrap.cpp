@@ -187,21 +187,8 @@ std::vector<fs::path> module_candidates_under_dir(const fs::path &dir) {
     if (dir.empty()) {
         return out;
     }
-    const char *name = injector_module_filename();
-    out.push_back(dir / name);
-#if !defined(_WIN32) && !defined(__APPLE__)
-    out.push_back(dir / "lib64" / name);
-#endif
+    out.push_back(dir / injector_module_filename());
     return out;
-}
-
-std::vector<fs::path> module_candidates_under_mod_root(const fs::path &mod_root) {
-    // Prefer mod-root Injector; keep bin64/ for legacy packages.
-    auto c = module_candidates_under_dir(mod_root);
-    if (c.empty()) {
-        c = module_candidates_under_dir(mod_root / "bin64");
-    }
-    return c;
 }
 
 bool looks_like_mod_root(const fs::path &mod_root) {
@@ -214,16 +201,6 @@ bool looks_like_mod_root(const fs::path &mod_root) {
 
 bool find_module_in_dir(const fs::path &dir, fs::path &out) {
     for (const auto &cand : module_candidates_under_dir(dir)) {
-        if (is_regular_existing(cand)) {
-            out = absolute_if_possible(cand);
-            return true;
-        }
-    }
-    return false;
-}
-
-bool find_module_in_mod_root(const fs::path &mod_root, fs::path &out) {
-    for (const auto &cand : module_candidates_under_mod_root(mod_root)) {
         if (is_regular_existing(cand)) {
             out = absolute_if_possible(cand);
             return true;
@@ -279,7 +256,7 @@ bool scan_mod_injector(fs::path &out) {
             if (!looks_like_mod_root(mod_root)) {
                 continue;
             }
-            if (find_module_in_mod_root(mod_root, out)) {
+            if (find_module_in_dir(mod_root, out)) {
                 return true;
             }
         }
@@ -291,7 +268,7 @@ bool scan_mod_injector(fs::path &out) {
         }
         for (const auto alias : ds::config::path::kModFolderAliases) {
             const auto mod_root = base / std::string{alias};
-            if (find_module_in_mod_root(mod_root, out)) {
+            if (find_module_in_dir(mod_root, out)) {
                 return true;
             }
         }
@@ -432,32 +409,8 @@ bool resolve_injector_module(std::filesystem::path &out_abs) {
 }
 
 std::filesystem::path mod_root_from_injector_module(const std::filesystem::path &abs_module) {
-    // Canonical: Injector lives at <mod_root>/Injector.dll (or libInjector.so/.dylib).
-    // Legacy: <mod_root>/bin64/... or <mod_root>/bin64/lib64/...
-    const auto parent = abs_module.parent_path();
-    if (parent.empty()) {
-        return {};
-    }
-    const auto parent_name = parent.filename().string();
-    if (parent_name == "lib64") {
-        const auto bin64 = parent.parent_path();
-        if (bin64.filename() == "bin64") {
-            return bin64.parent_path();
-        }
-        return bin64;
-    }
-    if (parent_name == "bin64") {
-        return parent.parent_path();
-    }
-    // windows/ under bin64 package tree (legacy package layout)
-    if (parent_name == "windows" || parent_name == "linux" || parent_name == "osx") {
-        const auto bin64 = parent.parent_path();
-        if (bin64.filename() == "bin64") {
-            return bin64.parent_path();
-        }
-    }
-    // Canonical: parent directory of Injector module is the mod root.
-    return parent;
+    // Current layout: the real module sits directly in the mod root.
+    return abs_module.parent_path();
 }
 
 bool configure_injector_deps_search(const std::filesystem::path &mod_root,

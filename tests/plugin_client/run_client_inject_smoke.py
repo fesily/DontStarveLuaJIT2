@@ -105,18 +105,12 @@ def build_inject_env(game_dir: Path, extra: Optional[dict] = None) -> dict:
     """Mod-local Injector bootstrap env (mirror L-G server harness).
 
     Game bin64 keeps only the inject shell (Winmm / POSIX stub). Real Injector
-    is resolved via DS_LUAJIT_INJECTOR from the mod package / build tree.
+    is resolved via DS_LUAJIT_INJECTOR from the mod root.
     """
     env: dict = {}
 
     if sys.platform.startswith("linux"):
-        real = _first_existing(
-            [
-                ROOT / "Mod" / "bin64" / "linux" / "libInjector.so",
-                ROOT / "Mod" / "bin64" / "libInjector.so",
-                game_dir / "bin64" / "libInjector.so",  # rare legacy
-            ]
-        )
+        real = _first_existing([ROOT / "Mod" / "libInjector.so"])
         stub = _first_existing(
             [
                 ROOT / "Mod" / "bin64" / "linux" / "lib64" / "libInjector.so",
@@ -144,12 +138,7 @@ def build_inject_env(game_dir: Path, extra: Optional[dict] = None) -> dict:
         else:
             print("[lc] WARN: libInjector.so not found; inject may be missing")
     elif sys.platform == "darwin":
-        real = _first_existing(
-            [
-                ROOT / "Mod" / "bin64" / "osx" / "libInjector.dylib",
-                ROOT / "Mod" / "bin64" / "libInjector.dylib",
-            ]
-        )
+        real = _first_existing([ROOT / "Mod" / "libInjector.dylib"])
         stub = _first_existing(
             [
                 ROOT / "Mod" / "bin64" / "osx" / "shell" / "libInjector.dylib",
@@ -172,18 +161,12 @@ def build_inject_env(game_dir: Path, extra: Optional[dict] = None) -> dict:
         winmm_alt = game_dir / "bin64" / "winmm.dll"
         if not winmm.exists() and not winmm_alt.exists():
             print("[lc] WARN: Winmm.dll missing in game bin64; inject shell may be absent")
-        real = _first_existing(
-            [
-                ROOT / "Mod" / "bin64" / "windows" / "Injector.dll",
-                ROOT / "Mod" / "bin64" / "Injector.dll",
-                game_dir / "bin64" / "Injector.dll",  # legacy install only
-            ]
-        )
+        real = _first_existing([ROOT / "Mod" / "Injector.dll"])
         if real is not None:
             env["DS_LUAJIT_INJECTOR"] = str(real)
             print(f"[lc] DS_LUAJIT_INJECTOR={real}")
         else:
-            print("[lc] WARN: Injector.dll not found under mod/game bin64; inject may be missing")
+            print("[lc] WARN: Injector.dll not found at the mod root; inject may be missing")
 
     if extra:
         env.update(extra)
@@ -217,19 +200,10 @@ def ensure_injector(game_dir: Path) -> bool:
             shutil.copy2(mod_winmm, winmm)
             print(f"[lc] installed Winmm.dll shell -> {winmm}")
 
-        # Prefer mod-local real Injector; do not stage it into game bin64.
-        real = _first_existing(
-            [
-                ROOT / "Mod" / "bin64" / "windows" / "Injector.dll",
-                ROOT / "Mod" / "bin64" / "Injector.dll",
-            ]
-        )
-        if real is None and (bin64 / "Injector.dll").exists():
-            # Legacy game-dir only — allow for smoke, but warn.
-            eprint(f"[lc] WARN: using legacy game-dir Injector.dll at {bin64 / 'Injector.dll'}")
-            real = bin64 / "Injector.dll"
+        # Real Injector lives at the mod root; never staged into game bin64.
+        real = _first_existing([ROOT / "Mod" / "Injector.dll"])
         if real is None:
-            eprint("[lc] Injector.dll missing under Mod/bin64 (mod-local layout)")
+            eprint("[lc] Injector.dll missing at the mod root")
             return False
 
         # Drop stale game-dir real Injector so Winmm + DS_LUAJIT_INJECTOR is the path.
@@ -245,12 +219,7 @@ def ensure_injector(game_dir: Path) -> bool:
 
     if sys.platform.startswith("linux"):
         stub_dst = bin64 / "lib64" / "libInjector.so"
-        real = _first_existing(
-            [
-                ROOT / "Mod" / "bin64" / "linux" / "libInjector.so",
-                ROOT / "Mod" / "bin64" / "libInjector.so",
-            ]
-        )
+        real = _first_existing([ROOT / "Mod" / "libInjector.so"])
         stub_src = _first_existing(
             [
                 ROOT / "Mod" / "bin64" / "linux" / "lib64" / "libInjector.so",
@@ -278,12 +247,7 @@ def ensure_injector(game_dir: Path) -> bool:
         return True
 
     if sys.platform == "darwin":
-        real = _first_existing(
-            [
-                ROOT / "Mod" / "bin64" / "osx" / "libInjector.dylib",
-                ROOT / "Mod" / "bin64" / "libInjector.dylib",
-            ]
-        )
+        real = _first_existing([ROOT / "Mod" / "libInjector.dylib"])
         stub = _first_existing(
             [
                 ROOT / "Mod" / "bin64" / "osx" / "shell" / "libInjector.dylib",

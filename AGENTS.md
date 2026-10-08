@@ -42,6 +42,7 @@ Don't Starve / Don't Starve Together LuaJIT 优化补丁项目。通过 DLL 注�
 - 使用 CMake presets: `CMakePresets.json`
 - 依赖管理: vcpkg (`vcpkg.json` + `vcpkg-configuration.json`)
 - 快速初始化: `dev_init.bat` (Windows) / `dev_init.sh` (Linux/macOS)
+- 推送前测试钩子（可选）: 每个克隆执行一次 `git config core.hooksPath .githooks`，之后 `git push` 会先跑 CTest（跨平台入口 `tools/pre_push.py`，单次跳过用 `git push --no-verify`）
 
 ## 外部游戏目录
 

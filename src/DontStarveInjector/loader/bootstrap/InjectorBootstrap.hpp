@@ -34,11 +34,8 @@ using HookStartupEntryFn = bool (*)();
 // return HookStartupEntry or nullptr. Logs on failure.
 HookStartupEntryFn load_injector_hook_entry();
 
-// Derive mod_root from absolute module path:
-//   .../mod/Injector.dll                  -> .../mod   (canonical)
-//   .../mod/libInjector.so|.dylib         -> .../mod   (canonical)
-//   .../mod/bin64/Injector.dll            -> .../mod   (legacy)
-//   .../mod/bin64/lib64/libInjector.so    -> .../mod   (legacy)
+// Derive mod_root from absolute module path (the module sits in the mod root):
+//   .../mod/Injector.dll|libInjector.so|libInjector.dylib -> .../mod
 std::filesystem::path mod_root_from_injector_module(const std::filesystem::path &abs_module);
 
 // Windows: AddDllDirectory(mod_root/deps) if exists; AddDllDirectory(module parent).

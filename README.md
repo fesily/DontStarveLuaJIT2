@@ -81,12 +81,12 @@
 
 ## 2.注入部分：
 
-安装模型（2026-08-06 起）：**仅注入壳**进游戏 `bin64`；真实 `Injector` 在 **mod** `bin64/`。
+安装模型（2026-08-06 起）：**仅注入壳**进游戏 `bin64`；真实 `Injector` 在 **mod 根目录**（与 `modmain.lua` 同级）。
 
 ### 方法 1（自动安装）
 - 直接运行 Luajit 文件夹内的 `install.bat`（Windows）/ `install_linux.sh`（Linux）
 - 运行 `install_linux.sh` 前可能需要先执行 `chmod +x ./install_linux.sh` 赋予权限
-- 脚本会：壳 → 游戏 `bin64`；真实 Injector → 当前 mod `bin64/`；并写入标记文件 `data/unsafedata/ds_luajit_injector.path`
+- 脚本会：壳 → 游戏 `bin64`；真实 Injector → 当前 mod 根目录；并写入标记文件 `data/unsafedata/ds_luajit_injector.path`
 
 ### 方法 2（手动安装）
 
@@ -94,8 +94,8 @@
 
 - **只**将 `Winmm.dll` 复制到游戏目录的 `bin64`（DLL 劫持壳）
   - 例如：`D:\Steam\steamapps\common\Don't Starve Together\bin64\Winmm.dll`
-- 将真实 **`Injector.dll`** 放到 **mod** 的 `bin64\`（与 `modmain.lua` 同级树下）
-  - 例如：`…/mods/Luajit/bin64/Injector.dll` 或 workshop 内容目录下的 `bin64\Injector.dll`
+- 将真实 **`Injector.dll`** 放到 **mod 根目录**（与 `modmain.lua` 同级）
+  - 例如：`…/mods/Luajit/Injector.dll` 或 workshop 内容目录下的 `Injector.dll`
 - （可选）在游戏 `data/unsafedata/ds_luajit_injector.path` 写入一行真实 Injector 的绝对路径，便于冷启动固定解析
 - **不要**再把整包 `bin64/windows` 全量拷进游戏 `bin64`
 - 专用服务器同理（同样只装 `Winmm.dll` 到游戏 `bin64`）
@@ -105,7 +105,7 @@
 我只在 ubuntu 上测试过，但如果有人能提供 steamos 环境，我也可以在 steamos 上测试，哈哈！
 
 - 将 **stub**（薄壳）复制到游戏 `bin64/lib64/libInjector.so`（`LD_PRELOAD` 仍指向游戏 stub）
-- 将 **真实** `libInjector.so` 放到 **mod** `bin64/libInjector.so`（也可放在 `bin64/lib64/` 供扫描兼容）
+- 将 **真实** `libInjector.so` 放到 **mod 根目录**（与 `modmain.lua` 同级）
 - 将原始游戏可执行文件 `dontstarve_steam_x64` 重命名为 `dontstarve_steam_x64_1`
 - 创建内容为 `dontstarve_steam_x64` 的新文件：
 

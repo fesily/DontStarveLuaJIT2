@@ -40,6 +40,20 @@ local function assert_false(v, message)
     end
 end
 
+-- Dump host failure events before asserting a load_phase result, so a bare
+-- "load ok" failure names the plugin, reason and detail.
+local function assert_load_ok(host, lr, message)
+    if not lr.ok then
+        for _, ev in ipairs(host:events_list()) do
+            print(string.format(
+                "load event: plugin=%s phase=%s status=%s reason=%s detail=%s",
+                tostring(ev.plugin_id), tostring(ev.phase), tostring(ev.status),
+                tostring(ev.reason), tostring(ev.detail)))
+        end
+    end
+    assert_true(lr.ok, message)
+end
+
 local STATUS = PluginHost.Status
 local FAIL = PluginHost.FailReason
 local PHASE = PluginHost.Phase
@@ -407,10 +421,12 @@ local function test_save_fork_enable_matrix()
     package.loaded["plugins.network_sim"] = nil
     package.loaded["plugins.network_rpc"] = nil
     package.loaded["plugins.network_entity"] = nil
-    local list = require("plugins.init")
-    assert_eq(type(list), "table", "init returns table")
-    assert_true(#list >= 1, "init has plugins")
-    local save_fork = plugin_by_id(list, "save.fork")
+    local registry = require("plugins.init")
+    assert_eq(type(registry), "table", "init returns table")
+    assert_true(#registry >= 1, "init has plugins")
+    -- Register only save.fork: this matrix tests its own gates/load and must
+    -- not depend on other plugins (their modmains belong to their own tests).
+    local save_fork = plugin_by_id(registry, "save.fork")
     assert_true(save_fork ~= nil, "save.fork registered")
     assert_eq(save_fork.priority, 60, "save.fork priority")
 
@@ -429,15 +445,16 @@ local function test_save_fork_enable_matrix()
     local ok, err = pcall(function()
         -- Row: EnableForkSave=true + dedicated + has_luajit → Loaded
         local host_on = PluginHost.new()
-        host_on:register_all(list)
+        host_on:register(save_fork)
         host_on:resolve(
             { EnableForkSave = true },
             { has_luajit = true, is_client = false }
         )
         local lr_on = host_on:load_phase(PHASE.AfterModMain)
-        assert_true(lr_on.ok, "save.fork on load ok")
+        assert_load_ok(host_on, lr_on, "save.fork on load ok")
         assert_eq(host_on:status("save.fork"), STATUS.Loaded, "save.fork on Loaded")
         assert_eq(pos(lr_on.loaded_order, "save.fork") ~= nil and 1 or 0, 1, "save.fork in order")
+        assert_eq(#lr_on.loaded_order, 1, "only save.fork loaded")
         local e_on = host_on:find("save.fork")
         assert_eq(e_on.load_count, 1, "save.fork load_count on")
         assert_eq(#postinits, 1, "save.fork scheduled PostInit")
@@ -449,15 +466,16 @@ local function test_save_fork_enable_matrix()
         postinits = {}
         modimports = {}
         local host_off = PluginHost.new()
-        host_off:register_all(list)
+        host_off:register(save_fork)
         host_off:resolve(
             { EnableForkSave = false },
             { has_luajit = true, is_client = false }
         )
         local lr_off = host_off:load_phase(PHASE.AfterModMain)
-        assert_true(lr_off.ok, "save.fork off resolve ok")
+        assert_load_ok(host_off, lr_off, "save.fork off resolve ok")
         assert_eq(host_off:status("save.fork"), STATUS.Disabled, "save.fork off Disabled")
         assert_eq(pos(lr_off.loaded_order, "save.fork"), nil, "save.fork not loaded when off")
+        assert_eq(#lr_off.loaded_order, 0, "nothing loaded when option off")
         local e_off = host_off:find("save.fork")
         assert_eq(e_off.load_count or 0, 0, "save.fork load_count off")
         assert_eq(#postinits, 0, "no PostInit when off")
@@ -465,7 +483,7 @@ local function test_save_fork_enable_matrix()
 
         -- when gate: client (not dedicated) disables even if option on
         local host_client = PluginHost.new()
-        host_client:register_all(list)
+        host_client:register(save_fork)
         host_client:resolve(
             { EnableForkSave = true },
             { has_luajit = true, is_client = true }
@@ -475,7 +493,7 @@ local function test_save_fork_enable_matrix()
 
         -- when gate: no luajit disables
         local host_nojit = PluginHost.new()
-        host_nojit:register_all(list)
+        host_nojit:register(save_fork)
         host_nojit:resolve(
             { EnableForkSave = true },
             { has_luajit = false, is_client = false }
@@ -501,11 +519,13 @@ local function test_sim_lagcomp_enable_matrix()
     package.loaded["plugins.network_sim"] = nil
     package.loaded["plugins.network_rpc"] = nil
     package.loaded["plugins.network_entity"] = nil
-    local list = require("plugins.init")
-    local plugin = plugin_by_id(list, "sim.lagcomp")
+    local registry = require("plugins.init")
+    local plugin = plugin_by_id(registry, "sim.lagcomp")
     assert_true(plugin ~= nil, "sim.lagcomp registered")
     assert_eq(plugin.priority, 60, "sim.lagcomp priority")
     assert_eq(plugin.options.all_of[1], "EnableLagCompensation", "sim.lagcomp option")
+    -- Only the plugin under test is registered (no cross-plugin dependence).
+    local list = { plugin }
 
     local modimports = {}
     local prev_modimport = rawget(_G, "modimport")
@@ -594,11 +614,13 @@ local function test_network_sim_enable_matrix()
     package.loaded["plugins.network_sim"] = nil
     package.loaded["plugins.network_rpc"] = nil
     package.loaded["plugins.network_entity"] = nil
-    local list = require("plugins.init")
-    local plugin = plugin_by_id(list, "network.sim")
+    local registry = require("plugins.init")
+    local plugin = plugin_by_id(registry, "network.sim")
     assert_true(plugin ~= nil, "network.sim registered")
     assert_eq(plugin.priority, 60, "network.sim priority")
     assert_eq(plugin.options.all_of[1], "EnableNetSim", "network.sim option")
+    -- Only the plugin under test is registered (no cross-plugin dependence).
+    local list = { plugin }
 
     local modimports = {}
     local prev_modimport = rawget(_G, "modimport")
@@ -719,11 +741,13 @@ end
 local function test_network_rpc_enable_matrix()
     -- L-E: network.rpc NetworkOpt true/false (Lua face AfterModMain).
     clear_plugin_modules()
-    local list = require("plugins.init")
-    local plugin = plugin_by_id(list, "network.rpc")
+    local registry = require("plugins.init")
+    local plugin = plugin_by_id(registry, "network.rpc")
     assert_true(plugin ~= nil, "network.rpc registered")
     assert_eq(plugin.priority, 40, "network.rpc priority")
     assert_eq(plugin.options.all_of[1], "NetworkOpt", "network.rpc option")
+    -- Only the plugin under test is registered (no cross-plugin dependence).
+    local list = { plugin }
     assert_eq(#(plugin.depends or {}), 0, "network.rpc no hard deps")
 
     local set_next_calls = {}
@@ -793,12 +817,16 @@ end
 local function test_network_entity_enable_matrix()
     -- L-E / S9: network.entity × network.rpc hard dep matrix.
     clear_plugin_modules()
-    local list = require("plugins.init")
-    local plugin = plugin_by_id(list, "network.entity")
+    local registry = require("plugins.init")
+    local plugin = plugin_by_id(registry, "network.entity")
     assert_true(plugin ~= nil, "network.entity registered")
     assert_eq(plugin.priority, 40, "network.entity priority")
     assert_eq(plugin.options.all_of[1], "NetworkOptEntity", "network.entity option")
     assert_eq(plugin.depends[1], "network.rpc", "network.entity depends network.rpc")
+    -- This matrix is the entity × hard-dep pair only; nothing else registers.
+    local rpc = plugin_by_id(registry, "network.rpc")
+    assert_true(rpc ~= nil, "network.rpc registered")
+    local list = { rpc, plugin }
 
     local register_calls = {}
     local injector = {
@@ -1176,10 +1204,12 @@ end
 local function test_debug_profiler_enable_matrix()
     -- L-E: EnableProfiler off/fzvp; EnableTracy on/off
     clear_plugin_modules()
-    local list = require("plugins.init")
-    local plugin = plugin_by_id(list, "debug.profiler")
+    local registry = require("plugins.init")
+    local plugin = plugin_by_id(registry, "debug.profiler")
     assert_true(plugin ~= nil, "debug.profiler registered")
     assert_eq(plugin.priority, 20, "debug.profiler priority")
+    -- Only the plugin under test is registered (no cross-plugin dependence).
+    local list = { plugin }
 
     local prev = install_m4_game_stubs()
     local ok, err = pcall(function()
@@ -1257,12 +1287,14 @@ end
 local function test_gc_policy_enable_matrix()
     -- L-E: DisableForceFullGC / EnableFrameGC now owned by debug.profiler (+ EnabledGenGC short-circuit)
     clear_plugin_modules()
-    local list = require("plugins.init")
-    assert_true(plugin_by_id(list, "gc.policy") == nil, "gc.policy removed from registry")
-    local plugin = plugin_by_id(list, "debug.profiler")
+    local registry = require("plugins.init")
+    assert_true(plugin_by_id(registry, "gc.policy") == nil, "gc.policy removed from registry")
+    local plugin = plugin_by_id(registry, "debug.profiler")
     assert_true(plugin ~= nil, "debug.profiler registered")
     assert_eq(plugin.priority, 20, "debug.profiler priority")
     assert_true(plugin.options and plugin.options.any_of, "debug.profiler any_of options")
+    -- Only the plugin under test is registered (no cross-plugin dependence).
+    local list = { plugin }
 
     local prev = install_m4_game_stubs()
     local ok, err = pcall(function()
@@ -1324,10 +1356,12 @@ end
 local function test_fps_render_enable_matrix()
     -- L-E: TargetRenderFPS present vs off-ish; Win gate
     clear_plugin_modules()
-    local list = require("plugins.init")
-    local plugin = plugin_by_id(list, "fps.render")
+    local registry = require("plugins.init")
+    local plugin = plugin_by_id(registry, "fps.render")
     assert_true(plugin ~= nil, "fps.render registered")
     assert_eq(plugin.priority, 50, "fps.render priority")
+    -- Only the plugin under test is registered (no cross-plugin dependence).
+    local list = { plugin }
 
     local prev = install_m4_game_stubs()
     local ok, err = pcall(function()
@@ -1396,10 +1430,12 @@ end
 local function test_jit_tailcall_enable_matrix()
     -- L-E: SlowTailCall / ForceDisable / AutoDetect combinations
     clear_plugin_modules()
-    local list = require("plugins.init")
-    local plugin = plugin_by_id(list, "jit.tailcall")
+    local registry = require("plugins.init")
+    local plugin = plugin_by_id(registry, "jit.tailcall")
     assert_true(plugin ~= nil, "jit.tailcall registered")
     assert_eq(plugin.priority, 10, "jit.tailcall priority")
+    -- Only the plugin under test is registered (no cross-plugin dependence).
+    local list = { plugin }
 
     local prev, reg = install_m4_game_stubs()
     local ok, err = pcall(function()
@@ -1470,10 +1506,12 @@ end
 local function test_jit_runtime_enable_matrix()
     -- L-E: EnabledJIT true/false; HideGlobalJIT true/false; order vs profiler
     clear_plugin_modules()
-    local list = require("plugins.init")
-    local plugin = plugin_by_id(list, "jit.runtime")
+    local registry = require("plugins.init")
+    local plugin = plugin_by_id(registry, "jit.runtime")
     assert_true(plugin ~= nil, "jit.runtime registered")
     assert_eq(plugin.priority, 70, "jit.runtime priority")
+    -- Only the plugin under test is registered (no cross-plugin dependence).
+    local list = { plugin }
 
     local prev, reg, jit_stub = install_m4_game_stubs()
     local ok, err = pcall(function()

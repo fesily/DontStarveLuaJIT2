@@ -10,8 +10,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROBE = Path(__file__).resolve().with_name("string_hash_distribution_probe.lua")
 
-DEFAULT_LUA51 = ROOT / "builds" / "ninja-multi-vcpkg" / "src" / "lua51original" / "RelWithDebInfo" / "lua.exe"
-DEFAULT_LUAJIT = ROOT / "builds" / "ninja-multi-vcpkg" / "luajit" / "RelWithDebInfo" / "luajit.exe"
+# Resolve the runtimes exactly like run.py does (same build dir, same config
+# fallback) so the probe can never diverge from the runtimes the sync tests used.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import run as suite  # noqa: E402
+
+DEFAULT_LUA51 = suite.default_runtime_path("src", "lua51original", "lua.exe")
+DEFAULT_LUAJIT = suite.default_runtime_path("luajit", "luajit.exe")
 
 
 def runtime_path(env_name: str, default_path: Path) -> Path:

@@ -1,0 +1,48 @@
+#!/bin/sh
+# Git pre-push hook: run the test suite before anything leaves this machine.
+#
+# Cross-platform by design: Git runs this file through a POSIX shell on every
+# platform (Git for Windows ships sh.exe), so one script covers Windows, Linux
+# and macOS. All check logic lives in the entry script `tools/pre_push.py`.
+#
+# Enable once per clone:
+#     git config core.hooksPath .githooks
+#
+# Run the checks manually:   python tools/pre_push.py
+# Skip a single push:        git push --no-verify
+# Skip via environment:      PRE_PUSH_SKIP=1 git push
+#
+# Git invokes this with: $1 = remote name, $2 = remote URL; pushed refs on stdin.
+
+set -u
+
+if [ "${PRE_PUSH_SKIP:-}" = "1" ]; then
+	echo "pre-push: skipped (PRE_PUSH_SKIP=1)" >&2
+	exit 0
+fi
+
+# Git already runs hooks from the working tree root; keep this for manual runs.
+root=$(git rev-parse --show-toplevel 2>/dev/null) || root=.
+cd "$root" || exit 1
+
+entry=tools/pre_push.py
+if [ ! -f "$entry" ]; then
+	echo "pre-push: $entry not found, skipping checks" >&2
+	exit 0
+fi
+
+# Pick the first Python 3 interpreter that actually runs. On Windows the
+# python3.exe on PATH can be the Microsoft Store alias stub, so test it first.
+if command -v python3 >/dev/null 2>&1 && python3 -c "" >/dev/null 2>&1; then
+	exec python3 "$entry" "$@"
+fi
+if command -v python >/dev/null 2>&1 && python -c "" >/dev/null 2>&1; then
+	exec python "$entry" "$@"
+fi
+if command -v py >/dev/null 2>&1 && py -3 -c "" >/dev/null 2>&1; then
+	exec py -3 "$entry" "$@"
+fi
+
+echo "pre-push: no working Python 3 interpreter found; skipping checks." >&2
+echo "pre-push: install Python 3, or push with 'git push --no-verify' to skip." >&2
+exit 0
