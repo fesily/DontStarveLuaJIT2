@@ -525,6 +525,17 @@ set_tests_properties(game_mod_throw_abort PROPERTIES
     TIMEOUT 180
     LABELS "game;harness")
 
+# Game-launching tests share the game install and bind fixed UDP ports
+# (cluster server.ini: ServerPort 10999 / SteamAuthPort 8766 /
+# SteamMasterServerPort 27016), so a parallel `ctest -j` run fails with
+# SOCKET_PORT_ALREADY_IN_USE. Serialize them with a resource lock.
+set_tests_properties(
+    plugin_dedicated_sim_pause
+    plugin_client_inject_smoke
+    plugin_client_host_smoke
+    game_mod_throw_abort
+    PROPERTIES RESOURCE_LOCK dst_game_server)
+
 # --- LuaJIT traceback engine-parity ---
 # The shipped DS VM must print what the engine-embedded Lua 5.1 db_errorfb
 # prints: unnamed metamethod frames (LJ_DS_DEBUG_FUNCNAME_PATCH) and one
