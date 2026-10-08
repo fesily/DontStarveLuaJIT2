@@ -37,6 +37,7 @@ set(SOURCES
         core/DynamicPluginLoader.cpp
         core/PluginPath.cpp
         core/PluginPendingUpdates.cpp
+        core/PluginProcessLock.cpp
         core/CoreVmBootstrap.cpp
         core/PluginPackModinfo.cpp
         core/ExternalPluginDiscovery.cpp
@@ -206,7 +207,7 @@ add_subdirectory(loader/bootstrap)
 # POSIX game-side shell (libInjector.so/.dylib). Windows uses Winmm.
 # Thin shell only: injector_bootstrap + libdl. No vcpkg/third-party shared libs.
 # OUTPUT_NAME Injector → libInjector.*; dual destinations:
-#   real Injector → package root (mod bin64)
+#   real Injector → package root (mod root)
 #   stub          → lib64/ (Linux) or shell/ (macOS)
 if (NOT WIN32)
     add_library(InjectorStub SHARED

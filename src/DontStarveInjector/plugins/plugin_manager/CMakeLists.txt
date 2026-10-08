@@ -16,6 +16,9 @@ ds_add_dynamic_plugin(plugin_manager
 target_link_libraries(plugin_manager PRIVATE
     nlohmann_json::nlohmann_json
     libzip::zip)
+# Build-configuration stamp: assets whose manifest/meta names another configuration are
+# refused (a Release DLL loaded into a Debug tree crashes at LoadLibrary).
+target_compile_definitions(plugin_manager PRIVATE DS_PLUGIN_BUILD_CONFIG="$<CONFIG>")
 if (WIN32)
     target_link_libraries(plugin_manager PRIVATE winhttp)
 else()

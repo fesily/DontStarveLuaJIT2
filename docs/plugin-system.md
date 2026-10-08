@@ -362,7 +362,7 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 | `save.fork` | `plugin_save_fork` | `all_of` `EnableForkSave` | EarlyNative | 60 | — | — | always (platform-native) |
 | `sim.lagcomp` | `plugin_sim_lagcomp` | `all_of` `EnableLagCompensation` | EarlyNative | 60 | — | — | Win; degrades without core.vm context |
 | `debug.profiler` | `plugin_debug_profiler` | AlwaysOn (native face) | EarlyNative | 20 | — | — | always (optional DLL; missing ⇒ soft no-op for Tracy/FullGC/FrameGC) |
-| `plugin.manager` | `plugin_manager` | AlwaysOn | EarlyNative | 50 | — | — | always (optional DLL; missing ⇒ no package manager; inject + other plugins continue) |
+| `plugin.manager` | `plugin_manager` | AlwaysOn | EarlyNative | 50 | — | — | always (optional DLL; missing ⇒ no package manager and no boot check; inject + other plugins continue) |
 | `debug.dummy` | `plugin_dummy` | AlwaysOn | EarlyNative | 1000 | — | — | always |
 
 ### 6.2 Lua (`Mod/plugins/init.lua` order + manifests)
@@ -502,9 +502,10 @@ When adding a plugin:
 | `src/DontStarveInjector/core/CoreVmBootstrap.*` | Optional load of `plugin_core_vm` + `ds_core_vm_run_signature_and_replace` |
 | `src/DontStarveInjector/plugins/plugin_core_vm/` | Optional `core.vm` package: `signature_load` / `game` / `io` / `injector` / `event` / `optional` + pure VM deps stage; fullgc forwarder only |
 | `src/DontStarveInjector/plugins/plugin_debug_profiler/` | Optional `debug.profiler` (Tracy / FullGC / FrameGC) |
-| `src/DontStarveInjector/plugins/plugin_manager/` | Optional `plugin.manager` (channel/pin download; soft-absent) |
+| `src/DontStarveInjector/plugins/plugin_manager/` | Optional `plugin.manager` (channel/pin download + one background boot check; soft-absent) |
 | `src/DontStarveInjector/plugins/plugin_*/` | Dynamic native feature modules (rpc/sim/vbpool/angle/fork/lagcomp/dummy/…) |
 | `src/DontStarveInjector/core/PluginPendingUpdates.*` | L0 pre-load `plugins/update_pending/` moves (no manager needed) |
+| `src/DontStarveInjector/core/PluginProcessLock.*` | L0 cross-process lock over a shared `plugins/` tree (pending moves + manager apply) |
 | `Mod/plugins/host.lua` | Lua host |
 | `Mod/plugins/init.lua` | Lua registry |
 | `Mod/plugins/package_load.lua` | Package load helper (modinfo sandbox + modimport rebind) |
@@ -537,10 +538,10 @@ EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`, �
 | Artifact | Location | Required? | Notes |
 |----------|----------|-----------|-------|
 | Winmm / POSIX stub | **game** `bin64` (Linux: `bin64/lib64/libInjector.so`) | **Yes** (shell) | Thin inject shell only; no business logic |
-| Injector (real) | **mod** `bin64/` (`Injector.dll` / `libInjector.so` / `.dylib`) | **Yes** | L0 inject + PluginHost + DynamicPluginLoader |
+| Injector (real) | **mod** root (`Injector.dll` / `libInjector.so` / `libInjector.dylib`) | **Yes** | L0 inject + PluginHost + DynamicPluginLoader |
 | `plugin_core_vm` | **mod** `plugins/` | **Recommended for JIT** | Optional. Missing ⇒ no Signature/ReplaceLuaModule/`GameInjector`; feature plugins still load |
 | `plugin_debug_profiler` | **mod** `plugins/` | **Optional (Tracy/FullGC/FrameGC)** | Independent of core.vm |
-| `plugin_manager` | **mod** `plugins/` | **Optional (package manager)** | Missing ⇒ manual install only; UI soft-degrades. See **§13** |
+| `plugin_manager` | **mod** `plugins/` | **Optional (package manager + boot check)** | Missing ⇒ manual install only, no boot check; UI soft-degrades. See **§13** |
 | other `plugin_*` | **mod** `plugins/` | Per feature | `network_*`, `render_*`, `save_fork`, `sim_lagcomp`, `dummy`, … |
 | third-party runtime deps | **mod** `deps/` | As needed | Shared DLL/SO search for Injector + plugins. Win client ANGLE: `libGLESv2.dll`, `libEGL.dll`, `vulkan-1.dll` from `3rd/angle/win64/bin` (also staged by `tools/deploy_debug_client.py`) |
 
@@ -670,7 +671,7 @@ Design: `docs/superpowers/specs/2026-08-05-plugin-manager-design.md` (**Accepted
 | Per-plugin zip | From the same Release: `plugin_<stem>-<ver>-<platform>.zip` (e.g. `plugin_network_rpc-1.0.0-windows.zip`). Extract module + optional `plugin_*.meta.json` into mod `plugins/`. |
 | `plugins/update_pending/` | Drop replacement modules here when the live DLL is locked. L0 `apply_pending_plugin_updates` runs **before** `LoadLibrary` on every inject — no manager needed. |
 
-Also published for humans and tools: `plugins-manifest.json` (catalog of ids, versions, assets, sha256). CI stages `plugins/` via `install(TARGETS … DESTINATION plugins)` so Mod zips include modules even without the manager.
+Also published for humans and tools: `plugins-manifest.json` (catalog of ids, versions, assets, sha256, per-platform `build_config`). CI stages `plugins/` via `install(TARGETS … DESTINATION plugins)` so Mod zips include modules even without the manager.
 
 ```text
 Release assets (manual baseline):
@@ -692,15 +693,49 @@ After any manual copy, **restart the game / dedicated process** so DynamicPlugin
 
 When the module is staged:
 
-1. **Config** — independent `data/unsafedata/luajit_plugins.json` (override env `DS_LUAJIT_PLUGINS_CONFIG`). Channel (`repo` / `stable|preview` / tag / `follow_latest`), download (`github_base`, `gh_proxy_base`, `prefer_proxy=auto|always|never`, `auto_apply_on_boot`), per-id pins, soft `prefer_present` (default empty — never blocks boot).
+1. **Config** — independent `data/unsafedata/luajit_plugins.json` (override env `DS_LUAJIT_PLUGINS_CONFIG`). Channel (`repo` / `stable|preview` / tag / `follow_latest`), download (`github_base`, `gh_proxy_base`, `prefer_proxy=auto|always|never`), per-id pins, soft `prefer_present` (default empty — never blocks boot). A legacy `download.auto_apply_on_boot` key is ignored: the boot check is not configurable, deleting `plugin_manager.dll` removes it.
 2. **Download** — GitHub Releases; gh-proxy wrap when direct probe fails (`prefer_proxy=auto`).
 3. **Apply** — extract allowlisted files into `plugins/` or `plugins/update_pending/` if locked; set `needs_restart`.
 4. **UI** — this mod’s `ModConfigurationScreen` action-bar **Plugin Manager / 插件管理** (all platforms). Full list / channel / pin / apply when exports present.
-5. **Dedicated** — no UI; optional `auto_apply_on_boot` only if the module loaded.
+5. **Boot check (dedicated + client)** — `plugin.manager` itself runs one background check per boot on a detached thread: reload pin config → `fetch_manifest_blocking` → `apply_blocking` → one log line. Not tied to the UI, not configurable, never forces a restart.
 
 GameInjector surface (registered only when the module loads): `DS_LUAJIT_plugin_config_path`, `DS_LUAJIT_plugin_manager_status_json`, `DS_LUAJIT_plugin_config_reload`, `DS_LUAJIT_plugin_config_set_json`, `DS_LUAJIT_plugin_pin_set` / `pin_clear`, `DS_LUAJIT_plugin_fetch_manifest`, `DS_LUAJIT_plugin_manifest_json`, `DS_LUAJIT_plugin_plan_apply_json`, `DS_LUAJIT_plugin_apply`, `DS_LUAJIT_plugin_needs_restart`.
 
+Native services (same names, typed, for plugin callers — **not** Lua exports):
+`DS_LUAJIT_plugin_config_reload` (`bool(void)`), `DS_LUAJIT_plugin_needs_restart` (`bool(void)`).
+The boot check and its helpers stay module-internal (`run_boot_check` → `fetch_manifest_blocking` / `apply_blocking`), so nothing outside the manager can hard-depend on them; each performs HTTP/download **with the manager mutex released**, so `DS_LUAJIT_plugin_manager_status_json` keeps answering (< 100 ms) while a check is in flight. `apply_blocking` returns `true` when nothing failed — an empty plan (“already up to date”) counts as success, and a partial install returns `false` while keeping what it installed (no rollback).
+
+Installing is serialized **across processes** (client + Master/Caves shards share one `plugins/`); see §13.4.
+
 Lua always soft-looks up these names. Missing export ⇒ `nil` / popup with manual install guidance — never a hard Injector error.
+
+#### Boot check (inside `plugin.manager`)
+
+`plugin_manager`'s EarlyNative `load()` reloads the pin config and starts **one** detached worker (`run_boot_check`), which logs exactly one outcome line:
+
+```text
+[plugin_manager] up to date
+[plugin_manager] updates installed; restart required to load them
+[plugin_manager] another process is checking for updates (deferred)
+[plugin_manager] boot check failed (non-fatal)
+[plugin_manager] boot apply incomplete (non-fatal)
+```
+
+Failures are non-fatal; a successful install only sets `needs_restart` (never a forced restart). This is why the manager owns the whole update path: there is no separate trigger plugin, no service dependency, and no enable/disable key — deleting `plugin_manager.dll` removes both the UI-driven manager and the boot check.
+
+#### Build-configuration stamp (mixed Debug/Release trees)
+
+Loading a DLL built for another configuration (Release asset into a Debug tree, or the reverse) fails at `LoadLibrary` — CRT/STL mismatch, observed as an instant boot crash. Installs are therefore stamped and gated:
+
+| | |
+|---|---|
+| Stamp | `build_config` in the manifest platform slot **and** in the packaged `<stem>.meta.json`; values `Debug` / `Release` / `RelWithDebInfo` / `MinSizeRel` / `any` (raw CMake config name, for humans) |
+| Compatibility | compared as **classes**, not exact names: on Windows/MSVC `Debug` is isolated (debug CRT `ucrtbased.dll`/`msvcp140D.dll`, `/MDd`, `_ITERATOR_DEBUG_LEVEL=2`, `d`-suffixed vcpkg deps) while `Release` / `RelWithDebInfo` / `MinSizeRel` are interchangeable (`/MD`, IDL 0, differing only in optimisation/debug-info flags). POSIX shares one libstdc++/libc++ ABI, so no pair is rejected there |
+| Producer | `tools/gen_plugins_manifest.py --build-config <cfg>` (default: inferred from the plugins dir path, else `any`). CI passes one job-level `PLUGIN_BUILD_CONFIG` that also drives `cmake --build --config`, so the shipped assets and the published stamps cannot drift |
+| Consumer | `plugin_manager` compares the slot stamp with its own `DS_PLUGIN_BUILD_CONFIG` (CMake `$<CONFIG>`; absent ⇒ `any` ⇒ unconstrained, which keeps legacy/unstamped manifests installable) |
+| Mismatch | an **incompatible class** is refused before any download (see `build_config_compatible`): no bytes fetched, nothing written, counted as `refused` (never as a failure) — `attempted == succeeded + refused` means “nothing failed” |
+| Visible as | `[plugin_manager] apply refused <id>: build mismatch …` (stderr), progress message `refused N/M (build config mismatch)`, boot log `[plugin_manager] refused N update(s): build config mismatch`, `status.build_config` (this build) and per-plugin `status.plugins[].build_config` / `build_mismatch` (from the local meta) |
+| `any` | explicit opt-out stamp; also the default for ad-hoc/non-CMake builds, so nothing is over-constrained |
 
 ### 13.3 Soft absence / non-core guarantee
 
@@ -708,7 +743,7 @@ Lua always soft-looks up these names. Missing export ⇒ `nil` / popup with manu
 |---|---|
 | Dependency class | Optional enhancement only |
 | Missing module | Same as any absent `plugin_*`; loader skips; no Injector error |
-| Other plugins | **Must not** list `plugin.manager` in `depends` / `soft_depends` or `DS_LUAJIT_plugin_*` in `requires_services` / `soft_requires_services` |
+| Other plugins | **Must not** list `plugin.manager` in `depends` / `soft_depends` or `DS_LUAJIT_plugin_*` in `requires_services` / `soft_requires_services` (the manager's boot check is internal, so nothing needs to) |
 | Pins / prefer_present | Missing file or soft preference never blocks boot |
 | First install of manager | Manual (full Mod.zip or `plugin_manager-*-<platform>.zip`) |
 | Self-update | When present, manager may pin/update/remove itself (no special bootstrap lock) |
@@ -719,14 +754,48 @@ Lua always soft-looks up these names. Missing export ⇒ `nil` / popup with manu
 
 Successful replace writes new files (or `update_pending/`) and reports `needs_restart`. Sticky modules are not reloaded in-process. User/UI must restart (client Quit/`DoRestart` confirm; dedicated process restart) before the new modules load. Pending dir is applied on the **next** inject before LoadLibrary.
 
+#### Concurrent processes (shared `plugins/` tree)
+
+A Steam client plus every shard of a dedicated cluster (Master/Caves) run **separate game processes** that share one mod `plugins/` directory. The manager's mutex is per-process, so installing is serialized by a cross-platform advisory **file lock** over that tree:
+
+| | |
+|---|---|
+| Lock file | `<plugins_dir>/.ds_plugin_update.lock` (byte 0 is the lock; bytes ≥ 64 hold a `pid=… host=…` stamp for diagnostics) |
+| Implementation | `core/PluginProcessLock.*` (`LockFileEx` on Windows, `flock` elsewhere) — shared by L0 and the manager |
+| One lock per tree | check and apply share it, so at most one of {check, apply} runs per tree at a time — a check can never scan the inventory while another process installs into it |
+| L0 `update_pending/` moves | wait ≤ 5 s; on contention **defer** (files stay pending, applied on the next inject) |
+| `plugin.manager` check (boot worker) | single attempt, no wait: if another process holds the tree, this process **defers without touching the network** (`status.progress.phase = "deferred"`, `last_error` stays null, `status.check_deferred` → true). That is what makes a multi-process boot wave perform **one** check: whoever takes the lock runs the whole check + install for that wave |
+| `plugin.manager` check (UI, user-triggered) | single attempt; on contention the click fails visibly with `fetch_manifest: another process is checking this plugins dir [pid=… host=…]` instead of silently deferring |
+| `plugin.manager` apply (boot worker + UI) | wait ≤ 30 s; while waiting `status.progress` says *waiting for another process's update…*; on timeout the apply fails with `another process is updating this plugins dir [pid=… host=…]` |
+| Plan re-check | after acquiring, the plan is rebuilt from the current inventory, so a process that waited does not re-download or re-install what another process just installed (it then reports *another process already updated plugins; restart required* and sets `needs_restart`) |
+| Deferred ≠ failed | a deferred process keeps its `needs_restart` untouched (it installed nothing) and learns the result on its next boot; the process that owns the lock reports the install outcome for its own status/UI |
+| No locking support | if the file cannot be created/locked (odd filesystem, permissions), both paths log a note and keep the legacy unlocked behavior instead of failing boot |
+
+The lock file is never deleted by the code (deleting it while held would let a third process lock a fresh file); it is ignored by the plugin loader and by the inventory scan, and it is safe to delete manually while no game process is running.
+
+#### Install layout (package dirs, not flat)
+
+`plugins/<stem>/<stem>.{dll,so,dylib}` is the **only** supported layout (what `install(TARGETS … DESTINATION plugins/<name>)` and the release zips produce). Flat `plugins/plugin_<stem>.<ext>` modules are not plugins: the loader ignores them (logged), the inventory does not list them, and updates always install into the package dir. All plugin discovery paths (`DynamicPluginLoader`, `ExternalPluginDiscovery`, inventory) follow this rule.
+
+| | |
+|---|---|
+| Manifest | platform slot `package: "<stem>"`; `module` (**must be `<package><ext>`**) and `files[]` are **relative to that dir** (`modinfo.lua`, `scripts/x.lua`). Manifest without `package` ⇒ `package` = module stem (migrates already-published flat manifests); `||` `| Install target | `<plugins_dir>/<package>/<member>` with subdirs preserved; a locked/live target falls back to `<plugins_dir>/update_pending/<package>/<member>`, moved in next boot. A legacy flat pending member (`update_pending/plugin_x.dll`) is translated into its package dir by the mover |
+| Atomicity | a package update moves as **one unit**: if any member cannot be written in place (the module is loaded/locked), every member goes to `update_pending/<package>/`, so a running boot never mixes a new Lua face/meta with the old module |
+| Cleanup | every boot consolidates leftovers (`consolidate_flat_plugin_layout`, under the tree lock): a flat module/meta whose package dir exists is removed (stale flat-install leftover); a flat module without a package dir is kept but warned about — move it into `plugins/<stem>/` |
+| Inventory | scans package dirs only (flat modules are invisible), so status/version/stamps match what the loader loads |
+| Generator | emits `package`; when a build tree holds both layouts, one entry per stem (package preferred) |
+
+Safety is unchanged: `package` must be a single safe segment and every member is validated as a safe relative path (no absolute/drive/`..`/backslash), so a hostile manifest cannot write outside `<plugins_dir>/<package>/`.
+
 ### 13.5 Absence hardening checklist
 
 ```text
 [ ] Delete plugin_manager.dll → dedicated/client still injects
 [ ] Other plugins load; no MissingService for manager APIs
+[ ] Boot check absent (no `[plugin_manager]` boot-check line); UI shows manual guidance
 [ ] UI shows manual guidance
 [ ] Restore DLL → manager functions
-[ ] Manual copy of a business plugin zip still works without manager
+[ ] Manual copy of a business plugin zip still works without manager (unpack into `plugins/<stem>/`; a flat `plugin_<stem>.dll` at the plugins root is ignored with a warning)
 ```
 
 Related plan: `docs/superpowers/plans/2026-08-05-plugin-manager.md`.

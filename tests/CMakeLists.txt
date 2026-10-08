@@ -28,6 +28,7 @@ add_test(
     NAME fork_save_lua
     COMMAND ${CMAKE_COMMAND} -E env
         REPO_ROOT=${CMAKE_SOURCE_DIR}
+        FORK_SAVE_CONFIG=$<CONFIG>
         ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/fork_save/run.py
 )
 set_tests_properties(fork_save_lua PROPERTIES
@@ -167,7 +168,8 @@ add_executable(test_dynamic_plugin_loader
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPendingUpdates.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/ExternalPluginDiscovery.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/EnabledDstMods.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPackModinfo.cpp)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPackModinfo.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginProcessLock.cpp)
 target_include_directories(test_dynamic_plugin_loader PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
     ${SOL2_INCLUDE_DIRS}
@@ -216,11 +218,24 @@ endif()
 
 add_executable(test_plugin_pending_updates
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_pending_updates.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPendingUpdates.cpp)
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginPendingUpdates.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginProcessLock.cpp)
 target_include_directories(test_plugin_pending_updates PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
 target_compile_features(test_plugin_pending_updates PRIVATE cxx_std_23)
+# Compile PluginProcessLock into the test image (not via Injector import lib).
+target_compile_definitions(test_plugin_pending_updates PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME plugin_pending_updates COMMAND test_plugin_pending_updates)
+
+# Cross-process lock over a shared plugins tree (spawns itself as the second process).
+add_executable(test_plugin_process_lock
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_process_lock.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginProcessLock.cpp)
+target_include_directories(test_plugin_process_lock PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_plugin_process_lock PRIVATE cxx_std_23)
+target_compile_definitions(test_plugin_process_lock PRIVATE DS_PLUGIN_HOST_STATIC)
+add_test(NAME plugin_process_lock COMMAND test_plugin_process_lock)
 
 add_executable(test_plugin_pin_config
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_pin_config.cpp
@@ -282,6 +297,8 @@ target_link_libraries(test_plugin_apply_offline PRIVATE
 if (WIN32)
     target_link_libraries(test_plugin_apply_offline PRIVATE winhttp)
 endif()
+# Fixed stamp so build-config refusal cases are deterministic (see PluginApply.hpp).
+target_compile_definitions(test_plugin_apply_offline PRIVATE DS_PLUGIN_BUILD_CONFIG="Debug")
 add_test(NAME plugin_apply_offline COMMAND test_plugin_apply_offline)
 
 # L0 lua_event bus — no hard-coded plugin DLL forwarder

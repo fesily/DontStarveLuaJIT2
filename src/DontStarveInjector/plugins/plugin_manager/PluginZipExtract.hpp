@@ -20,12 +20,15 @@ bool zip_entry_is_unsafe(std::string_view name);
 // Basename of a zip entry after normalizing separators; empty if unsafe.
 std::string zip_entry_safe_basename(std::string_view name);
 
-// Default allowlist when manifest files[] is absent: top-level plugin_* modules + meta.
-bool zip_entry_matches_default_allowlist(std::string_view basename);
+// Package-layout member: a path RELATIVE to the package dir. Nested segments are
+// allowed (`scripts/netsim.lua`); absolute paths, drive letters, `..` segments,
+// backslashes and NUL are rejected (see zip_entry_is_unsafe).
+bool zip_entry_is_safe_relative(std::string_view name);
 
 // Extract allowlisted entries from `zip_path` into `dest_dir`.
-// - Rejects unsafe names (`..`, absolute, nested path escapes).
-// - If `allow_files` is non-empty: only those basenames (exact).
+// - Rejects unsafe names (`..`, absolute, drive letters).
+// - If `allow_files` is non-empty: only those package-relative names (exact); nested
+//   members are written with their subdirectories preserved. Empty = all safe members.
 // - Else: only top-level plugin_* modules (.dll/.so/.dylib) and plugin_*.meta.json.
 // - Caps: per-entry uncompressed 64 MiB; total extracted 128 MiB (hard fail).
 // Returns number of files written, or nullopt with *err on hard failure.

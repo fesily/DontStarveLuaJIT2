@@ -87,11 +87,13 @@ struct ExtractCtx {
     std::string *err = nullptr;
 };
 
-bool allow_basename(const ExtractCtx &ctx, const std::string &base) {
-    if (ctx.allow && !ctx.allow->empty()) {
-        return ctx.allow->count(base) > 0;
+// Allowlist match: package-relative member name (exact). An empty allowlist means
+// "every safe member" (fixtures/tests); the manager always passes manifest files[].
+bool allow_entry(const ExtractCtx &ctx, const std::string &name) {
+    if (!ctx.allow || ctx.allow->empty()) {
+        return true;
     }
-    return zip_entry_matches_default_allowlist(base);
+    return ctx.allow->count(name) > 0;
 }
 
 bool write_entry_to_disk(zip_t *za, zip_int64_t index, const std::filesystem::path &out_path,
@@ -236,25 +238,17 @@ std::optional<size_t> extract_archive(zip_t *za, const std::filesystem::path &de
             }
             return std::nullopt;
         }
-        // Only top-level names (no nested dirs) — packages store basenames only.
-        if (name.find('/') != std::string::npos) {
-            // Nested path that is not `..` still rejected for plugins (flat layout).
+        // Package-relative member (nested allowed, still inside dest_dir).
+        if (!zip_entry_is_safe_relative(name)) {
             if (err) {
-                *err = "zip: rejected nested entry: " + name;
+                *err = "zip: rejected unsafe member: " + name;
             }
             return std::nullopt;
         }
-        const std::string base = zip_entry_safe_basename(name);
-        if (base.empty()) {
-            if (err) {
-                *err = "zip: rejected entry basename: " + name;
-            }
-            return std::nullopt;
-        }
-        if (!allow_basename(ctx, base)) {
+        if (!allow_entry(ctx, name)) {
             continue; // skip non-allowlisted silently
         }
-        const auto out_path = dest_dir / base;
+        const auto out_path = dest_dir / name;
         if (!write_entry_to_disk(za, i, out_path, &total_written, err)) {
             return std::nullopt;
         }
@@ -291,6 +285,26 @@ bool zip_entry_is_unsafe(std::string_view name) {
     return false;
 }
 
+bool zip_entry_is_safe_relative(std::string_view name) {
+    if (name.empty() || zip_entry_is_unsafe(name)) {
+        return false;
+    }
+    // No empty / "." segments (normalize_entry_name strips leading "./" already).
+    std::string_view rest(name);
+    while (!rest.empty()) {
+        const size_t slash = rest.find('/');
+        const std::string_view seg = rest.substr(0, slash);
+        if (seg.empty() || seg == "." || seg == "..") {
+            return false;
+        }
+        if (slash == std::string_view::npos) {
+            break;
+        }
+        rest.remove_prefix(slash + 1);
+    }
+    return true;
+}
+
 std::string zip_entry_safe_basename(std::string_view name) {
     if (zip_entry_is_unsafe(name)) {
         return {};
@@ -302,10 +316,6 @@ std::string zip_entry_safe_basename(std::string_view name) {
         return {};
     }
     return base;
-}
-
-bool zip_entry_matches_default_allowlist(std::string_view basename) {
-    return is_module_basename(basename) || is_meta_basename(basename);
 }
 
 std::optional<size_t> extract_plugin_zip(const std::filesystem::path &zip_path,

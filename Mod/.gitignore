@@ -15,3 +15,5 @@ signatures_server.json
 !deps/lua51.dll
 !deps/lua51.pdb
 !deps/liblua51.dylib
+# plugin.manager cross-process update lock (runtime artifact; never commit)
+plugins/.ds_plugin_update.lock

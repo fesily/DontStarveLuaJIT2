@@ -26,9 +26,17 @@ static void write_text(const fs::path &p, const std::string &body) {
     assert(out);
 }
 
+// Package layout is the only supported one: fixtures write plugins/<stem>/<member>.
+static void write_pkg_text(const fs::path &plugins_dir, const char *stem, const char *member,
+                           const std::string &body) {
+    const auto p = plugins_dir / stem / member;
+    fs::create_directories(p.parent_path());
+    write_text(p, body);
+}
+
 static void test_scan_meta_and_module() {
     auto dir = temp_dir("ds_plugin_inv_meta");
-    write_text(dir / "plugin_dummy.meta.json",
+    write_pkg_text(dir, "plugin_dummy", "plugin_dummy.meta.json",
                R"({
   "id": "debug.dummy",
   "version": "1.2.3",
@@ -37,7 +45,7 @@ static void test_scan_meta_and_module() {
 }
 )");
     // Fake module binary (content irrelevant for inventory).
-    write_text(dir / "plugin_dummy.dll", "MZ-fake");
+    write_pkg_text(dir, "plugin_dummy", "plugin_dummy.dll", "MZ-fake");
 
     auto inv = scan_local_inventory(dir);
     assert(inv.size() == 1);
@@ -54,7 +62,7 @@ static void test_scan_meta_and_module() {
 
 static void test_module_without_meta_version_unknown() {
     auto dir = temp_dir("ds_plugin_inv_nometa");
-    write_text(dir / "plugin_core_vm.dll", "MZ-fake");
+    write_pkg_text(dir, "plugin_core_vm", "plugin_core_vm.dll", "MZ-fake");
 
     auto inv = scan_local_inventory(dir);
     assert(inv.size() == 1);
@@ -73,9 +81,9 @@ static void test_missing_dir_empty() {
 
 static void test_status_override_update_available() {
     auto dir = temp_dir("ds_plugin_inv_status");
-    write_text(dir / "plugin_dummy.meta.json",
+    write_pkg_text(dir, "plugin_dummy", "plugin_dummy.meta.json",
                R"({"id":"debug.dummy","version":"1.0.0","sha256":"x","module":"plugin_dummy.dll"})");
-    write_text(dir / "plugin_dummy.dll", "MZ");
+    write_pkg_text(dir, "plugin_dummy", "plugin_dummy.dll", "MZ");
 
     PluginPinConfig cfg = defaults();
     cfg.pins["debug.dummy"] = PinEntry{"2.0.0", "override"};
@@ -94,9 +102,9 @@ static void test_status_override_update_available() {
 
 static void test_status_local_only_ok() {
     auto dir = temp_dir("ds_plugin_inv_ok");
-    write_text(dir / "plugin_dummy.meta.json",
+    write_pkg_text(dir, "plugin_dummy", "plugin_dummy.meta.json",
                R"({"id":"debug.dummy","version":"1.0.0","module":"plugin_dummy.dll"})");
-    write_text(dir / "plugin_dummy.dll", "MZ");
+    write_pkg_text(dir, "plugin_dummy", "plugin_dummy.dll", "MZ");
 
     PluginPinConfig cfg = defaults();
     auto inv = scan_local_inventory(dir);
@@ -109,9 +117,9 @@ static void test_status_local_only_ok() {
 
 static void test_plan_mismatch_and_prefer_present() {
     auto dir = temp_dir("ds_plugin_inv_plan");
-    write_text(dir / "plugin_dummy.meta.json",
+    write_pkg_text(dir, "plugin_dummy", "plugin_dummy.meta.json",
                R"({"id":"debug.dummy","version":"1.0.0","module":"plugin_dummy.dll"})");
-    write_text(dir / "plugin_dummy.dll", "MZ");
+    write_pkg_text(dir, "plugin_dummy", "plugin_dummy.dll", "MZ");
 
     PluginPinConfig cfg = defaults();
     cfg.pins["debug.dummy"] = PinEntry{"9.9.9", "override"};
@@ -211,6 +219,35 @@ static void test_plugins_dir_from_module_dir() {
 }
 
 
+static void write_file(const fs::path &p, const std::string &content) {
+    fs::create_directories(p.parent_path());
+    std::ofstream out(p, std::ios::binary);
+    out << content;
+}
+
+static void test_flat_module_ignored() {
+    // Flat modules are unsupported (the loader ignores them), so they must not show up in
+    // the inventory either — only the package copy counts.
+    auto dir = temp_dir("ds_inv_flat_ignored");
+    write_file(dir / "plugin_dummy.dll", "FLAT");
+    write_file(dir / "plugin_dummy.meta.json", R"({"id":"debug.dummy","version":"1.0.0"})");
+    write_file(dir / "plugin_dummy" / "plugin_dummy.dll", "PKG");
+    write_file(dir / "plugin_dummy" / "plugin_dummy.meta.json",
+               R"({"id":"debug.dummy","version":"2.0.0"})");
+
+    const auto inv = scan_local_inventory(dir);
+    assert(inv.size() == 1);
+    assert(inv[0].id == "debug.dummy");
+    assert(inv[0].path == dir / "plugin_dummy" / "plugin_dummy.dll");
+    assert(inv[0].version.has_value() && *inv[0].version == "2.0.0");
+
+    // Flat-only tree: no plugins at all.
+    auto flat_only = temp_dir("ds_inv_flat_only");
+    write_file(flat_only / "plugin_dummy.dll", "FLAT");
+    assert(scan_local_inventory(flat_only).empty());
+    printf("PASS: flat_module_ignored\n");
+}
+
 int main() {
     test_scan_meta_and_module();
     test_module_without_meta_version_unknown();
@@ -221,6 +258,7 @@ int main() {
     test_plan_missing_override();
     test_status_with_channel_cache();
     test_plugins_dir_from_module_dir();
+    test_flat_module_ignored();
     printf("ALL PASS plugin_local_inventory\n");
     return 0;
 }

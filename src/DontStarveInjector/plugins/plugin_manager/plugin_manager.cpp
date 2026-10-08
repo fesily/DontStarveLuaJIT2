@@ -9,7 +9,7 @@
 #include "PluginManagerApi.hpp"
 
 #include <cstdio>
-#include <exception>
+#include <thread>
 
 namespace {
 
@@ -36,46 +36,14 @@ struct PluginManagerPlugin final : IPlugin {
     }
 
     void load(PluginContext &) override {
-        // Reload pin config first. Optional network apply only when config opts in.
-        // Failures are logged and never abort Inject / host boot.
+        // Reload pin config from disk, then run ONE background release check
+        // (reload → fetch manifest → apply plan). It owns the cross-process tree
+        // lock, so a client + shard boot wave performs a single check and later
+        // processes defer. Failures are logged and never abort Inject / host boot;
+        // installing only sets needs_restart, it never forces a restart.
         ds::plugin_manager::reload_pin_config();
         std::fprintf(stderr, "[plugin_manager] pin config reloaded\n");
-
-        if (!ds::plugin_manager::auto_apply_on_boot()) {
-            return;
-        }
-
-        try {
-            std::fprintf(stderr, "[plugin_manager] auto_apply_on_boot: fetch_manifest...\n");
-            // Blocking is intentional here: EarlyNative, no UI yet. The Lua UI
-            // path uses the async DS_LUAJIT_plugin_fetch_manifest export.
-            const bool fetched = ds::plugin_manager::fetch_manifest_blocking(nullptr);
-            if (!fetched) {
-                std::fprintf(stderr,
-                             "[plugin_manager] auto_apply_on_boot: fetch_manifest failed "
-                             "(non-fatal)\n");
-                return;
-            }
-
-            std::fprintf(stderr, "[plugin_manager] auto_apply_on_boot: apply...\n");
-            const bool applied = ds::plugin_manager::apply_blocking(nullptr);
-            if (!applied) {
-                std::fprintf(stderr,
-                             "[plugin_manager] auto_apply_on_boot: apply failed or nothing "
-                             "to apply (non-fatal)\n");
-                return;
-            }
-
-            std::fprintf(stderr, "[plugin_manager] auto_apply_on_boot: complete\n");
-        } catch (const std::exception &e) {
-            std::fprintf(stderr,
-                         "[plugin_manager] auto_apply_on_boot: exception (non-fatal): %s\n",
-                         e.what());
-        } catch (...) {
-            std::fprintf(stderr,
-                         "[plugin_manager] auto_apply_on_boot: unknown exception "
-                         "(non-fatal)\n");
-        }
+        std::thread([] { ds::plugin_manager::run_boot_check(); }).detach();
     }
 
     void unload(PluginContext &) override {

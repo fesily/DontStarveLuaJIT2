@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <cstdio>
 #include <fstream>
 #include <system_error>
@@ -40,7 +41,7 @@ std::string github_api_base_from_github_base(std::string_view github_base) {
 }
 
 // Single-segment basename only: reject absolute, drive, `..`, separators, empty.
-bool is_flat_safe_basename(std::string_view name) {
+bool is_single_safe_segment(std::string_view name) {
     if (name.empty() || name == "." || name == "..") {
         return false;
     }
@@ -52,8 +53,25 @@ bool is_flat_safe_basename(std::string_view name) {
     if (zip_entry_is_unsafe(name)) {
         return false;
     }
-    // Must already be a pure basename (no nested components).
+    // Must be one path segment (no separators / nested components).
     return zip_entry_safe_basename(name) == std::string(name);
+}
+
+// Single path segment usable as a package directory name.
+bool is_safe_segment(std::string_view name) {
+    return is_single_safe_segment(name) && name != "." && name != "..";
+}
+
+// Module stem: "plugin_x.dll" -> "plugin_x" (empty when the name has no extension).
+std::string module_stem_of(std::string_view module_name) {
+    const std::string name(module_name);
+    for (const char *ext : {".dll", ".so", ".dylib"}) {
+        if (name.size() > std::strlen(ext) && name.ends_with(ext)) {
+            return name.substr(0, name.size() - std::strlen(ext));
+        }
+    }
+    const auto dot = name.rfind('.');
+    return dot == std::string::npos ? std::string() : name.substr(0, dot);
 }
 
 bool file_looks_locked_or_unwritable(const std::filesystem::path &path) {
@@ -332,11 +350,42 @@ std::optional<ManifestPluginAsset> lookup_manifest_asset(const nlohmann::json &m
         !req_str("module", out.module)) {
         return std::nullopt;
     }
-    if (!is_flat_safe_basename(out.module)) {
+    // Package layout only: explicit slot field wins, else the module stem (plugins/<stem>/
+    // is the canonical dir; legacy flat manifests are migrated by this inference).
+    if (slot->contains("package") && (*slot)["package"].is_string()) {
+        out.package = (*slot)["package"].get<std::string>();
+    } else {
+        out.package = module_stem_of(out.module);
+    }
+    if (!is_safe_segment(out.package)) {
         if (err) {
-            *err = "manifest: unsafe module path for " + out.id + ": " + out.module;
+            *err = "manifest: unsafe package dir for " + out.id + ": " + out.package;
         }
         return std::nullopt;
+    }
+    if (!zip_entry_is_safe_relative(out.module)) {
+        if (err) {
+            *err = "manifest: unsafe module member for " + out.id + ": " + out.module;
+        }
+        return std::nullopt;
+    }
+    // The loader only finds plugins/<package>/<package><ext>.
+    {
+        const std::string expected_dll = out.package + ".dll";
+        const std::string expected_so = out.package + ".so";
+        const std::string expected_dylib = out.package + ".dylib";
+        if (out.module != expected_dll && out.module != expected_so &&
+            out.module != expected_dylib) {
+            if (err) {
+                *err = "manifest: module '" + out.module + "' must be <package><ext> for " +
+                       out.id + " (expected " + expected_dll + "/" + expected_so + "/" +
+                       expected_dylib + ")";
+            }
+            return std::nullopt;
+        }
+    }
+    if (slot->contains("build_config") && (*slot)["build_config"].is_string()) {
+        out.build_config = (*slot)["build_config"].get<std::string>();
     }
     if (slot->contains("files") && (*slot)["files"].is_array()) {
         for (const auto &f : (*slot)["files"]) {
@@ -344,7 +393,7 @@ std::optional<ManifestPluginAsset> lookup_manifest_asset(const nlohmann::json &m
                 continue;
             }
             const std::string name = f.get<std::string>();
-            if (!is_flat_safe_basename(name)) {
+            if (!zip_entry_is_safe_relative(name)) {
                 if (err) {
                     *err = "manifest: unsafe files[] entry for " + out.id + ": " + name;
                 }
@@ -357,20 +406,50 @@ std::optional<ManifestPluginAsset> lookup_manifest_asset(const nlohmann::json &m
 }
 
 bool install_extracted_files(const std::filesystem::path &staging_dir,
-                             const std::filesystem::path &plugins_dir,
-                             const std::vector<std::string> &basenames, bool *used_pending,
+                             const std::filesystem::path &plugins_dir, std::string_view package,
+                             const std::vector<std::string> &members, bool *used_pending,
                              std::string *err) {
     if (used_pending) {
         *used_pending = false;
     }
+    if (!is_safe_segment(package)) {
+        if (err) {
+            *err = "install: unsafe package dir: " + std::string(package);
+        }
+        return false;
+    }
     std::error_code ec;
     std::filesystem::create_directories(plugins_dir, ec);
-    const auto pending_dir = plugins_dir / "update_pending";
+    // Package layout only: members land under <plugins_dir>/<package>/; the pending
+    // mirror keeps the same relative shape so the pre-LoadLibrary mover can restore it.
+    const auto package_dir = plugins_dir / std::string(package);
+    const auto pending_dir = plugins_dir / "update_pending" / std::string(package);
 
-    for (const auto &name : basenames) {
-        if (!is_flat_safe_basename(name)) {
+    // A package update is one unit: if ANY member cannot be written in place (the
+    // module is loaded/locked), route every member to update_pending/. Otherwise the
+    // running boot would mix a new Lua face / meta with the old module.
+    bool force_pending = false;
+    for (const auto &name : members) {
+        const auto src = staging_dir / name;
+        if (!std::filesystem::is_regular_file(src, ec)) {
+            continue;
+        }
+        const auto dest = package_dir / name;
+        if (std::filesystem::exists(dest, ec) && file_looks_locked_or_unwritable(dest)) {
+            force_pending = true;
+            break;
+        }
+    }
+    if (force_pending) {
+        std::fprintf(stderr,
+                     "[plugin_manager] install pending: %s (package kept together)\n",
+                     (package_dir / members.front()).string().c_str());
+    }
+
+    for (const auto &name : members) {
+        if (!zip_entry_is_safe_relative(name)) {
             if (err) {
-                *err = "install: unsafe basename: " + name;
+                *err = "install: unsafe member: " + name;
             }
             return false;
         }
@@ -379,9 +458,11 @@ bool install_extracted_files(const std::filesystem::path &staging_dir,
             continue; // optional meta may be absent
         }
 
-        const auto dest = plugins_dir / name;
-        bool go_pending = false;
-        if (std::filesystem::exists(dest, ec) && file_looks_locked_or_unwritable(dest)) {
+        const auto dest = package_dir / name;
+        bool go_pending = force_pending;
+        if (go_pending) {
+            // already routed to update_pending below
+        } else if (std::filesystem::exists(dest, ec) && file_looks_locked_or_unwritable(dest)) {
             go_pending = true;
         } else {
             std::string copy_err;
@@ -421,17 +502,28 @@ bool install_extracted_files(const std::filesystem::path &staging_dir,
     return true;
 }
 
-bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::json &manifest,
-                      const ManifestPluginAsset &asset, const std::filesystem::path &plugins_dir,
-                      bool *needs_restart, std::string *err) {
+ApplyOneOutcome apply_one_plugin(const ds::plugin::PluginPinConfig &cfg,
+                                 const nlohmann::json &manifest,
+                                 const ManifestPluginAsset &asset,
+                                 const std::filesystem::path &plugins_dir, bool *needs_restart,
+                                 std::string *err) {
     (void)manifest;
     if (asset.asset.empty() || asset.module.empty()) {
         if (err) {
             *err = "apply: incomplete asset for " + asset.id;
         }
-        return false;
+        return ApplyOneOutcome::Failed;
     }
 
+    // Build stamp: refuse assets built for an INCOMPATIBLE configuration BEFORE
+    // downloading (see build_config_compatible: Debug vs Release family on MSVC).
+    if (!build_config_compatible(asset.build_config, DS_PLUGIN_BUILD_CONFIG)) {
+        if (err) {
+            *err = "build mismatch for " + asset.id + " (asset=" + asset.build_config +
+                   ", this build=" + DS_PLUGIN_BUILD_CONFIG + ")";
+        }
+        return ApplyOneOutcome::Refused;
+    }
     // Tag for download: prefer manifest release_tag field if present, else cfg.
     std::string tag = cfg.release_tag;
     // Caller should have set cfg.release_tag / resolved; also accept top-level later via
@@ -441,7 +533,7 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
         if (err) {
             *err = "apply: empty release_tag for download of " + asset.id;
         }
-        return false;
+        return ApplyOneOutcome::Failed;
     }
 
     const std::string direct =
@@ -453,13 +545,13 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
         if (err) {
             *err = "apply download: " + http_err;
         }
-        return false;
+        return ApplyOneOutcome::Failed;
     }
     if (zip_bytes.size() < 4 || zip_bytes[0] != 'P' || zip_bytes[1] != 'K') {
         if (err) {
             *err = "apply: downloaded asset is not a zip for " + asset.id;
         }
-        return false;
+        return ApplyOneOutcome::Failed;
     }
 
     std::error_code ec;
@@ -483,23 +575,23 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
         if (err) {
             *err = "apply extract: " + zerr;
         }
-        return false;
+        return ApplyOneOutcome::Failed;
     }
     if (*extracted == 0) {
         std::filesystem::remove_all(staging, ec);
         if (err) {
             *err = "apply: no allowlisted files extracted for " + asset.id;
         }
-        return false;
+        return ApplyOneOutcome::Failed;
     }
 
     // Module must be a single safe basename under staging and among extracted members.
-    if (!is_flat_safe_basename(asset.module)) {
+    if (!zip_entry_is_safe_relative(asset.module)) {
         std::filesystem::remove_all(staging, ec);
         if (err) {
             *err = "apply: unsafe module path: " + asset.module;
         }
-        return false;
+        return ApplyOneOutcome::Failed;
     }
     const std::string module_base = asset.module;
     const auto module_path = staging / module_base;
@@ -508,7 +600,7 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
         if (err) {
             *err = "apply: module missing after extract: " + module_base;
         }
-        return false;
+        return ApplyOneOutcome::Failed;
     }
     auto digest = sha256_file_hex(module_path);
     if (!digest.has_value() || !sha256_hex_equal(*digest, asset.sha256)) {
@@ -517,7 +609,7 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
             *err = "apply: sha256 mismatch for " + module_base +
                    " (got " + digest.value_or("<read-error>") + ", expected " + asset.sha256 + ")";
         }
-        return false;
+        return ApplyOneOutcome::Failed;
     }
 
     // Production apply requires explicit files[] (CI always emits it). Default
@@ -527,20 +619,20 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
         if (err) {
             *err = "apply: files[] is required and must be non-empty for " + asset.id;
         }
-        return false;
+        return ApplyOneOutcome::Failed;
     }
 
-    // Collect basenames actually present in staging (allowlist ∩ extracted).
-    // Re-validate files[] as single safe basenames before install.
+    // Collect members actually present in staging (allowlist ∩ extracted).
+    // Re-validate files[] as safe package-relative members.
     std::vector<std::string> basenames;
     bool module_listed = false;
     for (const auto &f : asset.files) {
-        if (!is_flat_safe_basename(f)) {
+        if (!zip_entry_is_safe_relative(f)) {
             std::filesystem::remove_all(staging, ec);
             if (err) {
                 *err = "apply: unsafe files[] entry: " + f;
             }
-            return false;
+            return ApplyOneOutcome::Failed;
         }
         basenames.push_back(f);
         if (f == module_base) {
@@ -552,19 +644,20 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
         if (err) {
             *err = "apply: module not listed in files[]: " + module_base;
         }
-        return false;
+        return ApplyOneOutcome::Failed;
     }
 
 
 
     bool used_pending = false;
     std::string ierr;
-    if (!install_extracted_files(staging, plugins_dir, basenames, &used_pending, &ierr)) {
+    if (!install_extracted_files(staging, plugins_dir, asset.package, basenames, &used_pending,
+                                 &ierr)) {
         std::filesystem::remove_all(staging, ec);
         if (err) {
             *err = ierr;
         }
-        return false;
+        return ApplyOneOutcome::Failed;
     }
     std::filesystem::remove_all(staging, ec);
 
@@ -575,7 +668,7 @@ bool apply_one_plugin(const ds::plugin::PluginPinConfig &cfg, const nlohmann::js
     if (needs_restart) {
         *needs_restart = true;
     }
-    return true;
+    return ApplyOneOutcome::Installed;
 }
 
 ApplyResult apply_plan(const ds::plugin::PluginPinConfig &cfg, const nlohmann::json &manifest,
@@ -652,10 +745,16 @@ ApplyResult apply_plan(const ds::plugin::PluginPinConfig &cfg, const nlohmann::j
             continue;
         }
         bool nr = false;
-        report("install", step, planned, action.id,
-               "install " + action.id + " (" + std::to_string(step) + "/" +
-                   std::to_string(planned) + ")");
-        if (!apply_one_plugin(cfg_local, manifest, *asset, plugins_dir, &nr, &lerr)) {
+        const auto outcome = apply_one_plugin(cfg_local, manifest, *asset, plugins_dir, &nr, &lerr);
+        if (outcome == ApplyOneOutcome::Refused) {
+            // Build-configuration mismatch: deliberate skip, not a failure.
+            ++result.refused;
+            std::fprintf(stderr, "[plugin_manager] apply refused %s: %s\n", action.id.c_str(),
+                         lerr.c_str());
+            report("skipped", step, planned, action.id, lerr);
+            continue;
+        }
+        if (outcome == ApplyOneOutcome::Failed) {
             result.last_error = lerr;
             std::fprintf(stderr, "[plugin_manager] apply fail %s: %s\n", action.id.c_str(),
                          lerr.c_str());
@@ -671,13 +770,24 @@ ApplyResult apply_plan(const ds::plugin::PluginPinConfig &cfg, const nlohmann::j
                    ")");
     }
 
-    if (result.attempted > 0 && result.succeeded == 0 && result.last_error.empty()) {
+    if (result.attempted > 0 && result.succeeded == 0 && result.refused == 0 &&
+        result.last_error.empty()) {
         result.last_error = "apply: no matching actions";
     }
-    report("done", planned, planned, "",
-           result.succeeded > 0 ? ("applied " + std::to_string(result.succeeded) + "/" +
-                                   std::to_string(result.attempted))
-                               : result.last_error);
+    std::string summary;
+    if (result.succeeded > 0) {
+        summary = "applied " + std::to_string(result.succeeded) + "/" +
+                  std::to_string(result.attempted);
+    } else if (result.refused > 0) {
+        summary = "refused " + std::to_string(result.refused) + "/" +
+                  std::to_string(result.attempted) + " (build config mismatch)";
+    } else {
+        summary = result.last_error;
+    }
+    if (result.refused > 0 && result.succeeded > 0) {
+        summary += "; refused " + std::to_string(result.refused) + " (build config mismatch)";
+    }
+    report("done", planned, planned, "", summary);
     return result;
 }
 

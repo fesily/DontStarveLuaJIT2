@@ -91,7 +91,10 @@ bool has_plugin_extension(const std::filesystem::path &path) {
 #endif
 }
 
-bool is_plugin_candidate(const std::filesystem::directory_entry &entry) {
+// A flat plugin_<stem>.<ext> at the plugins root is NOT a plugin anymore: modules must
+// live in plugins/<stem>/<stem>.<ext> (see docs/plugin-system.md §13.4). Recognized only
+// to warn once per file.
+bool is_ignored_flat_module(const std::filesystem::directory_entry &entry) {
     if (!entry.is_regular_file()) {
         return false;
     }
@@ -274,8 +277,10 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
     // Test seam / per-root: register this plugins root (and deps/) for USER_DIRS.
     (void)configure_plugin_dll_search({dir});
 
-    // Apply manager/manual drops from update_pending/ before any LoadLibrary.
+    // Apply manager/manual drops from update_pending/ before any LoadLibrary, then drop
+    // unsupported flat leftovers whose package dir already supersedes them.
     (void)apply_pending_plugin_updates(dir);
+    (void)consolidate_flat_plugin_layout(dir);
 
     for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
         if (ec) {
@@ -283,20 +288,19 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
         }
 
         std::filesystem::path module_path;
-        bool from_package = false;
-        if (is_plugin_candidate(entry)) {
-            module_path = entry.path();
-        } else if (package_plugin_candidate(entry, &module_path)) {
-            from_package = true;
-        } else {
+        if (!package_plugin_candidate(entry, &module_path)) {
+            if (is_ignored_flat_module(entry)) {
+                std::fprintf(stderr,
+                             "[DynamicPluginLoader] ignoring flat plugin module %s: plugins must "
+                             "live in plugins/<stem>/<stem>%s\n",
+                             entry.path().string().c_str(), plugin_module_extension());
+            }
             continue;
         }
 
         // Package modules may ship private deps beside the DLL; register the
         // package dir in addition to the plugins root already configured above.
-        if (from_package) {
-            (void)configure_plugin_dll_search({module_path.parent_path()});
-        }
+        (void)configure_plugin_dll_search({module_path.parent_path()});
 
         // Do not reuse `ec` from the iterator — a failed weakly_canonical
         // must not abort the rest of the directory scan.

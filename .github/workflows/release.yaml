@@ -16,6 +16,9 @@ on:
 jobs:
   compile:
     env:
+      # Single source for the CMake configuration of shipped plugins: it decides both
+      # the build and the build_config stamp in meta/manifest (installs refuse mismatches).
+      PLUGIN_BUILD_CONFIG: RelWithDebInfo
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-bincache
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite
     strategy:
@@ -105,11 +108,11 @@ jobs:
 
       - name: Build
         run: |
-          cmake --build ./builds/ninja-multi-vcpkg --config RelWithDebInfo
+          cmake --build ./builds/ninja-multi-vcpkg --config "$PLUGIN_BUILD_CONFIG"
 
       - name: CMake install
         run: |
-          cmake --build ./builds/ninja-multi-vcpkg --config RelWithDebInfo --target install
+          cmake --build ./builds/ninja-multi-vcpkg --config "$PLUGIN_BUILD_CONFIG" --target install
 
       - name: Clean Up linux
         if: ${{ matrix.target == 'linux' }}
@@ -160,6 +163,7 @@ jobs:
             --repo fesily/DontStarveLuaJIT2 \
             --release-tag "$TAG" \
             --mod-version "$VERSION" \
+            --build-config "$PLUGIN_BUILD_CONFIG" \
             --source-root . \
             --out-manifest "dist/plugins-manifest.${PLATFORM}.json" \
             --out-zips-dir dist \

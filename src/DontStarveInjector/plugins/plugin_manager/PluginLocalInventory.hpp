@@ -18,6 +18,7 @@ struct LocalPluginEntry {
     std::optional<std::string> version;          // nullopt when meta missing / unparsed
     std::optional<std::string> sha256;
     std::string module;                          // filename (e.g. plugin_dummy.dll)
+    std::optional<std::string> build_config;     // meta stamp ("Release"…); absent = unstamped
     std::filesystem::path path;                  // plugins dir entry path (module or meta)
     bool has_meta = false;
     bool has_module = false;
@@ -47,6 +48,8 @@ struct PluginStatusEntry {
     std::string state;                     // ok | missing | update_available | unknown
     std::string module;
     std::optional<std::string> sha256;
+    std::optional<std::string> build_config;      // local module's stamp from meta
+    bool build_mismatch = false;                  // local stamp differs from this build
 };
 
 // Build full status rows from config + local inventory (+ optional channel cache).

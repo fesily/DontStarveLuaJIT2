@@ -41,6 +41,18 @@ VERSION_RE = re.compile(
     r"""man\.version\s*=\s*["']([0-9]+\.[0-9]+\.[0-9]+)["']"""
 )
 ABI_VERSION = "1"
+# Build-configuration stamp written into meta + manifest platform slots. Installs
+# refuse assets stamped with a configuration other than the running module's
+# (see PluginApply.hpp DS_PLUGIN_BUILD_CONFIG); "any" disables the check.
+BUILD_CONFIGS = ("Debug", "Release", "RelWithDebInfo", "MinSizeRel", "any")
+
+
+def infer_build_config(plugins_dir: Path) -> str:
+    """Best-effort: a build-tree path such as .../<Config>/plugins carries the config."""
+    for part in plugins_dir.parts:
+        if part in BUILD_CONFIGS:
+            return part
+    return "any"
 
 
 def sha256_file(path: Path) -> str:
@@ -117,20 +129,22 @@ def iter_plugin_modules(plugins_dir: Path) -> list[Path]:
     Package layout: plugins/plugin_<stem>/plugin_<stem>.{dll,so,dylib}
     Flat (legacy / C-only staging): plugins/plugin_<stem>.{dll,so,dylib}
     """
-    found: list[Path] = []
+    by_stem: dict[str, Path] = {}
     if not plugins_dir.is_dir():
         return found
     for p in sorted(plugins_dir.iterdir()):
         if is_plugin_module(p):
-            found.append(p)
+            # Legacy/flat staging: keep it unless a package dir for the same stem exists
+            # (the loader prefers the package layout; manifests must not ship both).
+            by_stem.setdefault(module_stem(p), p)
             continue
         if p.is_dir() and p.name.startswith("plugin_"):
             for ext in MODULE_EXTS:
                 cand = p / f"{p.name}{ext}"
                 if cand.is_file():
-                    found.append(cand)
+                    by_stem[p.name] = cand
                     break
-    return found
+    return [by_stem[stem] for stem in sorted(by_stem)]
 
 
 def package_dir_for_module(module_path: Path) -> Path | None:
@@ -198,7 +212,17 @@ def generate_partial(args: argparse.Namespace) -> int:
             "version": version,
             "sha256": digest,
             "module": module_path.name,
+            "build_config": args.build_config,
         }
+        # Layout: plugins/<stem>/<stem>.<ext> is the only supported form. Staging may
+        # still be flat (dev trees); the slot then carries package=<stem> so installers
+        # put the files into the canonical package dir.
+        package = pkg_dir.name if pkg_dir is not None else stem
+        if pkg_dir is None:
+            print(
+                f"warning: {stem} staged flat; manifest packages it as plugins/{stem}/",
+                file=sys.stderr,
+            )
         if args.write_meta:
             write_meta(meta_path, meta)
 
@@ -237,6 +261,8 @@ def generate_partial(args: argparse.Namespace) -> int:
                         "sha256": digest,
                         "module": module_path.name,
                         "files": files,
+                        "build_config": args.build_config,
+                        "package": package,
                     }
                 },
             }
@@ -398,11 +424,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory for per-plugin zip packages",
     )
     p.add_argument(
+        "--build-config",
+        default=None,
+        choices=list(BUILD_CONFIGS),
+        help="Build configuration stamp for meta + manifest slots "
+        "(default: inferred from the plugins dir path, else 'any').",
+    )
+    p.add_argument(
         "--write-meta",
         action="store_true",
         help="Write plugin_*.meta.json beside each module",
     )
     return p
+
+
+def resolve_build_config(args: argparse.Namespace, plugins_dir: Path | None) -> str:
+    if args.build_config:
+        return args.build_config
+    if plugins_dir is not None:
+        return infer_build_config(plugins_dir)
+    return "any"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -435,6 +476,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    args.build_config = resolve_build_config(args, Path(args.plugins_dir))
     return generate_partial(args)
 
 

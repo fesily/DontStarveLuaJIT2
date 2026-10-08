@@ -1,4 +1,5 @@
 #include "PluginLocalInventory.hpp"
+#include "PluginApply.hpp"  // DS_PLUGIN_BUILD_CONFIG / kBuildConfigAny
 
 #include <nlohmann/json.hpp>
 
@@ -65,13 +66,13 @@ std::string meta_stem(std::string_view name) {
     return std::string(name.substr(0, name.size() - suffix.size()));
 }
 
-struct Accum {
-    LocalPluginEntry entry;
-};
-
-void merge_meta(Accum &acc, const std::filesystem::path &meta_path) {
-    acc.entry.has_meta = true;
-    acc.entry.path = meta_path;
+// Sidecar meta beside the module inside the package dir. `path` stays on the module
+// when one exists (that is the file the loader loads), else it points at the meta.
+void merge_meta(LocalPluginEntry &entry, const std::filesystem::path &meta_path) {
+    entry.has_meta = true;
+    if (!entry.has_module) {
+        entry.path = meta_path;
+    }
     try {
         std::ifstream in(meta_path);
         if (!in.is_open()) {
@@ -80,28 +81,29 @@ void merge_meta(Accum &acc, const std::filesystem::path &meta_path) {
         nlohmann::json j;
         in >> j;
         if (j.contains("id") && j["id"].is_string()) {
-            acc.entry.id = j["id"].get<std::string>();
+            entry.id = j["id"].get<std::string>();
         }
         if (j.contains("version") && j["version"].is_string()) {
-            acc.entry.version = j["version"].get<std::string>();
+            entry.version = j["version"].get<std::string>();
         }
         if (j.contains("sha256") && j["sha256"].is_string()) {
-            acc.entry.sha256 = j["sha256"].get<std::string>();
+            entry.sha256 = j["sha256"].get<std::string>();
         }
         if (j.contains("module") && j["module"].is_string()) {
-            acc.entry.module = j["module"].get<std::string>();
+            entry.module = j["module"].get<std::string>();
+        }
+        if (j.contains("build_config") && j["build_config"].is_string()) {
+            entry.build_config = j["build_config"].get<std::string>();
         }
     } catch (...) {
         // Keep partial / empty fields; version stays unknown.
     }
 }
 
-void merge_module(Accum &acc, const std::filesystem::path &module_path) {
-    acc.entry.has_module = true;
-    acc.entry.module = module_path.filename().string();
-    if (acc.entry.path.empty()) {
-        acc.entry.path = module_path;
-    }
+void merge_module(LocalPluginEntry &entry, const std::filesystem::path &module_path) {
+    entry.has_module = true;
+    entry.module = module_path.filename().string();
+    entry.path = module_path;
 }
 
 std::string state_for(const std::optional<std::string> &local,
@@ -158,54 +160,42 @@ std::vector<LocalPluginEntry> scan_local_inventory(const std::filesystem::path &
         return out;
     }
 
-    // stem → accum
-    std::unordered_map<std::string, Accum> by_stem;
-
-    for (const auto &entry : std::filesystem::directory_iterator(plugins_dir, ec)) {
+    // Package layout only: plugins/<stem>/<stem>.<ext> (+ <stem>.meta.json beside it).
+    // Flat plugin modules at the root are unsupported (the loader ignores them), so they
+    // are not part of the inventory.
+    const char *module_exts[] = {".dll", ".so", ".dylib"};
+    for (std::filesystem::directory_iterator it(plugins_dir, ec), end; it != end;
+         it.increment(ec)) {
         if (ec) {
             break;
         }
-        if (!entry.is_regular_file(ec)) {
+        std::error_code probe_ec;
+        if (!it->is_directory(probe_ec)) {
             continue;
         }
-        const auto path = entry.path();
-        const auto name = path.filename().string();
-
-        if (is_meta_filename(name)) {
-            const std::string stem = meta_stem(name);
-            auto &acc = by_stem[stem];
-            merge_meta(acc, path);
-            if (acc.entry.id.empty()) {
-                if (auto lid = logical_id_for_module_stem(stem)) {
-                    acc.entry.id = *lid;
-                } else {
-                    acc.entry.id = stem;
-                }
-            }
+        const std::string stem = it->path().filename().string();
+        if (!stem.starts_with("plugin_")) {
             continue;
         }
-
-        if (name.rfind("plugin_", 0) == 0 && has_plugin_module_extension(path)) {
-            const std::string stem = module_stem(path);
-            auto &acc = by_stem[stem];
-            merge_module(acc, path);
-            if (acc.entry.id.empty()) {
-                if (auto lid = logical_id_for_module_stem(stem)) {
-                    acc.entry.id = *lid;
-                } else {
-                    acc.entry.id = stem;
-                }
+        LocalPluginEntry entry;
+        entry.id = logical_id_for_module_stem(stem).value_or(stem);
+        for (const char *ext : module_exts) {
+            std::error_code cand_ec;
+            const auto module_path = it->path() / (stem + ext);
+            if (std::filesystem::is_regular_file(module_path, cand_ec)) {
+                merge_module(entry, module_path);
+                break;
             }
         }
-    }
-
-    out.reserve(by_stem.size());
-    for (auto &[stem, acc] : by_stem) {
-        (void)stem;
-        if (acc.entry.id.empty()) {
-            continue;
+        const auto meta_path = it->path() / (stem + ".meta.json");
+        std::error_code meta_ec;
+        if (std::filesystem::is_regular_file(meta_path, meta_ec)) {
+            merge_meta(entry, meta_path);
         }
-        out.push_back(std::move(acc.entry));
+        if (entry.module.empty() && !entry.has_meta) {
+            continue; // empty/unrelated dir
+        }
+        out.push_back(std::move(entry));
     }
 
     std::sort(out.begin(), out.end(),
@@ -260,6 +250,12 @@ std::vector<PluginStatusEntry> build_plugin_status(const PluginPinConfig &cfg,
             row.local_version = e->version;
             row.module = e->module;
             row.sha256 = e->sha256;
+            row.build_config = e->build_config;
+            // Mixed trees crash at LoadLibrary; surface it instead of just failing later.
+            row.build_mismatch =
+                e->build_config.has_value() &&
+                !ds::plugin_manager::build_config_compatible(*e->build_config,
+                                                             DS_PLUGIN_BUILD_CONFIG);
         }
 
         auto cache_it = channel_cache.find(id);

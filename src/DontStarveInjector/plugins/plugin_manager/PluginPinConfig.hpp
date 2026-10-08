@@ -23,7 +23,6 @@ struct PluginPinConfig {
     std::string github_base = "https://github.com";
     std::string gh_proxy_base = "https://gh-proxy.com";
     std::string prefer_proxy = "auto";
-    bool auto_apply_on_boot = false;
     std::unordered_map<std::string, PinEntry> pins;
     std::vector<std::string> prefer_present; // default empty; soft preference only
 };

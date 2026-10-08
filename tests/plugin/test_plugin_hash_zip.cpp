@@ -101,25 +101,27 @@ static void test_zip_unsafe_detection() {
     printf("PASS: zip_unsafe_detection\n");
 }
 
-static void test_zip_extract_allowlist_default() {
+static void test_zip_extract_empty_allowlist() {
+    // Empty allowlist = every SAFE member (fixtures/tests); the manager always passes
+    // manifest files[]. Unsafe members are still rejected regardless.
     const auto dir = make_temp_dir("zip_def");
     const auto zip = dir / "pkg.zip";
     build_zip_with_entries(zip, {
                                     {"plugin_dummy.dll", "MZ-dummy"},
                                     {"plugin_dummy.meta.json", "{\"id\":\"debug.dummy\"}"},
-                                    {"readme.txt", "nope"},
+                                    {"readme.txt", "kept"},
                                 });
     const auto out = dir / "out";
     std::string err;
     auto n = extract_plugin_zip(zip, out, /*allow_files=*/{}, &err);
     assert(n.has_value());
-    assert(*n == 2);
+    assert(*n == 3);
     assert(read_bytes(out / "plugin_dummy.dll") == "MZ-dummy");
     assert(fs::exists(out / "plugin_dummy.meta.json"));
-    assert(!fs::exists(out / "readme.txt"));
+    assert(fs::exists(out / "readme.txt"));
     std::error_code ec;
     fs::remove_all(dir, ec);
-    printf("PASS: zip_extract_allowlist_default\n");
+    printf("PASS: zip_extract_empty_allowlist\n");
 }
 
 static void test_zip_extract_explicit_allowlist() {
@@ -161,20 +163,44 @@ static void test_zip_reject_dotdot() {
     printf("PASS: zip_reject_dotdot\n");
 }
 
-static void test_zip_reject_nested() {
-    const auto dir = make_temp_dir("zip_nest");
-    const auto zip = dir / "nest.zip";
-    build_zip_with_entries(zip, {
-                                    {"subdir/plugin_dummy.dll", "MZ"},
-                                });
-    const auto out = dir / "out";
-    std::string err;
-    auto n = extract_plugin_zip(zip, out, {}, &err);
-    assert(!n.has_value());
-    assert(err.find("nested") != std::string::npos || err.find("unsafe") != std::string::npos);
-    std::error_code ec;
-    fs::remove_all(dir, ec);
-    printf("PASS: zip_reject_nested\n");
+static void test_zip_nested_members() {
+    // Package layout: nested members (modinfo.lua, scripts/...) extract with their
+    // subdirectories preserved; escaping paths are still rejected.
+    {
+        const auto dir = make_temp_dir("zip_nest_ok");
+        const auto zip = dir / "nest.zip";
+        build_zip_with_entries(zip, {
+                                        {"plugin_dummy.dll", "MZ"},
+                                        {"scripts/a.lua", "return 1"},
+                                    });
+        const auto out = dir / "out";
+        std::string err;
+        auto n = extract_plugin_zip(zip, out,
+                                    {"plugin_dummy.dll", "scripts/a.lua"}, &err);
+        assert(n.has_value());
+        assert(*n == 2);
+        assert(read_bytes(out / "plugin_dummy.dll") == "MZ");
+        assert(read_bytes(out / "scripts" / "a.lua") == "return 1");
+        std::error_code ec;
+        fs::remove_all(dir, ec);
+        printf("PASS: zip_nested_members_extract\n");
+    }
+    {
+        const auto dir = make_temp_dir("zip_nest_escape");
+        const auto zip = dir / "nest.zip";
+        build_zip_with_entries(zip, {
+                                        {"scripts/../../escape.lua", "bad"},
+                                    });
+        const auto out = dir / "out";
+        std::string err;
+        auto n = extract_plugin_zip(zip, out, {}, &err);
+        assert(!n.has_value());
+        assert(err.find("unsafe") != std::string::npos || err.find("nested") != std::string::npos);
+        assert(!fs::exists(dir / "escape.lua"));
+        std::error_code ec;
+        fs::remove_all(dir, ec);
+        printf("PASS: zip_reject_escaping_nested\n");
+    }
 }
 
 static void test_zip_memory_extract() {
@@ -289,10 +315,10 @@ int main() {
     test_sha256_known_vectors();
     test_sha256_file();
     test_zip_unsafe_detection();
-    test_zip_extract_allowlist_default();
+    test_zip_extract_empty_allowlist();
     test_zip_extract_explicit_allowlist();
     test_zip_reject_dotdot();
-    test_zip_reject_nested();
+    test_zip_nested_members();
     test_zip_memory_extract();
     test_zip_reject_oversized_entry();
     printf("ALL PASS plugin_hash_zip\n");
