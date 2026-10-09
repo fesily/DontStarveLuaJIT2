@@ -744,6 +744,19 @@ ApplyResult apply_plan(const ds::plugin::PluginPinConfig &cfg, const nlohmann::j
             report("error", step, planned, action.id, lerr);
             continue;
         }
+        // Spec "Cross-tag pin (v1)": refuse when the manifest slot is not the version this
+        // action asked for (an override pin the current tag does not publish) — before any
+        // download, so nothing is fetched and nothing is installed under the wrong version.
+        if (!action.to.empty() && !asset->version.empty() && asset->version != action.to) {
+            lerr = "pinned " + action.to + " is not on this release tag (manifest has " +
+                   asset->version + "); switch channel/tag first";
+            result.last_error = lerr;
+            std::fprintf(stderr, "[plugin_manager] apply refused %s: %s\n", action.id.c_str(),
+                         lerr.c_str());
+            report("error", step, planned, action.id, lerr);
+            continue;
+        }
+
         bool nr = false;
         const auto outcome = apply_one_plugin(cfg_local, manifest, *asset, plugins_dir, &nr, &lerr);
         if (outcome == ApplyOneOutcome::Refused) {

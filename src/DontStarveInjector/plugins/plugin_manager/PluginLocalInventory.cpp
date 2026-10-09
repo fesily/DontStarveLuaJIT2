@@ -128,6 +128,17 @@ std::string state_for(const std::optional<std::string> &local,
     return "ok";
 }
 
+// Spec "Cross-tag pin (v1)": an override pin at a version the current tag does not
+// publish cannot be satisfied without a full-history search — surface it instead of
+// pretending an update is available.
+bool pin_unavailable_for(const PluginPinConfig &cfg, std::string_view plugin_id,
+                         const std::optional<std::string> &desired,
+                         const std::optional<std::string> &channel) {
+    auto it = cfg.pins.find(std::string(plugin_id));
+    return it != cfg.pins.end() && it->second.source == "override" && desired.has_value() &&
+           channel.has_value() && *desired != *channel;
+}
+
 } // namespace
 
 std::optional<std::string> logical_id_for_module_stem(std::string_view stem) {
@@ -270,6 +281,9 @@ std::vector<PluginStatusEntry> build_plugin_status(const PluginPinConfig &cfg,
 
         row.desired_version = desired_version(cfg, id, row.channel_version);
         row.state = state_for(row.local_version, row.desired_version, has_local);
+        if (pin_unavailable_for(cfg, id, row.desired_version, row.channel_version)) {
+            row.state = "pin_unavailable"; // spec: switch channel/tag first
+        }
         rows.push_back(std::move(row));
     }
 
@@ -332,6 +346,20 @@ std::vector<PlanAction> build_plan_actions(const PluginPinConfig &cfg,
     for (const auto &[id, pin] : cfg.pins) {
         (void)pin;
         maybe_add_mismatch(id, "missing");
+    }
+
+    // Spec "Cross-tag pin (v1)": an override asset must appear on the CURRENT channel
+    // tag. Without full-history search such a pin is unsatisfiable here, so mark the
+    // action (apply then refuses with "switch channel/tag first" instead of silently
+    // installing the channel build).
+    for (auto &a : actions) {
+        auto pin_it = cfg.pins.find(a.id);
+        auto ch_it = channel_cache.find(a.id);
+        if (pin_it != cfg.pins.end() && pin_it->second.source == "override" &&
+            ch_it != channel_cache.end() && !ch_it->second.empty() &&
+            pin_it->second.version != ch_it->second) {
+            a.reason = "pin_unavailable";
+        }
     }
     for (const auto &[id, ver] : channel_cache) {
         (void)ver;

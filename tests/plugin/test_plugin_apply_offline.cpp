@@ -713,6 +713,48 @@ static nlohmann::json pkg_manifest(const std::string &direct_asset, const std::s
     return manifest;
 }
 
+// Cross-tag pin: the manifest slot is not the version the action asked for, so the apply
+// must refuse before downloading (spec: "switch channel/tag first").
+static void test_cross_tag_pin_refused() {
+    set_http_get_override(&mock_http_get);
+    const std::string platform = current_platform_key();
+    const std::string module_name =
+#if defined(_WIN32)
+        "plugin_dummy.dll";
+#else
+        "plugin_dummy.so";
+#endif
+    const std::string module_bytes = "MZ-OFFTAG";
+    const std::string digest = sha256_hex(module_bytes);
+    const std::string asset_name = "plugin_dummy-2.0.0-" + platform + ".zip";
+    g_http_map.clear();
+    g_http_hits = 0;
+    g_http_map["https://github.com/fesily/DontStarveLuaJIT2/releases/download/v2.0.0/" + asset_name] =
+        build_zip_bytes({{module_name, module_bytes}});
+
+    const auto manifest = pkg_manifest(asset_name, digest, platform, module_name, {module_name},
+                                      true, "plugin_dummy"); // slot version is 2.0.0
+
+    PluginPinConfig cfg = defaults();
+    cfg.release_tag = "v2.0.0";
+    cfg.prefer_proxy = "never";
+
+    PlanAction action;
+    action.id = "debug.dummy";
+    action.from = "1.0.0";
+    action.to = "1.0.0"; // the pin the user asked for; the tag publishes 2.0.0
+    action.reason = "pin_unavailable";
+
+    const auto plugins_dir = make_temp_dir("offtag");
+    const auto result = apply_plan(cfg, manifest, {action}, plugins_dir, "");
+    assert(result.succeeded == 0);
+    assert(result.attempted == 1);
+    assert(result.last_error.find("switch channel/tag first") != std::string::npos);
+    assert(g_http_hits == 0); // refused before any download
+    assert(!fs::exists(plugins_dir / "plugin_dummy" / module_name));
+    printf("PASS: cross_tag_pin_refused\n");
+}
+
 static void test_package_layout_install() {
     set_http_get_override(&mock_http_get);
     const std::string platform = current_platform_key();
@@ -848,6 +890,7 @@ int main() {
     test_apply_requires_nonempty_files();
     test_build_config_compatibility_classes();
     test_build_config_stamp_matrix();
+    test_cross_tag_pin_refused();
     test_package_layout_install();
     test_package_layout_traversal_rejected();
     test_package_layout_pending_mirror();

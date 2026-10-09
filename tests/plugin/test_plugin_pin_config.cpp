@@ -29,6 +29,7 @@ static void test_defaults() {
     assert(cfg.github_base == "https://github.com");
     assert(cfg.gh_proxy_base == "https://gh-proxy.com");
     assert(cfg.prefer_proxy == "auto");
+    assert(cfg.auto_update_on_boot == false); // opt-in only (design default)
     assert(cfg.pins.empty());
     assert(cfg.prefer_present.empty());
     printf("PASS: defaults\n");
@@ -89,6 +90,7 @@ static void test_round_trip_save_load() {
     cfg.github_base = "https://github.com";
     cfg.gh_proxy_base = "https://gh-proxy.com";
     cfg.prefer_proxy = "always";
+    cfg.auto_update_on_boot = true;
     cfg.pins["network.rpc"] = PinEntry{"1.0.0", "override"};
     cfg.pins["core.vm"] = PinEntry{"0.2.0", "channel"};
     cfg.prefer_present = {"core.vm"};
@@ -107,6 +109,7 @@ static void test_round_trip_save_load() {
     assert(loaded.github_base == "https://github.com");
     assert(loaded.gh_proxy_base == "https://gh-proxy.com");
     assert(loaded.prefer_proxy == "always");
+    assert(loaded.auto_update_on_boot == true);
     assert(loaded.pins.size() == 2);
     assert(loaded.pins.at("network.rpc").version == "1.0.0");
     assert(loaded.pins.at("network.rpc").source == "override");

@@ -54,6 +54,82 @@ nlohmann::json g_manifest = nlohmann::json::object();
 // Resolved tag used for last successful fetch (for apply downloads).
 std::string g_resolved_release_tag;
 
+// nlohmann::json::dump() throws on invalid UTF-8 (type_error.316). Status/manifest
+// strings can come from HTTP bodies, on-disk meta files or a non-UTF-8 source code page,
+// so scrub invalid bytes to '?' and always produce a dumpable buffer.
+void scrub_invalid_utf8(nlohmann::json &j) {
+    if (j.is_string()) {
+        std::string src = j.get<std::string>();
+        std::string out;
+        out.reserve(src.size());
+        size_t i = 0;
+        while (i < src.size()) {
+            const unsigned char c = static_cast<unsigned char>(src[i]);
+            size_t need = 0;
+            if (c < 0x80) {
+                need = 0;
+            } else if (c >= 0xC2 && c <= 0xDF) {
+                need = 1;
+            } else if (c >= 0xE0 && c <= 0xEF) {
+                need = 2;
+            } else if (c >= 0xF0 && c <= 0xF4) {
+                need = 3;
+            } else {
+                out.push_back('?'); // lone continuation byte / overlong leader
+                ++i;
+                continue;
+            }
+            if (i + need >= src.size()) {
+                out.push_back('?'); // truncated sequence
+                ++i;
+                continue;
+            }
+            bool ok = true;
+            for (size_t k = 1; k <= need; ++k) {
+                if ((static_cast<unsigned char>(src[i + k]) & 0xC0) != 0x80) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (!ok) {
+                out.push_back('?');
+                ++i;
+                continue;
+            }
+            out.append(src, i, need + 1);
+            i += need + 1;
+        }
+        if (out != src) {
+            j = std::move(out);
+        }
+        return;
+    }
+    if (j.is_array()) {
+        for (auto &item : j) {
+            scrub_invalid_utf8(item);
+        }
+        return;
+    }
+    if (j.is_object()) {
+        for (auto it = j.begin(); it != j.end(); ++it) {
+            scrub_invalid_utf8(it.value());
+        }
+    }
+}
+
+std::string dump_safe(nlohmann::json j) {
+    try {
+        return j.dump();
+    } catch (...) {
+        scrub_invalid_utf8(j);
+        try {
+            return j.dump();
+        } catch (...) {
+            return "{}";
+        }
+    }
+}
+
 nlohmann::json status_plugins_json(const std::vector<ds::plugin::PluginStatusEntry> &rows) {
     nlohmann::json arr = nlohmann::json::array();
     for (const auto &r : rows) {
@@ -110,7 +186,7 @@ void clear_progress_locked() {
 
 void refresh_plan_locked_with_inv(const std::vector<ds::plugin::LocalPluginEntry> &inv) {
     const auto actions = ds::plugin::build_plan_actions(g_cfg, inv, g_channel_cache);
-    g_plan_json_buf = plan_actions_json(actions).dump();
+    g_plan_json_buf = dump_safe(plan_actions_json(actions));
 }
 
 void refresh_plan_locked() {
@@ -186,7 +262,8 @@ void refresh_status_locked(bool full_inventory = true) {
                                     : nlohmann::json(g_resolved_release_tag);
     j["follow_latest"] = g_cfg.follow_latest;
     j["prefer_proxy"] = g_cfg.prefer_proxy;
-    g_status_json_buf = j.dump();
+    j["auto_update_on_boot"] = g_cfg.auto_update_on_boot;
+    g_status_json_buf = dump_safe(j);
 }
 
 void set_error_locked(std::string msg) {
@@ -287,8 +364,15 @@ bool build_apply_job_locked(const std::string &only, ds::plugin::PluginPinConfig
             ds::plugin::PlanAction a;
             a.id = only;
             a.from = std::nullopt;
+            // Pin-aware target: an explicit apply must not silently install the channel
+            // build when the user pinned another version (see "cross-tag pin").
+            std::optional<std::string> channel;
             auto it = g_channel_cache.find(only);
-            a.to = it != g_channel_cache.end() ? it->second : std::string();
+            if (it != g_channel_cache.end()) {
+                channel = it->second;
+            }
+            auto desired = ds::plugin::desired_version(*cfg, only, channel);
+            a.to = desired.value_or(channel.value_or(std::string()));
             a.reason = "explicit";
             actions->push_back(std::move(a));
         }
@@ -351,7 +435,7 @@ void finish_apply_locked(const ds::plugin_manager::ApplyResult &result) {
 // Caller clears g_busy_op / g_fetch_in_flight first so the final refresh is clean.
 void commit_manifest_locked(nlohmann::json manifest, std::string tag) {
     g_manifest = std::move(manifest);
-    g_manifest_json_buf = g_manifest.dump();
+    g_manifest_json_buf = dump_safe(g_manifest);
     g_resolved_release_tag = std::move(tag);
     if (g_cfg.release_tag.empty()) {
         g_cfg.release_tag = g_resolved_release_tag;
@@ -901,6 +985,18 @@ void run_boot_check() {
         try {
             // Disk truth, independent of plugin load order.
             reload_pin_config();
+
+            // Config gate: download.auto_update_on_boot=false keeps the manager (and its
+            // UI check/apply) but performs no automatic check — no network, no install.
+            {
+                std::lock_guard lock(g_mu);
+                if (!g_cfg.auto_update_on_boot) {
+                    std::fprintf(stderr,
+                                 "[plugin_manager] boot check disabled by config "
+                                 "(download.auto_update_on_boot=false)\n");
+                    return;
+                }
+            }
 
             if (!fetch_manifest_blocking(nullptr)) {
                 bool deferred = false;

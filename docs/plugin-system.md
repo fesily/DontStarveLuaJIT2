@@ -695,11 +695,11 @@ After any manual copy, **restart the game / dedicated process** so DynamicPlugin
 
 When the module is staged:
 
-1. **Config** — independent `data/unsafedata/luajit_plugins.json` (override env `DS_LUAJIT_PLUGINS_CONFIG`). Channel (`repo` / `stable|preview` / tag / `follow_latest`), download (`github_base`, `gh_proxy_base`, `prefer_proxy=auto|always|never`), per-id pins, soft `prefer_present` (default empty — never blocks boot). A legacy `download.auto_apply_on_boot` key is ignored: the boot check is not configurable, deleting `plugin_manager.dll` removes it.
+1. **Config** — independent `data/unsafedata/luajit_plugins.json` (override env `DS_LUAJIT_PLUGINS_CONFIG`). Channel (`repo` / `stable|preview` / tag / `follow_latest`), download (`github_base`, `gh_proxy_base`, `prefer_proxy=auto|always|never`, `auto_update_on_boot=true|false`, default **false** — opt in to the automatic boot check; with `false` the manager and its UI work but nothing is fetched or installed at boot), per-id pins, soft `prefer_present` (default empty — never blocks boot). A legacy `download.auto_apply_on_boot` key is ignored (superseded by `auto_update_on_boot`); deleting `plugin_manager.dll` still removes both the UI-driven manager and the boot check.
 2. **Download** — GitHub Releases; gh-proxy wrap when direct probe fails (`prefer_proxy=auto`).
 3. **Apply** — extract allowlisted files into `plugins/` or `plugins/update_pending/` if locked; set `needs_restart`.
 4. **UI** — this mod’s `ModConfigurationScreen` action-bar **Plugin Manager / 插件管理** (all platforms). Full list / channel / pin / apply when exports present.
-5. **Boot check (dedicated + client)** — `plugin.manager` itself runs one background check per boot on a detached thread: reload pin config → `fetch_manifest_blocking` → `apply_blocking` → one log line. Not tied to the UI, not configurable, never forces a restart.
+5. **Boot check (dedicated + client)** — `plugin.manager` itself runs one background check per boot on a detached thread: reload pin config → `fetch_manifest_blocking` → `apply_blocking` → one log line. Off by default: the automatic check only runs when `download.auto_update_on_boot=true` (otherwise it logs `boot check disabled by config` and does no request); never forces a restart.
 
 GameInjector surface (registered only when the module loads): `DS_LUAJIT_plugin_config_path`, `DS_LUAJIT_plugin_manager_status_json`, `DS_LUAJIT_plugin_config_reload`, `DS_LUAJIT_plugin_config_set_json`, `DS_LUAJIT_plugin_pin_set` / `pin_clear`, `DS_LUAJIT_plugin_fetch_manifest`, `DS_LUAJIT_plugin_manifest_json`, `DS_LUAJIT_plugin_plan_apply_json`, `DS_LUAJIT_plugin_apply`, `DS_LUAJIT_plugin_needs_restart`.
 
@@ -724,6 +724,16 @@ Lua always soft-looks up these names. Missing export ⇒ `nil` / popup with manu
 ```
 
 Failures are non-fatal; a successful install only sets `needs_restart` (never a forced restart). This is why the manager owns the whole update path: there is no separate trigger plugin, no service dependency, and no enable/disable key — deleting `plugin_manager.dll` removes both the UI-driven manager and the boot check.
+
+#### Per-plugin pins, upgrades and downgrades
+
+The unit of update is **one plugin id**, never the whole bundle: the manifest lists each plugin with its own version/asset, `build_plan_actions` plans per id, `apply_plan` downloads/installs per id (partial success is reported), and `DS_LUAJIT_plugin_apply(id)` / the UI apply act on a single id. A plugin's own members (module + meta + Lua face) move together atomically, but plugins never block each other.
+
+Pins are per id and drive upgrades **and** downgrades (`pins[id].version`, `source: "override"`), resolved ahead of the channel version. Spec rule "cross-tag pin": an override asset must exist on the **current channel tag** (no full-history search), so
+
+- `status.plugins[].state = "pin_unavailable"` when the pinned version is not the version this tag publishes,
+- applying such a pin is refused before any download with `pinned X is not on this release tag (manifest has Y) — switch channel/tag first`,
+- to actually move a plugin to another release's build, switch `channel.release_tag` (or pin a version that this tag publishes).
 
 #### Build-configuration stamp (mixed Debug/Release trees)
 
@@ -772,6 +782,8 @@ A Steam client plus every shard of a dedicated cluster (Master/Caves) run **sepa
 | Plan re-check | after acquiring, the plan is rebuilt from the current inventory, so a process that waited does not re-download or re-install what another process just installed (it then reports *another process already updated plugins; restart required* and sets `needs_restart`) |
 | Deferred ≠ failed | a deferred process keeps its `needs_restart` untouched (it installed nothing) and learns the result on its next boot; the process that owns the lock reports the install outcome for its own status/UI |
 | No locking support | if the file cannot be created/locked (odd filesystem, permissions), both paths log a note and keep the legacy unlocked behavior instead of failing boot |
+
+Status/plan/manifest buffers are emitted UTF-8-safely: strings that can originate from an HTTP body, an on-disk meta file or a non-UTF-8 source code page are scrubbed (invalid bytes become `?`) instead of making `json::dump()` throw.
 
 The lock file is never deleted by the code (deleting it while held would let a third process lock a fresh file); it is ignored by the plugin loader and by the inventory scan, and it is safe to delete manually while no game process is running.
 

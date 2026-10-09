@@ -225,6 +225,39 @@ static void write_file(const fs::path &p, const std::string &content) {
     out << content;
 }
 
+static void test_cross_tag_pin_unavailable() {
+    // Spec: an override pin must exist on the CURRENT channel tag; otherwise the row is
+    // pin_unavailable (and apply refuses with "switch channel/tag first").
+    auto dir = temp_dir("ds_inv_pin_offtag");
+    write_pkg_text(dir, "plugin_dummy", "plugin_dummy.meta.json",
+                   R"({"id":"debug.dummy","version":"1.0.0"})");
+    write_pkg_text(dir, "plugin_dummy", "plugin_dummy.dll", "MZ");
+
+    PluginPinConfig cfg = defaults();
+    cfg.pins["debug.dummy"] = PinEntry{"0.9.0", "override"};
+    ChannelVersionCache channel;
+    channel["debug.dummy"] = "2.0.0"; // current tag publishes 2.0.0 only
+
+    const auto inv = scan_local_inventory(dir);
+    const auto rows = build_plugin_status(cfg, inv, channel);
+    assert(rows.size() == 1);
+    assert(rows[0].desired_version.has_value() && *rows[0].desired_version == "0.9.0");
+    assert(rows[0].channel_version.has_value() && *rows[0].channel_version == "2.0.0");
+    assert(rows[0].state == "pin_unavailable");
+
+    // The plan still lists it (so the UI shows the intent) but marked unsatisfiable.
+    const auto plan = build_plan_actions(cfg, inv, channel);
+    assert(plan.size() == 1);
+    assert(plan[0].to == "0.9.0");
+    assert(plan[0].reason == "pin_unavailable");
+
+    // Pin equal to the channel version is satisfiable: normal update_available.
+    cfg.pins["debug.dummy"] = PinEntry{"2.0.0", "override"};
+    const auto rows2 = build_plugin_status(cfg, inv, channel);
+    assert(rows2[0].state == "update_available");
+    printf("PASS: cross_tag_pin_unavailable\n");
+}
+
 static void test_flat_module_ignored() {
     // Flat modules are unsupported (the loader ignores them), so they must not show up in
     // the inventory either — only the package copy counts.
@@ -258,6 +291,7 @@ int main() {
     test_plan_missing_override();
     test_status_with_channel_cache();
     test_plugins_dir_from_module_dir();
+    test_cross_tag_pin_unavailable();
     test_flat_module_ignored();
     printf("ALL PASS plugin_local_inventory\n");
     return 0;

@@ -23,6 +23,10 @@ struct PluginPinConfig {
     std::string github_base = "https://github.com";
     std::string gh_proxy_base = "https://gh-proxy.com";
     std::string prefer_proxy = "auto";
+    // Automatic boot check is OFF by default (design default, like the old
+    // auto_apply_on_boot): the manager and its UI check/apply work, but nothing is
+    // fetched or installed at boot unless the user opts in with `true`.
+    bool auto_update_on_boot = false;
     std::unordered_map<std::string, PinEntry> pins;
     std::vector<std::string> prefer_present; // default empty; soft preference only
 };

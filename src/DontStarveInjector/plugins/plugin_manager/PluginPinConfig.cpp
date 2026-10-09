@@ -63,6 +63,9 @@ PluginPinConfig parse_json(const nlohmann::json &j) {
         if (dl.contains("prefer_proxy") && dl["prefer_proxy"].is_string()) {
             cfg.prefer_proxy = dl["prefer_proxy"].get<std::string>();
         }
+        if (dl.contains("auto_update_on_boot") && dl["auto_update_on_boot"].is_boolean()) {
+            cfg.auto_update_on_boot = dl["auto_update_on_boot"].get<bool>();
+        }
     }
 
     if (j.contains("pins") && j["pins"].is_object()) {
@@ -107,6 +110,7 @@ nlohmann::json to_json(const PluginPinConfig &cfg) {
         {"github_base", cfg.github_base},
         {"gh_proxy_base", cfg.gh_proxy_base},
         {"prefer_proxy", cfg.prefer_proxy},
+        {"auto_update_on_boot", cfg.auto_update_on_boot},
     };
     nlohmann::json pins = nlohmann::json::object();
     for (const auto &[id, entry] : cfg.pins) {
