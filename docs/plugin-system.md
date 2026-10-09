@@ -669,7 +669,7 @@ Design: `docs/superpowers/specs/2026-08-05-plugin-manager-design.md` (**Accepted
 
 | Source | How |
 |---|---|
-| `{platform}_Mod.zip` | Unpack the monorepo release zip; keep `plugins/` under the **mod** root (not game `bin64/plugins`). Run `install.bat` / `install_linux.sh` for shell + real Injector staging. |
+| `{platform}_Mod.zip` | Unpack the monorepo release zip; keep `plugins/` under the **mod** root (not game `bin64/plugins`). `install.bat` (Windows) only copies the inject shell `bin64\windows\Winmm.dll` into game `bin64`; `install_linux.sh` stages the Linux stub + launcher. Injector/plugins/deps ship in place. |
 | Per-plugin zip | From the same Release: `plugin_<stem>-<ver>-<platform>.zip` (e.g. `plugin_network_rpc-1.0.0-windows.zip`). Extract module + optional `plugin_*.meta.json` into mod `plugins/`. |
 | `plugins/update_pending/` | Drop replacement modules here when the live DLL is locked. L0 `apply_pending_plugin_updates` runs **before** `LoadLibrary` on every inject — no manager needed. |
 

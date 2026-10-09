@@ -90,7 +90,7 @@ Linux：
 curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.sh | sh
 ```
 
-脚本会自动：挑最新 release（`preview` 或正式版取较新者）→ 从 Steam 安装位置（Windows 注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf`，与 `tools/steam_env.py` 同一套规则）定位游戏根目录 → 把包解到 `<游戏>/mods/DontStarveLuaJit2` → 运行包内安装脚本（装壳、写 marker、自检）。
+脚本会自动：挑最新 release（`preview` 或正式版取较新者）→ 从 Steam 安装位置（Windows 注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf`，与 `tools/steam_env.py` 同一套规则）定位游戏根目录 → 把包解到 `<游戏>/mods/DontStarveLuaJit2` → 运行包内安装脚本（装壳；Linux 另写 marker 并做自检）。
 
 可选项（Linux 追加参数：`curl ... | sh -s -- --channel preview`；Windows 用环境变量 `$env:DSJ_CHANNEL`）：
 
@@ -108,19 +108,18 @@ curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/ins
 1. 先在游戏根目录下的mods文件夹中创建一个新的文件夹，比如`Luajit`
 2. 解压后里面是一个 `Mod` 文件夹：把 **`Mod` 文件夹里面的内容**（`modinfo.lua`、`modmain.lua`、`plugins/`、`deps/`、`bin64/`、`install.bat` 等）复制到该目录，确认 `…/mods/Luajit/modmain.lua` 直接存在（**不要**复制成 `mods/Luajit/Mod/modmain.lua`）
 
-> 目录名说明：真实 Injector 的查找顺序是 `环境变量 → data/unsafedata/ds_luajit_injector.path → 扫描 mods 目录`，扫描只认这些目录名：`workshop-3444078585`、`3444078585`、`luajit`、`luajit2`、`DontStarveLuaJit2`、`DontStarveLuaJIT2`（Windows 大小写不敏感，Linux/macOS 敏感）。用其它名字时**必须**靠 marker（`install.bat`/`install_linux.sh` 会自动写）或环境变量，否则不会注入。
+> 目录名说明：真实 Injector 的查找顺序是 `环境变量 → data/unsafedata/ds_luajit_injector.path → 扫描 mods 目录`，扫描只认这些目录名：`workshop-3444078585`、`3444078585`、`luajit`、`luajit2`、`DontStarveLuaJit2`、`DontStarveLuaJIT2`（Windows 大小写不敏感，Linux/macOS 敏感）。用其它名字时扫描不会命中，也没人替你写 marker：必须自己设环境变量 `DS_LUAJIT_INJECTOR`（指向 mod 根的 `Injector.dll`）或 `DS_LUAJIT_INJECTOR_DIR`，否则不会注入（壳解析成功后会顺手把 marker 补写到 `data/unsafedata/ds_luajit_injector.path`，之后就不用再设了）。
 
 ## 2.注入部分：
 
 安装模型（2026-08-06 起）：**仅注入壳**进游戏 `bin64`；真实 `Injector` 在 **mod 根目录**（与 `modmain.lua` 同级）。
 
-> 排查：每次启动都会把解析来源/模块路径/加载结果写到 `<游戏>/data/unsafedata/ds_luajit_boot.log`（安装脚本结束也会打印 `[CHECK]` 自检；Linux 可随时 `./install_linux.sh selftest`）。装了没效果时先看这个日志。
+> 排查：每次启动都会把解析来源/模块路径/加载结果写到 `<游戏>/data/unsafedata/ds_luajit_boot.log`（Linux 可随时 `./install_linux.sh selftest` 做一次实测自检）。装了没效果时先看这个日志。
 
 ### 方法 1（自动安装）
-- 直接运行 Luajit 文件夹内的 `install.bat`（Windows）/ `install_linux.sh`（Linux）
-- 运行 `install_linux.sh` 前可能需要先执行 `chmod +x ./install_linux.sh` 赋予权限
-- 脚本会：壳 → 游戏 `bin64`；真实 Injector → 当前 mod 根目录；并写入标记文件 `data/unsafedata/ds_luajit_injector.path`
-- 模组更新（工坊更新 / 换 Release 包）后要**重新运行一次** `install.bat` / `install_linux.sh`，避免壳与真实 Injector 版本不匹配（mod 在版本不匹配时也会弹窗提示重跑）
+- Windows：运行 mod 文件夹内的 `install.bat`。它**只做一件事**——把包内 `bin64\windows\Winmm.dll` 复制到游戏 `bin64`（内容一致时直接跳过，重复运行结果不变）：不迁移、不删除、不写任何其它文件
+- Linux：运行 `./install_linux.sh`（可能需要先执行 `chmod +x ./install_linux.sh`）；它只装壳——把包内 `bin64/linux/lib64/libInjector.so` 放进游戏 `bin64/lib64`，并把启动器改写为 `LD_PRELOAD` 包装（原二进制保留为 `*_1`）
+- 模组更新（工坊更新 / 换 Release 包）后要**重新运行一次**安装脚本，让游戏 `bin64` 里的壳与包内 Injector 版本一致（mod 在版本不匹配时也会弹窗提示重跑）
 
 ### 方法 2（手动安装）
 

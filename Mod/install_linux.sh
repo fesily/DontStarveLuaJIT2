@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# DontStarveLuaJIT2 shell installer (Linux x64).
+#
+# Sole job: install the injection shell - the stub libInjector.so into the
+# game's bin64/lib64 plus the LD_PRELOAD launchers. The rest of the package -
+# libInjector.so, plugins/, deps/, signatures_*.json - is shipped in place by
+# the release package. This script never stages, migrates or deletes mod files,
+# and never writes into the game data dir (the shell writes its own resolution
+# marker once it finds the mod).
+
 # Needs bash (arrays + `local`); re-exec instead of dying with a dash syntax
 # error when started as `sh install_linux.sh`.
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -11,7 +20,7 @@ processes=("dontstarve_steam_x64" "dontstarve_dedicated_server_nullrenderer_x64"
 
 # Terminate running processes
 for process in "${processes[@]}"; do
-    pid=$(pgrep -f "$process")
+    pid=$(pgrep -f "$process" 2>/dev/null)
     if [ -n "$pid" ]; then
         echo "[INFO] Terminating process: $process (PID: $pid)"
         kill -INT "$pid"
@@ -19,18 +28,15 @@ for process in "${processes[@]}"; do
     fi
 done
 
-# Set path variables
-source="bin64/linux"
-current_dir=$(pwd)
-mod_plugins="${current_dir}/plugins"
-mod_root="${current_dir}"
-mod_bin64="${current_dir}/bin64"
-mod_deps="${current_dir}/deps"
+# The script's own folder decides source/destination; the caller's cwd is
+# irrelevant (logical pwd keeps a symlinked mod folder path intact).
+script_dir=$(cd -- "$(dirname -- "$0")" && pwd) || exit 1
+source="$script_dir/bin64/linux"
 
-if echo "$current_dir" | grep -q "workshop/content/322330"; then
-    destination="../../../../common/Don't Starve Together/bin64"
+if echo "$script_dir" | grep -q "workshop/content/322330"; then
+    destination="$script_dir/../../../../common/Don't Starve Together/bin64"
 else
-    destination="../../bin64"
+    destination="$script_dir/../../bin64"
 fi
 
 # Verify if the source directory exists
@@ -39,47 +45,24 @@ if [ ! -d "$source" ]; then
     exit 1
 fi
 
-# Create the destination directory if it doesn't exist
+# Verify if the destination directory exists
 if [ ! -d "$destination" ]; then
     echo "[ERROR] Destination directory does not exist: $destination"
     exit 1
 fi
-# Absolute: the script later cd's into it, and the check/marker paths must not
-# depend on the current directory anymore.
+# Absolute: the launcher rewrite and the check paths must not depend on the
+# current directory anymore.
 destination=$(cd "$destination" && pwd) || exit 1
 
-abs_path() {
-    # Prefer realpath; fall back to readlink -f; last resort: cd+pwd
-    if command -v realpath >/dev/null 2>&1; then
-        realpath "$1"
-    elif command -v readlink >/dev/null 2>&1 && readlink -f / >/dev/null 2>&1; then
-        readlink -f "$1"
-    else
-        local dir base
-        dir=$(cd "$(dirname "$1")" && pwd) || return 1
-        base=$(basename "$1")
-        printf '%s/%s\n' "$dir" "$base"
-    fi
-}
-
-uninstall() {
-    # Only remove game stub + marker; leave mod Injector/plugins/deps alone
-    echo "[INFO] removing injector shell from $destination ..."
-    rm -f "$destination/lib64/libInjector.so"
-    rm -f "$game_root/data/unsafedata/ds_luajit_injector.path"
-    echo "[INFO] removing success"
-    exit 0
-}
-
-# Marker + boot-log locations the loader uses (see docs/plugin-system.md).
+# Boot-log location the loader writes (see docs/plugin-system.md).
 game_root=$(dirname "$destination")
-marker_file="$game_root/data/unsafedata/ds_luajit_injector.path"
 boot_log_file="$game_root/data/unsafedata/ds_luajit_boot.log"
 
-# Static post-install check: shell, real module, marker, and unresolved deps.
+# Static post-install check: the shell the installer owns, the real module the
+# package ships, and unresolved dependencies.
 static_check() {
     local stub="$destination/lib64/libInjector.so"
-    local real="$mod_root/libInjector.so"
+    local real="$script_dir/libInjector.so"
     local fail=0
 
     echo "[CHECK] shell : $stub"
@@ -93,21 +76,6 @@ static_check() {
     echo "[CHECK] module: $real"
     if [ -f "$real" ]; then
         echo "[CHECK]         ok ($(stat -c%s "$real" 2>/dev/null || echo '?') bytes)"
-    else
-        echo "[CHECK]         MISSING"
-        fail=1
-    fi
-
-    echo "[CHECK] marker: $marker_file"
-    if [ -f "$marker_file" ]; then
-        local value
-        value=$(head -n1 "$marker_file" 2>/dev/null)
-        if [ -n "$value" ] && [ -f "$value" ]; then
-            echo "[CHECK]         ok -> $value"
-        else
-            echo "[CHECK]         STALE -> ${value:-<empty>} (target missing)"
-            fail=1
-        fi
     else
         echo "[CHECK]         MISSING"
         fail=1
@@ -175,6 +143,21 @@ live_probe() {
     return 1
 }
 
+uninstall() {
+    # Remove the game stub + the legacy marker, and undo the launcher rewrite
+    # so the game starts again without the shell.
+    echo "[INFO] removing injector shell from $destination ..."
+    rm -f "$destination/lib64/libInjector.so"
+    rm -f "$game_root/data/unsafedata/ds_luajit_injector.path"
+    for bin in dontstarve_steam_x64 dontstarve_dedicated_server_nullrenderer_x64; do
+        if [ -f "$destination/${bin}_1" ]; then
+            mv -f "$destination/${bin}_1" "$destination/$bin" && echo "[INFO] restored original $bin"
+        fi
+    done
+    echo "[INFO] removing success"
+    exit 0
+}
+
 if [ "${1:-}" = "uninstall" ]; then
     uninstall
 fi
@@ -185,7 +168,8 @@ if [ "${1:-}" = "selftest" ]; then
     exit $?
 fi
 
-# 1) Shell: stub into game bin64/lib64 (LD_PRELOAD path) — required
+# 1) Shell: stub into game bin64/lib64 (LD_PRELOAD path) - the only artifact
+#    this script installs.
 echo "[INFO] install shell -> $destination/lib64"
 mkdir -p "$destination/lib64"
 shell_src=""
@@ -202,118 +186,21 @@ if [ -z "$shell_src" ]; then
     echo "[ERROR] inject shell missing: no stub libInjector.so under $source/lib64 (or stub/shell)"
     exit 1
 fi
-cp -a "$shell_src" "$destination/lib64/libInjector.so"
-if [ $? -ne 0 ]; then
-    echo "[ERROR] install shell failed"
-    exit 1
-fi
-
-# Remove stale game-dir real Injector (not the lib64 stub shell path)
-if [ -f "$destination/libInjector.so" ]; then
-    echo "[INFO] removing stale game-dir libInjector.so -> $destination/libInjector.so"
-    rm -f "$destination/libInjector.so"
-fi
-if [ -f "$destination/../libInjector.so" ]; then
-    echo "[INFO] removing stale game-root libInjector.so -> $destination/../libInjector.so"
-    rm -f "$destination/../libInjector.so"
-fi
-
-# 2) Real Injector at mod root; lua/signatures live under mod/deps (never game bin64)
-echo "[INFO] install Injector -> $mod_root"
-if [ -f "$mod_root/libInjector.so" ]; then
-    echo "[INFO] Injector already at mod root"
-elif [ -f "$source/libInjector.so" ]; then
-    cp -a "$source/libInjector.so" "$mod_root/libInjector.so"
+if [ -f "$destination/lib64/libInjector.so" ] && cmp -s "$shell_src" "$destination/lib64/libInjector.so"; then
+    echo "[INFO] shell already up to date."
+else
+    cp -a "$shell_src" "$destination/lib64/libInjector.so"
     if [ $? -ne 0 ]; then
-        echo "[ERROR] install libInjector.so failed"
+        echo "[ERROR] install shell failed"
         exit 1
     fi
-elif [ -f "$current_dir/libInjector.so" ]; then
-    echo "[INFO] Injector already at $current_dir"
-else
-    echo "[WARN] no libInjector.so at mod root or package source"
-fi
-# Migrate legacy mod bin64 Injector
-if [ -f "$mod_bin64/libInjector.so" ] && [ ! -f "$mod_root/libInjector.so" ]; then
-    mv "$mod_bin64/libInjector.so" "$mod_root/libInjector.so"
-    echo "[INFO] moved legacy bin64/libInjector.so -> mod root"
-elif [ -f "$mod_bin64/libInjector.so" ]; then
-    rm -f "$mod_bin64/libInjector.so"
-    echo "[INFO] removed legacy mod bin64/libInjector.so"
-fi
-# lua/signatures should be under deps (cmake --install); migrate leftovers from package/bin64
-mkdir -p "$mod_deps"
-for f in \
-    liblua51.so liblua51DS.so liblua51DS_gengc.so liblua51Original.so \
-    lua51.dll lua51DS.dll lua51DS_gengc.dll lua51Original.dll \
-    signatures_client.json signatures_server.json
-do
-    for src in "$source/$f" "$source/lib64/$f" "$mod_bin64/$f"; do
-        if [ -f "$src" ]; then
-            cp -a "$src" "$mod_deps/$f"
-            break
-        fi
-    done
-    # drop leftovers under mod bin64
-    rm -f "$mod_bin64/$f"
-done
-# Drop stale copies previously mirrored into game bin64 by cmake --install
-for f in \
-    libInjector.so Injector.dll Injector.pdb \
-    liblua51.so liblua51DS.so liblua51DS_gengc.so liblua51Original.so \
-    lua51.dll lua51.pdb lua51DS.dll lua51DS_gengc.dll lua51Original.dll \
-    signatures_client.json signatures_server.json
-do
-    if [ -f "$destination/$f" ]; then
-        echo "[INFO] removing stale game-dir $f"
-        rm -f "$destination/$f"
-    fi
-done
-
-# 3) Business plugins stay under the mod directory
-if [ -d "$source/plugins" ]; then
-    echo "[INFO] install plugins -> $mod_plugins"
-    mkdir -p "$mod_plugins"
-    cp -a "$source/plugins"/. "$mod_plugins"/
-    if [ $? -ne 0 ]; then
-        echo "[ERROR] install plugins failed"
-        exit 1
-    fi
-else
-    echo "[INFO] no package plugins tree at $source/plugins — skip mod plugins copy"
 fi
 
-# 4) Runtime deps stay under the mod directory
-if [ -d "$source/deps" ]; then
-    echo "[INFO] install deps -> $mod_deps"
-    mkdir -p "$mod_deps"
-    cp -a "$source/deps"/. "$mod_deps"/
-    if [ $? -ne 0 ]; then
-        echo "[ERROR] install deps failed"
-        exit 1
-    fi
-else
-    echo "[INFO] no package deps tree at $source/deps — skip mod deps copy"
-fi
-
-# 5) Marker: game data/unsafedata/ds_luajit_injector.path -> absolute mod Injector path
-marker_dir="$game_root/data/unsafedata"
-mkdir -p "$marker_dir"
-if [ -f "$mod_root/libInjector.so" ]; then
-    abs_path "$mod_root/libInjector.so" > "$marker_dir/ds_luajit_injector.path"
-    if [ $? -ne 0 ]; then
-        echo "[ERROR] write marker failed"
-        exit 1
-    fi
-    echo "[INFO] wrote marker -> $marker_dir/ds_luajit_injector.path"
-else
-    echo "[WARN] skip marker: $mod_root/libInjector.so missing"
-fi
-
-# Launcher rewrite UNCHANGED: LD_PRELOAD=./lib64/libInjector.so (stub)
+# 2) Launchers: LD_PRELOAD=./lib64/libInjector.so (stub). The real binaries are
+#    kept as *_1, so a second run sees the small wrapper and skips.
 cd "$destination" || exit 1
 
-if [ -f dontstarve_steam_x64 ] && [ $(stat -c%s dontstarve_steam_x64) -gt 1048576 ]; then
+if [ -f dontstarve_steam_x64 ] && [ "$(stat -c%s dontstarve_steam_x64)" -gt 1048576 ]; then
     mv dontstarve_steam_x64 dontstarve_steam_x64_1
 
     cat > dontstarve_steam_x64 <<'EOF'
@@ -329,7 +216,7 @@ else
     echo "skip rewrite dontstarve_steam_x64."
 fi
 
-if [ -f dontstarve_dedicated_server_nullrenderer_x64 ] && [ $(stat -c%s dontstarve_dedicated_server_nullrenderer_x64) -gt 1048576 ]; then
+if [ -f dontstarve_dedicated_server_nullrenderer_x64 ] && [ "$(stat -c%s dontstarve_dedicated_server_nullrenderer_x64)" -gt 1048576 ]; then
     mv dontstarve_dedicated_server_nullrenderer_x64 dontstarve_dedicated_server_nullrenderer_x64_1
 
     cat > dontstarve_dedicated_server_nullrenderer_x64 <<'EOF'
@@ -344,7 +231,6 @@ EOF
 else
     echo "skip rewrite dontstarve_dedicated_server_nullrenderer_x64."
 fi
-
 
 echo "[INFO] Operation completed successfully"
 echo

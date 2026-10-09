@@ -2,9 +2,11 @@
 
 ## 未发布
 
-- 新增一行式安装：`install.ps1`（Windows，`irm … | iex`）与 `install.sh`（Linux，`curl … | sh`）——自动挑最新 release/preview（`DSJ_CHANNEL`/`--channel`）、按 `tools/steam_env.py` 的规则从注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf` 定位游戏根目录（可用 `DSJ_GAME_DIR`/`--game-dir` 覆盖），把包解到 `<游戏>/mods/<目录>` 后调用包内安装脚本（装壳、写 marker、自检）。
+- `install.bat` / `install_linux.sh` 收敛为“只装壳”：Windows 只把包内 `bin64\windows\Winmm.dll` 复制进游戏 `bin64`（内容一致直接跳过，重复运行结果不变），Linux 只把包内 `bin64/linux/lib64/libInjector.so` 放进游戏 `bin64/lib64` 并改写 `LD_PRELOAD` 启动器（原二进制保留为 `*_1`，重复运行跳过）；两者都不再迁移/删除任何 mod 文件、不再写 marker、不再清理游戏目录里的旧 DLL。旧脚本在原地更新时不收敛——`if exist Injector.dll`/`[ -f libInjector.so ]` 会把上一版的 Injector 留在 mod 根、robocopy 无 `/MIR`（Linux `cp -a`）会留下新版已删的 deps/插件，结果就是新壳配旧 Injector（启动崩溃的来源）。源/目标改为按脚本自身位置推导（与调用者 cwd 无关），Windows 侧错误提示不再因绝对路径里的 `(`/`)` 打断 cmd 解析，`uninstall` 只删壳与遗留 marker（Linux 另把 `*_1` 原二进制改回）。
 
-- 注入可诊断化：壳（Winmm / InjectorStub）每次启动把解析来源/模块路径/加载与导出结果、壳的最终结果写到 `<游戏>/data/unsafedata/ds_luajit_boot.log`（stderr 保留）；`install_linux.sh` 结束时自检壳/真实模块/marker/`ldd` 并打印 `[CHECK]` 结论，新增 `install_linux.sh selftest`（一次性进程实测 stub→真实模块链路），且脚本在 `sh`（dash）下会 `exec bash` 重跑，不再因语法错误空跑。
+- 新增一行式安装：`install.ps1`（Windows，`irm … | iex`）与 `install.sh`（Linux，`curl … | sh`）——自动挑最新 release/preview（`DSJ_CHANNEL`/`--channel`）、按 `tools/steam_env.py` 的规则从注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf` 定位游戏根目录（可用 `DSJ_GAME_DIR`/`--game-dir` 覆盖），把包解到 `<游戏>/mods/<目录>` 后调用包内安装脚本（装壳；Linux 另写 marker 与自检）。
+
+- 注入可诊断化：壳（Winmm / InjectorStub）每次启动把解析来源/模块路径/加载与导出结果、壳的最终结果写到 `<游戏>/data/unsafedata/ds_luajit_boot.log`（stderr 保留）；`install_linux.sh` 结束时自检壳/真实模块/`ldd` 并打印 `[CHECK]` 结论，新增 `install_linux.sh selftest`（一次性进程实测 stub→真实模块链路），且脚本在 `sh`（dash）下会 `exec bash` 重跑，不再因语法错误空跑。
 
 - `plugin.manager`：新增跨进程插件树锁（`plugins/.ds_plugin_update.lock`，`LockFileEx`/`flock`），启动更新检查与安装都持锁串行——客户端 + Master/Caves 同一波启动只做一次检查、不会并发写插件树（锁不支持时回退旧的无锁行为并提示，锁文件记录持有者 pid/host 便于诊断）。启动检查并入 `plugin_manager`（独立 `plugin.autoupdate` 模块及其三个专属服务删除），检查/安装期间不再持 manager 锁，`status_json` 全程可响应；等待中的安装最多等 30 秒后在锁内重建计划，不重复下载别的进程刚装好的资产。
 
@@ -13,6 +15,8 @@
 - 清单平台槽位与包内 meta 新增 `build_config` 构建戳：不兼容类别（MSVC 的 Debug 与 Release 家族）的资产在下载前被拒绝。
 
 - 工具/测试：新增跨平台 pre-push ctest 门禁（`.githooks/pre-push` + `tools/pre_push.py`，可用 `git push --no-verify` / `PRE_PUSH_SKIP` 跳过）；游戏类 ctest 共享 `RESOURCE_LOCK(dst_game_server)`，`ctest -j` 并行时不再因固定端口（10999/8766/27016）冲突；Injector 只按当前布局（mod 根）定位真实模块，移除 `bin64`/`lib64` 旧路径回退与 deps 搜索兜底。
+
+- CI 修复：Windows 发布包此前实际是 Debug 构建。`Build` / `CMake install` 两步没有声明 `shell:`，Windows runner 默认的 pwsh 把 `"$PLUGIN_BUILD_CONFIG"` 当同名 PowerShell 变量展开成空串（环境变量要写 `$env:…`），`cmake --config ""` 不报错、静默回退默认配置（`CMAKE_CONFIGURATION_TYPES` 第一项 Debug）；Linux 默认 bash 展开正常，所以只有 Windows 侧出未优化的 Debug 产物和 vcpkg debug 运行时（`spdlogd/fmtd/zlibd1`），而清单/meta 仍盖着 `build_config: RelWithDebInfo`（同一步骤显式 `shell: bash`，展开正确）。现改用 `${{ env.PLUGIN_BUILD_CONFIG }}`（与 shell 无关）并新增校验步骤：安装产物必须与目标配置的构建产物逐字节一致，且非 Debug 包不得出现 vcpkg debug 专属运行时，否则 fail。
 
 ## 3.2.0
 

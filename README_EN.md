@@ -79,17 +79,15 @@ Download the package for your platform from GitHub Releases (`windows_Mod.zip` /
 1. Create a new folder in the mods folder in the root directory of the game, e.g. `Luajit`.
 2. The archive contains a `Mod` folder: copy **the contents of that `Mod` folder** (`modinfo.lua`, `modmain.lua`, `plugins/`, `deps/`, `bin64/`, `install.bat`, …) into your new folder, so that `…/mods/Luajit/modmain.lua` exists directly (**not** `mods/Luajit/Mod/modmain.lua`).
 
-> Folder name: the real Injector is resolved as `env vars → data/unsafedata/ds_luajit_injector.path → scan of the mods dir`, and the scan only recognizes these names: `workshop-3444078585`, `3444078585`, `luajit`, `luajit2`, `DontStarveLuaJit2`, `DontStarveLuaJIT2` (case-insensitive on Windows, case-sensitive on Linux/macOS). With any other name you **must** rely on the marker (written automatically by `install.bat`/`install_linux.sh`) or on the env vars, otherwise nothing gets injected.
+> Folder name: the real Injector is resolved as `env vars → data/unsafedata/ds_luajit_injector.path → scan of the mods dir`, and the scan only recognizes these names: `workshop-3444078585`, `3444078585`, `luajit`, `luajit2`, `DontStarveLuaJit2`, `DontStarveLuaJIT2` (case-insensitive on Windows, case-sensitive on Linux/macOS). With any other name the scan misses it and nothing writes the marker for you: set `DS_LUAJIT_INJECTOR` (the mod-root `Injector.dll`) or `DS_LUAJIT_INJECTOR_DIR` yourself, otherwise nothing gets injected. (Once the shell resolves the mod it rewrites `data/unsafedata/ds_luajit_injector.path` itself, so the env var is a one-time help.)
 
 ### Automated install
 
-Run `install.bat` (Windows) or `./install_linux.sh` (Linux) inside the mod's folder.
+Windows: run `install.bat` inside the mod folder. It does **one thing** - copy the packaged `bin64\windows\Winmm.dll` into game `bin64` (skipped when the copy is already identical, so re-running changes nothing); no staging, no deletion, no other file touched.
 
-`./install_linux.sh` may need `chmod +x install_linux.sh`.
+Linux: run `./install_linux.sh` (may need `chmod +x install_linux.sh` first). Shell only: it puts the packaged `bin64/linux/lib64/libInjector.so` into game `bin64/lib64` and rewrites the launchers as `LD_PRELOAD` wrappers (the real binaries are kept as `*_1`).
 
-The installer stages **only the inject shell** into game `bin64`, copies the real Injector into the **mod root**, and writes `data/unsafedata/ds_luajit_injector.path`.
-
-After a mod update (Workshop update / new Release package) **re-run** `install.bat` / `install_linux.sh` so the shell and the real Injector match (the mod also pops up a reminder on version mismatch).
+After a mod update (Workshop update / new Release package) **re-run** the installer so the shell in game `bin64` matches the packaged Injector (the mod also pops up a reminder on version mismatch).
 
 ## 2. Injector
 
