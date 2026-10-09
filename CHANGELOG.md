@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- 新增一行式安装：`install.ps1`（Windows，`irm … | iex`）与 `install.sh`（Linux，`curl … | sh`）——自动挑最新 release/preview（`DSJ_CHANNEL`/`--channel`）、按 `tools/steam_env.py` 的规则从注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf` 定位游戏根目录（可用 `DSJ_GAME_DIR`/`--game-dir` 覆盖），把包解到 `<游戏>/mods/<目录>` 后调用包内安装脚本（装壳、写 marker、自检）。
+
 - 注入可诊断化：壳（Winmm / InjectorStub）每次启动把解析来源/模块路径/加载与导出结果、壳的最终结果写到 `<游戏>/data/unsafedata/ds_luajit_boot.log`（stderr 保留）；`install_linux.sh` 结束时自检壳/真实模块/marker/`ldd` 并打印 `[CHECK]` 结论，新增 `install_linux.sh selftest`（一次性进程实测 stub→真实模块链路），且脚本在 `sh`（dash）下会 `exec bash` 重跑，不再因语法错误空跑。
 
 - `plugin.manager`：新增跨进程插件树锁（`plugins/.ds_plugin_update.lock`，`LockFileEx`/`flock`），启动更新检查与安装都持锁串行——客户端 + Master/Caves 同一波启动只做一次检查、不会并发写插件树（锁不支持时回退旧的无锁行为并提示，锁文件记录持有者 pid/host 便于诊断）。启动检查并入 `plugin_manager`（独立 `plugin.autoupdate` 模块及其三个专属服务删除），检查/安装期间不再持 manager 锁，`status_json` 全程可响应；等待中的安装最多等 30 秒后在锁内重建计划，不重复下载别的进程刚装好的资产。
