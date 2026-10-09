@@ -107,12 +107,60 @@ jobs:
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
       - name: Build
+        shell: bash
         run: |
-          cmake --build ./builds/ninja-multi-vcpkg --config "$PLUGIN_BUILD_CONFIG"
+          cmake --build ./builds/ninja-multi-vcpkg --config "${{ env.PLUGIN_BUILD_CONFIG }}"
 
       - name: CMake install
+        shell: bash
         run: |
-          cmake --build ./builds/ninja-multi-vcpkg --config "$PLUGIN_BUILD_CONFIG" --target install
+          cmake --build ./builds/ninja-multi-vcpkg --config "${{ env.PLUGIN_BUILD_CONFIG }}" --target install
+
+      - name: Verify package build config
+        shell: bash
+        run: |
+          set -euo pipefail
+          cfg="${{ env.PLUGIN_BUILD_CONFIG }}"
+          [ -n "$cfg" ] || { echo "::error::PLUGIN_BUILD_CONFIG is empty"; exit 1; }
+          case "${{ matrix.target }}" in
+            windows) modbin="Injector.dll" ;;
+            linux)   modbin="libInjector.so" ;;
+            macos)   modbin="libInjector.dylib" ;;
+            *) echo "::error::unknown platform ${{ matrix.target }}"; exit 1 ;;
+          esac
+          # 1) The requested configuration must have produced the module ...
+          built=$(find builds/ninja-multi-vcpkg/src/DontStarveInjector -type f -path "*/${cfg}/${modbin}" -print -quit)
+          if [ -z "$built" ]; then
+            echo "::error::no ${modbin} built for configuration '${cfg}' (did the config reach cmake?)"
+            find builds/ninja-multi-vcpkg -type f -name "$modbin" -print | head -20 || true
+            exit 1
+          fi
+          # 2) ... and it must be the exact module the install staged into the package.
+          installed="Mod/${modbin}"
+          [ -f "$installed" ] || { echo "::error::${installed} is missing after install"; exit 1; }
+          if ! cmp -s "$built" "$installed"; then
+            echo "::error::${installed} is not the '${cfg}' build — install used another configuration"
+            exit 1
+          fi
+          echo "build config '${cfg}' verified against ${installed}"
+          # 3) A non-Debug package must not carry debug-only vcpkg runtimes (install
+          #    searches vcpkg debug/bin too, so a config mix-up ships them silently).
+          if [ "${{ matrix.target }}" = "windows" ] && [ "$cfg" != "Debug" ]; then
+            for root in builds/ninja-multi-vcpkg/vcpkg_installed vcpkg_installed; do
+              for tripdir in "$root"/*/; do
+                [ -d "${tripdir}debug/bin" ] || continue
+                for dbg in "${tripdir}debug/bin/"*.dll; do
+                  [ -e "$dbg" ] || continue
+                  name=$(basename "$dbg")
+                  [ -e "${tripdir}bin/$name" ] && continue
+                  if [ -e "Mod/deps/$name" ]; then
+                    echo "::error::debug-only vcpkg runtime Mod/deps/$name staged into a ${cfg} package"
+                    exit 1
+                  fi
+                done
+              done
+            done
+          fi
 
       - name: Clean Up linux
         if: ${{ matrix.target == 'linux' }}
