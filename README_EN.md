@@ -1,4 +1,4 @@
-[中文版本](README_CN.md)
+[中文版本](README.md)
 
 # DontStarveLuaJIT
 
@@ -7,7 +7,7 @@
 ## NOTICE
 
 Make sure to back up your saves! There is no guarantee that there are no bugs!  
-Note that on dedicated servers, the `Disable JIT on Server` option in the settings is invalid; you should just remove the luajit mod to start the server.
+Note that `Disable JIT on Server` (`DisableJITWhenServer`) only applies to real **dedicated server processes**, and is read from the server's own mod config (`modoverrides.lua`); for a client-hosted server (the process is still the client) the option has no effect — remove the luajit mod before starting the server instead.
 
 ## Save Paths
 
@@ -41,8 +41,12 @@ Note that on dedicated servers, the `Disable JIT on Server` option in the settin
 
 ## 1. Mod:
 
-1. Create a new folder in the mods folder in the root directory of the game with a name like `luajit_mod`.
-2. Then copy all files into that folder.
+Download the package for your platform from GitHub Releases (`windows_Mod.zip` / `linux_Mod.zip`), or subscribe to the mod on the Steam Workshop. Then:
+
+1. Create a new folder in the mods folder in the root directory of the game, e.g. `Luajit`.
+2. The archive contains a `Mod` folder: copy **the contents of that `Mod` folder** (`modinfo.lua`, `modmain.lua`, `plugins/`, `deps/`, `bin64/`, `install.bat`, …) into your new folder, so that `…/mods/Luajit/modmain.lua` exists directly (**not** `mods/Luajit/Mod/modmain.lua`).
+
+> Folder name: the real Injector is resolved as `env vars → data/unsafedata/ds_luajit_injector.path → scan of the mods dir`, and the scan only recognizes these names: `workshop-3444078585`, `3444078585`, `luajit`, `luajit2`, `DontStarveLuaJit2`, `DontStarveLuaJIT2` (case-insensitive on Windows, case-sensitive on Linux/macOS). With any other name you **must** rely on the marker (written automatically by `install.bat`/`install_linux.sh`) or on the env vars, otherwise nothing gets injected.
 
 ### Automated install
 
@@ -52,9 +56,13 @@ Run `install.bat` (Windows) or `./install_linux.sh` (Linux) inside the mod's fol
 
 The installer stages **only the inject shell** into game `bin64`, copies the real Injector into the **mod root**, and writes `data/unsafedata/ds_luajit_injector.path`.
 
+After a mod update (Workshop update / new Release package) **re-run** `install.bat` / `install_linux.sh` so the shell and the real Injector match (the mod also pops up a reminder on version mismatch).
+
 ## 2. Injector
 
 Deploy model (from 2026-08-06): **shell only** in game `bin64`; real **Injector** at the **mod root**.
+
+> Troubleshooting: every boot writes the resolve source / module path / load result to `<game>/data/unsafedata/ds_luajit_boot.log` (the installer also prints a `[CHECK]` summary; on Linux run `./install_linux.sh selftest` any time). Check that log first when an install seems to have no effect.
 
 ### Windows (manual)
 
@@ -62,7 +70,7 @@ Deploy model (from 2026-08-06): **shell only** in game `bin64`; real **Injector*
   - Example: `C:\steamapps\common\Don't Starve Together\bin64\Winmm.dll`
 - Copy real **`Injector.dll`** into the **mod root** (next to `modmain.lua`).
   - Example: `…/mods/luajit_mod/Injector.dll`
-- Optional: write one UTF-8 line (absolute path to the real Injector) to  
+- Optional (required when the folder name is not one of the aliases above): write one UTF-8 line (absolute path to the real Injector) to  
   `data/unsafedata/ds_luajit_injector.path` under the game root.
 - **Do not** copy the entire `bin64/windows` package into game `bin64`.
 
@@ -78,6 +86,7 @@ I've only tested it on Ubuntu, but I can also test it on SteamOS if someone can 
 
 - Copy the **stub** to game `bin64/lib64/libInjector.so` (`LD_PRELOAD` still points at this game-side stub).
 - Copy the **real** module to the **mod root** (`libInjector.so`).
+- Optional (required when the folder name is not one of the aliases above): write the absolute path of the real `libInjector.so` as one line to `data/unsafedata/ds_luajit_injector.path`. Linux paths are case-sensitive — a folder named `Luajit` does not match the `luajit` alias.
 - Rename original game executable `dontstarve_steam_x64` to `dontstarve_steam_x64_1`.
 - Create new file `dontstarve_steam_x64` with the content:
 
@@ -90,6 +99,8 @@ export LD_PRELOAD=./lib64/libInjector.so   # game-tree stub
 
 - Run `chmod +x ./dontstarve_steam_x64`
 - Done
+
+- The dedicated server binary is `dontstarve_dedicated_server_nullrenderer_x64`; replace the names accordingly.
 
 Note: the process working directory (where the game binary lives) should be writable for logs.
 
@@ -104,17 +115,13 @@ The shell (Winmm / stub) resolves env first, then the marker file, then mod cand
 
 ### MacOS
 
+> Since 3.0.0 CI no longer builds macOS, so Releases contain no `macos_Mod.zip` (the last one shipped with 2.9.1); the steps below assume you provide your own macOS build.
+
 - Create a certificate of your own, e.g. with the name Dontstarve
 
   [Official tutorial](https://support.apple.com/zh-cn/guide/keychain-access/kyca8916/mac)
 
-- Open the shell
-- Switch to your game path
-
-  `cd /Users/*/Library/Application Support/Steam/steamapps/common/Don't Starve Together/dontstarve_steam.app`
-
-- `sudo codesign -fs Dontstarve . /dontstarve_steam.app`
-- Create a new permissions management file, say called `my.xml`, with the contents:
+- Open the shell and create a new permissions management file, say called `my.xml`, with the contents:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -131,24 +138,45 @@ The shell (Winmm / stub) resolves env first, then the marker file, then mod cand
 </plist>
 ```
 
-- `sudo codesign -d --entitlements ./my.xml ./dontstarve_steam.app`
-- Copy all `bin64/osx` files to the `MacOS` folder in the game directory.
+- Re-sign the game app with those entitlements (`codesign -d --entitlements <file>` only **dumps** the current entitlements into a file; it does not apply them):
+
+  `sudo codesign --force --entitlements ./my.xml -fs Dontstarve "/Users/*/Library/Application Support/Steam/steamapps/common/Don't Starve Together/dontstarve_steam.app"`
+
+  Verify with `codesign -d --entitlements :- <app>` that `allow-dyld-environment-variables` / `disable-library-validation` are present.
+
+- Install the shell and the real module (same "shell only" model as Windows):
+  - Copy the **stub** `Luajit/bin64/osx/shell/libInjector.dylib` into the folder holding the game executable (`dontstarve_steam.app/Contents/MacOS/`).
+  - Copy the **real** `Luajit/libInjector.dylib` into the **mod root** (next to `modmain.lua`).
+  - Optional (required when the folder name is not one of the aliases above): write the absolute path of the real `libInjector.dylib` as one line to `data/unsafedata/ds_luajit_injector.path`.
 - Rename the original game executable, `dontstarve_steam`, to `dontstarve_steam_1`.
 - Create a new file with the contents of `dontstarve_steam`:
 
 ```bash
 #!/bin/bash
-export DYLD_INSERT_LIBRARIES=./libInjector.dylib
+export DYLD_INSERT_LIBRARIES=./libInjector.dylib   # game-side stub
 ./dontstarve_steam_1 "$@"
 ```
 
-- Run shell `chmod +x . /dontstarve_steam`.
+- Run `chmod +x ./dontstarve_steam`.
 
 ## 3. Enable Mod
 
 In Game，please enable the mod `Dontstarveluajit2`
 
-If there aren't any other problems, you can now see luajit in the version number in the bottom right corner
+If there aren't any other problems, the version number in the bottom right corner now carries a `(LuaJIT)`-style suffix (e.g. `(LuaJIT)`, `(LuaJIT/vulkan)`, `(LuaJIT->Lua 5.1)`, depending on the current VM and render backend)
+
+For a dedicated server: type `print(jit)` in the console; a table (e.g. `table: 0x18709a30`) means the installation works.
+
+## 4. Uninstall
+
+### Windows
+Delete or rename `Winmm.dll` in the game `bin64` folder and delete the marker `data/unsafedata/ds_luajit_injector.path` (`install.bat uninstall` does both).
+
+### Linux/MacOS
+- Delete the `dontstarve_steam_x64` launcher you created.
+- Rename `dontstarve_steam_x64_1` back to `dontstarve_steam_x64`.
+- Delete the game-side stub and the marker: `bin64/lib64/libInjector.so` (macOS: `MacOS/libInjector.dylib`) and `data/unsafedata/ds_luajit_injector.path` (`install_linux.sh uninstall` does all of this).
+- Same for the dedicated server, whose binary is `dontstarve_dedicated_server_nullrenderer_x64`.
 
 # MOD Author Compatibility
 

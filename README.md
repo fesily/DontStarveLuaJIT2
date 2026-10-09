@@ -9,7 +9,7 @@
 ## 注意
 
 请务必备份您的存档，因为我们无法保证插件不会导致存档损坏！
-使用专用服务器开服需要注意，设置中`服务器禁用luajit`选项是无效的，你应该直接卸载luajit再启动服务器
+使用专用服务器开服需要注意，`服务器禁用luajit`（`DisableJITWhenServer`）只对**专用服务器进程**生效，且要看服务器自己的模组配置（`modoverrides.lua`）；如果是客户端开服（进程仍是客户端），该选项无效，请直接卸载 luajit 再启动服务器
 
 ## 存档路径
 
@@ -76,17 +76,24 @@
 
 ## 1.MOD本体：
 
-1. 先在游戏根目录下的mods文件夹中创建一个新的文件夹，名字随意取，比如`Luajit`
-2. 然后把所有的文件复制到该目录
+从 GitHub Releases 下载对应平台的包（`windows_Mod.zip` / `linux_Mod.zip`），或者直接在创意工坊订阅本模组。然后：
+
+1. 先在游戏根目录下的mods文件夹中创建一个新的文件夹，比如`Luajit`
+2. 解压后里面是一个 `Mod` 文件夹：把 **`Mod` 文件夹里面的内容**（`modinfo.lua`、`modmain.lua`、`plugins/`、`deps/`、`bin64/`、`install.bat` 等）复制到该目录，确认 `…/mods/Luajit/modmain.lua` 直接存在（**不要**复制成 `mods/Luajit/Mod/modmain.lua`）
+
+> 目录名说明：真实 Injector 的查找顺序是 `环境变量 → data/unsafedata/ds_luajit_injector.path → 扫描 mods 目录`，扫描只认这些目录名：`workshop-3444078585`、`3444078585`、`luajit`、`luajit2`、`DontStarveLuaJit2`、`DontStarveLuaJIT2`（Windows 大小写不敏感，Linux/macOS 敏感）。用其它名字时**必须**靠 marker（`install.bat`/`install_linux.sh` 会自动写）或环境变量，否则不会注入。
 
 ## 2.注入部分：
 
 安装模型（2026-08-06 起）：**仅注入壳**进游戏 `bin64`；真实 `Injector` 在 **mod 根目录**（与 `modmain.lua` 同级）。
 
+> 排查：每次启动都会把解析来源/模块路径/加载结果写到 `<游戏>/data/unsafedata/ds_luajit_boot.log`（安装脚本结束也会打印 `[CHECK]` 自检；Linux 可随时 `./install_linux.sh selftest`）。装了没效果时先看这个日志。
+
 ### 方法 1（自动安装）
 - 直接运行 Luajit 文件夹内的 `install.bat`（Windows）/ `install_linux.sh`（Linux）
 - 运行 `install_linux.sh` 前可能需要先执行 `chmod +x ./install_linux.sh` 赋予权限
 - 脚本会：壳 → 游戏 `bin64`；真实 Injector → 当前 mod 根目录；并写入标记文件 `data/unsafedata/ds_luajit_injector.path`
+- 模组更新（工坊更新 / 换 Release 包）后要**重新运行一次** `install.bat` / `install_linux.sh`，避免壳与真实 Injector 版本不匹配（mod 在版本不匹配时也会弹窗提示重跑）
 
 ### 方法 2（手动安装）
 
@@ -96,7 +103,7 @@
   - 例如：`D:\Steam\steamapps\common\Don't Starve Together\bin64\Winmm.dll`
 - 将真实 **`Injector.dll`** 放到 **mod 根目录**（与 `modmain.lua` 同级）
   - 例如：`…/mods/Luajit/Injector.dll` 或 workshop 内容目录下的 `Injector.dll`
-- （可选）在游戏 `data/unsafedata/ds_luajit_injector.path` 写入一行真实 Injector 的绝对路径，便于冷启动固定解析
+- （可选；目录名不在上面的别名列表时**必需**）在游戏 `data/unsafedata/ds_luajit_injector.path` 写入一行真实 Injector 的绝对路径，便于冷启动固定解析
 - **不要**再把整包 `bin64/windows` 全量拷进游戏 `bin64`
 - 专用服务器同理（同样只装 `Winmm.dll` 到游戏 `bin64`）
 
@@ -106,6 +113,7 @@
 
 - 将 **stub**（薄壳）复制到游戏 `bin64/lib64/libInjector.so`（`LD_PRELOAD` 仍指向游戏 stub）
 - 将 **真实** `libInjector.so` 放到 **mod 根目录**（与 `modmain.lua` 同级）
+- （可选；目录名不在上面的别名列表时**必需**）在游戏 `data/unsafedata/ds_luajit_injector.path` 写入一行真实 `libInjector.so` 的绝对路径；注意 Linux 路径大小写敏感，目录名 `Luajit` 不能命中别名 `luajit`
 - 将原始游戏可执行文件 `dontstarve_steam_x64` 重命名为 `dontstarve_steam_x64_1`
 - 创建内容为 `dontstarve_steam_x64` 的新文件：
 
@@ -132,18 +140,13 @@ export LD_PRELOAD=./lib64/libInjector.so   # 游戏目录内的 stub
 
 #### Macos
 
+> 3.0.0 起 CI 不再构建 macOS，Release 中没有 `macos_Mod.zip`（最后随包发布于 2.9.1）；下面步骤需自备 macOS 构建产物。
 
 - 创建一个属于自己的证书，比如名字为Dontstarve
 
   [官方教程](https://support.apple.com/zh-cn/guide/keychain-access/kyca8916/mac)
 
-- 打开shell
-- 切换到自己的游戏路径
-
-  `cd /Users/*/Library/Application Support/Steam/steamapps/common/Don't Starve Together/dontstarve_steam.app`
-
-- `sudo codesign -fs Dontstarve ./dontstarve_steam.app`
-- 创建一个新的权限管理文件，比如叫`my.xml`，内容：
+- 打开 shell，创建一个新的权限管理文件，比如叫`my.xml`，内容：
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -160,15 +163,23 @@ export LD_PRELOAD=./lib64/libInjector.so   # 游戏目录内的 stub
 </plist>
 ```
 
-- `sudo codesign -d --entitlements ./my.xml ./dontstarve_steam.app`
-- 将 `Luajit/bin64/osx` 文件夹内所有文件`复制`到`游戏目录`下的 `MacOS`文件夹中
+- 用该 entitlements 重新签名游戏 app（`codesign -d --entitlements <文件>` 只是把现有 entitlements **导出**到文件，并不会应用）：
+
+  `sudo codesign --force --entitlements ./my.xml -fs Dontstarve "/Users/*/Library/Application Support/Steam/steamapps/common/Don't Starve Together/dontstarve_steam.app"`
+
+  可用 `codesign -d --entitlements :- <app>` 检查是否已带上 `allow-dyld-environment-variables` / `disable-library-validation`
+
+- 安装壳与真实模块（同 Windows 的“仅注入壳”模型）：
+  - 将 **stub**（薄壳）`Luajit/bin64/osx/shell/libInjector.dylib` 复制到游戏可执行文件所在目录（`dontstarve_steam.app/Contents/MacOS/`）
+  - 将 **真实** `Luajit/libInjector.dylib` 放到 **mod 根目录**（与 `modmain.lua` 同级）
+  - （可选；目录名不在上面的别名列表时**必需**）在游戏 `data/unsafedata/ds_luajit_injector.path` 写入一行真实 `libInjector.dylib` 的绝对路径
 - 将原始游戏可执行文件 `dontstarve_steam` 重命名为 `dontstarve_steam_1`
 - 创建内容为 `dontstarve_steam` 的新文件：
 
 ```bash
 #!/bin/bash
-export DYLD_INSERT_LIBRARIES=./libInjector.dylib
-./dontstarve_steam_1
+export DYLD_INSERT_LIBRARIES=./libInjector.dylib   # 游戏目录内的 stub
+./dontstarve_steam_1 "$@"
 ```
 
 - 运行 shell `chmod +x ./dontstarve_steam`
@@ -177,18 +188,19 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib
 
 在游戏中启用名为dontstarveluajit2的mod
 
-如果没有任何其他问题，应该可以在右下角的版本号看到luajit
+如果没有任何其他问题，应该可以在右下角的版本号看到 `(LuaJIT)` 之类的后缀（按当前 VM 与渲染后端可能是 `(LuaJIT)`、`(LuaJIT/vulkan)`、`(LuaJIT->Lua 5.1)` 等）
 
 若为专用服务器：输入控制台代码`print(jit)`，游戏返回一个table则为安装成功（比如table: 0x18709a30）
 
 ## 4.卸载mod
 
 ### Windows
-将`游戏目录`下的 `bin64`文件夹中的`Winmm.dll`删除或重命名
+将`游戏目录`下的 `bin64`文件夹中的`Winmm.dll`删除或重命名，并删除标记文件 `data/unsafedata/ds_luajit_injector.path`（`install.bat uninstall` 会一次做完这两步）
 
 ### Linux/MacOS
 - 删除安装游戏时自己创建的`dontstarve_steam_x64`文件
 - 将 `dontstarve_steam_x64_1` 重命名为 `dontstarve_steam_x64`
+- 删除游戏侧的薄壳与标记文件：`bin64/lib64/libInjector.so`（macOS 为 `MacOS/libInjector.dylib`）、`data/unsafedata/ds_luajit_injector.path`（`install_linux.sh uninstall` 会一次做完这些）
 - 专用服务器同理，文件名为`dontstarve_dedicated_server_nullrenderer_x64`
 
 # MOD作者兼容
