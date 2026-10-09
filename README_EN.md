@@ -74,7 +74,7 @@ as `$env:DSJ_CHANNEL`):
 
 ## 1. Mod:
 
-Download the package for your platform from GitHub Releases (`windows_Mod.zip` / `linux_Mod.zip`), or subscribe to the mod on the Steam Workshop. Then:
+Download the package for your platform from GitHub Releases (`windows_Mod.zip` / `linux_Mod.zip`), or subscribe to the mod on the Steam Workshop. For debugging crashes or perf, the same release also carries a separate symbols package `windows_symbols.zip` (PDBs, deliberately **not** inside the mod zip nor the workshop item): unzip it and point your debugger's symbol path at the folder to get function names and line numbers for Injector / plugin / lua51 frames; Linux `Mod/*.so` files are RelWithDebInfo and unstripped, so their DWARF is already in the package. Then:
 
 1. Create a new folder in the mods folder in the root directory of the game, e.g. `Luajit`.
 2. The archive contains a `Mod` folder: copy **the contents of that `Mod` folder** (`modinfo.lua`, `modmain.lua`, `plugins/`, `deps/`, `bin64/`, `install.bat`, …) into your new folder, so that `…/mods/Luajit/modmain.lua` exists directly (**not** `mods/Luajit/Mod/modmain.lua`).

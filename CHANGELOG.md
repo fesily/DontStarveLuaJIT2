@@ -18,6 +18,8 @@
 
 - CI 修复：Windows 发布包此前实际是 Debug 构建。`Build` / `CMake install` 两步没有声明 `shell:`，Windows runner 默认的 pwsh 把 `"$PLUGIN_BUILD_CONFIG"` 当同名 PowerShell 变量展开成空串（环境变量要写 `$env:…`），`cmake --config ""` 不报错、静默回退默认配置（`CMAKE_CONFIGURATION_TYPES` 第一项 Debug）；Linux 默认 bash 展开正常，所以只有 Windows 侧出未优化的 Debug 产物和 vcpkg debug 运行时（`spdlogd/fmtd/zlibd1`），而清单/meta 仍盖着 `build_config: RelWithDebInfo`（同一步骤显式 `shell: bash`，展开正确）。现改用 `${{ env.PLUGIN_BUILD_CONFIG }}`（与 shell 无关）并新增校验步骤：安装产物必须与目标配置的构建产物逐字节一致，且非 Debug 包不得出现 vcpkg debug 专属运行时，否则 fail。
 
+- CI 新增独立调试符号包 `windows_symbols.zip`（Release/Preview 资产，仅 Windows）：PDB 仍然**不**进 `*_Mod.zip`、也不进创意工坊（工坊那条路径本来就排除 `*.pdb`）。符号从 build tree 里按“本次实际发布的模块”逐个配齐——Injector / Winmm / 全部 `plugin_*` / function_relocation / lua51DS 系列 / lua51Original / 仓库自带的 stock lua51，配置取同一个 `PLUGIN_BUILD_CONFIG`，与发布二进制严格对应；Injector / Winmm / plugin_core_vm / plugin_manager 任一符号缺失即 fail。用法：解压后把该目录加入调试器符号路径（WinDbg `.sympath+`，VS「调试 → 符号」），Linux 不需要符号包——`Mod/*.so` 是 RelWithDebInfo 且未 strip，DWARF 就在包里（实测发布版 `libInjector.so` 21 MB、含 `.debug_info/.debug_line/.debug_str`）。
+
 ## 3.2.0
 
 - 修复加密模组（风雪/daxsg 家族，如《神话书说》workshop-1991746508）导致的服务器世界生成卡死/崩溃：其加载器探测 `require("jit")` 后会在 LuaJIT 下走坏路径（字节码 VM 报 `K nil` 或死循环），污染 worldgen 状态。新增 `Mod/modworldgenmain.lua`：只在真正的世界生成状态（`WORLDGEN_MAIN`，`scripts/worldgen_main.lua` 设置；客户端前端/普通加载路径无此标记）里 `rawset` 掉 `_G.jit` 并清 `package.loaded.jit`（`jit.runtime` 的 HideGlobalJIT 只覆盖 modmain 阶段，worldgen 不跑 modmain），受 `HideGlobalJIT` 选项控制（默认开）。

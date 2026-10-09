@@ -103,7 +103,7 @@ curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/ins
 
 ## 1.MOD本体：
 
-从 GitHub Releases 下载对应平台的包（`windows_Mod.zip` / `linux_Mod.zip`），或者直接在创意工坊订阅本模组。然后：
+从 GitHub Releases 下载对应平台的包（`windows_Mod.zip` / `linux_Mod.zip`），或者直接在创意工坊订阅本模组。想调试崩溃/性能问题时，同一个 Release 里还有一个独立符号包 `windows_symbols.zip`（PDB，**不**在分发包也不在工坊内容里）：解压后把该目录加进调试器的符号路径，Injector / 插件 / lua51 的栈就能解析出函数名与行号；Linux 的 `Mod/*.so` 是 RelWithDebInfo 且未 strip，DWARF 就在包里，无需额外符号。然后：
 
 1. 先在游戏根目录下的mods文件夹中创建一个新的文件夹，比如`Luajit`
 2. 解压后里面是一个 `Mod` 文件夹：把 **`Mod` 文件夹里面的内容**（`modinfo.lua`、`modmain.lua`、`plugins/`、`deps/`、`bin64/`、`install.bat` 等）复制到该目录，确认 `…/mods/Luajit/modmain.lua` 直接存在（**不要**复制成 `mods/Luajit/Mod/modmain.lua`）
