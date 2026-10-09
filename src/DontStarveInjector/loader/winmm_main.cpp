@@ -36,16 +36,19 @@ void DontStarveInjectorStart() {
 
     auto hook_startup_entry = ds::bootstrap::load_injector_hook_entry();
     if (!hook_startup_entry) {
+        ds::bootstrap::append_boot_log("shell(winmm): can't load real Injector");
         std::fprintf(stderr,
                      "[ds-bootstrap] can't load injector.dll (bootstrap resolve/load failed)\n");
         std::fflush(stderr);
         return;
     }
     if (hook_startup_entry()) {
+        ds::bootstrap::append_boot_log("shell(winmm): installed injector startup hook");
         std::fprintf(stderr, "[ds-bootstrap] installed injector startup hook\n");
         std::fflush(stderr);
         return;
     }
+    ds::bootstrap::append_boot_log("shell(winmm): failed to install injector startup hook");
     std::fprintf(stderr, "[ds-bootstrap] failed to install injector startup hook\n");
     std::fflush(stderr);
 }

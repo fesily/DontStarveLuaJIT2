@@ -14,15 +14,18 @@ struct BootstrapOnce {
     BootstrapOnce() {
         auto fn = ds::bootstrap::load_injector_hook_entry();
         if (!fn) {
+            ds::bootstrap::append_boot_log("shell(stub): failed to load real Injector");
             std::fprintf(stderr,
                 "[ds-bootstrap] stub: failed to load real Injector\n");
             return;
         }
         if (!fn()) {
+            ds::bootstrap::append_boot_log("shell(stub): HookStartupEntry returned false");
             std::fprintf(stderr,
                 "[ds-bootstrap] stub: HookStartupEntry returned false\n");
             return;
         }
+        ds::bootstrap::append_boot_log("shell(stub): HookStartupEntry OK");
         std::fprintf(stderr, "[ds-bootstrap] stub: HookStartupEntry OK\n");
     }
 };

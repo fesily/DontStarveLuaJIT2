@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <fstream>
 #include <mutex>
 #include <string>
@@ -90,14 +91,14 @@ const char *env_or_null(const char *key) {
 #endif
 }
 
-fs::path production_exe_directory() {
+fs::path production_exe_path() {
 #if defined(_WIN32)
     wchar_t buf[MAX_PATH];
     const DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
     if (n == 0 || n >= MAX_PATH) {
         return {};
     }
-    return fs::path(buf).parent_path();
+    return fs::path(buf);
 #else
     char buf[PATH_MAX];
     const ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
@@ -105,8 +106,13 @@ fs::path production_exe_directory() {
         return {};
     }
     buf[n] = '\0';
-    return fs::path(buf).parent_path();
+    return fs::path(buf);
 #endif
+}
+
+fs::path production_exe_directory() {
+    const auto exe = production_exe_path();
+    return exe.empty() ? fs::path{} : exe.parent_path();
 }
 
 std::vector<std::string> production_cmdline_tokens() {
@@ -165,6 +171,41 @@ fs::path marker_path() {
         return {};
     }
     return root / "data" / "unsafedata" / kMarkerFileName;
+}
+
+fs::path boot_log_file_path() {
+    const auto root = current_game_root();
+    if (root.empty()) {
+        return {};
+    }
+    return root / "data" / "unsafedata" / kBootLogFileName;
+}
+
+long current_pid() {
+#if defined(_WIN32)
+    return static_cast<long>(GetCurrentProcessId());
+#else
+    return static_cast<long>(getpid());
+#endif
+}
+
+std::string timestamp_now() {
+    const std::time_t now = std::time(nullptr);
+    std::tm tm{};
+#if defined(_WIN32)
+    if (localtime_s(&tm, &now) != 0) {
+        return {};
+    }
+#else
+    if (localtime_r(&now, &tm) == nullptr) {
+        return {};
+    }
+#endif
+    char buf[32]{};
+    if (std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tm) == 0) {
+        return {};
+    }
+    return buf;
 }
 
 fs::path absolute_if_possible(const fs::path &p) {
@@ -282,6 +323,43 @@ bool pin_success(const fs::path &module_abs, const char *source) {
     return true;
 }
 
+// Multi-line detail for the boot log's resolve-failure record.
+std::string describe_resolve_failure() {
+    std::string detail;
+    const auto add_line = [&detail](std::string line) {
+        if (!detail.empty()) {
+            detail += "\n";
+        }
+        detail += std::move(line);
+    };
+
+    const char *file_env = env_or_null(kInjectorFileEnv);
+    const char *dir_env = env_or_null(kInjectorDirEnv);
+    add_line("resolve: FAILED (env/marker/scan)");
+    add_line(std::string{"  DS_LUAJIT_INJECTOR="} + (file_env ? file_env : "<unset>"));
+    add_line(std::string{"  DS_LUAJIT_INJECTOR_DIR="} + (dir_env ? dir_env : "<unset>"));
+
+    const auto marker = marker_path();
+    if (marker.empty()) {
+        add_line("  marker: <unknown game root>");
+    } else {
+        add_line(std::string{"  marker: "} + marker.string() +
+                 (is_regular_existing(marker) ? " (present but unusable)" : " (missing)"));
+    }
+
+    std::vector<fs::path> bases;
+    collect_scan_bases(bases);
+    std::string scan;
+    for (const auto &base : bases) {
+        if (!scan.empty()) {
+            scan += "; ";
+        }
+        scan += base.string();
+    }
+    add_line(std::string{"  scan bases: "} + (scan.empty() ? "<none>" : scan));
+    return detail;
+}
+
 } // namespace
 
 const char *injector_module_filename() {
@@ -357,6 +435,42 @@ bool read_injector_marker(fs::path &out_abs) {
     }
     out_abs = absolute_if_possible(candidate);
     return true;
+}
+
+std::filesystem::path boot_log_path() {
+    return boot_log_file_path();
+}
+
+void reset_boot_log() {
+    const auto path = boot_log_file_path();
+    if (path.empty()) {
+        return;
+    }
+    std::error_code ec;
+    fs::create_directories(path.parent_path(), ec);
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        return;
+    }
+    const auto exe = production_exe_path();
+    out << "ds-bootstrap boot log " << timestamp_now() << " pid=" << current_pid()
+        << " exe=" << (exe.empty() ? std::string{"<unknown>"} : exe.string()) << "\n";
+    out.flush();
+    std::fprintf(stderr, "[ds-bootstrap] boot log: %s\n", path.string().c_str());
+    std::fflush(stderr);
+}
+
+void append_boot_log(std::string_view line) {
+    const auto path = boot_log_file_path();
+    if (path.empty() || line.empty()) {
+        return;
+    }
+    std::ofstream out(path, std::ios::binary | std::ios::app);
+    if (!out) {
+        return;
+    }
+    out << line << "\n";
+    out.flush();
 }
 
 bool resolve_injector_module(std::filesystem::path &out_abs) {
@@ -451,12 +565,18 @@ bool configure_injector_deps_search(const std::filesystem::path &mod_root,
 }
 
 HookStartupEntryFn load_injector_hook_entry() {
+    reset_boot_log();
+
     std::filesystem::path abs;
     if (!resolve_injector_module(abs)) {
+        append_boot_log(describe_resolve_failure());
         std::fprintf(stderr, "[ds-bootstrap] cannot resolve Injector module\n");
         std::fflush(stderr);
         return nullptr;
     }
+    append_boot_log(std::string{"resolve: source="} +
+                    (g_last_source.empty() ? "unknown" : g_last_source) +
+                    " module=" + abs.string());
     const auto mod_root = mod_root_from_injector_module(abs);
     const auto module_dir = abs.parent_path();
     (void)configure_injector_deps_search(mod_root, module_dir);
@@ -470,23 +590,36 @@ HookStartupEntryFn load_injector_hook_entry() {
         h = LoadLibraryW(abs.wstring().c_str()); // fallback
     }
     if (!h) {
+        const auto err = static_cast<unsigned long>(GetLastError());
+        append_boot_log(std::string{"load: FAILED LoadLibrary ("} + std::to_string(err) +
+                        ") module=" + abs.string());
         std::fprintf(stderr, "[ds-bootstrap] LoadLibrary failed (%lu): %s\n",
-                     static_cast<unsigned long>(GetLastError()), abs.string().c_str());
+                     err, abs.string().c_str());
         std::fflush(stderr);
         return nullptr;
     }
     auto fn = reinterpret_cast<HookStartupEntryFn>(
         GetProcAddress(h, "HookStartupEntry"));
+    if (!fn) {
+        append_boot_log(std::string{"load: missing export HookStartupEntry module="} +
+                        abs.string());
+    }
 #else
     void *h = dlopen(abs.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (!h) {
         const char *err = dlerror();
+        append_boot_log(std::string{"load: FAILED dlopen ("} + (err ? err : "unknown") +
+                        ") module=" + abs.string());
         std::fprintf(stderr, "[ds-bootstrap] dlopen failed: %s (%s)\n",
                      abs.c_str(), err ? err : "unknown");
         std::fflush(stderr);
         return nullptr;
     }
     auto fn = reinterpret_cast<HookStartupEntryFn>(dlsym(h, "HookStartupEntry"));
+    if (!fn) {
+        append_boot_log(std::string{"load: missing export HookStartupEntry module="} +
+                        abs.string());
+    }
 #endif
     if (!fn) {
         std::fprintf(stderr, "[ds-bootstrap] missing export HookStartupEntry: %s\n",
@@ -494,6 +627,7 @@ HookStartupEntryFn load_injector_hook_entry() {
         std::fflush(stderr);
         return nullptr;
     }
+    append_boot_log(std::string{"load: OK module="} + abs.string());
     std::fprintf(stderr, "[ds-bootstrap] loaded Injector: %s\n", abs.string().c_str());
     std::fflush(stderr);
     return fn;

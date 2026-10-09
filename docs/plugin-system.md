@@ -547,6 +547,8 @@ EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`, â€
 
 Override paths: `DS_LUAJIT_INJECTOR` / `DS_LUAJIT_INJECTOR_DIR` (real Injector); `DS_LUAJIT_PLUGIN_DIR` (plugins). Marker: `data/unsafedata/ds_luajit_injector.path`.
 
+Boot diagnostics: the shell bootstrap (Winmm / InjectorStub) resets and appends `<game>/data/unsafedata/ds_luajit_boot.log` on every boot â€” header (time/pid/exe), resolve source + module path, load result, exported-entry result, then the shell's outcome. Useful when a failed inject is invisible (Steam hides stderr). `Mod/install_linux.sh` ends with a `[CHECK]` summary (shell / real module / marker / `ldd`) and offers `install_linux.sh selftest` for a live one-process probe.
+
 `DisableJITWhenServer` (or harness `DS_LUAJIT_FORCE_DISABLE_VM=1`) only skips the VM path; it does **not** skip DynamicPluginLoader. Harness negative path: rename `plugin_core_vm.dll` or set `DS_LUAJIT_FORCE_NO_CORE_VM=1`.
 
 Related designs: `docs/superpowers/specs/2026-08-03-dynamic-plugin-skeleton-design.md`, `docs/superpowers/specs/2026-08-04-core-vm-plugin-design.md`.

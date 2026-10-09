@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -228,6 +229,59 @@ static void test_load_fail_fast_no_module() {
     printf("PASS: load_fail_fast_no_module\n");
 }
 
+static std::string read_all(const fs::path &p) {
+    std::ifstream in(p, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(in)),
+                       std::istreambuf_iterator<char>());
+}
+
+static void test_boot_log_written() {
+    clear_env_and_state();
+    auto root = make_temp("ds_inj_boot_log");
+    auto game = root / "game";
+    fs::create_directories(game);
+    set_marker_game_root_for_test(game);
+
+    assert(boot_log_path() == game / "data" / "unsafedata" / kBootLogFileName);
+    reset_boot_log();
+    append_boot_log("resolve: source=test module=/tmp/x");
+    append_boot_log("shell(stub): HookStartupEntry OK");
+
+    const auto text = read_all(boot_log_path());
+    assert(text.find("ds-bootstrap boot log") != std::string::npos);
+    assert(text.find("pid=") != std::string::npos);
+    assert(text.find("resolve: source=test module=/tmp/x") != std::string::npos);
+    assert(text.find("shell(stub): HookStartupEntry OK") != std::string::npos);
+
+    clear_env_and_state();
+    printf("PASS: boot_log_written\n");
+}
+
+static void test_boot_log_records_failed_resolve() {
+    clear_env_and_state();
+    auto root = make_temp("ds_inj_boot_log_fail");
+    auto game = root / "game";
+    fs::create_directories(game / "bin64");
+    fs::create_directories(game / "mods");
+    set_marker_game_root_for_test(game);
+    set_exe_dir_for_test(game / "bin64");
+
+    auto fn = load_injector_hook_entry();
+    assert(fn == nullptr);
+
+    const auto text = read_all(boot_log_path());
+    assert(text.find("ds-bootstrap boot log") != std::string::npos);
+    assert(text.find("resolve: FAILED") != std::string::npos);
+    assert(text.find("DS_LUAJIT_INJECTOR=<unset>") != std::string::npos);
+    assert(text.find("marker: ") != std::string::npos);
+    assert(text.find("(missing)") != std::string::npos);
+    assert(text.find("scan bases:") != std::string::npos);
+    assert(text.find("shell(stub)") == std::string::npos);
+
+    clear_env_and_state();
+    printf("PASS: boot_log_records_failed_resolve\n");
+}
+
 
 int main() {
     test_env_file_wins();
@@ -239,6 +293,8 @@ int main() {
     test_fail_when_nothing();
     test_mod_root_from_module_path();
     test_load_fail_fast_no_module();
+    test_boot_log_written();
+    test_boot_log_records_failed_resolve();
     printf("ALL PASS test_injector_bootstrap\n");
     return 0;
 }

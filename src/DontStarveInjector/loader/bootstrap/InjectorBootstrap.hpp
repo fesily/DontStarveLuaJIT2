@@ -1,6 +1,7 @@
 #pragma once
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace ds::bootstrap {
@@ -27,6 +28,18 @@ bool write_injector_marker(const std::filesystem::path &abs_module);
 
 // Read marker path if file exists and points at an existing regular file.
 bool read_injector_marker(std::filesystem::path &out_abs);
+
+// --- Support diagnostics ---------------------------------------------------
+// One boot record per process under <game root>/data/unsafedata/, so a failed
+// inject stays visible without a console (Steam hides stderr):
+//   ds_luajit_boot.log - header (time/pid/exe), resolve source + module path,
+//   load result, exported-entry result, then the shell's outcome appended by
+//   Winmm / InjectorStub. reset truncates + writes the header, append adds one
+//   line (flushed immediately so a crash keeps the record).
+inline constexpr const char *kBootLogFileName = "ds_luajit_boot.log";
+std::filesystem::path boot_log_path();
+void reset_boot_log();
+void append_boot_log(std::string_view line);
 
 using HookStartupEntryFn = bool (*)();
 

@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Needs bash (arrays + `local`); re-exec instead of dying with a dash syntax
+# error when started as `sh install_linux.sh`.
+if [ -z "${BASH_VERSION:-}" ]; then
+    exec bash "$0" "$@"
+fi
+
 # List of processes to check
 processes=("dontstarve_steam_x64" "dontstarve_dedicated_server_nullrenderer_x64")
 
@@ -38,6 +44,9 @@ if [ ! -d "$destination" ]; then
     echo "[ERROR] Destination directory does not exist: $destination"
     exit 1
 fi
+# Absolute: the script later cd's into it, and the check/marker paths must not
+# depend on the current directory anymore.
+destination=$(cd "$destination" && pwd) || exit 1
 
 abs_path() {
     # Prefer realpath; fall back to readlink -f; last resort: cd+pwd
@@ -57,13 +66,123 @@ uninstall() {
     # Only remove game stub + marker; leave mod Injector/plugins/deps alone
     echo "[INFO] removing injector shell from $destination ..."
     rm -f "$destination/lib64/libInjector.so"
-    rm -f "$destination/../data/unsafedata/ds_luajit_injector.path"
+    rm -f "$game_root/data/unsafedata/ds_luajit_injector.path"
     echo "[INFO] removing success"
     exit 0
 }
 
+# Marker + boot-log locations the loader uses (see docs/plugin-system.md).
+game_root=$(dirname "$destination")
+marker_file="$game_root/data/unsafedata/ds_luajit_injector.path"
+boot_log_file="$game_root/data/unsafedata/ds_luajit_boot.log"
+
+# Static post-install check: shell, real module, marker, and unresolved deps.
+static_check() {
+    local stub="$destination/lib64/libInjector.so"
+    local real="$mod_root/libInjector.so"
+    local fail=0
+
+    echo "[CHECK] shell : $stub"
+    if [ -f "$stub" ]; then
+        echo "[CHECK]         ok ($(stat -c%s "$stub" 2>/dev/null || echo '?') bytes)"
+    else
+        echo "[CHECK]         MISSING"
+        fail=1
+    fi
+
+    echo "[CHECK] module: $real"
+    if [ -f "$real" ]; then
+        echo "[CHECK]         ok ($(stat -c%s "$real" 2>/dev/null || echo '?') bytes)"
+    else
+        echo "[CHECK]         MISSING"
+        fail=1
+    fi
+
+    echo "[CHECK] marker: $marker_file"
+    if [ -f "$marker_file" ]; then
+        local value
+        value=$(head -n1 "$marker_file" 2>/dev/null)
+        if [ -n "$value" ] && [ -f "$value" ]; then
+            echo "[CHECK]         ok -> $value"
+        else
+            echo "[CHECK]         STALE -> ${value:-<empty>} (target missing)"
+            fail=1
+        fi
+    else
+        echo "[CHECK]         MISSING"
+        fail=1
+    fi
+
+    if [ -f "$real" ] && command -v ldd >/dev/null 2>&1; then
+        # Mirror the launcher env: libsteam_api.so comes from the game's lib64.
+        local ldd_out
+        ldd_out=$(LD_LIBRARY_PATH="$destination/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$real" 2>&1)
+        local unresolved
+        unresolved=$(printf '%s\n' "$ldd_out" | grep -c "not found")
+        if [ "$unresolved" = "0" ]; then
+            echo "[CHECK] ldd  : all dependencies resolved"
+        else
+            echo "[CHECK] ldd  : $unresolved unresolved line(s):"
+            printf '%s\n' "$ldd_out" | grep "not found" | sed 's/^/[CHECK]         /'
+            if printf '%s\n' "$ldd_out" | grep -q "GLIBC_2"; then
+                echo "[CHECK]         hint: this distro is too old for the shipped binaries"
+            fi
+            fail=1
+        fi
+    fi
+    return $fail
+}
+
+# Live probe: load the stub (and through it the real module) in a throwaway
+# process. Opt-in (`install_linux.sh selftest`) because it runs the injector's
+# boot path outside the game; DS_LUAJIT_FORCE_NO_CORE_VM=1 keeps it light.
+live_probe() {
+    local stub="$destination/lib64/libInjector.so"
+    if [ ! -f "$stub" ]; then
+        echo "[SELFTEST] stub missing; run the installer first"
+        return 1
+    fi
+
+    # Probe binary inside the game's bin64, so the stub derives the real game
+    # root (marker / mods scan) exactly like an actual launch would.
+    local probe="$destination/.ds_luajit_selftest_probe"
+    local probe_src="/bin/true"
+    [ -x "$probe_src" ] || probe_src="/bin/echo"
+    if ! cp -f "$probe_src" "$probe"; then
+        echo "[SELFTEST] cannot stage a probe binary in $destination"
+        return 1
+    fi
+    chmod +x "$probe"
+
+    echo "[SELFTEST] loading the stub through a throwaway process ..."
+    local out
+    out=$(DS_LUAJIT_FORCE_NO_CORE_VM=1 \
+          LD_LIBRARY_PATH="$destination/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+          LD_PRELOAD="$stub" \
+          "$probe" 2>&1)
+    rm -f "$probe"
+    printf '%s\n' "$out" | sed 's/^/[SELFTEST] /'
+
+    echo "[SELFTEST] boot log: $boot_log_file"
+    if [ -f "$boot_log_file" ]; then
+        sed 's/^/[SELFTEST]   /' "$boot_log_file"
+    fi
+    if printf '%s\n' "$out" | grep -q "stub: HookStartupEntry OK"; then
+        echo "[SELFTEST] OK: stub -> real module -> HookStartupEntry"
+        return 0
+    fi
+    echo "[SELFTEST] FAILED: stub could not load the real module (see above / boot log)"
+    return 1
+}
+
 if [ "${1:-}" = "uninstall" ]; then
     uninstall
+fi
+
+if [ "${1:-}" = "selftest" ]; then
+    static_check || true
+    live_probe
+    exit $?
 fi
 
 # 1) Shell: stub into game bin64/lib64 (LD_PRELOAD path) — required
@@ -178,7 +297,7 @@ else
 fi
 
 # 5) Marker: game data/unsafedata/ds_luajit_injector.path -> absolute mod Injector path
-marker_dir="$destination/../data/unsafedata"
+marker_dir="$game_root/data/unsafedata"
 mkdir -p "$marker_dir"
 if [ -f "$mod_root/libInjector.so" ]; then
     abs_path "$mod_root/libInjector.so" > "$marker_dir/ds_luajit_injector.path"
@@ -228,4 +347,8 @@ fi
 
 
 echo "[INFO] Operation completed successfully"
+echo
+static_check && echo "[CHECK] install OK" || echo "[CHECK] problems found (see above)"
+echo "[INFO] If luajit still does not take effect, read: $boot_log_file"
+echo "[INFO] Re-check any time: ./install_linux.sh selftest   Uninstall: ./install_linux.sh uninstall"
 exit 0
