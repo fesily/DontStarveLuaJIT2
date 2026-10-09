@@ -135,12 +135,25 @@ jobs:
             find builds/ninja-multi-vcpkg -type f -name "$modbin" -print | head -20 || true
             exit 1
           fi
-          # 2) ... and it must be the exact module the install staged into the package.
+          # 2) ... and it must be the module the install staged into the package.
           installed="Mod/${modbin}"
           [ -f "$installed" ] || { echo "::error::${installed} is missing after install"; exit 1; }
-          if ! cmp -s "$built" "$installed"; then
-            echo "::error::${installed} is not the '${cfg}' build — install used another configuration"
-            exit 1
+          if [ "${{ matrix.target }}" = "windows" ]; then
+            # PE installs are byte copies of the built module.
+            if ! cmp -s "$built" "$installed"; then
+              echo "::error::${installed} is not the '${cfg}' build — install used another configuration"
+              exit 1
+            fi
+          else
+            # ELF/Mach-O installs patch DT_RUNPATH / LC_RPATH in place: the build
+            # tree keeps its absolute link dirs ($ORIGIN/deps:/…), the installed
+            # copy only $ORIGIN/deps. Bytes therefore differ; the size does not.
+            built_size=$(wc -c <"$built")
+            installed_size=$(wc -c <"$installed")
+            if [ "$built_size" != "$installed_size" ]; then
+              echo "::error::${installed} (${installed_size} bytes) is not the '${cfg}' module (${built_size} bytes) — install used another configuration"
+              exit 1
+            fi
           fi
           echo "build config '${cfg}' verified against ${installed}"
           # 3) A non-Debug package must not carry debug-only vcpkg runtimes (install
