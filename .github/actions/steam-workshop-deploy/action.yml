@@ -1,0 +1,99 @@
+# Vendored fork of `m00nl1ght-dev/steam-workshop-deploy@v4` (MIT — see LICENSE).
+#
+# Why vendored: upstream builds its `workshopitem` manifest with only
+# appid / publishedfileid / contentfolder / changenote, so the SteamCMD run has no
+# way to carry tags. SteamCMD's manifest parser (the image's `steamconsole.so`) knows
+# exactly one tag key — `kvtags` (key/value pairs, mapped to
+# ISteamUGC::AddItemKeyValueTag) — and no plain `tags` key, so this copy exists to add
+# `kvtags` support. Everything else is upstream byte-for-byte.
+#
+# Patch summary (pure insertions, see steam_deploy.sh):
+#   * new input `kvTags` (newline-separated `key=value` pairs) → `"kvtags" { ... }` block
+#
+# NOTE: DST's own "mod out of date" check reads the item's *plain* tag string
+# (`version:<modinfo.version>` in the legacy RemoteStorage details, see
+# Mod/modmain.lua AllowLocalNewerWorkshopVersion). SteamCMD cannot write plain tags,
+# so this `kvtags` block is additive metadata only — the plain `version:` tag still has
+# to be maintained through an authenticated UGC client (Steam client / CM).
+name: 'Steam Workshop Deploy (vendored: kvTags support)'
+author: m00nl1ght-dev (original version by Webber Takken <webber@takken.io>)
+description: 'Deploy to the Steam Workshop using SteamCMD. Supports an alternative Steam Guard 2FA approach without TOTP seed.'
+branding:
+  icon: 'arrow-up-circle'
+  color: 'purple'
+inputs:
+  username:
+    required: true
+    default: ''
+    description: 'The username of your Steam account.'
+  password:
+    required: false
+    default: ''
+    description: 'The password of your Steam account. Only required if `configVdf` is not set.'
+  totp:
+    required: false
+    description: 'The TOTP to use for login. Only required if `configVdf` is not set, and Steam Guard is enabled for the account.'
+  configVdf:
+    required: false
+    description: 'The contents of STEAM_HOME/config/config.vdf. Only required if `password` and `totp` are not set.'
+  appId:
+    required: true
+    default: ''
+    description: 'The app id of the workshop to upload the item to.'
+  publishedFileId:
+    required: true
+    default: ''
+    description: 'The id of the workshop item.'
+  path:
+    required: false
+    default: ''
+    description: 'The path of the directory containing the files you wish to upload, relative to the repository root.'
+  deployIgnore:
+    required: true
+    default: ''
+    description: 'The path of the deploy ignore file. Paths in this file are not included in the deployment. If a value is not supplied, will attempt to read a file named `.deployignore` from the root of the supplied path.'
+  useBuiltinDeployIgnore:
+    required: true
+    default: 'true'
+    description: 'Enables the built-in .deployignore rules to exclude common sensitive files during deployment. This is combined with the file supplied in `deployIgnore`'
+  stagingPath:
+    required: true
+    default: '/tmp/steam_deploy/'
+    description: 'The staging directory. Files will be copied from your `path` to here before being uploaded. Anything excluded under your .deployIgnore rules will not be copied here, and as such will not be packaged with your deployed artifact. This directory is not cleared when this workflow finishes.'
+  concurrentStaging:
+    required: true
+    default: 'false'
+    description: 'If `true`, the `stagingPath` will include the commit SHA as a subdirectory, ensuring each deployment uses its own isolated path and avoiding conflicts between concurrent deployments. Useful for self-hosted or nonephemeral actions runners. This directory is not cleared when this workflow finishes'
+  verbosity:
+    required: true
+    default: "NORMAL"
+    description: 'Sets the log verbosity. Can be either `NORMAL` or `TRACE`. If invalid, will behave as `TRACE`.'
+  changeNote:
+    required: false
+    default: ''
+    description: 'An optional changenote to describe the update.'
+  kvTags:
+    required: false
+    default: ''
+    description: 'FORK ADDITION. Newline-separated `key=value` pairs written as a `"kvtags" { ... }` block in the SteamCMD workshop manifest (Steam key-value tags). Empty values are skipped by SteamCMD.'
+outputs:
+  manifest:
+    description: "The path to the generated manifest.vdf"
+runs:
+  using: "docker"
+  image: Dockerfile
+  env:
+    steam_username: ${{ inputs.username }}
+    steam_password: ${{ inputs.password }}
+    steam_totp: ${{ inputs.totp }}
+    configVdf: ${{ inputs.configVdf }}
+    appId: ${{ inputs.appId }}
+    itemId: ${{ inputs.publishedFileId }}
+    rootPath: ${{ inputs.path }}
+    changeNote: ${{ inputs.changeNote }}
+    deployIgnore: ${{ inputs.deployIgnore }}
+    useBuiltinDeployIgnore: ${{ inputs.useBuiltinDeployIgnore }}
+    stagingPath: ${{ inputs.stagingPath }}
+    concurrentStaging: ${{ inputs.concurrentStaging }}
+    verbosity: ${{ inputs.verbosity }}
+    kvTags: ${{ inputs.kvTags }}

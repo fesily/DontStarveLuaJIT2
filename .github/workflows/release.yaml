@@ -380,13 +380,18 @@ jobs:
           echo "workshop content: $(find workshop -type f | wc -l) files, $(du -sh workshop | cut -f1) (package: $(du -sh unzip | cut -f1))"
 
       - name: Deploy to Steam Workshop
-        uses: m00nl1ght-dev/steam-workshop-deploy@v4
+        uses: ./.github/actions/steam-workshop-deploy
         with:
           username: ${{ secrets.STEAM_USERNAME }}
           configVdf: ${{ secrets.STEAM_CONFIG_VDF }}
           appId: ${{ env.STEAM_WORKSHOP_APP_ID }}
           publishedFileId: ${{ env.STEAM_WORKSHOP_ITEM_ID }}
           path: workshop
+          # Fork addition: Steam key-value tag. Metadata only — the `version:<modinfo
+          # version>` *plain* tag that DST reads cannot be written by SteamCMD, so it
+          # still comes from an authenticated UGC client (see the action's README).
+          kvTags: |
+            version=${{ steps.project-version.outputs.version }}
           changeNote: "v${{ steps.project-version.outputs.version }} (${{ steps.project-version.outputs.short_sha }}) - https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
 
   publish-preview:

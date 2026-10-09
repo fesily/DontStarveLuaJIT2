@@ -1,0 +1,46 @@
+# # # Use rsync EXCLUDE syntax # # #
+
+#######
+# GIT #
+#######
+#The .git directory and everything under it
+.git/
+#Any .gitignore file
+.gitignore
+#Any .gitattributes file
+.gitattributes
+
+##########
+# GITHUB #
+##########
+# Github specific applications and workflows
+.github/
+
+################
+# STEAM DEPLOY #
+################
+#Any .deployignorefile
+.deployignore
+#The default deployment directory
+deploy/
+
+#########
+# STEAM #
+#########
+# Steam login files and credentials
+config.vdf
+localconfig.vdf
+DialogConfig.vdf
+# Steam guard tokens
+ssfn*
+# app manifest files
+*.acf
+
+###############
+# COMMON KEYS #
+###############
+.env
+.env.*
+.pem
+.key
+.crt
