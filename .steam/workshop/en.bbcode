@@ -1,0 +1,68 @@
+Replacing the underlying VM with luajit speeds up the entire game.
+Be sure to back up your saves, there is no guarantee that there are no bugs!
+Supports saves up to 2000 days with numerous mods, without frame drops or lag
+
+[b]Installation[/b]
+[b]1. One-line install (recommended)[/b]
+Windows (PowerShell):
+irm https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.ps1 | iex
+
+Linux:
+curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.sh | sh
+
+The script picks the newest release, finds the game, stages the package under <game>/mods and completes the install (shell deploy, marker, self-check).
+
+[b]2. Manual install / Workshop subscribers[/b]
+Open the folder containing the mod (steamapps\workshop\content\322330\3444078585) and run install.bat (Linux/SteamOS: install_linux.sh, after chmod +x if needed).
+
+After a mod update (Workshop update / new package) re-run the installer so the shell and the real Injector match (the mod also prompts on version mismatch).
+
+[b]Recommended Settings[/b]
+[list]
+[*] Client render frame rate set to 120 (the game cannot be run in offline mode; on Windows the desktop refresh rate must exceed 60fps)
+[*] Server: render frame rate set to 120 and add -tick_rate 60 to the command line
+[/list]
+
+[b]Features[/b]
+These features can be adjusted in the in-game mod configuration screen. Restart the game when prompted.
+[list]
+[*] [b]JIT acceleration[/b]: Runs game and mod scripts faster. If you suspect it causes stutter, try turning acceleration off
+[*] [b]Switch back to the original Lua[/b]: Choose "Game Default VM" to restore the game's original script engine for troubleshooting; features that need LuaJIT will also stop working. Restart required
+[*] [b]Reduce memory-cleanup stutter[/b]: Spreads memory cleanup over time and uses spare time between frames, reducing sudden pauses; memory usage may be higher
+[*] [b]Unlock render FPS[/b]: Supports 30/60/90/120/144/165/200/240 FPS for smoother visuals. Windows clients only; high FPS needs fullscreen and a high-refresh-rate display. Switch back to 60 if the picture stutters
+[*] [b]Network optimisations[/b]: Reduces the wait when sending game data. Windows only; try turning both options off if you notice desync or other network problems
+[*] [b]Encrypted-mod compatibility[/b]: Detects encrypted mods and applies compatibility fixes to reduce errors. Detection is not always accurate; if problems remain, try "Any Mod Disable Tail Call", which may reduce performance
+[*] [b]Hide jit[/b]: Helps prevent errors in mods that react badly to detecting LuaJIT, including during world generation. Mods that declare LuaJIT support can still use jit
+[*] [b]Original Lua on the server[/b]: Restores the game's own Lua on dedicated servers to help troubleshoot compatibility issues. Does not affect clients or servers hosted from inside the game
+[*] [b]Rendering options[/b]: Choose Auto/Vulkan/D3D11/D3D9. Try another option if you have visual problems; restart required. Leave it on Auto if everything works
+[*] [b]Shadow effects[/b]: Makes ground shadows turn and stretch with the sun, or follow the actual outlines of characters and objects; length and direction are adjustable. Windows clients only, off by default, restart required. If shadows disappear after enabling silhouette shadows, turn that option off to restore them
+[*] [b]Background saves[/b]: Moves saving into the background to reduce save-time pauses. Dedicated servers running LuaJIT only; falls back to normal saving if the background save fails
+[*] [b]Experimental features[/b]: "VB Pool" reduces repeated drawing setup on Windows clients; turn it off and restart if visuals break. "Generational GC" tries a different memory-cleanup method, but has many issues and is not recommended. "Lag Compensation" tries to reduce the effect of network delay on position checks on Windows servers. All three are off by default
+[*] [b]Debug tools[/b]: The profiler and Tracy help find the cause of stutter. The network simulator lets you simulate delay, jitter and packet loss to reproduce network problems on Windows clients
+[*] [strike] Unlock logical frame rate: 45/60/75/90/105/120fps [/strike] 
+[*] [strike] Unlock client network sync frame rate (default is 10fps and cannot be modified) [/strike] 
+[/list]
+
+[b]BUG[/b]
+Except for save time, if you experience lag, check the CPU utilisation first: if it is maxed out you should upgrade to a better CPU. Then report the issue - lag should not occur.
+
+[b]Issue resolution[/b]
+[list]
+[*] Re-running the installer resolves 99% of issues; they are usually version mismatches
+[*] No speed-up: check the boot log <game>/data/unsafedata/ds_luajit_boot.log first (every launch writes the resolve source, module path and load result there); on Linux you can also run ./install_linux.sh selftest
+[*] 'patch process' window frozen: add -disable_progress to the startup options and retry (the system's timer facilities are broken by something else)
+[*] Cannot start at all: you may need the VC2022 runtime:
+[url=https://download.visualstudio.microsoft.com/download/pr/285b28c7-3cf9-47fb-9be8-01cf5323a8df/8F9FB1B3CFE6E5092CF1225ECD6659DAB7CE50B8BF935CB79BFEDE1F3C895240/VC_redist.x64.exe]VC_redist.x64.exe[/url]
+[*] Frame-rate unlock has no effect: try switching the game to fullscreen mode
+[/list]
+
+[b]Mod compatibility issues[/b]
+Whether the mod is encrypted or not, an incompatibility is a bug - please report it. Include the minimal mod list that reproduces it, preferably a single mod.
+
+[b]Uninstallation[/b]
+1. With the MOD enabled, there is an uninstall button in the configuration interface.
+2. Alternatively run install.bat uninstall (Linux: ./install_linux.sh uninstall) - same as deleting bin64\Winmm.dll and data\unsafedata\ds_luajit_injector.path.
+
+Linux users can use the GitHub package; the Workshop only provides the Windows version (macOS builds are no longer published since 2.9.1).
+
+[url=https://github.com/fesily/DontStarveLuaJIT2]github[/url]

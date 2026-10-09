@@ -1,0 +1,68 @@
+目前可以达到2000天存档,大量mod,不掉帧不卡顿
+
+[b]安装方式[/b]
+[b]方法1.一行安装(推荐)[/b]
+Windows系统在PowerShell里执行:
+irm https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.ps1 | iex
+
+Linux执行:
+curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.sh | sh
+
+脚本会自动挑选最新版本、定位游戏目录、把包解到mods目录并完成安装(装壳、写标记、自检)。
+
+[b]方法2.手动安装/创意工坊订阅[/b]
+打开mod所在的文件夹,系统路径应该在steamapps\workshop\content\322330\3444078585目录下,执行install.bat(Linux/SteamOS执行install_linux.sh,可能需要先chmod +x ./install_linux.sh)
+
+更新mod(工坊更新/换包)后要重新运行一次安装脚本,否则壳与真实Injector版本不一致(mod在版本不匹配时也会弹窗提醒)
+
+[b]推荐设置[/b]
+[list]
+[*] 客户端渲染帧率120,(游戏不能开启网络本模式, windows系统桌面刷新率要超过60fps才会生效)
+[*] 服务器推荐设置渲染帧率120, 并把[url=https://www.bilibili.com/video/BV1Mc33eAE8b]通信频率改为60[/url]
+[/list]
+
+[b]功能[/b]
+以下功能都可以在游戏内的模组配置界面调整，按提示重启游戏后生效。
+[list]
+[*] [b]JIT加速[/b]: 加快游戏和模组的脚本运行。怀疑它引起卡顿时，可以暂时关闭加速试试
+[*] [b]切回原版[/b]: 选择“游戏默认虚拟机”，恢复游戏原来的脚本运行方式，方便排查问题；依赖LuaJIT的功能也会停用，需重启游戏
+[*] [b]减少回收卡顿[/b]: 把集中清理内存的工作分散到平时，并利用每帧的空闲时间清理，减少突然卡一下的情况；内存占用可能更高
+[*] [b]解锁画面帧率[/b]: 支持30/60/90/120/144/165/200/240fps，让画面更流畅；仅Windows客户端，高帧率需要全屏和高刷新率屏幕，出现抖动可改回60
+[*] [b]网络优化[/b]: 减少发送游戏数据时的排队等待；仅Windows，出现不同步等网络异常时，可以先关闭这两项试试
+[*] [b]加密模组兼容[/b]: 自动识别加密模组并做兼容处理，减少运行异常；识别不一定准确，仍有问题时可尝试开启“任何模组都禁用尾调用”，但可能降低性能
+[*] [b]隐藏jit[/b]: 避免部分模组因为检测到LuaJIT而运行出错，也帮助减少生成世界时的兼容问题；声明支持LuaJIT的模组仍可正常使用jit
+[*] [b]服务器使用原版Lua[/b]: 让专用服务器恢复使用游戏自带的Lua，方便排查兼容问题；不影响客户端，自己在游戏里开房间时无效
+[*] [b]切换渲染方式[/b]: 可选自动/Vulkan/D3D11/D3D9。画面异常时可尝试换一种，改完需重启；没有问题时保持“自动”即可
+[*] [b]阴影效果[/b]: 让地面阴影随太阳转动、变长变短，或按角色和物品的真实轮廓绘制；可调整长度和方向。仅Windows客户端，默认关闭，需重启；开启剪影后阴影消失时，关掉即可恢复
+[*] [b]后台存档[/b]: 把存档工作放到后台处理，减少保存时的停顿；仅使用LuaJIT的专用服务器，后台保存失败时会改用普通存档
+[*] [b]实验性功能[/b]: “顶点缓冲池”减少绘图时的重复准备工作，仅Windows客户端，花屏时关闭并重启；“分代GC”尝试另一种内存清理方式，问题较多，不建议开启；“延迟补偿”尝试减轻网络延迟对位置判断的影响，仅Windows服务端。这三项默认关闭
+[*] [b]调试工具[/b]: 性能分析和Tracy帮助查找卡顿原因；网络模拟器可以模拟延迟、抖动和丢包，方便复现网络问题，仅Windows客户端
+[*] [strike] 解锁逻辑帧率, 45/60/75/90/105/120fps [/strike] 
+[*] [strike] 解锁客户端网络同步帧率(默认是10fps不可修改) [/strike] 
+[/list]
+
+[b]BUG[/b]
+除了存档时间,出现卡顿,先检查cpu利用率,如果满了你应该换个更好的cpu.其次你应该报告问题.我不认为会出现卡顿.
+
+[b]问题解决[/b]
+[list]
+[*] 重新运行安装脚本可以解决99%的问题.一般都是版本不一致导致的
+[*] 装了没有加速效果: 先看启动日志<游戏>/data/unsafedata/ds_luajit_boot.log,里面写了每次启动的解析来源/模块路径/加载结果; Linux还可以执行./install_linux.sh selftest做一次实测自检
+[*] 如果出现名为patch process窗口进度条卡主不动,启动参数里填入-disable_progress,重试.这是问题是系统导致的,系统上的定时器功能被奇怪的玩意破坏掉了
+[*] 完全进不去的话,可能需要安装vc2022运行库:
+[url=https://download.visualstudio.microsoft.com/download/pr/285b28c7-3cf9-47fb-9be8-01cf5323a8df/8F9FB1B3CFE6E5092CF1225ECD6659DAB7CE50B8BF935CB79BFEDE1F3C895240/VC_redist.x64.exe]VC_redist.x64.exe[/url]
+[*] 帧率解锁没有生效,请尝试切换游戏全屏幕模式
+[/list]
+
+[b]模组兼容问题[/b]
+无论mod是否加密,出现不兼容都算BUG,请提交反馈.反馈时请给出最小数量的复现mod列表,最好能只用一个mod复现.
+
+
+[b]卸载方式[/b]
+1. 启用MOD的情况下,配置界面有卸载模组按钮
+2. 或者,执行install.bat uninstall(Linux: ./install_linux.sh uninstall),等价于删除游戏目录下的bin64\Winmm.dll与标记文件data\unsafedata\ds_luajit_injector.path
+
+linux用户使用github上的包,创意工坊只提供Windows版本; macOS自2.9.1起不再发布预编译包,需自行构建 [url=https://github.com/fesily/DontStarveLuaJIT2]github[/url]
+
+
+QQ群: 348368954
