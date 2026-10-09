@@ -74,6 +74,33 @@
 
 # 安装：
 
+## 0.一行安装（推荐）
+
+Windows（PowerShell）：
+
+```powershell
+irm https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.ps1 | iex
+```
+
+（管道形式不落盘、不受执行策略（ExecutionPolicy）限制；也可以先下载再 `.\install.ps1 -Channel preview` 运行。）
+
+Linux：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.sh | sh
+```
+
+脚本会自动：挑最新 release（`preview` 或正式版取较新者）→ 从 Steam 安装位置（Windows 注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf`，与 `tools/steam_env.py` 同一套规则）定位游戏根目录 → 把包解到 `<游戏>/mods/DontStarveLuaJit2` → 运行包内安装脚本（装壳、写 marker、自检）。
+
+可选项（Linux 追加参数：`curl ... | sh -s -- --channel preview`；Windows 用环境变量 `$env:DSJ_CHANNEL`）：
+
+| 选项 | 环境变量 | 说明 |
+|------|----------|------|
+| `--channel auto\|release\|preview` | `DSJ_CHANNEL` | 装哪一类版本，默认 `auto` = 最新 |
+| `--game-dir PATH` | `DSJ_GAME_DIR` | 跳过 Steam 搜索，直接指定游戏根目录 |
+| `--mod-folder NAME` | `DSJ_MOD_FOLDER` | `mods` 下的目录名，默认 `DontStarveLuaJit2` |
+| `--repo OWNER/NAME` | `DSJ_REPO` | GitHub 仓库，默认 `fesily/DontStarveLuaJIT2` |
+
 ## 1.MOD本体：
 
 从 GitHub Releases 下载对应平台的包（`windows_Mod.zip` / `linux_Mod.zip`），或者直接在创意工坊订阅本模组。然后：

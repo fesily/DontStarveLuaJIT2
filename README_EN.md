@@ -39,6 +39,39 @@ Note that `Disable JIT on Server` (`DisableJITWhenServer`) only applies to real 
 
 # Installation:
 
+## 0. One-line install (recommended)
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.ps1 | iex
+```
+
+(Piping avoids writing a file and is not blocked by ExecutionPolicy; you can also
+download it and run `.\install.ps1 -Channel preview`.)
+
+Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.sh | sh
+```
+
+The script picks the newest GitHub release (`preview` or stable, whichever is
+newer), locates the game through Steam (Windows registry / `libraryfolders.vdf` /
+`appmanifest_322330.acf` - the same rules as `tools/steam_env.py`), stages the
+package under `<game>/mods/DontStarveLuaJit2` and runs the packaged installer
+(shell deploy, marker, self-check).
+
+Options (Linux: `curl ... | sh -s -- --channel preview`; Windows: env vars such
+as `$env:DSJ_CHANNEL`):
+
+| Option | Env | Meaning |
+|--------|-----|---------|
+| `--channel auto\|release\|preview` | `DSJ_CHANNEL` | which release to install; `auto` = newest (default) |
+| `--game-dir PATH` | `DSJ_GAME_DIR` | skip Steam discovery, use this game root |
+| `--mod-folder NAME` | `DSJ_MOD_FOLDER` | folder under `mods`, default `DontStarveLuaJit2` |
+| `--repo OWNER/NAME` | `DSJ_REPO` | GitHub repository, default `fesily/DontStarveLuaJIT2` |
+
 ## 1. Mod:
 
 Download the package for your platform from GitHub Releases (`windows_Mod.zip` / `linux_Mod.zip`), or subscribe to the mod on the Steam Workshop. Then:
