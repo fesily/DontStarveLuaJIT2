@@ -282,6 +282,113 @@ jobs:
             ${{ github.workspace }}/plugin-assets/*.zip
           allowUpdates: true
 
+  # Steam Workshop deploy: uploads the packaged Windows mod (windows_Mod.zip release asset
+  # minus debug/link artifacts, see .github/workshop.deployignore) to the workshop item.
+  # Windows only on purpose — the item mirrors the client build players subscribe to;
+  # Linux / dedicated-server users install from the GitHub release. The item must already
+  # exist on Steam (SteamCMD updates it in place).
+  #
+  # Required repo secrets (Settings → Secrets and variables → Actions):
+  #   STEAM_USERNAME    Steam account that owns the workshop item
+  #   STEAM_CONFIG_VDF  SteamCMD MFA file: contents of config/config.vdf from a SteamCMD
+  #                     install that completed Steam Guard once for that account
+  #                       steamcmd +login <user> <pass>    # enter the emailed code
+  #                       steamcmd +login <user> +quit     # no code asked -> file is ready
+  #                     If Steam later emails a new code run
+  #                     `steamcmd +set_steam_guard_code <code>` and refresh the secret.
+  # Optional repo variable:
+  #   STEAM_WORKSHOP_ITEM_ID  item to update (defaults to the published mod)
+  deploy-workshop:
+    needs: [compile]
+    if: startsWith(github.ref, 'refs/tags/') && !startsWith(github.ref, 'refs/tags/preview-')
+    runs-on: ubuntu-24.04
+    env:
+      STEAM_WORKSHOP_APP_ID: "322330" # Don't Starve Together
+      STEAM_WORKSHOP_ITEM_ID: ${{ vars.STEAM_WORKSHOP_ITEM_ID || '3444078585' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Steam credentials
+        env:
+          STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
+          STEAM_CONFIG_VDF: ${{ secrets.STEAM_CONFIG_VDF }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$STEAM_USERNAME" ]; then
+            echo "::error::repository secret STEAM_USERNAME is not set (Steam account owning workshop item $STEAM_WORKSHOP_ITEM_ID)"
+            exit 1
+          fi
+          if [ -z "$STEAM_CONFIG_VDF" ]; then
+            echo "::error::repository secret STEAM_CONFIG_VDF is not set (SteamCMD MFA file, see the deploy-workshop job comment)"
+            exit 1
+          fi
+
+      - name: Download packaged windows mod
+        uses: actions/download-artifact@v4
+        with:
+          pattern: windows-mod-zip
+          path: ${{ github.workspace }}/artifacts
+
+      - name: Read project version
+        id: project-version
+        shell: bash
+        run: |
+          version=$(grep -oP 'project\([^)]*VERSION\s+\K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Stage workshop content (windows)
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ZIPS=(artifacts/windows-mod-zip/*_Mod.zip)
+          if [ ${#ZIPS[@]} -ne 1 ]; then
+            echo "::error::expected exactly one windows-mod-zip artifact, found ${#ZIPS[@]}"
+            find artifacts -type f | head -50 || true
+            exit 1
+          fi
+          rm -rf unzip workshop
+          mkdir -p unzip workshop
+          unzip -q "${ZIPS[0]}" -d unzip
+          # zip-release archives ./Mod, so members are rooted at Mod/. The workshop
+          # content root must be the mod root itself (modinfo.lua at the top level).
+          root=unzip/Mod
+          if [ ! -f "$root/modinfo.lua" ]; then
+            echo "::error::${ZIPS[0]} does not contain Mod/modinfo.lua"
+            find unzip -maxdepth 2 | head -50 || true
+            exit 1
+          fi
+          rsync -a --exclude-from=.github/workshop.deployignore "$root/" workshop/
+          # A package that lost its payload must fail the job, never silently ship a
+          # half item to subscribers.
+          for m in Injector.dll bin64/windows/Winmm.dll; do
+            if [ ! -e "workshop/$m" ]; then
+              echo "::error::windows payload member $m is missing from the staged content"
+              exit 1
+            fi
+          done
+          if find workshop -name '*.pdb' -print -quit | grep -q .; then
+            echo "::error::debug symbols survived .github/workshop.deployignore"
+            exit 1
+          fi
+          # The action also reads .deployignore from the content root, so a manual re-run
+          # of the action against this directory applies the same rules.
+          cp .github/workshop.deployignore workshop/.deployignore
+          echo "workshop content: $(find workshop -type f | wc -l) files, $(du -sh workshop | cut -f1) (package: $(du -sh unzip | cut -f1))"
+
+      - name: Deploy to Steam Workshop
+        uses: m00nl1ght-dev/steam-workshop-deploy@v4
+        with:
+          username: ${{ secrets.STEAM_USERNAME }}
+          configVdf: ${{ secrets.STEAM_CONFIG_VDF }}
+          appId: ${{ env.STEAM_WORKSHOP_APP_ID }}
+          publishedFileId: ${{ env.STEAM_WORKSHOP_ITEM_ID }}
+          path: workshop
+          changeNote: "v${{ steps.project-version.outputs.version }} (${{ steps.project-version.outputs.short_sha }}) - https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+
   publish-preview:
     needs: [compile, merge-plugins-manifest]
     if: ${{ github.ref == 'refs/heads/master' }}

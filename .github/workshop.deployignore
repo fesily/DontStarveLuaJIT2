@@ -1,0 +1,28 @@
+# rsync exclude syntax. Two consumers, both in the "deploy-workshop" job of
+# .github/workflows/release.yaml:
+#   1. "Stage workshop content (windows)" filters the staged tree with this file
+#      (and fails if debug symbols survive), so the uploaded payload is verifiable in CI.
+#   2. It is copied into the content root as .deployignore, which the deploy action picks
+#      up itself — a manual re-run of the action behaves identically, and the effective
+#      rule list shows up in the action log.
+#
+# The workshop item is the runtime payload every subscriber downloads, so debug/link
+# artifacts stay out. The GitHub release zips keep shipping them on purpose (local crash
+# symbolization); change the two lists deliberately, never by accident.
+
+# Debug symbols (Injector / plugins / lua51) and link-time artifacts
+*.pdb
+*.lib
+*.exp
+*.ilk
+
+# Foreign-platform libraries that the repo commits for the linux/macOS release zips
+# (e.g. deps/liblua51.so, deps/liblua51.dylib): the workshop item is the Windows build.
+*.so
+*.so.*
+*.dylib
+
+# Plugin manager bookkeeping and runtime leftovers
+.ds_plugin_update.lock
+update_pending/
+test.log
