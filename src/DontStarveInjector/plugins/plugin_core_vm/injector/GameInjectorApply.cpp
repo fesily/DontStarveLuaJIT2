@@ -131,9 +131,16 @@ static int push_ret(lua_State *L, GiType ret, U64 r, void *fn) {
         A()._lua_pushboolean(L, r ? 1 : 0);
         return 1;
     case GiType::I8:
+        // int8_t/int32_t returns keep their sign: the raw U64 register value has
+        // unspecified upper bits, so pushing it directly turned -1 into
+        // 4294967295 for Lua consumers.
+        A()._lua_pushinteger(L, static_cast<lua_Integer>(static_cast<int8_t>(r)));
+        return 1;
     case GiType::I32:
+        A()._lua_pushinteger(L, static_cast<lua_Integer>(static_cast<int32_t>(r)));
+        return 1;
     case GiType::U32:
-        A()._lua_pushinteger(L, static_cast<lua_Integer>(r));
+        A()._lua_pushinteger(L, static_cast<lua_Integer>(static_cast<uint32_t>(r)));
         return 1;
     case GiType::I64:
         A()._lua_pushnumber(L, static_cast<double>(static_cast<int64_t>(r)));
