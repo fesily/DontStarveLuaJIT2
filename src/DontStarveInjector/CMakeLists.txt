@@ -329,6 +329,7 @@ endif()
 if (_ds_gum_stage_ok)
     # Cross-platform gum plugins (Linux/macOS often stub until signatures land).
     add_subdirectory(plugins/plugin_network_rpc)
+    add_subdirectory(plugins/plugin_network_stats)
     add_subdirectory(plugins/plugin_network_sim)
     add_subdirectory(plugins/plugin_sim_lagcomp)
     add_subdirectory(plugins/plugin_debug_profiler)
@@ -336,6 +337,7 @@ if (_ds_gum_stage_ok)
     add_subdirectory(plugins/plugin_network_tick)
     set(_ds_gum_plugins
             plugin_network_rpc
+            plugin_network_stats
             plugin_network_sim
             plugin_sim_lagcomp
             plugin_debug_profiler

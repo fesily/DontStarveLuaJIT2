@@ -175,15 +175,27 @@ void DS_LUAJIT_lag_comp_restore_all() {
 
 ### RTT 精度
 
-当前 `GetNetworkPing()` 返回服务器到**所有已连接 peer** 的 Average Ping，而非 per-client RTT。当服务器上同时存在多个延迟差异较大的玩家时，精度下降。
+~~当前 `GetNetworkPing()` 返回服务器到**所有已连接 peer** 的 Average Ping，而非 per-client RTT。~~
 
-**改进方向**：通过 `entity → cNetworkComponent::GetOwningNetworkClientObject() → cNetworkClientObject2+0x164(GUID) → RakPeer::GetLastPing(GUID)` 获取 per-client RTT。
+**已解决（network.stats）**：`plugin_network_stats` 按特征码锚定 `cNetworkClientObject2::UpdateNetStats`，
+从代码窗口派生 5 个必需偏移（**不硬编码**）：`listing`（userid，作键）+ `ring` 指针/索引/槽位数/槽步长。
+该函数每客户端每秒把引擎解出的 RTT（clamp 到 99999）写进 `ring[idx]`，插件只读该槽 —— 不替换、不调用
+任何引擎函数（无 interceptor），也**不依赖 core.vm**。唯一导出 `DS_LUAJIT_net_client_ping(userid)`
+（Lua: `TheNet:GetClientPing(userid)`）；userid/名字/netscore 等其它字段由 Lua 侧自取。
+`lag_compensation.lua` 的 `refresh_rtt_map()` 优先使用它，取不到时回退 `GetClientTable()[i].ping`
+（一次性输出 `[sim.lagcomp] native client ping unavailable, …`）。
 
-| 函数 | macOS 32-bit | Windows x64 |
-|------|------|------|
-| `GetOwningNetworkClientObject` | `0x5c2e6` | 无符号，待定位 |
-| `RakPeer::GetLastPing` | `0x0022b468` | 无符号，待定位 |
-| `cNetworkClientObject2::GUID offset` | `+0x164` | 待确认 |
+平台实测参考（Windows x64 由运行时 probe 取得；Android arm64 为反编译参考，非 x86-64 平台不跑解码）：
+
+| 项 | Windows x64（实测） | Android arm64（参考） |
+|---|---|---|
+| 锚点（签名命中唯一） | client `0x140296b80` / server `0x14025d2f0` | `UpdateNetStats @0x93b540` |
+| listing（userid std::string 起点） | `+0x1C0` | `+0x1C0` |
+| ring 指针 / 槽位数 / 槽步长 | `+0x330` / 60 / 8 | `+0x2C0`（`new(0x1E0)` = 60×8） |
+| ring 最新槽索引 | `+0x340`（int8） | `+0x2D0`（int16，初值 0xFFFF） |
+| 累加器（插件不读，解码内部用于推 N） | `+0x338` | `+0x2C8` |
+| 引擎取 RTT 的方式 | `rakPeer->vtable[+0x158](rakPeer, &aog)` → clamp → 写入 `ring[idx]` | 同形（槽 `+0x1C0`） |
+| 备注 | `client+0x320 = cNetworkManager*`，`manager+0x240 = RakPeerInterface*`（见 `types_android.hpp` 同构记录） | 同左（arm64 偏移见该文件） |
 
 ### 速度平滑
 

@@ -97,6 +97,7 @@ Shipped modules today:
 |---|---|---|
 | `plugin_core_vm` | `core.vm` | **Optional.** Signature + `ReplaceLuaModule` + `luaopen_GameInjector`. **Recommended for JIT.** Feature plugins work without it. |
 | `plugin_network_rpc` | `network.rpc` | `GameNetWorkHookRpc4` |
+| `plugin_network_stats` | `network.stats` | per-client RTT only: `UpdateNetStats` listener + read-only ring probe (no interceptor, no core.vm dependency); exports `DS_LUAJIT_net_client_ping(userid)` |
 | `plugin_network_sim` | `network.sim` | outbound net simulation |
 | `plugin_save_fork` | `save.fork` | clone/fork save path |
 | `plugin_sim_lagcomp` | `sim.lagcomp` | lagcomp entity snapshot (needs GameLua context from core.vm when available) |
@@ -358,6 +359,7 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 | `render.shadow` | `plugin_render_shadow` | AlwaysOn native; Lua applies `ShadowSunDrive` | EarlyNative + AfterModMain | 35 | — | — | Win client |
 | `render.angle` | `plugin_render_angle` | `AlwaysOn` (`AngleBackend` is a parameter) | EarlyNative | 30 | — | — | Win client |
 | `network.rpc` | `plugin_network_rpc` | `all_of` `NetworkOpt` | EarlyNative | 40 | — | — | always |
+| `network.stats` | `plugin_network_stats` | `all_of` `EnableClientPing` | EarlyNative | 42 | — | — | x86-64 (Win/Linux; anchor/decode failure ⇒ disabled) |
 | `network.sim` | `plugin_network_sim` | `all_of` `EnableNetSim` | EarlyNative | 60 | — | — | Win (DLL always maps; load gated) |
 | `save.fork` | `plugin_save_fork` | `all_of` `EnableForkSave` | EarlyNative | 60 | — | — | always (platform-native) |
 | `sim.lagcomp` | `plugin_sim_lagcomp` | `all_of` `EnableLagCompensation` | EarlyNative | 60 | — | — | Win; degrades without core.vm context |
@@ -372,6 +374,7 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 | `jit.tailcall` | `any_of` SlowTailCall, ForceDisableTailCall, AutoDetectEncryptedMod | 10 | — | — | — | `has_luajit` |
 | `debug.profiler` | `any_of` EnableProfiler, EnableTracy, DisableForceFullGC, EnableFrameGC | 20 | — | — | — | `has_luajit` |
 | `network.rpc` | `all_of` NetworkOpt | 40 | — | — | — | — |
+| `network.stats` | `all_of` EnableClientPing | 42 | — | — | — | — |
 | `network.entity` | `all_of` NetworkOptEntity | 40 | **`network.rpc`** | — | — | — |
 | `fps.render` | `option` TargetRenderFPS | 50 | — | — | — | not non-Windows |
 | `save.fork` | `all_of` EnableForkSave | 60 | — | — | — | `has_luajit` + dedicated |
@@ -387,7 +390,7 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 |---:|---|
 | 10 | `jit.tailcall` (compat.frostxx folded in) |
 | 20 | `debug.profiler` (owns former `gc.policy` FullGC/FrameGC) |
-| 40 | `network.rpc` (Lua), `network.entity` |
+| 40 | `network.rpc` (Lua), `network.entity`, `network.stats` |
 | 50 | `fps.render` |
 | 60 | `sim.lagcomp`, `network.sim`, `save.fork` |
 | 70 | `jit.runtime` (HideGlobalJIT last among jit-related) |

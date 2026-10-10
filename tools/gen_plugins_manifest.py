@@ -24,6 +24,7 @@ MODULE_TO_ID: dict[str, str] = {
     "plugin_core_vm": "core.vm",
     "plugin_dummy": "debug.dummy",
     "plugin_network_rpc": "network.rpc",
+    "plugin_network_stats": "network.stats",
     "plugin_network_sim": "network.sim",
     "plugin_network_tick": "network.tick",
     "plugin_render_vbpool": "render.vbpool",

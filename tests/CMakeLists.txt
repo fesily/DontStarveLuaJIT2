@@ -629,6 +629,25 @@ if (WIN32)
   endif()
   add_test(NAME function_ranges COMMAND test_function_ranges)
 
+  # network.stats decoder: synthetic x86-64 windows -> NetStatsLayout (plan step 2).
+  add_executable(test_net_stats_decode
+      ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_net_stats_decode.cpp
+      ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_network_stats/ClientPingDecode.cpp)
+  target_include_directories(test_net_stats_decode PRIVATE
+      ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_network_stats
+      ${FUNCTION_RELOCATION_INCLUDE_DIR}
+      ${FRIDA_GUM_INCLUDE_DIR})
+  target_compile_features(test_net_stats_decode PRIVATE cxx_std_23)
+  target_link_libraries(test_net_stats_decode PRIVATE function_relocation_static Frida::Gum)
+  if (DEFINED FRIDA_GUM_RUNTIME)
+    add_custom_command(TARGET test_net_stats_decode POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${FRIDA_GUM_RUNTIME}"
+          "$<TARGET_FILE_DIR:test_net_stats_decode>"
+      VERBATIM)
+  endif()
+  add_test(NAME net_stats_decode COMMAND test_net_stats_decode)
+
   add_executable(test_nucleus_adapter
       ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_nucleus_adapter.cpp)
   target_include_directories(test_nucleus_adapter PRIVATE

@@ -30,6 +30,21 @@ local free_slots = {}
 
 local RTT_REFRESH_INTERVAL = 2
 
+-- Prefer the native per-client RTT (network.stats: DS_LUAJIT_net_client_ping)
+-- over the Lua-side ping field; fall back to client.ping when unavailable.
+local native_client_ping = GameInjector.DS_LUAJIT_net_client_ping
+local warned_native_ping_missing = false
+
+local function row_rtt_ms(client)
+    if native_client_ping and type(client.userid) == "string" then
+        local ok, ms = pcall(native_client_ping, client.userid)
+        if ok and type(ms) == "number" and ms >= 0 then
+            return ms, "native"
+        end
+    end
+    return client.ping, "lua"
+end
+
 local cached_rtt_map = {}
 
 local function alloc_slot()
@@ -75,10 +90,21 @@ local function refresh_rtt_map()
         cached_rtt_map = map
         return
     end
+    local saw_client = false
+    local saw_native = false
     for _, client in ipairs(clients) do
-        if not is_host_entry(client) and client.userid and client.ping then
-            map[client.userid] = client.ping / 2000.0
+        if not is_host_entry(client) and client.userid then
+            saw_client = true
+            local rtt_ms, source = row_rtt_ms(client)
+            if type(rtt_ms) == "number" then
+                map[client.userid] = rtt_ms / 2000.0
+                saw_native = saw_native or source == "native"
+            end
         end
+    end
+    if saw_client and not saw_native and not warned_native_ping_missing then
+        warned_native_ping_missing = true
+        print("[sim.lagcomp] native client ping unavailable, falling back to GetClientTable().ping")
     end
     cached_rtt_map = map
 end

@@ -89,6 +89,7 @@ local disable_by_lua51 = {
     reason = translate({ en = "Not compatible with Lua 5.1 VM", zh = "与Lua 5.1虚拟机不兼容" }),
 }
 local disable_by_non_win = platform_info and not (platform_info.os == "Windows") or false
+local disable_by_non_x64 = platform_info and not (platform_info.os == "Windows" or platform_info.os == "Linux") or false
 configuration_options = {
     AddSection(translate({ en = "General Options", zh = "通用选项" })),
     {
@@ -387,6 +388,18 @@ configuration_options = {
         default = true,
         disabled_by = disable_by_non_win,
         disabled_value = false,
+        host_gate = true,
+    },
+    AddSection("Network Stats"),
+    {
+        name = "EnableClientPing",
+        label = translate({ en = "Client ping (per-client RTT)", zh = "客户端延迟(每客户端RTT)" }),
+        hover = translate({ en = "Read each client's round-trip time from the engine and expose it to Lua (network.stats plugin, Windows/Linux x64).", zh = "从引擎读取每个客户端的往返延迟并暴露给 Lua（network.stats 插件，Windows/Linux x64）。" }),
+        options = toggle,
+        default = true,
+        disabled_by = disable_by_non_x64,
+        disabled_value = false,
+        require_restart = true,
         host_gate = true,
     },
     AddSection("FPS Render"),

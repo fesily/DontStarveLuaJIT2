@@ -126,6 +126,7 @@ local function make_sandbox(stem)
             return { __bake_section = true, label = label, hover = hover }
         end,
         disable_by_non_win = { __bake_ident = "disable_by_non_win" },
+        disable_by_non_x64 = { __bake_ident = "disable_by_non_x64" },
         disable_by_lua51 = { __bake_ident = "disable_by_lua51" },
         disable_by_gen_gc = { __bake_ident = "disable_by_gen_gc" },
         platform_info = nil,

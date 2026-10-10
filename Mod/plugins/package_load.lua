@@ -80,6 +80,7 @@ local function make_modinfo_env(stem, package_root, extras)
     }
     local platform_info = extras.platform_info
     local disable_by_non_win = platform_info and not (platform_info.os == "Windows") or false
+    local disable_by_non_x64 = platform_info and not (platform_info.os == "Windows" or platform_info.os == "Linux") or false
     local env = {
         folder_name = stem,
         locale = locale,
@@ -93,6 +94,7 @@ local function make_modinfo_env(stem, package_root, extras)
         disable_by_gen_gc = disable_by_gen_gc,
         disable_by_lua51 = disable_by_lua51,
         disable_by_non_win = disable_by_non_win,
+        disable_by_non_x64 = disable_by_non_x64,
         platform_info = platform_info,
     }
     -- Free globals (TheNet, TheWorld, _G, …) fall through to parent/_G for when().

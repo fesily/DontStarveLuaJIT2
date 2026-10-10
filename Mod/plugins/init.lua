@@ -115,6 +115,7 @@ return {
     load_flat("jit_tailcall"),
     load_package("plugin_debug_profiler"),
     load_package("plugin_network_rpc"),
+    load_package("plugin_network_stats"),
     load_flat("network_entity"),
     load_package("plugin_fps_render"),
     load_package("plugin_render_shadow"),
