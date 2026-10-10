@@ -54,12 +54,24 @@ namespace {
         FARPROC proc;
     };
 
-    constexpr const char *kSteamOverlayLayerName = "VK_LAYER_VALVE_steam_overlay";
     // enablePrecisionQualifiers: ANGLE's Vulkan backend otherwise emits RelaxedPrecision for
     // mediump/lowp (see ShaderVk.cpp), which lets drivers run DST's shaders at reduced precision.
     constexpr const char *kPrecisionQualifiersFeatureName = "enablePrecisionQualifiers";
+    // supportsSwapchainMaintenance1: ANGLE enables VK_EXT_swapchain_maintenance1 whenever the
+    // driver supports it, which puts a present fence (VkSwapchainPresentFenceInfoEXT) and
+    // deferred swapchain release on the present path. Steam's overlay Vulkan layer
+    // (SteamOverlayVulkanLayer64.dll) cannot handle those structures when it rebuilds the
+    // vkQueuePresentKHR info chain: with the overlay active the present fails and the render
+    // thread blocks forever in ANGLE's error-log path (std::ostringstream construction -> LFH
+    // heap lock) — "framebuffer not complete (0x0)" spam, then an unresponsive game (observed:
+    // RTX 3050 + 610.88 / Vulkan 1.4.341, ANGLE d9fc4a37 hang dump, RenderThread stuck in
+    // RtlpLowFragHeapAllocFromContext). Disabling the feature restores the classic present
+    // path, so the Steam overlay layer works; this replaces the old workaround that wrote
+    // VK_LAYER_VALVE_steam_overlay into VK_LOADER_LAYERS_DISABLE.
+    constexpr const char *kSwapchainMaintenance1FeatureName = "supportsSwapchainMaintenance1";
     // Null-terminated payload for EGL_FEATURE_OVERRIDES_DISABLED_ANGLE.
-    constexpr const char *kDisabledFeatureOverrides[] = {kPrecisionQualifiersFeatureName, nullptr};
+    constexpr const char *kDisabledFeatureOverrides[] = {kPrecisionQualifiersFeatureName,
+                                                         kSwapchainMaintenance1FeatureName, nullptr};
 
     HMODULE g_angle_glesv2 = nullptr;
     HMODULE g_angle_egl = nullptr;
@@ -141,22 +153,6 @@ namespace {
             return backend == DstAngleBackend::Vulkan;
         }();
         return result;
-    }
-
-    static bool ContainsDisabledLayer(std::string_view disabled_layers, std::string_view layer_name) {
-        std::size_t token_start = 0;
-        while (token_start < disabled_layers.size()) {
-            const auto token_end = disabled_layers.find_first_of(",; \t\r\n", token_start);
-            const auto token = disabled_layers.substr(token_start, token_end - token_start);
-            if (!token.empty() && EqualsIgnoreCase(token, layer_name)) {
-                return true;
-            }
-            if (token_end == std::string_view::npos) {
-                break;
-            }
-            token_start = token_end + 1;
-        }
-        return false;
     }
 
     static std::string DetectBackendFromRendererString(std::string_view renderer) {
@@ -265,26 +261,6 @@ namespace {
         g_render_backend_name = std::move(backend_name);
         g_render_backend_captured.store(true, std::memory_order_release);
         spdlog::info("detected ANGLE render backend: {} renderer={}", g_render_backend_name, renderer);
-    }
-
-    static void EnsureVulkanLayerDisableEnvironment() {
-        if (!IsVulkanPlatformRequested()) {
-            return;
-        }
-
-        auto disabled_layers = GetEnvironmentValue("VK_LOADER_LAYERS_DISABLE");
-        if (ContainsDisabledLayer(disabled_layers, kSteamOverlayLayerName)) {
-            return;
-        }
-
-        if (!disabled_layers.empty()) {
-            disabled_layers.append(",");
-        }
-        disabled_layers.append(kSteamOverlayLayerName);
-
-        if (SetEnvironmentVariableA("VK_LOADER_LAYERS_DISABLE", disabled_layers.c_str()) == 0) {
-            spdlog::warn("failed to set VK_LOADER_LAYERS_DISABLE for Vulkan mode");
-        }
     }
 
     static std::filesystem::path ThisPluginDir() {
@@ -461,8 +437,8 @@ namespace {
             return real_get_display(native_display);
         }
 
-        spdlog::info("ANGLE vulkan display requested with feature overrides: {} disabled",
-                     kPrecisionQualifiersFeatureName);
+        spdlog::info("ANGLE vulkan display requested with feature overrides disabled: {}, {}",
+                     kPrecisionQualifiersFeatureName, kSwapchainMaintenance1FeatureName);
         return display;
     }
 
@@ -710,7 +686,9 @@ DONTSTARVEINJECTOR_GAME_API void InitGameOpenGl() {
     if (!EnsureAngleDllsLoaded()) {
         return;
     }
-    EnsureVulkanLayerDisableEnvironment();
+    // Resolve the explicit backend early: IsVulkanPlatformRequested (cached) also writes
+    // ANGLE_DEFAULT_PLATFORM into the environment before the game's first EGL call.
+    (void) IsVulkanPlatformRequested();
     RebindMainModuleAngleImports();
     // VBPool resolves GL entry points via GetProcAddress(libGLESv2); do not
     // hard-call into plugin_render_vbpool from angle (Path A M-R1 decouple).
