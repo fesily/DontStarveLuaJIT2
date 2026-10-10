@@ -12,16 +12,34 @@ for `version:` and compares it with the local `modinfo.version`
 cannot keep that tag current. This tool talks to the UGC API through the local Steam
 client session instead, which does write plain tags.
 
-Requirements: Windows, the Steam client running and logged in, DST installed.
-The item's content/metadata are left alone: only `tags` is submitted, and the tag list
-is always sent in full (UGC tag updates replace the list).
+Requirements: Windows, the Steam client running and logged in, DST installed. No SteamCMD
+and no other toolchain: the same local session pushes content and tags together.
+
+Metadata (title/description/visibility/preview) is only touched when explicitly overridden with
+the one-shot `--title`/`--description`/`--preview`/`--visibility` flags: the UGC update handle
+applies exactly what is set on it, so an unset field stays as it is.
 
 Usage
 -----
-    python tools/update_workshop_tags.py                 # version from Mod/modinfo.lua
-    python tools/update_workshop_tags.py --print         # show the current tags only
-    python tools/update_workshop_tags.py --dry-run       # compose + print, no write
-    python tools/update_workshop_tags.py --version 3.2.3 # override the version
+    python tools/update_workshop_tags.py                  # tags only, version from Mod/modinfo.lua
+    python tools/update_workshop_tags.py --push-content   # Mod/ content + tags in one upload
+    python tools/update_workshop_tags.py --push-content --content <dir> --note "..."
+    python tools/update_workshop_tags.py --print          # show the current tags only
+    python tools/update_workshop_tags.py --dry-run        # stage/compose + print, no write
+    python tools/update_workshop_tags.py --version 3.2.3  # override the version
+    python tools/update_workshop_tags.py --push-content --ignore-file ignore.txt
+    python tools/update_workshop_tags.py --visibility 0 --yes   # flip to public, no prompt
+
+Content pushes stage a filtered copy first (Windows-only item, like the release shape):
+debug/link artifacts (`*.pdb`, `*.lib`, `*.exp`, `*.ilk`), foreign-platform libraries
+(`*.so`, `*.so.*`, `*.dylib`), `bin64/osx`, `bin64/linux`, `plugins/update_pending`,
+`.ds_plugin_update.lock` and `test.log` are skipped — `--no-filter` disables that and
+`--ignore-file` adds gitignore-style patterns on top.
+
+Writes ask for confirmation on a terminal (`--yes` for scripts); `--allow-unreadable` lets an
+item the public API cannot read (unlisted/private) be updated, at the cost of not being able to
+preserve its existing tags. Since a long-running Steam client can drop UGC writes until it is
+restarted, that failure is reported loudly along with the hint.
 
 Exit codes: 0 ok, 1 environment/usage, 2 UGC write/submit refused, 3 verification failed.
 """
@@ -29,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import fnmatch
 import json
 import os
 import pathlib
@@ -41,6 +60,10 @@ import urllib.parse
 import urllib.request
 
 DEFAULT_ITEM = 3444078585  # DontStarveLuaJit2
+# What a local content push skips, mirroring the windows-only release shape.
+EXCLUDE_NAME_PATTERNS = ("*.pdb", "*.lib", "*.exp", "*.ilk", "*.so", "*.so.*", "*.dylib",
+                         ".ds_plugin_update.lock", "test.log")
+EXCLUDE_PATH_PREFIXES = ("bin64/osx", "bin64/linux", "plugins/update_pending")
 DEFAULT_APPID = 322330  # Don't Starve Together
 DETAILS_URL = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -61,14 +84,20 @@ def version_from_modinfo(path: pathlib.Path) -> str:
     return match.group(1)
 
 
-def fetch_tags(item: int) -> list[str]:
+def fetch_tags(item: int, allow_unreadable: bool = False) -> list[str]:
+    """Current plain tags; for an unlisted/private item this needs --allow-unreadable."""
     body = urllib.parse.urlencode({"itemcount": "1", f"publishedfileids[0]": str(item)}).encode()
     request = urllib.request.Request(DETAILS_URL, data=body)
     with urllib.request.urlopen(request, timeout=30) as response:
         payload = json.load(response)
     details = payload["response"]["publishedfiledetails"][0]
     if details.get("result") != 1:
-        raise SystemExit(f"item {item} not readable through the public API (result={details.get('result')})")
+        if allow_unreadable:
+            log(f"item {item} is not publicly readable (result={details.get('result')}) — "
+                f"composing tags from scratch (existing tags cannot be preserved)")
+            return []
+        raise SystemExit(f"item {item} not readable through the public API (result={details.get('result')}); "
+                         f"pass --allow-unreadable for an unlisted/private item")
     return [tag["tag"] for tag in (details.get("tags") or [])]
 
 
@@ -87,6 +116,55 @@ def compose_tags(existing: list[str], version: str) -> list[str]:
     if not replaced:
         out.append(wanted)
     return out
+
+
+def load_ignore_file(path: pathlib.Path) -> list[str]:
+    """Read extra patterns (one per line, `#` comments, gitignore-style globs)."""
+    patterns = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            patterns.append(line.rstrip("/"))
+    return patterns
+
+
+def should_skip(rel: pathlib.Path, extra: tuple[str, ...] = ()) -> bool:
+    """True when this staged path is debug/link junk, a foreign-platform file or other platform shell."""
+    if any(fnmatch.fnmatch(rel.name, pattern) for pattern in EXCLUDE_NAME_PATTERNS):
+        return True
+    posix = rel.as_posix()
+    if any(posix == prefix or posix.startswith(prefix + "/") for prefix in EXCLUDE_PATH_PREFIXES):
+        return True
+    for pattern in extra:
+        if fnmatch.fnmatch(posix, pattern) or fnmatch.fnmatch(rel.name, pattern):
+            return True
+    return False
+
+
+def stage_content(content: pathlib.Path, dest: pathlib.Path, use_filter: bool = True,
+                  extra_patterns: tuple[str, ...] = ()) -> tuple[int, int, list[str]]:
+    """Copy the mod root into `dest`, returning (files, bytes, skipped examples)."""
+    if not (content / "modinfo.lua").is_file():
+        raise SystemExit(f"{content} does not look like a mod root (no modinfo.lua)")
+    files = total = 0
+    skipped: list[str] = []
+    for path in sorted(content.rglob("*")):
+        rel = path.relative_to(content)
+        if use_filter and should_skip(rel, extra_patterns):
+            if len(skipped) < 12:
+                skipped.append(rel.as_posix())
+            continue
+        target = dest / rel
+        if path.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+        files += 1
+        total += path.stat().st_size
+    if files == 0:
+        raise SystemExit(f"nothing to upload from {content}")
+    return files, total, skipped
 
 
 # ---------------------------------------------------------------- local Steam session
@@ -175,7 +253,15 @@ class SteamSession:
     def close(self) -> None:
         self.dll.SteamAPI_Shutdown()
 
-    def submit_tags(self, appid: int, item: int, tags: list[str], note: str) -> int:
+    def submit(self, appid: int, item: int, *, tags: list[str] | None = None,
+               content_dir: pathlib.Path | None = None, note: str = "",
+               title: str | None = None, description: str | None = None,
+               preview: pathlib.Path | None = None, visibility: int | None = None,
+               push_timeout: float = 1800.0) -> int:
+        """One update handle: optionally set the content folder, optionally the tags, then submit.
+
+        Nothing else is set, so title/description/visibility/preview stay untouched.
+        """
         dll = self.dll
         dll.SteamAPI_ISteamUGC_StartItemUpdate.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint64]
         dll.SteamAPI_ISteamUGC_StartItemUpdate.restype = ctypes.c_uint64
@@ -183,31 +269,83 @@ class SteamSession:
         if not handle:
             log("StartItemUpdate failed")
             return 2
-        encoded = [tag.encode("utf-8") for tag in tags]
-        array = (ctypes.c_char_p * len(encoded))(*encoded)
-        param = SteamParamStringArray(array, len(encoded))
-        dll.SteamAPI_ISteamUGC_SetItemTags.argtypes = [
-            ctypes.c_void_p, ctypes.c_uint64, ctypes.POINTER(SteamParamStringArray), ctypes.c_bool
-        ]
-        dll.SteamAPI_ISteamUGC_SetItemTags.restype = ctypes.c_bool
-        if not dll.SteamAPI_ISteamUGC_SetItemTags(self.ugc, handle, ctypes.byref(param), False):
-            log("SetItemTags was refused")
-            return 2
+
+        if content_dir is not None:
+            dll.SteamAPI_ISteamUGC_SetItemContent.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p]
+            dll.SteamAPI_ISteamUGC_SetItemContent.restype = ctypes.c_bool
+            if not dll.SteamAPI_ISteamUGC_SetItemContent(self.ugc, handle, str(content_dir).encode("utf-8")):
+                log("SetItemContent was refused")
+                return 2
+            log(f"content folder set: {content_dir}")
+
+        if title is not None:
+            dll.SteamAPI_ISteamUGC_SetItemTitle.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p]
+            dll.SteamAPI_ISteamUGC_SetItemTitle.restype = ctypes.c_bool
+            if not dll.SteamAPI_ISteamUGC_SetItemTitle(self.ugc, handle, title.encode("utf-8")):
+                log("SetItemTitle was refused")
+                return 2
+            log(f"title set: {title!r}")
+
+        if description is not None:
+            dll.SteamAPI_ISteamUGC_SetItemDescription.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p]
+            dll.SteamAPI_ISteamUGC_SetItemDescription.restype = ctypes.c_bool
+            if not dll.SteamAPI_ISteamUGC_SetItemDescription(self.ugc, handle, description.encode("utf-8")):
+                log("SetItemDescription was refused")
+                return 2
+            log("description set")
+
+        if preview is not None:
+            dll.SteamAPI_ISteamUGC_SetItemPreview.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p]
+            dll.SteamAPI_ISteamUGC_SetItemPreview.restype = ctypes.c_bool
+            if not dll.SteamAPI_ISteamUGC_SetItemPreview(self.ugc, handle, str(preview).encode("utf-8")):
+                log("SetItemPreview was refused")
+                return 2
+            log(f"preview set: {preview}")
+
+        if visibility is not None:
+            dll.SteamAPI_ISteamUGC_SetItemVisibility.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_int32]
+            dll.SteamAPI_ISteamUGC_SetItemVisibility.restype = ctypes.c_bool
+            if not dll.SteamAPI_ISteamUGC_SetItemVisibility(self.ugc, handle, visibility):
+                log("SetItemVisibility was refused")
+                return 2
+            log(f"visibility set: {visibility}")
+
+        if tags is not None:
+            encoded = [tag.encode("utf-8") for tag in tags]
+            array = (ctypes.c_char_p * len(encoded))(*encoded)
+            param = SteamParamStringArray(array, len(encoded))
+            dll.SteamAPI_ISteamUGC_SetItemTags.argtypes = [
+                ctypes.c_void_p, ctypes.c_uint64, ctypes.POINTER(SteamParamStringArray), ctypes.c_bool
+            ]
+            dll.SteamAPI_ISteamUGC_SetItemTags.restype = ctypes.c_bool
+            if not dll.SteamAPI_ISteamUGC_SetItemTags(self.ugc, handle, ctypes.byref(param), False):
+                log("SetItemTags was refused")
+                return 2
+            log(f"tags set: {tags}")
+
         dll.SteamAPI_ISteamUGC_SubmitItemUpdate.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p]
         dll.SteamAPI_ISteamUGC_SubmitItemUpdate.restype = ctypes.c_uint64
         call = dll.SteamAPI_ISteamUGC_SubmitItemUpdate(self.ugc, handle, note.encode("utf-8"))
         if not call:
             log("SubmitItemUpdate was refused")
             return 2
-        log(f"submitted tags={tags} (call={call})")
-        self._wait_for_submit(call, timeout=30.0)
+        log(f"submitted (call={call})")
+        wait = push_timeout if content_dir is not None else min(push_timeout, 60.0)
+        self._wait_for_submit(call, handle, timeout=wait)
         return 0
 
-    def _wait_for_submit(self, call: int, timeout: float) -> None:
+    def _wait_for_submit(self, call: int, handle: int, timeout: float) -> None:
         """Pump until SubmitItemUpdateResult_t arrives; a missing callback is not fatal
         (verification against the public API decides), but log what we saw."""
         dll = self.dll
+        dll.SteamAPI_ISteamUGC_GetItemUpdateProgress.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint64, ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_uint64)
+        ]
+        dll.SteamAPI_ISteamUGC_GetItemUpdateProgress.restype = ctypes.c_int
         deadline = time.time() + timeout
+        last_status = None
+        pct = -1
+        saw_progress = False
         while time.time() < deadline:
             dll.SteamAPI_ManualDispatch_RunFrame(self.pipe)
             msg = CallbackMsg()
@@ -222,20 +360,75 @@ class SteamSession:
                         log(f"submit result: eResult={buf.m_eResult} item={buf.m_nPublishedFileId}")
                         return
                 dll.SteamAPI_ManualDispatch_FreeLastCallback(self.pipe)
-            time.sleep(0.1)
-        log("no SubmitItemUpdateResult_t callback (the client may still have applied the update)")
+
+            done = ctypes.c_uint64(0)
+            total = ctypes.c_uint64(0)
+            status = dll.SteamAPI_ISteamUGC_GetItemUpdateProgress(self.ugc, handle, ctypes.byref(done), ctypes.byref(total))
+            if status != last_status:
+                stage = {0: "idle/finished", 1: "preparing update", 2: "preparing content",
+                         3: "uploading content", 4: "uploading preview", 5: "committing"}.get(status, f"status {status}")
+                log(f"upload: {stage}")
+                last_status = status
+            if total.value:
+                new_pct = int(done.value * 100 / total.value)
+                if new_pct >= pct + 10:
+                    log(f"upload: {new_pct}% ({done.value}/{total.value} bytes)")
+                    pct = new_pct
+            if status != 0:
+                saw_progress = True
+            elif saw_progress:
+                log("upload finished")
+                return
+            time.sleep(0.2)
+        log(f"no submit result within {timeout:.0f}s (the client may still have applied the update)")
 
 
-def verify(item: int, version: str, timeout: float) -> bool:
+SNAPSHOT_FIELDS = ("title", "description", "visibility", "hcontent_preview")
+CONTENT_FIELDS = ("hcontent_file", "file_size", "time_updated")
+
+
+def snapshot(item: int) -> dict:
+    body = urllib.parse.urlencode({"itemcount": "1", f"publishedfileids[0]": str(item)}).encode()
+    with urllib.request.urlopen(urllib.request.Request(DETAILS_URL, data=body), timeout=30) as response:
+        details = json.load(response)["response"]["publishedfiledetails"][0]
+    if details.get("result") != 1:
+        return {}
+    return {key: details.get(key) for key in (*SNAPSHOT_FIELDS, *CONTENT_FIELDS)}
+
+
+def verify(item: int, version: str, before: dict, timeout: float, content_pushed: bool = False,
+           metadata_expected: bool = False) -> bool:
+    """Tags must land, metadata must not move, and a content push must change something."""
     wanted = f"version:{version}"
+    if not before:
+        for _ in range(6):  # e.g. the update just made it public
+            time.sleep(5)
+            before = snapshot(item)
+            if before:
+                log("item became publicly readable during the update — verifying against that state")
+                break
+        else:
+            log("item not readable through the public API (unlisted/private?) — cannot verify")
+            return True
     deadline = time.time() + timeout
     while True:
+        after = snapshot(item)
+        check_fields = tuple(f for f in SNAPSHOT_FIELDS
+                             if not (metadata_expected and f in ("title", "description", "visibility")))
+        changed_metadata = {key: (before.get(key), after.get(key)) for key in check_fields
+                            if before.get(key) != after.get(key)}
+        if changed_metadata:
+            log(f"REFUSING: metadata changed while updating tags: {changed_metadata}")
+            return False
+        content_moved = any(before.get(key) != after.get(key) for key in CONTENT_FIELDS)
         tags = fetch_tags(item)
-        if wanted in tags:
-            log(f"verified: tags={tags}")
+        if wanted in tags and (content_moved or not content_pushed):
+            detail = f" (content: hcontent_file={after.get('hcontent_file')} size={after.get('file_size')})" \
+                if content_pushed else " (title/description/visibility/preview untouched)"
+            log(f"verified: tags={tags}{detail}")
             return True
         if time.time() >= deadline:
-            log(f"NOT verified after {timeout:.0f}s: tags={tags} (wanted {wanted})")
+            log(f"NOT verified after {timeout:.0f}s: tags={tags} (wanted {wanted}), content_moved={content_moved}")
             return False
         time.sleep(5)
 
@@ -248,29 +441,89 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--version", help="mod version to stamp (default: read --modinfo)")
     parser.add_argument("--print", dest="print_only", action="store_true", help="print current tags and exit")
     parser.add_argument("--dry-run", action="store_true", help="compose the tag list but do not write")
+    parser.add_argument("--push-content", action="store_true",
+                        help="also upload the staged content folder (Mod/ by default) in the same update")
+    parser.add_argument("--content", type=pathlib.Path, default=REPO_ROOT / "Mod",
+                        help="mod root to upload with --push-content (default: <repo>/Mod)")
+    parser.add_argument("--note", default="", help="changenote for a content push (default: v<version>)")
+    parser.add_argument("--no-filter", action="store_true",
+                        help="upload the content folder as-is (keep debug symbols and other platforms)")
+    parser.add_argument("--ignore-file", type=pathlib.Path,
+                        help="extra exclude patterns for --push-content (gitignore-style globs, one per line)")
+    parser.add_argument("--yes", dest="assume_yes", action="store_true",
+                        help="do not ask for confirmation before a written update")
+    parser.add_argument("--title", help="one-shot: also set the item title")
+    parser.add_argument("--description", help="one-shot: also set the item description")
+    parser.add_argument("--preview", type=pathlib.Path, help="one-shot: also upload a new preview image")
+    parser.add_argument("--visibility", type=int, choices=(0, 1, 2, 3),
+                        help="one-shot: also set visibility (0 public, 1 friends, 2 private, 3 unlisted)")
+    parser.add_argument("--push-timeout", type=float, default=1800.0,
+                        help="seconds to wait for the upload to finish (default 1800)")
     parser.add_argument("--timeout", type=float, default=120.0, help="seconds to wait for verification (default 120)")
     parser.add_argument("--client-timeout", type=float, default=90.0, help="seconds to wait for SteamAPI_Init (default 90)")
+    parser.add_argument("--allow-unreadable", action="store_true",
+                        help="proceed for an item the public API cannot read (unlisted/private): "
+                             "existing tags cannot be preserved then")
     args = parser.parse_args(argv)
 
     version = args.version or version_from_modinfo(args.modinfo)
-    existing = fetch_tags(args.item)
+    existing = fetch_tags(args.item, allow_unreadable=args.allow_unreadable)
     log(f"item {args.item} tags now: {existing} (mod version {version})")
     if args.print_only:
         return 0
     tags = compose_tags(existing, version)
     log(f"tag list to write: {tags}")
+
+    staged: pathlib.Path | None = None
+    if args.push_content:
+        extra = tuple(load_ignore_file(args.ignore_file)) if args.ignore_file else ()
+        if extra:
+            log(f"extra ignore patterns from {args.ignore_file}: {len(extra)}")
+        staged = pathlib.Path(tempfile.mkdtemp(prefix="workshop-content-"))
+        files, total, skipped = stage_content(args.content, staged, use_filter=not args.no_filter,
+                                              extra_patterns=extra)
+        log(f"staged {files} files, {total / 1048576:.1f} MiB from {args.content} into {staged}")
+        if skipped:
+            log(f"skipped e.g. {', '.join(skipped)}")
+        if args.preview is not None and not args.preview.is_file():
+            raise SystemExit(f"preview not found: {args.preview}")
+
     if args.dry_run:
+        log("dry run: nothing uploaded" if not args.push_content else "dry run: staging only, nothing uploaded")
         return 0
 
+    plan = []
+    if staged is not None:
+        plan.append("content")
+    plan.append(f"tags={tags}")
+    for label, value in (("title", args.title), ("description", args.description),
+                         ("preview", args.preview), ("visibility", args.visibility)):
+        if value is not None:
+            plan.append(f"{label}")
+    log(f"update plan: {' + '.join(plan)} (item {args.item}, note {args.note or version!r})")
+    if not args.assume_yes:
+        if not sys.stdin.isatty():
+            raise SystemExit("refusing to write without confirmation in a non-interactive shell; pass --yes")
+        if input("write this update? [y/N] ").strip().lower() not in ("y", "yes"):
+            log("aborted by user")
+            return 1
+
+    before = snapshot(args.item)
     session = SteamSession(dst_install_dir(), args.appid, init_timeout=args.client_timeout)
     try:
-        note = f"version tag {version} ({time.strftime('%Y-%m-%d')})"
-        code = session.submit_tags(args.appid, args.item, tags, note)
+        note = args.note or (f"v{version}" if args.push_content else
+                             f"version tag {version} ({time.strftime('%Y-%m-%d')})")
+        code = session.submit(args.appid, args.item, tags=tags, content_dir=staged, note=note,
+                              title=args.title, description=args.description,
+                              preview=args.preview, visibility=args.visibility,
+                              push_timeout=args.push_timeout)
     finally:
         session.close()
     if code:
         return code
-    return 0 if verify(args.item, version, args.timeout) else 3
+    pushed_metadata = any(v is not None for v in (args.title, args.description, args.preview, args.visibility))
+    return 0 if verify(args.item, version, before, args.timeout,
+                       content_pushed=staged is not None, metadata_expected=pushed_metadata) else 3
 
 
 if __name__ == "__main__":
