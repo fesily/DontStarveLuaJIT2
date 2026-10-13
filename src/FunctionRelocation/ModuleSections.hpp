@@ -136,6 +136,33 @@ namespace function_relocation {
         // Used only to label Function objects after FunctionTable is applied.
         std::unordered_map<uintptr_t, std::string> symbol_names;
 
+        // Static import table read from the module file: GOT/PLT slot -> imported
+        // symbol name. Resolving a PLT target through this map is a property of the
+        // FILE, so it cannot be polluted by runtime symbol interposition from other
+        // libraries loaded in the same process (which is exactly what breaks the
+        // training-library call graph inside the game process).
+        std::unordered_map<uintptr_t, std::string> import_slot_names;
+
+        // FILE symbol table (defined symbols only): name -> address. Available right
+        // after init, i.e. before Nucleus function tables exist.
+        std::unordered_map<std::string, uintptr_t> own_symbol_addresses;
+
+        uintptr_t own_definition_address(std::string_view name) const {
+            const auto it = own_symbol_addresses.find(std::string{name});
+            return it == own_symbol_addresses.end() ? 0 : it->second;
+        }
+
+        // File-semantics PLT decode: stub -> imported symbol name, following jmp
+        // chains, WITHOUT reading the runtime GOT contents. Null when unresolved.
+        FUNCTION_RELOCATION_API const std::string *import_name_for_plt_target(uintptr_t target) const;
+
+        // This module's own definition for a symbol name (reference-library
+        // semantics). Null when the module does not define it.
+        const Function *find_named_function(std::string_view name) const {
+            const auto it = known_functions.find(std::string{name});
+            return it == known_functions.end() ? nullptr : it->second;
+        }
+
         void set_known_function(uintptr_t addr, const char* name) {
             if (auto func = find_function(addr); func) {
                 func->name = name;

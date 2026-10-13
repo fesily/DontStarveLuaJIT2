@@ -13,6 +13,24 @@ namespace function_relocation::detail {
         if (!module.in_module(target)) return target;
         constexpr size_t hop_limit = 1;
 #else
+        // File semantics first: a PLT stub carries the imported symbol NAME in the
+        // module's static import table, and the reference module's own definition is
+        // the authority for call-graph seeding. Reading the runtime GOT instead lets
+        // any other library loaded earlier in the process interpose the slot
+        // (measured in-engine: plugin_core_vm.so hijacks liblua51.so's
+        // luaL_loadbuffer), which silently destroys the training-library call graph.
+        if (module.in_plt(target)) {
+            const auto *name = module.import_name_for_plt_target(target);
+            if (name != nullptr) {
+                // FILE symbol table first: it exists before Nucleus function tables.
+                if (const auto own = module.own_definition_address(*name); own != 0) {
+                    return own;
+                }
+                if (const auto *own_fn = module.find_named_function(*name)) {
+                    if (own_fn->address != 0) return own_fn->address;
+                }
+            }
+        }
         if (!module.in_plt(target)) return target;
         constexpr size_t hop_limit = 8;
 #endif

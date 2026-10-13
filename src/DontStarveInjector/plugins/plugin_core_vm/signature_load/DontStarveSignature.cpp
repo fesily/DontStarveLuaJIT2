@@ -955,6 +955,14 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
         }
     }
     if (!unresolved.empty()) {
+        // Silent degradation is expensive to diagnose: call-graph recovery finds no
+        // candidate when the reference module's PLT targets cannot be named (e.g.
+        // another library in this process interposes the training library's own
+        // symbols, so the runtime GOT no longer points at the module's definition).
+        spdlog::warn("unresolved Lua functions after call-graph recovery: {} (inspect "
+                     "reference-module PLT/import resolution; symbols may be interposed by "
+                     "another loaded library)",
+                     unresolved);
         function_relocation::release_signature_cache();
         throw update_signatures_exception{"unresolved Lua functions: " + unresolved};
     }
