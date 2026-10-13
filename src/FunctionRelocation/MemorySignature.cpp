@@ -1,4 +1,5 @@
 #include "MemorySignature.hpp"
+#include "FunctionRanges.hpp"
 #include <frida-gum.h>
 #include <cassert>
 #include <cctype>
@@ -47,7 +48,6 @@ static std::string normalize_gum_pattern(const char *raw) {
 
 static gboolean sacnBaseAddrCb(GumAddress address, gsize size, gpointer user_data) {
     auto self = static_cast<MemorySignature*>(user_data);
-    if (self->only_one) assert(self->target_address == 0);
     self->target_address = address + self->pattern_offset;
     self->targets.push_back(address + self->pattern_offset);
     if (self->log) {
@@ -64,13 +64,14 @@ static gboolean findBaseAddrCb(const GumRangeDetails* details, gpointer user_dat
     return true;
 }
 
-uintptr_t MemorySignature::scan(const char* module_name) {
-    target_address = 0;
-    const std::string normalized = normalize_gum_pattern(pattern);
+static uintptr_t scan_module(MemorySignature *signature, const char *module_name, bool resolve_entry) {
+    signature->target_address = 0;
+    signature->targets.clear();
+    const std::string normalized = normalize_gum_pattern(signature->pattern);
     if (normalized.empty()) {
         if (auto logger = spdlog::get(logger_name)) {
             logger->error("MemorySignature::scan: empty/invalid pattern after normalize: '{}'",
-                          pattern ? pattern : "<null>");
+                          signature->pattern ? signature->pattern : "<null>");
         }
         return 0;
     }
@@ -81,19 +82,48 @@ uintptr_t MemorySignature::scan(const char* module_name) {
         }
         return 0;
     }
-    auto ctx = std::pair{ this, match_pattern };
+    auto ctx = std::pair{signature, match_pattern};
     auto m = module_name ? gum_process_find_module_by_name(module_name) : gum_process_get_main_module();
-    if (log) {
+    if (!m) {
+        gum_match_pattern_unref(match_pattern);
+        return 0;
+    }
+    if (signature->log) {
         if (auto logger = spdlog::get(logger_name)) {
             logger->info("{} Signature {}", gum_module_get_path(m), normalized);
         }
     }
-    gum_module_enumerate_ranges(m, this-> prot_flag, findBaseAddrCb, (gpointer)&ctx);
+    gum_module_enumerate_ranges(m, signature->prot_flag, findBaseAddrCb, (gpointer) &ctx);
     gum_match_pattern_unref(match_pattern);
-    return target_address;
+    if (resolve_entry) {
+        ModuleSections sections{};
+        if (!get_module_sections(gum_module_get_path(m), sections)) {
+            signature->targets.clear();
+        } else {
+            std::vector<uintptr_t> entries;
+            for (const auto raw: signature->targets) {
+                const auto entry = resolve_function_entry(sections, raw - static_cast<intptr_t>(signature->pattern_offset));
+                if (entry != 0 && std::ranges::find(entries, entry) == entries.end()) entries.push_back(entry);
+            }
+            signature->targets = std::move(entries);
+        }
+    }
+    if (signature->targets.empty() || (signature->only_one && signature->targets.size() != 1)) signature->target_address = 0;
+    else
+        signature->target_address = signature->targets.back();
+    return signature->target_address;
 }
+uintptr_t MemorySignature::scan(const char *module_name) {
+    return scan_module(this, module_name, false);
+}
+
+uintptr_t MemorySignature::scan_function(const char *module_name) {
+    return scan_module(this, module_name, true);
+}
+
 uintptr_t MemorySignature::scan(uintptr_t address, size_t size) {
     target_address = 0;
+    targets.clear();
     const std::string normalized = normalize_gum_pattern(pattern);
     if (normalized.empty()) {
         if (auto logger = spdlog::get(logger_name)) {
@@ -117,6 +147,7 @@ uintptr_t MemorySignature::scan(uintptr_t address, size_t size) {
     GumMemoryRange range{address, size};
     gum_memory_scan(&range, match_pattern, sacnBaseAddrCb, (void*)this);
     gum_match_pattern_unref(match_pattern);
+    if (only_one && targets.size() != 1) target_address = 0;
     return target_address;
 }
 }// namespace function_relocation

@@ -21,6 +21,7 @@
 #include "FunctionRanges.hpp"
 #include "Signature.hpp"
 #include "GraphSeed.hpp"
+#include "InstructionPattern.hpp"
 #include "SignatureJson.hpp"
 #include "NucleusAdapter.hpp"
 #include "disasm.h"
@@ -33,6 +34,11 @@
 #include "Progress.hpp"
 
 using namespace std::literals;
+
+bool is_lua_signature_export(std::string_view name) {
+    return !get_missfuncs().contains(name) &&
+           (name.starts_with("lua_") || name.starts_with("luaL_") || name.starts_with("luaopen_"));
+}
 
 static gboolean ListLuaFuncCb(const GumExportDetails *details,
                               void *user_data) {
@@ -47,10 +53,7 @@ constexpr auto only_base_api =
         return true;
     }
     const auto name = std::string_view{details->name};
-    if (get_missfuncs().contains(name))
-        return true;
-
-    if (!(name.starts_with("lua_") || name.starts_with("luaL_") || name.starts_with("luaopen_")))
+    if (!is_lua_signature_export(name))
         return true;
 
     if (only_base_api && name.starts_with(("luaL_")))
@@ -77,17 +80,7 @@ create_signature(uintptr_t targetLuaModuleBase, const std::function<void(const S
     for (auto &[name, address]: exports) {
         signatures.funcs[name] = {};
     }
-    constexpr auto lua_module_range =
-#ifdef _WIN32
-            30720;
-#else
-#if defined(__APPLE__)
-            0x21F79;
-#else
-    66820;
-#endif
-#endif
-    auto errormsg = update_signatures_from_disasm(signatures, targetLuaModuleBase, exports, lua_module_range, false);
+    auto errormsg = update_signatures_from_disasm(signatures, targetLuaModuleBase, exports);
     if (!errormsg.empty()) {
         return std::unexpected(errormsg);
     }
@@ -104,10 +97,14 @@ get_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase,
                const std::function<void(const Signatures &)> &updated, bool force_update = false) {
     auto &funcs = signatures.funcs;
     auto exports = get_lua51_exports();
+    const auto removed = std::erase_if(funcs, [](const auto &entry) { return !is_lua_signature_export(entry.first); });
 
     // Stale signature DBs (or a richer lua51.dll export set) must refresh —
     // do not showError with a raw "name;name;..." list and abort the game.
-    bool need_update = force_update || SignatureJson::current_version() != signatures.version;
+    bool need_update = removed != 0 || force_update || SignatureJson::current_version() != signatures.version;
+    function_relocation::ModuleSections game_sections{};
+    if (!need_update && !function_relocation::get_module_sections(
+                                gum_module_get_path(gum_process_get_main_module()), game_sections)) need_update = true;
     for (auto &[name, address] : exports) {
         (void)address;
         if (!funcs.contains(name)) {
@@ -115,13 +112,28 @@ get_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase,
             need_update = true;
             spdlog::warn("signature DB missing export {}; will refresh", name);
         }
+        if (!need_update) {
+            const auto &sig = funcs.at(name);
+            const uintptr_t entry = targetLuaModuleBase + sig.offset;
+            const uintptr_t match = entry - static_cast<intptr_t>(sig.pattern_offset);
+            const size_t bytes = (sig.pattern.size() + 1) / 3;
+            if (sig.offset == 0 || sig.pattern.empty() || !game_sections.in_text(match) ||
+                bytes > game_sections.text.base_address + game_sections.text.size - match) {
+                need_update = true;
+            } else {
+                function_relocation::MemorySignature probe{sig.pattern.c_str(), sig.pattern_offset};
+                probe.log = false;
+                need_update = probe.scan(match, bytes) != entry;
+            }
+            if (need_update) spdlog::warn("stored signature {} does not match current binary; will refresh", name);
+        }
     }
 
     if (need_update) {
         if (force_update) {
             spdlog::warn("try fix all signatures (forced: re-resolve every stored entry)");
         } else {
-            spdlog::warn("try fix all signatures (version and/or export set changed)");
+            spdlog::warn("try fix all signatures (version, exports or stored bytes changed)");
         }
         auto errormsg =
             update_signatures_from_disasm(signatures, targetLuaModuleBase, exports);
@@ -191,93 +203,101 @@ struct update_signatures_exception {
 };
 
 
-Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports, uint32_t range,
-                  bool updated) {
-    const auto &lua51_path = get_module_path(lua51_name, 0);
-    const auto &game_path = get_module_path(game_name, targetLuaModuleBase);
-    function_relocation::ModuleSections modulelua51{}, moduleMain{};
+Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports,
+                                 function_relocation::ModuleSections *prepared_train = nullptr,
+                                 function_relocation::ModuleSections *prepared_game = nullptr) {
+    function_relocation::ModuleSections train_storage{}, game_storage{};
+    auto &modulelua51 = prepared_train ? *prepared_train : train_storage;
+    auto &moduleMain = prepared_game ? *prepared_game : game_storage;
+    const auto lua51_path = prepared_train ? modulelua51.details.path : get_module_path(lua51_name, 0);
+    const auto game_path = prepared_game ? moduleMain.details.path : get_module_path(game_name, targetLuaModuleBase);
+    if (!prepared_train || !prepared_game) {
 
-    // Phase 1: section ranges + symbol names only (no heuristic function starts).
-    if (!init_module_signature(lua51_path.c_str(), 0, modulelua51) ||
-        !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain)
-            ) {
-                throw  update_signatures_exception{"init_module_signature failed!"};
+        // Phase 1: section ranges + symbol names only (no heuristic function starts).
+        if (!init_module_signature(lua51_path.c_str(), 0, modulelua51) ||
+            !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain)) {
+            throw update_signatures_exception{"init_module_signature failed!"};
+        }
+
+        // Phase 2: Nucleus is sole start|end|size authority (export split only inside
+        // nucleus_analyze_file for real SYM_TYPE_FUNC). No ScanCtx table cuts.
+        {
+            auto train_nt = function_relocation::nucleus_analyze_file(lua51_path);
+            if (!train_nt) {
+                throw update_signatures_exception{
+                        fmt::format("nucleus_analyze_file(lua51) failed: {}", train_nt.error())};
+            }
+            if (!function_relocation::apply_nucleus_function_table(modulelua51, train_nt->table,
+                                                                   train_nt->image_base)) {
+                throw update_signatures_exception{"apply_nucleus_function_table(lua51) failed"};
             }
 
-    // Phase 2: Nucleus is sole start|end|size authority (export split only inside
-    // nucleus_analyze_file for real SYM_TYPE_FUNC). No ScanCtx table cuts.
-    {
-        auto train_nt = function_relocation::nucleus_analyze_file(lua51_path);
-        if (!train_nt) {
-            throw update_signatures_exception{
-                    fmt::format("nucleus_analyze_file(lua51) failed: {}", train_nt.error())};
-        }
-        if (!function_relocation::apply_nucleus_function_table(modulelua51, train_nt->table,
-                                                              train_nt->image_base)) {
-            throw update_signatures_exception{"apply_nucleus_function_table(lua51) failed"};
-        }
+            auto target_nt = function_relocation::nucleus_analyze_file(game_path);
+            if (!target_nt) {
+                throw update_signatures_exception{
+                        fmt::format("nucleus_analyze_file(game) failed: {}", target_nt.error())};
+            }
+            if (!function_relocation::apply_nucleus_function_table(moduleMain, target_nt->table,
+                                                                   target_nt->image_base)) {
+                throw update_signatures_exception{"apply_nucleus_function_table(game) failed"};
+            }
 
-        auto target_nt = function_relocation::nucleus_analyze_file(game_path);
-        if (!target_nt) {
-            throw update_signatures_exception{
-                    fmt::format("nucleus_analyze_file(game) failed: {}", target_nt.error())};
-        }
-        if (!function_relocation::apply_nucleus_function_table(moduleMain, target_nt->table,
-                                                              target_nt->image_base)) {
-            throw update_signatures_exception{"apply_nucleus_function_table(game) failed"};
-        }
+            // Phase 3: disasm each Nucleus body for soft-match features.
+            if (!function_relocation::scan_module_function_features(modulelua51) ||
+                !function_relocation::scan_module_function_features(moduleMain)) {
+                throw update_signatures_exception{"scan_module_function_features failed"};
+            }
 
-        // Phase 3: disasm each Nucleus body for soft-match features.
-        if (!function_relocation::scan_module_function_features(modulelua51) ||
-            !function_relocation::scan_module_function_features(moduleMain)) {
-            throw update_signatures_exception{"scan_module_function_features failed"};
-        }
-
-        // Optional pdata cross-check (log only; Nucleus remains authority).
-        {
-            std::vector<function_relocation::FuncRange> pdata_ranges;
-            if (function_relocation::enumerate_function_ranges_win(moduleMain, pdata_ranges)) {
-                size_t compared = 0;
-                size_t mismatches = 0;
-                for (const auto &sp: moduleMain.function_table.spans()) {
-                    const function_relocation::FuncRange *hit = nullptr;
-                    size_t hits = 0;
-                    for (const auto &pr: pdata_ranges) {
-                        if (pr.start <= sp.start && sp.start < pr.end) {
-                            hit = &pr;
-                            ++hits;
+            // Optional pdata cross-check (log only; Nucleus remains authority).
+            {
+                std::vector<function_relocation::FuncRange> pdata_ranges;
+                if (function_relocation::enumerate_function_ranges_win(moduleMain, pdata_ranges)) {
+                    size_t compared = 0;
+                    size_t mismatches = 0;
+                    for (const auto &sp: moduleMain.function_table.spans()) {
+                        const function_relocation::FuncRange *hit = nullptr;
+                        size_t hits = 0;
+                        for (const auto &pr: pdata_ranges) {
+                            if (pr.start <= sp.start && sp.start < pr.end) {
+                                hit = &pr;
+                                ++hits;
+                            }
+                        }
+                        if (hits != 1 || hit == nullptr) {
+                            continue;
+                        }
+                        ++compared;
+                        if (hit->end != sp.end) {
+                            ++mismatches;
+                            const auto delta = static_cast<intptr_t>(hit->end) -
+                                               static_cast<intptr_t>(sp.end);
+                            if (delta >= 0x20 || delta <= -0x20) {
+                                spdlog::warn(
+                                        "pdata/nucleus end mismatch start={} nucleus_end={} pdata_end={} delta={}",
+                                        (void *) sp.start, (void *) sp.end, (void *) hit->end, delta);
+                            }
                         }
                     }
-                    if (hits != 1 || hit == nullptr) {
-                        continue;
-                    }
-                    ++compared;
-                    if (hit->end != sp.end) {
-                        ++mismatches;
-                        const auto delta = static_cast<intptr_t>(hit->end) -
-                                           static_cast<intptr_t>(sp.end);
-                        if (delta >= 0x20 || delta <= -0x20) {
-                            spdlog::warn(
-                                    "pdata/nucleus end mismatch start={} nucleus_end={} pdata_end={} delta={}",
-                                    (void *) sp.start, (void *) sp.end, (void *) hit->end, delta);
-                        }
-                    }
+                    spdlog::info("pdata cross-check: compared={} mismatches={} (Nucleus not overridden)",
+                                 compared, mismatches);
+                } else {
+                    spdlog::info("pdata cross-check: no .pdata ranges for {}", moduleMain.details.path);
                 }
-                spdlog::info("pdata cross-check: compared={} mismatches={} (Nucleus not overridden)",
-                             compared, mismatches);
-            } else {
-                spdlog::info("pdata cross-check: no .pdata ranges for {}", moduleMain.details.path);
             }
         }
     }
-
-    auto lua51_module = gum_process_find_module_by_name(lua51_name);
+    auto lua51_module = prepared_train ? nullptr : gum_process_find_module_by_name(lua51_name);
+    const auto export_address = [&](std::string_view name) -> uintptr_t {
+        if (!prepared_train) return gum_module_find_export_by_name(lua51_module, std::string{name}.c_str());
+        const auto it = std::ranges::find_if(exports, [name](const auto &entry) { return entry.first == name; });
+        return it == exports.end() ? 0 : it->second;
+    };
 #ifndef __APPLE__
     spdlog::info("lua51 module base address:{}", (void*)modulelua51.details.range.base_address);
     spdlog::info("game module base address:{}", (void*)moduleMain.details.range.base_address);
     //明确定位 index2adr
     moduleMain.set_known_function(targetLuaModuleBase, "index2adr");
-    auto lua_type_fn = gum_module_find_export_by_name(lua51_module, "lua_type");
+    auto lua_type_fn = export_address("lua_type");
 #if !defined(NDEBUG) && !defined(_WIN32)
     if (auto fn = modulelua51.find_function(lua_type_fn); fn && !fn->blocks.empty() &&
                                                           !fn->get_block(0)->call_functions.empty()) {
@@ -291,7 +311,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
     co_yield 0;
     for (size_t i = 0; i < exports.size(); i++) {
         auto &[name, _] = exports[i];
-        auto original = (void *) gum_module_find_export_by_name(lua51_module, name.c_str());
+        auto original = (void *) export_address(name);
 
 #ifdef _WIN32
         original = format_address((uint8_t *) original);
@@ -332,8 +352,6 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
         else
             spdlog::info("try fix signature [{}]: {}", name, old_offset);
 
-        auto maybe_target = targetLuaModuleBase + old_offset;
-
         // Resolution is train-feature driven (try_fix_func_address); a stored
         // pattern is only consulted by the last-resort recovery at the end of
         // this function. The probe that used to sit here read `targets` of a
@@ -352,13 +370,10 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                 spdlog::warn("func[{}] can't fix address; re-entering inference (previous offset={})",
                              name, old_offset);
             } else {
-                spdlog::error("func[{}] can't fix address, keeping previous signature (offset={})",
-                              name, old_offset);
+                spdlog::warn("func[{}] has no byte match; deferring to call-graph inference", name);
             }
             continue;
         }
-        if (target == maybe_target)
-            continue;
         // Resolve to a Function* when possible. If soft/unique_const refined an
         // entry that is not a Nucleus span start (coarse over-merge), keep it —
         // do NOT snap back to containing() which can be thousands of bytes away.
@@ -515,33 +530,13 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                     std::span{reinterpret_cast<uint8_t *>(entry), n}};
             std::string pat;
             for (auto &insn: ds) {
+                if (!pat.empty()) pat.push_back(' ');
                 const auto &x86 = insn.detail->x86;
-                bool wild = false;
-                size_t fixed = insn.size;
-                if ((insn.id == X86_INS_CALL || insn.id == X86_INS_JMP) &&
-                    x86.op_count >= 1 && x86.operands[0].type == X86_OP_IMM) {
-                    wild = true;
-                    fixed = 1;
-                } else if ((insn.id == X86_INS_LEA || insn.id == X86_INS_MOV) &&
-                           x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM &&
-                           function_relocation::reg_is_ip(x86.operands[1].mem.base) &&
-                           insn.size >= 7) {
-                    wild = true;
-                    fixed = 3;
-                } else if (insn.size >= 5 && insn.bytes[0] >= 0xB8 && insn.bytes[0] <= 0xBF) {
-                    wild = true;
-                    fixed = 1;
-                }
-                for (size_t i = 0; i < insn.size; ++i) {
-                    if (!pat.empty()) {
-                        pat.push_back(' ');
-                    }
-                    if (wild && i >= fixed) {
-                        pat += "??";
-                    } else {
-                        pat += fmt::format("{:02x}", insn.bytes[i]);
-                    }
-                }
+                const bool module_immediate =
+                        (insn.id == X86_INS_MOV || insn.id == X86_INS_MOVABS) &&
+                        x86.op_count == 2 && x86.operands[1].type == X86_OP_IMM &&
+                        gum_memory_is_readable(reinterpret_cast<void *>(x86.operands[1].imm), 1);
+                pat += function_relocation::instruction_pattern(insn, module_immediate);
             }
             if (!pat.empty()) {
                 sig.pattern = std::move(pat);
@@ -614,8 +609,11 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                     const uintptr_t tgt_caller =
                             targetLuaModuleBase + static_cast<uintptr_t>(caller_sig.offset);
                     const auto [gs, glen] = caller_walk(moduleMain, tgt_caller);
-                    auto raw = function_relocation::collect_rel32_call_targets(gs, glen);
-                    std::unordered_set<uint64_t> set(raw.begin(), raw.end());
+                    const auto targets = function_relocation::collect_rel32_call_targets(moduleMain, gs, glen);
+                    std::unordered_set<uint64_t> set;
+                    for (auto target: targets) {
+                        if (moduleMain.in_text(target) && !moduleMain.in_plt(target)) set.insert(target);
+                    }
                     function_relocation::erase_claimed(set, claimed);
                     if (set.empty()) continue;
                     caller_sets.push_back(std::move(set));
@@ -703,6 +701,8 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                         }
                     }
                 }
+                std::unordered_set<std::string> allowed_callees(seed_callees.begin(), seed_callees.end());
+                allowed_callees.insert(name);
                 for (const auto &callee_name: seed_callees) {
                     auto &callee_sig = funcs.at(callee_name);
                     const uintptr_t tgt_callee =
@@ -736,7 +736,18 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                         const size_t walk = std::min(fn.size, size_t{128});
                         if (function_relocation::body_calls_entry(
                                     moduleMain, fn.address, walk, tgt_callee)) {
-                            candidates.push_back(fn.address);
+                            // A short leaf or one shared callee cannot identify
+                            // an unrelated Lua wrapper. Reject extra known API
+                            // calls absent from the train/one-level-inline graph.
+                            bool incompatible = false;
+                            for (const auto ct: function_relocation::collect_rel32_call_targets(moduleMain, fn.address, walk)) {
+                                const auto *called = moduleMain.find_function(ct);
+                                if (called && funcs.contains(called->name) && !allowed_callees.contains(called->name)) {
+                                    incompatible = true;
+                                    break;
+                                }
+                            }
+                            if (!incompatible) candidates.push_back(fn.address);
                         }
                     }
                     std::sort(candidates.begin(), candidates.end());
@@ -745,7 +756,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                     uint64_t chosen = 0;
                     if (candidates.size() > 1) {
                         auto first = function_relocation::filter_by_first_rel32_callee(
-                                candidates, tgt_callee);
+                                moduleMain, candidates, tgt_callee);
                         if (first.size() == 1) {
                             chosen = first.front();
                             spdlog::info(
@@ -928,6 +939,17 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
             } else {
                 continue;
             }
+#ifdef __linux__
+            if (function_relocation::resolve_function_entry(moduleMain, entry) != entry) continue;
+#endif
+            bool claimed = false;
+            for (const auto &[other, sig]: funcs) {
+                if (other != name && sig.offset != 0 && targetLuaModuleBase + sig.offset == entry) {
+                    claimed = true;
+                    break;
+                }
+            }
+            if (claimed) continue;
             signature.offset = entry - targetLuaModuleBase;
             moduleMain.set_known_function(entry, name.c_str());
             spdlog::warn("func[{}] recovered by stored pattern -> {:#x} (offset={})", name, entry,
@@ -936,12 +958,17 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
 
     }
 
-    for (auto &[name, previous]: deferred_previous) {
-        auto &signature = funcs.at(name);
-        if (signature.offset != 0) continue;
-        signature.offset = previous;
-        spdlog::error("func[{}] inference could not recover address; restored previous offset={}",
-                      name, previous);
+    std::string unresolved;
+    std::unordered_set<uintptr_t> resolved_offsets;
+    for (const auto &[name, sig]: funcs) {
+        if (sig.offset == 0 || !resolved_offsets.insert(sig.offset).second) {
+            if (!unresolved.empty()) unresolved += ", ";
+            unresolved += name;
+        }
+    }
+    if (!unresolved.empty()) {
+        function_relocation::release_signature_cache();
+        throw update_signatures_exception{"unresolved Lua functions: " + unresolved};
     }
 
     function_relocation::release_signature_cache();
@@ -949,11 +976,10 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
 }
 
 std::string
-update_signatures_from_disasm(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports, uint32_t range,
-                  bool updated) {
+update_signatures_from_disasm(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports) {
     try
     {
-        auto gen = update_signatures(signatures, targetLuaModuleBase, exports, range, updated);
+        auto gen = update_signatures(signatures, targetLuaModuleBase, exports);
         auto ictx = InjectorCtx::instance();
         if (ictx->config.disable_progress || !ictx->DontStarveInjectorIsClient) {
             NoShowProgressWindow(0, gen);
@@ -966,4 +992,16 @@ update_signatures_from_disasm(Signatures &signatures, uintptr_t targetLuaModuleB
         return e.msg;
     }
    return "";
+}
+
+std::string resolve_lua_signatures_from_modules(Signatures &signatures, uintptr_t base, const ListExports_t &exports,
+                                                function_relocation::ModuleSections &train,
+                                                function_relocation::ModuleSections &game) {
+    try {
+        auto generator = update_signatures(signatures, base, exports, &train, &game);
+        NoShowProgressWindow(0, generator);
+        return {};
+    } catch (const update_signatures_exception &error) {
+        return error.msg;
+    }
 }

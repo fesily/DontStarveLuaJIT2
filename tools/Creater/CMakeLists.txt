@@ -83,6 +83,9 @@ target_link_libraries(signature_updater PRIVATE nlohmann_json::nlohmann_json)
 # Order matters for static archives: dependents first, then providers.
 # ds_signature calls nucleus_analyze_file / apply_nucleus_* in function_relocation_static.
 target_link_libraries(signature_updater PRIVATE ds_signature function_relocation_static)
+if (TARGET stage_lua51_training)
+    add_dependencies(signature_updater stage_lua51_training)
+endif()
 target_include_directories(signature_updater PRIVATE ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/signature_load)
 target_include_directories(signature_updater PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
@@ -93,6 +96,19 @@ target_compile_definitions(signature_updater PUBLIC
         WORKER_DIR="${CMAKE_INSTALL_PREFIX}"
         EXECUTABLE_SUFFIX="${CMAKE_EXECUTABLE_SUFFIX}"
 )
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(verify_linux_signatures
+        verify_linux_signatures.cpp
+        ${DONTSTARVEINJECTOR_ROOT}/config/InjectorHostConfig.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp)
+    target_include_directories(verify_linux_signatures PRIVATE
+        ${PROJECT_SOURCE_DIR}/src ${DONTSTARVEINJECTOR_ROOT} ${DONTSTARVEINJECTOR_UTIL_DIR})
+    target_compile_definitions(verify_linux_signatures PRIVATE DS_PLUGIN_HOST_STATIC)
+    target_link_libraries(verify_linux_signatures PRIVATE ds_signature function_relocation_static Frida::Gum)
+endif()
 
 if (MSVC)
     target_link_options(signature_updater PUBLIC "/NODEFAULTLIB:LIBCMT")

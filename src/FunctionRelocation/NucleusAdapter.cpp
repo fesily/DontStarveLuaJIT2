@@ -1,4 +1,6 @@
 #include "NucleusAdapter.hpp"
+#include "FunctionRanges.hpp"
+#include "FunctionTableRefinement.hpp"
 
 #include <cstring>
 #include <fstream>
@@ -43,10 +45,39 @@ uint64_t infer_image_base_from_binary(const Binary &bin,
       return lo & ~uint64_t{0xFFF};
     }
   }
-  // ELF: ET_DYN section VMAs are load-bias relative (near 0) → image_base 0.
-  // ET_EXEC uses absolute preferred base (DST server is typically 0x400000).
-  // process_va = process_base + (image_va - image_base); wrong base empties
-  // containing() for many spans and breaks knowns/create (e.g. lua_close).
+  // ELF: derive the preferred mapping base from PT_LOAD, not the first
+  // section. Modern PIE executables can start .text above 0x10000 while their
+  // preferred mapping base remains zero.
+  if (bin.type == Binary::BIN_TYPE_ELF) {
+      std::ifstream file(path, std::ios::binary);
+      unsigned char header[64]{};
+      file.read(reinterpret_cast<char *>(header), sizeof(header));
+      if (file && std::memcmp(header, "\x7f"
+                                      "ELF",
+                              4) == 0 &&
+          header[4] == 2 && header[5] == 1) {
+          uint64_t phoff = 0;
+          uint16_t entsize = 0, count = 0;
+          std::memcpy(&phoff, header + 32, 8);
+          std::memcpy(&entsize, header + 54, 2);
+          std::memcpy(&count, header + 56, 2);
+          uint64_t base = UINT64_MAX;
+          if (entsize >= 56) {
+              for (size_t i = 0; i < count; ++i) {
+                  unsigned char ph[56]{};
+                  file.seekg(phoff + i * entsize);
+                  file.read(reinterpret_cast<char *>(ph), sizeof(ph));
+                  if (!file) break;
+                  uint32_t type = 0;
+                  uint64_t va = 0;
+                  std::memcpy(&type, ph, 4);
+                  std::memcpy(&va, ph + 16, 8);
+                  if (type == 1) base = (std::min) (base, va & ~uint64_t{0xfff});
+              }
+              if (base != UINT64_MAX) return base;
+          }
+      }
+  }
   if (!bin.sections.empty()) {
     uint64_t lo = bin.sections.front().vma;
     for (const auto &s : bin.sections) {
@@ -195,6 +226,27 @@ nucleus_analyze_file(const std::filesystem::path &path,
         export_vas.push_back(sym.addr);
       }
     }
+#ifdef __linux__
+    if (bin.type == Binary::BIN_TYPE_ELF) {
+        ModuleSections image{};
+        image.details.path = fname;
+        image.details.range.base_address = out.image_base;
+        for (const auto &section: bin.sections) {
+            if (section.name == ".text") image.text = {section.vma, section.size};
+        }
+        std::vector<FuncRange> fdes;
+        if (enumerate_function_ranges_elf(image, fdes)) {
+            // CFG discovery can stop at the first RET and detach the taken error
+            // branch. Use exact unwind extents wherever available; subtract
+            // their coverage from each Nucleus body to retain all uncovered
+            // prefixes, gaps and tails. Split at actual FUNC symbols afterwards.
+            std::vector<FunctionSpan> authoritative;
+            authoritative.reserve(fdes.size());
+            for (const auto &fde: fdes) authoritative.push_back({fde.start, fde.end});
+            out.table = detail::refine_function_table(out.table, std::move(authoritative));
+        }
+    }
+#endif
     out.table.split_at_known_entries(export_vas);
   }
 

@@ -1,4 +1,5 @@
 #include "ModuleSections.hpp"
+#include "GraphSeed.hpp"
 
 #include <unordered_set>
 #include <ranges>
@@ -331,8 +332,9 @@ namespace function_relocation {
             fn.features_ready = true;
             return true;
         }
-        // P2: clamp ScanCtx walk to leaf (first RET / external JMP), max 256B.
-        const size_t leaf = function_leaf_size(fn, 256);
+        // Include taken branches after an early RET. Bound feature work to
+        // 256B while retaining the full authoritative size on Function.
+        const size_t leaf = std::min(fn.size, size_t{256});
         if (leaf == 0) {
             fn.features_ready = true;
             return true;
@@ -356,26 +358,17 @@ namespace function_relocation {
         if (start == 0 || size < 5 || callee_entry == 0) {
             return false;
         }
-        const auto *bytes = reinterpret_cast<const uint8_t *>(start);
-        for (size_t i = 0; i + 5 <= size; ) {
-            const uint8_t op = bytes[i];
-            if (op == 0xE8 || op == 0xE9) {
-                const int32_t rel = *reinterpret_cast<const int32_t *>(bytes + i + 1);
-                const uint64_t site = start + i;
-                const uint64_t target = site + 5 + static_cast<int64_t>(rel);
-                if (target == callee_entry) {
+        for (const auto target: collect_rel32_call_targets(mod, start, size)) {
+            if (mod.in_plt(target)) continue;
+            if (target == callee_entry) {
+                return true;
+            }
+            if (!mod.function_table.empty()) {
+                const uint64_t entry = mod.function_table.containing(target);
+                if (entry == callee_entry) {
                     return true;
                 }
-                if (!mod.function_table.empty()) {
-                    const uint64_t entry = mod.function_table.containing(target);
-                    if (entry == callee_entry) {
-                        return true;
-                    }
-                }
-                i += 5;
-                continue;
             }
-            ++i;
         }
         return false;
     }

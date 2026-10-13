@@ -15,6 +15,12 @@ if(NOT DEFINED DS_BINARY_DIR OR DS_BINARY_DIR STREQUAL "")
 endif()
 file(MAKE_DIRECTORY "${DS_OUT}")
 
+# The runtime loader searches Injector/deps in the build tree. Stage the same
+# stock/training library that the signature tool uses on every platform.
+if(DEFINED DS_TRAINING_LIBRARY AND EXISTS "${DS_TRAINING_LIBRARY}")
+  file(COPY "${DS_TRAINING_LIBRARY}" DESTINATION "${DS_OUT}")
+endif()
+
 # Prefer the active build config only. Falling through Debug after RelWithDebInfo
 # previously staged Debug-CRT lua51DS.dll into a Rel package (LoadLibrary 0x7E).
 if(NOT DEFINED DS_CFG OR DS_CFG STREQUAL "")

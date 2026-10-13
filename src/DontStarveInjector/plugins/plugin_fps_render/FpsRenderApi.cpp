@@ -18,9 +18,12 @@ namespace {
 
 float g_frame_time_s = 1.0f / 30.0f;
 float *fps_ptr = nullptr;
+#ifdef _WIN32
 function_relocation::MemorySignature set_notebook_mode{"F3 0F 11 89 D8 01 00 00", -0x3E};
 void set_notebook_mode_config_hook(void *) {}
 function_relocation::MemorySignature set_notebook_mode_config{"80 B9 D4 01 00 00 00", -0x6};
+
+#endif
 
 const char *main_module_path() {
     return gum_module_get_path(gum_process_get_main_module());

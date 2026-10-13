@@ -17,6 +17,8 @@ set(SOURCE
         ScanCtx.cpp
         FunctionRanges.cpp
         NucleusAdapter.cpp
+        GraphSeed.cpp
+        CallTargetResolver.cpp
 )
 
 find_package(spdlog CONFIG REQUIRED)

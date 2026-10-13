@@ -96,14 +96,25 @@ namespace function_relocation {
         MODULESECTION_IN_RANGE(text)
         MODULESECTION_IN_RANGE(pdata)
         MODULESECTION_IN_RANGE(rodata)
-        MODULESECTION_IN_RANGE(plt)
-        MODULESECTION_IN_RANGE(got_plt)
         MODULESECTION_IN_RANGE(bss)
 #ifndef _WIN32
         MODULESECTION_IN_RANGE(ehframe)
 #endif  
 
 #undef MODULESECTION_IN_RANGE
+        bool in_named_section(std::string_view name, uintptr_t address) const {
+            const auto it = sections.find(std::string{name});
+            return it != sections.end() && address >= it->second.base_address &&
+                   address - it->second.base_address < it->second.size;
+        }
+        bool in_plt(uintptr_t address) const {
+            return (address >= plt.base_address && address - plt.base_address < plt.size) ||
+                   in_named_section(".plt.sec", address) || in_named_section(".plt.got", address);
+        }
+        bool in_got_plt(uintptr_t address) const {
+            return (address >= got_plt.base_address && address - got_plt.base_address < got_plt.size) ||
+                   in_named_section(".got", address);
+        }
     bool in_module(uintptr_t address) const {
         return details.range.base_address <= address && address <= details.range.base_address + details.range.size;
     }
@@ -117,7 +128,8 @@ namespace function_relocation {
 
         // Process-VA Nucleus spans (preferred ImageBase remapped to load base).
         // Empty until apply_nucleus_function_table runs for this module.
-        // THIS is the sole authority for function start|end|size.
+        // The adapter refines ELF bodies with exact FDE extents. This table is
+        // the sole authority consumed by the matcher for start|end|size.
         FunctionTable function_table;
 
         // Symbol names collected during init (before Nucleus rebuild). address -> name.
@@ -164,8 +176,9 @@ namespace function_relocation {
     // P0: on-demand ScanCtx disasm for one body (leaf-clamped). Idempotent.
     FUNCTION_RELOCATION_API bool ensure_function_features(Function &fn);
 
-    // True if [start,start+size) contains a direct CALL/JMP whose target
-    // resolves (via FunctionTable) to callee_entry. No full feature scan.
+    // True if [start,start+size) contains a direct CALL/JMP whose PLT/GOT-resolved
+    // target equals callee_entry or lies in its FunctionTable span. Unbound PLT
+    // targets do not count as callees. No full feature scan.
     FUNCTION_RELOCATION_API bool body_calls_entry(const ModuleSections &mod,
                                                   uint64_t start, size_t size,
                                                   uint64_t callee_entry);
