@@ -143,8 +143,9 @@ namespace function_relocation {
         // training-library call graph inside the game process).
         std::unordered_map<uintptr_t, std::string> import_slot_names;
 
-        // FILE symbol table (defined symbols only): name -> address. Available right
-        // after init, i.e. before Nucleus function tables exist.
+        // Defined GLOBAL/WEAK functions from the file: name -> address. Dynamic
+        // definitions referenced by PLT relocations take precedence over .symtab.
+        // Available after init, before Nucleus function tables exist.
         std::unordered_map<std::string, uintptr_t> own_symbol_addresses;
 
         uintptr_t own_definition_address(std::string_view name) const {

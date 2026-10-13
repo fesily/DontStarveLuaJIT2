@@ -26,9 +26,9 @@ namespace function_relocation::detail {
                 if (const auto own = module.own_definition_address(*name); own != 0) {
                     return own;
                 }
-                if (const auto *own_fn = module.find_named_function(*name)) {
-                    if (own_fn->address != 0) return own_fn->address;
-                }
+                // Nucleus names include LOCAL symbols. A matching name there
+                // cannot prove that this module defines the dynamic import;
+                // genuine external imports must fall back to their runtime GOT.
             }
         }
         if (!module.in_plt(target)) return target;

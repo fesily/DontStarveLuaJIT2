@@ -176,6 +176,7 @@ namespace function_relocation {
         sections.symbol_names.clear();
         // Static GOT/PLT slot -> symbol name table (file semantics, interposition-proof).
         sections.import_slot_names.clear();
+        sections.own_symbol_addresses.clear();
 #ifndef _WIN32
         // ELF: enumerate every JUMP_SLOT relocation. Self-references matter here —
         // the training library imports its OWN luaL_loadbuffer through its PLT, and
@@ -194,6 +195,13 @@ namespace function_relocation {
                         }
                         secs->import_slot_names.try_emplace(static_cast<uintptr_t>(details->address),
                                                             details->symbol->name);
+                        // This relocation references a particular dynamic symbol.
+                        // Prefer its own definition to any same-name .symtab entry.
+                        const auto &symbol = *details->symbol;
+                        if (symbol.type == GUM_ELF_SYMBOL_FUNC && symbol.section != nullptr && symbol.address != 0 &&
+                            (symbol.bind == GUM_ELF_BIND_GLOBAL || symbol.bind == GUM_ELF_BIND_WEAK)) {
+                            secs->own_symbol_addresses.try_emplace(symbol.name, static_cast<uintptr_t>(symbol.address));
+                        }
                         return TRUE;
                     },
                     &sections);
@@ -212,9 +220,14 @@ namespace function_relocation {
 #endif
         gum_module_enumerate_symbols(module, +[](const GumSymbolDetails *details, gpointer data) -> gboolean {
             auto *secs = static_cast<ModuleSections *>(data);
-            // FILE symbol table: keep defined symbols so PLT self-imports can be
-            // mapped back to this module's own definition without the runtime GOT.
-            if (details->section != nullptr && details->address != 0 && details->name != nullptr &&
+            // LOCAL definitions cannot satisfy a dynamic import, even if their
+            // .symtab names match. Keep only externally visible function definitions.
+            bool function_symbol = details->type == GUM_SYMBOL_FUNCTION;
+#ifdef __APPLE__
+            function_symbol |= details->type == GUM_SYMBOL_SECTION && details->section != nullptr &&
+                               (details->section->protection & GUM_PAGE_EXECUTE) != 0;
+#endif
+            if (details->is_global && function_symbol && details->section != nullptr && details->address != 0 && details->name != nullptr &&
                 details->name[0] != '\0') {
                 secs->own_symbol_addresses.try_emplace(details->name,
                                                        static_cast<uintptr_t>(details->address));

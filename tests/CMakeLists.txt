@@ -661,6 +661,30 @@ if (UNIX AND NOT APPLE)
   add_test(NAME eh_frame_starts COMMAND test_eh_frame_starts)
   set_tests_properties(eh_frame_starts PROPERTIES
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+  add_library(elf_plt_collision_fixture SHARED
+      function_relocation/elf_plt_local_fixture.c function_relocation/elf_plt_global_fixture.c)
+  add_library(elf_plt_external_fixture SHARED
+      function_relocation/elf_plt_local_fixture.c function_relocation/elf_plt_external_fixture.c)
+  add_library(elf_plt_provider_fixture SHARED function_relocation/elf_plt_provider_fixture.c)
+  target_link_libraries(elf_plt_external_fixture PRIVATE elf_plt_provider_fixture)
+  foreach(_ds_plt_fixture IN ITEMS elf_plt_collision_fixture elf_plt_external_fixture elf_plt_provider_fixture)
+      target_compile_options(${_ds_plt_fixture} PRIVATE -fno-inline)
+      # These fixtures must retain interposable PLT calls despite the project's
+      # default -Bsymbolic-functions policy for production shared libraries.
+      target_link_options(${_ds_plt_fixture} PRIVATE -Wl,-Bno-symbolic)
+      set_target_properties(${_ds_plt_fixture} PROPERTIES C_VISIBILITY_PRESET default)
+  endforeach()
+  add_executable(test_elf_plt_symbols function_relocation/test_elf_plt_symbols.cpp)
+  target_compile_features(test_elf_plt_symbols PRIVATE cxx_std_23)
+  target_link_libraries(test_elf_plt_symbols PRIVATE function_relocation_static Frida::Gum)
+  add_dependencies(test_elf_plt_symbols elf_plt_collision_fixture elf_plt_external_fixture elf_plt_provider_fixture)
+  if (TARGET stage_lua51_training)
+      add_dependencies(test_elf_plt_symbols stage_lua51_training)
+  endif()
+  add_test(NAME elf_plt_symbols COMMAND test_elf_plt_symbols
+      $<TARGET_FILE:elf_plt_collision_fixture> $<TARGET_FILE:elf_plt_external_fixture>
+      $<TARGET_FILE:elf_plt_provider_fixture> "${LUA_LIBRARIES_PATH}")
 endif()
 
 # Header-only interval refinement: authoritative extents plus uncovered fallback.
