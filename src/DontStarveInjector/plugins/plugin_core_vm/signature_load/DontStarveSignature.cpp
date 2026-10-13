@@ -22,6 +22,7 @@
 #include "Signature.hpp"
 #include "GraphSeed.hpp"
 #include "InstructionPattern.hpp"
+#include "UniqueSignature.hpp"
 #include "SignatureJson.hpp"
 #include "NucleusAdapter.hpp"
 #include "disasm.h"
@@ -105,6 +106,7 @@ get_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase,
     function_relocation::ModuleSections game_sections{};
     if (!need_update && !function_relocation::get_module_sections(
                                 gum_module_get_path(gum_process_get_main_module()), game_sections)) need_update = true;
+    const auto scan_range = function_relocation::signature_search_range(game_sections, targetLuaModuleBase);
     for (auto &[name, address] : exports) {
         (void)address;
         if (!funcs.contains(name)) {
@@ -115,17 +117,8 @@ get_signatures(Signatures &signatures, uintptr_t targetLuaModuleBase,
         if (!need_update) {
             const auto &sig = funcs.at(name);
             const uintptr_t entry = targetLuaModuleBase + sig.offset;
-            const uintptr_t match = entry - static_cast<intptr_t>(sig.pattern_offset);
-            const size_t bytes = (sig.pattern.size() + 1) / 3;
-            if (sig.offset == 0 || sig.pattern.empty() || !game_sections.in_text(match) ||
-                bytes > game_sections.text.base_address + game_sections.text.size - match) {
-                need_update = true;
-            } else {
-                function_relocation::MemorySignature probe{sig.pattern.c_str(), sig.pattern_offset};
-                probe.log = false;
-                need_update = probe.scan(match, bytes) != entry;
-            }
-            if (need_update) spdlog::warn("stored signature {} does not match current binary; will refresh", name);
+            need_update = sig.offset == 0 || !function_relocation::validate_unique_signature({&scan_range, 1}, sig, entry);
+            if (need_update) spdlog::warn("stored signature {} is missing, ambiguous or targets another entry; will refresh", name);
         }
     }
 
@@ -900,16 +893,11 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
             if (signature.offset != 0 || signature.pattern.empty()) continue;
             function_relocation::MemorySignature scan{signature.pattern.c_str(),
                                                       signature.pattern_offset, false};
-            // Scan by address+size instead of by module path: the path overload
-            // enumerates the module's executable ranges through
-            // gum_process_find_module_by_name(), which on Windows resolves its
-            // argument with GetModuleHandleW (full paths and bare names both
-            // work, but the enumeration re-walks every exec range). Scanning the
-            // parsed .text window is cheaper and matches how soft_revalidate_pattern
-            // already validates stored patterns. Fall back to the whole module
-            // range if .text was not reported, as on some platforms it may be absent.
-            const auto text_range = moduleMain.text.size != 0 ? moduleMain.text
-                                                             : moduleMain.details.range;
+            // Use the same Lua-base domain as final generation and cached
+            // validation. Feature evidence may select a candidate here; its
+            // final persisted pattern is separately required to be unique.
+            const auto text_range = function_relocation::signature_search_range(moduleMain, targetLuaModuleBase);
+            if (text_range.size == 0) continue;
             scan.scan(text_range.base_address, text_range.size);
             const auto found = scan.targets | std::ranges::views::filter(
                                        [targetLuaModuleBase](auto addr) {
@@ -969,6 +957,26 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
     if (!unresolved.empty()) {
         function_relocation::release_signature_cache();
         throw update_signatures_exception{"unresolved Lua functions: " + unresolved};
+    }
+
+    // Resolution may use graph/feature evidence and broad byte candidates. The
+    // persisted pattern has a stricter contract: one raw hit between Lua base
+    // and .text end, before applying pattern_offset or comparing the stored RVA.
+    const auto scan_range = function_relocation::signature_search_range(moduleMain, targetLuaModuleBase);
+    std::string ambiguous;
+    for (auto &[name, signature]: funcs) {
+        const uintptr_t entry = targetLuaModuleBase + signature.offset;
+        const auto previous_pattern = signature.pattern;
+        if (!function_relocation::make_unique_signature(moduleMain, {&scan_range, 1}, entry, signature)) {
+            if (!ambiguous.empty()) ambiguous += ", ";
+            ambiguous += name;
+        } else if (signature.pattern != previous_pattern) {
+            spdlog::info("replaced ambiguous signature [{}] with target pattern unique from Lua base", name);
+        }
+    }
+    if (!ambiguous.empty()) {
+        function_relocation::release_signature_cache();
+        throw update_signatures_exception{"cannot generate signatures unique from Lua base: " + ambiguous};
     }
 
     function_relocation::release_signature_cache();

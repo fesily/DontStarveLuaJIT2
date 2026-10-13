@@ -706,12 +706,16 @@ target_include_directories(test_graph_seed PRIVATE
 target_compile_features(test_graph_seed PRIVATE cxx_std_23)
 target_link_libraries(test_graph_seed PRIVATE function_relocation_static Frida::Gum)
 add_test(NAME graph_seed COMMAND test_graph_seed)
+add_executable(test_unique_signature function_relocation/test_unique_signature.cpp)
+target_compile_features(test_unique_signature PRIVATE cxx_std_23)
+target_link_libraries(test_unique_signature PRIVATE function_relocation_static Frida::Gum nlohmann_json::nlohmann_json)
+add_test(NAME unique_signature COMMAND test_unique_signature)
 add_executable(test_memory_signature_abi function_relocation/test_memory_signature_abi.cpp)
 target_compile_features(test_memory_signature_abi PRIVATE cxx_std_23)
 target_link_libraries(test_memory_signature_abi PRIVATE function_relocation Frida::Gum)
 add_test(NAME memory_signature_abi COMMAND test_memory_signature_abi)
 if (WIN32)
-    foreach(_ds_decode_test IN ITEMS test_xref_pattern test_graph_seed test_memory_signature_abi)
+    foreach(_ds_decode_test IN ITEMS test_xref_pattern test_graph_seed test_unique_signature test_memory_signature_abi)
         add_custom_command(TARGET ${_ds_decode_test} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 $<TARGET_RUNTIME_DLLS:${_ds_decode_test}> "$<TARGET_FILE_DIR:${_ds_decode_test}>"

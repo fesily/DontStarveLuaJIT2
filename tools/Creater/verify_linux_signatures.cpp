@@ -5,6 +5,7 @@
 #include "ModuleSections.hpp"
 #include "NucleusAdapter.hpp"
 #include "ctx.hpp"
+#include "UniqueSignature.hpp"
 #include "util/LinuxGameSignatures.hpp"
 
 #include <elf.h>
@@ -165,6 +166,7 @@ int main(int argc, char **argv) {
         verify_pattern(game, "FrameProfiler::Push", ds::linux_signatures::profiler_push);
         verify_pattern(game, "FrameProfiler::Push singleton", ds::linux_signatures::profiler_push_singleton);
         verify_pattern(game, "FrameProfiler::Pop", ds::linux_signatures::profiler_pop);
+        const auto scan_range = function_relocation::signature_search_range(game.module, base);
         train.analyze();
         game.analyze();
         if (std::getenv("DS_SIGNATURE_DEBUG")) {
@@ -180,6 +182,20 @@ int main(int argc, char **argv) {
         if (!error.empty()) throw std::runtime_error(error);
         if (check_cache) {
             const auto expected = signatures.funcs;
+            // A legacy cache can be locally correct at its RVA yet ambiguous
+            // elsewhere. Inject that case and require update to certify/repair
+            // it instead of accepting the narrow local match.
+            auto &legacy = signatures.funcs.at("lua_gettop");
+            const uintptr_t entry = base + legacy.offset;
+            const auto first = *reinterpret_cast<const uint8_t *>(entry);
+            constexpr char hex[] = "0123456789abcdef";
+            legacy.pattern = std::string{hex[first >> 4], hex[first & 15]};
+            legacy.pattern_offset = 0;
+            function_relocation::MemorySignature local{legacy.pattern.c_str(), 0};
+            local.log = false;
+            if (local.scan(entry, 1) != entry ||
+                function_relocation::validate_unique_signature({&scan_range, 1}, legacy, entry))
+                throw std::runtime_error("invalid ambiguous-cache regression fixture");
             // A new update starts with no target labels. Rebuild both module
             // tables so the fresh pass cannot mask a missing registration.
             train.analyze();
@@ -194,22 +210,19 @@ int main(int argc, char **argv) {
                 }
             }
             std::cout << "cached update preserved " << expected.size() << " Lua entry offsets\n";
+            std::cout << "ambiguous legacy cache repaired and verified from Lua base\n";
         }
         nlohmann::json funcs = nlohmann::json::object();
         for (const auto &[name, sig]: signatures.funcs) {
             const uintptr_t entry = base + sig.offset;
-            const uintptr_t raw = entry - static_cast<intptr_t>(sig.pattern_offset);
-            if (sig.pattern.empty() || !game.module.in_text(raw)) throw std::runtime_error("invalid result: " + name);
-            function_relocation::MemorySignature probe{sig.pattern.c_str(), sig.pattern_offset};
-            probe.log = false;
-            if (probe.scan(raw, (sig.pattern.size() + 1) / 3) != entry) {
+            if (!function_relocation::validate_unique_signature({&scan_range, 1}, sig, entry)) {
                 std::cerr << name << " offset=" << sig.offset << " pattern_offset=" << sig.pattern_offset << " pattern=" << sig.pattern << '\n';
-                throw std::runtime_error("pattern does not reproduce entry: " + name);
+                throw std::runtime_error("pattern is missing, ambiguous or targets another entry: " + name);
             }
             if (function_relocation::resolve_function_entry(game.module, entry) != entry) throw std::runtime_error("not an FDE entry: " + name);
             funcs[name] = {{"offset", sig.offset}, {"pattern", sig.pattern}, {"pattern_offset", sig.pattern_offset}};
         }
-        std::cout << "resolved and verified " << funcs.size() << " Lua exports\n";
+        std::cout << "resolved and verified " << funcs.size() << " Lua export patterns unique from Lua base\n";
         if (argc == 4 && !check_cache) {
             std::ifstream version(std::filesystem::path{argv[2]}.parent_path().parent_path() / "version.txt");
             uintptr_t value = 0;
