@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `dev_init.sh` / `dev_init.bat` (`tools/update_steam_paths.py`) now complete one more init step: after locating the game dir they write `<game>/bin64/steam_appid.txt` with the app id (default `322330`), so the manual creation described in the debug docs is no longer needed.
+
 - One-line install: `install.ps1` (Windows, `irm ... | iex`) and `install.sh` (Linux, `curl ... | sh`) - pick the newest release/preview (`DSJ_CHANNEL` / `--channel`), locate the game root through Steam using the same rules as `tools/steam_env.py` (registry / `libraryfolders.vdf` / `appmanifest_322330.acf`, overridable with `DSJ_GAME_DIR` / `--game-dir`), stage the package under `<game>/mods/<folder>` and run the packaged installer (shell deploy, marker, self-check).
 
 - Inject diagnostics: the shell (Winmm / InjectorStub) now writes the resolve source, module path, load/export results and its own outcome to `<game>/data/unsafedata/ds_luajit_boot.log` on every boot (stderr kept); `install_linux.sh` finishes with a `[CHECK]` summary (shell / real module / marker / `ldd`) and gained `install_linux.sh selftest` (a one-process live probe of the stub -> real-module chain); the script now re-execs under bash when started via `sh` (dash) instead of dying with a syntax error and doing nothing.

@@ -263,7 +263,7 @@ end
 
 ## 不通过 Steam 调试游戏的方法
 
-在游戏目录/bin64 文件夹中创建 `steam_appid.txt` 文件，内容为 `322330`。
+在游戏目录/bin64 文件夹中创建 `steam_appid.txt` 文件，内容为 `322330`。（`dev_init.sh` / `dev_init.bat` 初始化时会自动创建）
 
 ## 直接启用游戏调试
 

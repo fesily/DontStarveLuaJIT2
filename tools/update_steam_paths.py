@@ -55,6 +55,15 @@ def update_settings(settings_path: Path, steamapps_dir: Path) -> bool:
     return _write_if_changed(settings_path, updated)
 
 
+def update_steam_appid(game_dir: Path, appid: str) -> bool:
+    """Write ``bin64/steam_appid.txt`` so the binary can start outside Steam.
+
+    Without it ``SteamAPI_Init`` fails ("Steam doesn't seem to be running") and
+    the game exits before loading any mod.
+    """
+    return _write_if_changed(game_dir / "bin64" / "steam_appid.txt", appid)
+
+
 def resolve_paths(workspace_root: Path, appid: str, steam_root_arg: str | None) -> tuple[Path, Path]:
     steam_root = detect_steam_root(steam_root_arg)
     if steam_root is None:
@@ -74,7 +83,10 @@ def resolve_paths(workspace_root: Path, appid: str, steam_root_arg: str | None) 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate cmake/GameDir.cmake and update .vscode/settings.json with detected Steam paths."
+        description=(
+            "Generate cmake/GameDir.cmake, update .vscode/settings.json with detected Steam paths, "
+            "and write bin64/steam_appid.txt in the game dir."
+        )
     )
     parser.add_argument(
         "--workspace-root",
@@ -114,9 +126,11 @@ def main() -> int:
 
     cmake_changed = update_game_dir_cmake(game_dir_cmake_path, game_dir)
     settings_changed = update_settings(settings_path, steamapps_dir)
+    appid_changed = update_steam_appid(game_dir, str(args.appid))
 
     print(f"Updated {game_dir_cmake_path}: {'yes' if cmake_changed else 'no change'}")
     print(f"Updated {settings_path}: {'yes' if settings_changed else 'no change'}")
+    print(f"Updated {game_dir / 'bin64' / 'steam_appid.txt'}: {'yes' if appid_changed else 'no change'}")
     return 0
 
 

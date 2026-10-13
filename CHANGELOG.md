@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- `dev_init.sh`/`dev_init.bat`（`tools/update_steam_paths.py`）初始化补齐一步：定位到游戏目录后，向 `<游戏>/bin64/steam_appid.txt` 写入 appid（默认 `322330`），不再需要按调试文档手工创建。
+
 - 新增一行式安装：`install.ps1`（Windows，`irm … | iex`）与 `install.sh`（Linux，`curl … | sh`）——自动挑最新 release/preview（`DSJ_CHANNEL`/`--channel`）、按 `tools/steam_env.py` 的规则从注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf` 定位游戏根目录（可用 `DSJ_GAME_DIR`/`--game-dir` 覆盖），把包解到 `<游戏>/mods/<目录>` 后调用包内安装脚本（装壳、写 marker、自检）。
 
 - 注入可诊断化：壳（Winmm / InjectorStub）每次启动把解析来源/模块路径/加载与导出结果、壳的最终结果写到 `<游戏>/data/unsafedata/ds_luajit_boot.log`（stderr 保留）；`install_linux.sh` 结束时自检壳/真实模块/marker/`ldd` 并打印 `[CHECK]` 结论，新增 `install_linux.sh selftest`（一次性进程实测 stub→真实模块链路），且脚本在 `sh`（dash）下会 `exec bash` 重跑，不再因语法错误空跑。
