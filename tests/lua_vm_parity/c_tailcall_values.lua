@@ -155,28 +155,26 @@ jit.off()
 local function loop(k) if k == 0 then return 0 end return loop(k-1) end
 assert(loop(200000) == 0, "Lua tail recursion must not grow the stack")
 
--- Bytecode format boundary.  The trailing BC_RETM is part of the bytecode, so
--- a pre-change dump (stock CALLT with nothing behind it) would make the C
--- return resume past the prototype; lj_bcdump.h therefore bumps BCDUMP_VERSION
--- to 0x80 (stock is 2) while this switch is on, and such chunks must be
--- rejected at load time instead of running off the prototype.  A chunk
--- claiming the stock version stands in for them here.
+-- Bytecode format boundary. Version 0x81 closes after a retained C-tail call;
+-- 0x80 closed too early, and stock version 2 has no trailing return.
 local function dumped(x) return math.abs(x) end
 local blob = string.dump(dumped)
 assert(blob:byte(1) == 0x1b and blob:byte(2) == 0x4c and blob:byte(3) == 0x4a,
        "unexpected dump header")
-assert(blob:byte(4) == 0x80, "the dump version must be 0x80 with this switch on")
+assert(blob:byte(4) == 0x81, "the dump version must be 0x81 with this switch on")
 local fresh, ferr = loadstring(blob)
 assert(fresh ~= nil, "a dump of this VM must still load: " .. tostring(ferr))
 assert(fresh(-7) == 7, "the reloaded dump must still run the C-callee tail call")
-local stock = blob:sub(1, 3) .. string.char(2) .. blob:sub(5)
-local bad, berr = loadstring(stock)
-if bad ~= nil then
-  error("a pre-change dump version must be rejected: the bytecode format changed")
-end
-if type(berr) ~= "string" or not berr:find("incompatible bytecode", 1, true) then
-  error("rejecting a pre-change dump must report an incompatible bytecode, got: "
-        .. tostring(berr))
+for _, version in ipairs({2, 0x80}) do
+  local old = blob:sub(1, 3) .. string.char(version) .. blob:sub(5)
+  local bad, berr = loadstring(old)
+  if bad ~= nil then
+    error("a pre-change dump version must be rejected: the bytecode format changed")
+  end
+  if type(berr) ~= "string" or not berr:find("incompatible bytecode", 1, true) then
+    error("rejecting a pre-change dump must report an incompatible bytecode, got: "
+          .. tostring(berr))
+  end
 end
 
 print("ok c_tailcall_values")
