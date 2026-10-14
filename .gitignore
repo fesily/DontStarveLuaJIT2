@@ -55,7 +55,7 @@ cmake/GameDir.cmake
 Mod/**/*.dll
 !Mod/deps/lua51.dll
 Mod/mod.manifest
-dst-scripts/tests/plugin_server/_markers/
+tests/plugin_server/_markers/
 
 # Local reference checkouts with nested .git (never tracked; would be
 # recorded as gitlinks and break CI submodule checkout)

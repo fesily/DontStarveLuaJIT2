@@ -108,6 +108,8 @@ CTest: `plugin_client_host_smoke` (`LC_MODE=host` / `--mode host`, TIMEOUT 900; 
 
 - Built Injector at the mod root (mod root `Injector.dll`)
 - Cluster `LGPluginTest` under Klei (offline) — create via L-G / design notes
+- `bin64/steam_appid.txt` (contents `322330`) — required for the direct (non-Steam) client
+  launch; the harness writes it when missing
 - Steam client binary present
 - GPU/desktop session for client window
 - For `--profile`: existing `modconfiguration_workshop-3444078585_dev` (launch client once with mod)

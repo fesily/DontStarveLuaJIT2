@@ -94,6 +94,23 @@ def find_server_exe(game_dir: Path) -> Optional[Path]:
     return None
 
 
+def ensure_steam_appid(game_dir: Path) -> None:
+    """Write ``bin64/steam_appid.txt`` when absent (README: non-Steam launch).
+
+    The harness starts the client binary directly, so no parent Steam process
+    supplies the app id; without this file ``SteamAPI_Init`` fails and the game
+    logs "Steam doesn't seem to be running" and exits before loading any mod.
+    """
+    appid = game_dir / "bin64" / "steam_appid.txt"
+    if appid.exists():
+        return
+    try:
+        appid.write_text("322330", encoding="utf-8")
+        print(f"[lc] wrote {appid}")
+    except OSError as exc:
+        eprint(f"[lc] WARN: cannot write {appid}: {exc}")
+
+
 def _first_existing(paths: List[Path]) -> Optional[Path]:
     for p in paths:
         if p.exists():
@@ -584,6 +601,7 @@ def run_p1_host(game_dir: Path, profile: Optional[str] = None) -> int:
 
     install_probe(game_dir)
     # Do NOT install/enable stress_test_bot
+    ensure_steam_appid(game_dir)
 
     client = start_client_host(game_dir)
     try:
