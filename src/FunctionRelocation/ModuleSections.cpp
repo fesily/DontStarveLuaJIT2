@@ -407,7 +407,7 @@ namespace function_relocation {
         }
         // Include taken branches after an early RET. Bound feature work to
         // 256B while retaining the full authoritative size on Function.
-        const size_t leaf = std::min(fn.size, size_t{256});
+        const size_t leaf = (std::min)(fn.size, size_t{256});
         if (leaf == 0) {
             fn.features_ready = true;
             return true;
