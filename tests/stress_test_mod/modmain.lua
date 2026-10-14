@@ -52,13 +52,35 @@ local auto_connect_done = false
 
 local LAN_SEARCH_INTERVAL = 1
 local LAN_SEARCH_TIMEOUT  = 30
+local LAN_SEARCH_OFFLINE = _G.os.getenv("STRESS_LAN_OFFLINE") == "1"
+local DIRECT_CONNECT_IP = _G.os.getenv("STRESS_CONNECT_IP")
+local DIRECT_CONNECT_PORT = _G.tonumber(_G.os.getenv("STRESS_CONNECT_PORT")) or 10999
 
 local function try_auto_connect(screen_inst)
     if auto_connect_done then return end
     auto_connect_done = true
 
-    log("Starting LAN server search for auto-connect...")
-    _G.TheNet:SearchLANServers(false)
+    if LAN_SEARCH_OFFLINE then
+        -- MainScreen defaults to online mode. Follow its offline-login path
+        -- before searching, rather than relying on the launch flag alone.
+        _G.TheNet:NotifyAuthenticationFailure()
+        _G.TheFrontEnd:SetOfflineMode(true)
+    end
+
+    -- The inject smoke owns a local dedicated server; connect to its known
+    -- endpoint instead of depending on broadcast discovery and listing filters.
+    if DIRECT_CONNECT_IP then
+        log("Connecting directly to " .. DIRECT_CONNECT_IP .. ":" .. tostring(DIRECT_CONNECT_PORT))
+        if not _G.c_connect(DIRECT_CONNECT_IP, DIRECT_CONNECT_PORT) then
+            log("ERROR: direct connection failed to start")
+        end
+        return
+    end
+
+    -- Match ServerListingScreen: the argument selects offline LAN listings.
+    log("Starting LAN server search for auto-connect... offline=" .. tostring(LAN_SEARCH_OFFLINE)
+        .. ", network_online=" .. tostring(_G.TheNet:IsOnlineMode()))
+    _G.TheNet:SearchLANServers(LAN_SEARCH_OFFLINE)
 
     local elapsed = 0
     local function poll()
@@ -66,17 +88,20 @@ local function try_auto_connect(screen_inst)
 
         if _G.TheNet:GetServerListingReadDirty() then
             local listings = _G.TheNet:GetServerListings()
+            log("LAN listings updated: " .. tostring(listings and #listings or 0))
             if listings and #listings > 0 then
                 local server = listings[1]
                 log("Found LAN server: " .. tostring(server.name)
-                    .. " (guid=" .. tostring(server.guid) .. ")")
+                    .. " (guid=" .. tostring(server.guid)
+                    .. ", offline=" .. tostring(server.offline) .. ")")
                 _G.JoinServer(server)
                 return
             end
         end
 
         if elapsed >= LAN_SEARCH_TIMEOUT then
-            log("ERROR: LAN server search timed out after " .. LAN_SEARCH_TIMEOUT .. "s")
+            log("ERROR: LAN server search timed out after " .. LAN_SEARCH_TIMEOUT .. "s"
+                .. ", offline=" .. tostring(LAN_SEARCH_OFFLINE))
             auto_connect_done = false  -- allow retry
             return
         end
@@ -88,6 +113,15 @@ local function try_auto_connect(screen_inst)
 end
 
 AddClassPostConstruct("screens/redux/mainscreen", function(self)
+    if LAN_SEARCH_OFFLINE then
+        -- A saved AutoLogin preference otherwise starts an online login at
+        -- the same time as our search and resets the offline network state.
+        self.auto_login_started = true
+        if self.inst._AutoLoginTask ~= nil then
+            self.inst._AutoLoginTask:Cancel()
+            self.inst._AutoLoginTask = nil
+        end
+    end
     log("MainScreen opened, scheduling auto-connect")
     self.inst:DoTaskInTime(0.5, function()
         try_auto_connect(self)
