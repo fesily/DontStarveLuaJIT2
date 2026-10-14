@@ -680,7 +680,39 @@ if (UNIX AND NOT APPLE)
   add_test(NAME eh_frame_starts COMMAND test_eh_frame_starts)
   set_tests_properties(eh_frame_starts PROPERTIES
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+  add_library(elf_plt_collision_fixture SHARED
+      function_relocation/elf_plt_local_fixture.c function_relocation/elf_plt_global_fixture.c)
+  add_library(elf_plt_external_fixture SHARED
+      function_relocation/elf_plt_local_fixture.c function_relocation/elf_plt_external_fixture.c)
+  add_library(elf_plt_provider_fixture SHARED function_relocation/elf_plt_provider_fixture.c)
+  target_link_libraries(elf_plt_external_fixture PRIVATE elf_plt_provider_fixture)
+  foreach(_ds_plt_fixture IN ITEMS elf_plt_collision_fixture elf_plt_external_fixture elf_plt_provider_fixture)
+      target_compile_options(${_ds_plt_fixture} PRIVATE -fno-inline)
+      # These fixtures must retain interposable PLT calls despite the project's
+      # default -Bsymbolic-functions policy for production shared libraries.
+      target_link_options(${_ds_plt_fixture} PRIVATE -Wl,-Bno-symbolic)
+      set_target_properties(${_ds_plt_fixture} PROPERTIES C_VISIBILITY_PRESET default)
+  endforeach()
+  add_executable(test_elf_plt_symbols function_relocation/test_elf_plt_symbols.cpp)
+  target_compile_features(test_elf_plt_symbols PRIVATE cxx_std_23)
+  target_link_libraries(test_elf_plt_symbols PRIVATE function_relocation_static Frida::Gum)
+  add_dependencies(test_elf_plt_symbols elf_plt_collision_fixture elf_plt_external_fixture elf_plt_provider_fixture)
+  if (TARGET stage_lua51_training)
+      add_dependencies(test_elf_plt_symbols stage_lua51_training)
+  endif()
+  add_test(NAME elf_plt_symbols COMMAND test_elf_plt_symbols
+      $<TARGET_FILE:elf_plt_collision_fixture> $<TARGET_FILE:elf_plt_external_fixture>
+      $<TARGET_FILE:elf_plt_provider_fixture> "${LUA_LIBRARIES_PATH}")
 endif()
+
+# Header-only interval refinement: authoritative extents plus uncovered fallback.
+add_executable(test_function_table_refinement
+    ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_function_table_refinement.cpp)
+target_include_directories(test_function_table_refinement PRIVATE
+    ${FUNCTION_RELOCATION_INCLUDE_DIR})
+target_compile_features(test_function_table_refinement PRIVATE cxx_std_23)
+add_test(NAME function_table_refinement COMMAND test_function_table_refinement)
 
 # Soft-match accept policy primitives (plan function-relocation-match-v2 todo 1).
 # Header-only: depends only on MatchPolicy.hpp + the C++23 standard library, so
@@ -707,6 +739,7 @@ add_executable(test_xref_pattern
 target_include_directories(test_xref_pattern PRIVATE
     ${FUNCTION_RELOCATION_INCLUDE_DIR})
 target_compile_features(test_xref_pattern PRIVATE cxx_std_23)
+target_link_libraries(test_xref_pattern PRIVATE function_relocation_static Frida::Gum nlohmann_json::nlohmann_json)
 add_test(NAME xref_pattern COMMAND test_xref_pattern)
 
 add_executable(test_graph_seed
@@ -714,7 +747,47 @@ add_executable(test_graph_seed
 target_include_directories(test_graph_seed PRIVATE
     ${FUNCTION_RELOCATION_INCLUDE_DIR})
 target_compile_features(test_graph_seed PRIVATE cxx_std_23)
+target_link_libraries(test_graph_seed PRIVATE function_relocation_static Frida::Gum)
 add_test(NAME graph_seed COMMAND test_graph_seed)
+add_executable(test_unique_signature function_relocation/test_unique_signature.cpp)
+target_compile_features(test_unique_signature PRIVATE cxx_std_23)
+target_link_libraries(test_unique_signature PRIVATE function_relocation_static Frida::Gum nlohmann_json::nlohmann_json)
+add_test(NAME unique_signature COMMAND test_unique_signature)
+add_executable(test_memory_signature_abi function_relocation/test_memory_signature_abi.cpp)
+target_compile_features(test_memory_signature_abi PRIVATE cxx_std_23)
+target_link_libraries(test_memory_signature_abi PRIVATE function_relocation Frida::Gum)
+add_test(NAME memory_signature_abi COMMAND test_memory_signature_abi)
+if (WIN32)
+    foreach(_ds_decode_test IN ITEMS test_xref_pattern test_graph_seed test_unique_signature test_memory_signature_abi)
+        add_custom_command(TARGET ${_ds_decode_test} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:${_ds_decode_test}> "$<TARGET_FILE_DIR:${_ds_decode_test}>"
+            COMMAND_EXPAND_LISTS VERBATIM)
+    endforeach()
+endif()
+
+add_executable(test_game_info_arguments plugin/test_game_info_arguments.cpp)
+target_include_directories(test_game_info_arguments PRIVATE ${DONTSTARVEINJECTOR_ROOT})
+target_compile_features(test_game_info_arguments PRIVATE cxx_std_23)
+add_test(NAME game_info_arguments COMMAND test_game_info_arguments)
+
+if (TARGET verify_linux_signatures)
+    foreach(_ds_variant IN ITEMS client server)
+        if (_ds_variant STREQUAL "client")
+            set(_ds_game_binary "${GAME_DIR}/bin64/dontstarve_steam_x64")
+        else()
+            set(_ds_game_binary "${GAME_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64")
+        endif()
+        if (EXISTS "${_ds_game_binary}" AND EXISTS "${LUA_LIBRARIES_PATH}")
+            add_test(NAME linux_signatures_${_ds_variant}
+                COMMAND verify_linux_signatures "${LUA_LIBRARIES_PATH}" "${_ds_game_binary}")
+            set_tests_properties(linux_signatures_${_ds_variant} PROPERTIES LABELS linux_game_signatures TIMEOUT 120)
+            add_test(NAME linux_signatures_cache_${_ds_variant}
+                COMMAND verify_linux_signatures "${LUA_LIBRARIES_PATH}" "${_ds_game_binary}" --check-cache)
+            set_tests_properties(linux_signatures_cache_${_ds_variant} PROPERTIES LABELS linux_game_signatures TIMEOUT 240)
+        endif()
+    endforeach()
+endif()
 
 
 

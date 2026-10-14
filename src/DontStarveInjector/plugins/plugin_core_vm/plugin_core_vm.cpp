@@ -202,7 +202,13 @@ bool run_signature_and_replace(const ds::core_vm::BootstrapArgs &args) {
     }
     const std::string mainPath{mainPathC};
 
-    if (luaModuleSignature.scan(mainPath.c_str()) == 0) {
+    const auto lua_entry =
+#ifdef __linux__
+            luaModuleSignature.scan_function(mainPath.c_str());
+#else
+            luaModuleSignature.scan(mainPath.c_str());
+#endif
+    if (lua_entry == 0) {
         spdlog::error("can't find luamodule base address");
         return false;
     }

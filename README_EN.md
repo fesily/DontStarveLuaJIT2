@@ -270,7 +270,7 @@ We need `vscode` + `lua-debug` plugin
 
 ## How to debug game without steam
 
-Create file `steam_appid.txt` in gamedir/bin64, with contents `322330`.
+Create file `steam_appid.txt` in gamedir/bin64, with contents `322330`. (`dev_init.sh` / `dev_init.bat` create it automatically during init)
 
 ## Directly enable game debugging
 

@@ -4,6 +4,10 @@
 // Header-only: XrefPattern.hpp, no frida-gum.
 
 #include "XrefPattern.hpp"
+#include "InstructionPattern.hpp"
+#include "MemorySignature.hpp"
+#include "ModuleSections.hpp"
+#include "Signature.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -142,11 +146,69 @@ static void test_unknown_insn_empty() {
     REQUIRE(xp.insn_len == 0);
 }
 
+static void test_early_return_does_not_hide_type_check() {
+    // Identical success paths, different type constants in the failure path.
+    uint8_t train_bytes[] = {0x85, 0xf6, 0x74, 0x06, 0xb8, 1, 0, 0, 0, 0xc3, 0xb8, 4, 0, 0, 0, 0xc3};
+    uint8_t target_bytes[96]{};
+    std::memcpy(target_bytes + 16, train_bytes, sizeof(train_bytes));
+    std::memcpy(target_bytes + 64, train_bytes, sizeof(train_bytes));
+    target_bytes[16 + 11] = 3;
+    const auto train_base = reinterpret_cast<uintptr_t>(train_bytes);
+    const auto target_base = reinterpret_cast<uintptr_t>(target_bytes);
+    function_relocation::ModuleSections train{}, target{};
+    train.text = train.details.range = {train_base, sizeof(train_bytes)};
+    target.text = target.details.range = {target_base, sizeof(target_bytes)};
+    train.function_table.add({train_base, train_base + sizeof(train_bytes)});
+    for (const size_t offset: {size_t{16}, size_t{64}}) {
+        target.function_table.add({target_base + offset, target_base + offset + sizeof(train_bytes)});
+        auto &fn = target.functions.emplace_back();
+        fn.address = target_base + offset;
+        fn.size = sizeof(train_bytes);
+        fn.module = &target;
+    }
+    auto &original = train.functions.emplace_back();
+    original.address = train_base;
+    original.size = sizeof(train_bytes);
+    original.name = "typed_check";
+    original.module = &train;
+    REQUIRE(function_relocation::ensure_function_features(original));
+    REQUIRE(original.size == sizeof(train_bytes));
+    function_relocation::SignatureInfo signature{};
+    REQUIRE(target.try_fix_func_address(original, &signature, target_base + 1) == target_base + 64);
+}
+
 int main() {
+    gum_init_embedded();
+    REQUIRE(function_relocation::init_ctx());
+    function_relocation::ModuleSections sections;
+    sections.sections[".plt.sec"] = {0x1000, 0x100};
+    sections.sections[".got"] = {0x2000, 0x100};
+    REQUIRE(sections.in_plt(0x1000) && !sections.in_plt(0x1100));
+    REQUIRE(sections.in_got_plt(0x2000) && !sections.in_got_plt(0x2100));
+    uint8_t repeated[] = {0xaa, 0xbb, 0xcc, 0xaa, 0xbb, 0xcc};
+    function_relocation::MemorySignature scan{"aa bb cc", 0};
+    scan.log = false;
+    REQUIRE(scan.scan(reinterpret_cast<uintptr_t>(repeated), sizeof(repeated)) == 0);
+    REQUIRE(scan.targets.size() == 2);
+    REQUIRE(scan.scan(reinterpret_cast<uintptr_t>(repeated), 3) == reinterpret_cast<uintptr_t>(repeated));
+    REQUIRE(scan.targets.size() == 1);
+    const uint8_t movabs[] = {0x49, 0xb8, 1, 2, 3, 4, 5, 6, 7, 8};
+    const auto wide = function_relocation::make_xref_wildcard_pattern(movabs, 0, 0);
+    REQUIRE(wide.insn_len == 10 && wide.pattern == "49 b8 ?? ?? ?? ?? ?? ?? ?? ??");
+    const uint8_t lea32[] = {0x8d, 0x05, 0, 0, 0, 0};
+    const auto compact = function_relocation::make_xref_wildcard_pattern(lea32, 0, 0);
+    REQUIRE(compact.insn_len == 6 && compact.pattern == "8d 05 ?? ?? ?? ??");
+    const uint8_t prefixed[] = {0x66, 0x48, 0x8d, 0x05, 0, 0, 0, 0};
+    auto decoded = function_relocation::disasm::get_insn(const_cast<uint8_t *>(prefixed), sizeof(prefixed));
+    REQUIRE(decoded && function_relocation::instruction_pattern(*decoded) == "66 48 8d 05 ?? ?? ?? ??");
+    decoded.reset();
     test_rip_lea_wildcards_disp32();
     test_mov_imm32_wildcards_imm();
     test_mid_body_xref_negative_pattern_offset();
     test_unknown_insn_empty();
+    test_early_return_does_not_hide_type_check();
     std::puts("test_xref_pattern: ok");
+    function_relocation::deinit_ctx();
+    gum_deinit_embedded();
     return 0;
 }

@@ -3,12 +3,14 @@
 #include <expected>
 #include <vector>
 #include <string>
+#include <string_view>
 #include <stdint.h>
 #include <unordered_map>
 
 #include "Signature.hpp"
 
 using ListExports_t = std::vector<std::pair<std::string, uintptr_t>>;
+bool is_lua_signature_export(std::string_view name);
 
 struct Signatures {
     uintptr_t version;
@@ -35,5 +37,13 @@ struct SignatureUpdater {
     static std::expected<SignatureUpdater, std::string> create(uintptr_t luaModuleBaseAddress);
 };
 
-std::string update_signatures_from_disasm(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports,
-                              uint32_t range = 512, bool updated = true);
+std::string update_signatures_from_disasm(Signatures &signatures, uintptr_t targetLuaModuleBase, const ListExports_t &exports);
+
+namespace function_relocation {
+    struct ModuleSections;
+}
+// Offline verification uses the same resolver on non-executable mapped ELF
+// images. Callers supply already analyzed tables/features; no game runs.
+std::string resolve_lua_signatures_from_modules(Signatures &signatures, uintptr_t base, const ListExports_t &exports,
+                                                function_relocation::ModuleSections &train,
+                                                function_relocation::ModuleSections &game);

@@ -27,6 +27,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -36,6 +37,12 @@ from typing import List, Optional
 ROOT = Path(os.environ.get("REPO_ROOT", Path(__file__).resolve().parents[2]))
 SELF = Path(__file__).resolve().parent
 PROBE_SRC = SELF / "probe_mod"
+
+TESTS_DIR = SELF.parent
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+
+from harness.cluster import remove_persist_tree, write_offline_cluster  # noqa: E402
 
 # Timeouts (seconds) — match spec defaults
 T_INJECT = float(os.environ.get("LG_T_INJECT", "60"))
@@ -178,10 +185,18 @@ def restore_core_vm(game_dir: Path, original: Optional[Path]) -> None:
 
 
 class ServerProc:
-    def __init__(self, game_dir: Path, cluster: str, marker_dir: Path, inject_env: dict):
+    def __init__(
+        self,
+        game_dir: Path,
+        cluster: str,
+        marker_dir: Path,
+        inject_env: dict,
+        persist_root: Path,
+    ):
         self.game_dir = game_dir
         self.cluster = cluster
         self.marker_dir = marker_dir
+        self.persist_root = persist_root
         self.inject_env = inject_env
         self.proc: Optional[subprocess.Popen] = None
         self.lines: List[str] = []
@@ -200,7 +215,7 @@ class ServerProc:
         cmd = [
             str(exe),
             "-persistent_storage_root",
-            "APP:Klei/",
+            str(self.persist_root),
             "-conf_dir",
             "DoNotStarveTogether",
             "-cluster",
@@ -510,6 +525,14 @@ def run_core_profile(game_dir: Path, cluster: str, scenario: str = "present") ->
     install_probe_mod(game_dir)
     ensure_force_enable(game_dir)
 
+    # Absolute, isolated save tree: a relative `APP:Klei/` root makes the native
+    # config-write probe fail on Linux (``Check for write access: FALSE``), which
+    # aborts startup before the mod ever loads. The offline cluster
+    # (``offline_server = true``) removes the cluster_token requirement.
+    persist_root = Path(tempfile.mkdtemp(prefix="ds_lg_sim_"))
+    write_offline_cluster(persist_root, cluster, "Master", server_port=10999)
+    print(f"[lg] persist root: {persist_root}")
+
     renamed_from: Optional[Path] = None
     extra_env: dict = {}
 
@@ -523,7 +546,7 @@ def run_core_profile(game_dir: Path, cluster: str, scenario: str = "present") ->
         # present: no extra env
 
         inject_env = build_inject_env(game_dir, extra_env or None)
-        server = ServerProc(game_dir, cluster, marker_dir, inject_env)
+        server = ServerProc(game_dir, cluster, marker_dir, inject_env, persist_root)
         server.start()
 
         # Bootstrap marker dir into Lua via console once process is up a bit
@@ -601,6 +624,7 @@ def run_core_profile(game_dir: Path, cluster: str, scenario: str = "present") ->
     finally:
         if scenario == "absent":
             restore_core_vm(game_dir, renamed_from)
+        remove_persist_tree(persist_root)
 
 
 def main() -> int:

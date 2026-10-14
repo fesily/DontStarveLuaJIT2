@@ -637,12 +637,18 @@ static void test_build_config_stamp_matrix() {
         const char *stamp;
         bool expect_install;
     };
-    // This test binary is stamped with Debug (see tests/CMakeLists.txt).
+    // This test binary is stamped with Debug (see tests/CMakeLists.txt). The refusal
+    // only exists where build_config_compatible has an ABI split (MSVC debug CRT):
+    // on POSIX any stamp pair is compatible (see test_build_config_compatibility_classes).
     const Case cases[] = {
         {"matching", true, DS_PLUGIN_BUILD_CONFIG, true},
         {"any", true, kBuildConfigAny, true},
         {"unstamped-legacy", false, "", true},
+#if defined(_WIN32)
         {"mismatch", true, "RelWithDebInfo", false},
+#else
+        {"mismatch", true, "RelWithDebInfo", true},
+#endif
     };
 
     for (const auto &c : cases) {
@@ -669,7 +675,7 @@ static void test_build_config_stamp_matrix() {
         }
         printf("PASS: build_config_%s\n", c.name);
     }
-    // Mixed plan: one installable + one refused → nothing failed.
+    // Mixed plan accounting: attempted == succeeded + refused for a stamped asset.
     g_http_map.clear();
     g_http_hits = 0;
     g_http_map[direct_asset] = zip_bytes;
@@ -680,7 +686,12 @@ static void test_build_config_stamp_matrix() {
         manifest["plugins"] = nlohmann::json::array({plug});
         const auto plugins_dir = make_temp_dir("stamp_mixed");
         const auto result = apply_plan(cfg, manifest, {action}, plugins_dir, "");
+#if defined(_WIN32)
         assert(result.refused == 1 && result.succeeded == 0);
+#else
+        // POSIX: no debug-CRT ABI split, so the RelWithDebInfo stamp stays installable.
+        assert(result.refused == 0 && result.succeeded == 1);
+#endif
         assert(result.attempted == result.succeeded + result.refused);
         printf("PASS: build_config_attempted_accounting\n");
     }

@@ -455,7 +455,13 @@ struct GameLuaContextImpl : GameLuaContext {
         // Replace the whole function with our own implementation (same observable contract,
         // no GC-layout read) via frida-gum replace_fast instead of writing a one-way `ret`.
         // Unconditional (every VM); there is deliberately no revert path.
-        if (luaRegisterDebugGetsizeSignature.scan(mainPath.c_str())) {
+        const auto register_getsize_entry =
+#ifdef __linux__
+                luaRegisterDebugGetsizeSignature.scan_function(mainPath.c_str());
+#else
+                luaRegisterDebugGetsizeSignature.scan(mainPath.c_str());
+#endif
+        if (register_getsize_entry) {
             ds::core_vm::detail::hook_register_debug_getsize(
                     (void *) luaRegisterDebugGetsizeSignature.target_address);
         } else {

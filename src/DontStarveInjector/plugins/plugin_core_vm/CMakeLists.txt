@@ -13,6 +13,9 @@
 set(PLUGIN_CORE_VM_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_subdirectory(signature_load)
+if (TARGET stage_lua51_training)
+    add_dependencies(ds_signature stage_lua51_training)
+endif()
 
 add_custom_command(OUTPUT ${PLUGIN_CORE_VM_DIR}/injector/GameLuaInjectFramework.c
         COMMAND ${PYTHON_EXECUTABLE_NAME} "${PROJECT_SOURCE_DIR}/tools/lua2c.py"
@@ -124,6 +127,7 @@ add_custom_command(TARGET plugin_core_vm POST_BUILD
         "-DDS_CFG=$<CONFIG>"
         "-DDS_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
         "-DDS_BINARY_DIR=${CMAKE_BINARY_DIR}"
+        "-DDS_TRAINING_LIBRARY=${LUA_LIBRARIES_PATH}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/stage_core_vm_deps.cmake"
     COMMENT "stage core.vm lua into Injector/deps; require Mod/signatures_*.json"
     VERBATIM)

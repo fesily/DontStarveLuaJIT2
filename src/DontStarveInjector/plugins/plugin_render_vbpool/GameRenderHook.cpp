@@ -56,46 +56,33 @@ using BatcherFlush_t = void (*)(void* batcher);
 
 // Signature definitions — byte patterns from Ghidra/IDA.
 namespace render_signatures {
-
-// HWBuffer::Init(this, const void* data)
-// macOS x86: 0x001c6338 | Windows x64: 0x1403e69f0
-// Unique: confirmed 1 match in target binary
-inline function_relocation::MemorySignature HWBufferInit_sig{
 #ifdef _WIN32
-    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 54 48 83 EC 20 4C 8B E2 48 8D 51 10 48 8B E9 B9 01 00 00 00", 0
-#elif defined(__linux__)
-    "TODO_FILL_LINUX_PATTERN", 0
-#elif defined(__APPLE__)
-    "TODO_FILL_MACOS_PATTERN", 0
-#endif
-};
 
-// HWBuffer::~HWBuffer() non-deleting dtor
-// macOS x86: vtable 00457758 slot[0] = 001c62bc | Windows x64: 0x1403e68e0
-// Unique: confirmed 1 match in target binary
-// Strategy: zero glBufferID before calling original → glDeleteBuffers(1, &0) is a no-op in OpenGL
-inline function_relocation::MemorySignature HWBufferDtor_sig{
-#ifdef _WIN32
-    "40 53 48 83 EC 20 48 8D 05 ?? ?? ?? ?? 48 8D 51 10 48 8B D9 48 89 01 B9 01 00 00 00", 0
-#elif defined(__linux__)
-    "TODO_FILL_LINUX_PATTERN", 0
-#elif defined(__APPLE__)
-    "TODO_FILL_MACOS_PATTERN", 0
-#endif
-};
+    // HWBuffer::Init(this, const void* data)
+    // macOS x86: 0x001c6338 | Windows x64: 0x1403e69f0
+    // Unique: confirmed 1 match in target binary
+    inline function_relocation::MemorySignature HWBufferInit_sig{
+            "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 54 48 83 EC 20 4C 8B E2 48 8D 51 10 48 8B E9 B9 01 00 00 00", 0
 
-// Batcher::Flush(this)
-// macOS: 0x100167c6c | Windows: 0x140036360
-inline function_relocation::MemorySignature BatcherFlush_sig{
-#ifdef _WIN32
-    "4C 8B DC 49 89 6B 18 57 48 83 EC 70 48 8B 51 78 48 BD AB AA AA AA AA AA AA 2A", 0
-#elif defined(__linux__)
-    "TODO_FILL_LINUX_PATTERN", 0
-#elif defined(__APPLE__)
-    "TODO_FILL_MACOS_PATTERN", 0
-#endif
-};
+    };
 
+    // HWBuffer::~HWBuffer() non-deleting dtor
+    // macOS x86: vtable 00457758 slot[0] = 001c62bc | Windows x64: 0x1403e68e0
+    // Unique: confirmed 1 match in target binary
+    // Strategy: zero glBufferID before calling original → glDeleteBuffers(1, &0) is a no-op in OpenGL
+    inline function_relocation::MemorySignature HWBufferDtor_sig{
+            "40 53 48 83 EC 20 48 8D 05 ?? ?? ?? ?? 48 8D 51 10 48 8B D9 48 89 01 B9 01 00 00 00", 0
+
+    };
+
+    // Batcher::Flush(this)
+    // macOS: 0x100167c6c | Windows: 0x140036360
+    inline function_relocation::MemorySignature BatcherFlush_sig{
+            "4C 8B DC 49 89 6B 18 57 48 83 EC 70 48 8B 51 78 48 BD AB AA AA AA AA AA AA 2A", 0
+
+    };
+
+#endif
 } // namespace render_signatures
 
 // GL constants (ANGLE/GLES2 compatible)
@@ -282,6 +269,9 @@ inline void hooked_BatcherFlush(void* batcher) {
 static bool g_hooksInstalled = false;
 
 static bool installPoolHooks() {
+#ifndef _WIN32
+    return false;
+#else
     using namespace render_signatures;
 
     auto mainPath    = gum_module_get_path(gum_process_get_main_module());
@@ -334,9 +324,13 @@ static bool installPoolHooks() {
 
     spdlog::info("[RenderHook] HWBuffer pool hooks installed successfully");
     return true;
+#endif
 }
 
 static void uninstallPoolHooks() {
+#ifndef _WIN32
+    return;
+#else
     using namespace render_signatures;
     auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
 
@@ -345,11 +339,16 @@ static void uninstallPoolHooks() {
     original_HWBufferInit = nullptr;
     original_HWBufferDtor = nullptr;
     spdlog::info("[RenderHook] HWBuffer pool hooks reverted");
+#endif
 }
 
 } // namespace render_hook
 
 DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable) {
+#ifndef _WIN32
+    (void) enable;
+    return;
+#else
     using namespace render_hook;
     using namespace render_signatures;
     if (enable && !g_hooksInstalled) {
@@ -392,4 +391,5 @@ DONTSTARVEINJECTOR_GAME_API void DS_LUAJIT_set_vbpool_enabled(bool enable) {
         g_hooksInstalled = false;
         spdlog::info("[RenderHook] pool disabled and hooks reverted");
     }
+#endif
 }

@@ -2,6 +2,7 @@
 #include "GameProfilerHook.hpp"
 
 #include "config/InjectorHostConfig.hpp"
+#include "util/LinuxGameSignatures.hpp"
 
 #include <atomic>
 #include <frida-gum.h>
@@ -15,15 +16,17 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
         return 1;
     }
 #ifdef __linux__
-    // profiler_push: compiler now emits `add dword [rbx+0x180],1` (was r12-based 41 83 84 24 ...).
-    // Anchor on the surrounding `mov [rbp+0x18],0x42 ; mov [rbp+0x28],r14d ; add [rbx+0x180],1`
-    // tail to stay unique (the bare increment matches twice), func entry is -0xEE from match start.
-    function_relocation::MemorySignature profiler_push{"C6 45 18 42 44 89 75 28 83 83 80 01 00 00 01", -0xEE};
-    function_relocation::MemorySignature profiler_pop{"64 48 8B 1C 25 F8 FF FF FF", -0x15};
+    // GCC 9 splits FrameProfiler::Push into an enabled-check wrapper and a
+    // .part.0 body, plus a constant-propagated singleton wrapper. Both callers
+    // keep zone/source/line in rsi/rdx/ecx. Hook both wrappers so disabled stock
+    // profiling still reaches our replacement. Resolve through FDE ranges.
+    function_relocation::MemorySignature profiler_push{ds::linux_signatures::profiler_push, 0};
+    function_relocation::MemorySignature profiler_pop{ds::linux_signatures::profiler_pop, 0};
+    function_relocation::MemorySignature profiler_push_singleton{ds::linux_signatures::profiler_push_singleton, 0};
 #elif defined(__APPLE__)
     function_relocation::MemorySignature profiler_push{"41 83 84 24 80 01 00 00 01", -0xF6};
     function_relocation::MemorySignature profiler_pop{"64 48 8B 1C 25 F8 FF FF FF", -0x15};
-    return 0; // TODO
+    return 0;// TODO
 #elif defined(_WIN32)
     function_relocation::MemorySignature profiler_push{"44 8B 9B 88 02 00 00", -0x175};
     function_relocation::MemorySignature profiler_pop{"81 7F 1C 00 3C 00 00", -0x7D};
@@ -33,9 +36,31 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_profiler_api() {
 
 #if !defined(__APPLE__)
     auto path = gum_module_get_path(gum_process_get_main_module());
-    if (profiler_pop.scan(path) && profiler_push.scan(path)) {
-        Hook((uint8_t *) profiler_push.target_address, (uint8_t *) hook_profiler_push);
-        Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHooker::hook_profiler_pop);
+#ifdef __linux__
+    if (!profiler_push_singleton.scan_function(path)) return 0;
+#endif
+    const bool found =
+#ifdef __linux__
+            profiler_pop.scan_function(path) && profiler_push.scan_function(path);
+#else
+            profiler_pop.scan(path) && profiler_push.scan(path);
+#endif
+    if (found) {
+        const bool push_ok = Hook((uint8_t *) profiler_push.target_address, (uint8_t *) hook_profiler_push);
+#ifdef __linux__
+        const bool singleton_ok = Hook((uint8_t *) profiler_push_singleton.target_address, (uint8_t *) hook_profiler_push);
+#else
+        const bool singleton_ok = true;
+#endif
+        const bool pop_ok = Hook((uint8_t *) profiler_pop.target_address, (uint8_t *) ProfilerHooker::hook_profiler_pop);
+        if (!push_ok || !singleton_ok || !pop_ok) {
+            if (push_ok) ResetHook((uint8_t *) profiler_push.target_address);
+#ifdef __linux__
+            if (singleton_ok) ResetHook((uint8_t *) profiler_push_singleton.target_address);
+#endif
+            if (pop_ok) ResetHook((uint8_t *) profiler_pop.target_address);
+            return 0;
+        }
 #ifdef profiler_lua_gc
         auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
         static Gum::InvocationListenerProxy linstener{new Gum::InvocationListenerProfiler()};

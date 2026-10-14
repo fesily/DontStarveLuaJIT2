@@ -84,7 +84,13 @@ int update(bool isClient, const char *path, ToolMode mode) {
         return 1;
     }
 #endif
-    if (luaModuleSignature.scan(path) == 0) {
+    const auto lua_entry =
+#ifdef __linux__
+            luaModuleSignature.scan_function(path);
+#else
+            luaModuleSignature.scan(path);
+#endif
+    if (lua_entry == 0) {
         fprintf(stderr, "%s", "can find lua module base addr\n");
         return 1;
     }

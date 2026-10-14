@@ -278,9 +278,7 @@ namespace SLNet {
 }// namespace SLNet
 
 DONTSTARVEINJECTOR_GAME_API void GameNetWorkHookRpc4() {
-#ifndef _WIN32
-    return;
-#endif
+#ifdef _WIN32
     auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
     function_relocation::MemorySignature RakNet__RPC4__Signal{"48 81 EC 30 03 00 00 48 8B 05", -0x7};
     function_relocation::MemorySignature RakNet_Plugin2_SendUnified{"48 89 84 24 90 00 00 00 48 83 79 08 00", -0x18};
@@ -328,6 +326,7 @@ mov dword ptr [rdi+134], 3  // pro->reliability = PacketReliability::RELIABLE_OR
             ds::gum::attach(interceptor, (uint8_t *) cNetWorkComponent_serialize.target_address, listener);
         }
     }
+#endif
 }
 
 void RegisterNetworkRpcHostServices(ds::plugin::PluginHost *host) {

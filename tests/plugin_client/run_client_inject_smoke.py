@@ -4,7 +4,7 @@
 Spec: docs/superpowers/specs/2026-08-03-client-inject-smoke-design.md
 
 Default mode: P1b = offline dedicated (LGPluginTest) + steam client with
-stress_test_bot (LAN auto-connect + spawn) + plugin_lc_probe tokens.
+stress_test_bot (loopback auto-connect + spawn) + plugin_lc_probe tokens.
 
 Exit codes:
   0 PASS
@@ -20,6 +20,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -30,6 +31,12 @@ ROOT = Path(os.environ.get("REPO_ROOT", Path(__file__).resolve().parents[2]))
 SELF = Path(__file__).resolve().parent
 PROBE_SRC = SELF / "probe_mod"
 STRESS_SRC = ROOT / "tests" / "stress_test_mod"
+
+TESTS_DIR = SELF.parent
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+
+from harness.cluster import remove_persist_tree, write_offline_cluster  # noqa: E402
 
 T_INJECT = float(os.environ.get("LC_T_INJECT", os.environ.get("LG_T_INJECT", "90")))
 T_WORLD = float(os.environ.get("LC_T_WORLD", os.environ.get("LG_T_WORLD", "300")))
@@ -92,6 +99,23 @@ def find_server_exe(game_dir: Path) -> Optional[Path]:
         if p.exists():
             return p
     return None
+
+
+def ensure_steam_appid(game_dir: Path) -> None:
+    """Write ``bin64/steam_appid.txt`` when absent (README: non-Steam launch).
+
+    The harness starts the client binary directly, so no parent Steam process
+    supplies the app id; without this file ``SteamAPI_Init`` fails and the game
+    logs "Steam doesn't seem to be running" and exits before loading any mod.
+    """
+    appid = game_dir / "bin64" / "steam_appid.txt"
+    if appid.exists():
+        return
+    try:
+        appid.write_text("322330", encoding="utf-8")
+        print(f"[lc] wrote {appid}")
+    except OSError as exc:
+        eprint(f"[lc] WARN: cannot write {appid}: {exc}")
 
 
 def _first_existing(paths: List[Path]) -> Optional[Path]:
@@ -344,14 +368,15 @@ class LogProcess:
         return code
 
 
-def start_dedicated(game_dir: Path, cluster: str) -> LogProcess:
+def start_dedicated(game_dir: Path, cluster: str, persist_root: Path) -> LogProcess:
     exe = find_server_exe(game_dir)
     assert exe is not None
     lp = LogProcess("dedicated")
     cmd = [
         str(exe),
+        "-offline",
         "-persistent_storage_root",
-        "APP:Klei/",
+        str(persist_root),
         "-conf_dir",
         "DoNotStarveTogether",
         "-cluster",
@@ -366,7 +391,9 @@ def start_dedicated(game_dir: Path, cluster: str) -> LogProcess:
         "DST_Master",
     ]
     env = os.environ.copy()
-    inject_env = build_inject_env(game_dir)
+    # The client uses the dev branch patch. Match it on the server so the
+    # direct connection's native version check sees the same branch (Windows).
+    inject_env = build_inject_env(game_dir, extra={"AppVersionDevPatch": "1"})
     env.update({k: str(v) for k, v in inject_env.items()})
     print(f"[lc] dedicated: {' '.join(cmd)}")
     if inject_env:
@@ -386,23 +413,17 @@ def start_dedicated(game_dir: Path, cluster: str) -> LogProcess:
 
 
 def wait_dedicated_ready(ded: LogProcess, timeout: float) -> bool:
-    markers = (
-        "Telling Client our new session identifier",
-        "Sim paused",
-        "Lan Server Started",
-        "RESUME FROM",
-        "Serializing world",
-    )
+    # LAN broadcasting starts before worldgen; wait for the world/session so
+    # the bot's finite discovery window is not spent waiting for worldgen.
+    marker = "Telling Client our new session identifier"
     deadline = time.time() + timeout
     while time.time() < deadline:
         if not ded.alive():
             eprint("[lc] dedicated died before ready")
             return False
-        text = "\n".join(ded.lines[-200:])
-        for m in markers:
-            if m in text:
-                print(f"[lc] dedicated ready marker: {m}")
-                return True
+        if any(marker in line for line in ded.lines):
+            print(f"[lc] dedicated ready marker: {marker}")
+            return True
         time.sleep(0.5)
     eprint("[lc] dedicated ready timeout")
     return False
@@ -411,8 +432,9 @@ def wait_dedicated_ready(ded: LogProcess, timeout: float) -> bool:
 def start_client(game_dir: Path, force_mods: str, extra_env: Optional[dict] = None) -> LogProcess:
     exe = find_client_exe(game_dir)
     assert exe is not None
+    ensure_steam_appid(game_dir)
     lp = LogProcess("client")
-    # Align with stress_test_mod BotClient; avoid +connect (version check).
+    # The bot connects after the front end has entered offline mode.
     cmd = [
         str(exe),
         "-debug_random_data",
@@ -530,13 +552,27 @@ def run_p1b(game_dir: Path, cluster: str, profile: Optional[str] = None) -> int:
     # Native Injector splits force_enable_mods on ';' (GameLua.cpp), not commas.
     force_mods = "plugin_lc_probe;stress_test_bot"
 
-    ded = start_dedicated(game_dir, cluster)
+    # Match the server harness: an absolute, isolated offline cluster needs
+    # neither an existing user save nor a cluster_token.
+    persist_root = Path(tempfile.mkdtemp(prefix="ds_lc_smoke_"))
+    ded: Optional[LogProcess] = None
     client: Optional[LogProcess] = None
     try:
+        write_offline_cluster(persist_root, cluster, "Master", server_port=10999)
+        print(f"[lc] persist root: {persist_root}")
+        ded = start_dedicated(game_dir, cluster, persist_root)
         if not wait_dedicated_ready(ded, T_DEDICATED_READY):
             return 1
 
-        client = start_client(game_dir, force_mods)
+        client = start_client(
+            game_dir,
+            force_mods,
+            extra_env={
+                "STRESS_LAN_OFFLINE": "1",
+                "STRESS_CONNECT_IP": "127.0.0.1",
+                "STRESS_CONNECT_PORT": "10999",
+            },
+        )
 
         if not wait_tokens(
             client,
@@ -572,7 +608,9 @@ def run_p1b(game_dir: Path, cluster: str, profile: Optional[str] = None) -> int:
     finally:
         if client is not None:
             client.stop()
-        ded.stop(graceful_lua="c_shutdown(true)")
+        if ded is not None:
+            ded.stop(graceful_lua="c_shutdown(true)")
+        remove_persist_tree(persist_root)
 
 
 def run_p1_host(game_dir: Path, profile: Optional[str] = None) -> int:
@@ -636,7 +674,7 @@ def main() -> int:
         "--mode",
         choices=("p1b", "host", "offline"),
         default=os.environ.get("LC_MODE", "p1b"),
-        help="p1b=dedicated+LAN; host=client-host single process; offline=alias of host",
+        help="p1b=dedicated+loopback; host=client-host single process; offline=alias of host",
     )
     parser.add_argument(
         "--profile",

@@ -332,20 +332,6 @@ struct GameLuaContextGame : GameLua51Context {
                          (void *) *(replacedTargets.end() - 1), (void *) *api, (void *) newaddr,
                          isVmAnchor ? "  [VM anchor]" : "");
         }
-        // for debug luaG_errormsg
-        function_relocation::MemorySignature luaG_errormsg_signature{
-                "48 89 74 24 30 48 8B 71 40", -0x19};
-        if (luaG_errormsg_signature.scan(nullptr)) {
-            // static void (*_luaG_errormsg)(lua_State *L);
-            // gum_interceptor_replace(interceptor, (void *) luaG_errormsg_signature.target_address, (void *) +[](lua_State *L) {
-            //                             auto &ctx = GetGameLuaContext();
-            //                             auto stack = gum_interceptor_get_current_stack();
-            //                             ctx->_luaL_traceback(L, L, nullptr, 0);
-            //                             auto trace = ctx->_lua_tostring(L, -1);
-            //                             ctx->_lua_pop(L, 1);
-            //                             auto msg = ctx->_lua_tostring(L, -1);
-            //                             _luaG_errormsg(L); }, nullptr, (void **) &_luaG_errormsg);
-        }
         return true;
     }
 

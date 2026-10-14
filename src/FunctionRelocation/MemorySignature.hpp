@@ -15,5 +15,9 @@ namespace function_relocation
         std::vector<uintptr_t> targets;
         FUNCTION_RELOCATION_API uintptr_t scan(const char* m);
         FUNCTION_RELOCATION_API uintptr_t scan(uintptr_t address, size_t size);
+        // Resolve raw pattern hits through exact ELF FDE ranges. This policy is
+        // per call so the legacy data layout and scan() ABI remain unchanged.
+        // pattern_offset applies to scan(); scan_function() returns the entry.
+        FUNCTION_RELOCATION_API uintptr_t scan_function(const char *m);
     };
 }

@@ -392,6 +392,18 @@ else ()
     set(LUA_EXECUTABLE_PATH ${CMAKE_INSTALL_PREFIX}/deps/lua51)
 endif ()
 set(LUA_CONFIG_LIBRARIES_PATH ${LUA_LIBRARIES_PREFIX_PATH}/$<IF:$<CONFIG:Debug>,debug,release>/lua51.dll)
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(DS_LUA51_TRAINING_LIBRARY "${PROJECT_SOURCE_DIR}/Mod/bin64/linux/lib64/liblua51.so"
+        CACHE FILEPATH "Source Lua 5.1 training library staged into Mod/deps")
+    if (EXISTS "${DS_LUA51_TRAINING_LIBRARY}" AND NOT DS_LUA51_TRAINING_LIBRARY STREQUAL LUA_LIBRARIES_PATH)
+        add_custom_target(stage_lua51_training
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_INSTALL_PREFIX}/deps"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DS_LUA51_TRAINING_LIBRARY}" "${LUA_LIBRARIES_PATH}"
+            VERBATIM)
+        install(FILES "${DS_LUA51_TRAINING_LIBRARY}" DESTINATION deps COMPONENT deps)
+    endif()
+endif()
 set(LUA_LIBRARIES lua51)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)

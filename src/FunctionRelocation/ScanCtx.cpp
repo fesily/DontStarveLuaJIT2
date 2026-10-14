@@ -1,4 +1,5 @@
 #include "ScanCtx.hpp"
+#include "CallTargetResolver.hpp"
 #include "FunctionRanges.hpp"
 #include <spdlog/spdlog.h>
 
@@ -46,41 +47,6 @@ namespace function_relocation {
                 return data[i] == 0 ? data : nullptr;
         }
         return nullptr;
-    }
-
-    static uintptr_t filter_jmp_or_call(ModuleSections &m, uintptr_t imm) {
-        const auto hcs = get_ctx().hcs;
-        auto insn = cs_malloc(hcs);
-        auto addr = imm;
-        size_t size = 32;
-        auto code = (const uint8_t *) imm;
-        if (cs_disasm_iter(hcs, &code, &size, reinterpret_cast<uint64_t *>(&addr), insn)) {
-            if (insn->id == X86_INS_JMP) {
-                auto &op = insn->detail->x86.operands[0];
-                if (op.type == X86_OP_MEM) {
-                    auto target = insn->address + insn->size + op.mem.disp;
-#ifndef _WIN32
-                    if (m.in_got_plt(target))
-#endif
-
-                        imm = (intptr_t) *(void **) target;
-                } else if (op.type == X86_OP_IMM) {
-                    imm = op.imm;
-                }
-            }
-        }
-        cs_free(insn, 1);
-        return imm;
-    }
-
-    static bool address_is_lib_plt(uint8_t *address, uintptr_t target) {
-        disasm dis{std::span{address, 8}};
-        auto iter = dis.begin();
-        const auto &insn = *iter;
-        if (insn.id != X86_INS_JMP)
-            return false;
-        const auto plt = *(uintptr_t *) read_operand_rip_mem(insn, insn.detail->x86.operands[0]);
-        return plt == target;
     }
 
     static void *guess_switch_jump_table_address(disasm &dis, x86_reg switch_jump_table_reg, uintptr_t limit_address) {
@@ -266,7 +232,9 @@ namespace function_relocation {
 
     void ScanCtx::function_end(uintptr_t addr) {
         function_limit = 0;
-        cur->size = addr - cur->address;
+        // A feature scan may cover only a prefix. Its end must never shrink
+        // the authoritative function span supplied by the adapter.
+        if (body_hard_end == 0) cur->size = addr - cur->address;
         cur_block->size = addr - cur_block->address;
         cur = nullptr;
         cur_block = nullptr;
@@ -430,11 +398,7 @@ namespace function_relocation {
                             x86_details.disp == 0 ? operand.imm : next_insn_address + x86_details.disp;
                     if (!m.in_module(imm))
                         continue;
-#ifndef _WIN32
-                    if (m.in_plt(imm))
-#else
-#endif
-                        imm = filter_jmp_or_call(m, imm);
+                    imm = detail::resolve_call_target(m, imm);
                     if (m.in_text(imm)) {
                         if (text.base_address > imm)
                             continue;
@@ -661,10 +625,7 @@ namespace function_relocation {
                                 x86_details.disp == 0 ? operand.imm : next_insn_address + x86_details.disp;
                         if (!m.in_module(imm))
                             continue;
-#ifndef _WIN32
-                        if (m.in_plt(imm))
-#endif
-                            imm = filter_jmp_or_call(m, imm);
+                        imm = detail::resolve_call_target(m, imm);
 
                         cur_block->call_functions.emplace_back(imm);
                         if (!m.in_text(imm)) {
@@ -819,7 +780,7 @@ namespace function_relocation {
                             static const auto __stack_chk_fail_address = gum_module_find_export_by_name(gum_process_get_libc_module(),
                                                                                                         "__stack_chk_fail");
                             if (__stack_chk_fail_address &&
-                                address_is_lib_plt((uint8_t *) target, __stack_chk_fail_address))
+                                detail::resolve_call_target(m, target) == __stack_chk_fail_address)
                                 return insn->address + insn->size - imm;
 #endif
                         }

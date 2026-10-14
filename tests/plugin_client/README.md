@@ -19,13 +19,20 @@ Orchestrator then holds `LC_T_HOLD` (default 30s) and prints `LG_CLIENT_STABLE`.
 
 ## Default mode (P1b)
 
-1. Start dedicated cluster `LGPluginTest` (same offline cluster as L-G).
+1. Create an isolated offline dedicated cluster `LGPluginTest` in a temporary
+   absolute save directory (same helper as L-G), then launch with `-offline`.
+   No existing cluster or `cluster_token` is needed.
 2. Install `plugin_lc_probe` + `stress_test_bot`.
 3. Launch `dontstarve_steam_x64` with the inject shell (`Winmm.dll` in `bin64`; real `Injector.dll` at the mod root),
    `-offline -debug_random_data -force_enable_mods=plugin_lc_probe;stress_test_bot`
    (**`;` separator** — Injector `split_string` in `GameLua.cpp`).
-4. Stress bot LAN-joins and auto-spawns; probe emits tokens.
-5. Hold + kill.
+4. Wait for the dedicated world's session identifier. Stress bot disables saved
+   AutoLogin for this offline run, enters offline mode, then connects via
+   `c_connect("127.0.0.1", 10999)` (`STRESS_LAN_OFFLINE=1`,
+   `STRESS_CONNECT_IP=127.0.0.1`, `STRESS_CONNECT_PORT=10999`) and auto-spawns;
+   probe emits tokens. Dedicated and client share `AppVersionDevPatch=1` so the
+   native version check sees the same branch on Windows.
+5. Hold + kill + remove temporary dedicated save directory.
 
 ## Phase-2: mod config profiles
 
@@ -107,7 +114,8 @@ CTest: `plugin_client_host_smoke` (`LC_MODE=host` / `--mode host`, TIMEOUT 900; 
 ## Prerequisites
 
 - Built Injector at the mod root (mod root `Injector.dll`)
-- Cluster `LGPluginTest` under Klei (offline) — create via L-G / design notes
+- `bin64/steam_appid.txt` (contents `322330`) — required for the direct (non-Steam) client
+  launch; the harness writes it when missing
 - Steam client binary present
 - GPU/desktop session for client window
 - For `--profile`: existing `modconfiguration_workshop-3444078585_dev` (launch client once with mod)

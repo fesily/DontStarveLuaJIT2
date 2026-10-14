@@ -40,9 +40,16 @@ python tests/plugin_server/run_dedicated_sim_pause.py --scenario vm_disabled  # 
 
 ## Prerequisites
 
-- Pre-created DST cluster `LGPluginTest` (or `--cluster`) under Klei `DoNotStarveTogether` with `offline_server = true` recommended  
-- Inject shell in game `bin64` (Windows `Winmm.dll` / Linux stub `LD_PRELOAD`); real Injector under mod `bin64` (or `DS_LUAJIT_INJECTOR`)  
+- Built Injector at the mod root; inject shell in game `bin64` (Windows `Winmm.dll` / Linux stub `LD_PRELOAD`)
+  — the harness resolves the mod-root module via `DS_LUAJIT_INJECTOR`
 - Pause API: probe uses `TheNet:SetServerPaused(true)` (pinned on first green run)
+
+The harness creates its own isolated cluster: an absolute temporary
+`-persistent_storage_root` plus `offline_server = true` (`tests/harness/cluster.py`).
+No pre-created `LGPluginTest` and no Klei `cluster_token.txt` are needed, and the
+user's `~/.klei` tree is never touched. A relative `-persistent_storage_root`
+(e.g. `APP:Klei/`) makes the native config-write probe fail on Linux
+(`Check for write access: FALSE`) and aborts startup before mod load.
 
 ## CTest
 

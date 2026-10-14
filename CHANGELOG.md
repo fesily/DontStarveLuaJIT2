@@ -4,6 +4,8 @@
 
 - `render.angle`：修复 Vulkan 后端下 Steam 覆盖层不可用/卡死的问题，并移除旧的覆盖层禁用 workaround。旧实现无条件把 `VK_LAYER_VALVE_steam_overlay` 写进 `VK_LOADER_LAYERS_DISABLE`（禁用覆盖层 layer），但真实根因是 ANGLE 在驱动支持时默认启用 `supportsSwapchainMaintenance1`（`VK_EXT_swapchain_maintenance1`：present fence、信号量回收、延迟释放交换链），Steam 覆盖层的 Vulkan layer 重建呈现信息链时不支持这些结构——覆盖层激活后呈现报错，渲染线程在 ANGLE 错误日志路径（`std::ostringstream` 构造 → LFH 堆锁）上无限阻塞，游戏表现为 `framebuffer not complete (0x0)` 刷屏后无响应（实测：RTX 3050 / 610.88 / Vulkan 1.4.341，ANGLE d9fc4a37，挂起转储 RenderThread 卡在 `RtlpLowFragHeapAllocFromContext`）。现在 `EGL_FEATURE_OVERRIDES_DISABLED_ANGLE` 直接禁用该特性、回到经典呈现路径，Steam 覆盖层可正常打开；`EnsureVulkanLayerDisableEnvironment` 与 `VK_LOADER_LAYERS_DISABLE` 相关代码整段删除，不再触碰用户的 Vulkan loader 环境变量。
 
+- `dev_init.sh`/`dev_init.bat`（`tools/update_steam_paths.py`）初始化补齐一步：定位到游戏目录后，向 `<游戏>/bin64/steam_appid.txt` 写入 appid（默认 `322330`），不再需要按调试文档手工创建。
+
 - `install.bat` / `install_linux.sh` 收敛为“只装壳”：Windows 只把包内 `bin64\windows\Winmm.dll` 复制进游戏 `bin64`（内容一致直接跳过，重复运行结果不变），Linux 只把包内 `bin64/linux/lib64/libInjector.so` 放进游戏 `bin64/lib64` 并改写 `LD_PRELOAD` 启动器（原二进制保留为 `*_1`，重复运行跳过）；两者都不再迁移/删除任何 mod 文件、不再写 marker、不再清理游戏目录里的旧 DLL。旧脚本在原地更新时不收敛——`if exist Injector.dll`/`[ -f libInjector.so ]` 会把上一版的 Injector 留在 mod 根、robocopy 无 `/MIR`（Linux `cp -a`）会留下新版已删的 deps/插件，结果就是新壳配旧 Injector（启动崩溃的来源）。源/目标改为按脚本自身位置推导（与调用者 cwd 无关），Windows 侧错误提示不再因绝对路径里的 `(`/`)` 打断 cmd 解析，`uninstall` 只删壳与遗留 marker（Linux 另把 `*_1` 原二进制改回）。
 
 - 新增一行式安装：`install.ps1`（Windows，`irm … | iex`）与 `install.sh`（Linux，`curl … | sh`）——自动挑最新 release/preview（`DSJ_CHANNEL`/`--channel`）、按 `tools/steam_env.py` 的规则从注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf` 定位游戏根目录（可用 `DSJ_GAME_DIR`/`--game-dir` 覆盖），把包解到 `<游戏>/mods/<目录>` 后调用包内安装脚本（装壳；Linux 另写 marker 与自检）。

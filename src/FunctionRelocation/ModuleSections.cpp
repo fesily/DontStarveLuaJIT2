@@ -1,4 +1,5 @@
 #include "ModuleSections.hpp"
+#include "GraphSeed.hpp"
 
 #include <unordered_set>
 #include <ranges>
@@ -49,6 +50,23 @@ struct std::hash<function_relocation::CodeBlock> {
 };
 
 namespace function_relocation {
+    // JUMP_SLOT relocation type of the host architecture (ELF PLT/GOT table).
+    static bool is_jump_slot_relocation(uint32_t type) {
+#if defined(__x86_64__)
+        return type == GUM_ELF_X64_JUMP_SLOT;
+#elif defined(__i386__)
+        return type == GUM_ELF_IA32_JMP_SLOT;
+#elif defined(__aarch64__)
+        return type == GUM_ELF_ARM64_JUMP_SLOT;
+#elif defined(__arm__)
+        return type == GUM_ELF_ARM_JUMP_SLOT;
+#elif defined(__mips__)
+        return type == GUM_ELF_MIPS_JUMP_SLOT;
+#else
+        (void) type;
+        return false;
+#endif
+    }
     using namespace std::literals;
 
 
@@ -156,8 +174,64 @@ namespace function_relocation {
 #endif
         const auto module = get_module(path);
         sections.symbol_names.clear();
+        // Static GOT/PLT slot -> symbol name table (file semantics, interposition-proof).
+        sections.import_slot_names.clear();
+        sections.own_symbol_addresses.clear();
+#ifndef _WIN32
+        // ELF: enumerate every JUMP_SLOT relocation. Self-references matter here —
+        // the training library imports its OWN luaL_loadbuffer through its PLT, and
+        // those entries are exactly what the training-library call graph needs.
+        // gum_module_enumerate_imports only reports UNDEFINED symbols, so it misses
+        // them; it stays as the PE/Mach-O path below.
+        if (GumElfModule *elf = gum_elf_module_new_from_memory(
+                    path, sections.details.range.base_address, nullptr)) {
+            gum_elf_module_enumerate_relocations(
+                    elf,
+                    +[](const GumElfRelocationDetails *details, gpointer data) -> gboolean {
+                        auto *secs = static_cast<ModuleSections *>(data);
+                        if (!is_jump_slot_relocation(details->type) || details->symbol == nullptr ||
+                            details->symbol->name == nullptr || details->symbol->name[0] == '\0') {
+                            return TRUE;
+                        }
+                        secs->import_slot_names.try_emplace(static_cast<uintptr_t>(details->address),
+                                                            details->symbol->name);
+                        // This relocation references a particular dynamic symbol.
+                        // Prefer its own definition to any same-name .symtab entry.
+                        const auto &symbol = *details->symbol;
+                        if (symbol.type == GUM_ELF_SYMBOL_FUNC && symbol.section != nullptr && symbol.address != 0 &&
+                            (symbol.bind == GUM_ELF_BIND_GLOBAL || symbol.bind == GUM_ELF_BIND_WEAK)) {
+                            secs->own_symbol_addresses.try_emplace(symbol.name, static_cast<uintptr_t>(symbol.address));
+                        }
+                        return TRUE;
+                    },
+                    &sections);
+            g_object_unref(elf);
+        }
+#endif
+#if defined(_WIN32) || defined(__APPLE__)
+        gum_module_enumerate_imports(module, +[](const GumImportDetails *details, gpointer data) -> gboolean {
+            auto *secs = static_cast<ModuleSections *>(data);
+            if (details->name != nullptr && details->name[0] != '\0' && details->slot != 0) {
+                secs->import_slot_names.try_emplace(static_cast<uintptr_t>(details->slot),
+                                                    details->name);
+            }
+            return TRUE;
+        }, &sections);
+#endif
         gum_module_enumerate_symbols(module, +[](const GumSymbolDetails *details, gpointer data) -> gboolean {
             auto *secs = static_cast<ModuleSections *>(data);
+            // LOCAL definitions cannot satisfy a dynamic import, even if their
+            // .symtab names match. Keep only externally visible function definitions.
+            bool function_symbol = details->type == GUM_SYMBOL_FUNCTION;
+#ifdef __APPLE__
+            function_symbol |= details->type == GUM_SYMBOL_SECTION && details->section != nullptr &&
+                               (details->section->protection & GUM_PAGE_EXECUTE) != 0;
+#endif
+            if (details->is_global && function_symbol && details->section != nullptr && details->address != 0 && details->name != nullptr &&
+                details->name[0] != '\0') {
+                secs->own_symbol_addresses.try_emplace(details->name,
+                                                       static_cast<uintptr_t>(details->address));
+            }
             if (details->type == GUM_SYMBOL_FUNCTION || details->type == GUM_SYMBOL_OBJECT
 #if defined(__MACH__) && defined(__APPLE__)
                 || details->type == GUM_SYMBOL_SECTION
@@ -331,8 +405,9 @@ namespace function_relocation {
             fn.features_ready = true;
             return true;
         }
-        // P2: clamp ScanCtx walk to leaf (first RET / external JMP), max 256B.
-        const size_t leaf = function_leaf_size(fn, 256);
+        // Include taken branches after an early RET. Bound feature work to
+        // 256B while retaining the full authoritative size on Function.
+        const size_t leaf = std::min(fn.size, size_t{256});
         if (leaf == 0) {
             fn.features_ready = true;
             return true;
@@ -351,31 +426,73 @@ namespace function_relocation {
         return true;
     }
 
+    const std::string *ModuleSections::import_name_for_plt_target(uintptr_t target) const {
+        if (target == 0 || import_slot_names.empty() || !in_plt(target)) {
+            return nullptr;
+        }
+        uintptr_t current = target;
+        for (int hop = 0; hop < 4; ++hop) {
+            const auto *code = reinterpret_cast<const uint8_t *>(current);
+            size_t size = 32;
+            while (size != 0 && !gum_memory_is_readable(code, size)) {
+                --size;
+            }
+            if (size == 0) {
+                return nullptr;
+            }
+            uint64_t address = current;
+            const auto hcs = get_ctx().hcs;
+            auto insn = disasm::malloc_insn(hcs);
+            uintptr_t next_stub = 0;
+            const std::string *name = nullptr;
+            while (cs_disasm_iter(hcs, &code, &size, &address, insn.get())) {
+                if (insn->id == X86_INS_ENDBR64 || insn->id == X86_INS_ENDBR32 || insn->id == X86_INS_NOP) {
+                    continue;
+                }
+                const auto &x86 = insn->detail->x86;
+                if (insn->id != X86_INS_JMP || x86.op_count != 1) {
+                    break;
+                }
+                const auto &op = x86.operands[0];
+                if (op.type == X86_OP_IMM) {
+                    next_stub = static_cast<uintptr_t>(op.imm);
+                } else if (op.type == X86_OP_MEM) {
+                    // Slot address only — deliberately NOT the slot's runtime value.
+                    const uintptr_t slot = read_operand_rip_mem(*insn, op);
+                    const auto it = import_slot_names.find(slot);
+                    if (it != import_slot_names.end()) {
+                        name = &it->second;
+                    }
+                }
+                break;
+            }
+            if (name != nullptr) {
+                return name;
+            }
+            if (next_stub == 0 || next_stub == current || !in_plt(next_stub)) {
+                return nullptr;
+            }
+            current = next_stub;
+        }
+        return nullptr;
+    }
+
     bool body_calls_entry(const ModuleSections &mod, uint64_t start, size_t size,
                           uint64_t callee_entry) {
         if (start == 0 || size < 5 || callee_entry == 0) {
             return false;
         }
-        const auto *bytes = reinterpret_cast<const uint8_t *>(start);
-        for (size_t i = 0; i + 5 <= size; ) {
-            const uint8_t op = bytes[i];
-            if (op == 0xE8 || op == 0xE9) {
-                const int32_t rel = *reinterpret_cast<const int32_t *>(bytes + i + 1);
-                const uint64_t site = start + i;
-                const uint64_t target = site + 5 + static_cast<int64_t>(rel);
-                if (target == callee_entry) {
+        for (const auto target: collect_rel32_call_targets(mod, start, size)) {
+            if (mod.in_plt(target)) continue;
+            if (target == callee_entry) {
+                return true;
+            }
+            if (!mod.function_table.empty()) {
+                const uint64_t entry = mod.function_table.containing(target);
+                if (entry == callee_entry) {
                     return true;
                 }
-                if (!mod.function_table.empty()) {
-                    const uint64_t entry = mod.function_table.containing(target);
-                    if (entry == callee_entry) {
-                        return true;
-                    }
-                }
-                i += 5;
-                continue;
             }
-            ++i;
         }
         return false;
     }

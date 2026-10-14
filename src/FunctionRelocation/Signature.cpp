@@ -1,4 +1,4 @@
-﻿#include <algorithm>
+#include <algorithm>
 #include <cassert>
 #include <functional>
 #include <numbers>
@@ -8,9 +8,6 @@
 #include <string_view>
 
 #include <frida-gum.h>
-#if defined(__linux__)
-#include <keystone/keystone.h>
-#endif
 #include <range/v3/all.hpp>
 #include <spdlog/spdlog.h>
 
@@ -25,6 +22,8 @@
 #include "MatchPolicy.hpp"
 #include "MicroWindow.hpp"
 #include "XrefPattern.hpp"
+#include "InstructionPattern.hpp"
+#include "GraphSeed.hpp"
 
 #include <cstring>
 #include <numeric>
@@ -112,31 +111,11 @@ namespace function_relocation {
     struct Creator {
 
 
-        bool is_valid_remote_offset(int64_t offset, uintptr_t address) {
-            if (target) { return target->in_rodata(address); }
-            return offset >= std::numeric_limits<short>::min() && offset <= std::numeric_limits<short>::max();
-        }
-
         void
         filter_signature(cs_insn *insn, uint64_t &maybe_end, decltype(Signature::asm_codes) &asm_codes) {
             const auto &csX86 = insn->detail->x86;
             std::string op_str = insn->op_str;
-#ifdef __linux__
-            // linux上fpic生成的so跟直接生成应用程序的二进制上，对于加载确定的位置内存方式有一些差别
-            // 把类似与 mov reg, 0x????? 转成 lea reg, [rip + 0x????]
-            if (insn->id == X86_INS_MOV && csX86.op_count == 2) {
-                if (csX86.operands[0].type == x86_op_type::X86_OP_REG &&
-                    csX86.operands[1].type == x86_op_type::X86_OP_IMM) {
-                    auto imm = csX86.operands[1].imm;
-                    if (is_valid_remote_offset(imm, insn->address + insn->size + imm)) {
-                        asm_codes.push_back("lea");
-                        asm_codes.push_back(std::regex_replace(op_str, regx2,
-                                                               imm > 0 ? "[rip + 0x?]" : "[rip - 0x?]"));
-                        return;
-                    }
-                }
-            }
-#endif
+
             std::string signature = op_str;
             int64_t imm = 0;
             bool rva = false;
@@ -213,40 +192,10 @@ namespace function_relocation {
             return ret;
         }
 
-#if defined(__linux__)
-        std::vector<uint8_t> AsmX86(const char *CODE) {
-            ks_engine *ks;
-            ks_err err;
-            size_t count;
-            unsigned char *encode;
-            size_t size;
-
-            err = ks_open(KS_ARCH_X86, KS_MODE_64, &ks);
-            if (err != KS_ERR_OK) {
-                spdlog::get(logger_name)->error("ERROR: failed on ks_open(), quit");
-                return {};
-            }
-
-            if (ks_asm(ks, CODE, 0, &encode, &size, &count) != KS_ERR_OK) {
-                spdlog::get(logger_name)->error("ERROR: ks_asm() failed & count = {}, error = {}",
-                                                count, (int) ks_errno(ks));
-            }
-            std::vector<uint8_t> res{encode, encode + size};
-            // NOTE: free encode after usage to avoid leaking memory
-            ks_free(encode);
-
-            // close Keystone instance when done
-            ks_close(ks);
-
-            return res;
-        }
-
-#endif
         std::pair<Signature, uintptr_t>
         create_signature(ModuleSections *section, uint8_t *address, size_t size, size_t max_len, int offset) {
             Signature signature{};
             disasm ds{address, size};
-            bool skip_next_one = false;
             uintptr_t real_address = (uintptr_t) address;
             for (const auto &insn: ds) {
                 if (offset-- > 0) {
@@ -254,52 +203,12 @@ namespace function_relocation {
                     continue;
                 }
                 if (max_len-- == 0) break;
-                if (skip_next_one) {
-                    skip_next_one = false;
-                    continue;
-                }
-                const auto &details = insn.detail->x86;
-                const auto &operand0 = details.operands[0];
-                const auto &operand1 = details.operands[1];
-                switch (insn.id) {
-                    case X86_INS_JMP:
-                    case X86_INS_CALL:
-                        if (operand1.type == X86_OP_MEM || operand0.type == X86_OP_IMM) {
-                            auto pref = fmt::format("{:0>2x} ", insn.bytes[0]);
-                            signature.asm_codes.push_back(pref + make_unknown_string(insn.size - 1));
-                            continue;
-                        }
-                        break;
-                    case X86_INS_LEA:
-                    case X86_INS_MOV:
-#if defined(__linux__)
-                        // `mov exx 0x?????`
-                        if (insn.id == X86_INS_MOV && operand1.type == X86_OP_IMM && operand0.type == X86_OP_REG) {
-                            if (section->in_module(operand1.imm)) {
-                                assert(insn.size == 5);
-                                signature.asm_codes.push_back(
-                                        to_hex(insn.bytes, insn.bytes + 1) + make_unknown_string(insn.size - 1));
-                                continue;
-                            }
-                        }
-#endif
-                        if (operand1.type == X86_OP_MEM && details.disp != 0 && operand1.mem.base == X86_REG_RIP) {
-                            // Keep opcode/ModRM; only mask the RIP displacement so the
-                            // pattern still self-matches on train (LEA→MOV rewrite used
-                            // to produce `b8/b9 ??…` that never hits train's `48 8d …`).
-                            // Game absolute `mov reg, imm` is handled by unique_const xrefs.
-                            auto bytes = insn.bytes;
-                            auto size = insn.size;
-                            if (size >= 4) {
-                                signature.asm_codes.push_back(
-                                        to_hex(bytes, bytes + 3) + make_unknown_string(size - 3));
-                                continue;
-                            }
-                            break;
-                        }
-                        break;
-                }
-                signature.asm_codes.push_back(to_hex(insn.bytes, insn.bytes + insn.size));
+                const auto &x86 = insn.detail->x86;
+                const bool module_immediate =
+                        (insn.id == X86_INS_MOV || insn.id == X86_INS_MOVABS) &&
+                        x86.op_count == 2 && x86.operands[1].type == X86_OP_IMM &&
+                        section->in_module(static_cast<uintptr_t>(x86.operands[1].imm));
+                signature.asm_codes.push_back(instruction_pattern(insn, module_immediate) + " ");
             }
             return {signature, real_address};
         }
@@ -750,8 +659,6 @@ namespace function_relocation {
 
             auto scan_str_xrefs = [&](uint64_t str_va) -> std::unordered_map<uint64_t, uintptr_t> {
                 std::unordered_map<uint64_t, uintptr_t> entry_earliest;
-                const auto *text = reinterpret_cast<const uint8_t *>(target->text.base_address);
-                const size_t tsz = target->text.size;
                 const auto note = [&](uint64_t insn_va) {
                     if (insn_va < limit_address) return;
                     const uint64_t e = target->function_table.containing(insn_va);
@@ -761,29 +668,13 @@ namespace function_relocation {
                         entry_earliest[e] = insn_va;
                     }
                 };
-                for (size_t i = 0; i + 5 <= tsz; ++i) {
-                    const uint8_t b0 = text[i];
-                    const uint64_t insn_va = target->text.base_address + i;
-                    // PIC: REX + LEA/MOV r64,[rip+disp32] (7 bytes)
-                    if (i + 7 <= tsz && (b0 >= 0x40 && b0 <= 0x4f) &&
-                        (text[i + 1] == 0x8d || text[i + 1] == 0x8b) &&
-                        (text[i + 2] & 0xC7) == 0x05) {
-                        int32_t disp = 0;
-                        std::memcpy(&disp, text + i + 3, sizeof(disp));
-                        if (static_cast<uint64_t>(static_cast<int64_t>(insn_va + 7) + disp) ==
-                            str_va) {
-                            note(insn_va);
-                        }
-                    }
-                    // Non-PIC / large-code: mov r32, imm32 (B8+rd id) — game open_io style
-                    // e.g. be 00 c9 87 00  => mov esi, 0x87c900
-                    if (b0 >= 0xB8 && b0 <= 0xBF) {
-                        uint32_t imm = 0;
-                        std::memcpy(&imm, text + i + 1, sizeof(imm));
-                        if (static_cast<uint64_t>(imm) == (str_va & 0xffffffffull) &&
-                            (str_va >> 32) == 0) {
-                            note(insn_va);
-                        }
+                // Decode from known function starts: immediate bytes and data
+                // between bodies cannot manufacture an address reference.
+                for (const auto &fn: target->functions) {
+                    if (fn.address < limit_address || fn.size == 0) continue;
+                    disasm code{reinterpret_cast<uint8_t *>(fn.address), fn.size};
+                    for (const auto &insn: code) {
+                        if (instruction_address_reference(insn) == str_va) note(insn.address);
                     }
                 }
                 return entry_earliest;
@@ -902,14 +793,16 @@ namespace function_relocation {
             if (!original || original->size == 0) return nullptr;
             if (target->function_table.empty()) return nullptr;
             if (!original->module) return nullptr;
-            const size_t leaf = effective_leaf_size(*original);
+            // Early returns in check* wrappers share identical success paths.
+            // Include their failure branches before trying shorter windows.
+            const size_t leaf = original->size <= 256 ? original->size : effective_leaf_size(*original);
             auto log_skip = [&](const char *why) {
                 if (auto logger = spdlog::get(logger_name)) {
                     logger->info("scan_by_short_body: {} skip ({}) leaf={} size={}",
                                  original->name, why, leaf, original->size);
                 }
             };
-            if (leaf == 0 || leaf > 128) {
+            if (leaf == 0 || leaf > 256) {
                 log_skip("leaf_out_of_range");
                 return nullptr;
             }
@@ -964,11 +857,7 @@ namespace function_relocation {
             // Raw fixed prologue: stop before first E8/E9 (call/jmp rel32).
             {
                 const auto *bytes = reinterpret_cast<const uint8_t *>(original->address);
-                size_t fixed_len = 0;
-                while (fixed_len < leaf && fixed_len < 16) {
-                    if (bytes[fixed_len] == 0xE8 || bytes[fixed_len] == 0xE9) break;
-                    ++fixed_len;
-                }
+                const size_t fixed_len = reloc_free_prefix_len(bytes, leaf, 16);
                 if (fixed_len >= 8) {
                     tries.push_back({to_hex(bytes, bytes + fixed_len), 0, fixed_len});
                 }

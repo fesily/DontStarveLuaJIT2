@@ -182,6 +182,8 @@ GameInfo GetServerGameInfo() {
     }
     if (auto value = read_env_or_cmd_value("conf_dir"); !value.empty()) {
         game_info.config_dir = value;
+    } else if (auto value = read_env_or_cmd_value("config_dir"); !value.empty()) {
+        game_info.config_dir = value;
     }
     if (auto value = read_env_or_cmd_value("cluster"); !value.empty()) {
         game_info.cluster_name = value;
