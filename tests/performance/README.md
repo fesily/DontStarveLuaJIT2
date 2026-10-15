@@ -235,19 +235,47 @@ executable sections, including their RVAs and bytes, match the measured DLL.
 
 ### JIT symbols in WPA / PerfView
 
-`lua51DS` and `lua51DS_gengc` register the Microsoft-JScript ETW provider
-(`57277741-3638-4a4b-bdba-0ac6e45da56c`) automatically for the lifetime of
-every loaded VM: one provider per process, shared by all VMs, no manifest
-install and no JIT PDB. Each committed trace publishes a source record and a
-method record over the same protocol Windows/Chakra use, so
-`CPU Usage (Sampled)` resolves a sampled PC inside
-`[T->mcode, T->mcode + T->szmcode)` to
+`lua51DS` and `lua51DS_gengc` can publish LuaJIT trace symbols through the
+Microsoft-JScript ETW provider (`57277741-3638-4a4b-bdba-0ac6e45da56c`): no
+manifest install, no JIT PDB, one provider per process shared by all VMs. Each
+committed trace publishes a source record and a method record over the same
+protocol Windows/Chakra use, so `CPU Usage (Sampled)` resolves a sampled PC
+inside `[T->mcode, T->mcode + T->szmcode)` to
 `LuaJIT::TRACE_<traceno>::<chunk>:<startline>`.
 
+**The publisher is off by default and is switched at runtime from Lua:**
+
+```lua
+local profile = require("jit.profile")
+profile.etw(true)    -- enable; also flushes this VM's traces (see below)
+profile.etw(false)   -- disable; unloads the published records immediately
+print(profile.etw()) -- query the current state
+```
+
+- The switch is **process-global**: any VM's call applies to every VM. Each
+  VM keeps a small context while it is off, so turning it on later still
+  publishes that VM's *new* traces; traces compiled before the switch was
+  turned on are not retrofitted.
+- `etw(true)` runs `jit.flush`-equivalent `lj_trace_flushall` for the calling
+  VM: the traces compiled while the provider was off are dropped, so every
+  live trace has a record and no stale identity survives. Other VMs are not
+  flushed from here (their old traces simply stay unpublished) - call
+  `etw(true)` from a VM that needs a clean symbol table.
+- `etw(false)` reports the `MethodUnload`/`SourceUnload`/`ScriptContextUnload`
+  records at once and stops publishing new ones; the records are freed by
+  their owning VM, never by another thread.
+- **The game must therefore enable it explicitly**: nothing is published until
+  something in the injected VM calls `profile.etw(true)` (a mod, a bootstrap
+  hook). `etw-symbols-*.exe --hold-for-profile` and the integration tests do
+  that themselves, so the capture/verification path below stays valid.
+- `-DLUAJIT_DISABLE_ETW=ON` still removes the feature from the build entirely
+  (and `LJ_HASETW` is 0 on non-Windows and JIT-less builds, where
+  `profile.etw()` simply reports `false`).
+
 - `cpu.wprp` subscribes the provider with keywords `0x3` (runtime load/unload
-  plus the start rundown), so attaching to a process that already compiled
-  traces still resolves them. WPR keeps running the controller; the game keeps
-  its normal user token.
+  plus the start rundown), so attaching to a process whose traces were
+  published (i.e. the switch was already on) still resolves them. WPR keeps
+  running the controller; the game keeps its normal user token.
 - The symbol name is the trace's **starting line**. It does not claim to map
   every machine instruction or inlined call back to a Lua line.
 - The chunk part of the name comes from the Lua side: an `@`/`=` prefix is
@@ -267,9 +295,12 @@ method record over the same protocol Windows/Chakra use, so
 - `--jit-diagnostics` and `analyze.py` stay a separate stdout/`jit.attach`
   path: they are not ETW symbol consumers, and an older ETL does not gain JIT
   events retroactively.
-- Turn the provider off with `-DLUAJIT_DISABLE_ETW=ON` (CMake) or
+- Turning it off at runtime is `profile.etw(false)`; to remove it from the
+  build entirely use `-DLUAJIT_DISABLE_ETW=ON` (CMake) or
   `XCFLAGS+=-DLUAJIT_DISABLE_ETW` (Makefile). Windows with JIT is the only
-  target that has it, and no Lua API or C ABI changes when it is on.
+  target that has it; the runtime API is a single `jit.profile.etw` function
+  that reports `false` where the feature is not compiled in, and no other Lua
+  or C ABI surface changes.
 
 `-DLUAJIT_TEST_ETW=ON` builds `etw-symbols-default` / `etw-symbols-arenagc` and
 registers `luajit_<variant>_etw_symbols`. Both drive a real session
@@ -315,15 +346,25 @@ for automation on the machine used here (the single-file download produced no
 underlying parser contract is the same `JScriptTraceEventParser` field set this
 repository emits and WPT decodes.
 
-Cost of the always-on metadata (RelWithDebInfo, one 8-core desktop, no session
-attached, provider enabled vs `-DLUAJIT_DISABLE_ETW=ON`): VM
-create+open+close 48.4 vs 47.0 us, compiling distinct traces 10.5 vs
-10.4 us/trace, executing already-prewarmed machine code 58.6 vs 58.9 us/call.
-One blocked worker thread exists while any VM is alive, a VM with one trace
-adds about 4 KB private bytes, and the shipped DLL exports no new function
-(505 exports, none named `lj_etw_*`). Records are one per live trace, so a
-trace-heavy process pays proportionally: this is metadata maintenance, not a
-zero-overhead path.
+Cost with the switch off (the default) and with it on
+(RelWithDebInfo, one 8-core desktop, no session attached; `LUAJIT_DISABLE_ETW`
+is the compile-time baseline):
+
+| path | switch off | `etw(true)` | compiled out |
+|---|---|---|---|
+| VM create+open+close (min of 3 runs x 400) | 46.3 us | 45.5 us | 45.7 us |
+| compiling distinct traces | no work (addtrace returns on one flag) | ~10.5 us/trace | n/a |
+| executing already-prewarmed code | unchanged | unchanged | unchanged |
+
+The per-VM path is at run-to-run noise level in every state: with the switch
+off a build only pays one small `HeapAlloc` per VM (its context, kept so any
+VM can turn publishing on later) - no provider registration, no worker thread,
+no per-trace record. Only while publishing is enabled does the process carry
+one worker thread plus the provider registration, one heap record per live
+trace (bounded by the trace count) and two `EventWrite` calls per committed
+trace (two more when it is unloaded), all gated by `EventEnabled`, so with no
+session listening enabled still only maintains records. Nothing is added to
+generated code, which is why the prewarmed execution column does not move.
 
 Any diagnostic option saves complete stdout observations with monotonic timestamps.
 `analyze.py` divides map attempts using the game's existing Ocean stage markers
@@ -369,3 +410,64 @@ ctest --test-dir builds/ninja-multi-vcpkg -C Release `
 The CTest profiles use one measured round per VM and no warmup. Use the standalone
 runner for paired repetitions. Missing game installations follow the harness
 SKIP convention; `DS_REQUIRE_GAME=1` turns a skip into failure.
+
+## Existing Save Startup
+
+`stress_startup.py` loads the existing Master snapshot from a temporary copy,
+then launches an offline client and waits for its local player and HUD. It does
+not generate a new map. Caves, Shipwrecked and Volcano are not started.
+
+```powershell
+python tests/performance/stress_startup.py `
+  --cluster-source C:\Users\fesil\Documents\Klei\DoNotStarveTogether\191485686\StressTest `
+  --injector builds/game-performance-runtime-etw-release/src/DontStarveInjector/Release/Injector.dll `
+  --lua builds/game-performance-vm-etw-release/luajit/luajit.exe `
+  --vm game=game `
+  --vm jit_off=builds/game-performance-vm-etw-release/luajit/lua51DS.dll `
+  --vm jit_on=builds/game-performance-vm-etw-release/luajit/lua51DS.dll `
+  --mode jit_off=off --mode jit_on=on `
+  --repeat 3 --warmup 1 `
+  --output builds/stress-startup-timing
+```
+
+Required Workshop mods already cached by Steam are temporarily mounted using
+directory junctions when absent from the game's mods directory. Existing mod
+folders are retained. Missing mods cause an error unless each ID is explicitly
+listed with `--allow-missing-mod ID`. Such runs measure a modified configuration
+and must report the disabled IDs. The LuaJIT Lua mod itself is disabled in the
+copy to isolate the VM and avoid its later JIT, profiler and GC policy changes.
+Its native bootstrap options are also overridden in the copy, since the
+bootstrap reads that entry even when the Lua mod is disabled.
+
+The existing `GAME_INIT` entry installs a one-use wrapper around the framework's
+initial `jit.off()`. The wrapper restores the original API immediately and sets
+the requested mode before main.lua. The early status is retained and printed
+once the game logger exists, with `replayed=true`; it is not an ETW phase
+boundary. Later startup milestones verify the global compiler state again.
+There is no Lua sampling, trace callback or game newProfiler in this runner.
+
+Server wall time spans Popen entry to its session-ready log. Client wall time
+spans Popen entry through connection and loading to a local player with HUD.
+GetProcessTimes records kernel plus user CPU for all threads. The server's CPU
+while the client starts and the combined workflow CPU are recorded separately.
+These CPU clocks do not count waiting. Wall boundaries include stdout delivery
+latency and are independent of the harness's polling interval.
+
+Use a separate `--etw --repeat 1 --warmup 0` batch for diagnostics. WPR starts
+before launching the server and stops after client readiness. Each PID has its
+own launch and ready markers. Analyze completed captures with:
+
+```powershell
+python tests/performance/startup_etw.py `
+  builds/stress-startup-etw/round-0-jit_on-native-samples.json
+```
+
+The analyzer uses Windows OpenTrace/ProcessTrace to decode the new native
+Microsoft-JScript method events. CPU PCs are joined by PID, context, generation,
+address range and method lifetime, including unload and context destruction;
+reused addresses do not inherit old trace names. xperf exports real CPU samples
+and image mappings. Trace-wide event/buffer loss must be zero. Private VM code
+labels are accepted only from a sidecar bound to the measured DLL hash.
+
+The source cluster's file manifest is hashed before and after the batch and
+stored in results.json. Only the temporary save is written by the game.
