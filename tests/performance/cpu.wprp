@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WindowsPerformanceRecorder Version="1.0" Author="DontStarveLuaJIT2">
+  <Profiles>
+    <SystemCollector Id="CPUCollector" Name="DS Performance CPU">
+      <BufferSize Value="256"/>
+      <Buffers Value="256"/>
+    </SystemCollector>
+    <!-- The JScript provider GUID is shared with every Chakra host in the
+         machine (Edge/WebView2), which can produce tens of thousands of JIT
+         events. Give the collector headroom so LuaJIT's own symbol records are
+         not dropped as "events lost". -->
+    <EventCollector Id="MarkerCollector" Name="DS Performance Boundaries">
+      <BufferSize Value="256"/>
+      <Buffers Value="128"/>
+    </EventCollector>
+    <SystemProvider Id="CPUProvider">
+      <Keywords>
+        <Keyword Value="ProcessThread"/>
+        <Keyword Value="Loader"/>
+        <Keyword Value="SampledProfile"/>
+      </Keywords>
+      <Stacks>
+        <Stack Value="SampledProfile"/>
+      </Stacks>
+    </SystemProvider>
+    <EventProvider Id="Markers" Name="7c99be35-b55c-4ba7-9c44-31fd1e0da826"
+                   Level="5"/>
+    <!-- LuaJIT JIT symbols use the Microsoft-JScript protocol (see
+         luajit/src/lj_etw.c): 0x1 runtime load/unload, 0x2 start rundown,
+         0x4 end rundown. All three are subscribed so a session attached to an
+         already running process still resolves the existing traces. -->
+    <EventProvider Id="LuaJITJScript" Name="57277741-3638-4a4b-bdba-0ac6e45da56c"
+                   Level="4">
+      <Keywords>
+        <Keyword Value="0x3"/>
+      </Keywords>
+    </EventProvider>
+    <Profile Id="DsPerfCPU.Verbose.File" Name="DsPerfCPU"
+             Description="CPU samples, native stacks and world generation boundaries"
+             LoggingMode="File" DetailLevel="Verbose">
+      <Collectors>
+        <SystemCollectorId Value="CPUCollector">
+          <SystemProviderId Value="CPUProvider"/>
+        </SystemCollectorId>
+        <EventCollectorId Value="MarkerCollector">
+          <EventProviders>
+            <EventProviderId Value="Markers"/>
+            <EventProviderId Value="LuaJITJScript"/>
+          </EventProviders>
+        </EventCollectorId>
+      </Collectors>
+    </Profile>
+  </Profiles>
+</WindowsPerformanceRecorder>
