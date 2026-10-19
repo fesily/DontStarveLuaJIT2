@@ -38,6 +38,17 @@ if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
 
 from harness.cluster import remove_persist_tree, write_offline_cluster  # noqa: E402
+from harness.logs import safe_print  # noqa: E402
+
+# Child output is decoded with errors="replace"; a legacy console code page
+# (GBK) cannot encode the resulting U+FFFD, and killing the reader thread would
+# stop draining the pipe until the game blocks on write. Make every print lossy
+# instead of fatal.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
 
 T_INJECT = float(os.environ.get("LC_T_INJECT", os.environ.get("LG_T_INJECT", "90")))
 T_WORLD = float(os.environ.get("LC_T_WORLD", os.environ.get("LG_T_WORLD", "300")))
@@ -354,7 +365,7 @@ class LogProcess:
         for line in reader:
             line = line.rstrip("\n\r")
             self.observe(line)
-            print(f"[{self.name}] {line}")
+            safe_print(f"[{self.name}] {line}")
             if TOKEN_PREFIX in line:
                 try:
                     part = line.split(TOKEN_PREFIX, 1)[1]
@@ -372,7 +383,8 @@ class LogProcess:
                 if pat.lower() in line.lower():
                     self.fatal = True
 
-    def stop(self, graceful_lua: Optional[str] = None) -> int:
+    def stop(self, graceful_lua: Optional[str] = None,
+             timeout: Optional[float] = None) -> int:
         if not self.proc:
             return 0
         if self.alive():
@@ -383,7 +395,8 @@ class LogProcess:
                 except Exception:
                     pass
             try:
-                self.proc.wait(timeout=min(15, T_SHUTDOWN))
+                self.proc.wait(timeout=min(15, T_SHUTDOWN)
+                               if timeout is None else timeout)
             except subprocess.TimeoutExpired:
                 self.proc.terminate()
                 try:

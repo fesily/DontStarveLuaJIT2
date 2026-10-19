@@ -43,6 +43,25 @@ else()
     set(DS_TEST_GAME_DIR "")
 endif()
 
+# libzip is a shared vcpkg DLL whose bzip2/zlib runtime deps are not CMake
+# targets here. Copy the trio next to the test executable: otherwise the loader
+# searches PATH, where a JDK's bin/zip.dll (a JNI library importing jvm.dll)
+# can satisfy the zip.dll import and fail with 0xc0000135/0xc0000139.
+if(WIN32)
+    function(ds_copy_libzip_runtime target)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:libzip::zip>" "$<TARGET_FILE_DIR:${target}>"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE_DIR:libzip::zip>/$<IF:$<CONFIG:Debug>,bz2d.dll,bz2.dll>"
+                "$<TARGET_FILE_DIR:${target}>"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE_DIR:libzip::zip>/$<IF:$<CONFIG:Debug>,zlibd1.dll,zlib1.dll>"
+                "$<TARGET_FILE_DIR:${target}>"
+            VERBATIM)
+    endfunction()
+endif()
+
 add_executable(test_buffer_name_pool
     ${CMAKE_CURRENT_SOURCE_DIR}/test_buffer_name_pool.cpp)
 target_include_directories(test_buffer_name_pool PRIVATE
@@ -293,6 +312,9 @@ target_include_directories(test_plugin_hash_zip PRIVATE
 target_compile_features(test_plugin_hash_zip PRIVATE cxx_std_23)
 find_package(libzip CONFIG REQUIRED)
 target_link_libraries(test_plugin_hash_zip PRIVATE libzip::zip)
+if(WIN32)
+    ds_copy_libzip_runtime(test_plugin_hash_zip)
+endif()
 add_test(NAME plugin_hash_zip COMMAND test_plugin_hash_zip)
 
 add_executable(test_plugin_apply_offline
@@ -315,6 +337,9 @@ if (WIN32)
 endif()
 # Fixed stamp so build-config refusal cases are deterministic (see PluginApply.hpp).
 target_compile_definitions(test_plugin_apply_offline PRIVATE DS_PLUGIN_BUILD_CONFIG="Debug")
+if(WIN32)
+    ds_copy_libzip_runtime(test_plugin_apply_offline)
+endif()
 add_test(NAME plugin_apply_offline COMMAND test_plugin_apply_offline)
 
 # L0 lua_event bus — no hard-coded plugin DLL forwarder

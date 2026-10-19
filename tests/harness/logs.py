@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -19,14 +20,30 @@ _POLL_INTERVAL = 0.2
 
 
 def safe_print(*args: object) -> None:
-    """Best-effort console write: a closed stdout must not abort the run.
+    """Best-effort console write: neither a closed pipe nor a console encoding
+    limit may abort the caller.
 
     Windows reports a closed pipe as ``OSError(22, EINVAL)`` rather than
-    ``BrokenPipeError``, so every harness print goes through here.
+    ``BrokenPipeError``, so every harness print goes through here. Child output
+    is decoded with ``errors="replace"``, and a legacy console code page (GBK)
+    cannot encode the resulting U+FFFD, which raises ``UnicodeEncodeError``.
     """
     try:
         print(*args)
+        return
     except OSError:
+        return
+    except UnicodeError:
+        pass
+    stream = sys.stdout
+    if stream is None:
+        return
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    try:
+        text = " ".join(str(arg) for arg in args)
+        stream.write(text.encode(encoding, "replace").decode(encoding, "replace") + "\n")
+        stream.flush()
+    except (OSError, ValueError):
         pass
 
 

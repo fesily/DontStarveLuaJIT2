@@ -30,6 +30,15 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+# Child output is decoded with errors="replace"; a legacy console code page
+# (GBK) cannot encode the resulting U+FFFD, and killing the reader thread would
+# stop draining the pipe until the server blocks on write.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------

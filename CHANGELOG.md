@@ -22,6 +22,10 @@
 
 - 工具/测试：新增跨平台 pre-push ctest 门禁（`.githooks/pre-push` + `tools/pre_push.py`，可用 `git push --no-verify` / `PRE_PUSH_SKIP` 跳过）；游戏类 ctest 共享 `RESOURCE_LOCK(dst_game_server)`，`ctest -j` 并行时不再因固定端口（10999/8766/27016）冲突；Injector 只按当前布局（mod 根）定位真实模块，移除 `bin64`/`lib64` 旧路径回退与 deps 搜索兜底。
 
+- 工具/测试：修复 Windows 中文代码页下游戏类 ctest 的假超时（`plugin_dedicated_sim_pause` / `plugin_client_inject_smoke` / `plugin_client_host_smoke` / `game_mod_throw_abort`）。harness 用 UTF-8 `errors="replace"` 读取子进程 stdout，得到的 U+FFFD 在 GBK 控制台无法编码，读线程抛 `UnicodeEncodeError` 退出后不再排空管道，游戏继续写 stdout 时阻塞，测试只能等到超时。`harness.logs.safe_print` 现在对编码失败降级输出，三个入口脚本把 stdout/stderr 设为 `errors="replace"`，读线程不会再因打印失败退出。
+
+- 工具/测试：修复 Windows 上 `plugin_hash_zip` / `plugin_apply_offline` 两个 ctest 的加载失败（`0xc0000135` 找不到 `jvm.dll`、`0xc0000139` 找不到入口点 `zip_file_add`）。两者静态导入 vcpkg 的 `zip.dll`，但测试目录里没有这个 DLL，loader 会沿 PATH 命中 JDK 的 `bin\zip.dll`（JNI 库，自身导入 `jvm.dll` 且不导出 libzip 符号）。现在构建后把 `zip.dll` 连同 `bz2d/zlibd1`（Release 为 `bz2/zlib1`）复制到测试 exe 旁，与 PATH 内容无关。
+
 - CI 修复：Windows 发布包此前实际是 Debug 构建。`Build` / `CMake install` 两步没有声明 `shell:`，Windows runner 默认的 pwsh 把 `"$PLUGIN_BUILD_CONFIG"` 当同名 PowerShell 变量展开成空串（环境变量要写 `$env:…`），`cmake --config ""` 不报错、静默回退默认配置（`CMAKE_CONFIGURATION_TYPES` 第一项 Debug）；Linux 默认 bash 展开正常，所以只有 Windows 侧出未优化的 Debug 产物和 vcpkg debug 运行时（`spdlogd/fmtd/zlibd1`），而清单/meta 仍盖着 `build_config: RelWithDebInfo`（同一步骤显式 `shell: bash`，展开正确）。现改用 `${{ env.PLUGIN_BUILD_CONFIG }}`（与 shell 无关）并新增校验步骤：安装产物必须与目标配置的构建产物逐字节一致，且非 Debug 包不得出现 vcpkg debug 专属运行时，否则 fail。
 
 - CI 新增独立调试符号包 `windows_symbols.zip`（Release/Preview 资产，仅 Windows）：PDB 仍然**不**进 `*_Mod.zip`、也不进创意工坊（工坊那条路径本来就排除 `*.pdb`）。符号从 build tree 里按“本次实际发布的模块”逐个配齐——Injector / Winmm / 全部 `plugin_*` / function_relocation / lua51DS 系列 / lua51Original / 仓库自带的 stock lua51，配置取同一个 `PLUGIN_BUILD_CONFIG`，与发布二进制严格对应；Injector / Winmm / plugin_core_vm / plugin_manager 任一符号缺失即 fail。用法：解压后把该目录加入调试器符号路径（WinDbg `.sympath+`，VS「调试 → 符号」），Linux 不需要符号包——`Mod/*.so` 是 RelWithDebInfo 且未 strip，DWARF 就在包里（实测发布版 `libInjector.so` 21 MB、含 `.debug_info/.debug_line/.debug_str`）。

@@ -43,6 +43,17 @@ if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
 
 from harness.cluster import remove_persist_tree, write_offline_cluster  # noqa: E402
+from harness.logs import safe_print  # noqa: E402
+
+# Child output is decoded with errors="replace"; a legacy console code page
+# (GBK) cannot encode the resulting U+FFFD, and killing the reader thread would
+# stop draining the pipe until the game blocks on write. Make every print lossy
+# instead of fatal.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
 
 # Timeouts (seconds) — match spec defaults
 T_INJECT = float(os.environ.get("LG_T_INJECT", "60"))
@@ -258,7 +269,7 @@ class ServerProc:
         for line in reader:
             line = line.rstrip("\n\r")
             self.lines.append(line)
-            print(f"[server] {line}")
+            safe_print(f"[server] {line}")
             if "[lg_probe] TOKEN " in line:
                 # format: [lg_probe] TOKEN NAME rest
                 try:
