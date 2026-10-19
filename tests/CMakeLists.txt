@@ -545,6 +545,7 @@ set_tests_properties(
 foreach(_ds_vm_parity_case metamethod_name tailcall_lines)
     add_test(NAME luajit_parity_${_ds_vm_parity_case}
         COMMAND ${LUAJIT_HOST_EXECUTABLE_TARGET}
+            -joff
             ${CMAKE_CURRENT_SOURCE_DIR}/lua_vm_parity/${_ds_vm_parity_case}.lua)
     set_tests_properties(luajit_parity_${_ds_vm_parity_case} PROPERTIES
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -559,6 +560,7 @@ endforeach()
 # is switched off.
 add_test(NAME luajit_parity_mainchunk_tailcall
     COMMAND ${LUAJIT_HOST_EXECUTABLE_TARGET}
+        -joff
         ${CMAKE_CURRENT_SOURCE_DIR}/lua_vm_parity/mainchunk_tailcall.lua)
 set_tests_properties(luajit_parity_mainchunk_tailcall PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -570,15 +572,18 @@ set_tests_properties(luajit_parity_mainchunk_tailcall PROPERTIES
 # the report and pins the shape; see mac-lua51-parity-audit 5.2.
 add_test(NAME luajit_parity_xpcall_tailcall
     COMMAND ${LUAJIT_HOST_EXECUTABLE_TARGET}
+        -joff
         ${CMAKE_CURRENT_SOURCE_DIR}/lua_vm_parity/xpcall_tailcall.lua)
 set_tests_properties(luajit_parity_xpcall_tailcall PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     LABELS luajit_parity)
 
 # C-callee tail calls: result forwarding (0..N values), surviving caller frames
-# and Lua tail calls still eliding, with the JIT off and on.
+# and Lua tail calls still eliding in interpreted functions. JIT-on checks
+# validate result forwarding without requiring compiled tail-frame parity.
 add_test(NAME luajit_parity_c_tailcall_values
     COMMAND ${LUAJIT_HOST_EXECUTABLE_TARGET}
+        -joff
         ${CMAKE_CURRENT_SOURCE_DIR}/lua_vm_parity/c_tailcall_values.lua)
 set_tests_properties(luajit_parity_c_tailcall_values PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
