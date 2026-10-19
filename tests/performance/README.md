@@ -366,6 +366,14 @@ trace (two more when it is unloaded), all gated by `EventEnabled`, so with no
 session listening enabled still only maintains records. Nothing is added to
 generated code, which is why the prewarmed execution column does not move.
 
+Concurrency: the symbol-cache lock only covers list/flag updates - measured
+~0.2 us per committed trace and ~15 ns per record - and every `EventWrite`
+happens after it has been dropped, so a slow or backpressured ETW session
+cannot stall another VM thread's trace compilation or release. Unpublishing,
+the rundown replay and `etw(false)` write outside the lock as well, and the
+worker is joined outside the lifecycle lock (with a 5 s timeout diagnostic),
+so VM create/close never waits behind ETW writes.
+
 Any diagnostic option saves complete stdout observations with monotonic timestamps.
 `analyze.py` divides map attempts using the game's existing Ocean stage markers
 and reports require intervals, VM states, native CPU modules and top PCs/stacks
@@ -499,6 +507,9 @@ It retains per-round server logs, checks the actual VM/JIT/ETW state and save
 load marker, and collects dumps with the same preservation rules as
 `stress_startup.py`. A nonzero graceful shutdown exit or a nonempty dump fails
 the round. `--stop-mode kill` deliberately skips normal shutdown and its GC.
+`--shutdown-timeout` (default 120 s) bounds the wait for the close/GC path;
+large saves can take well over the harness smoke default of 15 s, and
+terminating early would record `exit_code=1` for a healthy close.
 
 ```powershell
 python tests/performance/server_load.py --cluster-source C:/bench/StressTest `
