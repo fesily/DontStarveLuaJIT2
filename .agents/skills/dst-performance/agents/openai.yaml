@@ -1,0 +1,4 @@
+interface:
+  display_name: "DST Performance"
+  short_description: "Benchmark DST VMs and analyze native ETW hotspots"
+  default_prompt: "Use $dst-performance to run the requested DST workload, compare the selected VMs, and report measured timings and hotspot evidence."
