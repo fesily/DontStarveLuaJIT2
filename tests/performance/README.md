@@ -58,10 +58,10 @@ cannot survive between source revisions. The runner rejects missing evidence, ch
 instrumented compilation commands. This deliberately rejects the earlier
 assertion/API-check review binaries, including optimized RelWithDebInfo builds.
 
-The always-on ETW JIT symbol provider (see *JIT symbols in WPA / PerfView*) is
+The optional ETW JIT symbol provider (see *JIT symbols in WPA / PerfView*) is
 not such an instrumented build: it adds no assertion, sanitizer, debug-CRT or
 diagnostic switch, so a normal Release VM keeps publishing its trace symbol
-records. That metadata maintenance is explicitly allowed in Release profiles,
+records when explicitly enabled. That metadata maintenance is allowed in diagnostic profiles,
 and its cost (per-VM, per-trace and prewarmed-execution numbers, plus the one
 worker thread) is measured in the same section.
 
@@ -415,16 +415,17 @@ SKIP convention; `DS_REQUIRE_GAME=1` turns a skip into failure.
 
 `stress_startup.py` loads the existing Master snapshot from a temporary copy,
 then launches an offline client and waits for its local player and HUD. It does
-not generate a new map. Caves, Shipwrecked and Volcano are not started.
+not generate a new map. The bot always spawns Wilson. Caves, Shipwrecked and
+Volcano are not started.
 
 ```powershell
 python tests/performance/stress_startup.py `
   --cluster-source C:\Users\fesil\Documents\Klei\DoNotStarveTogether\191485686\StressTest `
   --injector builds/game-performance-runtime-etw-release/src/DontStarveInjector/Release/Injector.dll `
-  --lua builds/game-performance-vm-etw-release/luajit/luajit.exe `
+  --lua builds/game-performance-vm-etw-switch-release/luajit/luajit.exe `
   --vm game=game `
-  --vm jit_off=builds/game-performance-vm-etw-release/luajit/lua51DS.dll `
-  --vm jit_on=builds/game-performance-vm-etw-release/luajit/lua51DS.dll `
+  --vm jit_off=builds/game-performance-vm-etw-switch-release/luajit/lua51DS.dll `
+  --vm jit_on=builds/game-performance-vm-etw-switch-release/luajit/lua51DS.dll `
   --mode jit_off=off --mode jit_on=on `
   --repeat 3 --warmup 1 `
   --output builds/stress-startup-timing
@@ -445,6 +446,10 @@ the requested mode before main.lua. The early status is retained and printed
 once the game logger exists, with `replayed=true`; it is not an ETW phase
 boundary. Later startup milestones verify the global compiler state again.
 There is no Lua sampling, trace callback or game newProfiler in this runner.
+On VMs with the native publishing switch, `jit.profile.etw(false)` is set before
+main.lua for timing. `--etw` instead enables publishing there. Later milestones
+verify both the compiler and publishing state. The `jit.profile` sampling
+start/stop functions are never called.
 
 Server wall time spans Popen entry to its session-ready log. Client wall time
 spans Popen entry through connection and loading to a local player with HUD.
@@ -465,9 +470,58 @@ python tests/performance/startup_etw.py `
 The analyzer uses Windows OpenTrace/ProcessTrace to decode the new native
 Microsoft-JScript method events. CPU PCs are joined by PID, context, generation,
 address range and method lifetime, including unload and context destruction;
-reused addresses do not inherit old trace names. xperf exports real CPU samples
-and image mappings. Trace-wide event/buffer loss must be zero. Private VM code
+reused addresses do not inherit old trace names. The CPU consumer reads kernel
+SampledProfile records and joins StackWalk fragments by their original QPC and
+TID, using thread lifecycle events for PID ownership. Marker events calibrate
+the QPC clock against the converted ETW timestamp axis. xperf supplies image
+mappings and trace-wide loss counts, which must be zero. `--validate-csv`
+exports an xperf dump and compares every startup sample's PC, TID and Count;
+`--csv-samples` retains the full xperf dumper path as an alternate consumer.
+Private VM code
 labels are accepted only from a sidecar bound to the measured DLL hash.
 
 The source cluster's file manifest is hashed before and after the batch and
 stored in results.json. Only the temporary save is written by the game.
+`success` means that both startup endpoints and mode checks passed; shutdown
+is outside that interval. PIDs and final process exit codes are recorded
+separately. `--keep-going` retains failed runs and completes other groups, but
+still returns a nonzero batch exit code if any startup failed.
+
+Nonempty `.dmp` and `.mdmp` files inside each run's own temporary save tree
+are copied to the output before cleanup. Copy failures retain the original
+tree in `preserved_persist`, record `dump_collection_errors`, and fail the run.
+No unrelated crash directories are scanned.
+
+## Server Load Loops
+
+`server_load.py` repeatedly loads the same Master snapshot without a client.
+It retains per-round server logs, checks the actual VM/JIT/ETW state and save
+load marker, and collects dumps with the same preservation rules as
+`stress_startup.py`. A nonzero graceful shutdown exit or a nonempty dump fails
+the round. `--stop-mode kill` deliberately skips normal shutdown and its GC.
+
+```powershell
+python tests/performance/server_load.py --cluster-source C:/bench/StressTest `
+  --vm C:/bench/vm/lua51DS.dll --lua C:/bench/vm/luajit.exe `
+  --injector C:/bench/runtime/Injector.dll --instances 1 --rounds 20 `
+  --output builds/server-load.json *> builds/server-load.console.log
+python tests/performance/run_report.py builds/server-load.console.log
+```
+
+`DS_CLUSTER_SOURCE`, `DS_VM_PATH`, `DS_LUA_PATH` and `DS_INJECTOR_PATH` provide
+defaults. Every missing Workshop mod requires an explicit `--allow-missing-mod ID`;
+no machine-specific list is automatically accepted. Output JSON and its
+`.logs` directory must be new for each batch; the shared dump directory uses
+the batch output name plus instance and round to separate evidence.
+Use `--instances 1` for comparable readiness times. Concurrent instances share
+CPU and disk and are intended for crash soaks.
+
+Normal runs require the hash-bound Release evidence. Setting `DS_ALLOW_ASAN`
+explicitly permits an instrumented VM for crash investigations and marks the
+output `diagnostic=true`; those runs are unsuitable for performance comparisons.
+The runtime injector still requires Release evidence.
+
+Historical measurements and their binary identities live in `baselines/`.
+They describe the builds and dates stated in each report and do not claim to
+measure the current working tree. Standalone debugger watchers and semantic
+comparison helpers are separate investigation tools.

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -24,7 +25,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import Callable, List, Optional, Set
 
 
 ROOT = Path(os.environ.get("REPO_ROOT", Path(__file__).resolve().parents[2]))
@@ -316,6 +317,33 @@ class LogProcess:
         self.token_values: dict[str, List[str]] = {}
         self.fatal = False
         self._thread: Optional[threading.Thread] = None
+        self.started_at: Optional[float] = None
+        self.observations: list[tuple[float, str]] = []
+        self._observation_lock = threading.Lock()
+        self.on_observe: Optional[Callable] = None
+        self.observation_error: Optional[str] = None
+
+    def observe(self, line: str) -> None:
+        observed_at = time.perf_counter()
+        if self.on_observe:
+            try:
+                self.on_observe(self, observed_at, line)
+            except Exception as exc:
+                self.observation_error = f"{type(exc).__name__}: {exc}"
+                self.fatal = True
+        # Publish readiness only after its clocks/markers have been recorded.
+        with self._observation_lock:
+            self.observations.append((observed_at, line))
+            self.lines.append(line)
+
+    def elapsed_until(self, marker: str) -> Optional[float]:
+        if self.started_at is None:
+            return None
+        with self._observation_lock:
+            for observed_at, line in self.observations:
+                if marker in line:
+                    return observed_at - self.started_at
+        return None
 
     def alive(self) -> bool:
         return self.proc is not None and self.proc.poll() is None
@@ -325,7 +353,7 @@ class LogProcess:
         reader = io.TextIOWrapper(self.proc.stdout, encoding="utf-8", errors="replace")
         for line in reader:
             line = line.rstrip("\n\r")
-            self.lines.append(line)
+            self.observe(line)
             print(f"[{self.name}] {line}")
             if TOKEN_PREFIX in line:
                 try:
@@ -334,9 +362,9 @@ class LogProcess:
                     tok = bits[0]
                     # DST client logs often append a trailing tab.
                     body = (bits[1] if len(bits) > 1 else "").strip()
-                    self.tokens.add(tok)
                     self.token_bodies[tok] = body
                     self.token_values.setdefault(tok, []).append(body)
+                    self.tokens.add(tok)
                     print(f"[lc] log-token {tok} {body}".rstrip())
                 except Exception:
                     pass
@@ -364,14 +392,20 @@ class LogProcess:
                     self.proc.kill()
                     self.proc.wait(timeout=5)
         code = self.proc.returncode if self.proc.returncode is not None else -1
+        if self._thread:
+            self._thread.join(timeout=2)
         print(f"[lc] {self.name} exit code={code}")
         return code
 
 
-def start_dedicated(game_dir: Path, cluster: str, persist_root: Path) -> LogProcess:
+def start_dedicated(
+    game_dir: Path, cluster: str, persist_root: Path, extra_env: Optional[dict] = None,
+    on_observe: Optional[Callable] = None,
+) -> LogProcess:
     exe = find_server_exe(game_dir)
     assert exe is not None
     lp = LogProcess("dedicated")
+    lp.on_observe = on_observe
     cmd = [
         str(exe),
         "-offline",
@@ -394,10 +428,13 @@ def start_dedicated(game_dir: Path, cluster: str, persist_root: Path) -> LogProc
     # The client uses the dev branch patch. Match it on the server so the
     # direct connection's native version check sees the same branch (Windows).
     inject_env = build_inject_env(game_dir, extra={"AppVersionDevPatch": "1"})
+    if extra_env:
+        inject_env.update(extra_env)
     env.update({k: str(v) for k, v in inject_env.items()})
     print(f"[lc] dedicated: {' '.join(cmd)}")
     if inject_env:
         print(f"[lc] dedicated inject env: {sorted(inject_env.keys())}")
+    lp.started_at = time.perf_counter()
     lp.proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE,
@@ -429,11 +466,16 @@ def wait_dedicated_ready(ded: LogProcess, timeout: float) -> bool:
     return False
 
 
-def start_client(game_dir: Path, force_mods: str, extra_env: Optional[dict] = None) -> LogProcess:
+def start_client(
+    game_dir: Path, force_mods: str, extra_env: Optional[dict] = None,
+    persist_root: Optional[Path] = None,
+    on_observe: Optional[Callable] = None,
+) -> LogProcess:
     exe = find_client_exe(game_dir)
     assert exe is not None
     ensure_steam_appid(game_dir)
     lp = LogProcess("client")
+    lp.on_observe = on_observe
     # The bot connects after the front end has entered offline mode.
     cmd = [
         str(exe),
@@ -441,12 +483,15 @@ def start_client(game_dir: Path, force_mods: str, extra_env: Optional[dict] = No
         "-offline",
         f"-force_enable_mods={force_mods}",
     ]
+    if persist_root is not None:
+        cmd.extend(["-persistent_storage_root", str(persist_root)])
     env = os.environ.copy()
     env["AppVersionDevPatch"] = "1"
     inject_env = build_inject_env(game_dir, extra=extra_env)
     env.update({k: str(v) for k, v in inject_env.items()})
     print(f"[lc] client: {' '.join(cmd)}")
     print(f"[lc] client inject env: {sorted(inject_env.keys())}")
+    lp.started_at = time.perf_counter()
     lp.proc = subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
@@ -536,7 +581,42 @@ def verify_profile_tokens(client: LogProcess, profile_name: str) -> bool:
     return ok
 
 
-def run_p1b(game_dir: Path, cluster: str, profile: Optional[str] = None) -> int:
+def report_timings(
+    mode: str,
+    started_at: float,
+    ready_at: Optional[float],
+    success: bool,
+    server: Optional[LogProcess],
+    client: Optional[LogProcess],
+    output: Optional[Path],
+) -> None:
+    record = {
+        "schema_version": 1,
+        "mode": mode,
+        "success": success,
+        "server_launch_to_world_seconds": (
+            server.elapsed_until("Telling Client our new session identifier") if server else None
+        ),
+        "client_launch_to_inject_seconds": (
+            client.elapsed_until("LG_CLIENT_INJECT_OK") if client else None
+        ),
+        "client_launch_to_world_seconds": (
+            client.elapsed_until("LG_CLIENT_WORLD_READY") if client else None
+        ),
+        "workflow_to_ready_seconds": ready_at - started_at if ready_at is not None else None,
+        "test_total_seconds": time.perf_counter() - started_at,
+        "hold_seconds": T_HOLD,
+    }
+    print("[lc] TIMINGS " + json.dumps(record, sort_keys=True))
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+
+def run_p1b(
+    game_dir: Path, cluster: str, profile: Optional[str] = None,
+    timings_json: Optional[Path] = None,
+) -> int:
     if not ensure_injector(game_dir):
         return 1
     if not find_server_exe(game_dir):
@@ -557,6 +637,9 @@ def run_p1b(game_dir: Path, cluster: str, profile: Optional[str] = None) -> int:
     persist_root = Path(tempfile.mkdtemp(prefix="ds_lc_smoke_"))
     ded: Optional[LogProcess] = None
     client: Optional[LogProcess] = None
+    started_at = time.perf_counter()
+    ready_at: Optional[float] = None
+    success = False
     try:
         write_offline_cluster(persist_root, cluster, "Master", server_port=10999)
         print(f"[lc] persist root: {persist_root}")
@@ -590,6 +673,7 @@ def run_p1b(game_dir: Path, cluster: str, profile: Optional[str] = None) -> int:
 
         if not wait_tokens(client, ("LG_CLIENT_WORLD_READY",), T_WORLD):
             return 1
+        ready_at = client.started_at + client.elapsed_until("LG_CLIENT_WORLD_READY")
 
         print(f"[lc] holding stable for {T_HOLD}s...")
         hold_end = time.time() + T_HOLD
@@ -604,6 +688,7 @@ def run_p1b(game_dir: Path, cluster: str, profile: Optional[str] = None) -> int:
 
         print("[lc] LG_CLIENT_STABLE (orchestrator)")
         print("[lc] PASS client inject smoke (P1b)")
+        success = True
         return 0
     finally:
         if client is not None:
@@ -611,9 +696,12 @@ def run_p1b(game_dir: Path, cluster: str, profile: Optional[str] = None) -> int:
         if ded is not None:
             ded.stop(graceful_lua="c_shutdown(true)")
         remove_persist_tree(persist_root)
+        report_timings("p1b", started_at, ready_at, success, ded, client, timings_json)
 
 
-def run_p1_host(game_dir: Path, profile: Optional[str] = None) -> int:
+def run_p1_host(
+    game_dir: Path, profile: Optional[str] = None, timings_json: Optional[Path] = None
+) -> int:
     if not ensure_injector(game_dir):
         return 1
     if not find_client_exe(game_dir):
@@ -623,6 +711,9 @@ def run_p1_host(game_dir: Path, profile: Optional[str] = None) -> int:
     install_probe(game_dir)
     # Do NOT install/enable stress_test_bot
 
+    started_at = time.perf_counter()
+    ready_at: Optional[float] = None
+    success = False
     client = start_client_host(game_dir)
     try:
         if not wait_tokens(
@@ -642,6 +733,7 @@ def run_p1_host(game_dir: Path, profile: Optional[str] = None) -> int:
             if "LG_CLIENT_HOST_FAIL" in client.tokens:
                 eprint(f"[lc] host fail: {client.token_bodies.get('LG_CLIENT_HOST_FAIL')}")
             return 1
+        ready_at = client.started_at + client.elapsed_until("LG_CLIENT_WORLD_READY")
 
         if "LG_CLIENT_HOST_OK" not in client.tokens:
             # allow late emit shortly after world
@@ -662,9 +754,11 @@ def run_p1_host(game_dir: Path, profile: Optional[str] = None) -> int:
 
         print("[lc] LG_CLIENT_STABLE (orchestrator)")
         print("[lc] PASS client inject smoke (host)")
+        success = True
         return 0
     finally:
         client.stop()
+        report_timings("host", started_at, ready_at, success, None, client, timings_json)
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="L-C client inject smoke")
@@ -680,6 +774,11 @@ def main() -> int:
         "--profile",
         default=os.environ.get("LC_PROFILE"),
         help="Phase-2: apply tests/plugin_client/profiles/<name>.json before launch",
+    )
+    parser.add_argument(
+        "--timings-json", type=Path,
+        default=os.environ.get("LC_TIMINGS_JSON"),
+        help="Write startup milestones and total test time as JSON",
     )
     args = parser.parse_args()
 
@@ -706,8 +805,8 @@ def main() -> int:
     if mode == "offline":
         mode = "host"
     if mode == "host":
-        return run_p1_host(game_dir, profile=args.profile)
-    return run_p1b(game_dir, args.cluster, profile=args.profile)
+        return run_p1_host(game_dir, profile=args.profile, timings_json=args.timings_json)
+    return run_p1b(game_dir, args.cluster, profile=args.profile, timings_json=args.timings_json)
 
 
 if __name__ == "__main__":

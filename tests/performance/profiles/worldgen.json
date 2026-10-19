@@ -1,0 +1,9 @@
+{
+  "launch_client": false,
+  "seed": 123456,
+  "world_size": "default",
+  "worldgen_jit": "default",
+  "hold_seconds": 0,
+  "server_timeout_seconds": 300,
+  "client_timeout_seconds": 300
+}

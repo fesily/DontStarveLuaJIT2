@@ -7,7 +7,7 @@ local function log(...)
     print(LOG_PREFIX, ...)
 end
 
-local auto_spawn_character = GetModConfigData("auto_spawn_character") or "wilson"
+local auto_spawn_character = _G.os.getenv("STRESS_CHARACTER") or GetModConfigData("auto_spawn_character") or "wilson"
 local auto_spawn_delay = GetModConfigData("auto_spawn_delay") or 1
 
 local DST_CHARACTERS = {
@@ -65,6 +65,10 @@ local function try_auto_connect(screen_inst)
         -- before searching, rather than relying on the launch flag alone.
         _G.TheNet:NotifyAuthenticationFailure()
         _G.TheFrontEnd:SetOfflineMode(true)
+    end
+    if _G.os.getenv("STRESS_SKIP_MOD_WARNING") == "1" and _G.Profile then
+        -- Fresh benchmark profiles must not wait for the server-mod warning.
+        _G.Profile.ShouldWarnModsEnabled = function() return false end
     end
 
     -- The inject smoke owns a local dedicated server; connect to its known

@@ -59,6 +59,15 @@ local function emit_world_ready(reason)
     if world_ready_emitted then
         return
     end
+    if env_flag("DS_PERF_STARTUP") then
+        local player = rawget(_G, "ThePlayer")
+        if not player or not player.HUD then
+            return
+        end
+        if _G.DSPerfStartup then
+            _G.DSPerfStartup("CLIENT_PLAYABLE")
+        end
+    end
     world_ready_emitted = true
     token("LG_CLIENT_WORLD_READY", reason or "world")
     if env_flag("LC_HOST_MODE") then
@@ -404,6 +413,7 @@ AddGamePostInit(function()
     if gi ~= nil then
         token("LG_CLIENT_INJECT_OK", "GameInjector")
         token("LG_CLIENT_PLUGINS_OK", "inject_present")
+        token("LG_CLIENT_VM_TYPE", gi.DS_LUAJIT_get_vm_type_name(0))
     else
         token("LG_CLIENT_INJECT_MISSING", "GameInjector nil")
     end

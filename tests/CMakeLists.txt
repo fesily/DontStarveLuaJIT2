@@ -527,6 +527,30 @@ set_tests_properties(harness_unit PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     LABELS harness)
 
+add_test(NAME game_performance_unit
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/performance/test_performance.py)
+set_tests_properties(game_performance_unit PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} LABELS "harness;performance")
+
+option(DS_TEST_GAME_PERFORMANCE "Run worldgen and startup performance profiles." OFF)
+if(DS_TEST_GAME_PERFORMANCE)
+    foreach(_ds_perf_profile worldgen startup)
+        add_test(NAME game_performance_${_ds_perf_profile}
+            COMMAND ${CMAKE_COMMAND} -E env
+                REPO_ROOT=${CMAKE_SOURCE_DIR}
+                GAME_DIR=${DS_TEST_GAME_DIR}
+                DST_GAME_DIR=${DS_TEST_GAME_DIR}
+                ${PYTHON_EXECUTABLE_NAME}
+                ${CMAKE_CURRENT_SOURCE_DIR}/performance/run.py
+                --profile ${_ds_perf_profile} --warmup 0 --repeat 1)
+        set_tests_properties(game_performance_${_ds_perf_profile} PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            TIMEOUT 1800 LABELS "game;performance" RESOURCE_LOCK dst_game_server)
+    endforeach()
+endif()
+
 # game_mod_throw_abort: dedicated + injected throwing mod; SKIP (exit 0) when
 # GAME_DIR is not a real install, FAIL when DS_REQUIRE_GAME=1.
 add_test(NAME game_mod_throw_abort

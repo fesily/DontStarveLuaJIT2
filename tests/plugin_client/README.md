@@ -17,6 +17,12 @@ Spec: `docs/superpowers/specs/2026-08-03-client-inject-smoke-design.md`
 
 Orchestrator then holds `LC_T_HOLD` (default 30s) and prints `LG_CLIENT_STABLE`.
 
+Every launched run also prints `[lc] TIMINGS {...}` with separate server and
+client readiness times and the total test time. `--timings-json <path>` (or
+`LC_TIMINGS_JSON`) saves those measurements. Readiness excludes the stability
+hold and teardown; total time includes them. Paired worldgen/startup performance
+profiles are documented in `tests/performance/README.md`.
+
 ## Default mode (P1b)
 
 1. Create an isolated offline dedicated cluster `LGPluginTest` in a temporary
