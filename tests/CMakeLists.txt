@@ -51,6 +51,22 @@ target_include_directories(test_buffer_name_pool PRIVATE
 target_compile_features(test_buffer_name_pool PRIVATE cxx_std_17)
 add_test(NAME BufferNamePool COMMAND test_buffer_name_pool)
 
+if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
+    add_executable(test_fast_hook
+        test_fast_hook.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/FastHook.cpp)
+    target_include_directories(test_fast_hook PRIVATE ${DONTSTARVEINJECTOR_ROOT} ${FRIDA_GUM_INCLUDE_DIR})
+    target_compile_features(test_fast_hook PRIVATE cxx_std_23)
+    target_link_libraries(test_fast_hook PRIVATE Frida::Gum)
+    if(WIN32)
+        add_custom_command(TARGET test_fast_hook POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${FRIDA_GUM_RUNTIME}" "$<TARGET_FILE_DIR:test_fast_hook>"
+            VERBATIM)
+    endif()
+    add_test(NAME fast_hook COMMAND test_fast_hook)
+endif()
+
 # --- PluginHost pure-logic unit tests (M0) ---
 find_path(SOL2_INCLUDE_DIRS "sol/abort.hpp")
 set(PLUGIN_HOST_SOURCES

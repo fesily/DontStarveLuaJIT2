@@ -298,11 +298,15 @@ void ApplyPendingVmType(std::string_view reason) {
     auto *previousCtx = GameLuaContextImpl::currentCtx;
     auto pendingType = vmSwitchCoordinator.pendingType;
     auto pendingModuleName = vmSwitchCoordinator.pendingModuleName;
-    vmSwitchCoordinator.hasPendingSwitch = false;
-    vmSwitchCoordinator.pendingModuleName.reset();
     if (previousCtx != nullptr && vmSwitchCoordinator.hasRuntimeSetup) {
         previousCtx->ResetApis(vmSwitchCoordinator.signatures, vmSwitchCoordinator.exports);
+        if (!previousCtx->replacedTargets.empty()) {
+            spdlog::error("Defer Lua VM switch: previous API entries were not fully restored");
+            return;
+        }
     }
+    vmSwitchCoordinator.hasPendingSwitch = false;
+    vmSwitchCoordinator.pendingModuleName.reset();
     ds::core_vm::detail::ApplyVmType(pendingType, pendingModuleName, reason);
     ds::core_vm::detail::ReinitializeCurrentVm(reason);
 }

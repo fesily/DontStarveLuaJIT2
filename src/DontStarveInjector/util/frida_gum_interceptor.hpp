@@ -4,7 +4,7 @@
 // Requires the staged header from 3rd/frida-gum-src (submodule) builds:
 //   attach(self, target, listener, const GumAttachOptions*)
 //   replace(self, target, replacement, original**, const GumReplaceOptions*)
-//   replace_fast(self, target, replacement, original**, const GumInterceptorOptions*)
+// Direct replacement hooks use FastHook.hpp.
 //
 // Do not support legacy amalgamations that used GumAttachFlags / 4-arg
 // replace_fast. Rebuild stage: DS_FRIDA_GUM_FORCE_MESON=1 tools/setup_frida_gum.py
@@ -26,11 +26,6 @@ inline GumAttachReturn attach(GumInterceptor *interceptor, gpointer target, GumI
 inline GumReplaceReturn replace(GumInterceptor *interceptor, gpointer target, gpointer replacement,
                                 gpointer *original) {
     return gum_interceptor_replace(interceptor, target, replacement, original, nullptr);
-}
-
-inline GumReplaceReturn replace_fast(GumInterceptor *interceptor, gpointer target, gpointer replacement,
-                                     gpointer *original) {
-    return gum_interceptor_replace_fast(interceptor, target, replacement, original, nullptr);
 }
 
 } // namespace ds::gum

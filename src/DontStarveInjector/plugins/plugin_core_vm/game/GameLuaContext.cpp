@@ -508,9 +508,8 @@ void register_debug_getsize_replacement(lua_State *L) {
     ctx->api._lua_getfield(L, LUA_GLOBALSINDEX, "debug");
 }
 
-// Unconditional hijack: installed for every VM (jit and game). No revert and no trampoline
-// (replace_fast patches the entry to branch straight to the replacement), so the engine's
-// own implementation is never reachable again.
+// Unconditional hijack: installed for every VM (jit and game). No original trampoline is
+// exposed; FastHook redirects the entry straight to the replacement.
 void hook_register_debug_getsize(void *addr) {
     if (addr == nullptr) {
         return;
@@ -519,11 +518,10 @@ void hook_register_debug_getsize(void *addr) {
         return; // already hijacked
     }
     auto *interceptor = InjectorCtx::instance()->GetGumInterceptor();
-    const auto rc = ds::gum::replace_fast(interceptor, addr, (gpointer) &register_debug_getsize_replacement,
-                                          nullptr);
+    const auto rc = ds::FastHook::Install(interceptor, addr, (gpointer) &register_debug_getsize_replacement);
     if (rc == GUM_REPLACE_OK) {
         g_getsize_target = addr;
-        spdlog::info("register_debug_getsize replaced at {} (gum replace_fast)", addr);
+        spdlog::info("register_debug_getsize replaced at {} (fast)", addr);
     } else {
         spdlog::error("Failed to replace register_debug_getsize at {} (rc={})", addr, (int) rc);
     }

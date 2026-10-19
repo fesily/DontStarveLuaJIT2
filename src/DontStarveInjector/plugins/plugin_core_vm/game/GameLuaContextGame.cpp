@@ -281,6 +281,7 @@ struct GameLuaContextGame : GameLua51Context {
             auto **api = name2apis.at(name);
             if (!api || *api == nullptr) {
                 spdlog::error("Cannot find api pointer for {}", name);
+                ResetApis(signatures, exports);
                 return false;
             }
             if ((void *) *api == newaddr) {
@@ -291,13 +292,8 @@ struct GameLuaContextGame : GameLua51Context {
             // engine's own native entry is the very address hooked here, so forwarding through
             // the raw field would re-enter this replacement.
             const bool isVmAnchor = (name == "lua_newstate");
-            if (!isVmAnchor) {
-                // Anchor fields are never restored: they must keep bypassing the hook for the
-                // whole process, across VM switches and ResetApis/ReplaceApis cycles.
-                apiFieldOriginals.emplace_back(api, *api);
-            }
             void *original = nullptr;
-            auto rc = ds::gum::replace_fast(interceptor, *api, newaddr, (void **) &original);
+            auto rc = ds::FastHook::Install(interceptor, *api, newaddr, (void **) &original);
             if (rc == GumReplaceReturn::GUM_REPLACE_ALREADY_REPLACED && isVmAnchor) {
                 // The anchor is deliberately kept installed across VM switches: tearing it down
                 // would open a window where the engine calls the native entry directly. Refresh
@@ -305,6 +301,10 @@ struct GameLuaContextGame : GameLua51Context {
                 // wrapper there, which would recurse into this replacement.
                 if (auto *native = ds::core_vm::detail::native_new_state()) {
                     *api = (void *) native;
+                } else {
+                    spdlog::error("VM anchor has no cached native trampoline");
+                    ResetApis(signatures, exports);
+                    return false;
                 }
                 spdlog::info("keep VM anchor {} hook (already installed by a previous VM)", name);
                 continue;
@@ -312,15 +312,21 @@ struct GameLuaContextGame : GameLua51Context {
             if (rc == GumReplaceReturn::GUM_REPLACE_ALREADY_REPLACED) {
                 // A previous VM left its replacement in place: drop it first, otherwise the new
                 // replacement would be layered on an already patched prologue.
-                gum_interceptor_revert(interceptor, *api);
-                rc = ds::gum::replace_fast(interceptor, *api, newaddr, (void **) &original);
-            }
-            if (rc != GumReplaceReturn::GUM_REPLACE_OK) {
-                rc = ds::gum::replace(interceptor, *api, newaddr, (void **) &original);
+                if (!ds::FastHook::Revert(interceptor, *api)) {
+                    spdlog::error("Cannot restore previous fast hook for {}", name);
+                    ResetApis(signatures, exports);
+                    return false;
+                }
+                rc = ds::FastHook::Install(interceptor, *api, newaddr, (void **) &original);
             }
             if (rc != GumReplaceReturn::GUM_REPLACE_OK) {
                 spdlog::error("Replaced game lua api {} failed: {}", name, (int) rc);
+                ResetApis(signatures, exports);
                 return false;
+            }
+            if (!isVmAnchor) {
+                // Restore API fields only after their installed entry hooks are gone.
+                apiFieldOriginals.emplace_back(api, *api);
             }
             replacedTargets.push_back(*api);
             *api = original;
@@ -344,15 +350,9 @@ struct GameLuaContextGame : GameLua51Context {
             spdlog::warn("Game lua interceptor is not initialized, skip reverting game lua hooks");
             return;
         }
-        // Revert exactly what ReplaceApis installed; name2apis may not cover the sites we
-        // replaced, and blindly reverting field values would target trampolines.
-        for (void *target: replacedTargets) {
-            if (std::find(anchorTargets.begin(), anchorTargets.end(), target) != anchorTargets.end()) {
-                spdlog::info("keep game VM anchor hook at {}", target);
-                continue;
-            }
-            gum_interceptor_revert(interceptor, target);
-            spdlog::info("Reverted game lua api target {}", target);
+        if (!replacedTargets.empty()) {
+            spdlog::error("Game lua api entries still hooked; retain original api fields for retry");
+            return;
         }
         for (auto &[field, value]: apiFieldOriginals) {
             *field = value;

@@ -7,6 +7,7 @@
 #include "GameSignature.hpp"
 #include "util/inlinehook.hpp"
 #include "util/frida_gum_interceptor.hpp"
+#include "util/FastHook.hpp"
 #include "util/platform.hpp"
 #include "util/lua_io2.hpp"
 #include "config/InjectorHostConfig.hpp"
@@ -42,7 +43,7 @@ namespace ds::core_vm::detail {
 // Hijack of the engine's register_debug_getsize (implemented in GameLuaContext.cpp).
 // The replacement keeps the observable contract (fetch the global `debug` table and leave
 // it on the Lua stack, +1) and drops the Lua 5.1 GC-layout read that is invalid under
-// LuaJIT/arenagc. Installed unconditionally (every VM) with gum replace_fast; no revert.
+// LuaJIT/arenagc. Installed unconditionally (every VM) with FastHook; no revert.
 void register_debug_getsize_replacement(lua_State *L);
 void hook_register_debug_getsize(void *addr);
 // Port of Klei's debug.getsize (src/lua51/src/new.c) using only the public Lua API so it is
@@ -379,19 +380,26 @@ struct GameLuaContextImpl : GameLuaContext {
             }
             const bool isVmAnchor = (name == "lua_newstate");
             void *trampoline = nullptr;
-            auto rc = ds::gum::replace_fast(interceptor, target, replacer, isVmAnchor ? &trampoline : nullptr);
+            auto rc = ds::FastHook::Install(interceptor, target, replacer, isVmAnchor ? &trampoline : nullptr);
+            if (rc == GumReplaceReturn::GUM_REPLACE_ALREADY_REPLACED && isVmAnchor) {
+                if (ds::core_vm::detail::native_new_state() == nullptr) {
+                    spdlog::error("VM anchor has no cached native trampoline");
+                    break;
+                }
+                // Its replacement dispatches through currentCtx for every VM. Keep the
+                // original trampoline alive instead of removing and rebuilding the anchor.
+                ++skipped;
+                spdlog::info("keep VM anchor {} hook at {}", name, (void *) target);
+                continue;
+            }
             if (rc == GumReplaceReturn::GUM_REPLACE_ALREADY_REPLACED) {
                 // A previous VM left its replacement in place: drop it first, otherwise the
                 // new replacement would be layered on an already patched prologue.
-                gum_interceptor_revert(interceptor, target);
-                rc = ds::gum::replace_fast(interceptor, target, replacer, isVmAnchor ? &trampoline : nullptr);
-            }
-            const char *mechanism = "fast";
-            if (rc != GumReplaceReturn::GUM_REPLACE_OK) {
-                // replace_fast rejects prologues it cannot redirect without a trampoline;
-                // fall back to the regular variant on the same interceptor.
-                rc = ds::gum::replace(interceptor, target, replacer, isVmAnchor ? &trampoline : nullptr);
-                mechanism = "normal";
+                if (!ds::FastHook::Revert(interceptor, target)) {
+                    spdlog::error("Cannot restore previous fast hook for {}", name);
+                    break;
+                }
+                rc = ds::FastHook::Install(interceptor, target, replacer, isVmAnchor ? &trampoline : nullptr);
             }
             if (rc != GumReplaceReturn::GUM_REPLACE_OK) {
                 spdlog::error("replace {} failed: {}", name, (int) rc);
@@ -403,15 +411,21 @@ struct GameLuaContextImpl : GameLuaContext {
                 // remember the trampoline to the image's own implementation for the creator.
                 anchorTargets.push_back(target);
                 ds::core_vm::detail::set_native_new_state((ds::core_vm::detail::LuaNewStateFn) trampoline);
-                spdlog::info("VM anchor {} ({}): {} -> {} native={}", name, mechanism, (void *) target,
+                spdlog::info("VM anchor {} (fast): {} -> {} native={}", name, (void *) target,
                              (void *) replacer, trampoline);
             }
-            spdlog::info("replace {} ({}): {} to {}", name, mechanism, (void *) target, (void *) replacer);
+            spdlog::info("replace {} (fast): {} to {}", name, (void *) target, (void *) replacer);
         }
 
         if (hookeds.size() + skipped != hookTargets.size()) {
             for (auto target: hookeds) {
-                gum_interceptor_revert(interceptor, target);
+                if (std::find(anchorTargets.begin(), anchorTargets.end(), target) != anchorTargets.end()) {
+                    continue;
+                }
+                if (!ds::FastHook::Revert(interceptor, target)) {
+                    replacedTargets.push_back(target);
+                    spdlog::error("Failed to roll back fast hook at {}", (void *) target);
+                }
             }
             spdlog::info("reset all hook");
             return false;
@@ -429,22 +443,23 @@ struct GameLuaContextImpl : GameLuaContext {
         GumInterceptor *interceptor = InjectorCtx::instance()->GetGumInterceptor();
         size_t reverted = 0;
         size_t failed = 0;
+        std::vector<void *> pending;
         for (void *target: replacedTargets) {
             if (std::find(anchorTargets.begin(), anchorTargets.end(), target) != anchorTargets.end()) {
                 spdlog::info("keep VM anchor hook at {} (state creation must stay behind us)", target);
                 continue;
             }
-            gum_interceptor_revert(interceptor, target);
-            ++reverted;
-            const auto *t = (const uint8_t *) target;
-            if (t != nullptr && t[0] == 0xe9) {
-                spdlog::error("lua api entry still hooked after revert (mixed-VM risk): {} bytes {:02x} {:02x} {:02x} {:02x}", target, t[0],
-                              t[1], t[2], t[3]);
+            if (ds::FastHook::Revert(interceptor, target)) {
+                ++reverted;
+            } else {
+                ++failed;
+                pending.push_back(target);
+                spdlog::error("Failed to restore lua api entry at {}", target);
             }
         }
         spdlog::info("Reverted {} base lua api targets for vm={} (failed={})", reverted, GameLuaTypeToString(luaType),
                      failed);
-        replacedTargets.clear();
+        replacedTargets.assign(pending.begin(), pending.end());
     }
 
     virtual void HotfixApis(const std::string &mainPath) {
@@ -453,7 +468,7 @@ struct GameLuaContextImpl : GameLuaContext {
         // (L->base[1].value.gc->cl.c.f) -- invalid under LuaJIT/arenagc -- and it leaves the
         // global `debug` table on the Lua stack (+1), which the rest of the boot relies on.
         // Replace the whole function with our own implementation (same observable contract,
-        // no GC-layout read) via frida-gum replace_fast instead of writing a one-way `ret`.
+        // no GC-layout read) via FastHook instead of writing a one-way `ret`.
         // Unconditional (every VM); there is deliberately no revert path.
         const auto register_getsize_entry =
 #ifdef __linux__
