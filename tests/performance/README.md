@@ -268,9 +268,11 @@ print(profile.etw()) -- query the current state
   something in the injected VM calls `profile.etw(true)` (a mod, a bootstrap
   hook). `etw-symbols-*.exe --hold-for-profile` and the integration tests do
   that themselves, so the capture/verification path below stays valid.
-- `-DLUAJIT_DISABLE_ETW=ON` still removes the feature from the build entirely
-  (and `LJ_HASETW` is 0 on non-Windows and JIT-less builds, where
-  `profile.etw()` simply reports `false`).
+- It is **not compiled by default**: build with `-DLUAJIT_ENABLE_ETW=ON`
+  (CMake), `XCFLAGS+=-DLUAJIT_ENABLE_ETW` (Makefile) or `set
+  CL=/DLUAJIT_ENABLE_ETW` (msvcbuild.bat) to include it.
+  `LJ_HASETW` stays 0 otherwise (and on non-Windows / JIT-less builds), where
+  `profile.etw()` simply reports `false`.
 
 - `cpu.wprp` subscribes the provider with keywords `0x3` (runtime load/unload
   plus the start rundown), so attaching to a process whose traces were
@@ -295,15 +297,17 @@ print(profile.etw()) -- query the current state
 - `--jit-diagnostics` and `analyze.py` stay a separate stdout/`jit.attach`
   path: they are not ETW symbol consumers, and an older ETL does not gain JIT
   events retroactively.
-- Turning it off at runtime is `profile.etw(false)`; to remove it from the
-  build entirely use `-DLUAJIT_DISABLE_ETW=ON` (CMake) or
-  `XCFLAGS+=-DLUAJIT_DISABLE_ETW` (Makefile). Windows with JIT is the only
-  target that has it; the runtime API is a single `jit.profile.etw` function
-  that reports `false` where the feature is not compiled in, and no other Lua
+- Turning it off at runtime is `profile.etw(false)`; the build switch is the
+  opt-in `-DLUAJIT_ENABLE_ETW=ON` (CMake) or `XCFLAGS+=-DLUAJIT_ENABLE_ETW`
+  (Makefile), so a default build carries none of this code. Windows with JIT
+  is the only target that can have it; the runtime API is a single
+  `jit.profile.etw` function that reports `false` where the feature is not
+  compiled in, and no other Lua
   or C ABI surface changes.
 
-`-DLUAJIT_TEST_ETW=ON` builds `etw-symbols-default` / `etw-symbols-arenagc` and
-registers `luajit_<variant>_etw_symbols`. Both drive a real session
+`-DLUAJIT_TEST_ETW=ON` (together with `-DLUAJIT_ENABLE_ETW=ON`) builds
+`etw-symbols-default` / `etw-symbols-arenagc` and registers
+`luajit_<variant>_etw_symbols`. Both drive a real session
 (`StartTraceW` / `EnableTraceEx2` / `ProcessTrace`), enable the provider with a
 PID filter and compare the payloads against the traces the VM actually
 committed. They need an elevated or *Performance Log Users* shell: failing to
@@ -347,8 +351,8 @@ underlying parser contract is the same `JScriptTraceEventParser` field set this
 repository emits and WPT decodes.
 
 Cost with the switch off (the default) and with it on
-(RelWithDebInfo, one 8-core desktop, no session attached; `LUAJIT_DISABLE_ETW`
-is the compile-time baseline):
+(RelWithDebInfo, one 8-core desktop, no session attached; a build without
+`-DLUAJIT_ENABLE_ETW=ON` is the compile-time baseline):
 
 | path | switch off | `etw(true)` | compiled out |
 |---|---|---|---|
