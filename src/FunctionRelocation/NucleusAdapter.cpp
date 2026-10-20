@@ -13,6 +13,7 @@
 #include "cfg.h"
 #include "disasm.h"
 #include "loader.h"
+#include "log.h"
 #include <frida-gum.h>
 
 #include "options.h"
@@ -185,8 +186,13 @@ nucleus_analyze_file(const std::filesystem::path &path,
   options.only_code_sections = 1;
 
   Binary bin;
+  nucleus_clear_last_error();
+  const auto with_loader_detail = [](const std::string &head) {
+    const char *last = nucleus_last_error();
+    return (last && *last) ? head + " (" + last + ")" : head;
+  };
   if (load_binary(fname, &bin, Binary::BIN_TYPE_AUTO) < 0) {
-    return std::unexpected("nucleus load_binary failed: " + fname);
+    return std::unexpected(with_loader_detail("nucleus load_binary failed: " + fname));
   }
 
   NucleusAnalyzeResult out;
@@ -195,13 +201,13 @@ nucleus_analyze_file(const std::filesystem::path &path,
   std::list<DisasmSection> disasm;
   if (nucleus_disasm(&bin, &disasm) < 0) {
     unload_binary(&bin);
-    return std::unexpected("nucleus_disasm failed: " + fname);
+    return std::unexpected(with_loader_detail("nucleus_disasm failed: " + fname));
   }
 
   CFG cfg;
   if (cfg.make_cfg(&bin, &disasm) < 0) {
     unload_binary(&bin);
-    return std::unexpected("nucleus make_cfg failed: " + fname);
+    return std::unexpected(with_loader_detail("nucleus make_cfg failed: " + fname));
   }
 
   // Map Nucleus Function -> FunctionSpan.

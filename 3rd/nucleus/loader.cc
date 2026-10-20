@@ -13,6 +13,8 @@
 
 #if defined(NUCLEUS_LOADER_PE_PARSE)
 #include <pe-parse/parse.h>
+#elif defined(NUCLEUS_LOADER_NATIVE_ELF)
+#include <elf.h>
 #elif !defined(NUCLEUS_LOADER_NO_BFD)
 #include <bfd.h>
 #include <map>
@@ -35,6 +37,157 @@ const char *binary_arch_descr[][2] = {
   {"x86"     , "x86: Specify x86-16, x86-32 or x86-64 (default x86-64)"},
   {NULL      , NULL}
 };
+
+
+/* DWARF exception-header encodings used by GNU .eh_frame_hdr (LSB). */
+#define NUCLEUS_EH_PE_udata4  0x03
+#define NUCLEUS_EH_PE_sdata4  0x0b
+#define NUCLEUS_EH_PE_pcrel   0x10
+#define NUCLEUS_EH_PE_datarel 0x30
+#define NUCLEUS_EH_PE_omit    0xff
+
+/* Shared by the Linux native ELF loader and the BFD fallback: seed function
+ * starts from .eh_frame_hdr FDE initial locations. */
+static int
+elf_va_in_code(Binary *bin, uint64_t va)
+{
+  for(auto &sec: bin->sections) {
+    if(sec.type == Section::SEC_TYPE_CODE && sec.contains(va)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void
+elf_add_func_symbol(Binary *bin, uint64_t va)
+{
+  if(va == 0) {
+    return;
+  }
+  for(auto &s: bin->symbols) {
+    if(s.addr == va && (s.type & Symbol::SYM_TYPE_FUNC)) {
+      return;
+    }
+  }
+  bin->symbols.push_back(Symbol());
+  Symbol *sym = &bin->symbols.back();
+  sym->type = Symbol::SYM_TYPE_FUNC;
+  sym->addr = va;
+}
+
+/* Decode one GNU-encoded pointer at *off. field_va is the VA of the encoded
+ * value (needed for pcrel). datarel_base is the .eh_frame_hdr VMA. */
+static int
+eh_decode_ptr(unsigned enc, const uint8_t *buf, size_t size, size_t *off,
+              uint64_t field_va, uint64_t datarel_base, uint64_t *out)
+{
+  unsigned fmt;
+  unsigned app;
+  uint64_t v;
+  uint64_t fva;
+
+  if(enc == NUCLEUS_EH_PE_omit) {
+    return -1;
+  }
+  fmt = enc & 0x0fu;
+  app = enc & 0x70u;
+  fva = field_va;
+  v = 0;
+  if(fmt == NUCLEUS_EH_PE_udata4) {
+    uint32_t t;
+    if(*off + 4 > size) {
+      return -1;
+    }
+    memcpy(&t, buf + *off, 4);
+    *off += 4;
+    v = t;
+  } else if(fmt == NUCLEUS_EH_PE_sdata4) {
+    int32_t t;
+    if(*off + 4 > size) {
+      return -1;
+    }
+    memcpy(&t, buf + *off, 4);
+    *off += 4;
+    v = (uint64_t)(int64_t)t;
+  } else {
+    return -1;
+  }
+  if(app == NUCLEUS_EH_PE_pcrel) {
+    v = fva + (uint64_t)(int64_t)v;
+  } else if(app == NUCLEUS_EH_PE_datarel) {
+    v = datarel_base + (uint64_t)(int64_t)v;
+  } else if(app != 0) {
+    return -1;
+  }
+  *out = v;
+  return 0;
+}
+
+/* Linux analogue of pe_load_pdata_symbols: GNU .eh_frame_hdr binary-search
+ * table of FDE initial_location → SYM_TYPE_FUNC. Stripped DST ELF has no
+ * FUNC dynsyms for lua internals; FDE starts still split dump/yield-style
+ * over-merged Nucleus bodies via split_at_known_entries. */
+static void
+elf_load_eh_frame_symbols(Binary *bin)
+{
+  Section *hdr = NULL;
+  const uint8_t *buf;
+  size_t size;
+  size_t off;
+  unsigned ehenc, cntenc, tabenc;
+  uint64_t ehptr, count, loc, fde;
+  size_t added;
+  size_t i;
+
+  if(bin->type != Binary::BIN_TYPE_ELF || bin->bits != 64) {
+    return;
+  }
+  for(auto &sec: bin->sections) {
+    if(sec.name == ".eh_frame_hdr" && sec.bytes && sec.size >= 12) {
+      hdr = &sec;
+      break;
+    }
+  }
+  if(!hdr) {
+    return;
+  }
+  buf = hdr->bytes;
+  size = (size_t)hdr->size;
+  if(buf[0] != 1) {
+    return;
+  }
+  ehenc = buf[1];
+  cntenc = buf[2];
+  tabenc = buf[3];
+  off = 4;
+  if(eh_decode_ptr(ehenc, buf, size, &off, hdr->vma + 4, hdr->vma, &ehptr) < 0) {
+    return;
+  }
+  (void)ehptr;
+  if(eh_decode_ptr(cntenc, buf, size, &off, hdr->vma + off, hdr->vma, &count) < 0) {
+    return;
+  }
+  added = 0;
+  for(i = 0; i < (size_t)count; i++) {
+    uint64_t loc_field = hdr->vma + off;
+    if(eh_decode_ptr(tabenc, buf, size, &off, loc_field, hdr->vma, &loc) < 0) {
+      break;
+    }
+    uint64_t fde_field = hdr->vma + off;
+    if(eh_decode_ptr(tabenc, buf, size, &off, fde_field, hdr->vma, &fde) < 0) {
+      break;
+    }
+    (void)fde;
+    if(!elf_va_in_code(bin, loc)) {
+      continue;
+    }
+    elf_add_func_symbol(bin, loc);
+    ++added;
+  }
+  verbose(2, "ELF eh_frame_hdr function starts: %zu (symbols now %zu)", added,
+          bin->symbols.size());
+}
 
 
 #if defined(NUCLEUS_LOADER_PE_PARSE)
@@ -282,7 +435,248 @@ load_binary_pe_parse(std::string &fname, Binary *bin, Binary::BinaryType /*type*
   return 0;
 }
 
-#elif !defined(NUCLEUS_LOADER_NO_BFD)
+#endif /* NUCLEUS_LOADER_PE_PARSE */
+
+#if defined(NUCLEUS_LOADER_NATIVE_ELF)
+
+/* Native ELF64 loader (Linux).
+ *
+ * DontStarveLuaJIT2 ships libfunction_relocation.so; a libbfd dependency is
+ * neither controlled nor guaranteed on user machines (release builds silently
+ * fell back to "no binary loader" when binutils-dev was absent on CI). This
+ * loader reproduces the exact BFD view Nucleus consumes:
+ *   - sections: SEC_CODE for SHF_EXECINSTR; SEC_DATA for allocated sections
+ *     that carry file contents (BFD excludes SHT_NOBITS, e.g. .bss); plus
+ *     .eh_frame_hdr which FDE seeding reads even without SEC_DATA.
+ *   - symbols: STT_FUNC entries from .symtab and .dynsym, value = st_value.
+ *     ELF32/multi-arch targets are rejected; the DST Linux VM is x86-64.
+ */
+template <typename T>
+static bool
+elf_read_at(const std::vector<uint8_t> &data, size_t off, T &out)
+{
+  if(off > data.size() || data.size() - off < sizeof(T)) {
+    return false;
+  }
+  memcpy(&out, data.data() + off, sizeof(T));
+  return true;
+}
+
+static int
+elf_load_file(std::string &fname, std::vector<uint8_t> &data)
+{
+  FILE *f;
+  long fsize;
+
+  f = fopen(fname.c_str(), "rb");
+  if(!f) {
+    print_err("failed to open binary '%s' (%s)", fname.c_str(), strerror(errno));
+    return -1;
+  }
+  fseek(f, 0L, SEEK_END);
+  fsize = ftell(f);
+  if(fsize <= 0) {
+    print_err("binary '%s' appears to be empty", fname.c_str());
+    fclose(f);
+    return -1;
+  }
+  rewind(f);
+  data.resize((size_t)fsize);
+  if(fread(data.data(), 1, data.size(), f) != data.size()) {
+    print_err("failed to read binary '%s'", fname.c_str());
+    fclose(f);
+    return -1;
+  }
+  fclose(f);
+  return 0;
+}
+
+/* Section and symbol payloads are trimmed to the file; malformed/truncated
+ * entries are skipped instead of aborting, matching BFD's best-effort reads. */
+static void
+elf_load_sections(const std::vector<uint8_t> &data, const Elf64_Ehdr &eh,
+                  const std::vector<Elf64_Shdr> &sh, Binary *bin)
+{
+  const uint8_t *shstr = NULL;
+  size_t shstr_size = 0;
+
+  if(eh.e_shstrndx < sh.size()) {
+    const Elf64_Shdr &s = sh[eh.e_shstrndx];
+    if(s.sh_offset <= data.size() && s.sh_size <= data.size() - s.sh_offset) {
+      shstr = data.data() + s.sh_offset;
+      shstr_size = (size_t)s.sh_size;
+    }
+  }
+
+  for(size_t i = 1; i < sh.size(); ++i) {
+    const Elf64_Shdr &h = sh[i];
+    const char *name = "<unnamed>";
+
+    if(shstr && h.sh_name < shstr_size) {
+      const char *n = (const char *)(shstr + h.sh_name);
+      size_t room = shstr_size - h.sh_name;
+      if(memchr(n, '\0', room)) {
+        name = n;
+      }
+    }
+
+    int sectype = Section::SEC_TYPE_NONE;
+    if((h.sh_flags & SHF_EXECINSTR) != 0) {
+      sectype = Section::SEC_TYPE_CODE;
+    } else if((h.sh_flags & SHF_ALLOC) != 0 && h.sh_type != SHT_NOBITS) {
+      sectype = Section::SEC_TYPE_DATA;
+    } else if(strcmp(name, ".eh_frame_hdr") == 0) {
+      sectype = Section::SEC_TYPE_DATA;
+    } else {
+      continue;
+    }
+
+    if(h.sh_size == 0) {
+      continue;
+    }
+    const uint64_t file_end = h.sh_offset + h.sh_size;
+    if(file_end < h.sh_offset || file_end > data.size()) {
+      print_err("skipping truncated section '%s' in '%s'", name, bin->filename.c_str());
+      continue;
+    }
+
+    bin->sections.push_back(Section());
+    Section *sec = &bin->sections.back();
+    sec->binary = bin;
+    sec->name   = std::string(name);
+    sec->type   = (unsigned)sectype;
+    sec->vma    = h.sh_addr;
+    sec->size   = h.sh_size;
+    sec->bytes  = (uint8_t*)malloc((size_t)h.sh_size);
+    if(!sec->bytes) {
+      print_err("out of memory");
+      return;
+    }
+    memcpy(sec->bytes, data.data() + h.sh_offset, (size_t)h.sh_size);
+  }
+}
+
+static void
+elf_load_symbols(const std::vector<uint8_t> &data, const Elf64_Ehdr &eh,
+                 const std::vector<Elf64_Shdr> &sh, Binary *bin)
+{
+  (void)eh;
+  for(size_t i = 0; i < sh.size(); ++i) {
+    const Elf64_Shdr &st = sh[i];
+    if(st.sh_type != SHT_SYMTAB && st.sh_type != SHT_DYNSYM) {
+      continue;
+    }
+    if(st.sh_entsize != sizeof(Elf64_Sym) || st.sh_link >= sh.size()) {
+      continue;
+    }
+    const Elf64_Shdr &str = sh[st.sh_link];
+    if(st.sh_offset > data.size() || st.sh_size > data.size() - st.sh_offset ||
+       str.sh_offset > data.size() || str.sh_size > data.size() - str.sh_offset) {
+      continue;
+    }
+    const Elf64_Sym *syms = (const Elf64_Sym *)(data.data() + st.sh_offset);
+    const size_t nsyms = (size_t)(st.sh_size / sizeof(Elf64_Sym));
+    const char *strtab = (const char *)(data.data() + str.sh_offset);
+    const size_t strtab_size = (size_t)str.sh_size;
+
+    for(size_t s = 0; s < nsyms; ++s) {
+      if(ELF64_ST_TYPE(syms[s].st_info) != STT_FUNC) {
+        continue;
+      }
+      bin->symbols.push_back(Symbol());
+      Symbol *sym = &bin->symbols.back();
+      sym->type = Symbol::SYM_TYPE_FUNC;
+      if(syms[s].st_name < strtab_size) {
+        const char *n = strtab + syms[s].st_name;
+        if(memchr(n, '\0', strtab_size - syms[s].st_name)) {
+          sym->name = std::string(n);
+        }
+      }
+      sym->addr = syms[s].st_value;
+    }
+  }
+}
+
+static int
+load_binary_elf(std::string &fname, Binary *bin, Binary::BinaryType type)
+{
+  std::vector<uint8_t> data;
+  Elf64_Ehdr eh;
+  std::vector<Elf64_Shdr> sh;
+
+  (void)type;
+  if(elf_load_file(fname, data) < 0) {
+    return -1;
+  }
+  if(!elf_read_at(data, 0, eh) || memcmp(eh.e_ident, ELFMAG, SELFMAG) != 0) {
+    print_err("'%s' is not an ELF file", fname.c_str());
+    return -1;
+  }
+  if(eh.e_ident[EI_CLASS] != ELFCLASS64 || eh.e_ident[EI_DATA] != ELFDATA2LSB) {
+    print_err("unsupported ELF class/encoding in '%s' (need ELF64 little-endian)",
+              fname.c_str());
+    return -1;
+  }
+  if(eh.e_type != ET_EXEC && eh.e_type != ET_DYN) {
+    print_err("unsupported ELF type %u in '%s' (need executable or shared object)",
+              (unsigned)eh.e_type, fname.c_str());
+    return -1;
+  }
+
+  bin->filename = std::string(fname);
+  bin->type     = Binary::BIN_TYPE_ELF;
+  bin->type_str = "elf";
+  bin->entry    = eh.e_entry;
+
+  switch(eh.e_machine) {
+  case EM_X86_64:
+    bin->arch = Binary::ARCH_X86;
+    bin->bits = 64;
+    bin->arch_str = "x86-64";
+    break;
+  case EM_386:
+    bin->arch = Binary::ARCH_X86;
+    bin->bits = 32;
+    bin->arch_str = "x86-32";
+    break;
+  default:
+    print_err("unsupported ELF machine 0x%x in '%s'", (unsigned)eh.e_machine,
+              fname.c_str());
+    return -1;
+  }
+
+  if(eh.e_shoff == 0 || eh.e_shnum == 0 || eh.e_shentsize != sizeof(Elf64_Shdr)) {
+    print_err("ELF '%s' has no usable section header table", fname.c_str());
+    return -1;
+  }
+  if(eh.e_shoff > data.size() ||
+     (uint64_t)eh.e_shnum * sizeof(Elf64_Shdr) > data.size() - eh.e_shoff) {
+    print_err("ELF '%s' section header table is out of file bounds", fname.c_str());
+    return -1;
+  }
+  sh.resize(eh.e_shnum);
+  memcpy(sh.data(), data.data() + eh.e_shoff, sh.size() * sizeof(Elf64_Shdr));
+
+  elf_load_sections(data, eh, sh, bin);
+  if(bin->sections.empty()) {
+    print_err("ELF binary '%s' has no loadable sections", fname.c_str());
+    return -1;
+  }
+  elf_load_symbols(data, eh, sh, bin);
+
+  /* .eh_frame_hdr FDE starts split over-merged CFG bodies on stripped libs. */
+  elf_load_eh_frame_symbols(bin);
+
+  verbose(2, "ELF binary '%s' arch=%s bits=%u sections=%zu symbols=%zu entry=0x%llx",
+          fname.c_str(), bin->arch_str.c_str(), bin->bits, bin->sections.size(),
+          bin->symbols.size(),
+          static_cast<unsigned long long>(bin->entry));
+  return 0;
+}
+
+#endif /* native ELF (Linux) */
+
+#if !defined(NUCLEUS_LOADER_NO_BFD) && !defined(NUCLEUS_LOADER_NATIVE_ELF)
 
 static bfd*
 open_bfd(std::string &fname)
@@ -535,155 +929,6 @@ load_sections_bfd(bfd *bfd_h, Binary *bin)
 }
 
 
-/* DWARF exception-header encodings used by GNU .eh_frame_hdr (LSB). */
-#define NUCLEUS_EH_PE_udata4  0x03
-#define NUCLEUS_EH_PE_sdata4  0x0b
-#define NUCLEUS_EH_PE_pcrel   0x10
-#define NUCLEUS_EH_PE_datarel 0x30
-#define NUCLEUS_EH_PE_omit    0xff
-
-static int
-elf_va_in_code(Binary *bin, uint64_t va)
-{
-  for(auto &sec: bin->sections) {
-    if(sec.type == Section::SEC_TYPE_CODE && sec.contains(va)) {
-      return 1;
-    }
-  }
-  return 0;
-}
-
-static void
-elf_add_func_symbol(Binary *bin, uint64_t va)
-{
-  if(va == 0) {
-    return;
-  }
-  for(auto &s: bin->symbols) {
-    if(s.addr == va && (s.type & Symbol::SYM_TYPE_FUNC)) {
-      return;
-    }
-  }
-  bin->symbols.push_back(Symbol());
-  Symbol *sym = &bin->symbols.back();
-  sym->type = Symbol::SYM_TYPE_FUNC;
-  sym->addr = va;
-}
-
-/* Decode one GNU-encoded pointer at *off. field_va is the VA of the encoded
- * value (needed for pcrel). datarel_base is the .eh_frame_hdr VMA. */
-static int
-eh_decode_ptr(unsigned enc, const uint8_t *buf, size_t size, size_t *off,
-              uint64_t field_va, uint64_t datarel_base, uint64_t *out)
-{
-  unsigned fmt;
-  unsigned app;
-  uint64_t v;
-  uint64_t fva;
-
-  if(enc == NUCLEUS_EH_PE_omit) {
-    return -1;
-  }
-  fmt = enc & 0x0fu;
-  app = enc & 0x70u;
-  fva = field_va;
-  v = 0;
-  if(fmt == NUCLEUS_EH_PE_udata4) {
-    uint32_t t;
-    if(*off + 4 > size) {
-      return -1;
-    }
-    memcpy(&t, buf + *off, 4);
-    *off += 4;
-    v = t;
-  } else if(fmt == NUCLEUS_EH_PE_sdata4) {
-    int32_t t;
-    if(*off + 4 > size) {
-      return -1;
-    }
-    memcpy(&t, buf + *off, 4);
-    *off += 4;
-    v = (uint64_t)(int64_t)t;
-  } else {
-    return -1;
-  }
-  if(app == NUCLEUS_EH_PE_pcrel) {
-    v = fva + (uint64_t)(int64_t)v;
-  } else if(app == NUCLEUS_EH_PE_datarel) {
-    v = datarel_base + (uint64_t)(int64_t)v;
-  } else if(app != 0) {
-    return -1;
-  }
-  *out = v;
-  return 0;
-}
-
-/* Linux analogue of pe_load_pdata_symbols: GNU .eh_frame_hdr binary-search
- * table of FDE initial_location → SYM_TYPE_FUNC. Stripped DST ELF has no
- * FUNC dynsyms for lua internals; FDE starts still split dump/yield-style
- * over-merged Nucleus bodies via split_at_known_entries. */
-static void
-elf_load_eh_frame_symbols(Binary *bin)
-{
-  Section *hdr = NULL;
-  const uint8_t *buf;
-  size_t size;
-  size_t off;
-  unsigned ehenc, cntenc, tabenc;
-  uint64_t ehptr, count, loc, fde;
-  size_t added;
-  size_t i;
-
-  if(bin->type != Binary::BIN_TYPE_ELF || bin->bits != 64) {
-    return;
-  }
-  for(auto &sec: bin->sections) {
-    if(sec.name == ".eh_frame_hdr" && sec.bytes && sec.size >= 12) {
-      hdr = &sec;
-      break;
-    }
-  }
-  if(!hdr) {
-    return;
-  }
-  buf = hdr->bytes;
-  size = (size_t)hdr->size;
-  if(buf[0] != 1) {
-    return;
-  }
-  ehenc = buf[1];
-  cntenc = buf[2];
-  tabenc = buf[3];
-  off = 4;
-  if(eh_decode_ptr(ehenc, buf, size, &off, hdr->vma + 4, hdr->vma, &ehptr) < 0) {
-    return;
-  }
-  (void)ehptr;
-  if(eh_decode_ptr(cntenc, buf, size, &off, hdr->vma + off, hdr->vma, &count) < 0) {
-    return;
-  }
-  added = 0;
-  for(i = 0; i < (size_t)count; i++) {
-    uint64_t loc_field = hdr->vma + off;
-    if(eh_decode_ptr(tabenc, buf, size, &off, loc_field, hdr->vma, &loc) < 0) {
-      break;
-    }
-    uint64_t fde_field = hdr->vma + off;
-    if(eh_decode_ptr(tabenc, buf, size, &off, fde_field, hdr->vma, &fde) < 0) {
-      break;
-    }
-    (void)fde;
-    if(!elf_va_in_code(bin, loc)) {
-      continue;
-    }
-    elf_add_func_symbol(bin, loc);
-    ++added;
-  }
-  verbose(2, "ELF eh_frame_hdr function starts: %zu (symbols now %zu)", added,
-          bin->symbols.size());
-}
-
-
 int
 load_binary_bfd(std::string &fname, Binary *bin, Binary::BinaryType type)
 {
@@ -916,6 +1161,8 @@ load_binary(std::string &fname, Binary *bin, Binary::BinaryType type)
   }
 #if defined(NUCLEUS_LOADER_PE_PARSE)
   return load_binary_pe_parse(fname, bin, type);
+#elif defined(NUCLEUS_LOADER_NATIVE_ELF)
+  return load_binary_elf(fname, bin, type);
 #elif !defined(NUCLEUS_LOADER_NO_BFD)
   return load_binary_bfd(fname, bin, type);
 #else

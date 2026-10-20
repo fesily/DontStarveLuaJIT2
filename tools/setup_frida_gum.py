@@ -413,6 +413,12 @@ def link_shell_posix(static_lib: Path, header: Path, stage: Path) -> None:
             "-Wl,--whole-archive",
             str(static_lib),
             "-Wl,--no-whole-archive",
+            # glibc ≥ 2.41 refuses dlopen() of a DSO whose PT_GNU_STACK is
+            # executable ("cannot enable executable stack ..."). Every consumer
+            # here is loaded with dlopen (Injector stub → real libInjector),
+            # so force a non-executable stack even though some gum objects
+            # carry no .note.GNU-stack.
+            "-Wl,-z,noexecstack",
             "-lpthread",
             "-ldl",
             "-lm",
