@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <errno.h>
 
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -676,7 +677,8 @@ load_binary_elf(std::string &fname, Binary *bin, Binary::BinaryType type)
 
 #endif /* native ELF (Linux) */
 
-#if !defined(NUCLEUS_LOADER_NO_BFD) && !defined(NUCLEUS_LOADER_NATIVE_ELF)
+#if !defined(NUCLEUS_LOADER_NO_BFD) && !defined(NUCLEUS_LOADER_NATIVE_ELF) &&     \
+    !defined(NUCLEUS_LOADER_PE_PARSE)
 
 static bfd*
 open_bfd(std::string &fname)
