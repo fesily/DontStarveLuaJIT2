@@ -68,8 +68,8 @@ if (WIN32)
     target_compile_definitions(nucleus_static PRIVATE NUCLEUS_LOADER_PE_PARSE=1)
     find_package(pe-parse CONFIG REQUIRED)
     target_link_libraries(nucleus_static PRIVATE pe-parse::pe-parse)
-else()
-    # Keep stock BFD loader when available; otherwise allow raw-only builds.
+elseif (APPLE)
+    # Mach-O still uses the stock BFD loader.
     find_library(BFD_LIBRARY NAMES bfd bfd-multiarch)
     if (BFD_LIBRARY)
         target_link_libraries(nucleus_static PRIVATE ${BFD_LIBRARY})
@@ -77,6 +77,11 @@ else()
         message(WARNING "nucleus_static: libbfd not found; non-raw load will fail")
         target_compile_definitions(nucleus_static PRIVATE NUCLEUS_LOADER_NO_BFD=1)
     endif()
+else()
+    # Linux: native ELF64 loader in loader.cc. No libbfd (binutils-dev) needed —
+    # release builds previously compiled the "no binary loader" stub when the
+    # CI image lacked it, so every nucleus_analyze_file call failed.
+    target_compile_definitions(nucleus_static PRIVATE NUCLEUS_LOADER_NATIVE_ELF=1)
 endif()
 
 if (MSVC)

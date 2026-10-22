@@ -501,8 +501,8 @@ local function main()
 
 					local btns = {}
 					local version_info = translate({
-						zh = "\n 模组版本:" .. modinfo.version .. " 模块版本:" .. version,
-						en = "\n Mod version:" .. modinfo.version .. " Module version:" .. version
+						zh = "\n 模组版本:" .. modinfo.version .. " 模块版本:" .. self.so_version,
+						en = "\n Mod version:" .. modinfo.version .. " Module version:" .. self.so_version
 					})
 					local content = translate({
 						zh = [[当前luajit模组有更新,是否要执行更新?]] .. version_info,

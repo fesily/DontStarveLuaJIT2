@@ -26,5 +26,18 @@ Injector. Final link units own gum resolution:
 ## Windows loader
 
 On Windows, `NUCLEUS_LOADER_PE_PARSE=1` enables a pe-parse based PE fill path
-so `libbfd` is not required. Non-Windows keeps the stock BFD loader when BFD is
-available.
+so `libbfd` is not required.
+
+## Linux loader
+
+Linux builds define `NUCLEUS_LOADER_NATIVE_ELF=1` and use the native ELF64
+reader in `loader.cc` (sections, `STT_FUNC` symbols, `.eh_frame_hdr` seeds);
+`libbfd` is neither linked nor needed. Rationale: the release CI image has no
+`binutils-dev`, and the old `find_library(bfd)` fallback silently produced a
+`NUCLEUS_LOADER_NO_BFD` build whose `load_binary()` always failed, so every
+Linux `nucleus_analyze_file()` call aborted signature generation at boot. The
+native path reproduces the BFD view exactly (verified span-for-span against the
+BFD builds of `liblua51.so`, the `lua51DS`/`lua51Original` VMs, and both DST game
+executables).
+
+macOS keeps the stock BFD loader when BFD is available.
