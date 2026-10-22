@@ -33,8 +33,10 @@ Usage
 Content pushes stage a filtered copy first (Windows-only item, like the release shape):
 debug/link artifacts (`*.pdb`, `*.lib`, `*.exp`, `*.ilk`), foreign-platform libraries
 (`*.so`, `*.so.*`, `*.dylib`), `bin64/osx`, `bin64/linux`, `plugins/update_pending`,
-`.ds_plugin_update.lock` and `test.log` are skipped — `--no-filter` disables that and
-`--ignore-file` adds gitignore-style patterns on top.
+debug-only vcpkg runtimes whose release twin sits beside them (`bz2d.dll`/`bz2.dll`,
+`zlibd1.dll`/`zlib1.dll`), VCS/editor leftovers (`.git*`, `*.log`, `*.bak`, `*.orig`, `*.tmp`,
+`Thumbs.db`) and the dev-only `*_fresh.dll` copy of the LuaJIT DLL are skipped —
+`--no-filter` disables that and `--ignore-file` adds gitignore-style patterns on top.
 
 Writes ask for confirmation on a terminal (`--yes` for scripts); `--allow-unreadable` lets an
 item the public API cannot read (unlisted/private) be updated, at the cost of not being able to
@@ -62,8 +64,16 @@ import urllib.request
 DEFAULT_ITEM = 3444078585  # DontStarveLuaJit2
 # What a local content push skips, mirroring the windows-only release shape.
 EXCLUDE_NAME_PATTERNS = ("*.pdb", "*.lib", "*.exp", "*.ilk", "*.so", "*.so.*", "*.dylib",
-                         ".ds_plugin_update.lock", "test.log")
+                         "*.log", "*.bak", "*.orig", "*.rej", "*.tmp", "*.swp", "*.swo",
+                         ".ds_plugin_update.lock", ".git*", ".DS_Store", "Thumbs.db",
+                         # dev-only copy of the LuaJIT DLL used to dodge file locks
+                         # (GAME_LUA_MODULE_NAME=lua51DS_fresh.dll, docs/engine-execerror-slots.md)
+                         "*_fresh.dll")
 EXCLUDE_PATH_PREFIXES = ("bin64/osx", "bin64/linux", "plugins/update_pending")
+# vcpkg stages debug runtimes next to the release ones (`bz2d.dll` beside `bz2.dll`,
+# `zlibd1.dll` beside `zlib1.dll`). Same rule as the CI "debug-only vcpkg runtime" check:
+# a name whose release twin sits in the same folder is the debug build.
+_DEBUG_RUNTIME = re.compile(r"^(?P<base>.+?)d(?P<digits>\d*)\.dll$", re.IGNORECASE)
 DEFAULT_APPID = 322330  # Don't Starve Together
 DETAILS_URL = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -128,9 +138,19 @@ def load_ignore_file(path: pathlib.Path) -> list[str]:
     return patterns
 
 
-def should_skip(rel: pathlib.Path, extra: tuple[str, ...] = ()) -> bool:
+def is_debug_runtime(rel: pathlib.Path, root: pathlib.Path) -> bool:
+    """True for a vcpkg debug-only runtime: `X d.dll` while `X.dll` exists in the same folder."""
+    match = _DEBUG_RUNTIME.match(rel.name)
+    if not match:
+        return False
+    return (root / rel.parent / f"{match['base']}{match['digits']}.dll").is_file()
+
+
+def should_skip(rel: pathlib.Path, extra: tuple[str, ...] = (), root: pathlib.Path | None = None) -> bool:
     """True when this staged path is debug/link junk, a foreign-platform file or other platform shell."""
     if any(fnmatch.fnmatch(rel.name, pattern) for pattern in EXCLUDE_NAME_PATTERNS):
+        return True
+    if root is not None and is_debug_runtime(rel, root):
         return True
     posix = rel.as_posix()
     if any(posix == prefix or posix.startswith(prefix + "/") for prefix in EXCLUDE_PATH_PREFIXES):
@@ -150,7 +170,7 @@ def stage_content(content: pathlib.Path, dest: pathlib.Path, use_filter: bool = 
     skipped: list[str] = []
     for path in sorted(content.rglob("*")):
         rel = path.relative_to(content)
-        if use_filter and should_skip(rel, extra_patterns):
+        if use_filter and should_skip(rel, extra_patterns, content):
             if len(skipped) < 12:
                 skipped.append(rel.as_posix())
             continue
