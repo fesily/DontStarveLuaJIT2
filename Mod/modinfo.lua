@@ -477,9 +477,9 @@ configuration_options = {
     {
         name = "EnableForkSave",
         label = translate({ en = "Fork Save (Preview)", zh = "分叉存档" }),
-        hover = translate({ en = "Fork or clone a child process to save the game, reducing save lag. Supported on Linux, macOS, and Windows x64 preview builds.", zh = "通过fork或克隆子进程保存游戏,存档不再卡顿.支持Linux、MacOS和Windows x64预览版" }),
+        hover = translate({ en = "Fork or clone a child process to save the game, reducing save lag. Supported on Linux, macOS, and Windows x64 preview builds.", zh = "通过fork或克隆子进程保存游戏,存档不再卡顿.支持Linux、MacOS和Windows x64预览版, 可能会导致存档全丢失,自行测试" }),
         options = toggle,
-        default = true,
+        default = false,
         disabled_by = disable_by_lua51,
         disabled_value = false,
         host_gate = true,
