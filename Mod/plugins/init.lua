@@ -111,16 +111,75 @@ local function load_package(stem)
     return R.load_package(stem, api)
 end
 
-return {
+-- Package discovery. The DST Lua sandbox has no directory listing, so the
+-- registry asks the injector (core.vm) which package dirs under plugins/ carry
+-- modinfo.lua — the same filesystem the native loader scans. The registry is
+-- therefore exactly the installed set: a package that is not installed (e.g.
+-- the Windows-only plugin_render_shadow on Linux/macOS) is never referenced,
+-- which used to raise inside load_package and drop every plugin.
+local function injector_get(name)
+    local env = getfenv(1)
+    if type(env) == "table" then
+        local v = rawget(env, name)
+        if v == nil then
+            v = env[name]
+        end
+        if v ~= nil then
+            return v
+        end
+    end
+    return rawget(_G, name)
+end
+
+-- No GameInjector means no Lua bridge (core.vm absent / not injected / unit-test
+-- run): every Lua face would be inert, so the plugin system stays off entirely.
+-- There is deliberately no static fallback list — it would be a second source of
+-- truth that drifts from what is installed (the original Linux bug).
+local function plugin_system_disabled(reason)
+    print("[luajit][plugin] plugin system disabled: " .. reason)
+    return {}
+end
+
+local packages_dir = api.MODROOT and (api.MODROOT .. "plugins/") or ""
+local injector = injector_get("GameInjector")
+local list_fn = injector and injector.DS_LUAJIT_list_plugin_packages
+if type(list_fn) ~= "function" then
+    return plugin_system_disabled("GameInjector.DS_LUAJIT_list_plugin_packages unavailable")
+end
+local ok_list, discovered = pcall(list_fn, packages_dir)
+if not ok_list or type(discovered) ~= "table" then
+    return plugin_system_disabled("package discovery failed: " .. tostring(discovered))
+end
+
+local registry = {
     load_flat("jit_tailcall"),
-    load_package("plugin_debug_profiler"),
-    load_package("plugin_network_rpc"),
-    load_package("plugin_network_stats"),
     load_flat("network_entity"),
-    load_package("plugin_fps_render"),
-    load_package("plugin_render_shadow"),
-    load_package("plugin_save_fork"),
-    load_package("plugin_sim_lagcomp"),
-    load_package("plugin_network_sim"),
     load_flat("jit_runtime"),
 }
+
+-- One bad package must not hide the rest (the native loader behaves the same).
+local function add_package(stem)
+    local ok, pkg = pcall(load_package, stem)
+    if ok and pkg then
+        if pkg.luajit_plugin_pack then
+            -- Smoke/pack face shipped for another mod's external discovery
+            -- (plugin_dummy); loading it here would be noise, not a feature.
+            print("[luajit][plugin] package " .. tostring(stem) .. " is an external pack face; skipped")
+            return false
+        end
+        registry[#registry + 1] = pkg
+        return true
+    end
+    print("[luajit][plugin] package " .. tostring(stem) .. " failed to load: " .. tostring(pkg))
+    return false
+end
+
+local loaded = 0
+for _, stem in ipairs(discovered) do
+    if add_package(stem) then
+        loaded = loaded + 1
+    end
+end
+print(string.format("[luajit][plugin] discovered %d package(s) under %s", loaded, packages_dir))
+
+return registry

@@ -78,6 +78,16 @@ This is **directory / ownership aggregation**, not a redesign of Host phases or 
 | A12 | modinfo load environment | Engine injects only a **tiny** sandbox (`folder_name`, `locale`, `ChooseTranslationTable`). Our Host `load_package` **must** inject an explicit marker (and package path helpers) so `modinfo` can tell **engine KnownModIndex load** vs **LuaJit package Host load**. Host-only logic must not run unguarded at top-level when the engine loads modinfo. |
 | A13 | Native vs modinfo identity | Dual-face **must not** forever dual-maintain divergent manifests. **Logical SSOT = package `modinfo.lua`** for shared identity (`plugin_id`/`version`/consumed option keys). Native `PluginManifest` is a face projection (EarlyNative + services/`can_load`). Consistency is enforced (test/codegen); hand-fork without gate is a bug. |
 
+> **Superseded 2026-10-23 (A8/A9 registry only):** the hand-written package list in
+> `Mod/plugins/init.lua` was the second source of truth and drifted from the
+> per-platform install set (`plugin_render_shadow` listed on Linux → `load_package`
+> raised on a missing `modinfo.lua` → whole AfterModMain registry aborted). Dual-face
+> packages are now discovered from disk through
+> `GameInjector.DS_LUAJIT_list_plugin_packages` (`core/PluginPath.cpp`), i.e. the same
+> filesystem `DynamicPluginLoader` scans; the sandbox has no readdir, so the listing
+> must come from native. Flat Lua faces stay explicit. See `docs/plugin-system.md`
+> §3.4/§4.2. Auto-discovery of *external* packs is unchanged.
+
 ---
 
 ## 5. Package layout

@@ -49,6 +49,14 @@ DS_INJECTOR_CXX_API std::vector<std::filesystem::path> default_plugin_search_dir
 // otherwise treat plugins_dir itself as the root (env override may be bare).
 DS_INJECTOR_CXX_API std::filesystem::path mod_root_from_plugins_dir(const std::filesystem::path &plugins_dir);
 
+// Lua-face packages directly under plugins_dir: entries whose name starts with
+// "plugin_" and that contain modinfo.lua (the package marker the Lua loader
+// needs). Sorted; missing/empty dir → {}. Paths are UTF-8 (as handed to us by
+// the Lua sandbox). This is the single source of truth the Lua registry uses
+// instead of a hand-written list, so a package that is not installed is never
+// referenced.
+DS_INJECTOR_CXX_API std::vector<std::string> list_plugin_packages(std::string_view plugins_dir_utf8);
+
 // Shared runtimes path: mod_root / "deps" (sibling of plugins/, not under it).
 DS_INJECTOR_CXX_API std::filesystem::path mod_deps_dir(const std::filesystem::path &mod_root);
 

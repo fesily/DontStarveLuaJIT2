@@ -149,6 +149,10 @@ local function build_plugin_table(env, package_root, stem, api)
         config_modname = cfg_name,
         config_lookup = config_lookup,
         support_reload = rawget(env, "support_reload") and true or false,
+        -- Pack-face marker (modinfo `luajit_plugin_pack = true`): such a package
+        -- is meant for another mod's external discovery, not this mod's own
+        -- registry (see plugins/init.lua).
+        luajit_plugin_pack = rawget(env, "luajit_plugin_pack") and true or false,
         priority = rawget(env, "priority") or 100,
         when = rawget(env, "when"),  -- rawget: parent may be strict.lua (no bare when)
         load = function(ctx)

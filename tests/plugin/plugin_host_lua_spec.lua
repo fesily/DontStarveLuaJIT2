@@ -20,6 +20,27 @@ end
 local ROOT = repo_root()
 package.path = ROOT .. "/Mod/?.lua;" .. ROOT .. "/Mod/?/init.lua;" .. package.path
 
+-- init.lua builds its package registry from the injector's filesystem listing
+-- (GameInjector.DS_LUAJIT_list_plugin_packages; the DST sandbox has no readdir).
+-- A bare LuaJIT run has no engine, so provide that surface here. Only membership
+-- matters for these specs — the listing itself is covered by test_plugin_path and
+-- the layout simulations; absent GameInjector disables the plugin system by design.
+if rawget(_G, "GameInjector") == nil then
+    rawset(_G, "GameInjector", {
+        DS_LUAJIT_list_plugin_packages = function()
+            return {
+                "plugin_debug_profiler",
+                "plugin_fps_render",
+                "plugin_network_rpc",
+                "plugin_network_sim",
+                "plugin_network_stats",
+                "plugin_save_fork",
+                "plugin_sim_lagcomp",
+            }
+        end,
+    })
+end
+
 local PluginHost = require("plugins.host")
 
 local function assert_eq(actual, expected, message)

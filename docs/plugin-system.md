@@ -215,8 +215,9 @@ Dual-face features live as a **DST mini-mod package** under one directory, not a
 2. Add a **DST-complete** `modinfo.lua` (engine hard fields + private `plugin_id` /
    `options` / …) and `modmain.lua` (+ optional `scripts/`). See package aggregation
    design §6 for the engine-compatible field set.
-3. Register the Lua face in `Mod/plugins/init.lua` via
-   `load_package("plugin_<stem>")` (not `load_flat` for dual-face).
+3. **No registry edit needed**: `Mod/plugins/init.lua` discovers packages from disk
+   (`GameInjector.DS_LUAJIT_list_plugin_packages`) and calls `load_package` for
+   each `plugin_*` dir that has `modinfo.lua` (not `load_flat` for dual-face).
 4. Keep identity SSOT in package `modinfo`; native `PluginManifest` must match
    (`python tools/check_plugin_package_identity.py --source-root .`). The same
    gate requires `Mod/plugins/<stem>/modinfo.lua` to be byte-identical to src.
@@ -224,6 +225,12 @@ Dual-face features live as a **DST mini-mod package** under one directory, not a
    hand-sync is fine until then.
 5. **Do not** add a flat dual-face face at `Mod/plugins/<face>.lua` or park business
    scripts only under `Mod/scripts/` — they belong in the package directory.
+6. **Windows-only native module** (e.g. `plugin_render_shadow`, which needs the
+   ANGLE/GLES stage) is not built or installed on Linux/macOS, so its package dir
+   is absent there and discovery never lists it — no platform check in Lua, no
+   packaging workaround. Keep the package's own `modinfo.when` for
+   platform-restricted *behavior* once installed; it cannot stand in for the
+   install-time platform split.
 
 Deployed / staged shape:
 
@@ -255,7 +262,7 @@ Example: `network.rpc` / `save.fork` — see §7.
 `scripts/`). See §3.4.
 
 **Lua-only flat face:** create `Mod/plugins/<name>.lua` and return a plugin table
-(explicit registry; no filesystem scan):
+(the only faces still listed by hand — packages are discovered, §4.2):
 
 ```lua
 return {
@@ -284,14 +291,43 @@ return {
 
 ### 4.2 Register in `Mod/plugins/init.lua`
 
+**Dual-face packages are discovered, not listed.** The DST Lua sandbox has no
+directory listing, so `init.lua` asks the injector which package dirs under
+`plugins/` carry `modinfo.lua`:
+
 ```lua
-return {
+GameInjector.DS_LUAJIT_list_plugin_packages(MODROOT .. "plugins/")
+--> { "plugin_debug_profiler", "plugin_fps_render", … }  (sorted, UTF-8 dir)
+```
+
+Backed by `ds::plugin::list_plugin_packages` (`core/PluginPath.cpp`), i.e. the
+same filesystem `DynamicPluginLoader` scans. Consequence: the registry is
+exactly the installed set — a Windows-only package (`plugin_render_shadow`) is
+simply absent from the list on Linux/macOS instead of aborting the chunk.
+Each package loads under `pcall`, so one broken `modinfo.lua` is logged and the
+rest still register (mirrors the native loader).
+
+Flat Lua faces stay explicit in the same file:
+
+```lua
+local registry = {
     load_flat("jit_tailcall"),
-    -- …
-    load_package("plugin_my_feature"),  -- dual-face package
-    load_flat("my_feature"),            -- Lua-only: Mod/plugins/my_feature.lua
+    load_flat("network_entity"),
+    load_flat("jit_runtime"),
 }
 ```
+
+Without `GameInjector` (not injected, no `core.vm`, unit-test runs) there is no
+Lua bridge and every Lua face would be inert, so `init.lua` returns an **empty**
+registry: the plugin system is fully disabled (`plugin system disabled: …`).
+There is deliberately no static fallback list — it would reintroduce the second
+source of truth that drifted from the installed set. New dual-face packages
+therefore need **no** registry edit.
+
+Packages whose `modinfo` sets `luajit_plugin_pack = true` are **external pack
+faces** (e.g. `plugin_dummy`, shipped as a smoke fixture for another mod's
+discovery) and are skipped by the built-in registry — they load only through
+`discover_external.lua`.
 
 `load_package` loads `plugins/plugin_<stem>/modinfo.lua` (+ modmain rebind).
 `load_flat` uses `kleiloadlua(MODROOT .. "plugins/" .. name .. ".lua")` in-game,
@@ -404,7 +440,7 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 ### `save.fork` (package dual-face + dedicated gate)
 
 - Package: `plugins/plugin_save_fork/` (`modinfo` + `modmain` + `scripts/fork_save.lua` + native MODULE)
-- Registry: `load_package("plugin_save_fork")` in `Mod/plugins/init.lua`
+- Registry: discovered from `plugins/plugin_save_fork/modinfo.lua` (§4.2) — no `init.lua` edit
 - Options: `EnableForkSave` (parent modinfo UI; package private `options` names keys)
 - `when`: `has_luajit` and not client / dedicated
 - `modmain`: `AddGamePostInit` → `modimport("scripts/fork_save")` under package rebind
@@ -479,7 +515,7 @@ When adding a plugin:
    Register option schema in `ds_plugin_module_init` **before** `register_plugin`. If cascade must parse the key before Host load, also add it to `RegisterBuiltinBusinessOptionSchema` (or the plugin's cascade seed). **Do not** add a new field on `GameJitModConfig`.
 3. **Dual-face / Lua + game API?** → package layout (not flat face):
    - `modinfo.lua` + `modmain.lua` (+ `scripts/`) next to the native sources
-   - `init.lua` entry: `load_package("plugin_<stem>")`
+   - no `Mod/plugins/init.lua` edit — discovery finds the package (§4.2)
    - Identity gate green vs native `man.id` / `man.version` / option keys
 4. **Lua-only (no native MODULE this round)?** → flat `Mod/plugins/<name>.lua` +
    `load_flat("<name>")` still OK (`jit.*`, `network.entity`).

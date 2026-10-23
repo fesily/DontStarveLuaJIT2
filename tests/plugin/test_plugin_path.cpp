@@ -157,6 +157,33 @@ static void test_empty_modmain_does_not_crash() {
     printf("PASS: empty_modmain_does_not_crash (dirs=%zu)\n", dirs.size());
 }
 
+static void test_list_plugin_packages() {
+    auto dir = make_temp("ds_plugin_list_pkgs");
+    // Lua-face package: plugin_* dir with modinfo.lua.
+    fs::create_directories(dir / "plugin_c");
+    std::ofstream(dir / "plugin_c" / "modinfo.lua") << "--";
+    fs::create_directories(dir / "plugin_a");
+    std::ofstream(dir / "plugin_a" / "modinfo.lua") << "--";
+    // Native-only package dir (no modinfo.lua) → not a Lua face.
+    fs::create_directories(dir / "plugin_b");
+    std::ofstream(dir / "plugin_b" / "plugin_b.dll") << "x";
+    // Non-plugin dir with a modinfo → ignored.
+    fs::create_directories(dir / "not_a_plugin");
+    std::ofstream(dir / "not_a_plugin" / "modinfo.lua") << "--";
+    // Stray files are not packages.
+    std::ofstream(dir / "plugin_flat.dll") << "x";
+
+    auto pkgs = list_plugin_packages(dir.string());
+    assert(pkgs.size() == 2);
+    assert(pkgs[0] == "plugin_a");
+    assert(pkgs[1] == "plugin_c"); // deterministic (sorted)
+
+    assert(list_plugin_packages("").empty());
+    assert(list_plugin_packages((dir / "missing").string()).empty());
+    fs::remove_all(dir);
+    printf("PASS: list_plugin_packages\n");
+}
+
 int main() {
     test_plugins_dir_from_modmain();
     test_search_order_env_wins();
@@ -165,6 +192,7 @@ int main() {
     test_configure_dll_search_idempotent();
     test_deps_registration_contract();
     test_empty_modmain_does_not_crash();
+    test_list_plugin_packages();
     printf("ALL PASS: plugin_path\n");
     return 0;
 }

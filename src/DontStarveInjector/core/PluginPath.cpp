@@ -2,6 +2,7 @@
 
 #include "config/path/ModFolderAliases.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -37,6 +38,29 @@ std::unordered_set<std::string> g_added_dll_dirs;
 // Primary workshop folder + local/dev aliases used when luajit_config.modmain_path
 // is empty (first client boot / dedicated before config is written).
 // Shared list: ds::config::path::kModFolderAliases / kPrimaryWorkshopModName.
+
+// Lua hands us UTF-8 (mod root paths can contain non-ASCII user names). Windows
+// filesystem::path from narrow chars assumes ANSI, so decode explicitly.
+std::filesystem::path path_from_utf8(std::string_view s) {
+#if defined(_WIN32)
+    if (s.empty()) {
+        return {};
+    }
+    const int need = ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
+                                           nullptr, 0);
+    if (need <= 0) {
+        return std::filesystem::path(std::string(s));
+    }
+    std::wstring wide(static_cast<size_t>(need), L'\0');
+    if (::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), wide.data(),
+                              need) != need) {
+        return std::filesystem::path(std::string(s));
+    }
+    return std::filesystem::path(wide);
+#else
+    return std::filesystem::path(std::string(s));
+#endif
+}
 
 bool iequals_ascii(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) {
@@ -325,6 +349,37 @@ std::filesystem::path mod_root_from_plugins_dir(const std::filesystem::path &plu
         return plugins_dir.parent_path();
     }
     return plugins_dir;
+}
+
+std::vector<std::string> list_plugin_packages(std::string_view plugins_dir_utf8) {
+    std::vector<std::string> out;
+    if (plugins_dir_utf8.empty()) {
+        return out;
+    }
+    std::error_code ec;
+    const std::filesystem::path dir = path_from_utf8(plugins_dir_utf8);
+    if (dir.empty() || !std::filesystem::is_directory(dir, ec)) {
+        return out;
+    }
+    for (std::filesystem::directory_iterator it(dir, ec), end; it != end; it.increment(ec)) {
+        if (ec) {
+            break;
+        }
+        std::error_code probe_ec;
+        if (!it->is_directory(probe_ec)) {
+            continue;
+        }
+        const std::string stem = it->path().filename().string();
+        if (stem.rfind("plugin_", 0) != 0) {
+            continue;
+        }
+        if (!std::filesystem::is_regular_file(it->path() / "modinfo.lua", probe_ec)) {
+            continue;
+        }
+        out.push_back(stem);
+    }
+    std::sort(out.begin(), out.end());
+    return out;
 }
 
 std::filesystem::path mod_deps_dir(const std::filesystem::path &mod_root) {
