@@ -49,7 +49,9 @@ restarted, that failure is reported loudly along with the hint.
 own cache (a fresh, independent copy that never touches the local Steam client or the workshop
 junction) and the result is hashed file by file against what the same filter would push today —
 reporting missing/extra/changed files (with the PE link time of changed DLLs), any debug/dev
-files that leaked into the item, and a `version:` tag that disagrees with modinfo.
+files that leaked into the item, and a `version:` tag that disagrees with modinfo. Both sides are
+compared under the publishing rule (`pack_payload.published_name`), so an item that predates the
+`<name>.pkg` layout shows up as one `layout:` note instead of a rename per module.
 
 Exit codes: 0 ok, 1 environment/usage, 2 UGC write/submit refused, 3 verification failed.
 """
@@ -575,31 +577,66 @@ def verify_content(item: int, appid: int, content: pathlib.Path, download_dir: p
 
     remote_bytes = sum(size for size, _ in remote.values())
     log(f"published payload: {len(remote)} files, {remote_bytes:,} B")
+    # The item may predate the "<name>.pkg" rule (mapped modules used their plain names then);
+    # compare both sides by the published name so a pending layout migration is one note, not
+    # 34 phantom differences.
+    keyed_remote: dict[str, tuple[str, int, str]] = {}
+    keyed_local: dict[str, tuple[str, int, str]] = {}
+    for name, (size, digest) in remote.items():
+        key = published_name(pathlib.PurePosixPath(name)).as_posix()
+        if key in keyed_remote:
+            log(f"layout conflict in the published item: two files map to {key}")
+            continue
+        keyed_remote[key] = (name, size, digest)
+    for name, (size, digest) in local.items():
+        keyed_local[published_name(pathlib.PurePosixPath(name)).as_posix()] = (name, size, digest)
+    stale_layout = sum(1 for key, (name, *_rest) in keyed_remote.items() if name != key)
+    if stale_layout:
+        log(f"layout: {stale_layout} published module(s) still carry the pre-'.pkg' name — "
+            f"compared under the publishing rule (pack_payload.published_name)")
     ok = True
-    only_remote = sorted(set(remote) - set(local))
-    only_local = sorted(set(local) - set(remote))
-    differ = sorted(name for name in set(remote) & set(local) if remote[name] != local[name])
+    only_remote = sorted(set(keyed_remote) - set(keyed_local))
+    only_local = sorted(set(keyed_local) - set(keyed_remote))
+    differ = sorted(key for key in set(keyed_remote) & set(keyed_local)
+                    if keyed_remote[key][1:] != keyed_local[key][1:])
     if only_remote:
         ok = False
         log(f"only in the published item: {len(only_remote)}")
-        for name in only_remote[:12]:
-            log(f"  + {name} ({remote[name][0]:,} B)")
+        for key in only_remote[:12]:
+            name, size, _ = keyed_remote[key]
+            log(f"  + {name} ({size:,} B)")
     if only_local:
         ok = False
         log(f"only in the local payload: {len(only_local)}")
-        for name in only_local[:12]:
-            log(f"  - {name} ({local[name][0]:,} B)")
+        for key in only_local[:12]:
+            name, size, _ = keyed_local[key]
+            log(f"  - {name} ({size:,} B)")
     if differ:
         ok = False
         log(f"differing files: {len(differ)}")
-        for name in differ[:12]:
-            stamp = pe_build_stamp(published / name)
-            log(f"  * {name}: published {remote[name][0]:,} B vs local {local[name][0]:,} B"
+        for key in differ[:12]:
+            remote_name, remote_size, _ = keyed_remote[key]
+            local_name, local_size, _ = keyed_local[key]
+            stamp = pe_build_stamp(published / remote_name)
+            where = remote_name if remote_name == local_name else f"{remote_name} vs {local_name}"
+            log(f"  * {where}: published {remote_size:,} B vs local {local_size:,} B"
                 + (f" (published PE {stamp})" if stamp else ""))
-    leaks = [name for name in remote
-             if any(fnmatch.fnmatch(pathlib.PurePosixPath(name).name, pattern)
-                    for pattern in EXCLUDE_NAME_PATTERNS)
-             or is_debug_runtime(pathlib.Path(name), published)]
+    published_names = set(remote)
+
+    def leaked(name: str) -> bool:
+        plain = name[: -len(PACKAGED_SUFFIX)] if name.endswith(PACKAGED_SUFFIX) else name
+        base = pathlib.PurePosixPath(plain)
+        if any(fnmatch.fnmatch(base.name, pattern) for pattern in EXCLUDE_NAME_PATTERNS):
+            return True
+        if base.name.lower() in EXCLUDE_DEBUG_RUNTIMES:
+            return True
+        match = _DEBUG_RUNTIME.match(base.name)
+        if not match:
+            return False
+        twin = (base.parent / f"{match['base']}{match['digits']}.dll").as_posix()
+        return twin in published_names or twin + PACKAGED_SUFFIX in published_names
+
+    leaks = sorted(name for name in remote if leaked(name))
     if leaks:
         ok = False
         log(f"debug/dev files in the published item: {len(leaks)}")
