@@ -2,12 +2,15 @@
 // never in the item manifest; the runtime materializes the canonical name before load.
 #include "core/PackagedModule.hpp"
 
+#include <atomic>
 #include <cassert>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <thread>
+#include <vector>
 
 #if defined(_WIN32)
 #  ifndef NOMINMAX
@@ -119,6 +122,92 @@ static void test_tree_is_packaged_and_prune() {
     printf("PASS: tree_is_packaged_and_prune\n");
 }
 
+// A real, complete PE (this test binary) so "torn copy" checks exercise the PE path.
+static fs::path self_image() {
+#if defined(_WIN32)
+    wchar_t buf[MAX_PATH] = {};
+    const DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+    assert(n != 0 && n < MAX_PATH);
+    return fs::path(buf);
+#else
+    return fs::path("/proc/self/exe");
+#endif
+}
+
+static size_t count_temp_files(const fs::path &dir) {
+    size_t n = 0;
+    for (const auto &entry : fs::directory_iterator(dir)) {
+        if (entry.path().filename().string().find(ds::packaged::kMaterializeTempSuffix) !=
+            std::string::npos) {
+            ++n;
+        }
+    }
+    return n;
+}
+
+// Concurrent materialize of the same module (client + Master + Caves booting together):
+// every writer stages into a private temp and only the atomic replace publishes, so the
+// canonical file is never missing or half-written and no temp is left behind.
+static void test_concurrent_materialize_is_safe() {
+    const auto dir = temp_dir("ds_pkg_race");
+    const auto canonical = dir / "Injector.dll";
+    fs::copy_file(self_image(), ds::packaged::packaged_path(canonical));
+    assert(!fs::exists(canonical));
+    const auto expected = fs::file_size(self_image());
+
+    // Transient open failures are legitimate while a peer swaps the name; a *wrong size*
+    // (a half-published file) is the corruption this guards against.
+    auto published_ok = [&] {
+        for (int attempt = 0; attempt < 20; ++attempt) {
+            std::error_code ec;
+            const auto size = fs::file_size(canonical, ec);
+            if (!ec) {
+                return size == expected;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return false;
+    };
+
+    std::atomic<int> failures{0};
+    std::vector<std::thread> threads;
+    threads.reserve(8);
+    for (int t = 0; t < 8; ++t) {
+        threads.emplace_back([&] {
+            for (int i = 0; i < 25; ++i) {
+                (void)ds::packaged::materialize(canonical);
+                if (!published_ok()) {
+                    ++failures;
+                }
+            }
+        });
+    }
+    for (auto &th : threads) {
+        th.join();
+    }
+    assert(failures.load() == 0);
+    assert(fs::file_size(canonical) == fs::file_size(self_image()));
+    assert(count_temp_files(dir) == 0);
+    printf("PASS: concurrent_materialize_is_safe\n");
+}
+
+// An item update rewriting the twin can hand us a half-written file: refuse to publish it
+// (a truncated PE has sections past EOF) instead of clobbering a working canonical.
+static void test_torn_twin_is_refused() {
+    const auto dir = temp_dir("ds_pkg_torn");
+    const auto canonical = dir / "lua51DS.dll";
+    write_file(canonical, "WORKING-OLD");
+    const auto twin = ds::packaged::packaged_path(canonical);
+    fs::copy_file(self_image(), twin);
+    const auto full = fs::file_size(twin);
+    fs::resize_file(twin, full / 2); // keep the headers, cut the payload
+
+    assert(!ds::packaged::materialize(canonical));
+    assert(read_file(canonical) == "WORKING-OLD");
+    assert(count_temp_files(dir) == 0);
+    printf("PASS: torn_twin_is_refused\n");
+}
+
 #if defined(_WIN32)
 static void test_locked_canonical_is_kept() {
     const auto dir = temp_dir("ds_pkg_locked");
@@ -145,6 +234,8 @@ int main() {
     test_identical_twin_does_not_rewrite();
     test_materialize_directory();
     test_tree_is_packaged_and_prune();
+    test_concurrent_materialize_is_safe();
+    test_torn_twin_is_refused();
 #if defined(_WIN32)
     test_locked_canonical_is_kept();
 #endif

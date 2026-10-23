@@ -714,6 +714,14 @@ under `<name>.pkg`:
 - A package member the item stops shipping leaves its canonical derivative behind; inside a
   packaged tree `DynamicPluginLoader` drops any module whose `.pkg` twin is gone. A source
   tree has no twins at all, so a developer build is never deleted.
+- **Concurrent boots are safe.** Every process stages into its own temp
+  (`<name>.ds_materialize_tmp_<pid>_<n>`) and publishes with one atomic replace
+  (`MoveFileEx(REPLACE_EXISTING)` on Windows, `rename` elsewhere), so a peer sees either the
+  old file or the complete new one — never a missing or half-written module. The exclusive
+  create loses cleanly when another process promoted first, a canonical already mapped by a
+  peer is left untouched, and a twin captured mid-rewrite is re-read once and refused when the
+  copy is incomplete (a truncated PE has sections past EOF). No writer ever truncates a target
+  in place: the same rule applies to `update_pending` moves and to `plugin.manager` installs.
 - `--no-filter` still uploads the tree as-is (canonical names): dev push only, not
   workshop-safe.
 - The **release package uses the same layout**: `.github/workflows/release.yaml` (Windows leg)

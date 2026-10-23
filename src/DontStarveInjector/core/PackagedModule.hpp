@@ -14,11 +14,13 @@
 // A build-tree / zip-install layout has no ".pkg" twin at all: every entry point
 // then returns the path unchanged.
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <string>
 #include <system_error>
 
 #if defined(_WIN32)
@@ -28,6 +30,9 @@
 #  ifndef NOMINMAX
 #    define NOMINMAX
 #  endif
+#  include <Windows.h>
+#else
+#  include <unistd.h>
 #endif
 
 namespace ds::packaged {
@@ -120,20 +125,115 @@ inline bool same_image(const std::filesystem::path &a, const std::filesystem::pa
     return true; // equal size is all we can compare for non-PE payloads
 }
 
+// A file that a copy was cut short on: a PE whose section table points past the end of
+// the file. Non-PE payloads cannot be validated here and are accepted.
+inline bool looks_complete(const std::filesystem::path &p) {
+#if defined(_WIN32)
+    std::error_code ec;
+    const auto total = std::filesystem::file_size(p, ec);
+    if (ec) {
+        return false;
+    }
+    std::ifstream in(p, std::ios::binary);
+    if (!in) {
+        return false;
+    }
+    char mz[2] = {};
+    in.read(mz, sizeof(mz));
+    if (!in || mz[0] != 'M' || mz[1] != 'Z') {
+        return true; // not a PE: nothing to validate
+    }
+    std::uint32_t lfanew = 0;
+    in.seekg(0x3C);
+    in.read(reinterpret_cast<char *>(&lfanew), sizeof(lfanew));
+    const auto pe_head = static_cast<std::uint64_t>(lfanew) + 24;
+    if (!in || pe_head > total) {
+        return false;
+    }
+    char signature[4] = {};
+    in.seekg(lfanew);
+    in.read(signature, sizeof(signature));
+    std::uint16_t n_sections = 0;
+    in.seekg(static_cast<std::streamoff>(lfanew) + 6);
+    in.read(reinterpret_cast<char *>(&n_sections), sizeof(n_sections));
+    std::uint16_t opt_header = 0;
+    in.seekg(static_cast<std::streamoff>(lfanew) + 20);
+    in.read(reinterpret_cast<char *>(&opt_header), sizeof(opt_header));
+    if (!in || std::memcmp(signature, "PE\0\0", 4) != 0 || n_sections == 0 || n_sections > 96) {
+        return false;
+    }
+    const auto table = pe_head + opt_header;
+    if (table + static_cast<std::uint64_t>(n_sections) * 40 > total) {
+        return false;
+    }
+    for (std::uint16_t i = 0; i < n_sections; ++i) {
+        std::uint32_t raw_size = 0;
+        std::uint32_t raw_ptr = 0;
+        in.seekg(static_cast<std::streamoff>(table) + i * 40 + 16);
+        in.read(reinterpret_cast<char *>(&raw_size), sizeof(raw_size));
+        in.read(reinterpret_cast<char *>(&raw_ptr), sizeof(raw_ptr));
+        if (!in) {
+            return false;
+        }
+        if (raw_size != 0 && static_cast<std::uint64_t>(raw_ptr) + raw_size > total) {
+            return false; // truncated copy
+        }
+    }
+    return true;
+#else
+    (void)p;
+    return true;
+#endif
+}
+
+// Unique scratch name: two processes materializing the same module must never write the
+// same temp file (a shared temp can be promoted half-written by the other process).
+inline std::filesystem::path unique_temp_path(const std::filesystem::path &canonical) {
+    static std::atomic<unsigned> counter{0};
+#if defined(_WIN32)
+    const unsigned long pid = static_cast<unsigned long>(GetCurrentProcessId());
+#else
+    const unsigned long pid = static_cast<unsigned long>(::getpid());
+#endif
+    std::filesystem::path p = canonical;
+    p += kMaterializeTempSuffix;
+    p += "_" + std::to_string(pid) + "_" + std::to_string(counter.fetch_add(1));
+    return p;
+}
+
 } // namespace detail
+
+// Replace `dest` with `src` in one step where the platform allows it, so a concurrent
+// reader sees either the old or the new file — never a missing or half-written one.
+// Fails (returns false) when `dest` is mapped by another process; the caller keeps it.
+inline bool atomic_replace(const std::filesystem::path &src, const std::filesystem::path &dest) {
+#if defined(_WIN32)
+    if (MoveFileExW(src.wstring().c_str(), dest.wstring().c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        return true;
+    }
+    return false;
+#else
+    std::error_code ec;
+    std::filesystem::rename(src, dest, ec);
+    return !ec;
+#endif
+}
 
 // Materialize the canonical name from its ".pkg" twin when they differ.
 // Returns true only when the canonical file was (re)written by this call.
-// Never throws, never deletes the canonical file: a mapped canonical (another
-// process of a shared plugins tree) fails the swap and keeps what is already there.
+//
+// Concurrency: several processes of the same install (client + Master + Caves) may run this
+// for the same module at the same time. It is safe because every writer uses a private temp
+// file and only the atomic replace publishes it; a replace that loses the race against a
+// peer that already promoted the same build is dropped, and a replace that hits a canonical
+// another process has mapped fails and keeps the existing file.
 inline bool materialize(const std::filesystem::path &canonical) {
     std::error_code ec;
     const auto from = packaged_path(canonical);
     if (!detail::is_regular(from)) {
         return false; // dev/zip layout: the canonical file is the shipped file
     }
-    const bool have_target = detail::is_regular(canonical);
-    if (have_target && detail::same_image(canonical, from)) {
+    if (detail::is_regular(canonical) && detail::same_image(canonical, from)) {
         return false; // already current
     }
     if (!canonical.parent_path().empty()) {
@@ -141,37 +241,59 @@ inline bool materialize(const std::filesystem::path &canonical) {
         ec.clear();
     }
 
-    // Stage beside the target so a partial copy can never be loaded.
-    const auto tmp = materialize_temp_path(canonical);
-    std::filesystem::remove(tmp, ec);
-    ec.clear();
-    std::filesystem::copy_file(from, tmp, std::filesystem::copy_options::overwrite_existing, ec);
-    if (ec) {
-        std::fprintf(stderr, "[PackagedModule] stage_failed: %s (%s)\n", from.string().c_str(),
-                     ec.message().c_str());
+    // Copy into a private temp; retry once when the twin moved under us (an item update
+    // rewriting "<name>.pkg" while this boot reads it) or the copy came out incomplete.
+    const auto tmp = detail::unique_temp_path(canonical);
+    bool staged = false;
+    for (int attempt = 0; attempt < 2 && !staged; ++attempt) {
+        std::filesystem::remove(tmp, ec);
+        ec.clear();
+        std::filesystem::copy_file(from, tmp, std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec) {
+            break;
+        }
+        staged = detail::looks_complete(tmp) && detail::same_image(tmp, from);
+    }
+    if (!staged) {
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp, rm_ec);
+        std::fprintf(stderr, "[PackagedModule] stage_failed: %s\n", from.string().c_str());
         return false;
     }
 
-    ec.clear();
-    std::filesystem::rename(tmp, canonical, ec);
-    if (!ec) {
+    // Publishing: exclusive create when the canonical is absent (the rename fails instead of
+    // clobbering a peer's just-promoted file), atomic replace when it is present.
+    if (!detail::is_regular(canonical)) {
+        std::error_code rn_ec;
+        std::filesystem::rename(tmp, canonical, rn_ec); // no replace: loses the race cleanly
+        if (!rn_ec) {
+            std::fprintf(stderr, "[PackagedModule] materialized: %s\n", canonical.string().c_str());
+            return true;
+        }
+        if (detail::is_regular(canonical) && detail::same_image(canonical, from)) {
+            std::error_code rm_ec;
+            std::filesystem::remove(tmp, rm_ec); // a peer promoted the same build
+            return false;
+        }
+    }
+
+    // A peer may have published the very same build after our first check.
+    if (detail::is_regular(canonical) && detail::same_image(canonical, from)) {
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp, rm_ec);
+        return false;
+    }
+
+    if (atomic_replace(tmp, canonical)) {
         std::fprintf(stderr, "[PackagedModule] materialized: %s\n", canonical.string().c_str());
         return true;
     }
-
-    // Windows cannot rename over an existing file: overwrite in place instead.
-    ec.clear();
-    std::filesystem::copy_file(tmp, canonical, std::filesystem::copy_options::overwrite_existing, ec);
     std::error_code rm_ec;
     std::filesystem::remove(tmp, rm_ec);
-    if (ec) {
-        std::fprintf(stderr,
-                     "[PackagedModule] kept existing %s (locked by another process?): %s\n",
-                     canonical.string().c_str(), ec.message().c_str());
-        return false;
-    }
-    std::fprintf(stderr, "[PackagedModule] materialized: %s\n", canonical.string().c_str());
-    return true;
+    std::fprintf(stderr,
+                 "[PackagedModule] kept existing %s (mapped by another process)\n",
+                 canonical.string().c_str());
+    return false;
 }
 
 // True when the canonical file is present after trying to materialize it.

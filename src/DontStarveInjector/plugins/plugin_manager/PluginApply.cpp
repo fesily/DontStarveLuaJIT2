@@ -4,6 +4,8 @@
 #include "PluginHttp.hpp"
 #include "PluginZipExtract.hpp"
 
+#include "core/PackagedModule.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -154,26 +156,18 @@ bool copy_file_overwrite(const std::filesystem::path &from, const std::filesyste
         return false;
     }
 
-    // Atomic-ish replace when the platform allows rename-over.
-    ec.clear();
-    std::filesystem::rename(tmp, to, ec);
-    if (!ec) {
+    // Publish in one step. Never fall back to an in-place overwrite: a peer boot could
+    // LoadLibrary the target while it is half-written. A mapped target simply fails here
+    // and the caller routes the whole package to update_pending/.
+    if (ds::packaged::atomic_replace(tmp, to)) {
         return true;
     }
-
-    // Fallback: overwrite dest in place from the completed temp (no pre-delete of dest).
-    ec.clear();
-    std::filesystem::copy_file(tmp, to, std::filesystem::copy_options::overwrite_existing, ec);
     std::error_code rm_ec;
     std::filesystem::remove(tmp, rm_ec);
-    if (ec) {
-        if (err) {
-            *err = "copy failed: " + from.generic_string() + " -> " + to.generic_string() + " (" +
-                   ec.message() + ")";
-        }
-        return false;
+    if (err) {
+        *err = "replace failed (target mapped by another process?): " + to.generic_string();
     }
-    return true;
+    return false;
 }
 
 

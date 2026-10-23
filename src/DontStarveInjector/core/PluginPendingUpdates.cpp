@@ -1,5 +1,6 @@
 #include "PluginPendingUpdates.hpp"
 
+#include "PackagedModule.hpp"
 #include "PluginProcessLock.hpp"
 
 #include <cstdio>
@@ -54,20 +55,20 @@ std::filesystem::path sibling_temp_path(const std::filesystem::path &dest) {
     return parent / (dest.filename().string() + ".ds_pending_tmp_" + tag);
 }
 
-// Prefer rename-over-existing when the OS supports it. Otherwise stage a sibling
-// temp next to dest and only then replace. Never delete a live module first.
+// Replace dest in one step (atomic on POSIX and on NTFS). When dest is mapped by another
+// process the replace fails and the pending file is kept for the next inject — never fall
+// back to an in-place overwrite, which would expose a half-written module to a peer boot.
 bool apply_one(const std::filesystem::path &from, const std::filesystem::path &to) {
     std::error_code ec;
     // Package members land in <plugins>/<package>/…: make the parent exist first
-    // (rename/copy do not create intermediate directories).
+    // (rename does not create intermediate directories).
     if (!to.parent_path().empty()) {
         std::filesystem::create_directories(to.parent_path(), ec);
         ec.clear();
     }
 
-    // Fast path: rename pending onto dest (atomic replace on POSIX; may fail on Windows if dest exists).
-    std::filesystem::rename(from, to, ec);
-    if (!ec) {
+    // Fast path: publish the pending file straight onto dest.
+    if (ds::packaged::atomic_replace(from, to)) {
         return true;
     }
 
@@ -82,10 +83,7 @@ bool apply_one(const std::filesystem::path &from, const std::filesystem::path &t
         return false;
     }
 
-    // Prefer rename temp over dest (no pre-delete).
-    ec.clear();
-    std::filesystem::rename(tmp, to, ec);
-    if (!ec) {
+    if (ds::packaged::atomic_replace(tmp, to)) {
         std::error_code rm_ec;
         std::filesystem::remove(from, rm_ec);
         if (rm_ec) {
@@ -95,25 +93,12 @@ bool apply_one(const std::filesystem::path &from, const std::filesystem::path &t
         return true;
     }
 
-    // Last resort: overwrite dest in place from the completed temp (dest stays intact on failure).
-    ec.clear();
-    std::filesystem::copy_file(tmp, to, std::filesystem::copy_options::overwrite_existing, ec);
     std::error_code rm_tmp;
     std::filesystem::remove(tmp, rm_tmp);
-    if (ec) {
-        std::fprintf(stderr, "[PluginPendingUpdates] apply_failed: %s -> %s (%s)\n", from.string().c_str(),
-                     to.string().c_str(), ec.message().c_str());
-        // Leave pending file for retry; do not delete working module.
-        return false;
-    }
-
-    std::error_code rm_from;
-    std::filesystem::remove(from, rm_from);
-    if (rm_from) {
-        std::fprintf(stderr, "[PluginPendingUpdates] remove_pending_failed: %s (%s)\n", from.string().c_str(),
-                     rm_from.message().c_str());
-    }
-    return true;
+    std::fprintf(stderr, "[PluginPendingUpdates] apply_deferred: %s -> %s (target mapped)\n",
+                 from.string().c_str(), to.string().c_str());
+    // Leave pending file for retry; do not touch the working module.
+    return false;
 }
 
 } // namespace
