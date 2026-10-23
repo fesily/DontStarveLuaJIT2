@@ -29,6 +29,8 @@ Usage
     python tools/update_workshop_tags.py --version 3.2.3  # override the version
     python tools/update_workshop_tags.py --push-content --ignore-file ignore.txt
     python tools/update_workshop_tags.py --visibility 0 --yes   # flip to public, no prompt
+    python tools/update_workshop_tags.py --verify-content      # download the item and diff it
+    python tools/update_workshop_tags.py --verify-content --download-dir D:\\ws-check
 
 Content pushes stage a filtered copy first (Windows-only item, like the release shape):
 debug/link artifacts (`*.pdb`, `*.lib`, `*.exp`, `*.ilk`), foreign-platform libraries
@@ -43,18 +45,28 @@ item the public API cannot read (unlisted/private) be updated, at the cost of no
 preserve its existing tags. Since a long-running Steam client can drop UGC writes until it is
 restarted, that failure is reported loudly along with the hint.
 
+`--verify-content` is the read-only counterpart: SteamCMD downloads the published item into its
+own cache (a fresh, independent copy that never touches the local Steam client or the workshop
+junction) and the result is hashed file by file against what the same filter would push today —
+reporting missing/extra/changed files (with the PE link time of changed DLLs), any debug/dev
+files that leaked into the item, and a `version:` tag that disagrees with modinfo.
+
 Exit codes: 0 ok, 1 environment/usage, 2 UGC write/submit refused, 3 verification failed.
 """
 from __future__ import annotations
 
 import argparse
 import ctypes
+import datetime
 import fnmatch
+import hashlib
 import json
 import os
 import pathlib
 import re
 import shutil
+import struct
+import subprocess
 import sys
 import tempfile
 import time
@@ -74,6 +86,10 @@ EXCLUDE_PATH_PREFIXES = ("bin64/osx", "bin64/linux", "plugins/update_pending")
 # `zlibd1.dll` beside `zlib1.dll`). Same rule as the CI "debug-only vcpkg runtime" check:
 # a name whose release twin sits in the same folder is the debug build.
 _DEBUG_RUNTIME = re.compile(r"^(?P<base>.+?)d(?P<digits>\d*)\.dll$", re.IGNORECASE)
+# Known vcpkg debug runtimes, for installs where the release twin is missing (the twin rule above
+# covers the normal layout; this is the same set the CI "debug-only vcpkg runtime" check rejects).
+EXCLUDE_DEBUG_RUNTIMES = ("bz2d.dll", "fmtd.dll", "mimalloc-debug.dll", "spdlogd.dll",
+                          "zlibd1.dll", "zstdd.dll")
 DEFAULT_APPID = 322330  # Don't Starve Together
 DETAILS_URL = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -149,6 +165,8 @@ def is_debug_runtime(rel: pathlib.Path, root: pathlib.Path) -> bool:
 def should_skip(rel: pathlib.Path, extra: tuple[str, ...] = (), root: pathlib.Path | None = None) -> bool:
     """True when this staged path is debug/link junk, a foreign-platform file or other platform shell."""
     if any(fnmatch.fnmatch(rel.name, pattern) for pattern in EXCLUDE_NAME_PATTERNS):
+        return True
+    if rel.name.lower() in EXCLUDE_DEBUG_RUNTIMES:
         return True
     if root is not None and is_debug_runtime(rel, root):
         return True
@@ -453,6 +471,124 @@ def verify(item: int, version: str, before: dict, timeout: float, content_pushed
         time.sleep(5)
 
 
+# ---------------------------------------------------------------- published-content check
+
+
+def find_steamcmd() -> pathlib.Path:
+    """Locate SteamCMD: $STEAMCMD, the usual install dir, then PATH."""
+    for candidate in (os.environ.get("STEAMCMD"), r"C:\steamcmd\steamcmd.exe"):
+        if candidate and pathlib.Path(candidate).is_file():
+            return pathlib.Path(candidate)
+    found = shutil.which("steamcmd") or shutil.which("steamcmd.exe")
+    if found:
+        return pathlib.Path(found)
+    raise SystemExit("SteamCMD not found — set STEAMCMD=/path/to/steamcmd.exe "
+                     "(anonymous login can download any public item)")
+
+
+def download_item(item: int, appid: int, steamcmd: pathlib.Path, timeout: float) -> pathlib.Path:
+    """Fetch the published item anonymously into SteamCMD's own cache (a fresh, independent copy)."""
+    target = steamcmd.parent / "steamapps" / "workshop" / "content" / str(appid) / str(item)
+    shutil.rmtree(target, ignore_errors=True)
+    command = [str(steamcmd), "+login", "anonymous",
+               "+workshop_download_item", str(appid), str(item), "validate", "+quit"]
+    log(f"downloading item {item} with SteamCMD (anonymous, independent copy)")
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise SystemExit(f"SteamCMD download timed out after {timeout:.0f}s")
+    if not target.is_dir():
+        tail = " | ".join((result.stdout or "").strip().splitlines()[-4:])
+        raise SystemExit(f"download failed (is the item public?): {tail or 'no SteamCMD output'}")
+    return target
+
+
+def pe_build_stamp(path: pathlib.Path) -> str:
+    """Link time (PE TimeDateStamp) in UTC — tells how old a shipped DLL really is; '' for non-PE."""
+    try:
+        data = path.read_bytes()
+        offset = struct.unpack_from("<I", data, 0x3C)[0]
+        if data[offset:offset + 4] != b"PE\0\0":
+            return ""
+        stamp = struct.unpack_from("<I", data, offset + 8)[0]
+    except (OSError, IndexError, struct.error):
+        return ""
+    return datetime.datetime.utcfromtimestamp(stamp).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _file_hashes(root: pathlib.Path) -> dict[str, tuple[int, str]]:
+    out: dict[str, tuple[int, str]] = {}
+    for path in root.rglob("*"):
+        if path.is_file():
+            out[path.relative_to(root).as_posix()] = (path.stat().st_size, hashlib.sha1(path.read_bytes()).hexdigest())
+    return out
+
+
+def verify_content(item: int, appid: int, content: pathlib.Path, download_dir: pathlib.Path | None,
+                   steamcmd: pathlib.Path, timeout: float, version: str, existing: list[str],
+                   use_filter: bool = True, extra_patterns: tuple[str, ...] = ()) -> bool:
+    """Independent check: fetch the published item and diff it against the filtered local payload."""
+    published = download_item(item, appid, steamcmd, timeout)
+    if download_dir is not None:
+        shutil.rmtree(download_dir, ignore_errors=True)
+        download_dir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(published, download_dir)
+        published = download_dir
+        log(f"independent copy kept at {published}")
+
+    staged = pathlib.Path(tempfile.mkdtemp(prefix="workshop-local-"))
+    try:
+        files, total, _ = stage_content(content, staged, use_filter=use_filter, extra_patterns=extra_patterns)
+        log(f"local payload: {files} files, {total:,} B")
+        remote = _file_hashes(published)
+        local = _file_hashes(staged)
+    finally:
+        shutil.rmtree(staged, ignore_errors=True)
+
+    remote_bytes = sum(size for size, _ in remote.values())
+    log(f"published payload: {len(remote)} files, {remote_bytes:,} B")
+    ok = True
+    only_remote = sorted(set(remote) - set(local))
+    only_local = sorted(set(local) - set(remote))
+    differ = sorted(name for name in set(remote) & set(local) if remote[name] != local[name])
+    if only_remote:
+        ok = False
+        log(f"only in the published item: {len(only_remote)}")
+        for name in only_remote[:12]:
+            log(f"  + {name} ({remote[name][0]:,} B)")
+    if only_local:
+        ok = False
+        log(f"only in the local payload: {len(only_local)}")
+        for name in only_local[:12]:
+            log(f"  - {name} ({local[name][0]:,} B)")
+    if differ:
+        ok = False
+        log(f"differing files: {len(differ)}")
+        for name in differ[:12]:
+            stamp = pe_build_stamp(published / name)
+            log(f"  * {name}: published {remote[name][0]:,} B vs local {local[name][0]:,} B"
+                + (f" (published PE {stamp})" if stamp else ""))
+    leaks = [name for name in remote
+             if any(fnmatch.fnmatch(pathlib.PurePosixPath(name).name, pattern)
+                    for pattern in EXCLUDE_NAME_PATTERNS)
+             or is_debug_runtime(pathlib.Path(name), published)]
+    if leaks:
+        ok = False
+        log(f"debug/dev files in the published item: {len(leaks)}")
+        for name in sorted(leaks)[:12]:
+            log(f"  ! {name}")
+    wanted = f"version:{version}"
+    if wanted not in existing:
+        ok = False
+        log(f"published tags {existing} lack {wanted} (local modinfo says {version})")
+    if ok:
+        log(f"verified: published content matches the local payload "
+            f"({len(remote)} files, {remote_bytes:,} B), {wanted} tagged")
+    else:
+        log("content verification FAILED")
+    return ok
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--item", type=int, default=DEFAULT_ITEM, help=f"workshop item id (default {DEFAULT_ITEM})")
@@ -484,6 +620,15 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--allow-unreadable", action="store_true",
                         help="proceed for an item the public API cannot read (unlisted/private): "
                              "existing tags cannot be preserved then")
+    parser.add_argument("--verify-content", action="store_true",
+                        help="download the published item anonymously with SteamCMD and diff it against "
+                             "the filtered local payload (exit 3 on any difference)")
+    parser.add_argument("--download-dir", type=pathlib.Path,
+                        help="also keep the downloaded copy in this folder (default: SteamCMD's workshop cache)")
+    parser.add_argument("--steamcmd", type=pathlib.Path,
+                        help="SteamCMD executable (default: $STEAMCMD, C:\\steamcmd, then PATH)")
+    parser.add_argument("--download-timeout", type=float, default=900.0,
+                        help="seconds for the SteamCMD download (default 900)")
     args = parser.parse_args(argv)
 
     version = args.version or version_from_modinfo(args.modinfo)
@@ -491,12 +636,18 @@ def main(argv: list[str]) -> int:
     log(f"item {args.item} tags now: {existing} (mod version {version})")
     if args.print_only:
         return 0
+    extra = tuple(load_ignore_file(args.ignore_file)) if args.ignore_file else ()
+    if args.verify_content:
+        ok = verify_content(args.item, args.appid, args.content, args.download_dir,
+                            args.steamcmd or find_steamcmd(), args.download_timeout,
+                            version=version, existing=existing,
+                            use_filter=not args.no_filter, extra_patterns=extra)
+        return 0 if ok else 3
     tags = compose_tags(existing, version)
     log(f"tag list to write: {tags}")
 
     staged: pathlib.Path | None = None
     if args.push_content:
-        extra = tuple(load_ignore_file(args.ignore_file)) if args.ignore_file else ()
         if extra:
             log(f"extra ignore patterns from {args.ignore_file}: {len(extra)}")
         staged = pathlib.Path(tempfile.mkdtemp(prefix="workshop-content-"))
