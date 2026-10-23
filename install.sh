@@ -10,7 +10,10 @@
 #   3. locates the game through Steam (registry-free: env overrides, ~/.steam,
 #      libraryfolders.vdf libraries, appmanifest_322330.acf) unless --game-dir
 #   4. stages the package under <game>/mods/<mod-folder>
-#   5. runs the packaged install_linux.sh (shell stub -> game, real module stays
+#   5. wipes <game>/data/unsafedata (stale Injector marker, boot log, plugin
+#      config) once the package is verified on disk, so the deployed shell
+#      starts from a clean slate
+#   6. runs the packaged install_linux.sh (shell stub -> game, real module stays
 #      in the mod, marker + launcher rewrite, [CHECK] self-check)
 #
 # Options (flags win over env):
@@ -246,6 +249,16 @@ mkdir -p "$MOD_DIR"
 cp -R "$SRC"/. "$MOD_DIR"/
 [ -f "$MOD_DIR/modmain.lua" ] || die "staged package is incomplete (modmain.lua missing)"
 
+# Injector state - resolution marker, boot log, plugin config - lives in
+# <game>/data/unsafedata. A marker left by a previous install pins a path that
+# may be gone (the usual "installed but no effect" cause), so start from an
+# empty dir; the shell recreates it at boot. Runs only now that the package is
+# verified on disk; a failed delete warns instead of aborting.
+if [ -d "$GAME/data/unsafedata" ]; then
+    log "removing game data: $GAME/data/unsafedata"
+    rm -rf "$GAME/data/unsafedata" || warn "cannot fully remove $GAME/data/unsafedata - continuing"
+fi
+
 log "running the packaged installer (deploys the shell + writes the marker) ..."
 # The packaged script needs bash; older releases predate its own sh->bash
 # re-exec guard, so prefer bash here.
@@ -256,13 +269,20 @@ else
 fi
 
 # Version-independent post-check (the packaged installer adds its own [CHECK]).
+# The marker is written by the shell on its first boot, never by the installer -
+# and the cleanup above guarantees it is gone right after an install - so only
+# the shell is a hard requirement here.
 stub="$GAME/bin64/lib64/libInjector.so"
 marker="$GAME/data/unsafedata/ds_luajit_injector.path"
-if [ -f "$stub" ] && [ -f "$marker" ]; then
+if [ -f "$stub" ]; then
     log "shell: $stub"
+else
+    warn "shell missing after the install - see the messages above"
+fi
+if [ -f "$marker" ]; then
     log "marker: $(head -n1 "$marker" 2>/dev/null)"
 else
-    warn "shell or marker missing after the install - see the messages above"
+    log "marker: absent (the shell writes it on the first boot)"
 fi
 
 log "done: $TAG installed in $MOD_DIR"

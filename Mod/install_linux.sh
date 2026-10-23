@@ -5,9 +5,11 @@
 # Sole job: install the injection shell - the stub libInjector.so into the
 # game's bin64/lib64 plus the LD_PRELOAD launchers. The rest of the package -
 # libInjector.so, plugins/, deps/, signatures_*.json - is shipped in place by
-# the release package. This script never stages, migrates or deletes mod files,
-# and never writes into the game data dir (the shell writes its own resolution
-# marker once it finds the mod).
+# the release package. This script never stages, migrates or deletes mod files.
+# The one thing it drops in the game data dir is <game>/data/unsafedata -
+# injector state (resolution marker, boot log, plugin config) - so a stale
+# marker cannot pin a path that no longer exists; the shell recreates it at
+# boot.
 
 # Needs bash (arrays + `local`); re-exec instead of dying with a dash syntax
 # error when started as `sh install_linux.sh`.
@@ -230,6 +232,20 @@ EOF
     echo "rewrite dontstarve_dedicated_server_nullrenderer_x64 success"
 else
     echo "skip rewrite dontstarve_dedicated_server_nullrenderer_x64."
+fi
+
+# 3) Injector state: <game>/data/unsafedata holds the resolution marker, the
+#    boot log and the plugin config. A marker left by a previous install pins a
+#    path that may be gone (the usual "installed but no effect" cause), so every
+#    install starts from an empty dir; the shell recreates it at boot. Best
+#    effort - a file still held by another process only warns.
+data_dir="$game_root/data/unsafedata"
+if [ -d "$data_dir" ]; then
+    echo "[INFO] removing game data -> $data_dir"
+    rm -rf "$data_dir"
+    if [ -d "$data_dir" ]; then
+        echo "[WARN] cannot fully remove $data_dir (still in use?)"
+    fi
 fi
 
 echo "[INFO] Operation completed successfully"

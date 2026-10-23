@@ -6,7 +6,9 @@ REM
 REM Sole job: put the injection shell (Winmm.dll) into the game bin64.
 REM The rest of the package - Injector.dll, plugins\, deps\, signatures_*.json -
 REM is shipped in place by the release package. This script never stages,
-REM migrates or deletes mod files, and never touches the game data dir.
+REM migrates or deletes mod files. The one thing it drops in the game data dir
+REM is <game>\data\unsafedata - injector state (resolution marker, boot log,
+REM plugin config) - so a stale marker cannot pin a path that no longer exists.
 
 set "processes=dontstarve_steam_x64.exe dontstarve_dedicated_server_nullrenderer_x64.exe"
 
@@ -58,7 +60,7 @@ if not exist "%destination%\Winmm.dll" goto copy_shell
 fc /b "%shell_src%" "%destination%\Winmm.dll" >NUL 2>&1
 if not errorlevel 1 (
     echo [INFO] shell already up to date.
-    goto end
+    goto clean_data
 )
 
 :copy_shell
@@ -66,6 +68,19 @@ echo [INFO] install shell -^> %destination%\Winmm.dll
 copy /Y "%shell_src%" "%destination%\Winmm.dll" >NUL
 if errorlevel 1 goto err_copy
 echo [INFO] install success
+goto clean_data
+
+:clean_data
+REM The loader keeps its own state - the resolution marker, the boot log and
+REM the plugin config - in <game>\data\unsafedata. A marker left by a previous
+REM install pins a path that may be gone (the usual "installed but no effect"
+REM cause), so every install starts from an empty dir; the shell recreates it
+REM at boot. Best effort: a file still held by another process only warns.
+set "data_dir=%destination%\..\data\unsafedata"
+if not exist "%data_dir%" goto end
+echo [INFO] removing game data -^> %data_dir%
+rd /S /Q "%data_dir%" >NUL 2>&1
+if exist "%data_dir%" echo [WARN] cannot fully remove %data_dir% (still in use?)
 goto end
 
 :uninstall

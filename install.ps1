@@ -26,7 +26,10 @@
 #   5. if the client or a dedicated server is still running, asks before
 #      force-closing it (the mod DLLs stay mapped otherwise) and aborts the
 #      whole install when that is not confirmed
-#   6. runs the packaged install.bat (Winmm shell -> game bin64, real Injector
+#   6. wipes <game>\data\unsafedata (stale Injector marker, boot log, plugin
+#      config) once the package is verified on disk, so the deployed shell
+#      starts from a clean slate
+#   7. runs the packaged install.bat (Winmm shell -> game bin64, real Injector
 #      stays in the mod, marker + stale-copy cleanup) and reports the result
 #
 # Everything runs inside one script block so a piped `iex` does not leak
@@ -94,9 +97,12 @@ $DsjScriptArgs = $args
         'staging'           = 'staging package -> {0}'
         'modinfo.missing'   = 'modinfo.lua not found inside {0}'
         'staged.incomplete' = 'staged package is incomplete (modmain.lua missing)'
+        'cleanup.unsafedata' = 'removing game data (stale marker / boot log / plugin config): {0}'
+        'cleanup.fail'      = 'cannot fully remove ''{0}'': {1} - continuing'
         'run.bat'           = 'running the packaged installer (deploys the Winmm shell; the marker is written by the shell at boot) ...'
         'check.ok'          = 'CHECK {0}: {1} ({2} bytes)'
         'check.missing'     = 'CHECK {0}: {1} MISSING'
+        'check.pending'     = 'CHECK {0}: {1} (absent - the shell writes it on the first boot)'
         'marker.dangling'   = 'marker points at ''{0}'', which does not exist'
         'done'              = 'done: {0} installed in {1}'
         'selfcheck'         = 'the self-check found problems above - see the boot log after launching the game'
@@ -273,6 +279,23 @@ $DsjScriptArgs = $args
         return (Join-Path $content $WorkshopItem)
     }
 
+    # <game>\data\unsafedata holds only what the injector wrote: the marker
+    # (absolute path of the previous install), the boot log and the plugin
+    # config. The Lua-side luajit_*.json moved to the save dir, so a leftover
+    # marker pointing at a removed package is the usual cause of "installed but
+    # no effect". Wiped by the caller after the package is verified on disk and
+    # before install.bat deploys the shell; the shell recreates the dir at boot.
+    function Remove-GameData($game) {
+        $dir = Join-Path $game 'data\unsafedata'
+        if (-not (Test-Path -LiteralPath $dir)) { return }
+        Write-Log (Msg 'cleanup.unsafedata' $dir)
+        try {
+            Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction Stop
+        } catch {
+            Write-Warn (Msg 'cleanup.fail' $dir, $_.Exception.Message)
+        }
+    }
+
     # --- running-game consent gate -------------------------------------------
     # Staging below deletes and replaces $modDir, whose DLLs a running client /
     # dedicated server keeps mapped, so those processes have to go first. Same
@@ -401,6 +424,8 @@ $DsjScriptArgs = $args
                 throw (Msg 'staged.incomplete')
             }
 
+            Remove-GameData $game
+
             Write-Log (Msg 'run.bat')
             Push-Location $modDir
             try {
@@ -425,8 +450,7 @@ $DsjScriptArgs = $args
         }
         $checks = @(
             @{ name = 'shell '; path = (Join-Path $game 'bin64\Winmm.dll') },
-            @{ name = 'module'; path = (Join-Path $modDir $moduleFile) },
-            @{ name = 'marker'; path = (Join-Path $game 'data\unsafedata\ds_luajit_injector.path') }
+            @{ name = 'module'; path = (Join-Path $modDir $moduleFile) }
         )
         $fail = $false
         foreach ($c in $checks) {
@@ -437,8 +461,17 @@ $DsjScriptArgs = $args
                 $fail = $true
             }
         }
+        # The marker is written by the shell on its first boot, never by the
+        # installer - and the cleanup above guarantees it is gone right after an
+        # install - so its absence is expected, not a failure. A marker that is
+        # present but points at a vanished module still is one.
         $real = Join-Path $modDir $moduleFile
         $marker = Join-Path $game 'data\unsafedata\ds_luajit_injector.path'
+        if (Test-Path -LiteralPath $marker) {
+            Write-Log (Msg 'check.ok' 'marker', $marker, (Get-Item -LiteralPath $marker).Length)
+        } else {
+            Write-Log (Msg 'check.pending' 'marker', $marker)
+        }
         if ((Test-Path -LiteralPath $real) -and (Test-Path -LiteralPath $marker)) {
             $target = (Get-Content -LiteralPath $marker -Raw).Trim()
             if ($target -and -not (Test-Path -LiteralPath $target)) {
