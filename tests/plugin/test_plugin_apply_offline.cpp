@@ -890,6 +890,39 @@ static void test_package_layout_pending_mirror() {
     printf("PASS: package_layout_pending_mirror\n");
 }
 
+static void test_install_prefers_packaged_twin() {
+    // Workshop layout: when "<module>.pkg" exists it is the durable target (the canonical
+    // file is a derivative the next boot regenerates from it); without a twin the canonical
+    // name stays the target (release zip / source layout).
+    {
+        const auto staging = make_temp_dir("pkg_stage_twin");
+        const auto plugins = make_temp_dir("pkg_plug_twin");
+        fs::create_directories(plugins / "plugin_dummy");
+        std::ofstream(staging / "plugin_dummy.dll", std::ios::binary) << "NEW";
+        std::ofstream(plugins / "plugin_dummy" / "plugin_dummy.dll.pkg", std::ios::binary) << "OLD";
+        std::ofstream(plugins / "plugin_dummy" / "plugin_dummy.dll", std::ios::binary) << "OLD";
+        bool pending = false;
+        std::string err;
+        assert(install_extracted_files(staging, plugins, "plugin_dummy", {"plugin_dummy.dll"},
+                                       &pending, &err));
+        assert(!pending);
+        assert(read_bytes(plugins / "plugin_dummy" / "plugin_dummy.dll.pkg") == "NEW");
+        assert(read_bytes(plugins / "plugin_dummy" / "plugin_dummy.dll") == "OLD");
+    }
+    {
+        const auto staging = make_temp_dir("pkg_stage_notwin");
+        const auto plugins = make_temp_dir("pkg_plug_notwin");
+        std::ofstream(staging / "plugin_dummy.dll", std::ios::binary) << "NEW";
+        bool pending = false;
+        std::string err;
+        assert(install_extracted_files(staging, plugins, "plugin_dummy", {"plugin_dummy.dll"},
+                                       &pending, &err));
+        assert(read_bytes(plugins / "plugin_dummy" / "plugin_dummy.dll") == "NEW");
+        assert(!fs::exists(plugins / "plugin_dummy" / "plugin_dummy.dll.pkg"));
+    }
+    printf("PASS: install_prefers_packaged_twin\n");
+}
+
 int main() {
     test_channel_cache_and_lookup();
     test_fetch_manifest_mock();
@@ -905,6 +938,7 @@ int main() {
     test_package_layout_install();
     test_package_layout_traversal_rejected();
     test_package_layout_pending_mirror();
+    test_install_prefers_packaged_twin();
     printf("ALL PASS plugin_apply_offline\n");
     return 0;
 }

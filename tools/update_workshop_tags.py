@@ -73,6 +73,10 @@ import time
 import urllib.parse
 import urllib.request
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+# One rule for "which file must be published under <name>.pkg" (release packaging shares it).
+from pack_payload import LOADED_MODULE_PARENTS, PACKAGED_SUFFIX, published_name  # noqa: E402
+
 DEFAULT_ITEM = 3444078585  # DontStarveLuaJit2
 # What a local content push skips, mirroring the windows-only release shape.
 EXCLUDE_NAME_PATTERNS = ("*.pdb", "*.lib", "*.exp", "*.ilk", "*.so", "*.so.*", "*.dylib",
@@ -82,6 +86,13 @@ EXCLUDE_NAME_PATTERNS = ("*.pdb", "*.lib", "*.exp", "*.ilk", "*.so", "*.so.*", "
                          # (GAME_LUA_MODULE_NAME=lua51DS_fresh.dll, docs/engine-execerror-slots.md)
                          "*_fresh.dll")
 EXCLUDE_PATH_PREFIXES = ("bin64/osx", "bin64/linux", "plugins/update_pending")
+
+# Source-side leftovers of the packaged layout: never upload a materialize temp, and never
+# re-package a ".pkg" that sits next to its canonical file (that pair is a staging leftover;
+# a release tree ships ".pkg" only and must keep it as payload).
+SOURCE_ONLY_EXCLUDE_PATTERNS = ("*.ds_materialize_tmp",)
+
+
 # vcpkg stages debug runtimes next to the release ones (`bz2d.dll` beside `bz2.dll`,
 # `zlibd1.dll` beside `zlib1.dll`). Same rule as the CI "debug-only vcpkg runtime" check:
 # a name whose release twin sits in the same folder is the debug build.
@@ -166,6 +177,12 @@ def should_skip(rel: pathlib.Path, extra: tuple[str, ...] = (), root: pathlib.Pa
     """True when this staged path is debug/link junk, a foreign-platform file or other platform shell."""
     if any(fnmatch.fnmatch(rel.name, pattern) for pattern in EXCLUDE_NAME_PATTERNS):
         return True
+    if any(fnmatch.fnmatch(rel.name, pattern) for pattern in SOURCE_ONLY_EXCLUDE_PATTERNS):
+        return True
+    if rel.name.endswith(PACKAGED_SUFFIX) and root is not None:
+        canonical = rel.with_name(rel.name[: -len(PACKAGED_SUFFIX)])
+        if (root / canonical).is_file():
+            return True  # leftover twin of an unpacked/materialized tree
     if rel.name.lower() in EXCLUDE_DEBUG_RUNTIMES:
         return True
     if root is not None and is_debug_runtime(rel, root):
@@ -181,10 +198,16 @@ def should_skip(rel: pathlib.Path, extra: tuple[str, ...] = (), root: pathlib.Pa
 
 def stage_content(content: pathlib.Path, dest: pathlib.Path, use_filter: bool = True,
                   extra_patterns: tuple[str, ...] = ()) -> tuple[int, int, list[str]]:
-    """Copy the mod root into `dest`, returning (files, bytes, skipped examples)."""
+    """Copy the mod root into `dest`, returning (files, bytes, skipped examples).
+
+    With the filter on, every module the game maps is staged under "<name>.pkg" so the
+    published item never contains a filename this process can hold mapped; `--no-filter`
+    uploads the tree as-is (dev push, not workshop-safe).
+    """
     if not (content / "modinfo.lua").is_file():
         raise SystemExit(f"{content} does not look like a mod root (no modinfo.lua)")
     files = total = 0
+    renamed: list[str] = []
     skipped: list[str] = []
     for path in sorted(content.rglob("*")):
         rel = path.relative_to(content)
@@ -192,7 +215,10 @@ def stage_content(content: pathlib.Path, dest: pathlib.Path, use_filter: bool = 
             if len(skipped) < 12:
                 skipped.append(rel.as_posix())
             continue
-        target = dest / rel
+        target_rel = published_name(rel) if use_filter else rel
+        if target_rel != rel and len(renamed) < 8:
+            renamed.append(f"{rel.as_posix()} -> {target_rel.as_posix()}")
+        target = dest / target_rel
         if path.is_dir():
             target.mkdir(parents=True, exist_ok=True)
             continue
@@ -202,6 +228,8 @@ def stage_content(content: pathlib.Path, dest: pathlib.Path, use_filter: bool = 
         total += path.stat().st_size
     if files == 0:
         raise SystemExit(f"nothing to upload from {content}")
+    if renamed:
+        log(f"packaged (not globally writable by Steam): {len(renamed)}+ e.g. {'; '.join(renamed)}")
     return files, total, skipped
 
 

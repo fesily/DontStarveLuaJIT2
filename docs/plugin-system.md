@@ -687,6 +687,51 @@ Release assets (manual baseline):
 
 After any manual copy, **restart the game / dedicated process** so DynamicPluginLoader can LoadLibrary the new files. There is no FreeLibrary hot-swap.
 
+### 13.1.1 Workshop layout: modules are published as `<name>.pkg`
+
+Steam updates a Workshop item by applying the item's file delta: it overwrites and deletes the
+files the new version lists. A DLL this process has mapped can be neither overwritten nor
+deleted (`ERROR 5`), so an item that publishes `Injector.dll` / `deps/*.dll` /
+`plugins/<stem>/<stem>.dll` can never finish an update while the game runs — the item stays on
+the old version until every process is closed.
+
+`tools/update_workshop_tags.py --push-content` therefore stages every module the game maps
+under `<name>.pkg`:
+
+| Published (in the item) | Materialized at boot (same folder) |
+|---|---|
+| `Injector.dll.pkg` | `Injector.dll` |
+| `deps/lua51DS.dll.pkg` | `deps/lua51DS.dll` |
+| `plugins/<stem>/<stem>.dll.pkg` | `plugins/<stem>/<stem>.dll` |
+
+- `.pkg` files are never mapped, so Steam can replace them at any time.
+- The canonical name is (re)written from its `.pkg` twin immediately before it is opened:
+  shell `InjectorBootstrap` (module resolve + `deps/`), `DynamicPluginLoader` (package
+  candidates), `CoreVmBootstrap` (`plugin_core_vm`). Shared logic: `core/PackagedModule.hpp`.
+- Refresh is decided by PE build stamp (`TimeDateStamp` + `SizeOfImage`): an identical twin is
+  not rewritten, and a canonical file another process already mapped is kept — that boot uses
+  what is on disk, the same version skew as before this layout.
+- A package member the item stops shipping leaves its canonical derivative behind; inside a
+  packaged tree `DynamicPluginLoader` drops any module whose `.pkg` twin is gone. A source
+  tree has no twins at all, so a developer build is never deleted.
+- `--no-filter` still uploads the tree as-is (canonical names): dev push only, not
+  workshop-safe.
+- The **release package uses the same layout**: `.github/workflows/release.yaml` (Windows leg)
+  runs `tools/pack_payload.py Mod` right before zipping, so `windows_Mod.zip` also ships
+  `<name>.pkg`; `install.ps1` accepts either name in its self-check.
+  **`cmake --install` itself never renames** — the install rules keep producing canonical
+  names (`Injector.dll`, `plugins/<stem>/<stem>.dll`, `deps/*.dll`); packing is the packaging
+  tool's job (`tools/pack_payload.py`, shared with the workshop push), so a build-tree
+  `cmake --install Mod/` stays a normal dev tree and the materializer is a no-op there.
+- **Linux/macOS need none of this.** POSIX lets a mapped file be replaced by `rename()`: the
+  running process keeps the old inode and the next start sees the new one (verified in WSL — a
+  holder still reports `version()` == 1 after `mv` over the loaded `.so`, a fresh process reads
+  2). What must never happen is an **in-place truncating write**: it zeroes the mapped pages and
+  the holder dies with `SIGILL` (also verified). Every writer here replaces by rename
+  (`PluginPendingUpdates::apply_one`, `PluginApply::copy_file_overwrite`,
+  `PackagedModule::materialize`), so Linux/macOS payloads stay canonical
+  (`libInjector.so` / `.dylib`) and `dlopen` keeps its plain `$ORIGIN/deps` resolution.
+
 ### 13.2 Optional `plugin.manager` (when present)
 
 | Field | Value |

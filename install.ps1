@@ -416,9 +416,16 @@ $DsjScriptArgs = $args
         }
 
         # --- summary (same shape as install_linux.sh's [CHECK]) ---
+        # Releases publish the mapped module as "Injector.dll.pkg" (the runtime materializes
+        # the canonical name before it is loaded); older releases shipped it directly.
+        $moduleFile = if (Test-Path -LiteralPath (Join-Path $modDir 'Injector.dll.pkg')) {
+            'Injector.dll.pkg'
+        } else {
+            'Injector.dll'
+        }
         $checks = @(
             @{ name = 'shell '; path = (Join-Path $game 'bin64\Winmm.dll') },
-            @{ name = 'module'; path = (Join-Path $modDir 'Injector.dll') },
+            @{ name = 'module'; path = (Join-Path $modDir $moduleFile) },
             @{ name = 'marker'; path = (Join-Path $game 'data\unsafedata\ds_luajit_injector.path') }
         )
         $fail = $false
@@ -430,7 +437,7 @@ $DsjScriptArgs = $args
                 $fail = $true
             }
         }
-        $real = Join-Path $modDir 'Injector.dll'
+        $real = Join-Path $modDir $moduleFile
         $marker = Join-Path $game 'data\unsafedata\ds_luajit_injector.path'
         if ((Test-Path -LiteralPath $real) -and (Test-Path -LiteralPath $marker)) {
             $target = (Get-Content -LiteralPath $marker -Raw).Trim()

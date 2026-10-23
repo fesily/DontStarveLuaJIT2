@@ -165,6 +165,14 @@ find_package(spdlog CONFIG REQUIRED)
 target_link_libraries(test_config_source_whitelist PRIVATE spdlog::spdlog)
 add_test(NAME config_source_whitelist COMMAND test_config_source_whitelist)
 
+# Workshop layout: "<name>.pkg" twins materialized before LoadLibrary (header-only).
+add_executable(test_packaged_module
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_packaged_module.cpp)
+target_include_directories(test_packaged_module PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_packaged_module PRIVATE cxx_std_23)
+add_test(NAME packaged_module COMMAND test_packaged_module)
+
 add_executable(test_config_resolve
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_config_resolve.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/CascadeEngine.cpp

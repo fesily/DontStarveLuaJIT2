@@ -76,6 +76,36 @@ static void test_env_file_wins() {
     printf("PASS: env_file_wins\n");
 }
 
+// Workshop layout: the item ships "<module>.pkg" only; the shell materializes the
+// canonical name while resolving, so the rest of the boot sees the normal layout.
+static void test_packaged_twin_materialized_on_resolve() {
+    clear_env_and_state();
+    auto root = make_temp("ds_inj_pkg_twin");
+    auto game = root / "game";
+    auto mods = game / "mods";
+    auto mod = mods / "workshop-3444078585";
+    auto module = mod / injector_module_filename();
+    {
+        std::ofstream twin(module.string() + ".pkg", std::ios::binary);
+        twin << "ITEM-PAYLOAD";
+    }
+    touch_file(mod / "modmain.lua");
+
+    set_marker_game_root_for_test(game);
+    set_exe_dir_for_test(game / "bin64");
+    assert(!fs::exists(module));
+
+    fs::path out;
+    assert(resolve_injector_module(out)); // scan base -> alias -> ".pkg" twin
+    assert(fs::equivalent(out, module));
+    assert(last_resolve_source_for_test() == "scan");
+    assert(fs::exists(module));
+    assert(fs::exists(fs::path(module.string() + ".pkg"))); // the item copy stays
+
+    clear_env_and_state();
+    printf("PASS: packaged_twin_materialized_on_resolve\n");
+}
+
 static void test_env_dir_wins_over_marker() {
     clear_env_and_state();
     auto root = make_temp("ds_inj_env_dir");
@@ -285,6 +315,7 @@ static void test_boot_log_records_failed_resolve() {
 
 int main() {
     test_env_file_wins();
+    test_packaged_twin_materialized_on_resolve();
     test_env_dir_wins_over_marker();
     test_marker_used_when_no_env();
     test_invalid_marker_falls_through_to_scan();

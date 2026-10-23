@@ -1,6 +1,7 @@
 #include "InjectorBootstrap.hpp"
 
 #include "config/path/ModFolderAliases.hpp"
+#include "core/PackagedModule.hpp"
 
 #include <cctype>
 #include <cstdio>
@@ -242,7 +243,7 @@ bool looks_like_mod_root(const fs::path &mod_root) {
 
 bool find_module_in_dir(const fs::path &dir, fs::path &out) {
     for (const auto &cand : module_candidates_under_dir(dir)) {
-        if (is_regular_existing(cand)) {
+        if (ds::packaged::exists_or_materialize(cand)) {
             out = absolute_if_possible(cand);
             return true;
         }
@@ -430,7 +431,7 @@ bool read_injector_marker(fs::path &out_abs) {
         return false;
     }
     fs::path candidate = line;
-    if (!is_regular_existing(candidate)) {
+    if (!ds::packaged::exists_or_materialize(candidate)) {
         return false;
     }
     out_abs = absolute_if_possible(candidate);
@@ -479,7 +480,7 @@ bool resolve_injector_module(std::filesystem::path &out_abs) {
     // 1) DS_LUAJIT_INJECTOR file
     if (const char *file_env = env_or_null(kInjectorFileEnv)) {
         fs::path cand = file_env;
-        if (is_regular_existing(cand)) {
+        if (ds::packaged::exists_or_materialize(cand)) {
             const auto abs = absolute_if_possible(cand);
             out_abs = abs;
             return pin_success(abs, "env_file");
@@ -557,6 +558,9 @@ bool configure_injector_deps_search(const std::filesystem::path &mod_root,
         }
     };
     if (!mod_root.empty()) {
+        // Workshop layout: deps/*.dll are shipped as "*.dll.pkg" so Steam can
+        // replace them while the game runs; materialize before they can be mapped.
+        (void)ds::packaged::materialize_directory(mod_root / "deps");
         add(mod_root / "deps");
     }
     add(module_dir);

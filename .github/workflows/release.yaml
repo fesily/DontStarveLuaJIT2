@@ -290,6 +290,18 @@ jobs:
             ${{ github.workspace }}/dist/plugins-manifest.${{ matrix.target }}.json
           if-no-files-found: error
 
+      - name: Publish mapped modules as <name>.pkg
+        if: ${{ matrix.target == 'windows' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The package must not list a filename the game maps: Steam (and any in-place
+          # updater) can neither overwrite nor delete a mapped DLL, so a canonical name in
+          # the shipped tree makes workshop updates impossible while the game runs. The
+          # runtime materializes the canonical name before LoadLibrary
+          # (src/DontStarveInjector/core/PackagedModule.hpp).
+          python tools/pack_payload.py Mod
+
       - name: Archive Release
         uses: thedoctor0/zip-release@0.7.5
         with:

@@ -1,4 +1,5 @@
 #include "DynamicPluginLoader.hpp"
+#include "PackagedModule.hpp"
 #include "PluginModuleAbi.hpp"
 #include "PluginPath.hpp"
 #include "PluginPendingUpdates.hpp"
@@ -130,11 +131,11 @@ bool package_plugin_candidate(const std::filesystem::directory_entry &entry,
         return false;
     }
     auto candidate = entry.path() / (stem + plugin_module_extension());
-    if (!std::filesystem::is_regular_file(candidate, ec) || ec) {
+    if (!ds::packaged::exists_or_materialize(candidate)) {
 #if defined(__APPLE__)
-        // Prefer .dylib, fall back to .so on Apple.
+        // Prefer .dylib, fall back .so on Apple.
         candidate = entry.path() / (stem + std::string(".so"));
-        if (!std::filesystem::is_regular_file(candidate, ec) || ec) {
+        if (!ds::packaged::exists_or_materialize(candidate)) {
             return false;
         }
 #else
@@ -150,6 +151,39 @@ bool package_plugin_candidate(const std::filesystem::directory_entry &entry,
 
 std::string skip_reason(const std::filesystem::path &path, const char *reason) {
     return path.string() + ": " + reason;
+}
+
+// Drop canonical modules this runtime materialized for package members the published
+// item no longer ships (their "<module>.pkg" is gone). Only inside a packaged tree: a
+// source tree has no ".pkg" twins, so a developer's build is never deleted.
+void prune_stale_packaged_modules(const std::filesystem::path &plugins_root) {
+    if (!ds::packaged::tree_is_packaged(plugins_root)) {
+        return;
+    }
+    std::error_code ec;
+    const char *module_exts[] = {plugin_module_extension(), ".so", ".dylib"};
+    for (std::filesystem::directory_iterator it(plugins_root, ec), end; it != end;
+         it.increment(ec)) {
+        if (ec) {
+            break;
+        }
+        std::error_code dir_ec;
+        if (!it->is_directory(dir_ec)) {
+            continue;
+        }
+        const auto stem = it->path().filename().string();
+        if (stem.rfind("plugin_", 0) != 0) {
+            continue;
+        }
+        for (const char *ext : module_exts) {
+            const auto candidate = it->path() / (stem + ext);
+            std::error_code probe_ec;
+            if (!std::filesystem::is_regular_file(candidate, probe_ec)) {
+                continue;
+            }
+            (void)ds::packaged::prune_unpackaged_module(plugins_root, candidate);
+        }
+    }
 }
 
 
@@ -171,6 +205,8 @@ DynamicLoadReport DynamicPluginLoader::load_all(PluginHost &host, bool is_client
     (void)configure_plugin_dll_search(dirs);
     std::filesystem::path this_mod_root;
     for (const auto &dir : dirs) {
+        // Workshop layout: deps/<name>.dll.pkg -> deps/<name>.dll before core_vm maps it.
+        (void)ds::packaged::materialize_directory(mod_root_from_plugins_dir(dir) / "deps");
         auto partial = load_directory(host, dir);
         report.loaded_modules.insert(report.loaded_modules.end(), partial.loaded_modules.begin(),
                                      partial.loaded_modules.end());
@@ -281,6 +317,12 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
     // unsupported flat leftovers whose package dir already supersedes them.
     (void)apply_pending_plugin_updates(dir);
     (void)consolidate_flat_plugin_layout(dir);
+
+    // Workshop layout: when the item stops shipping a package member, the canonical file
+    // this runtime materialized from "<module>.pkg" is the only thing that would still
+    // load it. Only within a packaged tree — a source tree has no ".pkg" twins, and a
+    // developer's build must never be deleted.
+    prune_stale_packaged_modules(dir);
 
     for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
         if (ec) {

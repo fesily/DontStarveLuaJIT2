@@ -75,6 +75,30 @@ static void test_package_subdir_bad_library_skipped() {
 }
 
 
+// Workshop layout: the item ships "<module>.pkg" only. The candidate must be materialized
+// (canonical name) before the load attempt — the loader never opens the twin itself.
+static void test_packaged_twin_materialized_before_load() {
+    PluginHost host;
+    DynamicPluginLoader loader;
+    auto dir = temp_dir("ds_plugin_loader_twin");
+#if defined(_WIN32)
+    const char *ext = ".dll";
+#else
+    const char *ext = ".so";
+#endif
+    auto pkg = dir / "plugin_pkgonly";
+    fs::create_directories(pkg);
+    const auto canonical = pkg / (std::string("plugin_pkgonly") + ext);
+    std::ofstream(canonical.string() + ".pkg", std::ios::binary) << "not a pe/elf";
+    assert(!fs::exists(canonical));
+
+    auto r = loader.load_directory(host, dir);
+    assert(fs::exists(canonical));      // materialized from the twin
+    assert(r.loaded_modules.empty());   // garbage payload: attempted and refused
+    assert(!r.skipped.empty());
+    printf("PASS: packaged_twin_materialized_before_load\n");
+}
+
 // Package dir + flat module for one stem: the flat copy is not a candidate at all, so
 // only the package copy is attempted (one stemming from the folder layout only).
 static void test_flat_ignored_beside_package() {
@@ -113,6 +137,7 @@ int main() {
     test_non_plugin_file_ignored();
     test_flat_module_ignored();
     test_package_subdir_bad_library_skipped();
+    test_packaged_twin_materialized_before_load();
     test_flat_ignored_beside_package();
     // Real plugin_dummy load is skipped here: MODULE imports Injector.dll
     // (and its transitive deps). Under Inject() Injector is already mapped so

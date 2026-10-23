@@ -1,4 +1,5 @@
 #include "CoreVmBootstrap.hpp"
+#include "PackagedModule.hpp"
 #include "PluginPath.hpp"
 
 #include "config/ResolvedConfig.hpp"
@@ -50,8 +51,8 @@ void *load_core_vm_from_search_dirs() {
         };
         for (const auto &path : candidates) {
             (void)ds::plugin::configure_plugin_dll_search({path.parent_path()});
-            std::error_code ec;
-            if (!std::filesystem::is_regular_file(path, ec)) {
+            // Workshop layout ships "plugin_core_vm.dll.pkg" only (see PackagedModule.hpp).
+            if (!ds::packaged::exists_or_materialize(path)) {
                 continue;
             }
 #if defined(_WIN32)

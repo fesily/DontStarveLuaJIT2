@@ -74,6 +74,20 @@ std::string module_stem_of(std::string_view module_name) {
     return dot == std::string::npos ? std::string() : name.substr(0, dot);
 }
 
+// Workshop layout: the item publishes "<module>.pkg" and the runtime materializes the
+// canonical name from it at boot (core/PackagedModule.hpp). The twin is therefore the
+// durable install target: a canonical write here would be reverted by the next
+// materialize pass, silently losing the update.
+std::filesystem::path durable_install_target(const std::filesystem::path &dest) {
+    std::filesystem::path twin = dest;
+    twin += ".pkg";
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(twin, ec)) {
+        return twin;
+    }
+    return dest;
+}
+
 bool file_looks_locked_or_unwritable(const std::filesystem::path &path) {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
@@ -434,7 +448,7 @@ bool install_extracted_files(const std::filesystem::path &staging_dir,
         if (!std::filesystem::is_regular_file(src, ec)) {
             continue;
         }
-        const auto dest = package_dir / name;
+        const auto dest = durable_install_target(package_dir / name);
         if (std::filesystem::exists(dest, ec) && file_looks_locked_or_unwritable(dest)) {
             force_pending = true;
             break;
@@ -458,7 +472,7 @@ bool install_extracted_files(const std::filesystem::path &staging_dir,
             continue; // optional meta may be absent
         }
 
-        const auto dest = package_dir / name;
+        const auto dest = durable_install_target(package_dir / name);
         bool go_pending = force_pending;
         if (go_pending) {
             // already routed to update_pending below
