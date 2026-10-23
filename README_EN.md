@@ -59,8 +59,25 @@ curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/ins
 The script picks the newest GitHub release (`preview` or stable, whichever is
 newer), locates the game through Steam (Windows registry / `libraryfolders.vdf` /
 `appmanifest_322330.acf` - the same rules as `tools/steam_env.py`), stages the
-package under `<game>/mods/DontStarveLuaJit2` and runs the packaged installer
-(shell deploy, marker, self-check).
+package and runs the packaged installer (shell deploy, marker, self-check).
+
+Where it stages: if the library holding the game has Workshop content
+(`...\steamapps\workshop\content\322330`), Windows installs into
+`...\workshop\content\322330\3444078585` - the folder subscribers actually load;
+`install.bat`'s `workshop\content\322330` branch then deploys the shell into the
+same library's `common\Don't Starve Together\bin64`. Without Workshop content it
+falls back to `<game>/mods/DontStarveLuaJit2`.
+
+If the client or a dedicated server is still running, the script asks before
+force-closing it: only a typed `y` kills it, anything else aborts the install
+(and nothing on disk has been touched at that point). For unattended runs pass
+`-AllowKill` or set `$env:DSJ_ALLOW_KILL=1` to force-close without asking.
+
+Messages follow the Windows display language: Chinese on zh* systems, English
+otherwise. The Chinese table lives in `install.zh.json` at the repo root - the
+script itself stays pure ASCII because PowerShell 5.1 parses a BOM-less `.ps1`
+as ANSI while `irm | iex` rejects a BOM. A missing or incomplete table falls
+back to English.
 
 Options (Linux: `curl ... | sh -s -- --channel preview`; Windows: env vars such
 as `$env:DSJ_CHANNEL`):
@@ -69,8 +86,9 @@ as `$env:DSJ_CHANNEL`):
 |--------|-----|---------|
 | `--channel auto\|release\|preview` | `DSJ_CHANNEL` | which release to install; `auto` = newest (default) |
 | `--game-dir PATH` | `DSJ_GAME_DIR` | skip Steam discovery, use this game root |
-| `--mod-folder NAME` | `DSJ_MOD_FOLDER` | folder under `mods`, default `DontStarveLuaJit2` |
+| `--mod-folder NAME` | `DSJ_MOD_FOLDER` | folder under `mods`, default `DontStarveLuaJit2` (unused when Workshop content exists) |
 | `--repo OWNER/NAME` | `DSJ_REPO` | GitHub repository, default `fesily/DontStarveLuaJIT2` |
+| `-AllowKill` | `DSJ_ALLOW_KILL` | force-close a running game without asking (default: ask) |
 
 ## 1. Mod:
 

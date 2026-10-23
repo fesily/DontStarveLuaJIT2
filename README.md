@@ -90,7 +90,13 @@ Linux：
 curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.sh | sh
 ```
 
-脚本会自动：挑最新 release（`preview` 或正式版取较新者）→ 从 Steam 安装位置（Windows 注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf`，与 `tools/steam_env.py` 同一套规则）定位游戏根目录 → 把包解到 `<游戏>/mods/DontStarveLuaJit2` → 运行包内安装脚本（装壳；Linux 另写 marker 并做自检）。
+脚本会自动：挑最新 release（`preview` 或正式版取较新者）→ 从 Steam 安装位置（Windows 注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf`，与 `tools/steam_env.py` 同一套规则）定位游戏根目录 → 把包解到目标目录 → 运行包内安装脚本（装壳；Linux 另写 marker 并做自检）。
+
+目标目录：游戏所在库存在工坊内容（`…\steamapps\workshop\content\322330`）时，Windows 装到 `…\workshop\content\322330\3444078585`（订阅者实际加载的目录，`install.bat` 按 `workshop\content\322330` 分支把壳装回同库的 `common\Don't Starve Together\bin64`）；没有工坊内容时退回 `<游戏>/mods/DontStarveLuaJit2`。
+
+安装前若游戏客户端或专服仍在运行，脚本会先询问是否强制结束（输入 `y` 才杀，其它任何输入都直接中止，且此时磁盘尚未做任何改动）；想免交互（比如脚本化安装）就加 `-AllowKill` 或设 `$env:DSJ_ALLOW_KILL=1`，此时直接强杀、不再询问。
+
+输出语言跟随 Windows 显示语言：中文系统用中文，其它英文。中文词条放在仓库根目录的 `install.zh.json`（脚本本身保持纯 ASCII——PS 5.1 把无 BOM 的 `.ps1` 按 ANSI 解析，而 `irm | iex` 又不接受 BOM），取不到或词条不全时自动回退英文。
 
 可选项（Linux 追加参数：`curl ... | sh -s -- --channel preview`；Windows 用环境变量 `$env:DSJ_CHANNEL`）：
 
@@ -98,8 +104,9 @@ curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/ins
 |------|----------|------|
 | `--channel auto\|release\|preview` | `DSJ_CHANNEL` | 装哪一类版本，默认 `auto` = 最新 |
 | `--game-dir PATH` | `DSJ_GAME_DIR` | 跳过 Steam 搜索，直接指定游戏根目录 |
-| `--mod-folder NAME` | `DSJ_MOD_FOLDER` | `mods` 下的目录名，默认 `DontStarveLuaJit2` |
+| `--mod-folder NAME` | `DSJ_MOD_FOLDER` | `mods` 下的目录名，默认 `DontStarveLuaJit2`（存在工坊内容目录时不生效） |
 | `--repo OWNER/NAME` | `DSJ_REPO` | GitHub 仓库，默认 `fesily/DontStarveLuaJIT2` |
+| `-AllowKill` | `DSJ_ALLOW_KILL` | 游戏仍在运行时不再询问，直接强制结束（默认询问） |
 
 ## 1.MOD本体：
 

@@ -16,7 +16,13 @@
 
 - `install.bat` / `install_linux.sh` 收敛为“只装壳”：Windows 只把包内 `bin64\windows\Winmm.dll` 复制进游戏 `bin64`（内容一致直接跳过，重复运行结果不变），Linux 只把包内 `bin64/linux/lib64/libInjector.so` 放进游戏 `bin64/lib64` 并改写 `LD_PRELOAD` 启动器（原二进制保留为 `*_1`，重复运行跳过）；两者都不再迁移/删除任何 mod 文件、不再写 marker、不再清理游戏目录里的旧 DLL。旧脚本在原地更新时不收敛——`if exist Injector.dll`/`[ -f libInjector.so ]` 会把上一版的 Injector 留在 mod 根、robocopy 无 `/MIR`（Linux `cp -a`）会留下新版已删的 deps/插件，结果就是新壳配旧 Injector（启动崩溃的来源）。源/目标改为按脚本自身位置推导（与调用者 cwd 无关），Windows 侧错误提示不再因绝对路径里的 `(`/`)` 打断 cmd 解析，`uninstall` 只删壳与遗留 marker（Linux 另把 `*_1` 原二进制改回）。
 
-- 新增一行式安装：`install.ps1`（Windows，`irm … | iex`）与 `install.sh`（Linux，`curl … | sh`）——自动挑最新 release/preview（`DSJ_CHANNEL`/`--channel`）、按 `tools/steam_env.py` 的规则从注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf` 定位游戏根目录（可用 `DSJ_GAME_DIR`/`--game-dir` 覆盖），把包解到 `<游戏>/mods/<目录>` 后调用包内安装脚本（装壳；Linux 另写 marker 与自检）。
+- 新增一行式安装：`install.ps1`（Windows，`irm … | iex`）与 `install.sh`（Linux，`curl … | sh`）——自动挑最新 release/preview（`DSJ_CHANNEL`/`--channel`）、按 `tools/steam_env.py` 的规则从注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf` 定位游戏根目录（可用 `DSJ_GAME_DIR`/`--game-dir` 覆盖），把包解到目标目录后调用包内安装脚本（装壳；Linux 另写 marker 与自检）。
+
+- `install.ps1` 目标目录改为工坊优先：游戏所在库存在 `steamapps\workshop\content\322330` 时，包解到 `…\322330\3444078585`（订阅者实际加载的目录；`install.bat` 的 `workshop\content\322330` 分支据此把壳装回同库的 `common\Don't Starve Together\bin64`），只有该目录不存在时才退回 `<游戏>/mods/<目录>`；`DSJ_MOD_FOLDER`/`-ModFolder` 只在回退路径生效。目标目录已存在却不是本 mod（无 `modinfo.lua`）时仍拒绝覆盖。
+
+- `install.ps1` 覆盖文件前先过“强杀授权”：检测到 `dontstarve_steam_x64` / `dontstarve_dedicated_server_nullrenderer_x64` 仍在运行（这些进程映射着 mod 里的 DLL，`Remove-Item`/`Copy-Item` 会 sharing violation）时，先打印进程名与 pid 并询问，只有输入 `y`/`yes` 才强制结束（随后等进程真正消失再继续）；其它输入或非交互环境（`Read-Host` 失败）整体中止。授权发生在解压/删目录/复制之前，中止时磁盘无任何改动，也不再浪费一次下载。原来“先删改 mod、再由 `install.bat` 无条件 kill”的顺序漏洞就此消除。免交互场景可用 `-AllowKill`（或 `$env:DSJ_ALLOW_KILL=1`）跳过询问直接强杀。
+
+- `install.ps1` 输出本地化：按 Windows 显示语言（`CultureInfo.CurrentUICulture`）自动选中文 / 英文，全部提示与错误都走同一张消息表（`Msg '<key>'`），未命中的 key 原样打印便于发现漏翻。中文词条放在仓库根新增的 `install.zh.json`（UTF-8 JSON，键与英文表一一对应）；脚本本身保持**纯 ASCII、无 BOM**——PS 5.1 会把无 BOM 的 `.ps1` 按 ANSI 解析（中文变乱码并触发语法错误），而 `irm | iex` 执行带 BOM 的文本会直接报 `无法将“Windows”项识别为…`，两种编码互斥，所以 CJK 文本不能写在脚本里。取不到（离线 / 未发布）或词条不全时静默回退英文。
 
 - 注入可诊断化：壳（Winmm / InjectorStub）每次启动把解析来源/模块路径/加载与导出结果、壳的最终结果写到 `<游戏>/data/unsafedata/ds_luajit_boot.log`（stderr 保留）；`install_linux.sh` 结束时自检壳/真实模块/`ldd` 并打印 `[CHECK]` 结论，新增 `install_linux.sh selftest`（一次性进程实测 stub→真实模块链路），且脚本在 `sh`（dash）下会 `exec bash` 重跑，不再因语法错误空跑。
 
