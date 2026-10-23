@@ -249,6 +249,13 @@ else()
     target_link_libraries(test_injector_bootstrap PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
+add_executable(test_crash_sentinel
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_crash_sentinel.cpp)
+target_include_directories(test_crash_sentinel PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_crash_sentinel PRIVATE cxx_std_23)
+add_test(NAME crash_sentinel COMMAND test_crash_sentinel)
+
 
 
 add_executable(test_plugin_pending_updates

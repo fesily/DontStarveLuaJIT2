@@ -12,6 +12,7 @@ set(SOURCES
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/lua51_object.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/PersistentString.cpp
+        ${DONTSTARVEINJECTOR_UTIL_DIR}/Unsafedata.cpp
         config/ConfigSession.cpp
         GameRuntimeApis.cpp
         config/sources/LuajitConfigFile.cpp

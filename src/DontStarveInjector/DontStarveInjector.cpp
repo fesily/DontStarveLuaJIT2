@@ -4,6 +4,7 @@
 #include "config/InjectorHostConfig.hpp"
 #include "util/inlinehook.hpp"
 #include "util/platform.hpp"
+#include "util/Unsafedata.hpp"
 #include "ctx.hpp"
 #include "MemorySignature.hpp"
 #include "core/PluginHost.hpp"
@@ -100,22 +101,9 @@ static bool check_crash() {
 #ifndef NDEBUG
     return true;
 #endif// !NDEBUG
-
-    auto rootpath = getExePath().parent_path().parent_path();
-    auto unsafedatapath = rootpath / "data" / "unsafedata" / "luajit_crash.json";
-    if (std::filesystem::exists(unsafedatapath)) {
-        auto fp = fopen(unsafedatapath.string().c_str(), "r+");
-        char buf[32] = {};
-        auto len = fread(buf, sizeof(char), 16, fp);
-        fclose(fp);
-        if (len > 0) {
-            return false;
-        }
-    }
-    auto fp = fopen(unsafedatapath.string().c_str(), "w");
-    fwrite("{1}", 1, 3, fp);
-    fclose(fp);
-    return true;
+    // Requires the Steam account id: the sentinel lives next to the mod's files
+    // in the save dir, so check_crash must run after sdk::steam::Initialize.
+    return ds::unsafedata::allow_inject(ds::unsafedata::sentinel_path());
 }
 
 /* 把字符串转换成hex数组*/
@@ -190,14 +178,23 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     spdlog::flush_on(spdlog::level::trace);
     spdlog::info("Inject start: isClient={} debuggerAttached={}", isClient, gum_process_is_debugger_attached());
 
+#ifdef ENABLE_STEAM_SUPPORT
+    ds::sdk::steam::Initialize(isClient);
+#endif
+
+    // Runtime state is shared with the mod through <save dir>/unsafedata (DST io
+    // sandbox root). Create it so the mod's first relative write can land, even
+    // when the crash guard below is compiled out.
+    if (const auto state_dir = ds::unsafedata::dir(); !state_dir.empty()) {
+        std::error_code ec;
+        std::filesystem::create_directories(state_dir, ec);
+        spdlog::info("unsafedata dir: {}", state_dir.string());
+    }
+
     if (!check_crash()) {
         spdlog::error("skip inject, find crash content");
         return;
     }
-
-#ifdef ENABLE_STEAM_SUPPORT
-    ds::sdk::steam::Initialize(isClient);
-#endif
 
     LoadGameModConfig();
 

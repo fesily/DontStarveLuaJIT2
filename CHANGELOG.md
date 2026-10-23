@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- 崩溃哨兵与 `luajit_config.json` 对齐 Klei 的 mod io 沙箱：759671 起 Lua 侧只认相对 `unsafedata/...`，且解析到**存档目录**（`…/<steamid>/client_save/unsafedata`），绝对路径与 `../` 一律 `invalid filepath`；注入器此前却按 `<游戏>/data/unsafedata` 读写，同一个逻辑文件被拆成两份——mod 的清理永远清不到哨兵，于是 `skip inject, find crash content` 长期命中：注入被永久跳过、`GameInjector` 为 nil，用户只看到“模组未安装”。现在两侧同根：native 取 `GetClientSaveDir()`（`util/Unsafedata.hpp`；steamid 缺失时退回最近写入的 `*/client_save`）下的 `unsafedata/`，mod 继续用相对 `unsafedata/...`；`check_crash` 移到 `sdk::steam::Initialize` 之后（哨兵需要 steamid），注入开始时顺带创建该目录。壳自己的 marker 与 `ds_luajit_boot.log` 仍在 `<游戏>/data/unsafedata`（游戏 main 之前就要写，与沙箱无关）。不做旧路径兼容：老安装残留的 `<游戏>/data/unsafedata/luajit_config.json` 会被忽略。哨兵同时改为“只跳过一跳”（`{1}` → `{2}`，下一次启动照常注入），stock 启动不再抹掉记录，`is_crash()` 恒 false 的笔误一并修正，崩溃后的重试弹窗恢复。
+
 - Linux 专服启动：修复 `nucleus_analyze_file(lua51) failed: nucleus load_binary failed: …/deps/liblua51.so` 后进程直接退出的问题。根因是 CI 镜像没有 `binutils-dev`，`3rd/nucleus` 把 `NUCLEUS_LOADER_NO_BFD` 编进了 `libfunction_relocation.so`（发布包里既无 `libbfd-2.42-system.so`，也没有任何 BFD 符号），Linux 上 `load_binary()` 只走到 "no binary loader available for non-raw type" 桩。现在 Linux 不再依赖 libbfd：`loader.cc` 内置 ELF64 加载器（段按 `SHF_EXECINSTR` / `SHF_ALLOC` 且非 `SHT_NOBITS` 映射，`STT_FUNC` 符号取自 `.symtab`/`.dynsym`，`.eh_frame_hdr` FDE 起点照旧）。对 `liblua51.so`、`liblua51DS.so`、`liblua51Original.so`、`dontstarve_dedicated_server_nullrenderer_x64`、`dontstarve_steam_x64` 生成的 FunctionTable 与原 BFD 路径逐条一致（服务端 25324、客户端 27236 条 span 完全相同）。macOS 仍走 BFD。
 
 - Linux 启动：`libfrida-gum.so` 改为 `-Wl,-z,noexecstack` 链接（`tools/setup_frida_gum.py`）。glibc ≥ 2.41 拒绝 `dlopen` 需要可执行栈的 DSO（`cannot enable executable stack as shared object requires`），而壳正是用 `dlopen` 加载真实 Injector，Ubuntu 25.04+/WSL2 上表现为启动即失败（#45/#47）。

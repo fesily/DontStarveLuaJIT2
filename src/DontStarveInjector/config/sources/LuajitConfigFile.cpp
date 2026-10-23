@@ -4,11 +4,7 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 
-#include "util/platform.hpp"
-static std::filesystem::path getGameDir() {
-    static std::filesystem::path p = getExePath().parent_path().parent_path();
-    return p;
-}
+#include "util/Unsafedata.hpp"
 namespace nlohmann {
     void to_json(json& j, const luajit_config& s) {
         using ds::config::keys::kAlwaysEnableMod;
@@ -41,13 +37,9 @@ namespace nlohmann {
 
 std::optional<luajit_config> luajit_config::read_from_file(std::filesystem::path path) {
     if (path.empty()) {
-        path = getGameDir() / "data" / "unsafedata";
-        if (!std::filesystem::exists(path)) {
-            std::filesystem::create_directories(path);
-        }
-        path = path / "luajit_config.json";
+        path = ds::unsafedata::config_path();
     }
-    if (!std::filesystem::exists(path))
+    if (path.empty() || !std::filesystem::exists(path))
         return std::nullopt;
     std::ifstream sf(path.string().c_str());
     if (!sf.is_open())

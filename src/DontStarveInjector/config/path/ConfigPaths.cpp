@@ -161,6 +161,38 @@ std::filesystem::path GetModConfigDataDir(std::string_view ownid, std::string_vi
     return save_dir / cluster_name / "mod_config_data";
 }
 
+std::filesystem::path GetClientSaveDir(std::string_view ownid) {
+    const auto klei_root = GetPlatformKleiRootDir();
+    if (klei_root.empty()) {
+        return {};
+    }
+    const auto game_root = klei_root / "DoNotStarveTogether";
+    if (!ownid.empty()) {
+        return game_root / std::string{ownid} / "client_save";
+    }
+    std::error_code ec;
+    std::filesystem::path newest;
+    std::filesystem::file_time_type newest_time{};
+    for (const auto &entry : std::filesystem::directory_iterator(game_root, ec)) {
+        if (ec) {
+            break;
+        }
+        const auto candidate = entry.path() / "client_save";
+        if (!std::filesystem::is_directory(candidate, ec)) {
+            continue;
+        }
+        const auto written = std::filesystem::last_write_time(candidate, ec);
+        if (ec) {
+            continue;
+        }
+        if (newest.empty() || written > newest_time) {
+            newest = candidate;
+            newest_time = written;
+        }
+    }
+    return newest;
+}
+
 std::filesystem::path GetModConfigDataFileName(std::string_view modname) {
     std::string_view ext = InjectorConfig::instance()->AppVersionDevPatch ? "_dev" : "";
     return std::string("modconfiguration_").append(modname).append(ext);

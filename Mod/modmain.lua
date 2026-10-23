@@ -95,7 +95,7 @@ local function main()
 
 	function luajit_crash:is_crash()
 		local content = self:read_file()
-		return content and #content ~= 0 and false
+		return type(content) == "string" and #content ~= 0
 	end
 
 	AddGamePostInit(function()
