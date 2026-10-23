@@ -92,18 +92,6 @@ class DedicatedProc:
         """Process return code, or None while it is still running."""
         return None if self.proc is None else self.proc.poll()
 
-    def wait_exit(self, timeout: float) -> bool:
-        """Wait for the process to terminate on its own (crash case).
-
-        Returns False on timeout; leaves stdout/log tailing untouched.
-        """
-        deadline = time.monotonic() + timeout
-        while self.alive():
-            if time.monotonic() >= deadline:
-                return False
-            time.sleep(0.2)
-        return True
-
     def send_lua(self, code: str) -> None:
         if self.proc is None or self.proc.stdin is None:
             return

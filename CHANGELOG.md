@@ -50,6 +50,8 @@
 
 - 修复 `dump_lua_mods` 对加密 mod 只能 dump 出源码尾部的问题（hercules / MyxlHttps 家族，如 workshop-3014076942）：这类 loader 会在**同一个 `lua_load` 内**把解密后的源码按 ~8 字节切片喂给 reader（如 `myxl_date.lua` 245 片 = 1960 字节、`speech_moyuxuanli.lua` 4.3 万片 = 344112 字节），并在 reader 排空期间**重入 `lua_load`**；原来共用的 `thread_local LuaReaderWrapper` 会被重入调用 `buffers.clear()`，外层已累积的切片整批丢失、只剩最后一片，dump 出来自然就是文件尾那几个字符。现在每次 `lua_load` 用各自独立的 wrapper（重入调用各建各的、各 dump 各的 chunk），整文件一次组装落盘：上述文件 dump 后为完整明文源码（344112 / 70920 / 36360 / 1960 …）。落盘策略同时收敛为三态：切片流期间**追加**、负载不小于已落盘内容时**整体覆盖**（完整 chunk）、完整 dump 之后的零散小负载**跳过**（不再被 8 字节探测清零，例如 modmain 的 80154 字节完整源码不会被随后的 652 片重流覆盖）；写文件改用二进制模式（此前文本模式把 `\n` 写成 `\r\n`，dump 与真实源码不符）。
 
+- 工具/测试：`game_mod_throw_abort` 对齐当前游戏的 mod 加载失败行为——modmain 报错后引擎不再退出进程，而是禁用该 mod（`Disabling <mod> because it had an error.`）并继续启动/重试游戏。测试仍要求三件事：`[ds_harness] THROW_ABORT`（force-enable 生效）、nil 索引错误文本、错误被处理（禁用日志或引擎 VM 的 `Error loading main.lua`），但不再要求进程退出；随之删除 `DedicatedProc.wait_exit`。
+
 ## 3.2.0
 
 - 修复加密模组（风雪/daxsg 家族，如《神话书说》workshop-1991746508）导致的服务器世界生成卡死/崩溃：其加载器探测 `require("jit")` 后会在 LuaJIT 下走坏路径（字节码 VM 报 `K nil` 或死循环），污染 worldgen 状态。新增 `Mod/modworldgenmain.lua`：只在真正的世界生成状态（`WORLDGEN_MAIN`，`scripts/worldgen_main.lua` 设置；客户端前端/普通加载路径无此标记）里 `rawset` 掉 `_G.jit` 并清 `package.loaded.jit`（`jit.runtime` 的 HideGlobalJIT 只覆盖 modmain 阶段，worldgen 不跑 modmain），受 `HideGlobalJIT` 选项控制（默认开）。

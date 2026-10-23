@@ -8,13 +8,17 @@ isolated ``-persistent_storage_root``, then require
   1. ``[ds_harness] THROW_ABORT`` — modmain ran at all (force-enable worked);
   2. ``attempt to index local 't' (a nil value)`` — the fixture's nil-index error
      propagated out of modmain;
-  3. ``Error loading main.lua`` / ``Error during game initialization!`` — the
-     engine aborted startup instead of booting with the mod disabled.
+  3. the engine handled the failed mod load instead of booting with it:
+     ``Disabling ds_harness_throw_abort because it had an error.`` (script-level
+     mod handling: the mod is disabled and the startup continues), or — under
+     the engine VM — ``Error loading main.lua`` / ``Error during game
+     initialization!`` (the startup script aborts and the engine restarts).
 
-The process must also have terminated by then (a live server would mean nothing
-aborted). Its exit status is reported, not asserted: on Windows the teardown of
-the failed startup trips a tier0 worker-thread assertion which exits fail-fast
-(0xC0000409), and that is engine teardown behaviour, not the Lua error itself.
+The process is no longer required to exit: since the 2026-10-23 game build the
+engine retries the failed start instead of terminating, so a live (or
+retrying) server after the error is expected. Its exit status is reported, not
+asserted: on Windows a fault teardown can surface as fail-fast (0xC0000409),
+and that is engine teardown behaviour, not the Lua error itself.
 
 Exit codes: 0 PASS, 1 FAIL, 2 SKIP (mapped by :func:`harness.skip.map_exit`).
 
@@ -51,9 +55,13 @@ SHARD = "Master"
 
 TOKEN_RAN = "[ds_harness] THROW_ABORT"
 NIL_INDEX_EVIDENCE = ("attempt to index local 't' (a nil value)",)
+# Engine handled the failed mod load: either the script-level path disables the
+# mod and continues (current build) or the startup script aborts and the engine
+# reports the failed main.lua load (engine-VM path).
 LOAD_ABORT_EVIDENCE = (
     "Error loading main.lua",
     "Error during game initialization!",
+    f"Disabling {FOLDER_NAME} because it had an error.",
 )
 FORCE_ENABLE_EVIDENCE = "[luajit] Force enable mod:"
 
@@ -89,7 +97,6 @@ def main() -> int:
     ok_ran = False
     ok_nil = False
     ok_abort = False
-    exited = False
     status = None
     try:
         write_offline_cluster(persist_root, CLUSTER, SHARD)
@@ -105,7 +112,6 @@ def main() -> int:
                 ok_ran = proc.logs.wait_any([TOKEN_RAN], timeout) is not None
                 ok_nil = proc.logs.wait_any(NIL_INDEX_EVIDENCE, 15.0) is not None
                 ok_abort = proc.logs.wait_any(LOAD_ABORT_EVIDENCE, 30.0) is not None
-                exited = proc.wait_exit(15.0)
                 status = proc.exit_code()
         finally:
             proc.stop()
@@ -115,14 +121,14 @@ def main() -> int:
         finally:
             remove_persist_tree(persist_root)
 
-    if ok_ran and ok_nil and ok_abort and exited:
-        print(f"[harness] PASS: {TOKEN_RAN} -> nil index -> startup abort")
+    if ok_ran and ok_nil and ok_abort:
+        print(f"[harness] PASS: {TOKEN_RAN} -> nil index -> mod load failure handled")
         print(f"[harness] exit status {_fmt_status(status)} fault={status in FAULT_STATUSES}")
         return 0
 
     print(
         f"[harness] FAIL: modmain_ran={ok_ran} nil_index={ok_nil} "
-        f"startup_abort={ok_abort} exited={exited} exit={_fmt_status(status)}"
+        f"load_failure_handled={ok_abort} exit={_fmt_status(status)}"
     )
     if not ok_ran:
         print(
