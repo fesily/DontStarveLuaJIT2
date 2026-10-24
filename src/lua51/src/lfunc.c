@@ -134,6 +134,9 @@ Proto *luaF_newproto (lua_State *L) {
   f->linedefined = 0;
   f->lastlinedefined = 0;
   f->source = NULL;
+#if LUA_KLEI_CHUNKNAME
+  f->chunkname = NULL;  /* Klei: no display chunk name until lua_setfuncchunkname */
+#endif
   return f;
 }
 

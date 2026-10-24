@@ -203,6 +203,9 @@ static int traversetable (global_State *g, Table *h) {
 static void traverseproto (global_State *g, Proto *f) {
   int i;
   if (f->source) stringmark(f->source);
+#if LUA_KLEI_CHUNKNAME
+  if (f->chunkname) stringmark(f->chunkname);  /* Klei: keep it alive */
+#endif
   for (i=0; i<f->sizek; i++)  /* mark literals */
     markvalue(g, &f->k[i]);
   for (i=0; i<f->sizeupvalues; i++) {  /* mark upvalue names */

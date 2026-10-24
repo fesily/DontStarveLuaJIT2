@@ -128,6 +128,12 @@ struct lua_State {
                         ** (shipped mac/win 32-bit layout: +0x70) */
   char allowed_gcstep;  /* luaC_checkGC gate (mac client: +0x74); cleared by
                         ** preinit, host toggles via lua_gc(LUA_GCALLOWGCSTEP) */
+#if LUA_KLEI_UNSAFEDATA
+  lu_byte allowed_unsafedata;  /* Klei: lets the io library open
+                               ** "unsafedata/<id>.<ext>" (win64: +0xC1, mac32:
+                               ** +0x75); the host writes it directly, the
+                               ** getter is lua_isunsafedataallowed */
+#endif
 };
 
 

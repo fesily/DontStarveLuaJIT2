@@ -205,6 +205,43 @@ static void read_numeral (LexState *ls, SemInfo *seminfo) {
 }
 
 
+#if LUA_KLEI_HEXNUMERAL
+/*
+** Klei: numeral scanner used by the shipped client (0x140493580).  It is the
+** same token walk as read_numeral, but parses the buffered text with the
+** locale-aware conversion directly and falls back to the stock reader (which
+** raises "malformed number") instead of trydecpoint.  This is what makes
+** literals such as 0x1p4 / 0x1.8p1 work without extra lexer states.
+*/
+static void read_numeral_hex (LexState *ls, SemInfo *seminfo) {
+  size_t i;
+  size_t n;
+  char *buff;
+  lua_assert(isdigit(ls->current));
+  do {
+    save_and_next(ls);
+  } while (isdigit(ls->current) || ls->current == '.');
+  if (check_next(ls, "Ee"))
+    check_next(ls, "+-");
+  while (isalnum(ls->current) || ls->current == '_')
+    save_and_next(ls);
+  save(ls, '\0');
+  buff = luaZ_buffer(ls->buff);
+  n = luaZ_bufflen(ls->buff);
+  for (i = 0; i < n; i++) {
+    if (buff[i] == '.') buff[i] = ls->decpoint;  /* buffreplace(ls,'.',...) */
+  }
+  if (!luaO_str2d(buff, &seminfo->r))
+    read_numeral(ls, seminfo);  /* stock path reports the syntax error */
+}
+
+
+#define luaX_read_numeral(ls,seminfo)	read_numeral_hex(ls, seminfo)
+#else
+#define luaX_read_numeral(ls,seminfo)	read_numeral(ls, seminfo)
+#endif
+
+
 static int skip_sep (LexState *ls) {
   int count = 0;
   int s = ls->current;
@@ -400,7 +437,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         }
         else if (!isdigit(ls->current)) return '.';
         else {
-          read_numeral(ls, seminfo);
+          luaX_read_numeral(ls, seminfo);
           return TK_NUMBER;
         }
       }
@@ -414,7 +451,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
           continue;
         }
         else if (isdigit(ls->current)) {
-          read_numeral(ls, seminfo);
+          luaX_read_numeral(ls, seminfo);
           return TK_NUMBER;
         }
         else if (isalpha(ls->current) || ls->current == '_') {

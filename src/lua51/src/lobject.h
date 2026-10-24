@@ -250,6 +250,11 @@ typedef struct Proto {
   lu_byte numparams;
   lu_byte is_vararg;
   lu_byte maxstacksize;
+#if LUA_KLEI_CHUNKNAME
+  TString *chunkname;  /* Klei: display chunk name (script file path), set by
+                       ** lua_setfuncchunkname and read by the client's traceback
+                       ** formatter; ends up at offset 0x78 on 64-bit builds */
+#endif
 } Proto;
 
 

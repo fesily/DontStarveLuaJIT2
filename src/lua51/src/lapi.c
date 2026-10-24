@@ -1097,3 +1097,55 @@ LUA_API const char *lua_setupvalue (lua_State *L, int funcindex, int n) {
   return name;
 }
 
+
+#if LUA_KLEI_CHUNKNAME
+/*
+** Klei: set the display chunk name of `p' and of every prototype nested in it.
+** The shipped client calls this right after luaL_loadbuffer so tracebacks show
+** the script path instead of the chunk source text.
+*/
+static void setproto_chunkname (lua_State *L, Proto *p, TString *name) {
+  int i;
+  p->chunkname = name;
+  luaC_objbarrier(L, p, name);
+  for (i = 0; i < p->sizep; i++) {
+    if (p->p[i] != NULL)
+      setproto_chunkname(L, p->p[i], name);
+  }
+}
+
+
+LUA_API void lua_setfuncchunkname (lua_State *L, int idx, const char *name) {
+  TValue *o;
+  lua_lock(L);
+  o = index2adr(L, idx);
+  if (ttisfunction(o) && !clvalue(o)->c.isC && name != NULL) {
+    TString *ts = luaS_new(L, name);
+    setproto_chunkname(L, clvalue(o)->l.p, ts);
+  }
+  lua_unlock(L);
+}
+
+
+/*
+** Klei engine counterpart: returns the display chunk name of the Lua closure
+** at `idx', or NULL for C closures / non-functions / unmarked prototypes.
+** Mirrors the client's lua51::luaGetFuncChunkName helper (Proto.chunkname).
+*/
+LUA_API const char *lua_getfuncchunkname (lua_State *L, int idx) {
+  TValue *o = index2adr(L, idx);
+  if (ttisfunction(o) && !clvalue(o)->c.isC) {
+    TString *ts = clvalue(o)->l.p->chunkname;
+    return ts != NULL ? getstr(ts) : NULL;
+  }
+  return NULL;
+}
+#endif
+
+
+#if LUA_KLEI_UNSAFEDATA
+LUA_API int lua_isunsafedataallowed (lua_State *L) {
+  return L->allowed_unsafedata;
+}
+#endif
+

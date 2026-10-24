@@ -158,11 +158,99 @@ static int io_tostring (lua_State *L) {
 }
 
 
+#if LUA_KLEI_IOPATH
+/*
+** Klei: every path handed to io.open / io.lines / io.input / io.output goes
+** through this guard (client: luaio_* at 0x14049c0a0..0x14049c2e0).
+**   - '\\' is normalised to '/', absolute paths and drive letters are refused;
+**   - ".." may walk up one level only, and only into "data" or "mods";
+**   - write modes additionally accept "unsafedata/<id>.<ext>" while the host
+**     has enabled it (lua_State.allowed_unsafedata).
+*/
+static int luaio_issafepath (char *path) {
+  int depth = 0;
+  char *p = strtok(path, "/");
+  for (;;) {
+    if (p == NULL) return 1;
+    if (*p == '.' && p[1] == '.')
+      depth--;  /* ".." */
+    else if (*p != '.' || p[1] != '\0')
+      depth++;  /* a real component (including ".name") */
+    p = strtok(NULL, "/");
+    if (depth < -1) return 0;
+    if (depth == -1) {  /* first step outside the root */
+      if (p == NULL) return 0;
+      if (strcmp(p, "data") != 0 && strcmp(p, "mods") != 0) return 0;
+    }
+  }
+}
+
+
+static int luaio_issafeunsafedataid (const char *name) {
+  size_t len;
+  if (*name == '.') return 0;  /* no dotfiles, no ".." */
+  len = strlen(name);
+  if (len < 5) return 0;  /* at least one character before ".txt" */
+  if (strcmp(name + len - 4, ".txt") == 0 ||
+      strcmp(name + len - 4, ".tex") == 0 ||
+      strcmp(name + len - 4, ".xml") == 0 ||
+      strcmp(name + len - 4, ".png") == 0 ||
+      strcmp(name + len - 4, ".ksh") == 0)
+    return 1;
+  if (len > 5 && strcmp(name + len - 5, ".json") == 0) return 1;
+  return 0;
+}
+
+
+static int luaio_issafeunsafedata (lua_State *L, char *path) {
+  char *p;
+  if (!lua_isunsafedataallowed(L))
+    return luaio_issafepath(path);  /* host did not opt in */
+  p = strtok(path, "/");
+  if (p == NULL || strcmp(p, "unsafedata") != 0) return 0;
+  p = strtok(NULL, "/");
+  if (p == NULL || !luaio_issafeunsafedataid(p)) return 0;
+  return strtok(NULL, "/") == NULL;  /* nothing after the id */
+}
+
+
+static int luaio_normalizepath (lua_State *L, const char *path, int unsafe) {
+  size_t n;
+  char *copy;
+  char *p;
+  int ok;
+  if (path == NULL) return 0;
+  n = strlen(path);
+  copy = (char *)malloc(n + 1);
+  if (copy == NULL) return 0;
+  memcpy(copy, path, n + 1);
+  for (p = copy; *p != '\0'; p++) {
+    if (*p == '\\') *p = '/';
+  }
+  if (copy[0] == '/' || strchr(copy, ':') != NULL) {  /* rooted or "C:\..." */
+    free(copy);
+    return 0;
+  }
+  ok = unsafe ? luaio_issafeunsafedata(L, copy) : luaio_issafepath(copy);
+  free(copy);
+  return ok;
+}
+
+
+#define luaio_writemode(mode)	(strpbrk((mode), "wa+") != NULL)
+#endif
+
+
 static int io_open (lua_State *L) {
   const char *filename = luaL_checkstring(L, 1);
   const char *mode = luaL_optstring(L, 2, "r");
+  FILE **pf;
 
-  FILE **pf = newfile(L);
+#if LUA_KLEI_IOPATH
+  if (!luaio_normalizepath(L, filename, strcmp(mode, "w") == 0))
+    luaL_error(L, "invalid filepath");
+#endif
+  pf = newfile(L);
   *pf = fopen(filename, mode);
   return (*pf == NULL) ? pushresult(L, 0, filename) : 1;
 }
@@ -202,7 +290,12 @@ static int g_iofile (lua_State *L, int f, const char *mode) {
   if (!lua_isnoneornil(L, 1)) {
     const char *filename = lua_tostring(L, 1);
     if (filename) {
-      FILE **pf = newfile(L);
+      FILE **pf;
+#if LUA_KLEI_IOPATH
+      if (!luaio_normalizepath(L, filename, luaio_writemode(mode)))
+        luaL_error(L, "invalid filepath");
+#endif
+      pf = newfile(L);
       *pf = fopen(filename, mode);
       if (*pf == NULL)
         fileerror(L, 1, filename);
@@ -254,7 +347,12 @@ static int io_lines (lua_State *L) {
   }
   else {
     const char *filename = luaL_checkstring(L, 1);
-    FILE **pf = newfile(L);
+    FILE **pf;
+#if LUA_KLEI_IOPATH
+    if (!luaio_normalizepath(L, filename, 0))
+      luaL_error(L, "invalid filepath");
+#endif
+    pf = newfile(L);
     *pf = fopen(filename, "r");
     if (*pf == NULL)
       fileerror(L, 1, filename);

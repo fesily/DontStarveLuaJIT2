@@ -100,6 +100,9 @@ static __forceinline void preinit_state (lua_State *L, global_State *g) {
   L->errfunc = 0;
   L->tobefreed = NULL;      /* mac client preinit also clears +0x70 */
   L->allowed_gcstep = 0;    /* ... and +0x74 (luaC_checkGC gate) */
+#if LUA_KLEI_UNSAFEDATA
+  L->allowed_unsafedata = 0;  /* ... and +0x75 / win64 +0xC1 */
+#endif
   setnilvalue(gt(L));
 }
 

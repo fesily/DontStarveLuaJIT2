@@ -309,9 +309,17 @@ LUA_API void lua_setlevel	(lua_State *from, lua_State *to);
 **   LUA_KLEI_PCALL_ERRSTATUS  protected calls report LUA_YIELD once the sink is
 **                             set (requires LUA_KLEI_EXECERROR)
 **   LUA_KLEI_TIMESLICE        lua_settimeslice stub (symbol compatibility only)
+**   LUA_KLEI_CHUNKNAME        per-proto display chunk name (Proto.chunkname)
+**   LUA_KLEI_UNSAFEDATA       per-state "unsafedata/<id>.<ext>" io allowance
+**   LUA_KLEI_IOPATH           io path guard in liolib (relative paths only)
+**   LUA_KLEI_HEXNUMERAL       lexer numeral scanner variant used by the client
 ** Provenance: macOS client lua51::_lua_getexecutionerror / _lua_clearexecutionerror
 ** / _lua_setexecutionerror (0x0032e32a / 0x0032e337 / 0x0032e348) and
 ** lua51::_lua_settimeslice (0x0032f037); the Android LuaJIT exports the trio.
+** The Windows x64 client (r759671) additionally exports lua_setfuncchunkname
+** (0x140483ab0), the Proto.chunkname field (+0x78), lua_isunsafedataallowed
+** (0x140489ab0, lua_State+0xC1), the liolib path guards (0x14049c0a0..0x14049c2e0)
+** and the extended numeral reader (0x140493580).
 */
 #ifndef LUA_KLEI_EXECERROR
 #define LUA_KLEI_EXECERROR		1
@@ -322,6 +330,18 @@ LUA_API void lua_setlevel	(lua_State *from, lua_State *to);
 #ifndef LUA_KLEI_TIMESLICE
 #define LUA_KLEI_TIMESLICE		1
 #endif
+#ifndef LUA_KLEI_CHUNKNAME
+#define LUA_KLEI_CHUNKNAME		1
+#endif
+#ifndef LUA_KLEI_UNSAFEDATA
+#define LUA_KLEI_UNSAFEDATA		1
+#endif
+#ifndef LUA_KLEI_IOPATH
+#define LUA_KLEI_IOPATH			1
+#endif
+#ifndef LUA_KLEI_HEXNUMERAL
+#define LUA_KLEI_HEXNUMERAL		1
+#endif
 
 #if LUA_KLEI_EXECERROR
 LUA_API const char *lua_getexecutionerror	(void);
@@ -331,6 +351,25 @@ LUA_API void        lua_setexecutionerror	(const char *msg);
 
 #if LUA_KLEI_TIMESLICE
 LUA_API void        lua_settimeslice		(float seconds);
+#endif
+
+#if LUA_KLEI_CHUNKNAME
+/*
+** Klei: store `name' as the display chunk name of the function at `idx' and of
+** every prototype nested in it.  Read back with the script loader's
+** lua51::luaGetFuncChunkName helper (Proto.chunkname).
+*/
+LUA_API void        lua_setfuncchunkname	(lua_State *L, int idx,
+						 const char *name);
+LUA_API const char *lua_getfuncchunkname	(lua_State *L, int idx);
+#endif
+
+#if LUA_KLEI_UNSAFEDATA
+/*
+** Klei: the shipped client writes lua_State.allowed_unsafedata directly; this
+** accessor is the read side used by the liolib path guard.
+*/
+LUA_API int         lua_isunsafedataallowed	(lua_State *L);
 #endif
 
 

@@ -127,3 +127,7 @@ lua_getexecutionerror
 lua_clearexecutionerror
 lua_setexecutionerror
 lua_settimeslice
+; dropped by -DLUA_KLEI_CHUNKNAME=0 / -DLUA_KLEI_UNSAFEDATA=0
+lua_setfuncchunkname
+lua_getfuncchunkname
+lua_isunsafedataallowed
