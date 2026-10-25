@@ -1,4 +1,5 @@
 #include <string>
+#include <chrono>
 #include <expected>
 #include <optional>
 #include <algorithm>
@@ -207,10 +208,16 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
     if (!prepared_train || !prepared_game) {
 
         // Phase 1: section ranges + symbol names only (no heuristic function starts).
+        const auto phase_start = std::chrono::steady_clock::now();
+        const auto phase_ms = [&phase_start] {
+            return std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - phase_start).count();
+        };
         if (!init_module_signature(lua51_path.c_str(), 0, modulelua51) ||
             !init_module_signature(game_path.c_str(), targetLuaModuleBase, moduleMain)) {
             throw update_signatures_exception{"init_module_signature failed!"};
         }
+        spdlog::info("phase init_module_signature: {} ms", phase_ms());
 
         // Phase 2: Nucleus is sole start|end|size authority (export split only inside
         // nucleus_analyze_file for real SYM_TYPE_FUNC). No ScanCtx table cuts.
@@ -220,26 +227,31 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                 throw update_signatures_exception{
                         fmt::format("nucleus_analyze_file(lua51) failed: {}", train_nt.error())};
             }
+            spdlog::info("phase nucleus(train): {} ms", phase_ms());
             if (!function_relocation::apply_nucleus_function_table(modulelua51, train_nt->table,
                                                                    train_nt->image_base)) {
                 throw update_signatures_exception{"apply_nucleus_function_table(lua51) failed"};
             }
+            spdlog::info("phase apply(train): {} ms", phase_ms());
 
             auto target_nt = function_relocation::nucleus_analyze_file(game_path);
             if (!target_nt) {
                 throw update_signatures_exception{
                         fmt::format("nucleus_analyze_file(game) failed: {}", target_nt.error())};
             }
+            spdlog::info("phase nucleus(game): {} ms", phase_ms());
             if (!function_relocation::apply_nucleus_function_table(moduleMain, target_nt->table,
                                                                    target_nt->image_base)) {
                 throw update_signatures_exception{"apply_nucleus_function_table(game) failed"};
             }
+            spdlog::info("phase apply(game): {} ms", phase_ms());
 
             // Phase 3: disasm each Nucleus body for soft-match features.
             if (!function_relocation::scan_module_function_features(modulelua51) ||
                 !function_relocation::scan_module_function_features(moduleMain)) {
                 throw update_signatures_exception{"scan_module_function_features failed"};
             }
+            spdlog::info("phase scan_features: {} ms", phase_ms());
 
             // Optional pdata cross-check (log only; Nucleus remains authority).
             {
@@ -247,10 +259,30 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                 if (function_relocation::enumerate_function_ranges_win(moduleMain, pdata_ranges)) {
                     size_t compared = 0;
                     size_t mismatches = 0;
+                    // spans x ranges was quadratic (4e5 x 1.3e4). Sort by start and
+                    // keep a prefix max end so the backwards containment walk stops
+                    // as soon as no earlier range can reach the span start.
+                    std::sort(pdata_ranges.begin(), pdata_ranges.end(),
+                              [](const function_relocation::FuncRange &l,
+                                 const function_relocation::FuncRange &r) { return l.start < r.start; });
+                    std::vector<uint64_t> prefix_max_end(pdata_ranges.size());
+                    uint64_t running_max = 0;
+                    for (size_t i = 0; i < pdata_ranges.size(); ++i) {
+                        running_max = (std::max)(running_max, pdata_ranges[i].end);
+                        prefix_max_end[i] = running_max;
+                    }
                     for (const auto &sp: moduleMain.function_table.spans()) {
                         const function_relocation::FuncRange *hit = nullptr;
                         size_t hits = 0;
-                        for (const auto &pr: pdata_ranges) {
+                        auto it = std::upper_bound(
+                                pdata_ranges.begin(), pdata_ranges.end(), sp.start,
+                                [](uint64_t value, const function_relocation::FuncRange &range) {
+                                    return value < range.start;
+                                });
+                        for (size_t idx = static_cast<size_t>(it - pdata_ranges.begin()); idx > 0;) {
+                            --idx;
+                            if (prefix_max_end[idx] <= sp.start) break;
+                            const auto &pr = pdata_ranges[idx];
                             if (pr.start <= sp.start && sp.start < pr.end) {
                                 hit = &pr;
                                 ++hits;
@@ -271,8 +303,8 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                             }
                         }
                     }
-                    spdlog::info("pdata cross-check: compared={} mismatches={} (Nucleus not overridden)",
-                                 compared, mismatches);
+                    spdlog::info("pdata cross-check: compared={} mismatches={} ({} ranges, {} ms)",
+                                 compared, mismatches, pdata_ranges.size(), phase_ms());
                 } else {
                     spdlog::info("pdata cross-check: no .pdata ranges for {}", moduleMain.details.path);
                 }

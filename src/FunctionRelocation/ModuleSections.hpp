@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <frida-gum.h>
 #include <memory>
+#include <optional>
 #include <list>
 #include "export.hpp"
 #include "FunctionTable.hpp"
@@ -73,20 +74,23 @@ namespace function_relocation {
 
     struct ModuleDetials {
         std::string name;
-        GumMemoryRange range;
+        GumMemoryRange range{};
         std::string path;
     };
     
     struct ModuleSections {
-        ModuleDetials details;
-        GumMemoryRange text;
-        GumMemoryRange pdata;
-        GumMemoryRange rodata;
-        GumMemoryRange plt;
-        GumMemoryRange got_plt;
-        GumMemoryRange bss;
+        ModuleDetials details{};
+        // GumMemoryRange is a plain C aggregate; value-initialize so "section not
+        // found" is a deterministic 0..0 range instead of stack garbage (the
+        // test suite and in_plt()/in_got_plt() rely on that).
+        GumMemoryRange text{};
+        GumMemoryRange pdata{};
+        GumMemoryRange rodata{};
+        GumMemoryRange plt{};
+        GumMemoryRange got_plt{};
+        GumMemoryRange bss{};
 #ifndef _WIN32
-        GumMemoryRange ehframe;
+        GumMemoryRange ehframe{};
 #endif  
         std::unordered_map<std::string, GumMemoryRange> sections;
 #define MODULESECTION_IN_RANGE(name) \
@@ -172,9 +176,53 @@ namespace function_relocation {
         }
 
         Function *find_function(uintptr_t addr) {
+            // address_functions is maintained by apply_nucleus_function_table and
+            // covers every materialized span start. The linear fallback below is
+            // O(functions) (~4e5 spans) and used to dominate short-body matching.
+            if (const auto it = address_functions.find(addr); it != address_functions.end()) {
+                return it->second;
+            }
             auto iter = std::ranges::find_if(functions, [addr](auto& f) { return addr == f.address; });
             return iter != functions.end() ? &(*iter) : nullptr;
         }
+
+        // --- Lazily built 8-byte window index over a .text sub-range -----------
+        // The short-body needle search used to scan the whole target range once
+        // per candidate window (thousands of scans per tiny body). Every fixed
+        // needle >= 8 bytes contains exactly one 8-byte window, so a single
+        // unique-window lookup decides the whole needle.
+        struct Window8Index {
+            static constexpr uint32_t kMultiple = 0xFFFFFFFFu;
+            uintptr_t base = 0;
+            size_t size = 0;
+            size_t mask = 0;
+            std::vector<uint64_t> keys; // value at slot
+            std::vector<uint32_t> hits; // first offset, or kMultiple
+            std::vector<uint8_t> occupied;
+        };
+
+        // Cached per (start, size); built on first use from mapped memory.
+        FUNCTION_RELOCATION_API const Window8Index *window8_index(uintptr_t start, size_t size);
+        // Unique occurrence address of the 8-byte value in [start, start+size),
+        // or nullopt when absent or ambiguous.
+        FUNCTION_RELOCATION_API std::optional<uintptr_t>
+        find_unique_window8(uintptr_t start, size_t size, uint64_t value);
+
+        std::vector<std::unique_ptr<Window8Index>> window8_cache;
+
+        // 4-byte postings for needles shorter than 8 bytes: sorted (value<<32 |
+        // offset) so a lookup is a binary search over a contiguous array.
+        struct Window4Index {
+            uintptr_t base = 0;
+            size_t size = 0;
+            std::vector<uint64_t> entries;
+        };
+        FUNCTION_RELOCATION_API const Window4Index *window4_index(uintptr_t start, size_t size);
+        // All occurrences of the 4-byte value inside [start, start+size).
+        FUNCTION_RELOCATION_API std::vector<uintptr_t>
+        find_window4(uintptr_t start, size_t size, uint32_t value);
+
+        std::vector<std::unique_ptr<Window4Index>> window4_cache;
 
         FUNCTION_RELOCATION_API uintptr_t try_fix_func_address(const Function &original, SignatureInfo* maybe_addr, uintptr_t limit_address);
     };

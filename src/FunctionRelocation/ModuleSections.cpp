@@ -5,6 +5,8 @@
 #include <ranges>
 #include <algorithm>
 #include <cassert>
+#include <cstring>
+#include <memory>
 
 #ifdef _WIN32
 #include <pe-parse/parse.h>
@@ -251,6 +253,109 @@ namespace function_relocation {
         return (uintptr_t) fix_func_address_by_signature(*this, original, limit_address, signature);
     }
 
+    namespace {
+        inline uint64_t load_le64(const uint8_t *p) {
+            uint64_t v = 0;
+            std::memcpy(&v, p, sizeof(v));
+            return v;
+        }
+
+        inline size_t mix64(uint64_t v) {
+            v ^= v >> 33;
+            v *= 0xff51afd7ed558ccdULL;
+            v ^= v >> 33;
+            v *= 0xc4ceb9fe1a85ec53ULL;
+            v ^= v >> 33;
+            return static_cast<size_t>(v);
+        }
+    }// namespace
+
+    const ModuleSections::Window8Index *
+    ModuleSections::window8_index(uintptr_t start, size_t size) {
+        for (const auto &cached: window8_cache) {
+            if (cached && cached->base == start && cached->size == size) return cached.get();
+        }
+        // 32-bit offsets in the table: refuse ranges that cannot be addressed.
+        if (size < 8 || start == 0 || size > static_cast<size_t>(UINT32_MAX)) return nullptr;
+        auto index = std::make_unique<Window8Index>();
+        index->base = start;
+        index->size = size;
+        const size_t windows = size - 7;
+        size_t cap = 64;
+        while (cap < windows * 2) cap <<= 1;
+        index->mask = cap - 1;
+        index->keys.assign(cap, 0);
+        index->hits.assign(cap, 0);
+        index->occupied.assign(cap, 0);
+        const auto *bytes = reinterpret_cast<const uint8_t *>(start);
+        for (size_t i = 0; i < windows; ++i) {
+            const uint64_t value = load_le64(bytes + i);
+            size_t slot = mix64(value) & index->mask;
+            while (index->occupied[slot] != 0 && index->keys[slot] != value) {
+                slot = (slot + 1) & index->mask;
+            }
+            if (index->occupied[slot] == 0) {
+                index->occupied[slot] = 1;
+                index->keys[slot] = value;
+                index->hits[slot] = static_cast<uint32_t>(i);
+            } else {
+                index->hits[slot] = Window8Index::kMultiple;
+            }
+        }
+        window8_cache.push_back(std::move(index));
+        return window8_cache.back().get();
+    }
+
+    const ModuleSections::Window4Index *
+    ModuleSections::window4_index(uintptr_t start, size_t size) {
+        for (const auto &cached: window4_cache) {
+            if (cached && cached->base == start && cached->size == size) return cached.get();
+        }
+        if (size < 4 || start == 0 || size > static_cast<size_t>(UINT32_MAX)) return nullptr;
+        auto index = std::make_unique<Window4Index>();
+        index->base = start;
+        index->size = size;
+        const size_t windows = size - 3;
+        index->entries.resize(windows);
+        const auto *bytes = reinterpret_cast<const uint8_t *>(start);
+        for (size_t i = 0; i < windows; ++i) {
+            uint32_t value = 0;
+            std::memcpy(&value, bytes + i, sizeof(value));
+            index->entries[i] = (static_cast<uint64_t>(value) << 32) | static_cast<uint32_t>(i);
+        }
+        std::sort(index->entries.begin(), index->entries.end());
+        window4_cache.push_back(std::move(index));
+        return window4_cache.back().get();
+    }
+
+    std::vector<uintptr_t>
+    ModuleSections::find_window4(uintptr_t start, size_t size, uint32_t value) {
+        std::vector<uintptr_t> hits;
+        const auto *index = window4_index(start, size);
+        if (!index) return hits;
+        const uint64_t key = static_cast<uint64_t>(value) << 32;
+        const auto low = std::lower_bound(index->entries.begin(), index->entries.end(), key);
+        for (auto it = low; it != index->entries.end() && (*it >> 32) == value; ++it) {
+            hits.push_back(index->base + static_cast<uint32_t>(*it));
+        }
+        return hits;
+    }
+
+    std::optional<uintptr_t>
+    ModuleSections::find_unique_window8(uintptr_t start, size_t size, uint64_t value) {
+        const auto *index = window8_index(start, size);
+        if (!index) return std::nullopt;
+        size_t slot = mix64(value) & index->mask;
+        while (index->occupied[slot] != 0) {
+            if (index->keys[slot] == value) {
+                if (index->hits[slot] == Window8Index::kMultiple) return std::nullopt;
+                return index->base + index->hits[slot];
+            }
+            slot = (slot + 1) & index->mask;
+        }
+        return std::nullopt;
+    }
+
     bool apply_nucleus_function_table(ModuleSections &sections,
                                       const FunctionTable &image_table,
                                       uint64_t image_base) {
@@ -265,14 +370,17 @@ namespace function_relocation {
         }
 
         const auto process_base = sections.details.range.base_address;
+        std::vector<FunctionSpan> remapped;
+        remapped.reserve(image_table.spans().size());
         for (const auto &sp: image_table.spans()) {
             if (sp.end <= sp.start) {
                 continue;
             }
             const uint64_t start = process_base + (sp.start - image_base);
             const uint64_t end = process_base + (sp.end - image_base);
-            sections.function_table.add(FunctionSpan{start, end});
+            remapped.push_back(FunctionSpan{start, end});
         }
+        sections.function_table.assign(std::move(remapped));
 
         if (sections.function_table.empty()) {
             if (log) {

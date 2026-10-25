@@ -213,11 +213,17 @@ nucleus_analyze_file(const std::filesystem::path &path,
   // Map Nucleus Function -> FunctionSpan.
   // Nucleus Function::{start,end}: end is exclusive (from BB::end = first byte
   // past last instruction). Keep as-is so containing uses start <= addr < end.
-  for (const auto &f : cfg.functions) {
-    if (f.end <= f.start) {
-      continue;
+  // Bulk load: inserting each span into a sorted vector is quadratic for the
+  // ~4e5 CFG functions of a game binary.
+  {
+    std::vector<FunctionSpan> spans;
+    spans.reserve(cfg.functions.size());
+    for (const auto &f : cfg.functions) {
+      if (f.end > f.start) {
+        spans.push_back(FunctionSpan{f.start, f.end});
+      }
     }
-    out.table.add(FunctionSpan{f.start, f.end});
+    out.table.assign(std::move(spans));
   }
 
   // FUNC-symbol refine: PE .pdata / ELF .eh_frame_hdr / exports that sit

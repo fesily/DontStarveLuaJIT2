@@ -1,9 +1,16 @@
 #include <format>
 #include <frida-gum.h>
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include <filesystem>
+#include <cstdio>
 #include <cstdlib>
 #include <string_view>
+
+#ifdef _WIN32
+#include <crtdbg.h>
+#include <windows.h>
+#endif
 
 #include "platform.hpp"
 #include "frida_gum_interceptor.hpp"
@@ -123,12 +130,46 @@ bool pre_updater() {
 #ifdef _WIN32
 int main(int argc, char **argv)
 {
+#ifdef _WIN32
+    // Batch tool: a modal CRT assert / WER dialog would hang the run forever.
+    // Route assert/error reports to stderr and disable fault dialogs.
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+    _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+    _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_WARN, _CRTDBG_FILE_STDERR);
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+    _set_error_mode(_OUT_TO_STDERR);
+    // Keep diagnostics even when the process aborts mid-run.
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+#endif
+    // Signature.cpp / MemorySignature.cpp log through this named logger; without
+    // it every strategy/per-scan message is silently dropped by spdlog::get().
+    // NOTE: function_relocation::init_ctx() already creates the
+    // "FunctionRelocation" logger (rotating file next to this exe); creating it
+    // here makes spdlog::create throw. Only mirror it to the console on demand.
     ToolMode mode = ToolMode::Auto;
     if (!parse_tool_mode(argc > 1 ? argv[1] : nullptr, mode))
         return 2;
+    fprintf(stderr, "[tool] gum_init_embedded...\n");
     gum_init_embedded();
-    if (pre_updater())
-        return update(true, game_path, mode) + update(false, game_server_path, mode);
+    fprintf(stderr, "[tool] pre_updater...\n");
+    if (pre_updater()) {
+        if (const char *env = std::getenv("DS_FR_LOG"); env && *env == '1') {
+            if (auto fr = spdlog::get("FunctionRelocation")) {
+                fr->sinks().push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
+                fr->set_level(spdlog::level::info);
+            }
+        }
+        fprintf(stderr, "[tool] client phase...\n");
+        const int client_rc = update(true, game_path, mode);
+        if (client_rc != 0) return client_rc;
+        fprintf(stderr, "[tool] server phase...\n");
+        return update(false, game_server_path, mode);
+    }
     return -1;
 }
 #else

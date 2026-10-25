@@ -25,3 +25,4 @@ lua_setexecutionerror
 lua_getexecutionerror
 lua_clearexecutionerror
 lua_settimeslice
+lua_isunsafedataallowed

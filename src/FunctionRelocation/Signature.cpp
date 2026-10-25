@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <functional>
 #include <numbers>
 #include <optional>
@@ -107,6 +108,26 @@ namespace function_relocation {
 
     static auto regx1 = std::regex(R"(\[r(.)x \+ rax\*(\d+) (\+\-) 0x([0-9a-z]+)\])");
     static auto regx2 = std::regex("0x[0-9a-z]+");
+
+    // Temporary (and cheap) per-strategy timing so `create` can attribute the
+    // cost of a single function instead of guessing. Logged at info to the
+    // "FunctionRelocation" logger (registered by the tools' main()).
+    struct PhaseClock {
+        const char *name;
+        std::chrono::steady_clock::time_point t0{std::chrono::steady_clock::now()};
+
+        ~PhaseClock() {
+            if (auto logger = spdlog::get(logger_name)) {
+                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - t0).count();
+                if (ms >= 100) {
+                    logger->info("strategy[{}] {} ms", name, ms);
+                } else {
+                    logger->debug("strategy[{}] {} ms", name, ms);
+                }
+            }
+        }
+    };
 
     struct Creator {
 
@@ -575,6 +596,7 @@ namespace function_relocation {
         // After short_body/micro_windows so unique strings cannot steal a body
         // pattern. containing() is the pdata span start.
         void *scan_by_unique_const() {
+            PhaseClock phase_clock{"unique_const"};
             if (!original || original->size == 0 || !original->module) return nullptr;
             if (target->function_table.empty()) return nullptr;
             if (target->text.base_address == 0 || target->text.size == 0) return nullptr;
@@ -790,6 +812,7 @@ namespace function_relocation {
         // target hits collapse to a single Nucleus entry. Covers tiny exports
         // (e.g. lua_pushnil 17B) where micro-windows lack SCORE_T signal.
         void *scan_by_short_body() {
+            PhaseClock phase_clock{"short_body"};
             if (!original || original->size == 0) return nullptr;
             if (target->function_table.empty()) return nullptr;
             if (!original->module) return nullptr;
@@ -975,6 +998,49 @@ namespace function_relocation {
             {
                 const auto *bytes = reinterpret_cast<const uint8_t *>(original->address);
                 const size_t n = leaf;
+                // Index-backed single-hit lookup. Falls back to the byte scan it
+                // replaces when the range cannot be indexed (shorter than 4 bytes
+                // or wider than the 32-bit offsets the postings store).
+                const auto unique_raw_hit =
+                        [](function_relocation::ModuleSections *module, uintptr_t base, size_t span,
+                           const uint8_t *needle, size_t len, const std::string &pattern,
+                           uintptr_t &hit) -> bool {
+                    hit = 0;
+                    if (len >= 8 && module->window8_index(base, span) != nullptr) {
+                        const size_t mid = (len - 8) / 2;
+                        uint64_t window = 0;
+                        std::memcpy(&window, needle + mid, sizeof(window));
+                        const auto unique = module->find_unique_window8(base, span, window);
+                        if (!unique) return false;
+                        const uintptr_t candidate = *unique - mid;
+                        if (candidate < base || candidate + len > base + span) return false;
+                        if (std::memcmp(reinterpret_cast<const void *>(candidate), needle, len) != 0)
+                            return false;
+                        hit = candidate;
+                        return true;
+                    }
+                    if (len < 8 && module->window4_index(base, span) != nullptr) {
+                        uint32_t core = 0;
+                        std::memcpy(&core, needle, sizeof(core));
+                        const auto hits = module->find_window4(base, span, core);
+                        size_t count = 0;
+                        for (const auto candidate: hits) {
+                            if (candidate + len > base + span) continue;
+                            if (std::memcmp(reinterpret_cast<const void *>(candidate), needle, len) != 0)
+                                continue;
+                            if (++count > 1) return false;
+                            hit = candidate;
+                        }
+                        return count == 1;
+                    }
+                    MemorySignature scan(pattern.c_str(), 0, false);
+                    scan.log = false;
+                    scan.scan(base, span);
+                    if (scan.targets.size() != 1) return false;
+                    hit = scan.targets[0];
+                    return true;
+                };
+
                 for (size_t len = 12; len >= 6; --len) {
                     // Prefer mid/late needles over shared prologues.
                     for (size_t off = n - len + 1; off-- > 0; ) {
@@ -987,20 +1053,17 @@ namespace function_relocation {
                         if (off < 8) continue;
 
                         auto pattern = trim(to_hex(bytes + off, bytes + off + len));
-                        MemorySignature train_scan(pattern.c_str(), 0, false);
-                        train_scan.log = false;
-                        train_scan.scan(train_text.base_address, train_text.size);
-                        if (train_scan.targets.size() != 1) continue;
-                        if (!original->in_function(train_scan.targets[0])) continue;
-
-                        MemorySignature tgt_scan(pattern.c_str(), 0, false);
-                        tgt_scan.log = false;
-                        tgt_scan.scan(limit_address,
-                                      target->text.size -
-                                              (limit_address - target->text.base_address));
-                        if (tgt_scan.targets.size() != 1) continue;
-                        const uintptr_t match = tgt_scan.targets[0];
-                        if (match < limit_address) continue;
+                        const size_t target_span =
+                                target->text.size - (limit_address - target->text.base_address);
+                        uintptr_t match = 0;
+                        if (!unique_raw_hit(target, limit_address, target_span, bytes + off, len,
+                                            pattern, match))
+                            continue;
+                        uintptr_t train_hit = 0;
+                        if (!unique_raw_hit(original->module, train_text.base_address,
+                                            train_text.size, bytes + off, len, pattern, train_hit))
+                            continue;
+                        if (!original->in_function(train_hit)) continue;
                         const uint64_t entry = target->function_table.containing(match);
                         if (entry == 0 || entry < limit_address) continue;
                         if (match < entry) continue;
@@ -1051,6 +1114,7 @@ namespace function_relocation {
 
         // Soft path: sliding micro-windows + dual-channel accept (SCORE_T/M).
         void *scan_by_micro_windows() {
+            PhaseClock phase_clock{"micro_windows"};
             if (!original || original->size == 0) return nullptr;
             if (target->function_table.empty()) return nullptr;
 
