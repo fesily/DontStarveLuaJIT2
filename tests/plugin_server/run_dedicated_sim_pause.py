@@ -43,6 +43,7 @@ if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
 
 from harness.cluster import remove_persist_tree, write_offline_cluster  # noqa: E402
+from harness.ports import free_udp_port  # noqa: E402
 from harness.logs import safe_print  # noqa: E402
 
 # Child output is decoded with errors="replace"; a legacy console code page
@@ -541,8 +542,9 @@ def run_core_profile(game_dir: Path, cluster: str, scenario: str = "present") ->
     # aborts startup before the mod ever loads. The offline cluster
     # (``offline_server = true``) removes the cluster_token requirement.
     persist_root = Path(tempfile.mkdtemp(prefix="ds_lg_sim_"))
-    write_offline_cluster(persist_root, cluster, "Master", server_port=10999)
-    print(f"[lg] persist root: {persist_root}")
+    server_port = free_udp_port(10999)
+    write_offline_cluster(persist_root, cluster, "Master", server_port=server_port)
+    print(f"[lg] persist root: {persist_root} (server_port={server_port})")
 
     renamed_from: Optional[Path] = None
     extra_env: dict = {}

@@ -38,6 +38,7 @@ if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
 
 from harness.cluster import remove_persist_tree, write_offline_cluster  # noqa: E402
+from harness.ports import free_udp_port  # noqa: E402
 from harness.logs import safe_print  # noqa: E402
 
 # Child output is decoded with errors="replace"; a legacy console code page
@@ -654,8 +655,9 @@ def run_p1b(
     ready_at: Optional[float] = None
     success = False
     try:
-        write_offline_cluster(persist_root, cluster, "Master", server_port=10999)
-        print(f"[lc] persist root: {persist_root}")
+        server_port = free_udp_port(10999)
+        write_offline_cluster(persist_root, cluster, "Master", server_port=server_port)
+        print(f"[lc] persist root: {persist_root} (server_port={server_port})")
         ded = start_dedicated(game_dir, cluster, persist_root)
         if not wait_dedicated_ready(ded, T_DEDICATED_READY):
             return 1
@@ -666,7 +668,7 @@ def run_p1b(
             extra_env={
                 "STRESS_LAN_OFFLINE": "1",
                 "STRESS_CONNECT_IP": "127.0.0.1",
-                "STRESS_CONNECT_PORT": "10999",
+                "STRESS_CONNECT_PORT": str(server_port),
             },
         )
 
