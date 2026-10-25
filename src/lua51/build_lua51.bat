@@ -39,7 +39,7 @@ set "DEF=src\lua51\lua51.def"
 set "OBJ=src\lua51\obj"
 set "OUT=src\lua51\release"
 set "DEFS=/DST /DWIN32 /D_CONSOLE /DLUA_BUILD_AS_DLL"
-set "OPT=/O2 /Ob0 /GF /Gy"
+set "OPT=/O2 /Ob2 /GF /Gy /DNDEBUG"
 set "RTLIB=/MD"
 set "DBG="
 if /i "%2"=="debug" goto :cfg_debug
