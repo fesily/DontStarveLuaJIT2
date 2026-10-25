@@ -6,6 +6,7 @@
 #include "MemorySignature.hpp"
 #include "util/inlinehook.hpp"
 #include "GameLua.hpp"
+#include <lj_arch.h>
 #include "plugins/plugin_core_vm/LuaEvent.hpp"
 #include "plugins/plugin_core_vm/VmServices.hpp"
 #ifdef _WIN32

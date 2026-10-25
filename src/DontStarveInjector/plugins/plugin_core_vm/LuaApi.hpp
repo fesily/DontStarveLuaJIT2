@@ -124,7 +124,9 @@
     _(luaopen_os)            \
     _(luaopen_package)       \
     _(luaopen_string)        \
-    _(luaopen_table)
+    _(luaopen_table)         \
+    _(lua_setfuncchunkname)   \
+    _(lua_getfuncchunkname)
 
 #define LUA_API_DEFINES_FMT_VARGS(_)    \
     _(lua_pushfstring)        \

@@ -54,6 +54,7 @@ Mod/scripts/jit
 cmake/GameDir.cmake
 Mod/**/*.dll
 !Mod/deps/lua51.dll
+Mod/**/*.pkg
 Mod/mod.manifest
 tests/plugin_server/_markers/
 

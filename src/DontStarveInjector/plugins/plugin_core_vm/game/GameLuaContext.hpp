@@ -6,8 +6,9 @@
 #include <vector>
 #include <string_view>
 #include <frida-gum.h>
+#define LJ_DS_CHUNKNAME_MARKER 1
 #include <lua.hpp>
-#include <lj_arch.h>
+#undef LJ_DS_CHUNKNAME_MARKER
 #include "GameLuaType.hpp"
 #include "LuaEvent.hpp"
 
