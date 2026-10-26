@@ -998,6 +998,43 @@ namespace function_relocation {
             {
                 const auto *bytes = reinterpret_cast<const uint8_t *>(original->address);
                 const size_t n = leaf;
+                // A raw byte window may start inside an instruction on either side;
+                // such a match is incidental (the same bytes also occur mid-stream
+                // in unrelated code). Require both ends of the needle to start at a
+                // decoded instruction boundary.
+                const auto is_insn_boundary = [](uintptr_t entry, size_t span,
+                                                 uintptr_t addr) -> bool {
+                    if (addr < entry || addr >= entry + span) return false;
+                    const size_t window = static_cast<size_t>(addr - entry) + 16;
+                    function_relocation::disasm ds{std::span{
+                            reinterpret_cast<uint8_t *>(entry), (std::min)(span, window)}};
+                    for (auto &insn: ds) {
+                        if (insn.address == addr) return true;
+                        if (insn.address > addr) return false;
+                    }
+                    return false;
+                };
+                // Unique bytes prove nothing about identity: a generic epilogue
+                // (cmovne/mov/ret) also ends unrelated helpers. When the reference
+                // function calls an already-identified Lua function (index2adr and
+                // previously resolved exports), the candidate must call the same
+                // target too.
+                std::unordered_set<uint64_t> expected_calls;
+                bool expected_collected = false;
+                const auto collect_expected_calls = [&]() {
+                    if (expected_collected) return;
+                    expected_collected = true;
+                    const size_t walk = (std::min)(original->size, size_t{256});
+                    for (const auto ct: function_relocation::collect_rel32_call_targets(
+                                 *original->module, original->address, walk)) {
+                        const auto *cf = original->module->find_function(ct);
+                        if (!cf || cf->name.empty()) continue;
+                        const auto it = target->known_functions.find(cf->name);
+                        if (it != target->known_functions.end() && it->second) {
+                            expected_calls.insert(it->second->address);
+                        }
+                    }
+                };
                 // Index-backed single-hit lookup. Falls back to the byte scan it
                 // replaces when the range cannot be indexed (shorter than 4 bytes
                 // or wider than the 32-bit offsets the postings store).
@@ -1090,6 +1127,27 @@ namespace function_relocation {
                             if (ratio < 0.4 || ratio > 2.5) continue;
                         }
                         if (match >= entry + std::max(leaf * 2, size_t{256})) continue;
+                        // Reject incidental mid-instruction windows (the false
+                        // lua_getfuncchunkname match landed inside a list walker).
+                        if (!is_insn_boundary(original->address, original->size,
+                                              original->address + off))
+                            continue;
+                        const size_t target_window =
+                                (std::min)(fn->size, std::max(leaf * 2, size_t{256}));
+                        if (!is_insn_boundary(entry, target_window, match)) continue;
+                        collect_expected_calls();
+                        if (!expected_calls.empty()) {
+                            const auto calls = function_relocation::collect_rel32_call_targets(
+                                    *target, entry, target_window);
+                            bool calls_expected = false;
+                            for (const auto ct: calls) {
+                                if (expected_calls.contains(ct)) {
+                                    calls_expected = true;
+                                    break;
+                                }
+                            }
+                            if (!calls_expected) continue;
+                        }
 
                         const int target_po = static_cast<int>(
                                 static_cast<intptr_t>(entry) - static_cast<intptr_t>(match));

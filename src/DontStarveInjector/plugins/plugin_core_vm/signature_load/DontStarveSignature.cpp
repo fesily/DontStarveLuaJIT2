@@ -520,7 +520,9 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                     if (!seen.insert(ct).second) continue;
                     auto *cf = mod.find_function(ct);
                     if (!cf || cf->name.empty()) continue;
-                    if (!mod.known_functions.contains(cf->name)) continue;
+                    // Any named symbol can seed the graph: the target side may
+                    // identify it without it being an export (index2adr is the
+                    // canonical case; resolution filters names the target lacks).
                     out.emplace_back(cf->name, ct);
                 }
             }
@@ -708,30 +710,42 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
 
                 // Direct named callees, plus one-level transitive (target may
                 // inline a direct callee: train loadstring→JMP loadbuffer→lua_load
-                // becomes game loadstring→CALL lua_load).
-                std::vector<std::string> seed_callees;
+                // becomes game loadstring→CALL lua_load). Names resolve either to
+                // a resolved export or to an internal function the target module
+                // already identified (index2adr).
+                std::vector<std::pair<std::string, uintptr_t>> seed_callees;
                 {
                     std::unordered_set<std::string> seen;
+                    const auto resolve_target = [&](const std::string &cn) -> uintptr_t {
+                        if (funcs.contains(cn)) {
+                            const auto off = funcs.at(cn).offset;
+                            if (off != 0) return targetLuaModuleBase + static_cast<uintptr_t>(off);
+                        }
+                        const auto it = moduleMain.known_functions.find(cn);
+                        if (it != moduleMain.known_functions.end() && it->second)
+                            return it->second->address;
+                        return 0;
+                    };
                     const auto direct = collect_named_callees(*train_fn, modulelua51);
                     for (const auto &[cn, _ct]: direct) {
-                        if (!funcs.contains(cn) || funcs.at(cn).offset == 0) continue;
-                        if (seen.insert(cn).second) seed_callees.push_back(cn);
+                        const auto tgt = resolve_target(cn);
+                        if (tgt == 0) continue;
+                        if (seen.insert(cn).second) seed_callees.emplace_back(cn, tgt);
                         auto *cfn = modulelua51.known_functions.contains(cn)
                                             ? modulelua51.known_functions.at(cn)
                                             : nullptr;
                         if (!cfn) continue;
                         for (const auto &[cn2, _ct2]: collect_named_callees(*cfn, modulelua51)) {
-                            if (!funcs.contains(cn2) || funcs.at(cn2).offset == 0) continue;
-                            if (seen.insert(cn2).second) seed_callees.push_back(cn2);
+                            const auto tgt2 = resolve_target(cn2);
+                            if (tgt2 == 0) continue;
+                            if (seen.insert(cn2).second) seed_callees.emplace_back(cn2, tgt2);
                         }
                     }
                 }
-                std::unordered_set<std::string> allowed_callees(seed_callees.begin(), seed_callees.end());
+                std::unordered_set<std::string> allowed_callees;
+                for (const auto &[cn, _tgt]: seed_callees) allowed_callees.insert(cn);
                 allowed_callees.insert(name);
-                for (const auto &callee_name: seed_callees) {
-                    auto &callee_sig = funcs.at(callee_name);
-                    const uintptr_t tgt_callee =
-                            targetLuaModuleBase + static_cast<uintptr_t>(callee_sig.offset);
+                for (const auto &[callee_name, tgt_callee]: seed_callees) {
 
                     std::vector<uint64_t> candidates;
                     for (auto &fn: moduleMain.functions) {
