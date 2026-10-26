@@ -28,6 +28,26 @@ namespace {
 using AbiVersionFn = const char *(*)();
 using ModuleInitFn = bool (*)(PluginHost *);
 
+// Counters and helpers that only need the stem live here so every entry point
+// (directory scan, external discovery) applies the same "one copy per stem" rule.
+bool mark_stem_handled(std::vector<std::string> &handled, const std::string &stem) {
+    for (const auto &done : handled) {
+        if (done == stem) {
+            return false;
+        }
+    }
+    handled.push_back(stem);
+    return true;
+}
+
+std::string stem_from_module_path(const std::filesystem::path &module_path) {
+    const auto parent = module_path.parent_path().filename();
+    if (!parent.empty()) {
+        return parent.string();
+    }
+    return module_path.stem().string();
+}
+
 #if defined(_WIN32)
 using ModuleHandle = HMODULE;
 
@@ -240,6 +260,21 @@ bool DynamicPluginLoader::load_module_path(PluginHost &host, const std::filesyst
     const auto path = path_ec ? module_path : abs;
     const auto path_str = path.string();
 
+    // One copy per plugin stem: the mod-local root and the injector_module_dir()
+    // migration fallback can both carry the same package, and initializing the
+    // second copy re-registers its services (host rejects init, the module is then
+    // unloaded while the first copy's registrations stay live).
+    if (!mark_stem_handled(handled_stems_, stem_from_module_path(path))) {
+        if (skip_reason) {
+            *skip_reason = "duplicate_stem";
+        }
+        std::fprintf(stderr,
+                     "[DynamicPluginLoader] skipped duplicate module (stem already handled "
+                     "from an earlier root): %s\n",
+                     path_str.c_str());
+        return false;
+    }
+
     (void)configure_plugin_dll_search({path.parent_path()});
 
 #if defined(_WIN32)
@@ -354,6 +389,17 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
         const auto abs = std::filesystem::weakly_canonical(module_path, path_ec);
         const auto path = path_ec ? module_path : abs;
         const auto path_str = path.string();
+
+        // First root wins per plugin stem (see handled_stems_): scanning a second
+        // root must never re-initialize a plugin this process already registered.
+        if (!mark_stem_handled(handled_stems_, entry.path().filename().string())) {
+            report.skipped.push_back(skip_reason(path, "duplicate_stem"));
+            std::fprintf(stderr,
+                         "[DynamicPluginLoader] skipped duplicate module (stem already handled "
+                         "from an earlier root): %s\n",
+                         path_str.c_str());
+            continue;
+        }
 
 #if defined(_WIN32)
         DWORD load_err = 0;

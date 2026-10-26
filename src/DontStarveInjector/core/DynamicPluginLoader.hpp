@@ -37,7 +37,12 @@ public:
     static std::vector<std::filesystem::path> default_search_dirs();
 
 private:
-    std::vector<void *> handles_; // HMODULE / void*
+    // Plugin stems this loader already handled (loaded or refused). Two search roots can
+    // carry the same package (mod-local tree + the injector_module_dir() migration
+    // fallback); initializing a second copy of one plugin re-registers its services and
+    // crashes the host, so the first root wins per stem.
+    std::vector<std::string> handled_stems_;
+    std::vector<void *> handles_; // HMODULE / void *
 };
 
 } // namespace ds::plugin

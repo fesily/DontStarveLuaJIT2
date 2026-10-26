@@ -132,6 +132,54 @@ static void test_flat_ignored_beside_package() {
     printf("PASS: flat_ignored_beside_package\n");
 }
 
+// Two plugins roots can carry the same package (mod-local tree + the
+// injector_module_dir() migration fallback). Initializing the second copy
+// re-registers the plugin's services; the loader must handle one copy per stem,
+// first root wins, and still pick up stems the first root did not have.
+static void test_duplicate_stem_across_roots() {
+    PluginHost host;
+    DynamicPluginLoader loader;
+    auto root1 = temp_dir("ds_plugin_loader_root1");
+    auto root2 = temp_dir("ds_plugin_loader_root2");
+#if defined(_WIN32)
+    const char *ext = ".dll";
+#else
+    const char *ext = ".so";
+#endif
+    auto make_pkg = [ext](const fs::path &root, const char *stem) {
+        auto pkg = root / stem;
+        fs::create_directories(pkg);
+        std::ofstream(pkg / (std::string(stem) + ext), std::ios::binary) << "not a pe/elf";
+    };
+    make_pkg(root1, "plugin_dupe");
+    make_pkg(root2, "plugin_dupe");
+    make_pkg(root2, "plugin_only2");
+
+    auto r1 = loader.load_directory(host, root1);
+    assert(r1.loaded_modules.empty());
+    assert(!r1.skipped.empty()); // garbage payload: attempted and refused
+
+    auto r2 = loader.load_directory(host, root2);
+    assert(r2.loaded_modules.empty());
+    const std::string dupe2 = (root2 / "plugin_dupe" / (std::string("plugin_dupe") + ext)).string();
+    const std::string only2 = (root2 / "plugin_only2" / (std::string("plugin_only2") + ext)).string();
+    bool dupe_skipped = false;
+    bool only2_attempted = false;
+    for (const auto &entry : r2.skipped) {
+        if (entry.find(dupe2) != std::string::npos) {
+            assert(entry.find("duplicate_stem") != std::string::npos);
+            dupe_skipped = true;
+        }
+        if (entry.find(only2) != std::string::npos) {
+            assert(entry.find("duplicate_stem") == std::string::npos);
+            only2_attempted = true;
+        }
+    }
+    assert(dupe_skipped);
+    assert(only2_attempted);
+    printf("PASS: duplicate_stem_across_roots\n");
+}
+
 int main() {
     test_empty_dir();
     test_non_plugin_file_ignored();
@@ -139,6 +187,7 @@ int main() {
     test_package_subdir_bad_library_skipped();
     test_packaged_twin_materialized_before_load();
     test_flat_ignored_beside_package();
+    test_duplicate_stem_across_roots();
     // Real plugin_dummy load is skipped here: MODULE imports Injector.dll
     // (and its transitive deps). Under Inject() Injector is already mapped so
     // LoadLibrary binds cleanly; a bare unit EXE cannot satisfy that graph.
