@@ -760,6 +760,19 @@ under `<name>.pkg`:
   in place: the same rule applies to `update_pending` moves and to `plugin.manager` installs.
 - `--no-filter` still uploads the tree as-is (canonical names): dev push only, not
   workshop-safe.
+- **Local dev deployment is a copy, never a junction.** A junction
+  (`…\workshop\content\322330\3444078585` → repo `Mod/`) let Steam updates, `--push-content`
+  staging and the materializer write into the source tree. Instead `cmake --install` ends by
+  running `tools/deploy_mod.py`: one-way, per-file, and it also copies
+  `bin64/windows/Winmm.dll` into the game `bin64` (what `install.bat` does for a release).
+  Target: `-DDS_DEPLOY_MOD_DIR=…` when set, else the Workshop item folder when it exists, else
+  `<game>/mods/<DS_DEPLOY_MOD_FOLDER>`. Disable with `-DDS_DEPLOY_AFTER_INSTALL=OFF`.
+  `tools/pre_push.py` runs the same `cmake --install` after the tests pass (`--no-deploy`
+  skips it) and only warns when deployment fails — a running game has the modules mapped.
+  Inside a packaged tree (any `<name><module suffix>.pkg` present) every deployed module is
+  also written to its published twin: a canonical-only copy is reverted by `materialize`
+  (older-stamped twin wins) and a module without a twin is deleted by
+  `prune_unpackaged_module`.
 - The **release package uses the same layout**: `.github/workflows/release.yaml` (Windows leg)
   runs `tools/pack_payload.py Mod` right before zipping, so `windows_Mod.zip` also ships
   `<name>.pkg`; `install.ps1` accepts either name in its self-check.

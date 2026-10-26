@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Pre-push test gate -- entry point for the repo's .githooks/pre-push hook.
+"""Pre-push gate -- entry point for the repo's .githooks/pre-push hook.
 
 Runs the CTest suite from the most recently configured build directory before
-a push is allowed. The git hook is a thin launcher around this script; run it
-directly to test the gate:
+a push is allowed, then deploys the built package into the game's mod directory
+(`cmake --install`, whose install rules call tools/deploy_mod.py). The git hook
+is a thin launcher around this script; run it directly to test the gate:
 
     python tools/pre_push.py                     # full suite, auto-detected build
     python tools/pre_push.py -R BufferNamePool   # one test, fast sanity check
+    python tools/pre_push.py --no-deploy         # tests only, no install/deploy
     python tools/pre_push.py --dry-run           # show what would run
 
 Exit codes:
@@ -16,8 +18,9 @@ Exit codes:
 
 The gate only blocks when a test run actually failed. Missing tooling prints a
 loud message and skips: the hook is a local convenience, not enforcement (use
-CI / branch protection for that). Bypass a single push with `git push
---no-verify`.
+CI / branch protection for that). Deployment failures warn and never block a
+push either -- the game may simply still be running with the modules mapped.
+Bypass a single push with `git push --no-verify`.
 """
 
 import argparse
@@ -34,12 +37,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # Configuration preference for multi-config generators.
 CONFIG_PREFERENCE = ("Debug", "RelWithDebInfo", "Release", "MinSizeRel")
 
-# Fallbacks for machines where neither PATH nor CMakeCache.txt knows ctest
+# Fallbacks for machines where neither PATH nor CMakeCache.txt knows ctest/cmake
 # (e.g. Visual Studio's bundled CMake outside a developer prompt).
 CTEST_FALLBACK_GLOBS = (
     "C:/Program Files/Microsoft Visual Studio/*/*/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/ctest.exe",
     "C:/Program Files (x86)/Microsoft Visual Studio/*/*/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/ctest.exe",
     "C:/Program Files/CMake/bin/ctest.exe",
+)
+CMAKE_FALLBACK_GLOBS = (
+    "C:/Program Files/Microsoft Visual Studio/*/*/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe",
+    "C:/Program Files (x86)/Microsoft Visual Studio/*/*/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe",
+    "C:/Program Files/CMake/bin/cmake.exe",
 )
 
 
@@ -132,6 +140,50 @@ def find_ctest(build_dir, override):
     return None
 
 
+def find_cmake(build_dir):
+    from_cache = read_cache_var(build_dir, "CMAKE_COMMAND")
+    if from_cache and Path(from_cache).is_file():
+        return from_cache
+    on_path = shutil.which("cmake")
+    if on_path:
+        return on_path
+    for pattern in CMAKE_FALLBACK_GLOBS:
+        for candidate in sorted(glob.glob(pattern)):
+            if Path(candidate).is_file():
+                return candidate
+    return None
+
+
+def deploy_package(build_dir, config, dry_run):
+    """Run `cmake --install`, whose install rules deploy into the game mod dir.
+
+    Never blocks the push: a missing cmake, an unbuilt target or a running game
+    (mapped modules cannot be replaced) only warns.
+    """
+    cmake = find_cmake(build_dir)
+    if not cmake:
+        print("pre-push: deploy skipped: cmake not found (PATH, CMakeCache.txt, Visual Studio).")
+        return True
+
+    cmd = [cmake, "--install", str(build_dir)]
+    if config:
+        cmd += ["--config", config]
+    print("pre-push: deploy    : %s" % shlex.join(cmd))
+    print("pre-push: deploy    : install rules copy the package into the game mod directory")
+    if dry_run:
+        print("pre-push: deploy    : dry run, not executing.")
+        return True
+
+    rc = subprocess.call(cmd)
+    if rc != 0:
+        print("pre-push: deploy WARNING: cmake --install exited %d; nothing was deployed." % rc)
+        print("pre-push: deploy WARNING: build the tree and close the game, or run")
+        print("pre-push: deploy WARNING:     python %s" % (REPO_ROOT / "tools" / "deploy_mod.py"))
+        return False
+    print("pre-push: deploy done.")
+    return True
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="pre_push.py",
@@ -146,6 +198,8 @@ def main(argv=None):
     parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 4,
                         help="parallel test jobs (default: CPU count)")
     parser.add_argument("-R", "--filter", help="run only tests matching this regex (ctest -R)")
+    parser.add_argument("--no-deploy", action="store_true",
+                        help="skip the cmake --install deploy stage (tests only)")
     parser.add_argument("--dry-run", action="store_true", help="print what would run without executing")
     args = parser.parse_args(argv)
 
@@ -201,6 +255,8 @@ def main(argv=None):
 
     if args.dry_run:
         print("pre-push: dry run, not executing.")
+        if not args.no_deploy:
+            deploy_package(build_dir, config, True)
         return 0
 
     rc = subprocess.call(cmd, cwd=str(build_dir))
@@ -210,6 +266,12 @@ def main(argv=None):
         print("pre-push: fix the failure, or bypass once with 'git push --no-verify'.")
         return 1
     print("pre-push: all tests passed.")
+
+    if args.no_deploy:
+        print("pre-push: deploy skipped (--no-deploy).")
+    else:
+        # Warning only: the game may be running with the modules mapped.
+        deploy_package(build_dir, config, False)
     return 0
 
 

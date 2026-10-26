@@ -1,5 +1,6 @@
 #!/bin/sh
-# Git pre-push hook: run the test suite before anything leaves this machine.
+# Git pre-push hook: run the test suite before anything leaves this machine, then
+# deploy the built package into the game's mod directory (`cmake --install`).
 #
 # Cross-platform by design: Git runs this file through a POSIX shell on every
 # platform (Git for Windows ships sh.exe), so one script covers Windows, Linux

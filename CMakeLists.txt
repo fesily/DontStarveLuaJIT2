@@ -592,3 +592,40 @@ add_custom_target(unzip_script_data
         DEPENDS ${LUA_LIBRARIES_PATH}
         WORKING_DIRECTORY ${GAME_DIR}
 )
+
+# --- Deploy the installed package into the live mod folder -------------------
+# The dev tree used to reach the game through a junction
+# (…\workshop\content\322330\3444078585 -> repo Mod/). Workshop content is
+# rewritten by Steam and rides the "<name>.pkg" layout (tools/pack_payload.py),
+# so a junction lets packaging mutate the sources and lets the runtime
+# materializer revert a fresh developer build. `cmake --install` therefore
+# copies the staged package into the mod folder the game actually loads.
+# tools/deploy_mod.py owns the rules (target resolution, .pkg twins, Winmm shell)
+# so the git hook (tools/pre_push.py) and a manual install behave identically.
+# Disable with -DDS_DEPLOY_AFTER_INSTALL=OFF.
+option(DS_DEPLOY_AFTER_INSTALL "Copy the installed Mod package into the game's mod directory" ON)
+set(DS_DEPLOY_MOD_DIR "" CACHE PATH
+        "Deploy target (default: Workshop item <app>/3444078585, else <game>/mods/<folder>)")
+set(DS_DEPLOY_MOD_FOLDER "DontStarveLuaJit2" CACHE STRING
+        "mods/<folder> used when the Workshop item folder is absent")
+
+if (DS_DEPLOY_AFTER_INSTALL AND GAME_DIR)
+    set(_ds_deploy_target_arg "")
+    if (DS_DEPLOY_MOD_DIR)
+        set(_ds_deploy_target_arg "                            --target \"${DS_DEPLOY_MOD_DIR}\"\n")
+    endif ()
+    install(CODE "
+      message(STATUS \"ds_deploy: copying \${CMAKE_INSTALL_PREFIX} into the game mod directory\")
+      execute_process(
+                    COMMAND \"${PYTHON_EXECUTABLE_NAME}\"
+                            \"${CMAKE_CURRENT_SOURCE_DIR}/tools/deploy_mod.py\"
+                            --source \"\${CMAKE_INSTALL_PREFIX}\"
+                            --game-dir \"${GAME_DIR}\"
+                            --mod-folder \"${DS_DEPLOY_MOD_FOLDER}\"
+${_ds_deploy_target_arg}                    RESULT_VARIABLE _ds_deploy_rc)
+      if (NOT _ds_deploy_rc EQUAL 0)
+        message(WARNING
+                \"ds_deploy: deployment failed (exit \${_ds_deploy_rc}); the package is still installed in \${CMAKE_INSTALL_PREFIX}. Close the game (mapped modules cannot be replaced) or run: python tools/deploy_mod.py\")
+      endif ()
+    ")
+endif ()

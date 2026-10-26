@@ -518,6 +518,13 @@ add_test(
 set_tests_properties(plugin_package_identity PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
+# tools/deploy_mod.py: target resolution, packaged-tree twins, skip rules.
+add_test(
+    NAME plugin_deploy_mod
+    COMMAND ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_deploy_mod.py)
+set_tests_properties(plugin_deploy_mod PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
 
 
 

@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Deploy Debug injector stack for local DST client debugging.
 
+Debug-only staging straight from the build tree. The general dev deployment is
+`tools/deploy_mod.py` (run by `cmake --install` and the pre-push hook); this
+script exists for the Debug/ucrtbased tree plus the Debug-only ANGLE staging.
+
 Rules:
 - Winmm/Injector/function_relocation/plugins use Debug (/MDd, ucrtbased).
 - Shared ANGLE (libGLESv2/libEGL/vulkan-1) is staged into Mod/deps from
