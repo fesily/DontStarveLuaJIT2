@@ -34,8 +34,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Configuration preference for multi-config generators.
-CONFIG_PREFERENCE = ("Debug", "RelWithDebInfo", "Release", "MinSizeRel")
+# Configuration preference for multi-config generators: the hook tests and
+# deploys what developers actually run (RelWithDebInfo). Debug is only picked
+# when it is the one with built tests (Debug-CRT modules cannot load into a
+# normal game launch).
+CONFIG_PREFERENCE = ("RelWithDebInfo", "Release", "Debug", "MinSizeRel")
 
 # Fallbacks for machines where neither PATH nor CMakeCache.txt knows ctest/cmake
 # (e.g. Visual Studio's bundled CMake outside a developer prompt).
@@ -115,11 +118,18 @@ def find_build_dir():
 
 
 def pick_config(build_dir, types):
-    """Pick a configuration for multi-config generators (no types -> None)."""
+    """Pick a configuration for multi-config generators (no types -> None).
+
+    Preference order first (only among configurations with built tests), then
+    the first preferred configuration the generator knows, then its first one.
+    """
     if not types:
         return None
     for config in CONFIG_PREFERENCE:
         if config in types and dir_has_files(build_dir / "tests" / config):
+            return config
+    for config in CONFIG_PREFERENCE:
+        if config in types:
             return config
     return types[0]
 
@@ -193,7 +203,7 @@ def main(argv=None):
     parser.add_argument("url", nargs="?", help="remote URL, passed by git")
     parser.add_argument("--build-dir", type=Path,
                         help="build directory to run tests in (default: newest configured build)")
-    parser.add_argument("--config", help="build configuration for multi-config generators (e.g. Debug)")
+    parser.add_argument("--config", help="build configuration for multi-config generators (default: RelWithDebInfo, then Release, Debug)")
     parser.add_argument("--ctest", help="ctest executable (default: PATH / CMakeCache.txt / Visual Studio)")
     parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 4,
                         help="parallel test jobs (default: CPU count)")
@@ -216,7 +226,7 @@ def main(argv=None):
         print("pre-push: no configured build directory found; skipping tests.")
         print("pre-push: configure + build first, e.g.:")
         print("pre-push:     cmake --preset ninja-multi-vcpkg")
-        print("pre-push:     cmake --build --preset ninja-vcpkg-debug")
+        print("pre-push:     cmake --build --preset ninja-vcpkg-release-dbg")
         return 0
 
     build_dir = build_dir.resolve()
@@ -233,7 +243,7 @@ def main(argv=None):
     tests_dir = build_dir / "tests" / config if config else build_dir / "tests"
     if not dir_has_files(tests_dir):
         print("pre-push: no built tests found in %s; build before pushing." % tests_dir)
-        print("pre-push:     cmake --build --preset ninja-vcpkg-debug")
+        print("pre-push:     cmake --build --preset ninja-vcpkg-release-dbg")
         return 0
 
     ctest = find_ctest(build_dir, args.ctest)
