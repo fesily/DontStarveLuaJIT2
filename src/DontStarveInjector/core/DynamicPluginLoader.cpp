@@ -161,7 +161,11 @@ void prune_stale_packaged_modules(const std::filesystem::path &plugins_root) {
         return;
     }
     std::error_code ec;
-    const char *module_exts[] = {plugin_module_extension(), ".so", ".dylib"};
+#if defined(__APPLE__)
+    const char *module_exts[] = {plugin_module_extension(), ".so"};
+#else
+    const char *module_exts[] = {plugin_module_extension()};
+#endif
     for (std::filesystem::directory_iterator it(plugins_root, ec), end; it != end;
          it.increment(ec)) {
         if (ec) {

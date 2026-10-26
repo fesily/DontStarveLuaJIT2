@@ -85,6 +85,7 @@ static void test_packaged_twin_materialized_on_resolve() {
     auto mods = game / "mods";
     auto mod = mods / "workshop-3444078585";
     auto module = mod / injector_module_filename();
+    fs::create_directories(mod); // the twin must be creatable before touch_file()
     {
         std::ofstream twin(module.string() + ".pkg", std::ios::binary);
         twin << "ITEM-PAYLOAD";

@@ -100,19 +100,31 @@ static void test_materialize_directory() {
     printf("PASS: materialize_directory\n");
 }
 
+static std::string platform_module_name(const char *stem) {
+#if defined(_WIN32)
+    return std::string{stem} + ".dll";
+#elif defined(__APPLE__)
+    return std::string{stem} + ".dylib";
+#else
+    return std::string{stem} + ".so";
+#endif
+}
+
 static void test_tree_is_packaged_and_prune() {
     const auto plugins = temp_dir("ds_pkg_tree");
     // Dev tree: no twins anywhere -> never pruned.
-    write_file(plugins / "plugin_dev" / "plugin_dev.dll", "DEV");
+    const auto dev = plugins / "plugin_dev" / platform_module_name("plugin_dev");
+    write_file(dev, "DEV");
     assert(!ds::packaged::tree_is_packaged(plugins));
-    assert(!ds::packaged::prune_unpackaged_module(plugins, plugins / "plugin_dev" / "plugin_dev.dll"));
-    assert(fs::exists(plugins / "plugin_dev" / "plugin_dev.dll"));
+    assert(!ds::packaged::prune_unpackaged_module(plugins, dev));
+    assert(fs::exists(dev));
 
     // Packaged tree: a member the item stopped shipping keeps only our derivative.
-    write_file(ds::packaged::packaged_path(plugins / "plugin_live" / "plugin_live.dll"), "LIVE");
+    write_file(ds::packaged::packaged_path(
+                       plugins / "plugin_live" / platform_module_name("plugin_live")), "LIVE");
     assert(ds::packaged::tree_is_packaged(plugins));
-    const auto live = plugins / "plugin_live" / "plugin_live.dll";
-    const auto dropped = plugins / "plugin_dropped" / "plugin_dropped.dll";
+    const auto live = plugins / "plugin_live" / platform_module_name("plugin_live");
+    const auto dropped = plugins / "plugin_dropped" / platform_module_name("plugin_dropped");
     write_file(live, "LIVE");
     write_file(dropped, "DROPPED");
     assert(!ds::packaged::prune_unpackaged_module(plugins, live)); // twin present -> keep
@@ -122,7 +134,8 @@ static void test_tree_is_packaged_and_prune() {
     printf("PASS: tree_is_packaged_and_prune\n");
 }
 
-// A real, complete PE (this test binary) so "torn copy" checks exercise the PE path.
+// A real, complete image (this test binary: PE on Windows, ELF elsewhere) so "torn
+// copy" checks exercise the platform's validator.
 static fs::path self_image() {
 #if defined(_WIN32)
     wchar_t buf[MAX_PATH] = {};

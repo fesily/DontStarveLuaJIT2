@@ -126,7 +126,8 @@ inline bool same_image(const std::filesystem::path &a, const std::filesystem::pa
 }
 
 // A file that a copy was cut short on: a PE whose section table points past the end of
-// the file. Non-PE payloads cannot be validated here and are accepted.
+// the file, or an ELF whose program/section tables or PT_LOAD segments do. Other
+// payloads cannot be validated here and are accepted.
 inline bool looks_complete(const std::filesystem::path &p) {
 #if defined(_WIN32)
     std::error_code ec;
@@ -181,7 +182,68 @@ inline bool looks_complete(const std::filesystem::path &p) {
     }
     return true;
 #else
-    (void)p;
+    // ELF (Linux game/module images): every table and PT_LOAD segment must lie inside
+    // the file, so a half-written copy cannot be published over a working module.
+    std::error_code ec;
+    const auto total = std::filesystem::file_size(p, ec);
+    if (ec) {
+        return false;
+    }
+    std::ifstream in(p, std::ios::binary);
+    if (!in) {
+        return false;
+    }
+    const auto read_at = [&](std::uint64_t offset, void *dst, std::size_t len) {
+        if (offset > total || len > total - offset) {
+            return false;
+        }
+        in.clear();
+        in.seekg(static_cast<std::streamoff>(offset));
+        in.read(static_cast<char *>(dst), static_cast<std::streamsize>(len));
+        return static_cast<bool>(in);
+    };
+    unsigned char ident[16] = {};
+    if (!read_at(0, ident, sizeof(ident)) || ident[0] != 0x7f || ident[1] != 'E' ||
+        ident[2] != 'L' || ident[3] != 'F') {
+        return true; // not ELF (e.g. Mach-O): nothing to validate
+    }
+    if (ident[4] != 2 /* ELFCLASS64 */ || ident[5] != 1 /* ELFDATA2LSB */) {
+        return true; // format we cannot validate here
+    }
+    std::uint64_t phoff = 0;
+    std::uint64_t shoff = 0;
+    std::uint16_t phentsize = 0;
+    std::uint16_t phnum = 0;
+    std::uint16_t shentsize = 0;
+    std::uint16_t shnum = 0;
+    if (!read_at(32, &phoff, sizeof(phoff)) || !read_at(40, &shoff, sizeof(shoff)) ||
+        !read_at(54, &phentsize, sizeof(phentsize)) || !read_at(56, &phnum, sizeof(phnum)) ||
+        !read_at(58, &shentsize, sizeof(shentsize)) || !read_at(60, &shnum, sizeof(shnum))) {
+        return false;
+    }
+    if (phnum != 0 &&
+        (phentsize < 56 || phoff > total ||
+         static_cast<std::uint64_t>(phnum) * phentsize > total - phoff)) {
+        return false;
+    }
+    for (std::uint16_t i = 0; i < phnum; ++i) {
+        const auto base = phoff + static_cast<std::uint64_t>(i) * phentsize;
+        std::uint32_t type = 0;
+        std::uint64_t offset = 0;
+        std::uint64_t filesz = 0;
+        if (!read_at(base, &type, sizeof(type)) || !read_at(base + 8, &offset, sizeof(offset)) ||
+            !read_at(base + 32, &filesz, sizeof(filesz))) {
+            return false;
+        }
+        if (type == 1 /* PT_LOAD */ && (offset > total || filesz > total - offset)) {
+            return false; // truncated copy
+        }
+    }
+    if (shnum != 0 &&
+        (shentsize < 64 || shoff > total ||
+         static_cast<std::uint64_t>(shnum) * shentsize > total - shoff)) {
+        return false;
+    }
     return true;
 #endif
 }
@@ -199,6 +261,40 @@ inline std::filesystem::path unique_temp_path(const std::filesystem::path &canon
     p += kMaterializeTempSuffix;
     p += "_" + std::to_string(pid) + "_" + std::to_string(counter.fetch_add(1));
     return p;
+}
+
+// Packaging is per platform: a Windows item ships "*.dll.pkg", a Linux one "*.so.pkg".
+// Foreign-platform leftovers must not make this platform's tree look packaged — that
+// would delete this platform's canonical modules (there is no twin for them).
+#if defined(_WIN32)
+inline constexpr const char *kPlatformModuleSuffix = ".dll";
+#elif defined(__APPLE__)
+inline constexpr const char *kPlatformModuleSuffix = ".dylib";
+#else
+inline constexpr const char *kPlatformModuleSuffix = ".so";
+#endif
+
+inline bool ends_with(const std::string &value, const char *suffix) {
+    const std::string tail{suffix};
+    return value.size() >= tail.size() &&
+           value.compare(value.size() - tail.size(), tail.size(), tail) == 0;
+}
+
+// True for "<name><platform module suffix>.pkg" (plus ".so.pkg" on Apple, whose
+// loader falls back to .so).
+inline bool is_platform_package_twin(const std::string &name) {
+    if (!ends_with(name, kPackageSuffix)) {
+        return false;
+    }
+    const auto canonical = name.substr(0, name.size() - std::string{kPackageSuffix}.size());
+    if (ends_with(canonical, kPlatformModuleSuffix)) {
+        return true;
+    }
+#if defined(__APPLE__)
+    return ends_with(canonical, ".so");
+#else
+    return false;
+#endif
 }
 
 } // namespace detail
@@ -334,13 +430,12 @@ inline size_t materialize_directory(const std::filesystem::path &dir) {
     return written;
 }
 
-// True when `tree` (a plugins root) ships packaged modules at all.
+// True when `tree` (a plugins root) ships packaged modules for this platform.
 inline bool tree_is_packaged(const std::filesystem::path &tree) {
     std::error_code ec;
     if (tree.empty() || !std::filesystem::is_directory(tree, ec)) {
         return false;
     }
-    const std::string suffix{kPackageSuffix};
     for (std::filesystem::recursive_directory_iterator it(tree, ec), end; it != end; it.increment(ec)) {
         if (ec) {
             return false;
@@ -349,9 +444,7 @@ inline bool tree_is_packaged(const std::filesystem::path &tree) {
         if (!it->is_regular_file(probe_ec)) {
             continue;
         }
-        const auto name = it->path().filename().string();
-        if (name.size() > suffix.size() &&
-            name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0) {
+        if (detail::is_platform_package_twin(it->path().filename().string())) {
             return true;
         }
     }
