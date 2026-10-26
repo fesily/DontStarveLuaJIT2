@@ -10,6 +10,16 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# vcpkg spawns `z-upload-metrics` as a detached child that inherits the two
+# `vcpkg-running.lock` descriptors. When that upload hangs (offline or blocked
+# telemetry) the lock is never released and every later vcpkg invocation --
+# including the manifest install that `cmake --build --target install` triggers
+# -- dies with "vcpkg filesystem lock". Opt out of telemetry so no uploader is
+# ever spawned. Set before project() so the vcpkg toolchain sees it.
+if(NOT DEFINED ENV{VCPKG_DISABLE_METRICS})
+    set(ENV{VCPKG_DISABLE_METRICS} "1")
+endif()
+
 set(GAME_NAME "Don't Starve Together")
 if (WIN32)
     set(GAME_DIR "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Don't Starve Together")
