@@ -154,6 +154,12 @@ int main(int argc, char **argv)
     ToolMode mode = ToolMode::Auto;
     if (!parse_tool_mode(argc > 1 ? argv[1] : nullptr, mode))
         return 2;
+    // Tests must never rewrite the shipped Mod/signatures_*.json: redirect the
+    // DB writes (create/update) to a scratch directory instead.
+    if (const char *out_dir = std::getenv("SIGNATURE_TOOL_OUTPUT_DIR"); out_dir && *out_dir) {
+        worker_dir = out_dir;
+        fprintf(stderr, "[tool] output dir:\t%s\n", worker_dir);
+    }
     fprintf(stderr, "[tool] gum_init_embedded...\n");
     gum_init_embedded();
     fprintf(stderr, "[tool] pre_updater...\n");

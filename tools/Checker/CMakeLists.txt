@@ -36,10 +36,13 @@ endif ()
 
 add_dependencies(signature_checker signature_updater)
 
-if (WIN32 AND DEFINED FRIDA_GUM_RUNTIME)
+# Config-matched runtime DLLs (same reason as tools/Creater): a Debug checker
+# must not load the Release pe-parse.dll staged in Mod/deps.
+if (WIN32)
     add_custom_command(TARGET signature_checker POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${FRIDA_GUM_RUNTIME}"
+            $<TARGET_RUNTIME_DLLS:signature_checker>
             "$<TARGET_FILE_DIR:signature_checker>"
+        COMMAND_EXPAND_LISTS
         VERBATIM)
 endif()

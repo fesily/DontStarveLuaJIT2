@@ -876,6 +876,30 @@ endif()
 
 
 
+# Windows counterpart of linux_signatures_*: drive the shipped signature_updater
+# tool over the installed game binaries -- `create` rebuilds every entry from
+# scratch, `update` re-resolves the stored DB (incremental path). DBs land in a
+# scratch dir (SIGNATURE_TOOL_OUTPUT_DIR); Mod/signatures_*.json stay untouched.
+if (WIN32 AND TARGET signature_updater)
+    set(_ds_win_client "${GAME_DIR}/bin64/dontstarve_steam_x64.exe")
+    set(_ds_win_server "${GAME_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64.exe")
+    if (EXISTS "${_ds_win_client}" AND EXISTS "${_ds_win_server}"
+            AND EXISTS "${LUA_LIBRARIES_PATH}" AND EXISTS "${GAME_DIR}/version.txt")
+        add_test(NAME windows_signatures
+            COMMAND ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/signatures/run.py
+                $<TARGET_FILE:signature_updater>)
+        set_tests_properties(windows_signatures PROPERTIES
+            LABELS windows_game_signatures TIMEOUT 1800)
+        add_test(NAME windows_signatures_cache
+            COMMAND ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/signatures/run.py
+                $<TARGET_FILE:signature_updater> --check-cache)
+        set_tests_properties(windows_signatures_cache PROPERTIES
+            LABELS windows_game_signatures TIMEOUT 1800)
+    endif()
+endif()
+
+
+
 # Soft multi-feature scoring + twin fail-closed (plan todo 3).
 # Header-only: depends on MatchPolicy.hpp + MicroWindow.hpp + the C++23 stdlib.
 add_executable(test_soft_score

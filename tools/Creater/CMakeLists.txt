@@ -114,11 +114,17 @@ if (MSVC)
     target_link_options(signature_updater PUBLIC "/NODEFAULTLIB:LIBCMT")
 endif ()
 
-if (WIN32 AND DEFINED FRIDA_GUM_RUNTIME)
+# Copy every config-matched runtime DLL next to the tool (frida-gum, spdlog,
+# fmt, bzip/zlib, and pe-parse). pe-parse matters most: it is an imported SHARED
+# dependency whose std::string crosses the ABI, so a Debug consumer that loads
+# the Release copy staged in Mod/deps reads back section names through a
+# mismatched std::string layout and crashes (0xC0000005) inside IterSec.
+if (WIN32)
     add_custom_command(TARGET signature_updater POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${FRIDA_GUM_RUNTIME}"
+            $<TARGET_RUNTIME_DLLS:signature_updater>
             "$<TARGET_FILE_DIR:signature_updater>"
+        COMMAND_EXPAND_LISTS
         VERBATIM)
 endif()
 
