@@ -60,7 +60,7 @@ if not exist "%destination%\Winmm.dll" goto copy_shell
 fc /b "%shell_src%" "%destination%\Winmm.dll" >NUL 2>&1
 if not errorlevel 1 (
     echo [INFO] shell already up to date.
-    goto clean_data
+    goto clean_pkg_mirrors
 )
 
 :copy_shell
@@ -68,6 +68,37 @@ echo [INFO] install shell -^> %destination%\Winmm.dll
 copy /Y "%shell_src%" "%destination%\Winmm.dll" >NUL
 if errorlevel 1 goto err_copy
 echo [INFO] install success
+goto clean_pkg_mirrors
+
+:clean_pkg_mirrors
+REM "<name>.dll.pkg" is the durable copy; the canonical "<name>.dll" beside it is
+REM a runtime derivative that the loader re-materializes from the twin before
+REM LoadLibrary and refreshes by PE stamp. A leftover canonical file can still be
+REM a stale build (older package, interrupted copy, manual drop), so every
+REM install drops the ones that have a twin - ONLY those: a .dll without a .pkg
+REM twin is the real module in a source/build layout and must survive. bin64\ is
+REM skipped too; its shell ships as a plain .dll and is the copy source above.
+REM Best effort: a file another process still maps only warns.
+set "pkg_mirrors_removed=0"
+set "pkg_mirrors_busy=0"
+for /R "%mod_root%" %%F in (*.dll.pkg) do (
+    set "pkg_mirror=%%~dpnF"
+    set "pkg_mirror_in_bin64=0"
+    if /I "!pkg_mirror:%~dp0bin64\=!" neq "!pkg_mirror!" set "pkg_mirror_in_bin64=1"
+    if "!pkg_mirror_in_bin64!"=="0" (
+        if exist "!pkg_mirror!" (
+            del /Q /F "!pkg_mirror!" >NUL 2>&1
+            if exist "!pkg_mirror!" (
+                set /a pkg_mirrors_busy+=1
+                echo [WARN] cannot remove materialized dll -^> !pkg_mirror!
+            ) else (
+                set /a pkg_mirrors_removed+=1
+            )
+        )
+    )
+)
+if !pkg_mirrors_removed! gtr 0 echo [INFO] removed !pkg_mirrors_removed! materialized dll^(s^) whose .pkg twin is authoritative
+if !pkg_mirrors_busy! gtr 0 echo [WARN] !pkg_mirrors_busy! dll^(s^) still in use - the loader keeps the mapped copy until the next boot
 goto clean_data
 
 :clean_data

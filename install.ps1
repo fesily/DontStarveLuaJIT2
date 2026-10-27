@@ -30,7 +30,9 @@
 #      config) once the package is verified on disk, so the deployed shell
 #      starts from a clean slate
 #   7. runs the packaged install.bat (Winmm shell -> game bin64, real Injector
-#      stays in the mod, marker + stale-copy cleanup) and reports the result
+#      stays in the mod; install.bat then drops every materialized .dll whose
+#      .pkg twin is authoritative - bin64/ excluded - and the injector state
+#      dir) and reports the result
 #
 # Everything runs inside one script block so a piped `iex` does not leak
 # variables/functions into the caller's session; `exit` is never used.
