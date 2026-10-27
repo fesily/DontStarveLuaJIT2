@@ -133,7 +133,9 @@ class DeployTest(unittest.TestCase):
 
     def test_packaged_tree_gets_identical_twins(self) -> None:
         source, target, game = self._setup()
-        stale = target / "deps" / "lua51DS.dll.pkg"
+        # Packaged detection is keyed on *this* platform's module suffix
+        # (a foreign platform's twin must not switch the deploy into twin mode).
+        stale = target / "deps" / ("lua51DS" + dm.platform_module_suffix() + ".pkg")
         stale.parent.mkdir(parents=True)
         stale.write_text("old build")
         result = dm.deploy(source, target, game_dir=game)
@@ -147,6 +149,17 @@ class DeployTest(unittest.TestCase):
         # The shell is copied by install.bat, never mapped from the mod tree.
         self.assertFalse((target / "bin64" / "windows" / "Winmm.dll.pkg").exists())
         self.assertEqual(result["twins"], 3)
+
+    def test_foreign_platform_twin_does_not_mark_packaged(self) -> None:
+        source, target, game = self._setup()
+        foreign = ".dll" if dm.platform_module_suffix() != ".dll" else ".so"
+        stale = target / "deps" / ("lua51DS" + foreign + ".pkg")
+        stale.parent.mkdir(parents=True)
+        stale.write_text("other platform")
+        result = dm.deploy(source, target, game_dir=game)
+        self.assertFalse(result["packaged"])
+        self.assertEqual(result["twins"], 0)
+        self.assertFalse((target / "Injector.dll.pkg").exists())
 
     def test_second_run_is_a_no_op(self) -> None:
         source, target, game = self._setup()
