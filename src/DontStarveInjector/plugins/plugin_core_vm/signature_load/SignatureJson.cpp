@@ -178,4 +178,10 @@ void SignatureJson::update_signatures(const Signatures &signatures) {
     nlohmann::json j;
     nlohmann::to_json(j, signatures);
     sf << j;
+    sf.flush();
+    // An unwritable mod dir used to be silent: generation "succeeded", the DB never
+    // landed and every launch regenerated from scratch.
+    if (!sf) {
+        spdlog::error("update_signatures: failed to write {}", output);
+    }
 }

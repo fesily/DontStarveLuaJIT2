@@ -206,6 +206,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
     const auto lua51_path = prepared_train ? modulelua51.details.path : get_module_path(lua51_name, 0);
     const auto game_path = prepared_game ? moduleMain.details.path : get_module_path(game_name, targetLuaModuleBase);
     if (!prepared_train || !prepared_game) {
+        set_progress(0, "Analyze lua51.dll and game module...");
 
         // Phase 1: section ranges + symbol names only (no heuristic function starts).
         const auto phase_start = std::chrono::steady_clock::now();
@@ -234,6 +235,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
             }
             spdlog::info("phase apply(train): {} ms", phase_ms());
 
+            set_progress(0, "Analyze game module (nucleus)...");
             auto target_nt = function_relocation::nucleus_analyze_file(game_path);
             if (!target_nt) {
                 throw update_signatures_exception{
@@ -247,6 +249,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
             spdlog::info("phase apply(game): {} ms", phase_ms());
 
             // Phase 3: disasm each Nucleus body for soft-match features.
+            set_progress(0, "Scan function features...");
             if (!function_relocation::scan_module_function_features(modulelua51) ||
                 !function_relocation::scan_module_function_features(moduleMain)) {
                 throw update_signatures_exception{"scan_module_function_features failed"};
@@ -1052,6 +1055,17 @@ update_signatures_from_disasm(Signatures &signatures, uintptr_t targetLuaModuleB
     catch(const update_signatures_exception& e)
     {
         return e.msg;
+    }
+    catch(const std::exception& e)
+    {
+        // Anything else (bad_alloc, out_of_range inside the pipeline) used to unwind
+        // out of the progress window's timer callback and terminate the game with no
+        // log and no dump; report it through the normal failure path instead.
+        return std::string{"signature generation threw: "} + e.what();
+    }
+    catch(...)
+    {
+        return std::string{"signature generation threw an unknown exception"};
     }
    return "";
 }

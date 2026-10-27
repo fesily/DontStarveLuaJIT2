@@ -48,9 +48,13 @@ namespace {
 using namespace ds::plugin;
 
 // Mirror of Injector showError — hard fail for signature path when VM module is active.
+// The message box is the only evidence a user can report: log it first (release
+// builds only keep error level), and force it above the fullscreen game window.
 [[noreturn]] void showError(const std::string_view &msg) {
 #ifdef _WIN32
-    MessageBoxA(NULL, msg.data(), "error!", 0);
+    spdlog::error("fatal: {}", msg);
+    if (auto *logger = spdlog::default_logger_raw()) logger->flush();
+    MessageBoxA(NULL, msg.data(), "error!", MB_SETFOREGROUND | MB_TOPMOST | MB_ICONERROR);
 #else
     spdlog::error("error: {}", msg);
 #endif

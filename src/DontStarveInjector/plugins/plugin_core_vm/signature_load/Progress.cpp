@@ -88,6 +88,23 @@ LRESULT CALLBACK ProgressWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM 
     }
 }
 
+namespace {
+// A generator that throws (signature failure) unwinds out of the message loop, so
+// the window used to survive as a zombie behind the follow-up error box. Reset the
+// shared state and destroy it on every exit path.
+struct ProgressWindowGuard {
+    HWND hwnd;
+    ~ProgressWindowGuard() {
+        if (hwnd) DestroyWindow(hwnd);
+        progress_ctx.ready = false;
+        progress_ctx.hwnd = nullptr;
+        progress_ctx.hProgress = nullptr;
+        progress_ctx.hStatusText = nullptr;
+        progress_ctx.gen = nullptr;
+    }
+};
+} // namespace
+
 void ShowProgressWindow(int maxstep, Generator<int>& gen) {
     progress_ctx.max_step = maxstep;
     progress_ctx.cur = 0;
@@ -106,6 +123,7 @@ void ShowProgressWindow(int maxstep, Generator<int>& gen) {
             CW_USEDEFAULT, CW_USEDEFAULT, 400, 100,
             NULL, NULL, GetModuleHandle(NULL), NULL);
 
+    ProgressWindowGuard guard{hwnd};
     // 显示窗口
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
@@ -122,7 +140,6 @@ void ShowProgressWindow(int maxstep, Generator<int>& gen) {
              }
         }
     }
-    DestroyWindow(hwnd);
 }
 
 void set_progress(int step, const std::string_view& msg) {
@@ -138,5 +155,8 @@ void set_progress(int step, const std::string_view& msg) {
     if (!msg.empty()) {
         std::string statusText = std::format("{:.1f} % [{}]", progress_ctx.cur / (float)progress_ctx.max_step * 100, msg);
         SetWindowText(progress_ctx.hStatusText, statusText.c_str());
+        // Phase work blocks this thread before the next timer tick, so the label must
+        // be painted right here or the window keeps showing "0%" for the whole run.
+        UpdateWindow(progress_ctx.hStatusText);
     }
 }

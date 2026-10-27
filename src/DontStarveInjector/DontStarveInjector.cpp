@@ -79,7 +79,11 @@ void wait_for_debugger_before_inject() {
 
 G_NORETURN void showError(const std::string_view &msg) {
 #ifdef _WIN32
-    MessageBoxA(NULL, msg.data(), "error!", 0);
+    // Release builds log at error level only, and a bare MessageBox behind the
+    // game window leaves the user with "the process just exited, no dump".
+    spdlog::error("fatal: {}", msg);
+    if (auto *logger = spdlog::default_logger_raw()) logger->flush();
+    MessageBoxA(NULL, msg.data(), "error!", MB_SETFOREGROUND | MB_TOPMOST | MB_ICONERROR);
 #else
     spdlog::error("error: {}", msg);
 #endif
