@@ -300,8 +300,15 @@ GameInjector.DS_LUAJIT_list_plugin_packages(MODROOT .. "plugins/")
 --> { "plugin_debug_profiler", "plugin_fps_render", … }  (sorted, UTF-8 dir)
 ```
 
-Backed by `ds::plugin::list_plugin_packages` (`core/PluginPath.cpp`), i.e. the
-same filesystem `DynamicPluginLoader` scans. Consequence: the registry is
+Backed by `ds::plugin::list_installed_plugin_packages` (`core/PluginPath.cpp`),
+which lists that directory when it exists and otherwise unions
+`default_plugin_search_dirs()` — the roots `DynamicPluginLoader` scans. The
+fallback matters because `MODROOT` is an engine path: a Workshop item is loaded
+from Steam UGC (`…/workshop/content/322330/<id>`) while `MODROOT` stays
+`../mods/workshop-<id>/`, so the listing path need not exist on disk. The export
+returns a Lua sequence table (`sol::as_table`) — a bare `std::vector` would be
+pushed as a container userdata and the registry would disable itself.
+Consequence: the registry is
 exactly the installed set — a Windows-only package (`plugin_render_shadow`) is
 simply absent from the list on Linux/macOS instead of aborting the chunk.
 Each package loads under `pcall`, so one broken `modinfo.lua` is logged and the

@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <iterator>
 #include <mutex>
 #include <string_view>
 #include <unordered_set>
@@ -351,13 +352,11 @@ std::filesystem::path mod_root_from_plugins_dir(const std::filesystem::path &plu
     return plugins_dir;
 }
 
-std::vector<std::string> list_plugin_packages(std::string_view plugins_dir_utf8) {
+namespace {
+
+std::vector<std::string> list_plugin_packages_in(const std::filesystem::path &dir) {
     std::vector<std::string> out;
-    if (plugins_dir_utf8.empty()) {
-        return out;
-    }
     std::error_code ec;
-    const std::filesystem::path dir = path_from_utf8(plugins_dir_utf8);
     if (dir.empty() || !std::filesystem::is_directory(dir, ec)) {
         return out;
     }
@@ -379,6 +378,34 @@ std::vector<std::string> list_plugin_packages(std::string_view plugins_dir_utf8)
         out.push_back(stem);
     }
     std::sort(out.begin(), out.end());
+    return out;
+}
+
+} // namespace
+
+std::vector<std::string> list_plugin_packages(std::string_view plugins_dir_utf8) {
+    if (plugins_dir_utf8.empty()) {
+        return {};
+    }
+    return list_plugin_packages_in(path_from_utf8(plugins_dir_utf8));
+}
+
+std::vector<std::string> list_installed_plugin_packages(std::string_view plugins_dir_utf8) {
+    auto out = list_plugin_packages(plugins_dir_utf8);
+    if (!out.empty()) {
+        return out;
+    }
+    // The Lua registry passes its MODROOT-relative plugins dir, which is an
+    // engine path and need not exist on disk (a Workshop item is loaded from
+    // Steam UGC while MODROOT stays "../mods/workshop-<id>/"), so fall back to
+    // the roots the native loader itself scans.
+    for (const auto &root : default_plugin_search_dirs()) {
+        auto stems = list_plugin_packages_in(root);
+        out.insert(out.end(), std::make_move_iterator(stems.begin()),
+                   std::make_move_iterator(stems.end()));
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
     return out;
 }
 

@@ -184,6 +184,31 @@ static void test_list_plugin_packages() {
     printf("PASS: list_plugin_packages\n");
 }
 
+static void test_list_installed_plugin_packages_fallback() {
+    auto mod_root = make_temp("ds_plugin_installed_mod");
+    fs::create_directories(mod_root / "plugins" / "plugin_fps_render");
+    std::ofstream(mod_root / "plugins" / "plugin_fps_render" / "modinfo.lua") << "--";
+    std::ofstream(mod_root / "modmain.lua") << "--";
+    set_env(kPluginDirEnv, "");
+    set_modmain_path_override_for_test((mod_root / "modmain.lua").string());
+
+    // A Workshop item is loaded from Steam UGC while the Lua registry hands over
+    // MODROOT-relative paths, so the hint does not resolve on disk; the native
+    // search roots must answer instead of a silently empty registry.
+    auto pkgs = list_installed_plugin_packages("workshop-3444078585/plugins/");
+    assert(pkgs.size() == 1);
+    assert(pkgs[0] == "plugin_fps_render");
+
+    // A resolvable hint is used verbatim.
+    auto direct = list_installed_plugin_packages((mod_root / "plugins").string());
+    assert(direct.size() == 1 && direct[0] == "plugin_fps_render");
+
+    set_modmain_path_override_for_test("");
+    set_env(kPluginDirEnv, "");
+    fs::remove_all(mod_root);
+    printf("PASS: list_installed_plugin_packages_fallback\n");
+}
+
 int main() {
     test_plugins_dir_from_modmain();
     test_search_order_env_wins();
@@ -193,6 +218,7 @@ int main() {
     test_deps_registration_contract();
     test_empty_modmain_does_not_crash();
     test_list_plugin_packages();
+    test_list_installed_plugin_packages_fallback();
     printf("ALL PASS: plugin_path\n");
     return 0;
 }

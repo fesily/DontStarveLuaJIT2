@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- 修复**所有 Lua 插件静默失效**（典型症状：改了 `TargetRenderFPS` 仍是 60fps，日志只有 `plugin system disabled: package discovery failed: userdata: 0x…`）。两处根因都在包发现：一、`GameInjector.DS_LUAJIT_list_plugin_packages` 直接返回 `std::vector<std::string>`，sol2 把它压成容器 **userdata**，`Mod/plugins/init.lua` 的 `type(...) ~= "table"` 判定失败后返回空注册表——现在用 `sol::as_table` 返回真正的 1-based 序列表；二、`MODROOT` 是引擎路径而非磁盘路径（工坊项实际从 `steamapps/workshop/content/322330/<id>` 加载，`MODROOT` 仍是 `../mods/workshop-<id>/`），按它列目录得到 0 个包——新增 `ds::plugin::list_installed_plugin_packages`：传入目录存在时照旧列出，否则回落到 `default_plugin_search_dirs()`（native loader 扫描的同一批根，含 `luajit_config.json` 的 `modmain_path` 与工坊发现）。实测（离线客户端 + 工坊项）：`discovered 8 package(s)`、`plugin=fps.render status=Loaded`、`Reset fps by SetNetbookMode 60`；`test_plugin_path` 增加引擎相对路径的回落用例。
+
 - **删除 `ForceDisableTailCall` 选项**并移除它在 VM 侧的支撑：LuaJIT 删掉 `jit.disabletailcall` 绑定与 `LUA_COMPAT_DYNAMIC_DISABLE_TAILCALL` 宏、`global_State::parser_disable_tailcall` 字段及 parser 里的运行时分支（源树 `jit/vmdef.lua` 同步重新生成）。5.1 尾调用帧语义由编译期 `LUA_COMPAT_TAILCALL_CFRAME` 无条件提供，该开关已无意义；`jit.tailcall` 现在只剩加密模组检测，`jit.runtime` 也去掉对应的 `jit_force_off` 守卫。残留配置键（若有）按未知键忽略。
 
 - 加密模组检测**强制开启**并改为直接禁用 JIT：删除 `AutoDetectEncryptedMod` 选项，`jit.tailcall` 改为 `options = { always = true }`（仅 `has_luajit` 门控），检测结果始终发布到 `ctx.encrypted_mod_manager`。`jit.runtime` 的 `kleiloadlua` 钩子现在把命中的加密模组当作黑名单处理——该模组加载出的每个 chunk 都 `jit.off(chunk, true)`（`PROTO_NOJIT`），与 `ModBlackList` 走同一条路径；声明 `luajit_compatible` 的模组从该集合里剔除，不受影响。顺带修掉钩子里对全局 `jit` 的依赖（`HideGlobalJIT` 之后全局为 nil），改为加载时捕获 `ctx.jit`；`kleiloadlua` 钩子也不再要求 `injector` 存在（解密路径才需要）。缓存文件版本升到 `/1.1.0` 以重建缺失 `EncryptedMods` 的旧缓存。

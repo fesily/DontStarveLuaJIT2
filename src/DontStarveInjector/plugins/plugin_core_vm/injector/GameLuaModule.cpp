@@ -1192,8 +1192,11 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version();
 // listed on Linux aborted the whole chunk on a missing modinfo.lua). This export
 // answers "which package dirs under <plugins>/ carry modinfo.lua" from the same
 // filesystem the native loader scans, so Lua never references an absent package.
-static std::vector<std::string> game_injector_list_plugin_packages(const std::string &plugins_dir) {
-    return ds::plugin::list_plugin_packages(plugins_dir);
+// sol2 pushes a bare std::vector as a container *userdata*, so the caller in
+// Mod/plugins/init.lua would see userdata instead of a table and disable every
+// plugin; sol::as_table converts it to a 1-based sequence table.
+static sol::as_table_t<std::vector<std::string>> game_injector_list_plugin_packages(const std::string &plugins_dir) {
+    return sol::as_table(ds::plugin::list_installed_plugin_packages(plugins_dir));
 }
 
 int luaopen_GameInjector(lua_State* L) {

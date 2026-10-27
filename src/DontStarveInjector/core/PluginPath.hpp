@@ -57,6 +57,12 @@ DS_INJECTOR_CXX_API std::filesystem::path mod_root_from_plugins_dir(const std::f
 // referenced.
 DS_INJECTOR_CXX_API std::vector<std::string> list_plugin_packages(std::string_view plugins_dir_utf8);
 
+// Same listing, but tolerant of an engine-relative path (the Lua registry hands
+// over MODROOT .. "plugins/", which does not exist for a Workshop item loaded
+// from Steam UGC). Empty hint listing → union over default_plugin_search_dirs(),
+// i.e. exactly the roots the native loader scans; deduped and sorted.
+DS_INJECTOR_CXX_API std::vector<std::string> list_installed_plugin_packages(std::string_view plugins_dir_utf8);
+
 // Shared runtimes path: mod_root / "deps" (sibling of plugins/, not under it).
 DS_INJECTOR_CXX_API std::filesystem::path mod_deps_dir(const std::filesystem::path &mod_root);
 
