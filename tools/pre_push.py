@@ -164,6 +164,37 @@ def find_cmake(build_dir):
     return None
 
 
+def build_config(build_dir, config, dry_run):
+    """Bring the tested configuration up to date before CTest runs it.
+
+    The gate tests a *binary* tree, but developers usually build only one
+    configuration (Debug) while CONFIG_PREFERENCE picks another
+    (RelWithDebInfo). Testing the stale tree reports yesterday's binaries:
+    a stale generator wrote a corrupted signature DB and a stale verifier
+    failed its pattern checks, both invisible to the sources under review.
+    A build failure blocks the push -- uncompilable code must not pass the gate.
+    """
+    cmake = find_cmake(build_dir)
+    if not cmake:
+        print("pre-push: build skipped: cmake not found (PATH, CMakeCache.txt, Visual Studio).")
+        return True
+
+    cmd = [cmake, "--build", str(build_dir)]
+    if config:
+        cmd += ["--config", config]
+    print("pre-push: build     : %s" % shlex.join(cmd))
+    if dry_run:
+        print("pre-push: build     : dry run, not executing.")
+        return True
+
+    rc = subprocess.call(cmd)
+    if rc != 0:
+        print("pre-push: BUILD FAILED (exit %d); push aborted." % rc)
+        print("pre-push: build the %s configuration before pushing." % (config or "default"))
+        return False
+    return True
+
+
 def deploy_package(build_dir, config, dry_run):
     """Run `cmake --install`, whose install rules deploy into the game mod dir.
 
@@ -210,6 +241,8 @@ def main(argv=None):
     parser.add_argument("-R", "--filter", help="run only tests matching this regex (ctest -R)")
     parser.add_argument("--no-deploy", action="store_true",
                         help="skip the cmake --install deploy stage (tests only)")
+    parser.add_argument("--no-build", action="store_true",
+                        help="skip the cmake --build stage (test the tree as it is)")
     parser.add_argument("--dry-run", action="store_true", help="print what would run without executing")
     args = parser.parse_args(argv)
 
@@ -265,9 +298,16 @@ def main(argv=None):
 
     if args.dry_run:
         print("pre-push: dry run, not executing.")
+        if not args.no_build:
+            build_config(build_dir, config, True)
         if not args.no_deploy:
             deploy_package(build_dir, config, True)
         return 0
+
+    if args.no_build:
+        print("pre-push: build skipped (--no-build); testing the tree as it is.")
+    elif not build_config(build_dir, config, False):
+        return 1
 
     rc = subprocess.call(cmd, cwd=str(build_dir))
     if rc != 0:

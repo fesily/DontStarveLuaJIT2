@@ -769,8 +769,14 @@ under `<name>.pkg`:
   `bin64/windows/Winmm.dll` into the game `bin64` (what `install.bat` does for a release).
   Target: `-DDS_DEPLOY_MOD_DIR=…` when set, else the Workshop item folder when it exists, else
   `<game>/mods/<DS_DEPLOY_MOD_FOLDER>`. Disable with `-DDS_DEPLOY_AFTER_INSTALL=OFF`.
-  `tools/pre_push.py` runs the same `cmake --install` after the tests pass (`--no-deploy`
-  skips it) and only warns when deployment fails — a running game has the modules mapped.
+  `tools/pre_push.py` runs `cmake --build` for the configuration it is about to test *before*
+  CTest (`--no-build` skips it) and the same `cmake --install` after the tests pass
+  (`--no-deploy` skips it); deploy only warns when it fails — a running game has the modules
+  mapped. The build step exists because the gate picks RelWithDebInfo first while a developer
+  usually builds Debug: testing the stale tree runs yesterday's generator and verifier (a
+  stale `libsignature_updater.so` wrote a `lua_getfuncchunkname` signature pointing at an
+  unrelated list walker, which crashed the injected client) with no relation to the sources
+  under review.
   Inside a packaged tree (any `<name><module suffix>.pkg` present) every deployed module is
   also written to its published twin: a canonical-only copy is reverted by `materialize`
   (older-stamped twin wins) and a module without a twin is deleted by
