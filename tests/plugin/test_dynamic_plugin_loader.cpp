@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <string>
 
 using namespace ds::plugin;
 namespace fs = std::filesystem;
@@ -99,6 +101,33 @@ static void test_packaged_twin_materialized_before_load() {
     printf("PASS: packaged_twin_materialized_before_load\n");
 }
 
+// A stale canonical must not shadow a replaced twin: the replacement is compared and
+// materialized before the load attempt instead of mapping the previous build's derivative.
+static void test_packaged_twin_refreshes_stale_canonical() {
+    PluginHost host;
+    DynamicPluginLoader loader;
+    auto dir = temp_dir("ds_plugin_loader_twin_stale");
+#if defined(_WIN32)
+    const char *ext = ".dll";
+#else
+    const char *ext = ".so";
+#endif
+    auto pkg = dir / "plugin_pkgswap";
+    fs::create_directories(pkg);
+    const auto canonical = pkg / (std::string("plugin_pkgswap") + ext);
+    std::ofstream(canonical, std::ios::binary) << "stale derivative";
+    std::ofstream(canonical.string() + ".pkg", std::ios::binary) << "replaced item payload";
+
+    auto r = loader.load_directory(host, dir);
+    std::ifstream in(canonical, std::ios::binary);
+    const std::string materialized((std::istreambuf_iterator<char>(in)),
+                                   std::istreambuf_iterator<char>());
+    assert(materialized == "replaced item payload");
+    assert(r.loaded_modules.empty()); // garbage payload: attempted and refused
+    assert(!r.skipped.empty());
+    printf("PASS: packaged_twin_refreshes_stale_canonical\n");
+}
+
 // Package dir + flat module for one stem: the flat copy is not a candidate at all, so
 // only the package copy is attempted (one stemming from the folder layout only).
 static void test_flat_ignored_beside_package() {
@@ -186,6 +215,7 @@ int main() {
     test_flat_module_ignored();
     test_package_subdir_bad_library_skipped();
     test_packaged_twin_materialized_before_load();
+    test_packaged_twin_refreshes_stale_canonical();
     test_flat_ignored_beside_package();
     test_duplicate_stem_across_roots();
     // Real plugin_dummy load is skipped here: MODULE imports Injector.dll

@@ -9,7 +9,9 @@
 // The runtime therefore materializes the canonical name from the ".pkg" twin
 // immediately before LoadLibrary. Nothing is renamed away, nothing is left behind:
 // the ".pkg" file stays the durable copy, and the canonical file is a local
-// derivative that is refreshed by PE build stamp.
+// derivative that is refreshed by PE build stamp at every entry point — the twin is
+// compared even when the canonical already exists, so replacing "<name>.pkg" alone
+// (Steam item update, manual copy) is enough to ship a new build.
 //
 // A build-tree / zip-install layout has no ".pkg" twin at all: every entry point
 // then returns the path unchanged.
@@ -87,6 +89,9 @@ inline ImageStamp image_stamp(const std::filesystem::path &p) {
         return stamp;
     }
     std::uint32_t time_stamp = 0;
+    // COFF file header: Machine (2), NumberOfSections (2), TimeDateStamp (4) — the stamp
+    // sits at lfanew + 8, right behind the 4-byte "PE\0\0" signature.
+    in.seekg(static_cast<std::streamoff>(lfanew) + 8);
     in.read(reinterpret_cast<char *>(&time_stamp), sizeof(time_stamp));
     if (!in) {
         return stamp;
@@ -393,10 +398,12 @@ inline bool materialize(const std::filesystem::path &canonical) {
 }
 
 // True when the canonical file is present after trying to materialize it.
+//
+// The twin is always compared, never taken as "already done" because a canonical file
+// exists: replacing "<name>.pkg" (Steam item update, a manual copy) must refresh the
+// derivative left behind by the previous build. `materialize` is the cheap no-op here —
+// one stat for the twin, then a PE stamp/size compare when both files exist.
 inline bool exists_or_materialize(const std::filesystem::path &canonical) {
-    if (detail::is_regular(canonical)) {
-        return true;
-    }
     (void)materialize(canonical);
     return detail::is_regular(canonical);
 }

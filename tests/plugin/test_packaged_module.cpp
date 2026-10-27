@@ -87,6 +87,24 @@ static void test_identical_twin_does_not_rewrite() {
     printf("PASS: identical_twin_does_not_rewrite\n");
 }
 
+// A replaced twin must refresh the derivative the previous build left behind: the resolve
+// and load entry points compare the twin even when the canonical name already exists, so a
+// manual/Steam replacement of "<name>.pkg" alone is enough (no delete needed first).
+static void test_exists_or_materialize_refreshes_stale_canonical() {
+    const auto dir = temp_dir("ds_pkg_stale_entry");
+    const auto canonical = dir / "Injector.dll";
+    write_file(canonical, "OLD-BUILD");
+    write_file(ds::packaged::packaged_path(canonical), "NEW-BUILD-REPLACED");
+    assert(ds::packaged::exists_or_materialize(canonical));
+    assert(read_file(canonical) == "NEW-BUILD-REPLACED");
+    assert(read_file(ds::packaged::packaged_path(canonical)) == "NEW-BUILD-REPLACED");
+    // Same build again: still present, still no rewrite.
+    const auto before = fs::last_write_time(canonical);
+    assert(ds::packaged::exists_or_materialize(canonical));
+    assert(fs::last_write_time(canonical) == before);
+    printf("PASS: exists_or_materialize_refreshes_stale_canonical\n");
+}
+
 static void test_materialize_directory() {
     const auto dir = temp_dir("ds_pkg_deps");
     write_file(ds::packaged::packaged_path(dir / "lua51DS.dll"), "VM");
@@ -146,6 +164,48 @@ static fs::path self_image() {
     return fs::path("/proc/self/exe");
 #endif
 }
+
+#if defined(_WIN32)
+// PE stamps: a rebuild that keeps the same file size must still be detected. TimeDateStamp
+// lives at lfanew+8 (behind "PE\0\0" and the Machine/NumberOfSections half of the COFF
+// header); read from the wrong offset it is just Machine|Sections<<16, i.e. constant for a
+// given layout — every same-size rebuild then looks identical and a replaced ".pkg" is
+// ignored in favour of the stale derivative.
+static void test_pe_time_stamp_detects_same_size_rebuild() {
+    const auto dir = temp_dir("ds_pkg_stamp");
+    const auto canonical = dir / "Injector.dll";
+    const auto twin = ds::packaged::packaged_path(canonical);
+    fs::copy_file(self_image(), canonical);
+    fs::copy_file(self_image(), twin);
+    // Identical build: present, never rewritten.
+    const auto before = fs::last_write_time(canonical);
+    assert(ds::packaged::exists_or_materialize(canonical));
+    assert(fs::last_write_time(canonical) == before);
+
+    std::uint32_t lfanew = 0;
+    {
+        std::ifstream in(twin, std::ios::binary);
+        in.seekg(0x3C);
+        in.read(reinterpret_cast<char *>(&lfanew), sizeof(lfanew));
+        assert(in);
+    }
+    {
+        std::fstream io(twin, std::ios::binary | std::ios::in | std::ios::out);
+        std::uint32_t stamp = 0;
+        io.seekg(static_cast<std::streamoff>(lfanew) + 8);
+        io.read(reinterpret_cast<char *>(&stamp), sizeof(stamp));
+        assert(io);
+        stamp ^= 0x5A5A5A5Au;
+        io.seekp(static_cast<std::streamoff>(lfanew) + 8);
+        io.write(reinterpret_cast<const char *>(&stamp), sizeof(stamp));
+        assert(io);
+    }
+    assert(fs::file_size(canonical) == fs::file_size(twin)); // same size: only the stamp differs
+    assert(ds::packaged::exists_or_materialize(canonical));
+    assert(read_file(canonical) == read_file(twin));
+    printf("PASS: pe_time_stamp_detects_same_size_rebuild\n");
+}
+#endif
 
 static size_t count_temp_files(const fs::path &dir) {
     size_t n = 0;
@@ -244,12 +304,14 @@ int main() {
     test_no_twin_is_a_noop();
     test_materializes_from_twin();
     test_replaces_stale_canonical();
+    test_exists_or_materialize_refreshes_stale_canonical();
     test_identical_twin_does_not_rewrite();
     test_materialize_directory();
     test_tree_is_packaged_and_prune();
     test_concurrent_materialize_is_safe();
     test_torn_twin_is_refused();
 #if defined(_WIN32)
+    test_pe_time_stamp_detects_same_size_rebuild();
     test_locked_canonical_is_kept();
 #endif
     printf("all packaged module tests passed\n");
