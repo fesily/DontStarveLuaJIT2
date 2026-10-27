@@ -129,6 +129,11 @@ struct InjectorConfig {
     ENV_OR_CMD_OPT_FLAG(AppVersionDevPatch);    // for developer, always treat app version as dev, so that can use dev code path
 
     ENV_OR_CMD_OPT_VALUE(lua_vm_type);     // specify lua vm type, can be lua51, luajit, or game, default is luajit
+    // spdlog level for the whole process: trace/debug/info/warn/err/critical/off.
+    // Dynamic verbosity switch for user-side diagnosis (release defaults to err, so
+    // nothing but errors is written). Accepts env `log_level=<level>` or a game
+    // argument `-log_level=<level>` / `--log_level <level>`.
+    ENV_OR_CMD_OPT_VALUE(log_level);
 
 #undef ENV_OR_CMD_OPT_VALUE
 #undef ENV_OR_CMD_OPT_FLAG

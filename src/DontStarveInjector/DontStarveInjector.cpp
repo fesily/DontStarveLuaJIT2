@@ -161,7 +161,9 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
 #ifdef _WIN32
     const auto log_path = std::format("DontStarveInjector_{}.log", isClient ? "client"s : "server"s);
     auto logger = std::make_shared<spdlog::logger>("", std::make_shared<spdlog::sinks::msvc_sink_st>());
-    logger->sinks().push_back(std::make_shared<spdlog::sinks::basic_file_sink_st>(log_path, true));
+    // Append, do not truncate: the failure a user is reporting survived the process
+    // exit, and the next launch used to erase it before anyone could read it.
+    logger->sinks().push_back(std::make_shared<spdlog::sinks::basic_file_sink_st>(log_path, false));
     spdlog::set_default_logger(std::move(logger));
 #endif
 #ifdef __linux__
@@ -180,6 +182,23 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         spdlog::set_level(spdlog::level::debug);
     }
     spdlog::flush_on(spdlog::level::trace);
+    // Explicit level wins over the defaults above, for either the process env
+    // (`log_level=info`) or a launcher argument (`-log_level=info`). set_level()
+    // applies to every registered logger, so the FunctionRelocation file follows too.
+    if (const char *requested = ictx->config.log_level; requested && *requested) {
+        std::string_view name{requested};
+        if (name == "warning") name = "warn";
+        if (name == "error") name = "err";
+        const auto parsed = spdlog::level::from_str(std::string{name});
+        // from_str() maps anything unrecognized to off: a typo must not mute the log.
+        if (parsed != spdlog::level::off || name == "off") {
+            spdlog::set_level(parsed);
+            spdlog::warn("log level set to '{}' by log_level={}", spdlog::level::to_string_view(parsed), requested);
+        } else {
+            spdlog::error("unknown log_level='{}' (trace|debug|info|warn|err|critical|off); keeping default",
+                          requested);
+        }
+    }
     spdlog::info("Inject start: isClient={} debuggerAttached={}", isClient, gum_process_is_debugger_attached());
 
 #ifdef ENABLE_STEAM_SUPPORT
