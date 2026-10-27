@@ -233,16 +233,10 @@ Delete or rename `Winmm.dll` in the game `bin64` folder and delete the marker `d
 
 Add compatibility flags in modinfo.
 
-For MODs without compatibility flags, the SlowTailCall or AutoDetectEncryptedMod options will be used.
-
-For code heuristically detected as encrypted MODs, "stack compatibility" will be automatically enabled.
+Tail calls to C/fast functions keep the caller frame by default (Lua 5.1 stack semantics); this is built in and needs no option.
 
 ``` lua
 luajit_compatible = true -- Indicates no dependency on stack depth
--- or
-luajit_compatible = {
-  dep_tailcall = false -- Indicates no dependency on stack depth
-}
 ```
 
 ## Stack Depth

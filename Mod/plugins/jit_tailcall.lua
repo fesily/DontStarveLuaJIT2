@@ -1,4 +1,4 @@
--- jit.tailcall — SlowTailCall + ForceDisableTailCall + AutoDetectEncryptedMod.
+-- jit.tailcall — ForceDisableTailCall + AutoDetectEncryptedMod.
 -- compat.frostxx encrypt detect is folded here (thin merge per §7.3 / inventory).
 -- Priority 10: runs before debug.profiler (20) and jit.runtime (70).
 --
@@ -68,7 +68,6 @@ local function GetEncryptedModManager(ctx)
     local EncryptedModManager_version = APP_VERSION .. "/1.0.0"
     if EncryptedModManager == nil or EncryptedModManager.version ~= EncryptedModManager_version then
         EncryptedModManager = {
-            EncryptedMods = {},
             frostxxMods = {},
             version = EncryptedModManager_version,
             hash = 0,
@@ -172,13 +171,11 @@ local function GetEncryptedModManager(ctx)
                     end
                 end
                 if #line > 1024 then
-                    self.EncryptedMods[modname] = true
                     print(filename, modname, " is encrypted! by line length")
                     result = true
                     break
                 end
                 if not all_invisible_chars_are_utf8(line) then
-                    self.EncryptedMods[modname] = true
                     print(filename, modname, " is encrypted! by invalid utf8", line)
                     result = true
                     break
@@ -199,15 +196,6 @@ local function GetEncryptedModManager(ctx)
             if ok and not isencrypted then
                 pcall(check_encrypted, MODS_ROOT .. modname .. "/modworldgenmain.lua", modname)
             end
-            local modinfo = KnownModIndex:GetModInfo(modname)
-            if modinfo and modinfo.luajit_compatible then
-                local luajit_compatible = modinfo.luajit_compatible
-                if luajit_compatible == true then
-                    self.EncryptedMods[modname] = nil
-                elseif type(luajit_compatible) == "table" then
-                    self.EncryptedMods[modname] = luajit_compatible.dep_tailcall
-                end
-            end
         end
         luajit_encryptmods:write_file(EncryptedModManager)
     end
@@ -216,22 +204,6 @@ local function GetEncryptedModManager(ctx)
         InitEncryptedModManager()
     end
     return EncryptedModManager
-end
-
-local function ApplySlowTailCall(ctx, encrypted_mods)
-    local AnyModDisableTailCall = get_config(ctx, "AnyModDisableTailCall")
-    if not get_config(ctx, "SlowTailCall") then
-        return
-    end
-    local mods_table = {}
-    if AnyModDisableTailCall then
-        mods_table["__any__"] = true
-    else
-        for modname, _ in pairs(encrypted_mods or {}) do
-            mods_table[modname] = true
-        end
-    end
-    debug.getregistry()["LJ_DS_slowtailcall_mods"] = mods_table
 end
 
 local function ForceDisableTailCall(ctx)
@@ -260,7 +232,6 @@ return {
     phases = "AfterModMain",
     options = {
         any_of = {
-            "SlowTailCall",
             "ForceDisableTailCall",
             "AutoDetectEncryptedMod",
         },
@@ -286,8 +257,6 @@ return {
                 ctx.frostxx_mods = {}
             end
         end
-
-        ApplySlowTailCall(ctx, EncryptedModManager.EncryptedMods)
     end,
     unload = function(ctx)
         -- Sticky by default.

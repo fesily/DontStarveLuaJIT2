@@ -223,32 +223,6 @@ configuration_options = {
     --     default = 15
     -- },
     {
-        name = "SlowTailCall",
-        label = translate({ en = "Slow Tail Call", zh = "慢速尾调用" }),
-        hover = translate({
-            zh = "模拟原生lua的尾调用堆栈, 加强加密mod兼容, 但会导致性能下降.搭配<启发式检测加密mod>选项食用",
-            en =
-            "Simulate the tail call stack of native lua, enhance compatibility with encrypted mods, but will cause a performance drop.\nUse with <Heuristic Detection of Encrypted Mods> option"
-        }),
-        options = toggle,
-        default = true,
-        disabled_value = false,
-        disabled_by = disable_by_lua51
-    },
-    {
-        name = "AnyModDisableTailCall",
-        label = translate({ en = "Any Mod Disable Tail Call", zh = "任何模组都禁用尾调用" }),
-        hover = translate({
-            zh = "强制模拟原生lua的尾调用堆栈, 加强加密mod兼容",
-            en =
-            "Force simulate the tail call stack of native lua, enhance compatibility with encrypted mods"
-        }),
-        options = toggle,
-        default = false,
-        disabled_value = false,
-        disabled_by = disable_by_lua51
-    },
-    {
         name = "AutoDetectEncryptedMod",
         label = translate({ en = "Heuristic Detection of Encrypted Mods", zh = "启发式检测加密mod" }),
         hover = translate({

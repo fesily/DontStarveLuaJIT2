@@ -241,15 +241,9 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib   # 游戏目录内的 stub
 ## modinfo.lua
 在modinfo里面添加兼容性标记
 
-对于没有兼容标记的MOD,将会根据`SlowTailCall`或者`AutoDetectEncryptedMod`选项.
-
-对启发式检测到加密MOD的代码, 自动启用`堆栈兼容性`
+尾调用对 C/fast 函数默认保留调用者帧（对齐 5.1 堆栈语义），已内置、无需选项开启。
 ```lua
 luajit_compatible = true --表示不依赖堆栈深度
---或者
-luajit_compatible = {
-  dep_tailcall = false --表示不依赖堆栈深度
-}
 ```
 
 ## 堆栈深度

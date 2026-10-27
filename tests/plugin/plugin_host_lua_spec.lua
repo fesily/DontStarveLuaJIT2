@@ -1173,9 +1173,8 @@ local function test_m4_plugin_priorities_and_order()
         local host = PluginHost.new()
         host:register_all(list)
         host:resolve({
-            SlowTailCall = true,
             AutoDetectEncryptedMod = false,
-            ForceDisableTailCall = false,
+            ForceDisableTailCall = true,
             EnableProfiler = "fzvp",
             EnableTracy = "off",
             DisableForceFullGC = true,
@@ -1245,7 +1244,6 @@ local function test_debug_profiler_enable_matrix()
             EnableForkSave = false,
             EnableLagCompensation = false,
             EnableNetSim = false,
-            SlowTailCall = false,
             ForceDisableTailCall = false,
             AutoDetectEncryptedMod = false,
             TargetRenderFPS = false,
@@ -1264,7 +1262,6 @@ local function test_debug_profiler_enable_matrix()
             EnableForkSave = false,
             EnableLagCompensation = false,
             EnableNetSim = false,
-            SlowTailCall = false,
             ForceDisableTailCall = false,
             AutoDetectEncryptedMod = false,
             TargetRenderFPS = false,
@@ -1286,7 +1283,6 @@ local function test_debug_profiler_enable_matrix()
             EnableForkSave = false,
             EnableLagCompensation = false,
             EnableNetSim = false,
-            SlowTailCall = false,
             ForceDisableTailCall = false,
             AutoDetectEncryptedMod = false,
             TargetRenderFPS = false,
@@ -1325,7 +1321,6 @@ local function test_gc_policy_enable_matrix()
             EnableForkSave = false,
             EnableLagCompensation = false,
             EnableNetSim = false,
-            SlowTailCall = false,
             ForceDisableTailCall = false,
             AutoDetectEncryptedMod = false,
             EnableProfiler = "off",
@@ -1392,7 +1387,6 @@ local function test_fps_render_enable_matrix()
             EnableForkSave = false,
             EnableLagCompensation = false,
             EnableNetSim = false,
-            SlowTailCall = false,
             ForceDisableTailCall = false,
             AutoDetectEncryptedMod = false,
             EnableProfiler = "off",
@@ -1449,7 +1443,7 @@ local function test_fps_render_enable_matrix()
 end
 
 local function test_jit_tailcall_enable_matrix()
-    -- L-E: SlowTailCall / ForceDisable / AutoDetect combinations
+    -- L-E: ForceDisable / AutoDetect combinations
     clear_plugin_modules()
     local registry = require("plugins.init")
     local plugin = plugin_by_id(registry, "jit.tailcall")
@@ -1458,7 +1452,7 @@ local function test_jit_tailcall_enable_matrix()
     -- Only the plugin under test is registered (no cross-plugin dependence).
     local list = { plugin }
 
-    local prev, reg = install_m4_game_stubs()
+    local prev = install_m4_game_stubs()
     local ok, err = pcall(function()
         local base = {
             NetworkOpt = false,
@@ -1476,6 +1470,11 @@ local function test_jit_tailcall_enable_matrix()
             EnabledGenGC = false,
         }
 
+        local disabletailcall_calls = {}
+        rawget(_G, "jit").disabletailcall = function(v)
+            disabletailcall_calls[#disabletailcall_calls + 1] = v
+        end
+
         local inj = fresh_m4_injector()
         local host = PluginHost.new()
         host:register_all(list)
@@ -1483,15 +1482,13 @@ local function test_jit_tailcall_enable_matrix()
         for k, v in pairs(base) do
             cfg[k] = v
         end
-        cfg.SlowTailCall = true
-        cfg.AnyModDisableTailCall = true
-        cfg.ForceDisableTailCall = false
+        cfg.ForceDisableTailCall = true
         cfg.AutoDetectEncryptedMod = false
         host:resolve(cfg, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
         host:load_phase(PHASE.AfterModMain)
         assert_eq(host:status("jit.tailcall"), STATUS.Loaded, "tailcall Loaded")
-        assert_true(reg["LJ_DS_slowtailcall_mods"] ~= nil, "slowtail registry set")
-        assert_eq(reg["LJ_DS_slowtailcall_mods"]["__any__"], true, "any mod disable")
+        assert_eq(#disabletailcall_calls, 1, "disabletailcall called once")
+        assert_eq(disabletailcall_calls[1], true, "disabletailcall(true)")
 
         local host_off = PluginHost.new()
         host_off:register_all(list)
@@ -1499,12 +1496,25 @@ local function test_jit_tailcall_enable_matrix()
         for k, v in pairs(base) do
             cfg2[k] = v
         end
-        cfg2.SlowTailCall = false
         cfg2.ForceDisableTailCall = false
         cfg2.AutoDetectEncryptedMod = false
         host_off:resolve(cfg2, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
         host_off:load_phase(PHASE.AfterModMain)
         assert_eq(host_off:status("jit.tailcall"), STATUS.Disabled, "tailcall all-off Disabled")
+        assert_eq(#disabletailcall_calls, 1, "disabletailcall untouched when off")
+
+        local host_detect = PluginHost.new()
+        host_detect:register_all(list)
+        local cfg4 = {}
+        for k, v in pairs(base) do
+            cfg4[k] = v
+        end
+        cfg4.ForceDisableTailCall = false
+        cfg4.AutoDetectEncryptedMod = true
+        host_detect:resolve(cfg4, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
+        host_detect:load_phase(PHASE.AfterModMain)
+        assert_eq(host_detect:status("jit.tailcall"), STATUS.Loaded, "tailcall detect-only Loaded")
+        assert_eq(#disabletailcall_calls, 1, "detect-only leaves tailcall enabled")
 
         local host_nojit = PluginHost.new()
         host_nojit:register_all(list)
@@ -1512,7 +1522,7 @@ local function test_jit_tailcall_enable_matrix()
         for k, v in pairs(base) do
             cfg3[k] = v
         end
-        cfg3.SlowTailCall = true
+        cfg3.ForceDisableTailCall = true
         host_nojit:resolve(cfg3, { injector = inj, has_luajit = false, is_windows = true })
         host_nojit:load_phase(PHASE.AfterModMain)
         assert_eq(host_nojit:status("jit.tailcall"), STATUS.Disabled, "tailcall no-luajit Disabled")
@@ -1545,7 +1555,6 @@ local function test_jit_runtime_enable_matrix()
             EnableProfiler = "off",
             EnableTracy = "off",
             TargetRenderFPS = false,
-            SlowTailCall = false,
             ForceDisableTailCall = false,
             AutoDetectEncryptedMod = false,
             DisableForceFullGC = false,

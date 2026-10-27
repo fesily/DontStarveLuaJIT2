@@ -407,7 +407,7 @@ Current registration (code). Spec inventory may list future rows (e.g. `steam.wo
 
 | id | Options | priority | depends | soft_depends | conflicts | `when` (summary) |
 |---|---|---:|---|---|---|---|
-| `jit.tailcall` | `any_of` SlowTailCall, ForceDisableTailCall, AutoDetectEncryptedMod | 10 | — | — | — | `has_luajit` |
+| `jit.tailcall` | `any_of` ForceDisableTailCall, AutoDetectEncryptedMod | 10 | — | — | — | `has_luajit` |
 | `debug.profiler` | `any_of` EnableProfiler, EnableTracy, DisableForceFullGC, EnableFrameGC | 20 | — | — | — | `has_luajit` |
 | `network.rpc` | `all_of` NetworkOpt | 40 | — | — | — | — |
 | `network.stats` | `all_of` EnableClientPing | 42 | — | — | — | — |
