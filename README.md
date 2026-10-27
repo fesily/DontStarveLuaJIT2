@@ -242,6 +242,8 @@ export DYLD_INSERT_LIBRARIES=./libInjector.dylib   # 游戏目录内的 stub
 在modinfo里面添加兼容性标记
 
 尾调用对 C/fast 函数默认保留调用者帧（对齐 5.1 堆栈语义），已内置、无需选项开启。
+
+启发式检测到的加密模组会被自动禁用 JIT（等同黑名单，`jit.off(chunk, true)`），无需任何开关；声明了 `luajit_compatible` 的模组不参与该判定。
 ```lua
 luajit_compatible = true --表示不依赖堆栈深度
 ```

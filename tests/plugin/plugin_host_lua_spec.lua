@@ -1173,8 +1173,7 @@ local function test_m4_plugin_priorities_and_order()
         local host = PluginHost.new()
         host:register_all(list)
         host:resolve({
-            AutoDetectEncryptedMod = false,
-            ForceDisableTailCall = true,
+            ForceDisableTailCall = false,
             EnableProfiler = "fzvp",
             EnableTracy = "off",
             DisableForceFullGC = true,
@@ -1245,7 +1244,6 @@ local function test_debug_profiler_enable_matrix()
             EnableLagCompensation = false,
             EnableNetSim = false,
             ForceDisableTailCall = false,
-            AutoDetectEncryptedMod = false,
             TargetRenderFPS = false,
         }, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
         host_off:load_phase(PHASE.AfterModMain)
@@ -1263,7 +1261,6 @@ local function test_debug_profiler_enable_matrix()
             EnableLagCompensation = false,
             EnableNetSim = false,
             ForceDisableTailCall = false,
-            AutoDetectEncryptedMod = false,
             TargetRenderFPS = false,
             EnabledJIT = false,
             HideGlobalJIT = false,
@@ -1284,7 +1281,6 @@ local function test_debug_profiler_enable_matrix()
             EnableLagCompensation = false,
             EnableNetSim = false,
             ForceDisableTailCall = false,
-            AutoDetectEncryptedMod = false,
             TargetRenderFPS = false,
             EnabledJIT = false,
             HideGlobalJIT = false,
@@ -1322,7 +1318,6 @@ local function test_gc_policy_enable_matrix()
             EnableLagCompensation = false,
             EnableNetSim = false,
             ForceDisableTailCall = false,
-            AutoDetectEncryptedMod = false,
             EnableProfiler = "off",
             EnableTracy = "off",
             TargetRenderFPS = false,
@@ -1388,7 +1383,6 @@ local function test_fps_render_enable_matrix()
             EnableLagCompensation = false,
             EnableNetSim = false,
             ForceDisableTailCall = false,
-            AutoDetectEncryptedMod = false,
             EnableProfiler = "off",
             EnableTracy = "off",
             EnabledJIT = false,
@@ -1483,13 +1477,14 @@ local function test_jit_tailcall_enable_matrix()
             cfg[k] = v
         end
         cfg.ForceDisableTailCall = true
-        cfg.AutoDetectEncryptedMod = false
-        host:resolve(cfg, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
+        local ctx_on = { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") }
+        host:resolve(cfg, ctx_on)
         host:load_phase(PHASE.AfterModMain)
         assert_eq(host:status("jit.tailcall"), STATUS.Loaded, "tailcall Loaded")
         assert_eq(#disabletailcall_calls, 1, "disabletailcall called once")
         assert_eq(disabletailcall_calls[1], true, "disabletailcall(true)")
 
+        -- AlwaysOn: detection must run even with ForceDisableTailCall off.
         local host_off = PluginHost.new()
         host_off:register_all(list)
         local cfg2 = {}
@@ -1497,24 +1492,15 @@ local function test_jit_tailcall_enable_matrix()
             cfg2[k] = v
         end
         cfg2.ForceDisableTailCall = false
-        cfg2.AutoDetectEncryptedMod = false
-        host_off:resolve(cfg2, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
+        local ctx_off = { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") }
+        host_off:resolve(cfg2, ctx_off)
         host_off:load_phase(PHASE.AfterModMain)
-        assert_eq(host_off:status("jit.tailcall"), STATUS.Disabled, "tailcall all-off Disabled")
+        assert_eq(host_off:status("jit.tailcall"), STATUS.Loaded, "tailcall Loaded with option off")
         assert_eq(#disabletailcall_calls, 1, "disabletailcall untouched when off")
 
-        local host_detect = PluginHost.new()
-        host_detect:register_all(list)
-        local cfg4 = {}
-        for k, v in pairs(base) do
-            cfg4[k] = v
-        end
-        cfg4.ForceDisableTailCall = false
-        cfg4.AutoDetectEncryptedMod = true
-        host_detect:resolve(cfg4, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
-        host_detect:load_phase(PHASE.AfterModMain)
-        assert_eq(host_detect:status("jit.tailcall"), STATUS.Loaded, "tailcall detect-only Loaded")
-        assert_eq(#disabletailcall_calls, 1, "detect-only leaves tailcall enabled")
+        -- Producer contract for jit.runtime: EncryptedMods table always present.
+        assert_true(type(ctx_off.encrypted_mod_manager) == "table", "encrypted_mod_manager published")
+        assert_true(type(ctx_off.encrypted_mod_manager.EncryptedMods) == "table", "EncryptedMods table published")
 
         local host_nojit = PluginHost.new()
         host_nojit:register_all(list)
@@ -1556,7 +1542,6 @@ local function test_jit_runtime_enable_matrix()
             EnableTracy = "off",
             TargetRenderFPS = false,
             ForceDisableTailCall = false,
-            AutoDetectEncryptedMod = false,
             DisableForceFullGC = false,
             EnableFrameGC = false,
             EnabledGenGC = false,
@@ -1609,6 +1594,49 @@ local function test_jit_runtime_enable_matrix()
         host_hide:load_phase(PHASE.AfterModMain)
         assert_eq(host_hide:status("jit.runtime"), STATUS.Loaded, "hide path Loaded")
         assert_eq(rawget(_G, "jit"), nil, "global jit hidden")
+
+        -- Encrypted mods are treated like the blacklist: their chunks get jit.off(m, true).
+        rawset(_G, "jit", jit_stub)
+        local prev_kleiloadlua = rawget(_G, "kleiloadlua")
+        local loaded_fn = function() end
+        rawset(_G, "kleiloadlua", function()
+            return loaded_fn
+        end)
+        local off_calls = {}
+        jit_stub.off = function(m, recursive)
+            off_calls[#off_calls + 1] = { m = m, recursive = recursive }
+        end
+
+        local host_enc = PluginHost.new()
+        host_enc:register_all(list)
+        local cfg3 = {}
+        for k, v in pairs(base) do
+            cfg3[k] = v
+        end
+        cfg3.EnabledJIT = true
+        cfg3.HideGlobalJIT = false
+        host_enc:resolve(cfg3, {
+            injector = inj,
+            has_luajit = true,
+            is_windows = true,
+            jit = jit_stub,
+            encrypted_mod_manager = { EncryptedMods = { ["workshop-enc"] = true } },
+            frostxx_mods = {},
+        })
+        host_enc:load_phase(PHASE.AfterModMain)
+        -- jit.runtime load() always calls jit.off() once before re-enabling; only
+        -- per-chunk calls are of interest here.
+        off_calls = {}
+        local hooked = rawget(_G, "kleiloadlua")
+        assert_true(hooked ~= nil, "kleiloadlua hook installed")
+        assert_eq(hooked("../mods/workshop-enc/modmain.lua"), loaded_fn, "encrypted chunk loaded")
+        assert_eq(#off_calls, 1, "jit.off called for encrypted mod")
+        assert_eq(off_calls[1].m, loaded_fn, "jit.off on the mod chunk")
+        assert_eq(off_calls[1].recursive, true, "jit.off recursive")
+
+        hooked("../mods/workshop-plain/modmain.lua")
+        assert_eq(#off_calls, 1, "plain mod keeps JIT")
+        rawset(_G, "kleiloadlua", prev_kleiloadlua)
     end)
     restore_m4_game_stubs(prev)
     if not ok then

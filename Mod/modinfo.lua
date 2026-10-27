@@ -223,18 +223,6 @@ configuration_options = {
     --     default = 15
     -- },
     {
-        name = "AutoDetectEncryptedMod",
-        label = translate({ en = "Heuristic Detection of Encrypted Mods", zh = "启发式检测加密mod" }),
-        hover = translate({
-            en = "Automatically detect and enable compatibility for encrypted mods",
-            zh = "自动检测并启用加密mod的兼容性"
-        }),
-        options = toggle,
-        default = true,
-        disabled_value = false,
-        disabled_by = disable_by_lua51
-    },
-    {
         name = "ModBlackList",
         label = translate({ en = "Mod JIT Blacklist", zh = "MODJit黑名单" }),
         hover = translate({ en = "Some mods may not be appropriate for JIT", zh = "有些mod可能写的特别,不合适jit模式" }),

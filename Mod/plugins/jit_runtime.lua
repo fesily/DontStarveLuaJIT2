@@ -134,13 +134,16 @@ local function HideGlobalJIT(ctx)
     skip_jit()
 end
 
-local function HookKleiloadlua(frostxxMods, injector, ctx)
+local function HookKleiloadlua(encryptedMods, frostxxMods, injector, ctx)
     local enbaleBlackList = get_config(ctx, "ModBlackList")
     local blacklists = {
         --- format
         --- 'workshop-<modid>'
     }
     local function decrypt_file(filename)
+        if not injector then
+            return
+        end
         local str = injector.DS_LUAJIT_Fengxun_Decrypt(filename)
         if str ~= nil then
             assert(type(str) == "string")
@@ -152,8 +155,12 @@ local function HookKleiloadlua(frostxxMods, injector, ctx)
         enbaleBlackList = #blacklists > 0
     end
     local hmask = table_hmask(frostxxMods)
-    if enbaleBlackList or hmask > 0 then
+    -- Heuristically detected encrypted mods are treated like blacklisted ones: their
+    -- chunks get PROTO_NOJIT so the encrypted loader never runs under the JIT.
+    local emask = table_hmask(encryptedMods)
+    if enbaleBlackList or hmask > 0 or emask > 0 then
         local _kleiloadlua = kleiloadlua
+        local jit_table = (ctx and ctx.jit) or jit
 
         rawset(_G, "kleiloadlua", function(filename, ...)
             local modname = filename2modname(filename)
@@ -173,9 +180,10 @@ local function HookKleiloadlua(frostxxMods, injector, ctx)
             end
 
             local m = _kleiloadlua(filename, ...)
-            if enbaleBlackList and modname and type(m) == "function" then
-                if blacklists[modname] then
-                    jit.off(m, true)
+            if modname and type(m) == "function" and jit_table and jit_table.off then
+                if (enbaleBlackList and blacklists[modname])
+                    or (emask > 0 and encryptedMods[modname]) then
+                    jit_table.off(m, true)
                 end
             end
             return m
@@ -224,10 +232,10 @@ return {
         end
 
         local injector = ctx and ctx.injector
-        if injector then
-            local frostxx = (ctx and ctx.frostxx_mods) or {}
-            HookKleiloadlua(frostxx, injector, ctx)
-        end
+        local manager = ctx and ctx.encrypted_mod_manager
+        local encrypted = (manager and manager.EncryptedMods) or {}
+        local frostxx = (ctx and ctx.frostxx_mods) or {}
+        HookKleiloadlua(encrypted, frostxx, injector, ctx)
 
         -- Hide global jit AFTER profiler / other jit.* requires in this phase.
         HideGlobalJIT(ctx)

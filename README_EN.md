@@ -235,6 +235,7 @@ Add compatibility flags in modinfo.
 
 Tail calls to C/fast functions keep the caller frame by default (Lua 5.1 stack semantics); this is built in and needs no option.
 
+Mods heuristically detected as encrypted have JIT disabled automatically (same as the blacklist, `jit.off(chunk, true)`) with no switch involved; mods declaring `luajit_compatible` are exempt.
 ``` lua
 luajit_compatible = true -- Indicates no dependency on stack depth
 ```

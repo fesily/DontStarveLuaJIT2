@@ -1,8 +1,9 @@
--- jit.tailcall — ForceDisableTailCall + AutoDetectEncryptedMod.
+-- jit.tailcall — ForceDisableTailCall + encrypted-mod detection.
 -- compat.frostxx encrypt detect is folded here (thin merge per §7.3 / inventory).
 -- Priority 10: runs before debug.profiler (20) and jit.runtime (70).
 --
--- Stores EncryptedModManager on ctx for jit.runtime HookKleiloadlua (ModBlackList + frostxx).
+-- Stores EncryptedModManager on ctx: jit.runtime reads EncryptedMods (JIT disabled for
+-- those mods, same as the blacklist) and frostxx_mods (HookKleiloadlua decrypt path).
 
 local function make_file_io()
     local ModManagerFile = { filepath = nil, json_mode = true }
@@ -62,12 +63,11 @@ local function GetEncryptedModManager(ctx)
         { __index = ModManagerFile }
     )
 
-    local AutoDetectEncryptedMod = get_config(ctx, "AutoDetectEncryptedMod")
-
-    local EncryptedModManager = AutoDetectEncryptedMod and luajit_encryptmods:read_file() or nil
-    local EncryptedModManager_version = APP_VERSION .. "/1.0.0"
+    local EncryptedModManager = luajit_encryptmods:read_file()
+    local EncryptedModManager_version = APP_VERSION .. "/1.1.0"
     if EncryptedModManager == nil or EncryptedModManager.version ~= EncryptedModManager_version then
         EncryptedModManager = {
+            EncryptedMods = {},
             frostxxMods = {},
             version = EncryptedModManager_version,
             hash = 0,
@@ -171,11 +171,13 @@ local function GetEncryptedModManager(ctx)
                     end
                 end
                 if #line > 1024 then
+                    self.EncryptedMods[modname] = true
                     print(filename, modname, " is encrypted! by line length")
                     result = true
                     break
                 end
                 if not all_invisible_chars_are_utf8(line) then
+                    self.EncryptedMods[modname] = true
                     print(filename, modname, " is encrypted! by invalid utf8", line)
                     result = true
                     break
@@ -196,13 +198,15 @@ local function GetEncryptedModManager(ctx)
             if ok and not isencrypted then
                 pcall(check_encrypted, MODS_ROOT .. modname .. "/modworldgenmain.lua", modname)
             end
+            local modinfo = KnownModIndex and KnownModIndex:GetModInfo(modname)
+            if modinfo and modinfo.luajit_compatible then
+                self.EncryptedMods[modname] = nil
+            end
         end
         luajit_encryptmods:write_file(EncryptedModManager)
     end
 
-    if AutoDetectEncryptedMod then
-        InitEncryptedModManager()
-    end
+    InitEncryptedModManager()
     return EncryptedModManager
 end
 
@@ -230,12 +234,8 @@ return {
     soft_depends = {},
     conflicts = {},
     phases = "AfterModMain",
-    options = {
-        any_of = {
-            "ForceDisableTailCall",
-            "AutoDetectEncryptedMod",
-        },
-    },
+    -- AlwaysOn when has_luajit: encrypted-mod detection feeds the jit.runtime blacklist path.
+    options = { always = true },
     support_reload = false,
     priority = 10,
     when = function(ctx)
