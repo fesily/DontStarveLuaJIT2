@@ -1,4 +1,4 @@
--- jit.tailcall — ForceDisableTailCall + encrypted-mod detection.
+-- jit.tailcall — encrypted-mod detection.
 -- compat.frostxx encrypt detect is folded here (thin merge per §7.3 / inventory).
 -- Priority 10: runs before debug.profiler (20) and jit.runtime (70).
 --
@@ -40,20 +40,6 @@ local function make_file_io()
         fp:close()
     end
     return ModManagerFile
-end
-
-local function get_config(ctx, key)
-    local config = ctx and ctx.config
-    if type(config) == "function" then
-        return config(key)
-    end
-    if type(config) == "table" then
-        return config[key]
-    end
-    if type(GetModConfigData) == "function" then
-        return GetModConfigData(key)
-    end
-    return nil
 end
 
 local function GetEncryptedModManager(ctx)
@@ -210,20 +196,6 @@ local function GetEncryptedModManager(ctx)
     return EncryptedModManager
 end
 
-local function ForceDisableTailCall(ctx)
-    if not (ctx and ctx.has_luajit) then
-        return
-    end
-    if get_config(ctx, "ForceDisableTailCall") then
-        local jit_table = ctx.jit
-        if jit_table and jit_table.disabletailcall then
-            jit_table.disabletailcall(true)
-        elseif jit and jit.disabletailcall then
-            jit.disabletailcall(true)
-        end
-    end
-end
-
 -- EnableFrostxxMods is a compile-time switch in former modmain (default false).
 local EnableFrostxxMods = false
 
@@ -245,8 +217,6 @@ return {
         return true
     end,
     load = function(ctx)
-        ForceDisableTailCall(ctx)
-
         local EncryptedModManager = GetEncryptedModManager(ctx)
         if ctx then
             ctx.encrypted_mod_manager = EncryptedModManager

@@ -282,20 +282,6 @@ configuration_options = {
         disabled_value = "auto",
         require_restart = true,
     },
-    AddSection(translate({ en = "DebugOptions", zh = "调试选项" })),
-    {
-        name = "ForceDisableTailCall",
-        label = translate({ en = "Force Disable Tail Call", zh = "强制禁用尾调用" }),
-        hover = translate({
-            zh = "强制禁用尾调用优化, 仅用于区别是否因尾调用问题导致的mod不兼容, 非调试不应该使用",
-            en =
-            "Force disable tail call optimization, used to determine if mod incompatibility is caused by inconsistent tail calls, should not be used in non-debugging"
-        }),
-        options = toggle,
-        default = false,
-        disabled_value = false,
-        disabled_by = disable_by_lua51
-    },
     AddSection(translate({ zh = "插件配置", en = "Plugin Options" })),
     -- BEGIN GENERATED PLUGIN OPTIONS
     AddSection("Debug Profiler"),

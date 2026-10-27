@@ -1109,7 +1109,6 @@ local function install_m4_game_stubs()
     local jit_stub = {
         off = function() end,
         on = function() end,
-        disabletailcall = function() end,
     }
     rawset(_G, "jit", jit_stub)
     package.preload["jit.opt"] = function()
@@ -1173,7 +1172,6 @@ local function test_m4_plugin_priorities_and_order()
         local host = PluginHost.new()
         host:register_all(list)
         host:resolve({
-            ForceDisableTailCall = false,
             EnableProfiler = "fzvp",
             EnableTracy = "off",
             DisableForceFullGC = true,
@@ -1243,7 +1241,6 @@ local function test_debug_profiler_enable_matrix()
             EnableForkSave = false,
             EnableLagCompensation = false,
             EnableNetSim = false,
-            ForceDisableTailCall = false,
             TargetRenderFPS = false,
         }, { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") })
         host_off:load_phase(PHASE.AfterModMain)
@@ -1260,7 +1257,6 @@ local function test_debug_profiler_enable_matrix()
             EnableForkSave = false,
             EnableLagCompensation = false,
             EnableNetSim = false,
-            ForceDisableTailCall = false,
             TargetRenderFPS = false,
             EnabledJIT = false,
             HideGlobalJIT = false,
@@ -1280,7 +1276,6 @@ local function test_debug_profiler_enable_matrix()
             EnableForkSave = false,
             EnableLagCompensation = false,
             EnableNetSim = false,
-            ForceDisableTailCall = false,
             TargetRenderFPS = false,
             EnabledJIT = false,
             HideGlobalJIT = false,
@@ -1317,7 +1312,6 @@ local function test_gc_policy_enable_matrix()
             EnableForkSave = false,
             EnableLagCompensation = false,
             EnableNetSim = false,
-            ForceDisableTailCall = false,
             EnableProfiler = "off",
             EnableTracy = "off",
             TargetRenderFPS = false,
@@ -1382,7 +1376,6 @@ local function test_fps_render_enable_matrix()
             EnableForkSave = false,
             EnableLagCompensation = false,
             EnableNetSim = false,
-            ForceDisableTailCall = false,
             EnableProfiler = "off",
             EnableTracy = "off",
             EnabledJIT = false,
@@ -1464,11 +1457,6 @@ local function test_jit_tailcall_enable_matrix()
             EnabledGenGC = false,
         }
 
-        local disabletailcall_calls = {}
-        rawget(_G, "jit").disabletailcall = function(v)
-            disabletailcall_calls[#disabletailcall_calls + 1] = v
-        end
-
         local inj = fresh_m4_injector()
         local host = PluginHost.new()
         host:register_all(list)
@@ -1476,40 +1464,18 @@ local function test_jit_tailcall_enable_matrix()
         for k, v in pairs(base) do
             cfg[k] = v
         end
-        cfg.ForceDisableTailCall = true
         local ctx_on = { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") }
         host:resolve(cfg, ctx_on)
         host:load_phase(PHASE.AfterModMain)
         assert_eq(host:status("jit.tailcall"), STATUS.Loaded, "tailcall Loaded")
-        assert_eq(#disabletailcall_calls, 1, "disabletailcall called once")
-        assert_eq(disabletailcall_calls[1], true, "disabletailcall(true)")
-
-        -- AlwaysOn: detection must run even with ForceDisableTailCall off.
-        local host_off = PluginHost.new()
-        host_off:register_all(list)
-        local cfg2 = {}
-        for k, v in pairs(base) do
-            cfg2[k] = v
-        end
-        cfg2.ForceDisableTailCall = false
-        local ctx_off = { injector = inj, has_luajit = true, is_windows = true, jit = rawget(_G, "jit") }
-        host_off:resolve(cfg2, ctx_off)
-        host_off:load_phase(PHASE.AfterModMain)
-        assert_eq(host_off:status("jit.tailcall"), STATUS.Loaded, "tailcall Loaded with option off")
-        assert_eq(#disabletailcall_calls, 1, "disabletailcall untouched when off")
 
         -- Producer contract for jit.runtime: EncryptedMods table always present.
-        assert_true(type(ctx_off.encrypted_mod_manager) == "table", "encrypted_mod_manager published")
-        assert_true(type(ctx_off.encrypted_mod_manager.EncryptedMods) == "table", "EncryptedMods table published")
+        assert_true(type(ctx_on.encrypted_mod_manager) == "table", "encrypted_mod_manager published")
+        assert_true(type(ctx_on.encrypted_mod_manager.EncryptedMods) == "table", "EncryptedMods table published")
 
         local host_nojit = PluginHost.new()
         host_nojit:register_all(list)
-        local cfg3 = {}
-        for k, v in pairs(base) do
-            cfg3[k] = v
-        end
-        cfg3.ForceDisableTailCall = true
-        host_nojit:resolve(cfg3, { injector = inj, has_luajit = false, is_windows = true })
+        host_nojit:resolve(cfg, { injector = inj, has_luajit = false, is_windows = true })
         host_nojit:load_phase(PHASE.AfterModMain)
         assert_eq(host_nojit:status("jit.tailcall"), STATUS.Disabled, "tailcall no-luajit Disabled")
     end)
@@ -1541,7 +1507,6 @@ local function test_jit_runtime_enable_matrix()
             EnableProfiler = "off",
             EnableTracy = "off",
             TargetRenderFPS = false,
-            ForceDisableTailCall = false,
             DisableForceFullGC = false,
             EnableFrameGC = false,
             EnabledGenGC = false,
