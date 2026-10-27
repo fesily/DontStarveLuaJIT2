@@ -24,7 +24,7 @@ if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
             set(GAME_SERVER_EXECUTABLE_NAME "dontstarve_dedicated_server_nullrenderer_x64")
         endif()
         set(PRELOAD_ENV_KEY DYLD_INSERT_LIBRARIES)
-        add_custom_target(create
+        add_custom_target(create_signatures
                 COMMAND ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" SIGNATURE_TOOL_MODE=create ${GAME_INSTALL_PREFIX}/${GAME_EXECUTABLE_NAME}
                 COMMAND ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" SIGNATURE_TOOL_MODE=create ${GAME_INSTALL_PREFIX}/${GAME_SERVER_EXECUTABLE_NAME}
                 WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
@@ -46,7 +46,7 @@ if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
         endif()
         set(PRELOAD_ENV_KEY LD_PRELOAD)
 
-        add_custom_target(create
+        add_custom_target(create_signatures
                 COMMAND ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" LUA51_SIGNATURE_OUTPUT_DIR="${CMAKE_INSTALL_PREFIX}" SIGNATURE_TOOL_MODE=create
                 ${CMAKE_CURRENT_SOURCE_DIR}/update_signatures.sh ${LUA_EXECUTABLE_PATH} "./${GAME_EXECUTABLE_NAME}" "./${GAME_SERVER_EXECUTABLE_NAME}"
                 WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
@@ -59,10 +59,11 @@ if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     endif ()
 else ()
     add_executable(signature_updater ${SOURCES})
-    # Two explicit targets: `create` rebuilds every entry from scratch (stored DB
-    # ignored); `update_signatures` requires the stored DB and re-runs the update
-    # pass on it, so a matching version can no longer turn the run into a no-op.
-    add_custom_target(create
+    # Two explicit targets: `create_signatures` rebuilds every entry from
+    # scratch (stored DB ignored); `update_signatures` requires the stored DB and
+    # re-runs the update pass on it, so a matching version can no longer turn the
+    # run into a no-op.
+    add_custom_target(create_signatures
             COMMAND signature_updater create
     )
     add_custom_target(update_signatures

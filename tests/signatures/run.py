@@ -1,7 +1,7 @@
 """Windows signature DB gate: full create + incremental update + format handling.
 
 Drives the production ``signature_updater`` tool (tools/Creater) against the
-installed game binaries, exactly like the shipped ``create`` and
+installed game binaries, exactly like the shipped ``create_signatures`` and
 ``update_signatures`` build targets do:
 
   create  -- rebuild every Lua entry from scratch (stored DB ignored)
