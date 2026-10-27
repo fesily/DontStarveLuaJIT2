@@ -7,8 +7,13 @@ from bisect import bisect_right
 from collections import Counter, defaultdict
 import json
 from pathlib import Path
+import platform as host
 import re
 import struct
+import sys
+
+# Signature DB layout version (SignatureJson::format_version).
+SIGNATURE_FORMAT_VERSION = 2
 
 BEGIN = re.compile(r"\[ds_perf\] MAP_BEGIN attempt=(\d+)")
 END = re.compile(r"\[ds_perf\] MAP_END attempt=(\d+) ok=(true|false)")
@@ -190,6 +195,20 @@ def disassemble_regions(capture: dict) -> list[dict]:
     return regions
 
 
+def signature_section(db: dict) -> dict:
+    """Host platform section (`<system>-<arch>`) of a signatures_*.json document."""
+    if db.get("format_version") != SIGNATURE_FORMAT_VERSION:
+        raise ValueError(f"format_version {db.get('format_version')!r} != {SIGNATURE_FORMAT_VERSION}")
+    machine = host.machine().lower()
+    arch = "x64" if machine in ("amd64", "x86_64") else "arm64" if machine in ("arm64", "aarch64") else machine
+    system = "windows" if sys.platform.startswith("win") else "macos" if sys.platform == "darwin" else "linux"
+    platform = f"{system}-{arch}"
+    section = (db.get("platforms") or {}).get(platform)
+    if not isinstance(section, dict):
+        raise ValueError(f"no '{platform}' section")
+    return section
+
+
 def hook_contexts(capture: dict, signatures: dict, base_rva: int) -> list[dict]:
     game = next(module for module in capture["modules"] if module["path"].lower().endswith(".exe"))
     addresses = {game["base"] + base_rva + value["offset"]: name
@@ -286,7 +305,12 @@ def main() -> None:
             import capstone  # noqa: F401
         except ImportError:
             parser.error("--disassemble requires the optional capstone Python package")
-    signatures = json.loads(args.signatures.read_text(encoding="utf-8")) if args.signatures else None
+    signatures = None
+    if args.signatures:
+        try:
+            signatures = signature_section(json.loads(args.signatures.read_text(encoding="utf-8")))
+        except ValueError as error:
+            parser.error(f"--signatures: {error}")
     results = {}
     for path in sorted(args.directory.glob("*-dedicated-observations.json")):
         prefix = path.name.removesuffix("-dedicated-observations.json")

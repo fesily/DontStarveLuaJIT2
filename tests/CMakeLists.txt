@@ -242,6 +242,22 @@ target_include_directories(test_signature_mod_root PRIVATE
 target_compile_features(test_signature_mod_root PRIVATE cxx_std_23)
 add_test(NAME signature_mod_root COMMAND test_signature_mod_root)
 
+# signatures_*.json layout gate: format_version + per-platform sections, and the
+# stale-format / foreign-platform rejection that drives "regenerate from scratch".
+if (TARGET ds_signature)
+    add_executable(test_signature_json_format
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_signature_json_format.cpp)
+    target_include_directories(test_signature_json_format PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/signature_load)
+    target_compile_features(test_signature_json_format PRIVATE cxx_std_23)
+    target_link_libraries(test_signature_json_format PRIVATE
+        ds_signature nlohmann_json::nlohmann_json spdlog::spdlog)
+    if (TARGET Frida::Gum)
+        target_link_libraries(test_signature_json_format PRIVATE Frida::Gum)
+    endif()
+    add_test(NAME signature_json_format COMMAND test_signature_json_format)
+endif()
+
 
 add_executable(test_injector_bootstrap
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_injector_bootstrap.cpp

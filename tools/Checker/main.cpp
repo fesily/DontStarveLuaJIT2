@@ -39,7 +39,12 @@ int check(const char *path, bool isClient) {
     sj.file_path = (std::filesystem::path{worker_dir} /
                     ("signatures_"s + (isClient ? "client"s : "server"s) + ".json"))
                            .string();
-    auto signatures = sj.read_from_signatures().value();
+    auto signatures = sj.read_from_signatures();
+    if (!signatures) {
+        fprintf(stderr, "cannot read %s (platform %s, format_version %d)\n", sj.file_path.c_str(),
+                SignatureJson::platform_name(), SignatureJson::format_version);
+        return 1;
+    }
     fprintf(stderr, "game_path:\t%s\n", path);
     if (!loadModule(path))
         return 1;
@@ -52,11 +57,16 @@ int check(const char *path, bool isClient) {
     SignatureJson sjCopy{isClient};
     auto p = std::filesystem::path{PROJECT_DIR} / "tests" / "windows_x64" / (("Signatures_"s + (isClient ? "client" : "server")) + ".txt.json");
     sjCopy.file_path = p.string();
-    auto sCopy = sjCopy.read_from_signatures().value();
+    auto sCopy = sjCopy.read_from_signatures();
+    if (!sCopy) {
+        fprintf(stderr, "cannot read reference %s (regenerate it in format_version %d with a '%s' section)\n",
+                p.string().c_str(), SignatureJson::format_version, SignatureJson::platform_name());
+        return 1;
+    }
 
     auto count = 0;
-    for (auto [func, info]: signatures.funcs) {
-        const auto ida_offset = sCopy.funcs.at(func).offset;
+    for (auto [func, info]: signatures->funcs) {
+        const auto ida_offset = sCopy->funcs.at(func).offset;
         if (ida_offset != info.offset) {
             fprintf(stderr, "[%s]%s [%d]-[%d]\n", func.c_str(), "can't match the address", (int) ida_offset, (int) info.offset);
             count++;

@@ -1,4 +1,5 @@
 #include "DontStarveSignature.hpp"
+#include "SignatureJson.hpp"
 #include "Signature.hpp"
 #include "FunctionRanges.hpp"
 #include "MemorySignature.hpp"
@@ -17,7 +18,6 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 namespace {
@@ -212,7 +212,6 @@ int main(int argc, char **argv) {
             std::cout << "cached update preserved " << expected.size() << " Lua entry offsets\n";
             std::cout << "ambiguous legacy cache repaired and verified from Lua base\n";
         }
-        nlohmann::json funcs = nlohmann::json::object();
         for (const auto &[name, sig]: signatures.funcs) {
             const uintptr_t entry = base + sig.offset;
             if (!function_relocation::validate_unique_signature({&scan_range, 1}, sig, entry)) {
@@ -220,16 +219,22 @@ int main(int argc, char **argv) {
                 throw std::runtime_error("pattern is missing, ambiguous or targets another entry: " + name);
             }
             if (function_relocation::resolve_function_entry(game.module, entry) != entry) throw std::runtime_error("not an FDE entry: " + name);
-            funcs[name] = {{"offset", sig.offset}, {"pattern", sig.pattern}, {"pattern_offset", sig.pattern_offset}};
         }
-        std::cout << "resolved and verified " << funcs.size() << " Lua export patterns unique from Lua base\n";
+        std::cout << "resolved and verified " << signatures.funcs.size() << " Lua export patterns unique from Lua base\n";
         if (argc == 4 && !check_cache) {
-            std::ifstream version(std::filesystem::path{argv[2]}.parent_path().parent_path() / "version.txt");
+            // Same writer as the shipped DBs: it stamps format_version and puts
+            // the entries in this platform's section (other platforms kept).
+            const auto version_file = std::filesystem::path{argv[2]}.parent_path().parent_path() / "version.txt";
+            std::ifstream version(version_file);
             uintptr_t value = 0;
             if (!(version >> value)) throw std::runtime_error("cannot read game version");
-            std::ofstream output(argv[3]);
-            output << nlohmann::json{{"version", value}, {"funcs", funcs}}.dump() << '\n';
-            if (!output) throw std::runtime_error("cannot write signatures");
+            signatures.version = value;
+            const auto version_path = version_file.string();
+            SignatureJson::version_path = version_path.c_str();
+            SignatureJson json{/*isClient=*/true};
+            json.file_path = argv[3];
+            json.update_signatures(signatures);
+            if (!std::filesystem::exists(argv[3])) throw std::runtime_error("cannot write signatures");
         }
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';

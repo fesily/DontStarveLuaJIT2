@@ -166,10 +166,17 @@ SignatureUpdater::create_or_update(bool isClient, uintptr_t luaModuleBaseAddress
         stored = json.read_from_signatures();
     }
     if (!stored) {
-        if (mode == SignatureMode::Update) {
+        if (mode == SignatureMode::Update && json.last_read_status == SignatureJson::ReadStatus::Missing) {
             return std::unexpected(
                     fmt::format("SignatureMode::Update needs an existing signature DB (nothing readable at {})",
                                 json.file_path.empty() ? "<default path>" : json.file_path));
+        }
+        if (mode == SignatureMode::Update) {
+            // A DB from another format version, without this platform's section
+            // or structurally broken is rebuilt from scratch: that is exactly
+            // what the format/per-platform layout is for.
+            spdlog::warn("signature DB is unusable for platform {} (format_version {}); rebuilding from scratch",
+                         SignatureJson::platform_name(), SignatureJson::format_version);
         }
         auto res = create_signature(luaModuleBaseAddress, [&json](auto &v) { json.update_signatures(v); });
         if (!res) {
