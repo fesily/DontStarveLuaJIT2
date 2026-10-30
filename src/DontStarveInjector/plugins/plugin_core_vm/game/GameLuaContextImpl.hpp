@@ -68,8 +68,7 @@ extern int (*luaopen_game_io)(lua_State *L);
 
 struct GameLuaInjectorFramework {
     void init(GameLuaContext &ctx, lua_State *L);
-    void forceEnabledLuaMod(GameLuaContext &ctx, lua_State *L, const std::string_view &modname,
-                            bool required = false);
+    void forceEnabledLuaMod(GameLuaContext &ctx, lua_State *L, const std::string_view &modname);
 };
 extern GameLuaInjectorFramework gameLuaInjectorFramework;
 
@@ -160,13 +159,10 @@ struct GameLuaContextImpl : GameLuaContext {
         if (!InjectorConfig::instance()->DisableForceLoadLuaJITMod) {
             (void) ds::config::ensure_resolved();
             if (auto *rc = ds::config::current()) {
-                do {
-                    auto modname = rc->modname();
-                    if (modname.empty()) {
-                        break;
-                    }
-                    gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, std::string{modname}, true);
-                } while (0);
+                auto modname = rc->modname();
+                if (!modname.empty()) {
+                    gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, std::string{modname});
+                }
             }
         }
 

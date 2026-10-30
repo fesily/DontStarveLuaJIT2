@@ -82,7 +82,7 @@ local platform_info = {
     os = jit and jit.os or "Unknown",
     arch = jit and jit.arch or "Unknown",
 }
-function _M.forceEnableLuaMod(en, modname, required)
+function _M.forceEnableLuaMod(en, modname)
     EnableForceLoadMod = en
     ModName = modname
     local pattern = "modindex"
@@ -95,28 +95,21 @@ function _M.forceEnableLuaMod(en, modname, required)
                 local modinfo = self.savedata.known_mods[modname]
                 if not modinfo then
                     print("[luajit] Mod not found: " .. modname)
-                elseif not required or (not self.badload and type(modinfo.modinfo) == "table"
-                    and not modinfo.disabled_bad and not modinfo.disabled_incompatible_with_mode and not modinfo.modinfo.failed) then
+                elseif not self.badload and type(modinfo.modinfo) == "table"
+                    and not modinfo.disabled_bad and not modinfo.disabled_incompatible_with_mode and not modinfo.modinfo.failed then
                     modinfo.enabled = true
                     print("[luajit] Force enable mod: " .. modname)
                 end
             end
-            if required then
-                -- modmain 尚未执行，必须在这里保证配套 Lua 能进入首轮加载名单。
-                local old_GetModsToLoad = KnownModIndex.GetModsToLoad
-                function KnownModIndex:GetModsToLoad(...)
-                    local row = self.savedata.known_mods[modname]
-                    if not self.badload and row and type(row.modinfo) == "table"
-                        and not row.disabled_bad and not row.disabled_incompatible_with_mode and not row.modinfo.failed then
-                        row.enabled = true
-                        row.temp_disabled = false
-                    end
-                    return old_GetModsToLoad(self, ...)
+            local old_GetModsToLoad = KnownModIndex.GetModsToLoad
+            function KnownModIndex:GetModsToLoad(...)
+                local modinfo = self.savedata.known_mods[modname]
+                if not self.badload and modinfo and type(modinfo.modinfo) == "table" and not modinfo.disabled_bad and not modinfo.disabled_incompatible_with_mode and not modinfo.modinfo.failed then
+                    modinfo.enabled = true
+                    modinfo.temp_disabled = false
                 end
+                return old_GetModsToLoad(self, ...)
             end
-        end)
-        _M.inject_module_text("modindex", function()
-            if not KnownModIndex then return end
             local old_env = getfenv(KnownModIndex.InitializeModInfo)
             local old_RunInEnvironment = old_env.RunInEnvironment or _G.RunInEnvironment
             local new_env = setmetatable({
@@ -130,10 +123,6 @@ function _M.forceEnableLuaMod(en, modname, required)
     else
         _M.injectors[pattern] = nil
     end
-end
-
-function _M.requireLuaJITMod(modname)
-    _M.forceEnableLuaMod(true, modname, true)
 end
 
 --[[

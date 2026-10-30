@@ -61,7 +61,7 @@ end
 
 local PARENT_FIXTURE = [[
 configuration_options = {
-    { name = "TestHostFlag", label = "A", options = { { description = "On", data = true } }, default = true },
+    { name = "AlwaysEnableMod", label = "A", options = { { description = "On", data = true } }, default = true },
     -- BEGIN GENERATED PLUGIN OPTIONS
     -- END GENERATED PLUGIN OPTIONS
 }
@@ -228,7 +228,7 @@ local function test_collision_handwritten()
     write_file(plugins .. "/plugin_aaa/modinfo.lua", package_modinfo({
         plugin_id = "aaa",
         rows = [[
-    { name = "TestHostFlag", label = "X", options = toggle, default = true, host_gate = true },
+    { name = "AlwaysEnableMod", label = "X", options = toggle, default = true, host_gate = true },
 ]],
     }))
     local ok, err = pcall(function()
@@ -240,7 +240,7 @@ local function test_collision_handwritten()
     end)
     assert_true(not ok, "expected write to fail on hand-written collision")
     local msg = tostring(err)
-    assert_true(msg:find("TestHostFlag", 1, true), msg)
+    assert_true(msg:find("AlwaysEnableMod", 1, true), msg)
     print("PASS: collision_handwritten")
 end
 
@@ -258,7 +258,7 @@ local function test_splice_idempotent()
     assert_true(once:find("-- BEGIN GENERATED PLUGIN OPTIONS", 1, true), once)
     assert_true(once:find("-- END GENERATED PLUGIN OPTIONS", 1, true), once)
     assert_true(once:find("EnableForkSave", 1, true), once)
-    assert_true(once:find("TestHostFlag", 1, true), once)
+    assert_true(once:find("AlwaysEnableMod", 1, true), once)
     print("PASS: splice_idempotent")
 end
 

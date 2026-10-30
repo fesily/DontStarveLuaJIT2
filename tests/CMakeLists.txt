@@ -136,15 +136,6 @@ target_include_directories(test_config_schema PRIVATE
 target_compile_features(test_config_schema PRIVATE cxx_std_23)
 add_test(NAME config_schema COMMAND test_config_schema)
 
-add_executable(test_luajit_config_file
-    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_luajit_config_file.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/sources/LuajitConfigFile.cpp)
-target_include_directories(test_luajit_config_file PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
-target_compile_features(test_luajit_config_file PRIVATE cxx_std_23)
-target_link_libraries(test_luajit_config_file PRIVATE nlohmann_json::nlohmann_json)
-add_test(NAME luajit_config_file COMMAND test_luajit_config_file)
-
 add_executable(test_sun_model
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_sun_model.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_render_shadow/SunModel.cpp)
@@ -500,15 +491,6 @@ add_test(
         ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_lua_host.py
 )
 set_tests_properties(plugin_host_lua PROPERTIES
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-
-add_test(
-    NAME required_mod_lua
-    COMMAND ${CMAKE_COMMAND} -E env
-        REPO_ROOT=${CMAKE_SOURCE_DIR}
-        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_required_mod.py
-)
-set_tests_properties(required_mod_lua PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 add_test(

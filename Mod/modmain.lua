@@ -784,7 +784,7 @@ local function main()
 		HookGameVersionUI()
 		luajit_config:WriteConfig(self.modmain_path)
 
-		modimport("inject_server_only_mod")
+		modimport("force_enable_mod")
 	end
 
 	if GameInjector then
@@ -792,7 +792,6 @@ local function main()
 	else
 		_M:NoInjectorMain()
 	end
-	modimport("force_enable_mod")
 end
 
 local env = _G.getfenv(main)
