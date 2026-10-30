@@ -127,14 +127,6 @@ bool TryCoerceSavedString(std::string_view raw, const OptionSchemaEntry &schema,
 void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
     constexpr auto kLuajitOnly =
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::LuajitConfig);
-    {
-        OptionSchemaEntry e;
-        e.key = std::string{ds::config::keys::kAlwaysEnableMod};
-        e.type = ConfigValueType::Bool;
-        e.default_value = ConfigValue::boolean(ModConfigurationOptions::AlwaysEnableMod.default_value);
-        e.allowed_sources = ds::config::kConfigSourceAll;
-        (void) r.add(std::move(e));
-    }
     // D7 identity keys — path/name identity owned by L0, tight sources.
     // VM keys (LuaVmType / EnabledGenGC / DisableJITWhenServer) are owned by
     // plugin_core_vm via RegisterCoreVmOptionSchema (OB-S2).

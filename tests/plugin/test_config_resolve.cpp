@@ -229,7 +229,6 @@ void test_resolved_config_accessors() {
     }
 
     ConfigView values;
-    values["AlwaysEnableMod"] = ConfigValue::boolean(true);
     values["DisableJITWhenServer"] = ConfigValue::boolean(true);
     values["LuaVmType"] = ConfigValue::string("jit");
     values["EnabledGenGC"] = ConfigValue::boolean(true);
@@ -240,11 +239,10 @@ void test_resolved_config_accessors() {
 
     CascadeContext ctx;
     ctx.modname = "ctx-fallback";
-    // AlwaysEnableMod etc. All sources; identity only Luajit.
+    // VM options allow all sources; identity only Luajit.
     const std::vector<const IConfigSource *> sources = {&lj, &env};
     auto resolved = resolve(reg, ctx, sources);
 
-    assert(resolved.always_enable_mod());
     assert(ds::core_vm::disable_jit_when_server(resolved));
     assert(ds::core_vm::enabled_gen_gc(resolved));
     assert(ds::core_vm::lua_vm_type_string(resolved) == "jit");
@@ -264,7 +262,7 @@ void test_resolve_without_vm_schema_omits_vm_keys() {
     RegisterCoreOptionSchema(reg);
 
     ConfigView defaults;
-    defaults["AlwaysEnableMod"] = ConfigValue::boolean(true);
+    defaults["AlwaysEnableMod"] = ConfigValue::boolean(false); // stale user configuration
     FakeSource modinfo(ConfigSource::ModinfoDefault, defaults);
 
     CascadeContext ctx;
@@ -274,7 +272,7 @@ void test_resolve_without_vm_schema_omits_vm_keys() {
     assert(resolved.view.count("LuaVmType") == 0);
     assert(resolved.view.count("EnabledGenGC") == 0);
     assert(resolved.view.count("DisableJITWhenServer") == 0);
-    assert(resolved.view.count("AlwaysEnableMod") == 1);
+    assert(resolved.view.count("AlwaysEnableMod") == 0);
 
     printf("PASS: resolve_without_vm_schema_omits_vm_keys\n");
 }

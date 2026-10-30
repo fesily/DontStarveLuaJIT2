@@ -15,7 +15,6 @@ end
 if mods["workshop-3444078585"] then
     mods["workshop-3444078585"].configuration_options = {
         DisableJITWhenServer = false,
-        AlwaysEnableMod = false,
         EnableProfiler = "off",
         EnableTracy = "off",
     }

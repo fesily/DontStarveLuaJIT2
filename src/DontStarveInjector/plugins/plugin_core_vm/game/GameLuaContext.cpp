@@ -192,9 +192,13 @@ void GameLuaInjectorFramework::init(GameLuaContext &ctx, lua_State *L) {
         }
 }
 
-void GameLuaInjectorFramework::forceEnabledLuaMod(GameLuaContext &ctx, lua_State *L, const std::string_view &modname) {
+void GameLuaInjectorFramework::forceEnabledLuaMod(GameLuaContext &ctx, lua_State *L,
+                                                 const std::string_view &modname, bool required) {
         LuaStackGuard guard(ctx, L);
-        int ret = ctx->_luaL_dostring(L, fmt::format(GameLuaInjectorName ".forceEnableLuaMod(true, [[{}]])", modname).c_str());
+        const auto command = required
+            ? fmt::format(GameLuaInjectorName ".requireLuaJITMod([[{}]])", modname)
+            : fmt::format(GameLuaInjectorName ".forceEnableLuaMod(true, [[{}]])", modname);
+        int ret = ctx->_luaL_dostring(L, command.c_str());
         if (ret != LUA_OK) {
             spdlog::error("{}", ctx->_lua_tostring(L, -1));
         }

@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- 删除 `AlwaysEnableMod` 选项及配置读写；原生端仅负责配套 Lua 的启动引导并保留游戏错误恢复。新增 `Mod/force_enable_mod.lua`，检测到 `GameLuaInjector` 后禁止普通关闭，客户端和创建世界页面的 LuaJIT 复选框保持勾选并灰显，仍允许游戏因崩溃或不兼容禁用模组。
+
 - `Mod/install.bat` 新增**清理 `.pkg` 镜像 `.dll`** 的步骤：安装壳之后、清 `data\unsafedata` 之前，递归删除包根下每个「存在 `.pkg` 孪生」的规范名 `.dll`（`Injector.dll`、`deps/*.dll`、`plugins/<stem>/*.dll`），`bin64\` 整棵跳过（壳以普通 `.dll` 发布，且正是本脚本上面的复制源）。规范名只是加载器在 `LoadLibrary` 前按 PE 构建戳从孪生生成的派生物，旧包残留、中断的拷贝、手工放进来的副本都可能比孪生旧；`.pkg` 才是耐久副本。**没有孪生的 `.dll` 一律不动** —— 源树/构建树布局里它就是真身，误删会直接毁掉整包。两条路径（复制壳 / 壳已是最新）都会走到这一步；删除失败只 `[WARN]` 不中断（被别的进程映射时加载器沿用已映射副本，下次启动自愈）。sandbox 实测：3 个孪生镜像被删、`deps/no_twin.dll` 与 `bin64\windows\*.dll(+.pkg)` 保留、`Winmm.dll` 落位、`data\unsafedata` 清空；「壳已是最新」分支同样清掉 2 个镜像。同时修正 `install.ps1` 头注释里与实际不符的「marker + stale-copy cleanup」描述。
 
 - 修复**替换 `<名>.pkg` 后对应的 DLL 不更新**（两个独立根因）。一、`ds::packaged::exists_or_materialize` 在规范名文件已存在时直接返回 true、**从不比较孪生**，而壳解析 `Injector.dll`、`DynamicPluginLoader` 的包内候选、`CoreVmBootstrap` 的 `plugin_core_vm` 全走这个入口——只有 `deps/` 的 `materialize_directory` 会按构建戳刷新，于是手工/Steam 换掉的 `.pkg` 必须先删掉同名 `.dll` 才生效。现在入口一律调用 `materialize`（无孪生即无操作，有孪生只做一次 size + PE 戳比较；被别的进程映射时仍是保留旧文件并打日志）。二、`image_stamp` 读 `TimeDateStamp` 时漏了定位：读完 `PE\0\0` 紧接着读 4 字节，实际拿到的是 COFF 文件头的 `Machine|NumberOfSections<<16`（同一布局恒定），**同尺寸重建被判成同一构建**，`.pkg` 换了也不刷新；现改为按 `lfanew + 8` 读取真正的构建时间戳（`SizeOfImage` 偏移不变）。回归测试均为「旧实现必失败」：`packaged_module` 新增 `exists_or_materialize_refreshes_stale_canonical` 与 `pe_time_stamp_detects_same_size_rebuild`（用测试自身的真实 PE、只改时间戳、尺寸不变），`plugin_dynamic_loader` / `injector_bootstrap` 各新增「陈旧规范名 + 已替换孪生」用例。
