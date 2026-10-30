@@ -92,20 +92,16 @@ local modinfo_luajit_server = {
 	force_enabled_server_mod = true, -- 强制开启服务端模组
 }
 
-AddGamePostInit(function()
+-- 必须立刻处理而不是等到游戏初始化后处理，否则太迟了，会引起网络变量不同步问题
+if rawget(_G, "BBGOAT_utils") then -- 兼容【冰冰羊的模组运行库】
+    local MOD_util = _G.BBGOAT_utils.MOD_util
+    MOD_util:AddConversionMod(modname, modinfo_luajit_server)
+else
     local function Import(file_name)
         local f = _G.kleiloadlua(file_name)
-        if f and type(f) == "function" then
-            _G.setfenv(f, env)
-            return f()
-        end
+        _G.setfenv(f, env)
+        return f()
     end
-
-    if rawget(_G, "BBGOAT_utils") then
-        local MOD_util = _G.BBGOAT_utils.MOD_util
-        MOD_util:AddConversionMod(modname, modinfo_luajit_server)
-    else
-        local AddConversionMod = Import(MODROOT .. "inject_server_only_mod.lua")
-        AddConversionMod(modname, modinfo_luajit_server)
-    end
-end)
+    local AddConversionMod = Import(MODROOT .. "inject_server_only_mod.lua")
+    AddConversionMod(modname, modinfo_luajit_server)
+end

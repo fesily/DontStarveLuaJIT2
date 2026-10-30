@@ -185,7 +185,7 @@ local function ChangeModname()
                             -- print(string.format("看起来 存档%s 世界%s 不是一个有效的shardIndex...？", slot, shardName))
                         end
                     elseif shardIndex.enabled_mods and moddata.modinfo.force_enabled_server_mod and not shardIndex.enabled_mods[moddata.modinfo.folder_name] then
-                        print(string.format("看起来 存档%s(%s) 世界%s 没有开启 %s ，强制开启 %s 以供下次使用", slot, shardIndex.server and shardIndex.server.name or "未知存档名称", shardName, moddata.modinfo.name, moddata.modinfo.folder_name))
+                        -- print(string.format("看起来 存档%s(%s) 世界%s 没有开启 %s ，强制开启 %s 以供下次使用", slot, shardIndex.server and shardIndex.server.name or "未知存档名称", shardName, moddata.modinfo.name, moddata.modinfo.folder_name))
                         if shardIndex:IsValid() then
                             shardIndex.enabled_mods[moddata.modinfo.folder_name] = {
                                 configuration_options = {},
