@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - master
-      - fix/luajit-force-enable-mod
     tags:
       - "*"
   pull_request:
