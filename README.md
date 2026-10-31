@@ -112,10 +112,10 @@ curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/ins
 
 从 GitHub Releases 下载对应平台的包（`windows_Mod.zip` / `linux_Mod.zip`），或者直接在创意工坊订阅本模组。想调试崩溃/性能问题时，同一个 Release 里还有一个独立符号包 `windows_symbols.zip`（PDB，**不**在分发包也不在工坊内容里）：解压后把该目录加进调试器的符号路径，Injector / 插件 / lua51 的栈就能解析出函数名与行号；Linux 的 `Mod/*.so` 是 RelWithDebInfo 且未 strip，DWARF 就在包里，无需额外符号。然后：
 
-1. 先在游戏根目录下的mods文件夹中创建一个新的文件夹，比如`Luajit`
-2. 解压后里面是一个 `Mod` 文件夹：把 **`Mod` 文件夹里面的内容**（`modinfo.lua`、`modmain.lua`、`plugins/`、`deps/`、`bin64/`、`install.bat` 等）复制到该目录，确认 `…/mods/Luajit/modmain.lua` 直接存在（**不要**复制成 `mods/Luajit/Mod/modmain.lua`）
+1. 先在游戏根目录下的mods文件夹中创建一个新的文件夹，比如`DontStarveLuaJit2`（**大小写敏感**；也可直接用下面别名列表里的其它拼写，如 `luajit`、`Luajit2`）
+2. 解压后里面是一个 `Mod` 文件夹：把 **`Mod` 文件夹里面的内容**（`modinfo.lua`、`modmain.lua`、`plugins/`、`deps/`、`bin64/`、`install.bat` 等）复制到该目录，确认 `…/mods/DontStarveLuaJit2/modmain.lua` 直接存在（**不要**复制成 `mods/DontStarveLuaJit2/Mod/modmain.lua`）
 
-> 目录名说明：真实 Injector 的查找顺序是 `环境变量 → data/unsafedata/ds_luajit_injector.path → 扫描 mods 目录`，扫描只认这些目录名：`workshop-3444078585`、`3444078585`、`luajit`、`luajit2`、`DontStarveLuaJit2`、`DontStarveLuaJIT2`（Windows 大小写不敏感，Linux/macOS 敏感）。用其它名字时扫描不会命中，也没人替你写 marker：必须自己设环境变量 `DS_LUAJIT_INJECTOR`（指向 mod 根的 `Injector.dll`）或 `DS_LUAJIT_INJECTOR_DIR`，否则不会注入（壳解析成功后会顺手把 marker 补写到 `data/unsafedata/ds_luajit_injector.path`，之后就不用再设了）。
+> 目录名说明：真实 Injector 的查找顺序是 `环境变量 → data/unsafedata/ds_luajit_injector.path → 扫描 mods 目录`，扫描只认这些目录名：`workshop-3444078585`、`3444078585`、`luajit`、`Luajit`、`luajit2`、`Luajit2`、`DontStarveLuaJit2`、`dontstarveluajit2`、`DontStarveLuaJIT2`（Windows 大小写不敏感，Linux/macOS 敏感；几种大小写混排的拼写只是为兼容旧文档/旧安装才并列列出，别指望大小写不敏感兜底）。用其它名字时扫描不会命中，也没人替你写 marker：必须自己设环境变量 `DS_LUAJIT_INJECTOR`（指向 mod 根的 `Injector.dll`）或 `DS_LUAJIT_INJECTOR_DIR`，否则不会注入（壳解析成功后会顺手把 marker 补写到 `data/unsafedata/ds_luajit_injector.path`，之后就不用再设了）。
 
 ## 2.注入部分：
 
@@ -135,7 +135,7 @@ curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/ins
 - **只**将 `Winmm.dll` 复制到游戏目录的 `bin64`（DLL 劫持壳）
   - 例如：`D:\Steam\steamapps\common\Don't Starve Together\bin64\Winmm.dll`
 - 将真实 **`Injector.dll`** 放到 **mod 根目录**（与 `modmain.lua` 同级）
-  - 例如：`…/mods/Luajit/Injector.dll` 或 workshop 内容目录下的 `Injector.dll`
+  - 例如：`…/mods/DontStarveLuaJit2/Injector.dll` 或 workshop 内容目录下的 `Injector.dll`
 - （可选；目录名不在上面的别名列表时**必需**）在游戏 `data/unsafedata/ds_luajit_injector.path` 写入一行真实 Injector 的绝对路径，便于冷启动固定解析
 - **不要**再把整包 `bin64/windows` 全量拷进游戏 `bin64`
 - 专用服务器同理（同样只装 `Winmm.dll` 到游戏 `bin64`）
@@ -146,7 +146,7 @@ curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/ins
 
 - 将 **stub**（薄壳）复制到游戏 `bin64/lib64/libInjector.so`（`LD_PRELOAD` 仍指向游戏 stub）
 - 将 **真实** `libInjector.so` 放到 **mod 根目录**（与 `modmain.lua` 同级）
-- （可选；目录名不在上面的别名列表时**必需**）在游戏 `data/unsafedata/ds_luajit_injector.path` 写入一行真实 `libInjector.so` 的绝对路径；注意 Linux 路径大小写敏感，目录名 `Luajit` 不能命中别名 `luajit`
+- （可选；目录名不在上面的别名列表时**必需**）在游戏 `data/unsafedata/ds_luajit_injector.path` 写入一行真实 `libInjector.so` 的绝对路径；注意 Linux 路径大小写敏感，目录名必须与上面的别名逐字符一致（如 `Luajit` 与 `luajit` 是两个名字，前者仅为兼容旧文档才在别名里）
 - 将原始游戏可执行文件 `dontstarve_steam_x64` 重命名为 `dontstarve_steam_x64_1`
 - 创建内容为 `dontstarve_steam_x64` 的新文件：
 

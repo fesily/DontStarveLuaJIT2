@@ -94,10 +94,10 @@ as `$env:DSJ_CHANNEL`):
 
 Download the package for your platform from GitHub Releases (`windows_Mod.zip` / `linux_Mod.zip`), or subscribe to the mod on the Steam Workshop. For debugging crashes or perf, the same release also carries a separate symbols package `windows_symbols.zip` (PDBs, deliberately **not** inside the mod zip nor the workshop item): unzip it and point your debugger's symbol path at the folder to get function names and line numbers for Injector / plugin / lua51 frames; Linux `Mod/*.so` files are RelWithDebInfo and unstripped, so their DWARF is already in the package. Then:
 
-1. Create a new folder in the mods folder in the root directory of the game, e.g. `Luajit`.
-2. The archive contains a `Mod` folder: copy **the contents of that `Mod` folder** (`modinfo.lua`, `modmain.lua`, `plugins/`, `deps/`, `bin64/`, `install.bat`, …) into your new folder, so that `…/mods/Luajit/modmain.lua` exists directly (**not** `mods/Luajit/Mod/modmain.lua`).
+1. Create a new folder in the mods folder in the root directory of the game, e.g. `DontStarveLuaJit2` (the name is **case-sensitive**; any spelling from the alias list below works, e.g. `luajit`, `Luajit2`).
+2. The archive contains a `Mod` folder: copy **the contents of that `Mod` folder** (`modinfo.lua`, `modmain.lua`, `plugins/`, `deps/`, `bin64/`, `install.bat`, …) into your new folder, so that `…/mods/DontStarveLuaJit2/modmain.lua` exists directly (**not** `mods/DontStarveLuaJit2/Mod/modmain.lua`).
 
-> Folder name: the real Injector is resolved as `env vars → data/unsafedata/ds_luajit_injector.path → scan of the mods dir`, and the scan only recognizes these names: `workshop-3444078585`, `3444078585`, `luajit`, `luajit2`, `DontStarveLuaJit2`, `DontStarveLuaJIT2` (case-insensitive on Windows, case-sensitive on Linux/macOS). With any other name the scan misses it and nothing writes the marker for you: set `DS_LUAJIT_INJECTOR` (the mod-root `Injector.dll`) or `DS_LUAJIT_INJECTOR_DIR` yourself, otherwise nothing gets injected. (Once the shell resolves the mod it rewrites `data/unsafedata/ds_luajit_injector.path` itself, so the env var is a one-time help.)
+> Folder name: the real Injector is resolved as `env vars → data/unsafedata/ds_luajit_injector.path → scan of the mods dir`, and the scan only recognizes these names: `workshop-3444078585`, `3444078585`, `luajit`, `Luajit`, `luajit2`, `Luajit2`, `DontStarveLuaJit2`, `dontstarveluajit2`, `DontStarveLuaJIT2` (case-insensitive on Windows, case-sensitive on Linux/macOS; the mixed-case spellings are listed side by side only for compatibility with older docs/installs — do not count on a case-insensitive filesystem to rescue you). With any other name the scan misses it and nothing writes the marker for you: set `DS_LUAJIT_INJECTOR` (the mod-root `Injector.dll`) or `DS_LUAJIT_INJECTOR_DIR` yourself, otherwise nothing gets injected. (Once the shell resolves the mod it rewrites `data/unsafedata/ds_luajit_injector.path` itself, so the env var is a one-time help.)
 
 ### Automated install
 
@@ -135,7 +135,7 @@ I've only tested it on Ubuntu, but I can also test it on SteamOS if someone can 
 
 - Copy the **stub** to game `bin64/lib64/libInjector.so` (`LD_PRELOAD` still points at this game-side stub).
 - Copy the **real** module to the **mod root** (`libInjector.so`).
-- Optional (required when the folder name is not one of the aliases above): write the absolute path of the real `libInjector.so` as one line to `data/unsafedata/ds_luajit_injector.path`. Linux paths are case-sensitive — a folder named `Luajit` does not match the `luajit` alias.
+- Optional (required when the folder name is not one of the aliases above): write the absolute path of the real `libInjector.so` as one line to `data/unsafedata/ds_luajit_injector.path`. Linux paths are case-sensitive — the folder name must match an alias character for character (`Luajit` and `luajit` are two different names; the former is in the list only for compatibility with older docs).
 - Rename original game executable `dontstarve_steam_x64` to `dontstarve_steam_x64_1`.
 - Create new file `dontstarve_steam_x64` with the content:
 

@@ -36,7 +36,7 @@ int fullgc_deferred_inc() {
 }
 
 } // namespace ds::profiler
-DS_PROFILER_C_API void lj_gc_fullgc_external(void *L, void (*oldfn)(void *L)) {
+DS_PROFILER_C_API void ds_profiler_lj_gc_fullgc_cb(void *L, void (*oldfn)(void *L)) {
     if (!ds::profiler::fullgc_deferred_enabled()) {
         ZoneScopedN("lua_full_gc");
         if (oldfn) {
