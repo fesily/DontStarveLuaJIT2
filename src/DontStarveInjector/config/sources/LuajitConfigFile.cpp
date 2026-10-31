@@ -7,16 +7,13 @@
 #include "util/Unsafedata.hpp"
 namespace nlohmann {
     void to_json(json& j, const luajit_config& s) {
-        using ds::config::keys::kAlwaysEnableMod;
         using ds::config::keys::kDisableJITWhenServer;
         using ds::config::keys::kModmainPath;
         j = json{{std::string{kModmainPath}, s.modmain_path},
-                  {std::string{kDisableJITWhenServer}, s.server_disable_luajit},
-                  {std::string{kAlwaysEnableMod}, s.always_enable_mod}};
+                  {std::string{kDisableJITWhenServer}, s.server_disable_luajit}};
     }
 
     void from_json(const json& j, luajit_config& s) {
-        using ds::config::keys::kAlwaysEnableMod;
         using ds::config::keys::kDisableJITWhenServer;
         using ds::config::keys::kModmainPath;
         j.at(std::string{kModmainPath}).get_to(s.modmain_path);
@@ -25,12 +22,6 @@ namespace nlohmann {
             j.at(std::string{kDisableJITWhenServer}).get_to(s.server_disable_luajit);
         } else if (j.contains("server_disable_luajit")) {
             j.at("server_disable_luajit").get_to(s.server_disable_luajit);
-        }
-
-        if (j.contains(std::string{kAlwaysEnableMod})) {
-            j.at(std::string{kAlwaysEnableMod}).get_to(s.always_enable_mod);
-        } else if (j.contains("always_enable_mod")) {
-            j.at("always_enable_mod").get_to(s.always_enable_mod);
         }
     }
 }

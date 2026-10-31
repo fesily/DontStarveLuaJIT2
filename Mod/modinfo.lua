@@ -93,16 +93,6 @@ local disable_by_non_x64 = platform_info and not (platform_info.os == "Windows" 
 configuration_options = {
     AddSection(translate({ en = "General Options", zh = "通用选项" })),
     {
-        name = "AlwaysEnableMod",
-        label = translate({ en = "Always Enable Mod", zh = "总是启用mod" }),
-        hover = translate({
-            zh = "强制启用当前mod,即使它在mod设置中没有启用",
-            en = "Force enable the current mod, even if it is not enabled in the mod settings"
-        }),
-        options = toggle,
-        default = true,
-    },
-    {
         name = "AllowLocalNewerWorkshopVersion",
         label = translate({ en = "Allow Local Newer Than Workshop", zh = "允许本地版本新于工坊" }),
         hover = translate({
