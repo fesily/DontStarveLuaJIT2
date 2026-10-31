@@ -1,10 +1,9 @@
 local modinfo = env.modinfo
 local modname = env.modname
 local KnownModIndex = _G.KnownModIndex
-local ModManager = _G.ModManager
-local scheduler = _G.scheduler
 local rawget = _G.rawget
 local type = _G.type
+local LOC = _G.LOC
 
 local server_folder_name = string.find(modname, "workshop%-") and "DontStarveLuaJIT2-Server" or "DontStarveLuaJIT2-GitHub-Server"
 
@@ -21,9 +20,9 @@ local function is_locked(name)
     local mods = KnownModIndex.savedata.known_mods
     local owner, row = mods[modname], mods[name]
     return owner ~= nil and type(owner.modinfo) == "table"
-        and not owner.disabled_bad and not owner.disabled_incompatible_with_mode and not owner.modinfo.failed
+        and not owner.disabled_bad and not owner.disabled_incompatible_with_mode and not owner.modinfo.failed and owner.enabled
         and row ~= nil and type(row.modinfo) == "table"
-        and not row.disabled_bad and not row.disabled_incompatible_with_mode and not row.modinfo.failed
+        and not row.disabled_bad and not row.disabled_incompatible_with_mode and not row.modinfo.failed and row.enabled
 end
 
 local old_Disable = KnownModIndex.Disable
@@ -89,6 +88,7 @@ local modinfo_luajit_server = {
     iconpath = MODROOT .. "modicon.tex",
     icon = "modicon.tex",
 
+    default_enabled = true,
 	force_enabled_server_mod = true, -- 强制开启服务端模组
 }
 
