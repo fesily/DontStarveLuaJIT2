@@ -158,14 +158,11 @@ struct GameLuaContextImpl : GameLuaContext {
 
         if (!InjectorConfig::instance()->DisableForceLoadLuaJITMod) {
             (void) ds::config::ensure_resolved();
-            if (auto *rc = ds::config::current(); rc && rc->always_enable_mod()) {
-                do {
-                    auto modname = rc->modname();
-                    if (modname.empty()) {
-                        break;
-                    }
+            if (auto *rc = ds::config::current()) {
+                auto modname = rc->modname();
+                if (!modname.empty()) {
                     gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, std::string{modname});
-                } while (0);
+                }
             }
         }
 

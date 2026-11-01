@@ -27,9 +27,9 @@ bool TryCoerceSavedBool(bool raw, const OptionSchemaEntry &schema, ConfigValue &
 bool TryCoerceSavedNumber(double raw, const OptionSchemaEntry &schema, ConfigValue &out);
 bool TryCoerceSavedString(std::string_view raw, const OptionSchemaEntry &schema, ConfigValue &out);
 
-// Register L0 base option schema: AlwaysEnableMod + identity string keys
+// Register L0 base option schema: identity string keys
 // (modmain_path, modname, modid, save_file) with normative allowed_sources.
-// L0 identity + AlwaysEnableMod only. Idempotent on conflict-free re-add.
+// L0 identity only. Idempotent on conflict-free re-add.
 void RegisterCoreOptionSchema(ConfigSchemaRegistry &r);
 
 // Test/helper seed of VM domain keys (LuaVmType, EnabledGenGC, DisableJITWhenServer).

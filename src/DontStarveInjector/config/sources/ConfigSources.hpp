@@ -15,7 +15,7 @@ private:
     const ds::plugin::ConfigSchemaRegistry &schema_;
 };
 
-// Wraps luajit_config::read_from_file → AlwaysEnableMod / DisableJITWhenServer.
+// Wraps luajit_config::read_from_file → DisableJITWhenServer.
 // Also seeds CascadeContext identity (modmain_path / modname / modid) when present.
 class LuajitConfigSource final : public IConfigSource {
 public:

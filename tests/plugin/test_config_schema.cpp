@@ -11,7 +11,6 @@
 
 
 using namespace ds::plugin;
-using ds::config::keys::kAlwaysEnableMod;
 using ds::config::keys::kDisableJITWhenServer;
 using ds::config::keys::kEnabledGenGC;
 using ds::config::keys::kLuaVmType;
@@ -85,11 +84,11 @@ static void test_find_missing() {
 static void test_register_core_option_schema() {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
-    // L0 base seed (OB-S2): AlwaysEnableMod + 4 identity keys only.
+    // L0 base seed: 4 identity keys only; retired options must not re-enter the cascade.
     // VM keys (LuaVmType, EnabledGenGC, DisableJITWhenServer) are owned by
     // plugin_core_vm via RegisterCoreVmOptionSchema.
-    assert(reg.size() == 5);
-    assert(reg.find(std::string{kAlwaysEnableMod}) != nullptr);
+    assert(reg.size() == 4);
+    assert(reg.find("AlwaysEnableMod") == nullptr);
     assert(reg.find(std::string{kModmainPath}) != nullptr);
     assert(reg.find(std::string{kModname}) != nullptr);
     assert(reg.find(std::string{kModid}) != nullptr);
@@ -105,8 +104,6 @@ static void test_register_core_option_schema() {
     constexpr auto kSaveOnly =
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::SaveFile);
 
-    assert(ds::config::effective_sources(reg.find(std::string{kAlwaysEnableMod})->allowed_sources) ==
-           ds::config::kConfigSourceAll);
     assert(ds::config::effective_sources(reg.find(std::string{kModmainPath})->allowed_sources) ==
            kLuajitOnly);
     assert(ds::config::effective_sources(reg.find(std::string{kModname})->allowed_sources) ==
@@ -123,7 +120,6 @@ static void test_register_core_option_schema() {
     assert(reg.find(std::string{kSaveFile})->type == ConfigValueType::String);
 
     // Constants match wire names (OptionKeys SSOT).
-    assert(kAlwaysEnableMod == "AlwaysEnableMod");
     assert(kDisableJITWhenServer == "DisableJITWhenServer");
     assert(kLuaVmType == "LuaVmType");
     assert(kEnabledGenGC == "EnabledGenGC");
@@ -134,7 +130,7 @@ static void test_register_core_option_schema() {
 
     // Idempotent re-register.
     RegisterCoreOptionSchema(reg);
-    assert(reg.size() == 5);
+    assert(reg.size() == 4);
     printf("PASS: register_core_option_schema\n");
 }
 
@@ -174,14 +170,14 @@ static void test_register_core_vm_option_schema() {
     assert(ds::config::effective_sources(reg.find(std::string{kEnabledGenGC})->allowed_sources) ==
            kDefaultSaveEnv);
 
-    // Combined L0 + VM matches former 8-key surface.
+    // Combined L0 + VM excludes the retired AlwaysEnableMod key.
     RegisterCoreOptionSchema(reg);
-    assert(reg.size() == 8);
-    assert(reg.find(std::string{kAlwaysEnableMod}) != nullptr);
+    assert(reg.size() == 7);
+    assert(reg.find("AlwaysEnableMod") == nullptr);
 
     // Idempotent re-register of VM keys.
     RegisterCoreVmOptionSchema(reg);
-    assert(reg.size() == 8);
+    assert(reg.size() == 7);
     printf("PASS: register_core_vm_option_schema\n");
 }
 

@@ -63,8 +63,6 @@ ConfigPartial LuajitConfigSource::read(CascadeContext &ctx) const {
             ds::plugin::ConfigValue::string(ctx.modid);
     }
 
-    partial.values[std::string{keys::kAlwaysEnableMod}] =
-        ds::plugin::ConfigValue::boolean(config->always_enable_mod);
     partial.values[std::string{keys::kDisableJITWhenServer}] =
         ds::plugin::ConfigValue::boolean(config->server_disable_luajit);
     return partial;

@@ -67,10 +67,12 @@ def runtime_config(game: Path, injector: Path):
     path = game / "data" / "unsafedata" / "luajit_config.json"
     previous = path.read_bytes() if path.is_file() else None
     config = json.loads(previous) if previous else {}
+    config.pop("AlwaysEnableMod", None)
+    config.pop("always_enable_mod", None)
     config.update({
         "modmain_path": str(injector.parent / "modmain.lua"),
-        "AlwaysEnableMod": False, "DisableJITWhenServer": False,
-        "always_enable_mod": False, "server_disable_luajit": False,
+        "DisableJITWhenServer": False,
+        "server_disable_luajit": False,
     })
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -244,7 +246,7 @@ def measure(game: Path, config: dict, label: str, module: Path | None, injector:
     persist = Path(tempfile.mkdtemp(prefix="ds_perf_"))
     server = client = None
     started = time.perf_counter()
-    env = {"lua_vm_type": vm_type, "force_enable_mods": MOD, "DS_PERF_SEED": str(seed),
+    env = {"DisableForceLoadLuaJITMod": "1", "lua_vm_type": vm_type, "force_enable_mods": MOD, "DS_PERF_SEED": str(seed),
            "DS_PERF_JIT": config["worldgen_jit"], "DS_LUAJIT_INJECTOR": str(injector),
            "DS_LUAJIT_PLUGIN_DIR": str(injector.parent / "plugins")}
     if config.get("sample_lua"):

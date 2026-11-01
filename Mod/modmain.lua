@@ -375,12 +375,11 @@ local function main()
 	end
 
 	local luajit_config = setmetatable({ filepath = "unsafedata/luajit_config.json" }, { __index = ModManagerFile })
-	function luajit_config:create(modmain_path, DisableJITWhenServer, AlwaysEnableMod, config)
+	function luajit_config:create(modmain_path, DisableJITWhenServer, config)
 		if config == nil then
 			return {
 				modmain_path = modmain_path,
 				DisableJITWhenServer = DisableJITWhenServer,
-				AlwaysEnableMod = AlwaysEnableMod,
 			}
 		else
 			if modmain_path ~= nil then
@@ -389,9 +388,6 @@ local function main()
 			if DisableJITWhenServer ~= nil then
 				config.DisableJITWhenServer = DisableJITWhenServer
 			end
-			if AlwaysEnableMod ~= nil then
-				config.AlwaysEnableMod = AlwaysEnableMod
-			end
 			return config
 		end
 	end
@@ -399,8 +395,7 @@ local function main()
 	function luajit_config:WriteConfig(modmain_path)
 		if not TheNet:IsDedicated() then
 			local DisableJITWhenServer = GetModConfigData("DisableJITWhenServer")
-			local AlwaysEnableMod = GetModConfigData("AlwaysEnableMod")
-			self.data = self:create(modmain_path, DisableJITWhenServer, AlwaysEnableMod)
+			self.data = self:create(modmain_path, DisableJITWhenServer)
 			self:write_file(self.data)
 		end
 	end
@@ -789,7 +784,7 @@ local function main()
 		HookGameVersionUI()
 		luajit_config:WriteConfig(self.modmain_path)
 
-		modimport("inject_server_only_mod")
+		modimport("force_enable_mod")
 	end
 
 	if GameInjector then

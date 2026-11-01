@@ -56,7 +56,6 @@ static ConfigSchemaRegistry make_production_schema() {
 static ConfigView make_resolved(std::initializer_list<std::pair<const char *, ConfigValue>> entries = {}) {
     ConfigView view;
     // Core keys always present after cascade (modinfo defaults at minimum).
-    view["AlwaysEnableMod"] = ConfigValue::boolean(false);
     view["DisableJITWhenServer"] = ConfigValue::boolean(false);
     view["LuaVmType"] = ConfigValue::string("");
     view["EnabledGenGC"] = ConfigValue::boolean(false);
@@ -70,7 +69,7 @@ static void test_vbpool_true_maps_to_config_key() {
     ConfigView resolved = make_resolved({
         {"EnableVBPool", ConfigValue::boolean(true)},
         {"AngleBackend", ConfigValue::string("auto")},
-        {"AlwaysEnableMod", ConfigValue::boolean(true)},
+        {"DisableJITWhenServer", ConfigValue::boolean(true)},
     });
 
     ConfigView view = BuildConfigView(make_production_schema(), resolved);
@@ -85,7 +84,7 @@ static void test_vbpool_false_maps_to_config_key() {
     ConfigView resolved = make_resolved({
         {"EnableVBPool", ConfigValue::boolean(false)},
         {"AngleBackend", ConfigValue::string("vulkan")},
-        {"AlwaysEnableMod", ConfigValue::boolean(false)},
+        {"DisableJITWhenServer", ConfigValue::boolean(false)},
     });
 
     ConfigView view = BuildConfigView(make_production_schema(), resolved);
@@ -99,10 +98,10 @@ static void test_vbpool_false_maps_to_config_key() {
     assert(angle->second.type == ConfigValueType::String);
     assert(angle->second.s == "vulkan");
 
-    auto always = view.find("AlwaysEnableMod");
-    assert(always != view.end());
-    assert(always->second.type == ConfigValueType::Bool);
-    assert(always->second.b == false);
+    auto server_disabled = view.find("DisableJITWhenServer");
+    assert(server_disabled != view.end());
+    assert(server_disabled->second.type == ConfigValueType::Bool);
+    assert(server_disabled->second.b == false);
 
     auto net = view.find("NetworkOpt");
     assert(net != view.end());
@@ -116,7 +115,6 @@ static void test_build_config_view_schema_defaults_and_overlay() {
     ConfigView resolved = make_resolved({
         {"EnableVBPool", ConfigValue::boolean(true)}, // overlay over schema default false
         {"AngleBackend", ConfigValue::string("d3d11")},
-        {"AlwaysEnableMod", ConfigValue::boolean(true)},
         {"DisableJITWhenServer", ConfigValue::boolean(true)},
         {"LuaVmType", ConfigValue::string("jit")},
         {"EnabledGenGC", ConfigValue::boolean(true)},
@@ -135,7 +133,6 @@ static void test_build_config_view_schema_defaults_and_overlay() {
     assert(view.at("AngleBackend").s == "d3d11");
 
     // Core from resolved.
-    assert(view.at("AlwaysEnableMod").b == true);
     assert(view.at("DisableJITWhenServer").b == true);
     assert(view.at("LuaVmType").s == "jit");
     assert(view.at("EnabledGenGC").b == true);
@@ -177,8 +174,8 @@ static void test_late_schema_defaults_for_missing_keys() {
     ConfigView legacy = BuildConfigView(empty, resolved);
     assert(legacy.find("EnableNetSim") == legacy.end());
     assert(legacy.find("NetworkOpt") == legacy.end());
-    // Core keys from resolved still present.
-    assert(legacy.find("AlwaysEnableMod") != legacy.end());
+    // Resolved VM keys still present.
+    assert(legacy.find("DisableJITWhenServer") != legacy.end());
 
     printf("PASS: late_schema_defaults_for_missing_keys\n");
 }
@@ -284,7 +281,7 @@ static void test_empty_registry_resolve_after_bridge_is_noop() {
     ConfigView resolved = make_resolved({
         {"EnableVBPool", ConfigValue::boolean(true)},
         {"AngleBackend", ConfigValue::string("d3d11")},
-        {"AlwaysEnableMod", ConfigValue::boolean(true)},
+        {"DisableJITWhenServer", ConfigValue::boolean(true)},
     });
     ConfigView view = BuildConfigView(make_production_schema(), resolved);
 

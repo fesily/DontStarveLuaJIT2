@@ -92,7 +92,6 @@ local CONFIG_KEYS = {
     "EnableProfiler",
     "EnableTracy",
     "EnabledJIT",
-    "AlwaysEnableMod",
 }
 
 local function find_main_modname()

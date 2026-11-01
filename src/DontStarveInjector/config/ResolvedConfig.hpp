@@ -17,14 +17,8 @@ struct ResolvedConfig {
     std::unordered_map<std::string, ConfigSource> source_of;
     CascadeContext ctx; // identity snapshot
 
-    // L0 base accessors only (identity + AlwaysEnableMod).
+    // L0 base accessors only (mod identity).
     // VM selection (GameLuaType / get_lua_vm_type) lives in plugin_core_vm/VmConfig.hpp.
-    bool always_enable_mod() const {
-        auto it = view.find(std::string{keys::kAlwaysEnableMod});
-        return it != view.end() && it->second.type == ds::plugin::ConfigValueType::Bool &&
-               it->second.b;
-    }
-
     std::string_view modmain_path() const {
         auto it = view.find(std::string{keys::kModmainPath});
         if (it != view.end() && it->second.type == ds::plugin::ConfigValueType::String &&

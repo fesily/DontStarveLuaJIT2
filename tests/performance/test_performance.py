@@ -434,7 +434,8 @@ class MeasurementTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "fixture"):
                 with perf.runtime_config(game, game / "release/Injector.dll"):
                     actual = json.loads(path.read_text())
-                    self.assertFalse(actual["AlwaysEnableMod"])
+                    self.assertNotIn("AlwaysEnableMod", actual)
+                    self.assertNotIn("always_enable_mod", actual)
                     self.assertEqual(actual["modmain_path"], str(game / "release/modmain.lua"))
                     path.write_text('{"modmain_path":"client rewrote the path"}', encoding="utf-8")
                     raise RuntimeError("fixture")
