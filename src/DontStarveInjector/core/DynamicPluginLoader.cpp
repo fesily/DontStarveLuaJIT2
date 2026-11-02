@@ -86,7 +86,15 @@ void close_library(void *handle) {
 
 #else
 void *load_library(const std::filesystem::path &path) {
-    return dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    // RTLD_LOCAL on purpose: plugins must not enter the ELF global symbol scope.
+    // A plugin exporting a name that the game/VM/host also defines (e.g. the
+    // profiler's old `lj_gc_fullgc_external`) would otherwise interpose that
+    // module's own references — DontStarveLuaJIT2#51 was a SIGSEGV on every full
+    // GC from exactly that. Plugin entry points are resolved on the handle
+    // (lookup_symbol), services through the host registry by string, and their
+    // DT_NEEDED deps (libInjector, gum, ...) through the module's own scope, so
+    // nothing here needs global visibility.
+    return dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
 }
 
 void *lookup_symbol(void *handle, const char *name) {

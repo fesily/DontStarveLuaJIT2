@@ -609,7 +609,11 @@ HookStartupEntryFn load_injector_hook_entry() {
                         abs.string());
     }
 #else
-    void *h = dlopen(abs.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    // RTLD_LOCAL: every symbol consumed from the real Injector is taken from this
+    // handle (HookStartupEntry below), and the module resolves its own imports and
+    // DT_NEEDED through its own scope, so it does not need to pollute the global
+    // symbol scope of the game process.
+    void *h = dlopen(abs.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!h) {
         const char *err = dlerror();
         append_boot_log(std::string{"load: FAILED dlopen ("} + (err ? err : "unknown") +

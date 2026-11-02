@@ -66,14 +66,24 @@ DS_INJECTOR_CXX_API std::vector<std::string> list_installed_plugin_packages(std:
 // Shared runtimes path: mod_root / "deps" (sibling of plugins/, not under it).
 DS_INJECTOR_CXX_API std::filesystem::path mod_deps_dir(const std::filesystem::path &mod_root);
 
-// Windows: for each plugins root, AddDllDirectory(mod_root/deps) if exists and
-// AddDllDirectory(plugins_root) for private side-by-side deps. Does NOT call
-// SetDefaultDllDirectories (process-wide); callers load with LoadLibraryEx
-// flags USER_DIRS | DLL_LOAD_DIR | DEFAULT_DIRS.
+// Registers library search roots for a plugins root: <mod>/deps (canonical),
+// <plugins_root>/deps (legacy) and <plugins_root> (private side-by-side deps).
+// Windows: AddDllDirectory each existing root (LoadLibraryEx is called with
+// USER_DIRS | DLL_LOAD_DIR | DEFAULT_DIRS; process-wide SetDefaultDllDirectories
+// is intentionally NOT used).
+// Non-Windows: records the same roots in a process-wide registry that
+// util/platform.cpp loadlib() consults. This is what keeps VM/dependency
+// resolution working for plugins living OUTSIDE the mod tree — the caller
+// passes the absolute directory it actually loaded from.
 // Idempotent: repeated calls with same absolute paths no-op.
-// Non-Windows: no-op success (RPATH is link-time).
 // Returns true if no hard failure; missing deps dir is OK (not an error).
 DS_INJECTOR_CXX_API bool configure_plugin_dll_search(const std::vector<std::filesystem::path> &plugins_roots);
+
+// Every root registered by configure_plugin_dll_search(), in registration order,
+// absolute and deduped. loadlib() prioritises these after its own module dir.
+// Windows also mirrors the list here for diagnostics; there the OS-side
+// AddDllDirectory list is what actually drives LoadLibraryEx.
+DS_INJECTOR_CXX_API std::vector<std::filesystem::path> plugin_dll_search_roots();
 
 // Test seam: clear internal "already added" set (Windows) between tests.
 DS_INJECTOR_CXX_API void reset_plugin_dll_search_for_test();

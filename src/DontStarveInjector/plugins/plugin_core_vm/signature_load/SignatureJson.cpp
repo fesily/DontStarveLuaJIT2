@@ -20,6 +20,7 @@
 #include "ModuleSections.hpp"
 #include <filesystem>
 #include "SignatureModRoot.hpp"
+#include "util/ModulePath.hpp"
 #ifdef _WIN32
 #  ifndef NOMINMAX
 #    define NOMINMAX
@@ -167,19 +168,18 @@ static std::filesystem::path module_dir_if_loaded_win(const wchar_t *wname, cons
 #endif
 }
 
-static std::filesystem::path module_dir_if_loaded_sym(const char *sym_name) {
+// Locate a loaded module by file stem, without touching the ELF global symbol
+// scope: the previous dlsym(RTLD_DEFAULT, "<a symbol of that module>") probe only
+// worked only while the module was RTLD_GLOBAL (plugins are loaded RTLD_LOCAL now),
+// and a plugin exporting a same-named symbol could redirect the result. Kept out of PluginPath on purpose — see the
+// note above (ds_signature is a STATIC lib also linked into signature_updater,
+// where neither module is loaded and this correctly returns {}).
+static std::filesystem::path module_dir_if_loaded_stem(std::string_view stem) {
 #if !defined(_WIN32)
-    void *sym = dlsym(RTLD_DEFAULT, sym_name);
-    if (!sym) {
-        return {};
-    }
-    Dl_info info{};
-    if (!dladdr(sym, &info) || !info.dli_fname) {
-        return {};
-    }
-    return std::filesystem::path(info.dli_fname).parent_path();
+    const auto path = ds::util::loaded_module_path_by_stem(stem);
+    return path.empty() ? std::filesystem::path{} : path.parent_path();
 #else
-    (void)sym_name;
+    (void)stem;
     return {};
 #endif
 }
@@ -196,11 +196,11 @@ static std::filesystem::path mod_root_if_loaded() {
         return signature_mod_root_from_module_dir(inj);
     }
 #else
-    const auto core = module_dir_if_loaded_sym("ds_core_vm_run_signature_and_replace");
+    const auto core = module_dir_if_loaded_stem("plugin_core_vm");
     if (!core.empty()) {
         return signature_mod_root_from_module_dir(core);
     }
-    const auto inj = module_dir_if_loaded_sym("HookStartupEntry");
+    const auto inj = module_dir_if_loaded_stem("libInjector");
     if (!inj.empty()) {
         return signature_mod_root_from_module_dir(inj);
     }

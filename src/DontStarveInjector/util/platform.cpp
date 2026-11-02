@@ -15,6 +15,7 @@
 #include <vector>
 #include <string>
 #include "platform.hpp"
+#include "core/PluginPath.hpp"
 
 std::filesystem::path getExePath() {
     static std::filesystem::path p = [] {
@@ -136,25 +137,25 @@ module_handler_t loadlib(const char *name, int mode) {
         push_root(inj_dir);
     }
 #else
-    auto module_dir_from_path = [](const char *path) -> fs::path {
-        if (!path || !*path) {
-            return {};
-        }
-        return fs::path(path).parent_path();
-    };
-    Dl_info info{};
-    void *core_sym = dlsym(RTLD_DEFAULT, "ds_core_vm_run_signature_and_replace");
-    if (core_sym && dladdr(core_sym, &info) && info.dli_fname) {
-        const auto core_dir = module_dir_from_path(info.dli_fname);
-        push_root(core_dir / "deps");
-        push_root(core_dir);
+    // Locate our OWN module instead of probing the ELF global symbol scope:
+    // loadlib() lives in libInjector.so, which sits at the mod root, so this
+    // reproduces what the old dlsym(RTLD_DEFAULT, "HookStartupEntry") probe meant —
+    // without requiring libInjector/plugin_core_vm to be RTLD_GLOBAL (plugins are
+    // loaded RTLD_LOCAL and a same-named plugin export must never be able to
+    // redirect this resolution).
+    Dl_info self_info{};
+    if (dladdr(reinterpret_cast<void *>(&loadlib), &self_info) && self_info.dli_fname != nullptr) {
+        const fs::path self_dir = fs::path(self_info.dli_fname).parent_path();
+        // <mod>/deps is where lua51* and third-party deps live.
+        push_root(self_dir / "deps");
+        push_root(self_dir / "plugins" / "deps"); // legacy discarded layout
+        push_root(self_dir);
     }
-    void *inj_sym = dlsym(RTLD_DEFAULT, "HookStartupEntry");
-    if (inj_sym && dladdr(inj_sym, &info) && info.dli_fname) {
-        const auto inj_dir = module_dir_from_path(info.dli_fname);
-        // <mod>/libInjector.so|.dylib → <mod>/deps
-        push_root(inj_dir / "deps");
-        push_root(inj_dir);
+    // Roots registered by whoever actually loaded a module (builtin plugins under
+    // <mod>/plugins, and external plugins from arbitrary directories): each one
+    // contributes <mod>/deps, <root>/deps and <root>.
+    for (const auto &root : ds::plugin::plugin_dll_search_roots()) {
+        push_root(root);
     }
 #endif
 

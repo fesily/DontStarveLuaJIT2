@@ -1,6 +1,7 @@
 #include "CoreVmBootstrap.hpp"
 #include "PackagedModule.hpp"
 #include "PluginPath.hpp"
+#include "util/ModulePath.hpp"
 
 #include "config/ResolvedConfig.hpp"
 #include "plugins/plugin_core_vm/VmConfig.hpp"
@@ -71,7 +72,10 @@ void *load_core_vm_from_search_dirs() {
                 return static_cast<void *>(handle);
             }
 #else
-            if (void *h = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL)) {
+            // RTLD_LOCAL: see DynamicPluginLoader::load_library — core.vm must not
+            // enter the global symbol scope either (it is found by name through
+            // ModulePath enumeration, and by handle everywhere else).
+            if (void *h = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL)) {
                 return h;
             }
 #endif
@@ -85,13 +89,17 @@ void *core_vm_module_handle() {
     return static_cast<void *>(GetModuleHandleA(kCoreVmModuleName));
 #else
     // Prefer an already-mapped handle (DynamicPluginLoader or prior Ensure).
-    void *existing = dlopen(kCoreVmModuleName, RTLD_NOLOAD | RTLD_LAZY);
-    if (existing) {
-        // dlopen(RTLD_NOLOAD) bumps the refcount; drop the extra ref.
-        dlclose(existing);
-        return existing;
+    // dlopen(basename, RTLD_NOLOAD) does NOT work here: glibc matches the name the
+    // object was opened with, and plugin_core_vm.so is always opened by absolute
+    // path and carries no SONAME, so that lookup is empty even when it is mapped.
+    // Enumerate the mapped objects and re-open by the exact path instead.
+    const auto path = ds::util::loaded_module_path_by_stem("plugin_core_vm");
+    if (path.empty()) {
+        return nullptr;
     }
-    return nullptr;
+    // RTLD_NOLOAD returns the existing handle (and takes a ref we never drop: the
+    // module is process-lifetime by design, see ensure_handle_locked()).
+    return dlopen(path.string().c_str(), RTLD_NOLOAD | RTLD_LAZY);
 #endif
 }
 

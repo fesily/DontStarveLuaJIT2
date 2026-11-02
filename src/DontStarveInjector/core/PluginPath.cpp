@@ -35,6 +35,9 @@ std::mutex g_dll_search_mu;
 // Process-wide SetDefaultDllDirectories is intentionally NOT used — plugin loads
 // pass LOAD_LIBRARY_SEARCH_USER_DIRS | DLL_LOAD_DIR | DEFAULT_DIRS on LoadLibraryEx.
 std::unordered_set<std::string> g_added_dll_dirs;
+// POSIX counterpart: the roots themselves, in registration order, walked by
+// util/platform.cpp loadlib(). Windows keeps the authoritative list in the OS.
+std::vector<std::filesystem::path> g_dll_roots;
 
 // Primary workshop folder + local/dev aliases used when luajit_config.modmain_path
 // is empty (first client boot / dedicated before config is written).
@@ -417,28 +420,33 @@ std::filesystem::path mod_deps_dir(const std::filesystem::path &mod_root) {
 }
 
 bool configure_plugin_dll_search(const std::vector<std::filesystem::path> &plugins_roots) {
-#if !defined(_WIN32)
-    (void)plugins_roots;
-    return true;
-#else
     std::lock_guard lock(g_dll_search_mu);
-    // Do NOT call SetDefaultDllDirectories: it is process-wide and changes
-    // default LoadLibrary search for the whole game. Plugin loads already pass
-    // LOAD_LIBRARY_SEARCH_USER_DIRS | DLL_LOAD_DIR | DEFAULT_DIRS on LoadLibraryEx,
-    // which honors AddDllDirectory without mutating process defaults.
     for (const auto &root : plugins_roots) {
-        std::error_code ec;
-        auto add = [&](const std::filesystem::path &p) {
-            if (p.empty() || !std::filesystem::is_directory(p, ec)) {
-                return;
+        if (root.empty()) {
+            continue;
+        }
+        // One definition of "which roots" for every platform.
+        const std::filesystem::path candidates[] = {
+            mod_deps_dir(mod_root_from_plugins_dir(root)), // <mod>/deps (canonical)
+            root / "deps",                                 // legacy plugins/deps
+            root,                                          // private side-by-side deps
+        };
+        for (const auto &p : candidates) {
+            if (p.empty()) {
+                continue;
+            }
+            std::error_code ec;
+            if (!std::filesystem::is_directory(p, ec)) {
+                continue;
             }
             const auto canon = std::filesystem::weakly_canonical(p, ec);
-            const auto key = (ec ? p : canon).string();
+            const auto abs_path = ec ? p : canon;
+            const auto key = abs_path.string();
             if (!g_added_dll_dirs.insert(key).second) {
-                return;
+                continue; // already registered
             }
-            const DLL_DIRECTORY_COOKIE cookie =
-                AddDllDirectory((ec ? p : canon).wstring().c_str());
+#if defined(_WIN32)
+            const DLL_DIRECTORY_COOKIE cookie = AddDllDirectory(abs_path.wstring().c_str());
             if (cookie == nullptr) {
                 // Keep bookkeeping so we do not spam; still report once.
                 const DWORD err = GetLastError();
@@ -448,23 +456,26 @@ bool configure_plugin_dll_search(const std::vector<std::filesystem::path> &plugi
                               key.c_str(), static_cast<unsigned long>(err));
                 log_once("warn", buf);
             }
-        };
-        // mod_root/deps: third-party + lua51* + signatures_*.json (canonical)
-        add(mod_deps_dir(mod_root_from_plugins_dir(root)));
-        // legacy discarded layout plugins/deps — still AddDllDirectory if present during migration
-        add(root / "deps");
-        add(root); // optional private side-by-side next to plugin_*.dll
+#else
+            // util/platform.cpp loadlib() walks this instead of probing the ELF
+            // global symbol scope (see plugin_dll_search_roots()).
+            g_dll_roots.push_back(abs_path);
+#endif
+        }
     }
     return true;
-#endif
+}
+
+std::vector<std::filesystem::path> plugin_dll_search_roots() {
+    std::lock_guard lock(g_dll_search_mu);
+    return g_dll_roots;
 }
 
 void reset_plugin_dll_search_for_test() {
-#if defined(_WIN32)
     std::lock_guard lock(g_dll_search_mu);
     // Win32 has no bulk RemoveDllDirectory; tests only clear bookkeeping so re-Add is attempted.
     g_added_dll_dirs.clear();
-#endif
+    g_dll_roots.clear();
 }
 
 } // namespace ds::plugin

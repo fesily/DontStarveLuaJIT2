@@ -1,4 +1,5 @@
 #include "core/PluginPath.hpp"
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -96,13 +97,27 @@ static void test_mod_deps_dir_sibling() {
 
 static void test_configure_dll_search_idempotent() {
     reset_plugin_dll_search_for_test();
+    assert(plugin_dll_search_roots().empty());
     auto mod = make_temp("ds_plugin_path_deps");
     auto plugins = mod / "plugins";
     fs::create_directories(plugins);
     fs::create_directories(mod / "deps");
     assert(configure_plugin_dll_search({plugins}));
+    // loadlib() walks this list instead of probing the ELF global symbol scope,
+    // so it must hold the roots the caller got a module from: <mod>/deps (canonical)
+    // and the plugins root itself. plugins/deps does not exist here -> not listed.
+    auto roots = plugin_dll_search_roots();
+    auto has = [&](const fs::path &p) {
+        return std::find(roots.begin(), roots.end(), p) != roots.end();
+    };
+    assert(has(mod / "deps"));
+    assert(has(plugins));
+    assert(!has(plugins / "deps"));
+    const auto count = roots.size();
     assert(configure_plugin_dll_search({plugins})); // second call OK
+    assert(plugin_dll_search_roots().size() == count); // idempotent, no duplicates
     reset_plugin_dll_search_for_test();
+    assert(plugin_dll_search_roots().empty());
     printf("PASS: configure_dll_search_idempotent\n");
 }
 
