@@ -4,6 +4,10 @@ set(SOURCES
         main.cpp
         ${DONTSTARVEINJECTOR_ROOT}/config/InjectorHostConfig.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
+        # loadlib() walks the roots registered by configure_plugin_dll_search();
+        # these tools compile util/platform.cpp standalone, so the registry owner
+        # (core/PluginPath.cpp) has to be linked in as well.
+        ${DONTSTARVEINJECTOR_ROOT}/core/PluginPath.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
 )
@@ -103,6 +107,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         verify_linux_signatures.cpp
         ${DONTSTARVEINJECTOR_ROOT}/config/InjectorHostConfig.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
+        ${DONTSTARVEINJECTOR_ROOT}/core/PluginPath.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp)
     target_include_directories(verify_linux_signatures PRIVATE
@@ -137,6 +142,7 @@ if (WIN32)
     add_executable(angle_iat_api_generator
             angle_iat_api_generator.cpp
             ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
+            ${DONTSTARVEINJECTOR_ROOT}/core/PluginPath.cpp
             ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp
     )
 
