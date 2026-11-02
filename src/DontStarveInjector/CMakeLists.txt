@@ -223,6 +223,15 @@ if (NOT WIN32)
         # Keep build-tree stub separate from real Injector output dir.
         LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/stub"
     )
+    # The shell keeps its file name (the game PRELOADs bin64/lib64/libInjector.so)
+    # but must NOT advertise the real module's SONAME: the loader matches a
+    # plugin's DT_NEEDED "libInjector.so" against already-loaded objects by that
+    # name first, and with plugins loaded RTLD_LOCAL it would bind them to the
+    # stub (which exports none of the DS_* API) instead of resolving the real
+    # injector from the plugin's RUNPATH ($ORIGIN/../.. = mod root).
+    # -Wl,-soname does not work here: CMake emits its own soname flag after the
+    # target link options, so the only effective switch is NO_SONAME.
+    set_target_properties(InjectorStub PROPERTIES NO_SONAME TRUE)
     if (UNIX AND NOT APPLE)
         # Game PRELOAD path is bin64/lib64; package mirror under bin64/<plat>/lib64
         install(TARGETS InjectorStub LIBRARY DESTINATION "${DS_INSTALL_SHELL_DIR}/lib64" COMPONENT injector_shell)
@@ -264,8 +273,10 @@ function(ds_add_dynamic_plugin name)
     set_target_properties(${name} PROPERTIES
         PREFIX ""
         OUTPUT_NAME "${name}"
-        INSTALL_RPATH "$ORIGIN/../../deps"
-        BUILD_RPATH "$ORIGIN/../../deps"
+        # $ORIGIN/../.. first: plugins DT_NEEDED libInjector.so, and that module
+        # lives at the mod root (deps/ only carries third-party + the VM).
+        INSTALL_RPATH "$ORIGIN/../..:$ORIGIN/../../deps"
+        BUILD_RPATH "$ORIGIN/../..:$ORIGIN/../../deps"
         RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
         LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
         ARCHIVE_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/plugins/${name}"
