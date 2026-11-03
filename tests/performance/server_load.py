@@ -129,7 +129,8 @@ def run_instance(index: int, args, game: pathlib.Path,
                     if args.stop_mode == "kill" and server.alive():
                         server.proc.kill()
                     record["exit_code"] = server.stop(
-                        graceful_lua="c_shutdown(true)" if args.stop_mode == "shutdown" else None)
+                        graceful_lua="c_shutdown(true)" if args.stop_mode == "shutdown" else None,
+                        timeout=args.shutdown_timeout)
                     if args.stop_mode == "shutdown" and record["exit_code"] != 0:
                         record["success"] = False
                         record.setdefault("error", "server failed during shutdown")
@@ -179,6 +180,10 @@ def main() -> int:
                         default="shutdown",
                         help="'shutdown' sends c_shutdown(true) after ready (runs "
                              "the close-path full GC); 'kill' hard-terminates")
+    parser.add_argument("--shutdown-timeout", type=float, default=120,
+                        help="seconds to wait for the graceful close/GC path before "
+                             "terminating; large saves need more than the harness "
+                             "smoke default")
     parser.add_argument("--game-init-extra", type=pathlib.Path, default=None,
                         help="extra Lua appended to GAME_INIT (e.g. a probe)")
     parser.add_argument("--allow-missing-mod", action="append", default=[],
@@ -191,6 +196,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.instances < 1 or args.rounds < 1 or args.timeout <= 0:
         parser.error("instances, rounds and timeout must be positive")
+    if args.shutdown_timeout <= 0:
+        parser.error("shutdown timeout must be positive")
     if args.port_base < 1 or args.port_base + args.instances - 1 > 65535:
         parser.error("instance ports must be in 1..65535")
     args.vm = args.vm.resolve()

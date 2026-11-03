@@ -103,8 +103,8 @@ class MeasurementTest(unittest.TestCase):
             args = SimpleNamespace(
                 rounds=1, port_base=12010, cluster_source=root, lua=root / "luajit.exe",
                 injector=root / "Injector.dll", jit="on", vm=root / "vm.dll", extra_lua="",
-                timeout=1, stop_mode="shutdown", dump_dir=root / "dumps",
-                output=root / "batch.json", log_dir=root / "logs")
+                timeout=1, stop_mode="shutdown", shutdown_timeout=1,
+                dump_dir=root / "dumps", output=root / "batch.json", log_dir=root / "logs")
             with patch.object(server_load.tempfile, "mkdtemp", return_value=str(persist)), \
                     patch.object(server_load, "prepare"), \
                     patch.object(perf.smoke, "start_dedicated", return_value=server), \
