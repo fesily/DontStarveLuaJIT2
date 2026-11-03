@@ -518,9 +518,27 @@ def prepare_shared_header(header: Path) -> Path:
             text,
             flags=re.MULTILINE,
         )
-        if n2 == 0:
-            return header
-        new_text = new_text2
+        if n2:
+            new_text = new_text2
+    if os.name == "nt":
+        # glib 2.90 (frida-gum 17.25) tests the C++11 branch before the MSVC
+        # one, so G_NORETURN becomes [[noreturn]]; combined with the dllimport
+        # GUM_API that our shared consumers need it expands to
+        #   __declspec (dllimport) [[noreturn]] void gum_panic (...);
+        # which MSVC rejects with C3829 "attribute [[noreturn]] may only be
+        # applied to a function declaration". Reproduced on both 14.44 and
+        # 14.51 with the project's own -std:c++latest flags, so this is an
+        # upstream glib ordering bug, not an old-toolset problem.
+        # __declspec (noreturn) is the spelling glib itself uses for MSVC.
+        new_text, n_nor = re.subn(
+            r"^[ \t]*#[ \t]*define[ \t]+G_NORETURN[ \t]+\[\[noreturn\]\][ \t]*$",
+            "# define G_NORETURN __declspec (noreturn)",
+            new_text,
+            flags=re.MULTILINE,
+        )
+        if n_nor:
+            print("patched glib G_NORETURN to __declspec(noreturn) for MSVC consumers",
+                  flush=True)
     out = BUILD_ROOT / "frida-gum.shared.h"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(new_text, encoding="utf-8")
