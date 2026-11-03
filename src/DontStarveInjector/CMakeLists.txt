@@ -27,6 +27,7 @@ set(SOURCES
         config/CascadeEngine.cpp
         config/ConfigResolve.cpp
         config/path/ConfigPaths.cpp
+        config/path/OwnerDirs.cpp
         config/path/ModIdentity.cpp
         config/sources/ModinfoDefaultSource.cpp
         config/sources/LuajitConfigSource.cpp

@@ -5,6 +5,7 @@
 #include "util/gum_platform.hpp"
 #include "util/platform.hpp"
 #include "util/zipfile.hpp"
+#include "util/PathText.hpp"
 #include "core/PluginServices.hpp"
 #ifdef _WIN32
 #include "util/win_wfile.hpp"
@@ -80,9 +81,20 @@ static std::filesystem::path to_path(const char *p) {
 }
 
 
+// stdio open through the native form: on Windows that is the wide path (a mod
+// root the ANSI code page cannot represent still opens), on POSIX the raw bytes.
+static FILE *os_fopen(const std::filesystem::path &path, const char *mode) {
+#if defined(_WIN32)
+    const std::wstring wide_mode{mode, mode + std::strlen(mode)};
+    return ::_wfopen(path.c_str(), wide_mode.c_str());
+#else
+    return ::fopen(path.native().c_str(), mode);
+#endif
+}
+
 static std::filesystem::path lj_fpath_format(std::filesystem::path const &path) {
     const auto &workshop_dir = ds::sdk::steam::GetWorkshopDirectory();
-    auto path_s = path.string();
+    auto path_s = ds::util::path_to_utf8_generic(path);
     constexpr auto mods_root = "../mods/workshop-"sv;
     if (path_s.starts_with(mods_root)) {
         // get mod dir
@@ -95,8 +107,9 @@ static std::filesystem::path lj_fpath_format(std::filesystem::path const &path) 
             return path;
 
         if (workshop_dir) {
-            if (std::filesystem::exists(workshop_dir.value() / mod_id))
-                return workshop_dir.value() / left_path;
+            const auto workshop_mod = workshop_dir.value() / ds::util::path_from_utf8(mod_id);
+            if (std::filesystem::exists(workshop_mod))
+                return workshop_mod / ds::util::path_from_utf8(left_path);
         }
     }
     return path;
@@ -107,19 +120,19 @@ FILE *lj_fopen_ex(char const *f, const char *mode, std::filesystem::path *out_re
     auto write_mode = fmode.contains("w") || fmode.contains("a") || fmode.contains("+");
     auto path = lj_fpath_format(to_path(f));
     if (write_mode) {
-        return fopen(path.string().c_str(), mode);
+        return os_fopen(path, mode);
     }
     file_interface *fp = nullptr;
     // TODO：在w的情况下不是行为不一致
     if (std::filesystem::exists(path)) {
-        fp = GAMEIO_FILE_INTERFACE::fopen(path.string().c_str(), mode);
+        fp = GAMEIO_FILE_INTERFACE::fopen(path, mode);
         if (out_real_path)
             *out_real_path = path;
     } else {
         if (write_mode) {
             return nullptr;// write mode, not supported
         }
-        auto key = (*path.begin()).string();
+        auto key = ds::util::path_to_utf8((*path.begin()));
         if (zipPaths.contains(key)) {
             auto zip_manager = zipPaths[key].get();
             if (!zip_manager) {

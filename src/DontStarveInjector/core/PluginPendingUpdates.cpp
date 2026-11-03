@@ -1,4 +1,5 @@
 #include "PluginPendingUpdates.hpp"
+#include "util/PathText.hpp"
 
 #include "PackagedModule.hpp"
 #include "PluginProcessLock.hpp"
@@ -52,7 +53,10 @@ std::filesystem::path sibling_temp_path(const std::filesystem::path &dest) {
 #else
     const auto tag = std::to_string(static_cast<unsigned>(::getpid()));
 #endif
-    return parent / (dest.filename().string() + ".ds_pending_tmp_" + tag);
+    auto staged = dest.filename();
+    staged += ".ds_pending_tmp_";
+    staged += tag;  // ASCII digits
+    return parent / staged;
 }
 
 // Replace dest in one step (atomic on POSIX and on NTFS). When dest is mapped by another
@@ -78,8 +82,9 @@ bool apply_one(const std::filesystem::path &from, const std::filesystem::path &t
     ec.clear();
     std::filesystem::copy_file(from, tmp, std::filesystem::copy_options::overwrite_existing, ec);
     if (ec) {
-        std::fprintf(stderr, "[PluginPendingUpdates] stage_failed: %s -> %s (%s)\n", from.string().c_str(),
-                     tmp.string().c_str(), ec.message().c_str());
+        std::fprintf(stderr, "[PluginPendingUpdates] stage_failed: %s -> %s (%s)\n",
+                     util::path_to_utf8(from).c_str(), util::path_to_utf8(tmp).c_str(),
+                     ec.message().c_str());
         return false;
     }
 
@@ -88,7 +93,7 @@ bool apply_one(const std::filesystem::path &from, const std::filesystem::path &t
         std::filesystem::remove(from, rm_ec);
         if (rm_ec) {
             std::fprintf(stderr, "[PluginPendingUpdates] remove_pending_failed: %s (%s)\n",
-                         from.string().c_str(), rm_ec.message().c_str());
+                         util::path_to_utf8(from).c_str(), rm_ec.message().c_str());
         }
         return true;
     }
@@ -96,7 +101,7 @@ bool apply_one(const std::filesystem::path &from, const std::filesystem::path &t
     std::error_code rm_tmp;
     std::filesystem::remove(tmp, rm_tmp);
     std::fprintf(stderr, "[PluginPendingUpdates] apply_deferred: %s -> %s (target mapped)\n",
-                 from.string().c_str(), to.string().c_str());
+                 util::path_to_utf8(from).c_str(), util::path_to_utf8(to).c_str());
     // Leave pending file for retry; do not touch the working module.
     return false;
 }
@@ -137,7 +142,7 @@ size_t consolidate_flat_plugin_layout(const std::filesystem::path &plugins_dir) 
         if (!it->is_regular_file(probe_ec)) {
             continue;
         }
-        const std::string name = it->path().filename().string();
+        const std::string name = util::path_to_utf8(it->path().filename());
         if (!name.starts_with("plugin_")) {
             continue;
         }
@@ -169,7 +174,7 @@ size_t consolidate_flat_plugin_layout(const std::filesystem::path &plugins_dir) 
             std::fprintf(stderr,
                          "[PluginPendingUpdates] unsupported flat %s: plugins must live in "
                          "plugins/<stem>/<stem>%s\n",
-                         it->path().string().c_str(), module_exts[0]);
+                         util::path_to_utf8(it->path()).c_str(), module_exts[0]);
             continue;
         }
         doomed.push_back(it->path());
@@ -184,7 +189,7 @@ size_t consolidate_flat_plugin_layout(const std::filesystem::path &plugins_dir) 
         }
         ++removed;
         std::fprintf(stderr, "[PluginPendingUpdates] removed shadowed flat %s\n",
-                     path.string().c_str());
+                     util::path_to_utf8(path).c_str());
     }
     return removed;
 }
@@ -230,7 +235,7 @@ size_t apply_pending_plugin_updates(const std::filesystem::path &plugins_dir) {
         if (!it->is_regular_file(probe_ec)) {
             continue;
         }
-        const auto name = it->path().filename().string();
+        const auto name = util::path_to_utf8(it->path().filename());
         if (name.find(".ds_pending_tmp_") != std::string::npos) {
             continue; // our own staging leftover
         }
@@ -241,19 +246,19 @@ size_t apply_pending_plugin_updates(const std::filesystem::path &plugins_dir) {
     for (const auto &from : pending_files) {
         std::error_code rel_ec;
         const auto rel = std::filesystem::relative(from, pending_dir, rel_ec);
-        if (rel_ec || rel.empty() || rel.string().starts_with("..")) {
+        if (rel_ec || rel.empty() || util::path_to_utf8_generic(rel).starts_with("..")) {
             continue; // outside the pending root (should not happen)
         }
         // Legacy flat pending member (written by an old flat install): route it into the
         // package dir, which is the only supported layout now.
         auto dest_rel = rel;
         if (rel.parent_path().empty()) {
-            const std::string stem = flat_pending_stem(rel.filename().string());
+            const std::string stem = flat_pending_stem(util::path_to_utf8(rel.filename()));
             if (stem.empty()) {
                 std::fprintf(stderr,
                              "[PluginPendingUpdates] ignoring unsupported flat pending member %s "
                              "(plugins must live in plugins/<stem>/)\n",
-                             rel.string().c_str());
+                             util::path_to_utf8(rel).c_str());
                 continue;
             }
             dest_rel = std::filesystem::path(stem) / rel.filename();
@@ -261,7 +266,8 @@ size_t apply_pending_plugin_updates(const std::filesystem::path &plugins_dir) {
         const auto to = plugins_dir / dest_rel;
         if (apply_one(from, to)) {
             ++applied;
-            std::fprintf(stderr, "[PluginPendingUpdates] applied: %s\n", to.string().c_str());
+            std::fprintf(stderr, "[PluginPendingUpdates] applied: %s\n",
+                         util::path_to_utf8(to).c_str());
         }
     }
     return applied;

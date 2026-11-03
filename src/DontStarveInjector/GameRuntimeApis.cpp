@@ -3,6 +3,7 @@
 #include "config/InjectorHostConfig.hpp"
 #include "MemorySignature.hpp"
 #include "util/inlinehook.hpp"
+#include "util/PathText.hpp"
 
 #include <filesystem>
 #include <frida-gum.h>
@@ -26,7 +27,10 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_update(const char *mod_directory, int 
     if (!std::filesystem::exists(installer)) {
         return 0;
     }
-    std::string cmd = std::format("cmd /C \"{}\" {}", installer.string(), tt == 1 ? "uninstall" : "");
+    // cmd.exe takes ANSI here (CreateProcessA): keep ANSI when it maps.
+    std::string cmd = std::format("cmd /C \"{}\" {}",
+                                 ds::util::path_to_native_lossy(installer),
+                                 tt == 1 ? "uninstall" : "");
     STARTUPINFO si;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);

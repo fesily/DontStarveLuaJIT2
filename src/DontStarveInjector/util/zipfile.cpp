@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include "zipfile.hpp"
 #include <sstream>
+#include "util/PathText.hpp"
 
 using namespace std::literals;
 
@@ -108,8 +109,8 @@ struct zip_manager : public zip_manager_interface {
     std::unordered_map<std::string, zip_int64_t> paths;
 
     zip_manager(std::filesystem::path p) {
-        prefix = p.stem().string() + "/";
-        archive = zip_open(p.string().c_str(), 0, nullptr);
+        prefix = ds::util::path_to_utf8(p.stem()) + "/";
+        archive = zip_open(ds::util::path_to_utf8(p).c_str(), 0, nullptr);
         auto len = zip_get_num_entries(archive, 0);
         for (zip_int64_t i = 0; i < len; i++) {
             auto name = zip_get_name(archive, i, 0);
@@ -118,7 +119,7 @@ struct zip_manager : public zip_manager_interface {
     }
 
     std::expected<std::string, std::string_view> readfile(const std::filesystem::path &path) override {
-        const auto key = path.string();
+        const auto key = ds::util::path_to_utf8(path);
         if (!paths.contains(key)) {
             return std::unexpected("can't find file"sv);
         }

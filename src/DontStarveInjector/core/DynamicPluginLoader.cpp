@@ -5,6 +5,7 @@
 #include "PluginPendingUpdates.hpp"
 #include "ExternalPluginDiscovery.hpp"
 #include "PluginPath.hpp"
+#include "util/PathText.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -43,9 +44,9 @@ bool mark_stem_handled(std::vector<std::string> &handled, const std::string &ste
 std::string stem_from_module_path(const std::filesystem::path &module_path) {
     const auto parent = module_path.parent_path().filename();
     if (!parent.empty()) {
-        return parent.string();
+        return util::path_to_utf8(parent);
     }
-    return module_path.stem().string();
+    return util::path_to_utf8(module_path.stem());
 }
 
 #if defined(_WIN32)
@@ -110,7 +111,7 @@ void close_library(void *handle) {
 #endif
 
 bool has_plugin_extension(const std::filesystem::path &path) {
-    const auto ext = path.extension().string();
+    const auto ext = util::path_to_utf8(path.extension());
 #if defined(_WIN32)
     return _stricmp(ext.c_str(), ".dll") == 0;
 #elif defined(__APPLE__)
@@ -127,7 +128,7 @@ bool is_ignored_flat_module(const std::filesystem::directory_entry &entry) {
     if (!entry.is_regular_file()) {
         return false;
     }
-    const auto name = entry.path().filename().string();
+    const auto name = util::path_to_utf8(entry.path().filename());
     if (name.rfind("plugin_", 0) != 0) {
         return false;
     }
@@ -154,15 +155,18 @@ bool package_plugin_candidate(const std::filesystem::directory_entry &entry,
     if (!entry.is_directory(ec) || ec) {
         return false;
     }
-    const auto stem = entry.path().filename().string();
-    if (stem.rfind("plugin_", 0) != 0) {
+    if (util::path_to_utf8(entry.path().filename()).rfind("plugin_", 0) != 0) {
         return false;
     }
-    auto candidate = entry.path() / (stem + plugin_module_extension());
+    // The package dir name IS the module stem, so appending the suffix to the
+    // directory path never narrows anything through the ANSI code page.
+    auto candidate = entry.path();
+    candidate += plugin_module_extension();
     if (!ds::packaged::exists_or_materialize(candidate)) {
 #if defined(__APPLE__)
         // Prefer .dylib, fall back .so on Apple.
-        candidate = entry.path() / (stem + std::string(".so"));
+        candidate = entry.path();
+        candidate += ".so";
         if (!ds::packaged::exists_or_materialize(candidate)) {
             return false;
         }
@@ -178,7 +182,7 @@ bool package_plugin_candidate(const std::filesystem::directory_entry &entry,
 
 
 std::string skip_reason(const std::filesystem::path &path, const char *reason) {
-    return path.string() + ": " + reason;
+    return util::path_to_utf8(path) + ": " + reason;
 }
 
 // Drop canonical modules this runtime materialized for package members the published
@@ -203,12 +207,12 @@ void prune_stale_packaged_modules(const std::filesystem::path &plugins_root) {
         if (!it->is_directory(dir_ec)) {
             continue;
         }
-        const auto stem = it->path().filename().string();
-        if (stem.rfind("plugin_", 0) != 0) {
+        if (util::path_to_utf8(it->path().filename()).rfind("plugin_", 0) != 0) {
             continue;
         }
         for (const char *ext : module_exts) {
-            const auto candidate = it->path() / (stem + ext);
+            auto candidate = it->path();
+            candidate += ext;
             std::error_code probe_ec;
             if (!std::filesystem::is_regular_file(candidate, probe_ec)) {
                 continue;
@@ -266,7 +270,7 @@ bool DynamicPluginLoader::load_module_path(PluginHost &host, const std::filesyst
     std::error_code path_ec;
     const auto abs = std::filesystem::weakly_canonical(module_path, path_ec);
     const auto path = path_ec ? module_path : abs;
-    const auto path_str = path.string();
+    const auto path_str = util::path_to_utf8(path);
 
     // One copy per plugin stem: the mod-local root and the injector_module_dir()
     // migration fallback can both carry the same package, and initializing the
@@ -382,7 +386,8 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
                 std::fprintf(stderr,
                              "[DynamicPluginLoader] ignoring flat plugin module %s: plugins must "
                              "live in plugins/<stem>/<stem>%s\n",
-                             entry.path().string().c_str(), plugin_module_extension());
+                             util::path_to_utf8(entry.path()).c_str(),
+                             plugin_module_extension());
             }
             continue;
         }
@@ -396,11 +401,11 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
         std::error_code path_ec;
         const auto abs = std::filesystem::weakly_canonical(module_path, path_ec);
         const auto path = path_ec ? module_path : abs;
-        const auto path_str = path.string();
+        const auto path_str = util::path_to_utf8(path);
 
         // First root wins per plugin stem (see handled_stems_): scanning a second
         // root must never re-initialize a plugin this process already registered.
-        if (!mark_stem_handled(handled_stems_, entry.path().filename().string())) {
+        if (!mark_stem_handled(handled_stems_, util::path_to_utf8(entry.path().filename()))) {
             report.skipped.push_back(skip_reason(path, "duplicate_stem"));
             std::fprintf(stderr,
                          "[DynamicPluginLoader] skipped duplicate module (stem already handled "

@@ -1,4 +1,5 @@
 #pragma once
+#include <filesystem>
 #include <stdio.h>
 #include <stdarg.h>
 #include "file_interface.hpp"
@@ -49,6 +50,10 @@ struct normal_file_interface : file_interface {
 
     int feof() override {
         return ::feof(fp);
+    }
+
+    static normal_file_interface* fopen(const std::filesystem::path &path, const char *mode) {
+        return fopen(path.native().c_str(), mode);
     }
 
     static normal_file_interface* fopen(const char *path, const char *mode) {

@@ -1,6 +1,7 @@
 #include "ExternalPluginDiscovery.hpp"
 #include "EnabledDstMods.hpp"
 #include "PluginPackModinfo.hpp"
+#include "util/PathText.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -64,8 +65,8 @@ bool path_under_root(const std::filesystem::path &root, const std::filesystem::p
     std::error_code ec;
     const auto r = weakly_canonical_or(root, ec);
     const auto c = weakly_canonical_or(candidate, ec);
-    auto rs = r.generic_string();
-    auto cs = c.generic_string();
+    auto rs = util::path_to_utf8_generic(r);
+    auto cs = util::path_to_utf8_generic(c);
     if (rs.empty()) {
         return false;
     }
@@ -106,7 +107,7 @@ std::vector<std::filesystem::path> list_pack_modules_under_mod(const std::filesy
         if (!entry.is_directory(ec) || ec) {
             continue;
         }
-        const auto stem = entry.path().filename().string();
+        const auto stem = util::path_to_utf8(entry.path().filename());
         if (stem.rfind("plugin_", 0) != 0) {
             continue;
         }
@@ -161,7 +162,8 @@ discover_and_load_external_plugins(PluginHost &host, bool is_client,
             ec.clear();
         }
         if (!this_root_canon.empty() &&
-            mod_canon.generic_string() == this_root_canon.generic_string()) {
+            util::path_to_utf8_generic(mod_canon) ==
+                util::path_to_utf8_generic(this_root_canon)) {
             std::fprintf(stderr, "[plugin-discover] skip mod=%s reason=this_mod\n", mod.name.c_str());
             continue;
         }
@@ -185,9 +187,9 @@ discover_and_load_external_plugins(PluginHost &host, bool is_client,
         auto modules = list_pack_modules_under_mod(mod.root);
         for (const auto &module_path : modules) {
             if (!path_under_root(mod.root, module_path)) {
-                report.skipped.push_back(module_path.string() + ": path_jail");
+                report.skipped.push_back(util::path_to_utf8(module_path) + ": path_jail");
                 std::fprintf(stderr, "[plugin-discover] skip mod=%s path=%s reason=path_jail\n",
-                             mod.name.c_str(), module_path.string().c_str());
+                             mod.name.c_str(), util::path_to_utf8(module_path).c_str());
                 continue;
             }
             std::string skip;
@@ -200,17 +202,17 @@ discover_and_load_external_plugins(PluginHost &host, bool is_client,
                 skip = "no_load_fn";
             }
             if (!loaded) {
-                report.skipped.push_back(module_path.string() + ": " +
+                report.skipped.push_back(util::path_to_utf8(module_path) + ": " +
                                          (skip.empty() ? "load_failed" : skip));
                 std::fprintf(stderr, "[plugin-discover] skip mod=%s path=%s reason=%s\n",
-                             mod.name.c_str(), module_path.string().c_str(),
+                             mod.name.c_str(), util::path_to_utf8(module_path).c_str(),
                              skip.empty() ? "load_failed" : skip.c_str());
                 continue;
             }
             ++report.modules_loaded;
-            report.loaded_modules.push_back(module_path.string());
+            report.loaded_modules.push_back(util::path_to_utf8(module_path));
             std::fprintf(stderr, "[plugin-discover] load mod=%s id=%s module=%s\n", mod.name.c_str(),
-                         info.plugin_id.c_str(), module_path.string().c_str());
+                         info.plugin_id.c_str(), util::path_to_utf8(module_path).c_str());
             (void)host;
         }
     }

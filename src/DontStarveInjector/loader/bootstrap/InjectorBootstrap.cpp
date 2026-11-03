@@ -2,6 +2,7 @@
 
 #include "config/path/ModFolderAliases.hpp"
 #include "core/PackagedModule.hpp"
+#include "util/PathText.hpp"
 
 #include <cctype>
 #include <cstdio>
@@ -46,7 +47,7 @@ std::vector<std::string> g_cmdline_override;
 bool g_has_cmdline_override = false;
 bool g_logged_failure = false;
 std::mutex g_dll_search_mu;
-std::unordered_set<std::string> g_added_dll_dirs;
+std::unordered_set<std::filesystem::path, ds::util::PathHash> g_added_dll_dirs;
 
 
 void log_once_tag(const char *msg) {
@@ -126,7 +127,7 @@ std::vector<std::string> production_cmdline_tokens() {
     }
     cmds.reserve(static_cast<size_t>(n));
     for (int i = 0; i < n; ++i) {
-        cmds.push_back(fs::path(argv[i]).string());
+        cmds.push_back(ds::util::path_to_utf8(fs::path(argv[i])));
     }
     LocalFree(argv);
 #else
@@ -344,7 +345,7 @@ std::string describe_resolve_failure() {
     if (marker.empty()) {
         add_line("  marker: <unknown game root>");
     } else {
-        add_line(std::string{"  marker: "} + marker.string() +
+        add_line(std::string{"  marker: "} + ds::util::path_to_utf8(marker) +
                  (is_regular_existing(marker) ? " (present but unusable)" : " (missing)"));
     }
 
@@ -355,7 +356,7 @@ std::string describe_resolve_failure() {
         if (!scan.empty()) {
             scan += "; ";
         }
-        scan += base.string();
+        scan += ds::util::path_to_utf8(base);
     }
     add_line(std::string{"  scan bases: "} + (scan.empty() ? "<none>" : scan));
     return detail;
@@ -385,13 +386,14 @@ bool write_injector_marker(const fs::path &abs_module) {
     }
 
     const auto abs = absolute_if_possible(abs_module);
-    const auto tmp = path.string() + ".tmp";
+    auto tmp = path;
+    tmp += ".tmp";
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
         if (!out) {
             return false;
         }
-        out << abs.string() << "\n";
+        out << ds::util::path_to_utf8(abs) << "\n";
         if (!out.good()) {
             return false;
         }
@@ -430,7 +432,7 @@ bool read_injector_marker(fs::path &out_abs) {
     if (line.empty()) {
         return false;
     }
-    fs::path candidate = line;
+    fs::path candidate = ds::util::path_from_utf8(line);
     if (!ds::packaged::exists_or_materialize(candidate)) {
         return false;
     }
@@ -455,9 +457,10 @@ void reset_boot_log() {
     }
     const auto exe = production_exe_path();
     out << "ds-bootstrap boot log " << timestamp_now() << " pid=" << current_pid()
-        << " exe=" << (exe.empty() ? std::string{"<unknown>"} : exe.string()) << "\n";
+        << " exe="
+        << (exe.empty() ? std::string{"<unknown>"} : ds::util::path_to_utf8(exe)) << "\n";
     out.flush();
-    std::fprintf(stderr, "[ds-bootstrap] boot log: %s\n", path.string().c_str());
+    std::fprintf(stderr, "[ds-bootstrap] boot log: %s\n", ds::util::path_to_utf8(path).c_str());
     std::fflush(stderr);
 }
 
@@ -543,10 +546,11 @@ bool configure_injector_deps_search(const std::filesystem::path &mod_root,
             return;
         }
         const auto canon = fs::weakly_canonical(p, ec);
-        const auto key = (ec ? p : canon).string();
-        if (!g_added_dll_dirs.insert(key).second) {
+        const auto abs = ec ? p : canon;
+        if (!g_added_dll_dirs.insert(abs).second) {
             return;
         }
+        const auto key = ds::util::path_to_utf8_generic(abs);  // diagnostics only
         const DLL_DIRECTORY_COOKIE cookie =
             AddDllDirectory((ec ? p : canon).wstring().c_str());
         if (cookie == nullptr) {
@@ -580,7 +584,7 @@ HookStartupEntryFn load_injector_hook_entry() {
     }
     append_boot_log(std::string{"resolve: source="} +
                     (g_last_source.empty() ? "unknown" : g_last_source) +
-                    " module=" + abs.string());
+                    " module=" + ds::util::path_to_utf8(abs));
     const auto mod_root = mod_root_from_injector_module(abs);
     const auto module_dir = abs.parent_path();
     (void)configure_injector_deps_search(mod_root, module_dir);
@@ -596,9 +600,9 @@ HookStartupEntryFn load_injector_hook_entry() {
     if (!h) {
         const auto err = static_cast<unsigned long>(GetLastError());
         append_boot_log(std::string{"load: FAILED LoadLibrary ("} + std::to_string(err) +
-                        ") module=" + abs.string());
+                        ") module=" + ds::util::path_to_utf8(abs));
         std::fprintf(stderr, "[ds-bootstrap] LoadLibrary failed (%lu): %s\n",
-                     err, abs.string().c_str());
+                     err, ds::util::path_to_utf8(abs).c_str());
         std::fflush(stderr);
         return nullptr;
     }
@@ -606,7 +610,7 @@ HookStartupEntryFn load_injector_hook_entry() {
         GetProcAddress(h, "HookStartupEntry"));
     if (!fn) {
         append_boot_log(std::string{"load: missing export HookStartupEntry module="} +
-                        abs.string());
+                        ds::util::path_to_utf8(abs));
     }
 #else
     // RTLD_LOCAL: every symbol consumed from the real Injector is taken from this
@@ -617,7 +621,7 @@ HookStartupEntryFn load_injector_hook_entry() {
     if (!h) {
         const char *err = dlerror();
         append_boot_log(std::string{"load: FAILED dlopen ("} + (err ? err : "unknown") +
-                        ") module=" + abs.string());
+                        ") module=" + ds::util::path_to_utf8(abs));
         std::fprintf(stderr, "[ds-bootstrap] dlopen failed: %s (%s)\n",
                      abs.c_str(), err ? err : "unknown");
         std::fflush(stderr);
@@ -626,17 +630,17 @@ HookStartupEntryFn load_injector_hook_entry() {
     auto fn = reinterpret_cast<HookStartupEntryFn>(dlsym(h, "HookStartupEntry"));
     if (!fn) {
         append_boot_log(std::string{"load: missing export HookStartupEntry module="} +
-                        abs.string());
+                        ds::util::path_to_utf8(abs));
     }
 #endif
     if (!fn) {
         std::fprintf(stderr, "[ds-bootstrap] missing export HookStartupEntry: %s\n",
-                     abs.string().c_str());
+                     ds::util::path_to_utf8(abs).c_str());
         std::fflush(stderr);
         return nullptr;
     }
-    append_boot_log(std::string{"load: OK module="} + abs.string());
-    std::fprintf(stderr, "[ds-bootstrap] loaded Injector: %s\n", abs.string().c_str());
+    append_boot_log(std::string{"load: OK module="} + ds::util::path_to_utf8(abs));
+    std::fprintf(stderr, "[ds-bootstrap] loaded Injector: %s\n", ds::util::path_to_utf8(abs).c_str());
     std::fflush(stderr);
     return fn;
 }

@@ -24,6 +24,17 @@ if (WIN32)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif ()
 
+# Gate: no path may be narrowed through the ANSI code page outside util/PathText.
+# A name the code page cannot map makes path::string() throw error 1113, which
+# used to abort inject before core.vm loaded (0xE06D7363). See
+# tools/check_path_narrowing.py for the sanctioned conversions.
+add_test(
+    NAME path_narrowing
+    COMMAND ${PYTHON_EXECUTABLE_NAME} ${CMAKE_SOURCE_DIR}/tools/check_path_narrowing.py --quiet
+)
+set_tests_properties(path_narrowing PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
 add_test(
     NAME fork_save_lua
     COMMAND ${CMAKE_COMMAND} -E env

@@ -99,7 +99,7 @@ void *core_vm_module_handle() {
     }
     // RTLD_NOLOAD returns the existing handle (and takes a ref we never drop: the
     // module is process-lifetime by design, see ensure_handle_locked()).
-    return dlopen(path.string().c_str(), RTLD_NOLOAD | RTLD_LAZY);
+    return dlopen(path.native().c_str(), RTLD_NOLOAD | RTLD_LAZY);
 #endif
 }
 

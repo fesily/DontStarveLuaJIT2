@@ -14,12 +14,14 @@
 #include <string>
 #include <mutex>
 #include <cstdlib>
+#include <spdlog/fmt/std.h>
 #include <spdlog/spdlog.h>
 #ifdef _WIN32
 #include <Windows.h>
 #include <DbgHelp.h>
 #pragma comment(lib, "dbghelp.lib")
 #endif
+#include "util/PathText.hpp"
 
 struct GameLuaContextGame : GameLua51Context {
     GameLuaContextGame(GameLuaType type)
@@ -93,7 +95,7 @@ struct GameLuaContextGame : GameLua51Context {
             name.remove_prefix(mods_prefix.size());
             if (!name.empty() && name.find_first_of(invalid_path_chars) == std::string_view::npos) {
                 auto path = std::filesystem::path{dump_mod_output_directory} / std::string{name};
-                if (path.string().size() <= 255) {
+                if (ds::util::path_to_utf8(path).size() <= 255) {
                     return path;
                 }
             }
@@ -123,7 +125,7 @@ struct GameLuaContextGame : GameLua51Context {
         }
         std::lock_guard guard{dump_mutex};
         auto output_path = ChunkDumpPath(chunkname.c_str());
-        DumpState &state = dump_states[output_path.string()];
+        DumpState &state = dump_states[output_path];
         const bool streamed = state.last_payload != 0 && state.last_payload <= stream_piece_max;
         const bool append = streamed && total <= state.size;
         if (!append && total < state.size) {
@@ -134,7 +136,8 @@ struct GameLuaContextGame : GameLua51Context {
                     (append ? std::ios_base::app : std::ios_base::out | std::ios_base::trunc);
         std::ofstream dump_file(output_path, mode);
         if (!dump_file) {
-            spdlog::warn("Cannot open lua chunk dump file: {}", output_path.string());
+            spdlog::warn("Cannot open lua chunk dump file: {}",
+                         output_path);
             return;
         }
         for (const auto &b: buffers) {
@@ -365,7 +368,7 @@ struct GameLuaContextGame : GameLua51Context {
     std::unordered_map<std::string, GumAddress> exports;
     GumInterceptor *interceptor = nullptr;
     std::list<std::string> dump_mod_names;
-    std::unordered_map<std::string, DumpState> dump_states;
+    std::unordered_map<std::filesystem::path, DumpState, ds::util::PathHash> dump_states;
     std::mutex dump_mutex;
     constexpr static auto dump_mod_output_directory = "dumped_lua_mods/";
 };

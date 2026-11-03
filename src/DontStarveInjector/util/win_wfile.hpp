@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <filesystem>
 #include <string>
 #include <cassert>
 
@@ -90,6 +91,25 @@ struct wFile_interface : file_interface {
 
     FILE *fp = nullptr;
     bool textmode = false;
+
+    // Native path overload: the wide API, so a module/file under a folder the ANSI
+    // code page cannot represent still opens (path(char*) would throw error 1113).
+    static wFile_interface *fopen(const std::filesystem::path &path, const char *mode) {
+        auto m = std::string_view{mode};
+        if (m.contains('t')) {
+            return nullptr;// 不支持文本模式
+        }
+        bool textmode = !m.contains('b');
+        std::wstring wide_mode{mode, mode + m.size()};
+        if (textmode) {
+            wide_mode += L"b";
+        }
+        auto fp = ::_wfopen(path.c_str(), wide_mode.c_str());
+        if (fp == nullptr) {
+            return nullptr;
+        }
+        return new wFile_interface{fp, textmode};
+    }
 
     static wFile_interface *fopen(const char *path, const char *mode) {
         auto m = std::string_view{mode};

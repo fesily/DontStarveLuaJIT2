@@ -12,8 +12,8 @@
 
 namespace ds::config::path {
 
-std::filesystem::path GetModConfigDataDir(std::string_view ownid,
-                                          std::string_view cluster_name = "client_save");
+std::filesystem::path GetModConfigDataDir(
+    std::string_view ownid, const std::filesystem::path &cluster_name = std::filesystem::path{"client_save"});
 
 // <klei>/DoNotStarveTogether/<ownid>/client_save - the client's working "save"
 // root and the root DST's mod io sandbox uses for relative mod paths. With an

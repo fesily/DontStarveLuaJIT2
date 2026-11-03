@@ -16,18 +16,23 @@
 #include <string>
 #include "platform.hpp"
 #include "core/PluginPath.hpp"
+#include "util/PathText.hpp"
 
 std::filesystem::path getExePath() {
     static std::filesystem::path p = [] {
 #ifdef _WIN32
-        char path[MAX_PATH];
-        GetModuleFileNameA(NULL, path, 255);
+        // Wide first: the game may live under a path the ANSI code page cannot
+        // represent, and path(char*) would decode it through CP_ACP.
+        wchar_t path[MAX_PATH * 4] = {};
+        const DWORD len =
+            GetModuleFileNameW(NULL, path, static_cast<DWORD>(MAX_PATH * 4));
+        return std::filesystem::path{std::wstring{path, len}};
 #else
         char path[1024];
         ssize_t len = readlink("/proc/self/exe", path, sizeof(path) - 1);
         path[len == -1 ? 0 : len] = 0;
-#endif
         return std::filesystem::path{path};
+#endif
     }();
     return p;
 }
@@ -49,13 +54,15 @@ module_handler_t loadlib(const char *name, int mode) {
         if (p.has_extension()) {
             return p;
         }
+        auto out = p;
 #if defined(_WIN32)
-        return fs::path(p.string() + ".dll");
+        out.concat(L".dll");
 #elif defined(__APPLE__)
-        return fs::path(p.string() + ".dylib");
+        out.concat(".dylib");
 #else
-        return fs::path(p.string() + ".so");
+        out.concat(".so");
 #endif
+        return out;
     };
 
     const auto try_load_path = [&](const fs::path &candidate) -> module_handler_t {
@@ -66,15 +73,16 @@ module_handler_t loadlib(const char *name, int mode) {
         if (!fs::is_regular_file(candidate, ec)) {
             return nullptr;
         }
-        const auto s = candidate.string();
 #ifdef _WIN32
         // Absolute path + DLL_LOAD_DIR: dependency dir is the VM's own folder (Mod/deps).
         // Do NOT add USER_DIRS here unless AddDllDirectory was called — otherwise
         // LoadLibraryEx can fail with ERROR_INVALID_PARAMETER (0x57) / 0x7E chain.
-        return LoadLibraryExA(s.c_str(), nullptr,
+        // Wide: narrowing a module path through CP_ACP throws error 1113 for names
+        // the code page cannot map (and would load the wrong file if it did not).
+        return LoadLibraryExW(candidate.c_str(), nullptr,
                               LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
 #else
-        return dlopen(s.c_str(), RTLD_NOW | mode);
+        return dlopen(candidate.native().c_str(), RTLD_NOW | mode);
 #endif
     };
 
@@ -173,7 +181,7 @@ module_handler_t loadlib(const char *name, int mode) {
 #if !defined(_WIN32)
     fs::path base_lib;
     if (!base.has_extension()) {
-        const auto s = base.string();
+        const auto &s = base.native();  // POSIX: path bytes, no code page involved
         if (s.rfind("lib", 0) != 0) {
             base_lib = fs::path(std::string("lib") + s +
 #if defined(__APPLE__)
@@ -203,21 +211,19 @@ module_handler_t loadlib(const char *name, int mode) {
     }
 
 #ifdef _WIN32
-    if (auto h = LoadLibraryA(with_platform_suffix(input).string().c_str())) {
+    if (auto h = LoadLibraryW(with_platform_suffix(input).c_str())) {
         return h;
     }
     return LoadLibraryA(name);
 #else
-    if (auto h = dlopen(with_platform_suffix(input).string().c_str(), RTLD_NOW | mode)) {
+    if (auto h = dlopen(with_platform_suffix(input).native().c_str(), RTLD_NOW | mode)) {
         return h;
     }
-#if !defined(_WIN32)
     if (!base_lib.empty()) {
-        if (auto h = dlopen(base_lib.string().c_str(), RTLD_NOW | mode)) {
+        if (auto h = dlopen(base_lib.native().c_str(), RTLD_NOW | mode)) {
             return h;
         }
     }
-#endif
     return dlopen(name, RTLD_NOW | mode);
 #endif
 }
@@ -354,7 +360,7 @@ std::vector<std::string> get_cmds(uintptr_t pid) {
     if (auto argv = CommandLineToArgvW(std::filesystem::path(cmd).wstring().c_str(), &n); argv) {
         cmds.resize(n);
         for (int i = 0; i < n; i++) {
-           cmds[i] = std::filesystem::path(argv[i]).string();
+           cmds[i] = ds::util::path_to_utf8(std::filesystem::path(argv[i]));
         }
     }
     return cmds;

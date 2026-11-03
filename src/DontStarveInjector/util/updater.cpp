@@ -11,6 +11,7 @@
 #include "config/InjectorHostConfig.hpp"
 #include "PersistentString.hpp"
 #include "config/sources/LuajitConfigFile.hpp"
+#include "util/PathText.hpp"
 
 using namespace std::literals;
 
@@ -78,7 +79,7 @@ static auto need_updater() {
     auto gameBinDir = getExePath().parent_path();
     for (auto &p: std::filesystem::recursive_directory_iterator(binDir)) {
         if (p.is_regular_file()) {
-            auto filename = p.path().filename().string();
+            auto filename = ds::util::path_to_utf8(p.path().filename());
 
             if (filename.ends_with(".dll") || filename.ends_with(".so")) {
                 auto gamePath = gameBinDir / filename;
@@ -109,8 +110,10 @@ static std::optional<const char *> setup_pre(std::filesystem::path game_dir) {
         return std::nullopt;
     }
     auto bin_dir = modDir.value() / "bin64" / "windows";
-    auto bin_dir_copy = bin_dir.make_preferred().string();
-    auto game_dir_copy = game_dir.make_preferred().string();
+    // Consumed by install.bat through the ANSI environment: keep ANSI when it maps
+    // and never throw on a folder the code page cannot represent.
+    auto bin_dir_copy = ds::util::path_to_native_lossy(bin_dir.make_preferred());
+    auto game_dir_copy = ds::util::path_to_native_lossy(game_dir.make_preferred());
 
     char path[MAX_PATH];
     HMODULE hmod;
@@ -152,7 +155,7 @@ static void installer(bool setup, bool restart) {
             ,
                            GetCurrentProcessId(), update_cmd);
 #ifndef ENABLE_STEAM_SUPPORT
-    cmd += std::format("start {}", getExePath().filename().string());
+    cmd += std::format("start {}", ds::util::path_to_native_lossy(getExePath().filename()));
 #endif
     spdlog::info("run shell:{}", cmd);
     if (CreateProcessA(NULL, cmd.data(), NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {

@@ -2,6 +2,7 @@
 
 #include "config/path/ModFolderAliases.hpp"
 #include "config/sources/LuajitConfigFile.hpp"
+#include "util/PathText.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -43,7 +44,8 @@ std::string resolve_canonical_modname_from_modmain_path(std::string_view modmain
     if (modmain_path.empty()) {
         return {};
     }
-    const auto folder = std::filesystem::path(modmain_path).parent_path().filename().string();
+    const auto folder = util::path_to_utf8(
+        util::path_from_utf8(modmain_path).parent_path().filename());
     if (folder.empty()) {
         return {};
     }

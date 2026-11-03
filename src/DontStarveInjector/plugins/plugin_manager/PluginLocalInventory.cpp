@@ -1,5 +1,6 @@
 #include "PluginLocalInventory.hpp"
 #include "PluginApply.hpp"  // DS_PLUGIN_BUILD_CONFIG / kBuildConfigAny
+#include "util/PathText.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -27,7 +28,7 @@ bool iequals_ascii(std::string_view a, std::string_view b) {
 }
 
 bool has_plugin_module_extension(const std::filesystem::path &path) {
-    const auto ext = path.extension().string();
+    const auto ext = ds::util::path_to_utf8(path.extension());
 #if defined(_WIN32)
     return iequals_ascii(ext, ".dll");
 #elif defined(__APPLE__)
@@ -39,7 +40,7 @@ bool has_plugin_module_extension(const std::filesystem::path &path) {
 
 // plugin_dummy.dll / plugin_dummy.so / plugin_dummy.dylib → plugin_dummy
 std::string module_stem(const std::filesystem::path &path) {
-    std::string name = path.filename().string();
+    std::string name = ds::util::path_to_utf8(path.filename());
     // Strip known multi-part extensions first.
     static const char *kExts[] = {".dll", ".so", ".dylib"};
     for (const char *ext : kExts) {
@@ -102,7 +103,7 @@ void merge_meta(LocalPluginEntry &entry, const std::filesystem::path &meta_path)
 
 void merge_module(LocalPluginEntry &entry, const std::filesystem::path &module_path) {
     entry.has_module = true;
-    entry.module = module_path.filename().string();
+    entry.module = ds::util::path_to_utf8(module_path.filename());
     entry.path = module_path;
 }
 
@@ -185,7 +186,7 @@ std::vector<LocalPluginEntry> scan_local_inventory(const std::filesystem::path &
         if (!it->is_directory(probe_ec)) {
             continue;
         }
-        const std::string stem = it->path().filename().string();
+        const std::string stem = ds::util::path_to_utf8(it->path().filename());
         if (!stem.starts_with("plugin_")) {
             continue;
         }

@@ -2,7 +2,10 @@
 #include "SaveParse.hpp"
 #include "config/BaseOptionKeys.hpp"
 #include "config/path/ConfigPaths.hpp"
+#include "util/PathText.hpp"
 
+#include <exception>
+#include <spdlog/fmt/std.h>
 #include <spdlog/spdlog.h>
 
 namespace ds::config {
@@ -35,26 +38,35 @@ ConfigPartial SaveFileSource::read(CascadeContext &ctx) const {
     auto mod_config_data = path::GetModConfigDataDir(ownid);
     auto canonical_save_path =
         mod_config_data / path::GetModConfigDataFileName(identity.canonical_modname);
-    spdlog::info("resolved client mod config data dir to {}", mod_config_data.string());
-    spdlog::info("resolved canonical mod config save path to {}", canonical_save_path.string());
-    ctx.save_file = canonical_save_path.string();
-    partial.values[std::string{keys::kSaveFile}] =
-        ds::plugin::ConfigValue::string(canonical_save_path.string());
+    spdlog::info("resolved client mod config data dir to {}", mod_config_data);
+    spdlog::info("resolved canonical mod config save path to {}",
+                 canonical_save_path);
+    // The save-file key is consumed by narrow filesystem APIs: keep ANSI when it
+    // maps and fall back to UTF-8 instead of throwing.
+    const auto save_file = util::path_to_native_lossy(canonical_save_path);
+    ctx.save_file = save_file;
+    partial.values[std::string{keys::kSaveFile}] = ds::plugin::ConfigValue::string(save_file);
 
     for (const auto &alias : ctx.aliases) {
         auto candidate = mod_config_data / path::GetModConfigDataFileName(alias);
-        spdlog::info("checking client mod config candidate {}", candidate.string());
-        if (!std::filesystem::exists(candidate)) {
-            continue;
-        }
-        spdlog::info("try load mod configuration from {}", candidate.string());
-        ds::plugin::ConfigView values;
-        if (save_parse::read_save_file(candidate, schema_, values)) {
-            // Preserve discovered path; merge save contents on top without dropping it.
-            partial.values = std::move(values);
-            partial.values[std::string{keys::kSaveFile}] =
-                ds::plugin::ConfigValue::string(canonical_save_path.string());
-            break;
+        try {
+            spdlog::info("checking client mod config candidate {}", candidate);
+            if (!std::filesystem::exists(candidate)) {
+                continue;
+            }
+            spdlog::info("try load mod configuration from {}", candidate);
+            ds::plugin::ConfigView values;
+            if (save_parse::read_save_file(candidate, schema_, values)) {
+                // Preserve discovered path; merge save contents on top without dropping it.
+                partial.values = std::move(values);
+                partial.values[std::string{keys::kSaveFile}] =
+                    ds::plugin::ConfigValue::string(save_file);
+                break;
+            }
+        } catch (const std::exception &e) {
+            // Unrepresentable save-folder names must not abort the cascade.
+            spdlog::warn("client mod config candidate {} skipped: {}",
+                         candidate, e.what());
         }
     }
     return partial;

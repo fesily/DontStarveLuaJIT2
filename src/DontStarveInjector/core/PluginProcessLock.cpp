@@ -1,5 +1,6 @@
 // L0 cross-process lock over a shared plugins tree (see header).
 #include "PluginProcessLock.hpp"
+#include "util/PathText.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -136,7 +137,7 @@ LockTry try_lock_once(const std::filesystem::path &path, void **out_handle, int 
                            FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         if (open_err) {
-            *open_err = "cannot open lock file: " + path.generic_string();
+            *open_err = "cannot open lock file: " + util::path_to_utf8_generic(path);
         }
         return LockTry::OpenFailed;
     }
@@ -154,7 +155,7 @@ LockTry try_lock_once(const std::filesystem::path &path, void **out_handle, int 
     const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);
     if (fd < 0) {
         if (open_err) {
-            *open_err = "cannot open lock file: " + path.generic_string() + " (" +
+            *open_err = "cannot open lock file: " + util::path_to_utf8_generic(path) + " (" +
                         std::strerror(errno) + ")";
         }
         return LockTry::OpenFailed;

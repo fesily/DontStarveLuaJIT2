@@ -1,4 +1,5 @@
 #include "EnabledDstMods.hpp"
+#include "util/PathText.hpp"
 
 #include <cstdlib>
 #include <fstream>
@@ -160,7 +161,7 @@ std::vector<EnabledDstMod> enumerate_enabled_dst_mods(bool is_client) {
             if (!std::filesystem::is_directory(root, ec)) {
                 continue;
             }
-            auto name = root.filename().string();
+            auto name = util::path_to_utf8(root.filename());
             auto canon = std::filesystem::weakly_canonical(root, ec);
             push_name(name, canon);
         }

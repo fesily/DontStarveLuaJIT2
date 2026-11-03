@@ -1,7 +1,10 @@
 #include "ConfigSources.hpp"
 #include "SaveParse.hpp"
 #include "config/path/ConfigPaths.hpp"
+#include "util/PathText.hpp"
 
+#include <exception>
+#include <spdlog/fmt/std.h>
 #include <spdlog/spdlog.h>
 
 namespace ds::config {
@@ -48,22 +51,31 @@ ConfigPartial ModOverridesSource::read(CascadeContext &ctx) const {
     const auto game_info = path::GetServerGameInfo();
     spdlog::info(
         "resolved server game storage config: persist_root='{}', config_dir='{}', cluster='{}', shard='{}'",
-        game_info.persist_root, game_info.config_dir, game_info.cluster_name, game_info.shared_name);
+        game_info.persist_root, game_info.config_dir,
+        game_info.cluster_name, game_info.shared_name);
     if (ctx.ownerdir_hint && !ctx.ownerdir_hint->empty()) {
         spdlog::info("using server ownerdir hint '{}'", *ctx.ownerdir_hint);
     }
 
     const auto candidates = path::GetServerModOverridesPaths(game_info, ctx.ownerdir_hint);
     for (const auto &candidate : candidates) {
-        spdlog::info("checking server mod overrides candidate {}", candidate.string());
-        if (!std::filesystem::exists(candidate)) {
-            continue;
-        }
-        spdlog::info("try load server mod overrides from {}", candidate.string());
-        ds::plugin::ConfigView values;
-        if (save_parse::read_modoverrides(candidate, ctx.aliases, schema_, values)) {
-            partial.values = std::move(values);
-            break;
+        try {
+            spdlog::info("checking server mod overrides candidate {}",
+                         candidate);
+            if (!std::filesystem::exists(candidate)) {
+                continue;
+            }
+            spdlog::info("try load server mod overrides from {}", candidate);
+            ds::plugin::ConfigView values;
+            if (save_parse::read_modoverrides(candidate, ctx.aliases, schema_, values)) {
+                partial.values = std::move(values);
+                break;
+            }
+        } catch (const std::exception &e) {
+            // A candidate derived from an unrepresentable save folder name must not
+            // terminate the process; skip it and keep the cascade going.
+            spdlog::warn("server mod overrides candidate {} skipped: {}",
+                         candidate, e.what());
         }
     }
     return partial;

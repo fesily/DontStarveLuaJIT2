@@ -5,6 +5,7 @@
 #include <zlib.h>
 #include <errno.h>
 #include <filesystem>
+#include <stdio.h>
 
 using namespace std::literals;
 
@@ -109,8 +110,23 @@ struct file_closer {
     }
 };
 
-std::expected<std::string, std::string> GetPersistentString(const std::string_view &filename) {
-    std::unique_ptr<FILE, file_closer> fp(fopen(filename.data(), "r"));
+namespace {
+
+// Windows: open through the wide path so save folders the ANSI code page cannot
+// represent still work (narrowing them would throw error 1113).
+std::unique_ptr<FILE, file_closer> open_persistent_file(const std::filesystem::path &path,
+                                                        bool for_write) {
+#if defined(_WIN32)
+    return std::unique_ptr<FILE, file_closer>{::_wfopen(path.c_str(), for_write ? L"w" : L"r")};
+#else
+    return std::unique_ptr<FILE, file_closer>{::fopen(path.c_str(), for_write ? "w" : "r")};
+#endif
+}
+
+} // namespace
+
+std::expected<std::string, std::string> GetPersistentString(const std::filesystem::path &filename) {
+    auto fp = open_persistent_file(filename, false);
     if (!fp)
         return std::unexpected(strerror(errno));
     fseek(fp.get(), 0, SEEK_END);
@@ -144,9 +160,9 @@ std::expected<std::string, std::string> GetPersistentString(const std::string_vi
     return original_buffer;
 }
 
-//TODO: fix utf8 encodeing issue
-bool SetPersistentString(const std::string_view &filename, const std::string_view &data, bool encode) {
-    std::unique_ptr<FILE, file_closer> fp(fopen(filename.data(), "w"));
+bool SetPersistentString(const std::filesystem::path &filename, const std::string_view &data,
+                         bool encode) {
+    auto fp = open_persistent_file(filename, true);
     if (!fp)
         return false;
     if (fwrite(file_head.data(), sizeof(char), file_head.size(), fp.get()) != file_head.size()) {

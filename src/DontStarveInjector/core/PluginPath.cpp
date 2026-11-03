@@ -1,6 +1,7 @@
 #include "PluginPath.hpp"
 
 #include "config/path/ModFolderAliases.hpp"
+#include "util/PathText.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -34,7 +35,7 @@ std::mutex g_dll_search_mu;
 // Bookkeeping only: AddDllDirectory USER_DIRS paths (absolute/weakly_canonical).
 // Process-wide SetDefaultDllDirectories is intentionally NOT used — plugin loads
 // pass LOAD_LIBRARY_SEARCH_USER_DIRS | DLL_LOAD_DIR | DEFAULT_DIRS on LoadLibraryEx.
-std::unordered_set<std::string> g_added_dll_dirs;
+std::unordered_set<std::filesystem::path, util::PathHash> g_added_dll_dirs;
 // POSIX counterpart: the roots themselves, in registration order, walked by
 // util/platform.cpp loadlib(). Windows keeps the authoritative list in the OS.
 std::vector<std::filesystem::path> g_dll_roots;
@@ -81,15 +82,15 @@ bool iequals_ascii(std::string_view a, std::string_view b) {
 }
 
 void try_push_dir(std::vector<std::filesystem::path> &out,
-                  std::unordered_set<std::string> &seen,
+                  std::unordered_set<std::filesystem::path, util::PathHash> &seen,
                   const std::filesystem::path &dir) {
     std::error_code ec;
     if (dir.empty() || !std::filesystem::is_directory(dir, ec)) {
         return;
     }
     const auto canon = std::filesystem::weakly_canonical(dir, ec);
-    const auto key = (ec ? dir : canon).string();
-    if (!seen.insert(key).second) {
+    // Path key, not text: dedupe never needs an encoding.
+    if (!seen.insert(ec ? dir : canon).second) {
         return;
     }
     out.push_back(ec ? dir : canon);
@@ -222,12 +223,12 @@ std::filesystem::path plugins_dir_from_module_dir(const std::filesystem::path &m
     // Prefer the path as-is when this module already lives under plugins/
     // (plugin_manager.dll is deployed to <InjectorDir>/plugins/).
     const auto leaf = module_dir.filename();
-    if (!leaf.empty() && iequals_ascii(leaf.string(), "plugins")) {
+    if (!leaf.empty() && iequals_ascii(util::path_to_utf8(leaf), "plugins")) {
         return module_dir;
     }
     // Also accept paths whose string form ends with /plugins (defensive for
     // root-edge cases where filename() may be empty on some platforms).
-    const auto s = module_dir.generic_string();
+    const auto s = util::path_to_utf8_generic(module_dir);
     if (s.size() >= 8) {
         const auto tail = std::string_view(s).substr(s.size() - 8);
         if (iequals_ascii(tail, "/plugins") || iequals_ascii(tail, "\\plugins")) {
@@ -276,7 +277,7 @@ std::string resolve_modmain_path() {
 
 std::vector<std::filesystem::path> default_plugin_search_dirs() {
     std::vector<std::filesystem::path> dirs;
-    std::unordered_set<std::string> seen;
+    std::unordered_set<std::filesystem::path, util::PathHash> seen;
 
     if (const char *env = std::getenv(kPluginDirEnv); env && *env) {
         try_push_dir(dirs, seen, std::filesystem::path(env));
@@ -338,11 +339,11 @@ std::filesystem::path mod_root_from_plugins_dir(const std::filesystem::path &plu
         return {};
     }
     const auto leaf = plugins_dir.filename();
-    if (!leaf.empty() && iequals_ascii(leaf.string(), "plugins")) {
+    if (!leaf.empty() && iequals_ascii(util::path_to_utf8(leaf), "plugins")) {
         return plugins_dir.parent_path();
     }
     // Defensive: some platforms may yield empty filename() for trailing separators.
-    const auto s = plugins_dir.generic_string();
+    const auto s = util::path_to_utf8_generic(plugins_dir);
     if (s.size() >= 8) {
         const auto tail = std::string_view(s).substr(s.size() - 8);
         if (iequals_ascii(tail, "/plugins") || iequals_ascii(tail, "\\plugins")) {
@@ -371,7 +372,7 @@ std::vector<std::string> list_plugin_packages_in(const std::filesystem::path &di
         if (!it->is_directory(probe_ec)) {
             continue;
         }
-        const std::string stem = it->path().filename().string();
+        const std::string stem = util::path_to_utf8(it->path().filename());
         if (stem.rfind("plugin_", 0) != 0) {
             continue;
         }
@@ -441,10 +442,10 @@ bool configure_plugin_dll_search(const std::vector<std::filesystem::path> &plugi
             }
             const auto canon = std::filesystem::weakly_canonical(p, ec);
             const auto abs_path = ec ? p : canon;
-            const auto key = abs_path.string();
-            if (!g_added_dll_dirs.insert(key).second) {
+            if (!g_added_dll_dirs.insert(abs_path).second) {
                 continue; // already registered
             }
+            const auto key = util::path_to_utf8_generic(abs_path);  // diagnostics only
 #if defined(_WIN32)
             const DLL_DIRECTORY_COOKIE cookie = AddDllDirectory(abs_path.wstring().c_str());
             if (cookie == nullptr) {

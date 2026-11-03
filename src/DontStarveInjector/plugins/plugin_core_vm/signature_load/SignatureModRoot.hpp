@@ -12,7 +12,11 @@
 //   <mod>                          -> <mod>     Injector.dll at package root
 //   <mod>/bin64/windows            -> <mod>     legacy shell
 inline bool signature_leaf_iequals(const std::filesystem::path &p, std::string_view name) {
-    const auto leaf = p.filename().string();
+    // UTF-8 view of the leaf, spelled inline so this header stays usable by the
+    // standalone tools/tests that do not add the Injector include dir (same role as
+    // util/PathText::path_to_utf8). u8string() is total: no code page, no throw.
+    const auto u8 = p.filename().u8string();
+    const std::string leaf{reinterpret_cast<const char *>(u8.data()), u8.size()};
     if (leaf.size() != name.size()) {
         return false;
     }

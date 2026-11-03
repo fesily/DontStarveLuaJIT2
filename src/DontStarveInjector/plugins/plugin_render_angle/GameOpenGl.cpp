@@ -1,5 +1,6 @@
 #include "GameOpenGl.hpp"
 #include "AngleConfig.hpp"
+#include "util/PathText.hpp"
 
 #ifdef _WIN32
 
@@ -10,6 +11,7 @@
 #include "util/module.hpp"
 
 #include <Windows.h>
+#include <spdlog/fmt/std.h>
 #include <spdlog/spdlog.h>
 
 #include <egl/egl.h>
@@ -94,7 +96,7 @@ namespace {
     }
 
     static bool PathLeafEqualsIgnoreCase(const std::filesystem::path &path, std::string_view leaf) {
-        return EqualsIgnoreCase(path.filename().string(), leaf);
+        return EqualsIgnoreCase(ds::util::path_to_utf8(path.filename()), leaf);
     }
 
     static bool ContainsIgnoreCase(std::string_view text, std::string_view needle) {
@@ -322,7 +324,8 @@ namespace {
     static constexpr const wchar_t *kSideloadGlesName = L"ds_GLESv2.dll";
     static constexpr const wchar_t *kSideloadEglName = L"ds_libEGL.dll";
 
-    static std::string ModulePathString(HMODULE mod) {
+    // Keep the wide path: it is compared/printed and never has to be narrowed.
+    static std::filesystem::path ModulePath(HMODULE mod) {
         if (!mod) {
             return {};
         }
@@ -330,7 +333,7 @@ namespace {
         if (GetModuleFileNameW(mod, path, MAX_PATH) == 0) {
             return {};
         }
-        return std::filesystem::path(path).string();
+        return std::filesystem::path(path);
     }
 
     static bool TryLoadAnglePair(const std::filesystem::path &dir) {
@@ -354,8 +357,8 @@ namespace {
         const DWORD egl_err = GetLastError();
         if (!gles_mod || !egl_mod) {
             spdlog::error("ANGLE sideload failed gles={} egl={} gles_err={} egl_err={}",
-                          gles.string(),
-                          egl.string(),
+                          gles,
+                          egl,
                           gles_mod ? 0u : static_cast<unsigned>(gles_err),
                           egl_mod ? 0u : static_cast<unsigned>(egl_err));
             if (gles_mod) {
@@ -368,12 +371,13 @@ namespace {
         }
 
         // Refuse if loader still bound us to game basenames (should not happen with sideload names).
-        const auto gles_path = ModulePathString(gles_mod);
-        const auto egl_path = ModulePathString(egl_mod);
-        const auto gles_leaf = std::filesystem::path(gles_path).filename().string();
-        const auto egl_leaf = std::filesystem::path(egl_path).filename().string();
+        const auto gles_path = ModulePath(gles_mod);
+        const auto egl_path = ModulePath(egl_mod);
+        const auto gles_leaf = ds::util::path_to_utf8(gles_path.filename());
+        const auto egl_leaf = ds::util::path_to_utf8(egl_path.filename());
         if (!EqualsIgnoreCase(gles_leaf, "ds_GLESv2.dll") || !EqualsIgnoreCase(egl_leaf, "ds_libEGL.dll")) {
-            spdlog::error("ANGLE sideload resolved unexpected modules gles={} egl={}", gles_path, egl_path);
+            spdlog::error("ANGLE sideload resolved unexpected modules gles={} egl={}",
+                          gles_path, egl_path);
             FreeLibrary(gles_mod);
             FreeLibrary(egl_mod);
             return false;
@@ -381,7 +385,8 @@ namespace {
 
         g_angle_glesv2 = gles_mod;
         g_angle_egl = egl_mod;
-        spdlog::info("ANGLE sideload loaded gles={} egl={}", gles_path, egl_path);
+        spdlog::info("ANGLE sideload loaded gles={} egl={}",
+                     gles_path, egl_path);
         return true;
     }
 
@@ -400,8 +405,7 @@ namespace {
 
         spdlog::error("ANGLE sideload missing: need {} and {} under plugin dir or Mod/deps "
                       "(game-resident libGLESv2/libEGL are not used for rebind)",
-                      std::filesystem::path(kSideloadGlesName).string(),
-                      std::filesystem::path(kSideloadEglName).string());
+                      "ds_GLESv2.dll", "ds_libEGL.dll");
         return false;
     }
 

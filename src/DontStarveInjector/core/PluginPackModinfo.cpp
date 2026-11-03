@@ -1,4 +1,5 @@
 #include "PluginPackModinfo.hpp"
+#include "util/PathText.hpp"
 
 #include <fstream>
 #include <iterator>
@@ -21,7 +22,7 @@ PluginPackModinfo parse_plugin_pack_modinfo(const std::filesystem::path &modinfo
         lua.open_libraries(sol::lib::base);
 
         sol::environment env(lua, sol::create, lua.globals());
-        env["folder_name"] = modinfo_path.parent_path().filename().string();
+        env["folder_name"] = util::path_to_utf8(modinfo_path.parent_path().filename());
         env["locale"] = "";
         env["ChooseTranslationTable"] = [](sol::table t) -> sol::object {
             if (!t.valid()) {

@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <ranges>
 #include <string_view>
+#include "util/PathText.hpp"
 
 #include <spdlog/spdlog.h>
 #include <fmt/format.h>
@@ -217,7 +218,9 @@ static std::string get_signatures_filename(bool isClient) {
         spdlog::error("get_signatures_filename: mod root unresolved; set file_path for tools");
         return {};
     }
-    return (root / file).string();
+    // Downstream opens this by narrow name (legacy stdio/tooling): keep ANSI when
+    // it maps and fall back to UTF-8 instead of throwing on an unrepresentable root.
+    return ds::util::path_to_native_lossy(root / file);
 }
 
 const char *SignatureJson::version_path = "../version.txt";

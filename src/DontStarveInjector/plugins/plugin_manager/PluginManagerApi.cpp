@@ -4,6 +4,7 @@
 #include "PluginLocalInventory.hpp"
 #include "PluginPinConfig.hpp"
 #include "core/PluginProcessLock.hpp"
+#include "util/PathText.hpp"
 
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -252,7 +253,8 @@ void refresh_status_locked(bool full_inventory = true) {
     }
     j["config_path"] = g_config_path_buf;
     j["plugins_dir"] = plugins_dir.empty() ? nlohmann::json(nullptr)
-                                           : nlohmann::json(plugins_dir.generic_string());
+                                           : nlohmann::json(
+                                                 ds::util::path_to_utf8_generic(plugins_dir));
     j["schema_version"] = g_cfg.schema_version;
     j["channel_name"] = g_cfg.channel_name;
     j["repo"] = g_cfg.repo;
@@ -278,7 +280,7 @@ void clear_error_locked() {
 
 bool reload_locked() {
     const auto path = ds::plugin::resolve_config_path();
-    g_config_path_buf = path.generic_string();
+    g_config_path_buf = ds::util::path_to_native_lossy(path);
     bool ok = false;
     g_cfg = ds::plugin::load_from_file(path, &ok);
     // Missing file is not an error - defaults apply.
@@ -292,7 +294,7 @@ bool reload_locked() {
 
 bool save_locked(const ds::plugin::PluginPinConfig &cfg) {
     const auto path = ds::plugin::resolve_config_path();
-    g_config_path_buf = path.generic_string();
+    g_config_path_buf = ds::util::path_to_native_lossy(path);
     if (!ds::plugin::save_to_file(cfg, path)) {
         set_error_locked("failed to save pin config");
         return false;
@@ -724,7 +726,7 @@ bool apply_blocking(const char *id_or_null, size_t *refused_out) {
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_config_path() {
     std::lock_guard lock(g_mu);
     if (g_config_path_buf.empty()) {
-        g_config_path_buf = ds::plugin::resolve_config_path().generic_string();
+        g_config_path_buf = ds::util::path_to_native_lossy(ds::plugin::resolve_config_path());
     }
     return g_config_path_buf.c_str();
 }
@@ -732,7 +734,7 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_config_path() {
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_manager_status_json() {
     std::lock_guard lock(g_mu);
     if (g_config_path_buf.empty()) {
-        g_config_path_buf = ds::plugin::resolve_config_path().generic_string();
+        g_config_path_buf = ds::util::path_to_native_lossy(ds::plugin::resolve_config_path());
     }
     // While network is in flight, skip inventory rescan so UI poll never blocks
     // the game thread on disk/discovery. Progress callback already patches status.
@@ -764,7 +766,7 @@ DONTSTARVEINJECTOR_GAME_API bool DS_LUAJIT_plugin_config_set_json(const char *js
 
     std::lock_guard lock(g_mu);
     const auto path = ds::plugin::resolve_config_path();
-    g_config_path_buf = path.generic_string();
+    g_config_path_buf = ds::util::path_to_native_lossy(path);
     try {
         if (!path.parent_path().empty()) {
             std::filesystem::create_directories(path.parent_path());
@@ -928,7 +930,7 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_manifest_json() {
 DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_plugin_plan_apply_json() {
     std::lock_guard lock(g_mu);
     if (g_config_path_buf.empty()) {
-        g_config_path_buf = ds::plugin::resolve_config_path().generic_string();
+        g_config_path_buf = ds::util::path_to_native_lossy(ds::plugin::resolve_config_path());
     }
     refresh_plan_locked();
     return g_plan_json_buf.c_str();

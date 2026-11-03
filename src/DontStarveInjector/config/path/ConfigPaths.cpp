@@ -1,10 +1,13 @@
 #include "ConfigPaths.hpp"
 
 #include "config/InjectorHostConfig.hpp"
+#include "config/path/OwnerDirs.hpp"
 #include "game_info.hpp"
+#include "util/PathText.hpp"
 
 #include <algorithm>
 #include <cstdlib>
+#include <spdlog/fmt/std.h>
 #include <spdlog/spdlog.h>
 #include <string_view>
 
@@ -73,15 +76,16 @@ std::filesystem::path GetAppStorageBaseDir(std::string_view relative_path = {}) 
     if (relative_path.empty()) {
         return home_dir;
     }
-    const auto normalized = std::filesystem::path{relative_path}.generic_string();
+    std::string normalized{relative_path};
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
     if (normalized == "Klei") {
         return home_dir / ".klei";
     }
     if (std::string_view{normalized}.starts_with("Klei/"sv)) {
-        return home_dir /
-               std::filesystem::path{std::string{".klei/"}.append(normalized.substr(sizeof("Klei/") - 1))};
+        return home_dir / util::path_from_utf8(
+                              std::string{".klei/"}.append(normalized.substr(sizeof("Klei/") - 1)));
     }
-    return home_dir / std::filesystem::path{relative_path};
+    return home_dir / util::path_from_utf8(relative_path);
 #else
     const auto documents_dir = GetUserDocumentsDir();
     if (documents_dir.empty()) {
@@ -90,7 +94,7 @@ std::filesystem::path GetAppStorageBaseDir(std::string_view relative_path = {}) 
     if (relative_path.empty()) {
         return documents_dir;
     }
-    return documents_dir / std::filesystem::path{relative_path};
+    return documents_dir / util::path_from_utf8(relative_path);
 #endif
 }
 
@@ -109,9 +113,10 @@ std::filesystem::path GetKleiSaveDataDir(std::string_view ownid) {
     }
     auto save_dir = klei_root / "DoNotStarveTogether";
     if (!ownid.empty()) {
-        save_dir /= ownid;
+        save_dir /= util::path_from_utf8(ownid);
     }
-    spdlog::info("resolved Klei save data dir for ownid '{}' to {}", ownid, save_dir.string());
+    spdlog::info("resolved Klei save data dir for ownid '{}' to {}", ownid,
+                 save_dir);
     return save_dir;
 }
 
@@ -124,12 +129,13 @@ std::filesystem::path GetPersistentStorageRootDir(std::string_view persist_root)
     if (std::string_view{normalized}.starts_with(app_prefix)) {
         normalized.erase(0, app_prefix.size());
         const auto resolved_root = GetAppStorageBaseDir(normalized);
-        spdlog::info("resolved persistent storage root '{}' to {}", persist_root, resolved_root.string());
+        spdlog::info("resolved persistent storage root '{}' to {}", persist_root,
+                     resolved_root);
         return resolved_root;
     }
-    std::filesystem::path root{normalized};
+    const auto root = util::path_from_utf8(normalized);
     if (root.is_absolute()) {
-        spdlog::info("using absolute persistent storage root {}", root.string());
+        spdlog::info("using absolute persistent storage root {}", root);
         return root;
     }
     const auto base = GetHomeDir();
@@ -137,7 +143,8 @@ std::filesystem::path GetPersistentStorageRootDir(std::string_view persist_root)
         return {};
     }
     const auto resolved_root = base / root;
-    spdlog::info("resolved relative persistent storage root '{}' to {}", persist_root, resolved_root.string());
+    spdlog::info("resolved relative persistent storage root '{}' to {}", persist_root,
+                 resolved_root);
     return resolved_root;
 }
 
@@ -153,7 +160,8 @@ void add_path_candidate(std::vector<std::filesystem::path> &candidates,
 
 } // namespace
 
-std::filesystem::path GetModConfigDataDir(std::string_view ownid, std::string_view cluster_name) {
+std::filesystem::path GetModConfigDataDir(std::string_view ownid,
+                                         const std::filesystem::path &cluster_name) {
     auto save_dir = GetKleiSaveDataDir(ownid);
     if (save_dir.empty()) {
         return {};
@@ -168,7 +176,7 @@ std::filesystem::path GetClientSaveDir(std::string_view ownid) {
     }
     const auto game_root = klei_root / "DoNotStarveTogether";
     if (!ownid.empty()) {
-        return game_root / std::string{ownid} / "client_save";
+        return game_root / util::path_from_utf8(ownid) / "client_save";
     }
     std::error_code ec;
     std::filesystem::path newest;
@@ -212,28 +220,29 @@ GameInfo GetServerGameInfo() {
     if (auto value = read_env_or_cmd_value("persistent_storage_root"); !value.empty()) {
         game_info.persist_root = value;
     }
+    // Overrides are UTF-8 text (see getEnvOrCmdValue): decode once, here.
     if (auto value = read_env_or_cmd_value("conf_dir"); !value.empty()) {
-        game_info.config_dir = value;
+        game_info.config_dir = util::path_from_utf8(value);
     } else if (auto value = read_env_or_cmd_value("config_dir"); !value.empty()) {
-        game_info.config_dir = value;
+        game_info.config_dir = util::path_from_utf8(value);
     }
     if (auto value = read_env_or_cmd_value("cluster"); !value.empty()) {
-        game_info.cluster_name = value;
+        game_info.cluster_name = util::path_from_utf8(value);
     }
     if (auto value = read_env_or_cmd_value("shard"); !value.empty()) {
-        game_info.shared_name = value;
+        game_info.shared_name = util::path_from_utf8(value);
     }
     if (game_info.persist_root.empty()) {
         game_info.persist_root = std::string{GetDefaultPersistentStorageRoot()};
     }
     if (game_info.config_dir.empty()) {
-        game_info.config_dir = "DoNotStarveTogether";
+        game_info.config_dir = std::filesystem::path{"DoNotStarveTogether"};
     }
     if (game_info.cluster_name.empty()) {
-        game_info.cluster_name = "Cluster_1";
+        game_info.cluster_name = std::filesystem::path{"Cluster_1"};
     }
     if (game_info.shared_name.empty()) {
-        game_info.shared_name = "Master";
+        game_info.shared_name = std::filesystem::path{"Master"};
     }
     return game_info;
 }
@@ -248,31 +257,26 @@ GetServerModOverridesPaths(const GameInfo &game_info,
     }
     const auto config_root = persist_root / game_info.config_dir;
     const auto shard_suffix =
-        std::filesystem::path{game_info.cluster_name} / game_info.shared_name / "modoverrides.lua";
+        game_info.cluster_name / game_info.shared_name / "modoverrides.lua";
 
     if (ownerdir_hint && !ownerdir_hint->empty()) {
-        add_path_candidate(candidates, config_root / *ownerdir_hint / shard_suffix);
+        add_path_candidate(candidates, config_root / util::path_from_utf8(*ownerdir_hint) /
+                                          shard_suffix);
     }
 
     std::error_code ec;
     if (std::filesystem::exists(config_root, ec) && std::filesystem::is_directory(config_root, ec)) {
-        std::vector<std::filesystem::path> ownerdirs;
-        for (const auto &entry : std::filesystem::directory_iterator(config_root, ec)) {
-            if (ec) {
-                break;
-            }
-            if (!entry.is_directory(ec)) {
-                continue;
-            }
-            const auto ownerdir_name = entry.path().filename().string();
-            if (ownerdir_name.empty() || ownerdir_name == game_info.cluster_name) {
-                continue;
-            }
-            ownerdirs.push_back(entry.path());
-        }
-        std::sort(ownerdirs.begin(), ownerdirs.end());
-        for (const auto &ownerdir : ownerdirs) {
+        // Owner dir names come from the save root: the scan compares path
+        // components and never narrows them, so a folder the ANSI code page
+        // cannot represent cannot throw here.
+        std::string scan_stop_reason;
+        for (const auto &ownerdir :
+             list_owner_dirs(config_root, game_info.cluster_name, &scan_stop_reason)) {
             add_path_candidate(candidates, ownerdir / shard_suffix);
+        }
+        if (!scan_stop_reason.empty()) {
+            spdlog::warn("owner dir scan under {} stopped: {}", config_root,
+                         scan_stop_reason);
         }
     }
     add_path_candidate(candidates, config_root / shard_suffix);

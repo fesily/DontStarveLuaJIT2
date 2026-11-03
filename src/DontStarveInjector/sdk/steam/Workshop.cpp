@@ -1,5 +1,6 @@
 #include "Workshop.hpp"
 #include "util/platform.hpp"
+#include "util/PathText.hpp"
 
 #include <algorithm>
 #include <string>
@@ -57,7 +58,9 @@ const char *GetAbsoluteWorkshopDirectory() {
         return nullptr;
     }
     if (absolute_directory.empty()) {
-        absolute_directory = std::filesystem::absolute(*directory).generic_string();
+        // Steamworks takes UTF-8 path strings.
+        absolute_directory =
+            ds::util::path_to_utf8_generic(std::filesystem::absolute(*directory));
     }
     return absolute_directory.c_str();
 }

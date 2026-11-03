@@ -10,6 +10,7 @@
 #include "config/ConfigSource.hpp"
 #include "plugins/plugin_core_vm/VmOptionKeys.hpp"
 #include "../../modinfo.hpp"
+#include "util/PathText.hpp"
 
 #include "GameLua.hpp"
 #include "LuaEvent.hpp"
@@ -201,7 +202,8 @@ bool run_signature_and_replace(const ds::core_vm::BootstrapArgs &args) {
     std::string mainPathOwned;
     const char *mainPathC = args.main_path;
     if (!mainPathC || !*mainPathC) {
-        mainPathOwned = getExePath().string();
+        // FunctionRelocation takes a narrow module path; keep ANSI when it maps.
+        mainPathOwned = ds::util::path_to_native_lossy(getExePath());
         mainPathC = mainPathOwned.c_str();
     }
     const std::string mainPath{mainPathC};

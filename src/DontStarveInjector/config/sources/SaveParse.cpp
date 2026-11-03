@@ -1,9 +1,11 @@
 #include "SaveParse.hpp"
 
+#include "util/PathText.hpp"
 #include "util/PersistentString.hpp"
 
 #include <cmath>
 #include <fstream>
+#include <spdlog/fmt/std.h>
 #include <spdlog/spdlog.h>
 #include <sol/sol.hpp>
 
@@ -51,22 +53,22 @@ bool try_coerce_saved_value(const sol::object &raw, const ds::plugin::OptionSche
 }
 
 bool load_save_config_table(const std::filesystem::path &path, sol::state &lua, sol::table &root) {
-    const auto persistent_string = GetPersistentString(path.string());
+    const auto persistent_string = GetPersistentString(path);
     if (!persistent_string) {
-        spdlog::error("failed to load mod configuration from {}: {}", path.string(),
+        spdlog::error("failed to load mod configuration from {}: {}", path,
                       persistent_string.error());
         return false;
     }
     try {
         auto config = lua.safe_script(persistent_string.value());
         if (config.get_type() != sol::type::table) {
-            spdlog::warn("mod configuration at {} is not a table", path.string());
+            spdlog::warn("mod configuration at {} is not a table", path);
             return false;
         }
         root = config;
         return true;
     } catch (const std::exception &e) {
-        spdlog::error("failed to parse mod configuration from {}: {}", path.string(), e.what());
+        spdlog::error("failed to parse mod configuration from {}: {}", path, e.what());
         return false;
     }
 }
@@ -74,20 +76,20 @@ bool load_save_config_table(const std::filesystem::path &path, sol::state &lua, 
 bool load_plain_lua_table(const std::filesystem::path &path, sol::state &lua, sol::table &root) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        spdlog::error("failed to open lua table file {}", path.string());
+        spdlog::error("failed to open lua table file {}", path);
         return false;
     }
     const std::string content{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
     try {
         auto config = lua.safe_script(content);
         if (config.get_type() != sol::type::table) {
-            spdlog::warn("lua table file at {} is not a table", path.string());
+            spdlog::warn("lua table file at {} is not a table", path);
             return false;
         }
         root = config;
         return true;
     } catch (const std::exception &e) {
-        spdlog::error("failed to parse lua table file {}: {}", path.string(), e.what());
+        spdlog::error("failed to parse lua table file {}: {}", path, e.what());
         return false;
     }
 }
@@ -154,13 +156,13 @@ bool read_modoverrides(const std::filesystem::path &path,
     }
     sol::table mod_entry = lua.create_table();
     if (!find_mod_override_entry(root, aliases, mod_entry)) {
-        spdlog::warn("no matching mod entry found in server mod overrides {}", path.string());
+        spdlog::warn("no matching mod entry found in server mod overrides {}", path);
         return false;
     }
     auto options_object = mod_entry["configuration_options"].get<sol::object>();
     if (is_nil_object(options_object) || options_object.get_type() != sol::type::table) {
         spdlog::warn("server mod overrides entry at {} has no configuration_options table",
-                     path.string());
+                     path);
         return true;
     }
     auto options = options_object.as<sol::table>();

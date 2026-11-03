@@ -3,6 +3,7 @@
 #include "PluginHash.hpp"
 #include "PluginHttp.hpp"
 #include "PluginZipExtract.hpp"
+#include "util/PathText.hpp"
 
 #include "core/PackagedModule.hpp"
 
@@ -112,14 +113,14 @@ bool try_write_bytes(const std::filesystem::path &path, const std::string &bytes
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out.is_open()) {
         if (err) {
-            *err = "cannot open for write: " + path.generic_string();
+            *err = "cannot open for write: " + ds::util::path_to_utf8_generic(path);
         }
         return false;
     }
     out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
     if (!out) {
         if (err) {
-            *err = "write failed: " + path.generic_string();
+            *err = "write failed: " + ds::util::path_to_utf8_generic(path);
         }
         return false;
     }
@@ -136,13 +137,14 @@ bool copy_file_overwrite(const std::filesystem::path &from, const std::filesyste
     }
 
     const auto parent = to.parent_path().empty() ? std::filesystem::path(".") : to.parent_path();
+    auto staged = to.filename();
+    staged += ".ds_tmp_";
 #if defined(_WIN32)
-    const auto tmp =
-        parent / (to.filename().string() + ".ds_tmp_" + std::to_string(GetCurrentProcessId()));
+    staged += std::to_string(GetCurrentProcessId());
 #else
-    const auto tmp =
-        parent / (to.filename().string() + ".ds_tmp_" + std::to_string(static_cast<unsigned>(::getpid())));
+    staged += std::to_string(static_cast<unsigned>(::getpid()));
 #endif
+    const auto tmp = parent / staged;
 
     std::filesystem::remove(tmp, ec);
     ec.clear();
@@ -150,8 +152,8 @@ bool copy_file_overwrite(const std::filesystem::path &from, const std::filesyste
     std::filesystem::copy_file(from, tmp, std::filesystem::copy_options::overwrite_existing, ec);
     if (ec) {
         if (err) {
-            *err = "temp write failed: " + from.generic_string() + " -> " + tmp.generic_string() +
-                   " (" + ec.message() + ")";
+            *err = "temp write failed: " + ds::util::path_to_utf8_generic(from) + " -> " +
+                   ds::util::path_to_utf8_generic(tmp) + " (" + ec.message() + ")";
         }
         return false;
     }
@@ -165,7 +167,8 @@ bool copy_file_overwrite(const std::filesystem::path &from, const std::filesyste
     std::error_code rm_ec;
     std::filesystem::remove(tmp, rm_ec);
     if (err) {
-        *err = "replace failed (target mapped by another process?): " + to.generic_string();
+        *err = "replace failed (target mapped by another process?): " +
+               ds::util::path_to_utf8_generic(to);
     }
     return false;
 }
@@ -451,7 +454,7 @@ bool install_extracted_files(const std::filesystem::path &staging_dir,
     if (force_pending) {
         std::fprintf(stderr,
                      "[plugin_manager] install pending: %s (package kept together)\n",
-                     (package_dir / members.front()).string().c_str());
+                     ds::util::path_to_utf8(package_dir / members.front()).c_str());
     }
 
     for (const auto &name : members) {
@@ -502,9 +505,11 @@ bool install_extracted_files(const std::filesystem::path &staging_dir,
             if (used_pending) {
                 *used_pending = true;
             }
-            std::fprintf(stderr, "[plugin_manager] install pending: %s\n", pend.string().c_str());
+            std::fprintf(stderr, "[plugin_manager] install pending: %s\n",
+                         ds::util::path_to_utf8(pend).c_str());
         } else {
-            std::fprintf(stderr, "[plugin_manager] install: %s\n", dest.string().c_str());
+            std::fprintf(stderr, "[plugin_manager] install: %s\n",
+                         ds::util::path_to_utf8(dest).c_str());
         }
     }
     return true;

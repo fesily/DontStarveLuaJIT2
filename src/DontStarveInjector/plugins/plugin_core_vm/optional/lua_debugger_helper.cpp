@@ -5,6 +5,7 @@
 #include <windows.h>
 #else
 #endif
+#include "util/PathText.hpp"
 #include "util/platform.hpp"
 #include <spdlog/spdlog.h>
 using namespace std::string_view_literals;
@@ -45,7 +46,7 @@ namespace dontstarveinjector::lua_debugger_helper {
         for (const auto &entry: std::filesystem::directory_iterator(vscode_ext_dir)) {
             if (!entry.is_directory()) continue;
             auto path = entry.path();
-            if (path.string().find(actboy168_lua_debug_key) != std::string::npos) {
+            if (ds::util::path_to_utf8(path).find(actboy168_lua_debug_key) != std::string::npos) {
                 return path;
             }
         }
@@ -104,12 +105,12 @@ namespace dontstarveinjector::lua_debugger_helper {
         }
         auto lua_debugger_root = get_lua_debugger_root_path();
         if (lua_debugger_root.empty()) return nullptr;
-        auto debugger_so_path = get_lua_debugger_so_path(lua_debugger_root).string();
+        auto debugger_so_path = ds::util::path_to_native_lossy(get_lua_debugger_so_path(lua_debugger_root));
         if (debugger_so_path.empty()) return nullptr;
         handler = loadlib(debugger_so_path.c_str());
         set_env_variable("LUA_DEBUG_CORE", debugger_so_path.c_str());
         set_env_variable(env_key.data(), debugger_so_path.c_str());
-        set_env_variable(LUA_DEBUG_CORE_ROOT, lua_debugger_root.string().c_str());
+        set_env_variable(LUA_DEBUG_CORE_ROOT, ds::util::path_to_utf8(lua_debugger_root).c_str());
 // #ifdef _WIN32
 //         if (GetGameLuaContext().luaType == GameLuaType::game) {
 //             // get current module dll path 

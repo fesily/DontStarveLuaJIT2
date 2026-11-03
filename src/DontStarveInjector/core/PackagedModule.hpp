@@ -1,4 +1,5 @@
 #pragma once
+#include "util/PathText.hpp"
 
 // Workshop layout: the published item carries every module the game maps as
 // "<canonical name>.pkg" (e.g. "Injector.dll.pkg"), never the canonical name
@@ -358,7 +359,8 @@ inline bool materialize(const std::filesystem::path &canonical) {
     if (!staged) {
         std::error_code rm_ec;
         std::filesystem::remove(tmp, rm_ec);
-        std::fprintf(stderr, "[PackagedModule] stage_failed: %s\n", from.string().c_str());
+        std::fprintf(stderr, "[PackagedModule] stage_failed: %s\n",
+                     util::path_to_utf8(from).c_str());
         return false;
     }
 
@@ -368,7 +370,8 @@ inline bool materialize(const std::filesystem::path &canonical) {
         std::error_code rn_ec;
         std::filesystem::rename(tmp, canonical, rn_ec); // no replace: loses the race cleanly
         if (!rn_ec) {
-            std::fprintf(stderr, "[PackagedModule] materialized: %s\n", canonical.string().c_str());
+            std::fprintf(stderr, "[PackagedModule] materialized: %s\n",
+                         util::path_to_utf8(canonical).c_str());
             return true;
         }
         if (detail::is_regular(canonical) && detail::same_image(canonical, from)) {
@@ -386,14 +389,15 @@ inline bool materialize(const std::filesystem::path &canonical) {
     }
 
     if (atomic_replace(tmp, canonical)) {
-        std::fprintf(stderr, "[PackagedModule] materialized: %s\n", canonical.string().c_str());
+        std::fprintf(stderr, "[PackagedModule] materialized: %s\n",
+                     util::path_to_utf8(canonical).c_str());
         return true;
     }
     std::error_code rm_ec;
     std::filesystem::remove(tmp, rm_ec);
     std::fprintf(stderr,
                  "[PackagedModule] kept existing %s (mapped by another process)\n",
-                 canonical.string().c_str());
+                 util::path_to_utf8(canonical).c_str());
     return false;
 }
 
@@ -423,13 +427,15 @@ inline size_t materialize_directory(const std::filesystem::path &dir) {
         if (!it->is_regular_file(probe_ec)) {
             continue;
         }
-        const auto name = it->path().filename().string();
+        const auto name = util::path_to_utf8(it->path().filename());
         const std::string suffix{kPackageSuffix};
         if (name.size() <= suffix.size() || name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
             continue;
         }
+        // Strip ".pkg" natively: the stem may hold characters the ANSI code page
+        // cannot represent, and rebuilding it from text would throw.
         std::filesystem::path canonical = it->path();
-        canonical = canonical.parent_path() / std::filesystem::path(name.substr(0, name.size() - suffix.size()));
+        canonical.replace_extension();
         if (materialize(canonical)) {
             ++written;
         }
@@ -451,7 +457,7 @@ inline bool tree_is_packaged(const std::filesystem::path &tree) {
         if (!it->is_regular_file(probe_ec)) {
             continue;
         }
-        if (detail::is_platform_package_twin(it->path().filename().string())) {
+        if (detail::is_platform_package_twin(util::path_to_utf8(it->path().filename()))) {
             return true;
         }
     }
@@ -478,7 +484,7 @@ inline bool prune_unpackaged_module(const std::filesystem::path &tree,
         return false; // mapped by a live process: keep it, next boot retries
     }
     std::fprintf(stderr, "[PackagedModule] dropped stale derivative (no .pkg): %s\n",
-                 canonical.string().c_str());
+                 util::path_to_utf8(canonical).c_str());
     return true;
 }
 

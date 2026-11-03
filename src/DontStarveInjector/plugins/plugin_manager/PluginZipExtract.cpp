@@ -1,4 +1,5 @@
 #include "PluginZipExtract.hpp"
+#include "util/PathText.hpp"
 
 #include <zip.h>
 
@@ -323,7 +324,7 @@ std::optional<size_t> extract_plugin_zip(const std::filesystem::path &zip_path,
                                          const std::vector<std::string> &allow_files,
                                          std::string *err) {
     int zerr = 0;
-    zip_t *za = zip_open(zip_path.string().c_str(), ZIP_RDONLY, &zerr);
+    zip_t *za = zip_open(ds::util::path_to_utf8(zip_path).c_str(), ZIP_RDONLY, &zerr);
     if (!za) {
         if (err) {
             *err = "zip: open failed code " + std::to_string(zerr);

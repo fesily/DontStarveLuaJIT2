@@ -3,6 +3,7 @@
 
 #include "config/InjectorHostConfig.hpp"
 #include "util/inlinehook.hpp"
+#include "util/PathText.hpp"
 #include "util/platform.hpp"
 #include "util/Unsafedata.hpp"
 #include "ctx.hpp"
@@ -22,6 +23,7 @@
 
 
 
+#include <spdlog/fmt/std.h>
 #include <spdlog/spdlog.h>
 
 #ifdef _WIN32
@@ -211,7 +213,7 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     if (const auto state_dir = ds::unsafedata::dir(); !state_dir.empty()) {
         std::error_code ec;
         std::filesystem::create_directories(state_dir, ec);
-        spdlog::info("unsafedata dir: {}", state_dir.string());
+        spdlog::info("unsafedata dir: {}", state_dir);
     }
 
     if (!check_crash()) {
@@ -314,7 +316,8 @@ int chdir_hook(const char *path) {
     static bool injector = false;
     if ("../data"sv == path && !injector) {
         wait_for_debugger_before_inject();
-        auto isClientMode = !getExePath().string().contains("dontstarve_dedicated_server_nullrenderer");
+        auto isClientMode =
+            !ds::util::path_to_native_lossy(getExePath()).contains("dontstarve_dedicated_server_nullrenderer");
         Inject(isClientMode);
         spdlog::default_logger_raw()->flush();
         injector = true;
@@ -353,7 +356,7 @@ static bool install_posix_startup_hook() {
 }
 
 __attribute__((constructor)) void init() {
-    if (!getExePath().string().contains("dontstarve")) {
+    if (!ds::util::path_to_native_lossy(getExePath()).contains("dontstarve")) {
         return;
     }
     (void) install_posix_startup_hook();
@@ -388,7 +391,8 @@ void inject_from_startup_entry() {
 
     wait_for_debugger_before_inject();
 
-    const auto is_client_mode = !getExePath().string().contains("dontstarve_dedicated_server_nullrenderer");
+    const auto is_client_mode =
+        !ds::util::path_to_native_lossy(getExePath()).contains("dontstarve_dedicated_server_nullrenderer");
     Inject(is_client_mode);
     if (auto *logger = spdlog::default_logger_raw()) {
         logger->flush();
