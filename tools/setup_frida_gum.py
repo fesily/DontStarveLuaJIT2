@@ -311,6 +311,66 @@ def _msvc_tool(name: str) -> str:
     return name
 
 
+def _archive_defined_symbols(static_lib: Path) -> set[str]:
+    """Names the static archive really defines (COFF `External` with a section)."""
+    dumpbin = _msvc_tool("dumpbin")
+    out = subprocess.run(
+        [dumpbin, "/nologo", "/symbols", str(static_lib)],
+        capture_output=True,
+        text=True,
+        errors="replace",
+    ).stdout
+    names: set[str] = set()
+    for line in out.splitlines():
+        if "External" not in line or "|" not in line:
+            continue
+        head, _, name = line.partition("|")
+        if "UNDEF" in head:
+            continue
+        name = name.strip()
+        if name:
+            names.add(name)
+    return names
+
+
+def _prune_def_missing(static_lib: Path, work: Path) -> Path:
+    """Drop .def exports the archive does not define; return the .def to link with.
+
+    FridaGum.def is the export contract for the shell DLL, but upstream moves
+    platform-specific symbols between releases: frida-gum 17.25 no longer
+    defines gum_darwin_* on Windows, and every absent entry becomes a hard
+    LNK2001 (34 of them) that fails the whole link. The archive built from the
+    pinned source is the authority, so filter the list instead of pinning the
+    .def to one upstream version. Localized (non-ASCII) dumpbin output is
+    tolerated: only the `| symbol` column is read.
+    """
+    present = _archive_defined_symbols(static_lib)
+    if not present:
+        return DEF_PATH
+    kept: list[str] = []
+    dropped: list[str] = []
+    for raw in DEF_PATH.read_text(encoding="utf-8").splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.upper() == "EXPORTS" or stripped.startswith(";"):
+            kept.append(raw)
+            continue
+        name = stripped.split()[0]
+        if name in present:
+            kept.append(raw)
+        else:
+            dropped.append(name)
+    if not dropped:
+        return DEF_PATH
+    out = work / "frida-gum.pruned.def"
+    out.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    print(
+        f"warn: {len(dropped)} export(s) not defined by {static_lib.name} were dropped "
+        f"from the shell .def: {', '.join(dropped[:6])}{', ...' if len(dropped) > 6 else ''}",
+        flush=True,
+    )
+    return out
+
+
 def link_shell_windows(static_lib: Path, header: Path, stage: Path) -> None:
     """cl/link thin DLL with FridaGum.def; produce import lib + dll."""
     work = BUILD_ROOT / "shell-win"
@@ -341,6 +401,7 @@ def link_shell_windows(static_lib: Path, header: Path, stage: Path) -> None:
     )
     dll = work / "frida-gum.dll"
     implib = work / "frida-gum.lib"
+    def_path = _prune_def_missing(static_lib, work)
     # /WHOLEARCHIVE so def-exported cs_* / gum_* are not GC'd from the static archive.
     link_cmd = [
         link,
@@ -348,7 +409,7 @@ def link_shell_windows(static_lib: Path, header: Path, stage: Path) -> None:
         "/DLL",
         f"/OUT:{dll}",
         f"/IMPLIB:{implib}",
-        f"/DEF:{DEF_PATH}",
+        f"/DEF:{def_path}",
         str(obj),
         f"/WHOLEARCHIVE:{static_lib}",
         *WIN_SYSTEM_LIBS,
