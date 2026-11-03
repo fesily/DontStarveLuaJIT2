@@ -494,10 +494,11 @@ def link_shell_posix(static_lib: Path, header: Path, stage: Path) -> None:
 
 
 def prepare_shared_header(header: Path) -> Path:
-    """Strip forced GUM_STATIC so consumers get dllimport / shared linkage."""
+    """Post-process the amalgamated header for our shared shell consumers."""
     import re
 
     text = header.read_text(encoding="utf-8", errors="replace")
+    changed = False
     # Amalgamated headers often force:  #ifndef GUM_STATIC / # define GUM_STATIC / #endif
     pattern = re.compile(
         r"^[ \t]*#\s*ifndef\s+GUM_STATIC[ \t]*\r?\n"
@@ -510,17 +511,36 @@ def prepare_shared_header(header: Path) -> Path:
         text,
         count=1,
     )
-    if n == 0:
+    if n:
+        changed = True
+    else:
         # Fallback: comment any remaining `# define GUM_STATIC` lines.
-        new_text2, n2 = re.subn(
+        new_text, n2 = re.subn(
             r"^([ \t]*#\s*define\s+GUM_STATIC)\b(.*)$",
             r"/* GUM_STATIC stripped for shared Frida::Gum */ // \1\2",
             text,
             flags=re.MULTILINE,
         )
-        if n2 == 0:
-            return header
-        new_text = new_text2
+        if n2:
+            changed = True
+    if os.name == "nt":
+        # glib's C++11 branch expands G_NORETURN to [[noreturn]]; MSVC 19.44
+        # rejects that placement right after GUM_API (a __declspec) with C3829
+        # "attribute [[noreturn]] may only be applied to a function
+        # declaration", which fails every C++ TU that includes the header.
+        # __declspec(noreturn) is what glib itself uses for MSVC in C mode.
+        new_text, n_nor = re.subn(
+            r"^[ \t]*#[ \t]*define[ \t]+G_NORETURN[ \t]+\[\[noreturn\]\][ \t]*$",
+            "# define G_NORETURN __declspec (noreturn)",
+            new_text,
+            flags=re.MULTILINE,
+        )
+        if n_nor:
+            changed = True
+            print("patched G_NORETURN to __declspec(noreturn) for MSVC C++ consumers",
+                  flush=True)
+    if not changed:
+        return header
     out = BUILD_ROOT / "frida-gum.shared.h"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(new_text, encoding="utf-8")
