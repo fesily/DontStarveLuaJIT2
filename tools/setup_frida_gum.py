@@ -236,14 +236,14 @@ def run_with_retries(steps: list[list[str]], *, cwd: Path | None, attempts: int 
                 run(cmd, cwd=cwd)
             return
         except subprocess.CalledProcessError as exc:
+            if attempt == attempts:
+                die(f"frida-gum configure failed after {attempts} attempts: {exc}")
             print(
                 f"warn: frida-gum configure failed (attempt {attempt}/{attempts}, "
                 f"rc={exc.returncode}); retrying in {attempt * 20}s",
                 file=sys.stderr,
                 flush=True,
             )
-            if attempt == attempts:
-                die(f"frida-gum configure failed after {attempts} attempts: {exc}")
             time.sleep(attempt * 20)
 
 
