@@ -38,6 +38,33 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Resolve frida-gum submodule revision
+        id: frida-rev
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C 3rd/frida-gum-src rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Restore frida-gum staged artifacts
+        id: frida-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ github.workspace }}/3rd/frida-gum
+            ${{ github.workspace }}/3rd/frida-gum-build/input
+          # Exact key only. CMake takes the --skip-meson fast path as soon as a
+          # staged marker / 3rd/frida-gum-build/input exists, so artifacts from a
+          # different frida-gum revision must never be restored here.
+          key: ${{ runner.os }}-frida-gum-${{ steps.frida-rev.outputs.sha }}-${{ hashFiles('tools/setup_frida_gum.py', 'tools/frida/**') }}
+      - name: Restore frida-gum subproject tarballs
+        id: frida-downloads
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/3rd/frida-gum-src/subprojects
+          # meson verifies every wrap checksum, so reuse across revisions is safe
+          # and spares the 504-prone codeload download after a submodule bump.
+          key: ${{ runner.os }}-frida-subprojects-${{ steps.frida-rev.outputs.sha }}
+          restore-keys: |
+            ${{ runner.os }}-frida-subprojects-
       - name: Restore ANGLE cache
         if: ${{ matrix.target == 'windows' }}
         id: angle-cache
@@ -168,6 +195,21 @@ jobs:
         with:
           path: ${{ github.workspace }}/.vcpkg-downloads
           key: ${{ steps.vcpkg-downloads.outputs.cache-primary-key }}
+      - name: Save frida-gum staged artifacts
+        # Only a completed stage (marker written) is worth caching.
+        if: ${{ always() && steps.frida-cache.outputs.cache-hit != 'true' && hashFiles('3rd/frida-gum/*/version-*.txt') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ github.workspace }}/3rd/frida-gum
+            ${{ github.workspace }}/3rd/frida-gum-build/input
+          key: ${{ steps.frida-cache.outputs.cache-primary-key }}
+      - name: Save frida-gum subproject tarballs
+        if: ${{ always() && steps.frida-downloads.outputs.cache-hit != 'true' && hashFiles('3rd/frida-gum-src/subprojects/**') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/3rd/frida-gum-src/subprojects
+          key: ${{ steps.frida-downloads.outputs.cache-primary-key }}
 
       - name: Build
         shell: bash

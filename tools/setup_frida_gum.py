@@ -31,6 +31,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -219,6 +220,33 @@ def _find_static_artifacts(search_roots: list[Path]) -> tuple[Path, Path]:
     return candidates_lib[0], candidates_h[0]
 
 
+def run_with_retries(steps: list[list[str]], *, cwd: Path | None, attempts: int = 3) -> None:
+    """Run the configure sequence, retrying it on failure.
+
+    Frida's `configure` bootstraps meson subprojects (glib, libffi, capstone, ...)
+    from codeload.github.com; that endpoint intermittently answers 5xx and a single
+    failed tarball aborts the configure. Meson keeps the tarballs it already fetched
+    in `subprojects/packagecache`, so a retry only downloads what is still missing.
+    Only the configure step is retried: `make` failures are compile errors, and
+    retrying a multi-minute Frida build would just triple the cost.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            for cmd in steps:
+                run(cmd, cwd=cwd)
+            return
+        except subprocess.CalledProcessError as exc:
+            print(
+                f"warn: frida-gum configure failed (attempt {attempt}/{attempts}, "
+                f"rc={exc.returncode}); retrying in {attempt * 20}s",
+                file=sys.stderr,
+                flush=True,
+            )
+            if attempt == attempts:
+                die(f"frida-gum configure failed after {attempts} attempts: {exc}")
+            time.sleep(attempt * 20)
+
+
 def meson_build_static(src: Path, build_dir: Path, prefix: Path, version: str) -> tuple[Path, Path]:
     """Configure + build + install static frida-gum. Returns (static_lib, header)."""
     build_dir.mkdir(parents=True, exist_ok=True)
@@ -231,15 +259,19 @@ def meson_build_static(src: Path, build_dir: Path, prefix: Path, version: str) -
             die(f"missing {configure}")
         # Frida 17.x configure: static is default; use --with-devkits (not
         # --default-library=static / --enable-devkits, which are rejected).
-        cmd = [
-            "cmd",
-            "/c",
-            str(configure),
-            f"--prefix={prefix}",
-            "--with-devkits=gum",
-            "--disable-tests",
-        ]
-        run(cmd, cwd=src)
+        run_with_retries(
+            [
+                [
+                    "cmd",
+                    "/c",
+                    str(configure),
+                    f"--prefix={prefix}",
+                    "--with-devkits=gum",
+                    "--disable-tests",
+                ]
+            ],
+            cwd=src,
+        )
         # Frida windows build uses make.bat after configure (or ninja via make wrapper).
         make_bat = src / "make.bat"
         if make_bat.is_file():
@@ -250,13 +282,15 @@ def meson_build_static(src: Path, build_dir: Path, prefix: Path, version: str) -
             run(["cmd", "/c", "make", "install"], cwd=src)
     else:
         configure = src / "configure"
-        run(
+        run_with_retries(
             [
-                "bash",
-                str(configure),
-                f"--prefix={prefix}",
-                "--with-devkits=gum",
-                "--disable-tests",
+                [
+                    "bash",
+                    str(configure),
+                    f"--prefix={prefix}",
+                    "--with-devkits=gum",
+                    "--disable-tests",
+                ]
             ],
             cwd=src,
         )
