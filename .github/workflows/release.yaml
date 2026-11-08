@@ -21,6 +21,10 @@ jobs:
       PLUGIN_BUILD_CONFIG: RelWithDebInfo
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-bincache
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite
+      # Port source tarballs live outside the binary cache. Keeping them makes vcpkg
+      # touch codeload.github.com only when a port is actually new; that endpoint
+      # intermittently answers 504 and takes the whole configure step down with it.
+      VCPKG_DOWNLOADS: ${{ github.workspace }}/.vcpkg-downloads
     strategy:
       fail-fast: false
       matrix:
@@ -49,6 +53,31 @@ jobs:
         with:
           path: ${{ github.workspace }}/.vcpkg-bincache
           key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'CMakeLists.txt', 'cmake/custom-triplets/**') }}
+      - name: Restore vcpkg source downloads
+        id: vcpkg-downloads
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-downloads
+          # Port versions are pinned by the vcpkg-configuration baseline, so this key
+          # changes only when a port set/overlay changes; restore-keys still reuse the
+          # tarballs of earlier baselines when a bump makes a fresh entry.
+          key: ${{ runner.os }}-vcpkg-downloads-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'cmake/ports/**', 'cmake/custom-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-
+      - name: Configure vcpkg asset mirror (optional)
+        # Repo variable VCPKG_ASSET_SOURCES = e.g. "x-azurl,https://host/vcpkg-assets,"
+        # Unset (the default) keeps the plain GitHub origins.
+        shell: bash
+        env:
+          MIRROR: ${{ vars.VCPKG_ASSET_SOURCES }}
+        run: |
+          set -euo pipefail
+          if [ -n "${MIRROR:-}" ]; then
+            echo "X_VCPKG_ASSET_SOURCES=${MIRROR}" >> "$GITHUB_ENV"
+            echo "vcpkg asset mirror enabled"
+          else
+            echo "vcpkg asset mirror: none (GitHub origins only)"
+          fi
       - name: Initialize MSVC developer environment
         if: ${{ matrix.target == 'windows' }}
         uses: ilammy/msvc-dev-cmd@v1
@@ -61,10 +90,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13' 
-      - name: Ensure vcpkg binary cache directories
+      - name: Ensure vcpkg cache directories
         shell: bash
         run: |
           mkdir -p "${{ github.workspace }}/.vcpkg-bincache"
+          mkdir -p "${{ github.workspace }}/.vcpkg-downloads"
           if [ "${{ matrix.target }}" = "windows" ]; then
             mkdir -p "${{ github.workspace }}/.angle-bincache"
           fi
@@ -80,15 +110,40 @@ jobs:
           VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.angle-bincache,readwrite
         shell: bash
         run: |
+          set -uo pipefail
           mkdir -p "${{ github.workspace }}/.angle-bincache"
           test -d "${{ github.workspace }}/.angle-bincache"
-          python tools/setup_angle.py --release-only --vcpkg "${{ github.workspace }}/vcpkg/vcpkg.exe"
+          # Same 504 exposure as the main configure: this step vcpkg-builds ANGLE from
+          # source. setup_angle.py skips stages that already exist, so a retry resumes
+          # instead of starting over.
+          for attempt in 1 2 3; do
+            if python tools/setup_angle.py --release-only --vcpkg "${{ github.workspace }}/vcpkg/vcpkg.exe"; then
+              exit 0
+            fi
+            echo "::warning title=ANGLE setup retry::attempt ${attempt}/3 failed (vcpkg source download 5xx is usually the cause); retrying"
+            sleep $((attempt * 20))
+          done
+          echo "::error title=ANGLE setup failed::3 attempts exhausted — check the vcpkg 'Download failed' lines, or set the VCPKG_ASSET_SOURCES repo variable to a mirror"
+          exit 1
 
       - name: Configure CMake and populate vcpkg binary cache
-        uses: lukka/run-cmake@v10
-        with:
-          configurePreset: 'ninja-multi-vcpkg'
-          configurePresetAdditionalArgs: "['-DCMAKE_OSX_ARCHITECTURES=x86_64']"
+        # Retry: vcpkg fetches port sources from codeload.github.com, which answers
+        # 504 under load ("Download failed, halting portfile"), and a single failed
+        # tarball aborts the whole configure. Later attempts reuse the tarballs the
+        # earlier ones already cached in $VCPKG_DOWNLOADS, so they only retry what
+        # actually failed.
+        shell: bash
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            if cmake --preset ninja-multi-vcpkg -DCMAKE_OSX_ARCHITECTURES=x86_64; then
+              exit 0
+            fi
+            echo "::warning title=CMake configure retry::attempt ${attempt}/3 failed (vcpkg source download 5xx is usually the cause); retrying"
+            sleep $((attempt * 20))
+          done
+          echo "::error title=CMake configure failed::3 attempts exhausted — a port source could not be downloaded (check the vcpkg 'Download failed' lines, or set the VCPKG_ASSET_SOURCES repo variable to a mirror)"
+          exit 1
 
 
       - name: Save ANGLE cache
@@ -105,6 +160,14 @@ jobs:
         with:
           path: ${{ github.workspace }}/.vcpkg-bincache
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+      - name: Save vcpkg source downloads
+        # No tarballs (configure failed before downloading, or the cache already had
+        # everything) => do not burn a cache entry on an empty directory.
+        if: ${{ always() && steps.vcpkg-downloads.outputs.cache-hit != 'true' && hashFiles('.vcpkg-downloads/**') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-downloads
+          key: ${{ steps.vcpkg-downloads.outputs.cache-primary-key }}
 
       - name: Build
         shell: bash
