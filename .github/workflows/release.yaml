@@ -55,25 +55,6 @@ jobs:
           # staged marker / 3rd/frida-gum-build/input exists, so artifacts from a
           # different frida-gum revision must never be restored here.
           key: ${{ runner.os }}-frida-gum-${{ steps.frida-rev.outputs.sha }}-${{ hashFiles('tools/setup_frida_gum.py', 'tools/frida/**') }}
-      - name: Restore frida-gum subproject clones
-        id: frida-downloads
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ github.workspace }}/3rd/frida-gum-src/subprojects
-          # Every frida wrap is [wrap-git], so what gets cached is the cloned
-          # forks (plus packagecache), not tarballs: meson then only has to check
-          # out the pinned revision instead of cloning 10+ repos from github.
-          key: ${{ runner.os }}-frida-subprojects-${{ steps.frida-rev.outputs.sha }}
-          restore-keys: |
-            ${{ runner.os }}-frida-subprojects-
-      - name: Re-pin frida-gum subproject wraps
-        # The clone cache can carry subprojects/*.wrap from another revision;
-        # the submodule's tracked wraps must win, they pin the cloned revisions.
-        shell: bash
-        run: |
-          set -euo pipefail
-          git -C 3rd/frida-gum-src checkout -- subprojects
-          git -C 3rd/frida-gum-src status --short -- subprojects | head -5 || true
       - name: Restore ANGLE cache
         if: ${{ matrix.target == 'windows' }}
         id: angle-cache
@@ -134,10 +115,58 @@ jobs:
           if [ "${{ matrix.target }}" = "windows" ]; then
             mkdir -p "${{ github.workspace }}/.angle-bincache"
           fi
-      - name: Restore from cache and setup vcpkg executable and data files.
-        uses: lukka/run-vcpkg@v11
+      - name: Resolve vcpkg submodule revision
+        id: vcpkg-rev
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C vcpkg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Restore vcpkg tool cache
+        id: vcpkg-tool-cache
+        uses: actions/cache/restore@v4
         with:
-          vcpkgJsonGlob: 'vcpkg.json'
+          path: |
+            ${{ github.workspace }}/vcpkg/vcpkg.exe
+            ${{ github.workspace }}/vcpkg/downloads
+          key: ${{ runner.os }}-vcpkg-tool-${{ steps.vcpkg-rev.outputs.sha }}
+      - name: Bootstrap vcpkg tool (retry)
+        # lukka/run-vcpkg bootstraps by downloading the vcpkg-tool archive from
+        # GitHub and reports nothing but "error code 1" on a 504, with no retry.
+        # The bootstrap is one small download, so do it here: cached per vcpkg
+        # submodule revision, retried, and the CMake toolchain picks the binary up
+        # from the submodule it already lives in.
+        shell: bash
+        run: |
+          set -uo pipefail
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            bin="vcpkg/vcpkg.exe"
+            boot="./vcpkg/bootstrap-vcpkg.bat"
+          else
+            bin="vcpkg/vcpkg"
+            boot="./vcpkg/bootstrap-vcpkg.sh"
+          fi
+          if [ -x "$bin" ]; then
+            echo "vcpkg tool present: $bin"
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            if $boot -disableMetrics; then
+              echo "bootstrapped on attempt ${attempt}"
+              exit 0
+            fi
+            echo "::warning title=vcpkg bootstrap retry::attempt ${attempt}/3 failed (vcpkg-tool download 5xx?); retrying"
+            sleep $((attempt * 20))
+          done
+          echo "::error title=vcpkg bootstrap failed::3 attempts exhausted"
+          exit 1
+      - name: Save vcpkg tool cache
+        if: ${{ always() && steps.vcpkg-tool-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ github.workspace }}/vcpkg/vcpkg.exe
+            ${{ github.workspace }}/vcpkg/downloads
+          key: ${{ steps.vcpkg-tool-cache.outputs.cache-primary-key }}
 
       - name: Setup ANGLE (Windows)
         if: ${{ matrix.target == 'windows' }}
@@ -213,12 +242,6 @@ jobs:
             ${{ github.workspace }}/3rd/frida-gum
             ${{ github.workspace }}/3rd/frida-gum-build/input
           key: ${{ steps.frida-cache.outputs.cache-primary-key }}
-      - name: Save frida-gum subproject clones
-        if: ${{ always() && steps.frida-downloads.outputs.cache-hit != 'true' && hashFiles('3rd/frida-gum-src/subprojects/**') != '' }}
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ github.workspace }}/3rd/frida-gum-src/subprojects
-          key: ${{ steps.frida-downloads.outputs.cache-primary-key }}
 
       - name: Build
         shell: bash
