@@ -191,6 +191,59 @@ jobs:
           echo "::error title=ANGLE setup failed::3 attempts exhausted — check the vcpkg 'Download failed' lines, or set the VCPKG_ASSET_SOURCES repo variable to a mirror"
           exit 1
 
+      - name: Pre-warm frida-gum subproject clones (retry)
+        # meson clones every [wrap-git] entry from github.com in one shot and aborts
+        # the configure on a 504. Clone them here first, retried per repository;
+        # meson then finds the checkout in place and only verifies the revision.
+        # v8 is skipped: the gum devkit build never needs it and it is huge.
+        shell: bash
+        run: |
+          set -uo pipefail
+          python - <<'PY'
+          import configparser, pathlib, shutil, subprocess, sys, time
+          SKIP = {"v8"}
+          root = pathlib.Path("3rd/frida-gum-src/subprojects")
+          failed = []
+          for wrap in sorted(root.glob("*.wrap")):
+              cp = configparser.ConfigParser()
+              try:
+                  cp.read(wrap, encoding="utf-8")
+              except Exception:
+                  continue
+              if not cp.has_section("wrap-git") or wrap.stem in SKIP:
+                  continue
+              url = cp["wrap-git"].get("url")
+              rev = cp["wrap-git"].get("revision")
+              if not url or not rev:
+                  continue
+              dest = root / wrap.stem
+              if (dest / ".git").exists():
+                  print("present:", dest.name)
+                  continue
+              ok = False
+              for attempt in range(1, 4):
+                  shutil.rmtree(dest, ignore_errors=True)
+                  dest.mkdir(parents=True, exist_ok=True)
+                  steps = [
+                      ["init", "--quiet"],
+                      ["remote", "add", "origin", url],
+                      ["fetch", "--quiet", "--depth", "1", "origin", rev],
+                      ["checkout", "--quiet", "FETCH_HEAD"],
+                  ]
+                  if all(subprocess.run(["git", "-C", str(dest), *cmd], check=False).returncode == 0
+                         for cmd in steps):
+                      ok = True
+                      break
+                  print(f"::warning title=frida wrap clone retry::{dest.name} attempt {attempt}/3 failed")
+                  time.sleep(attempt * 15)
+              if ok:
+                  print("cloned:", dest.name)
+              else:
+                  failed.append(dest.name)
+          if failed:
+              print("::error title=frida wrap clone failed::" + ", ".join(failed))
+              sys.exit(1)
+          PY
       - name: Configure CMake and populate vcpkg binary cache
         # Retry: vcpkg fetches port sources from codeload.github.com, which answers
         # 504 under load ("Download failed, halting portfile"), and a single failed
