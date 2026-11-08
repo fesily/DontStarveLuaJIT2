@@ -221,6 +221,9 @@ jobs:
         # the configure on a 504. Clone them here first, retried per repository;
         # meson then finds the checkout in place and only verifies the revision.
         # v8 is skipped: the gum devkit build never needs it and it is huge.
+        # Only needed when the staged frida-gum artifacts are missing — a cache hit
+        # makes CMake take --skip-meson, so meson never runs.
+        if: ${{ steps.frida-cache.outputs.cache-hit != 'true' }}
         shell: bash
         run: |
           set -uo pipefail
