@@ -25,6 +25,12 @@ jobs:
       # touch codeload.github.com only when a port is actually new; that endpoint
       # intermittently answers 504 and takes the whole configure step down with it.
       VCPKG_DOWNLOADS: ${{ github.workspace }}/.vcpkg-downloads
+      # Auto-issued per job but NOT exported by default: a step only sees it when the
+      # workflow passes it. Authenticated requests are budgeted against this token
+      # (installation-token quota) instead of the runner's shared anonymous IP; `gh`
+      # and `vcpkg` pick it up from GH_TOKEN / GITHUB_TOKEN.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -38,6 +44,25 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Authenticate GitHub downloads
+        # actions/checkout sets http.extraheader only for its own fetches. The git
+        # processes that meson and vcpkg spawn later are anonymous unless git has a
+        # credential helper. The helper references the env var instead of embedding
+        # the token, so it never lands in config files, URLs or logs.
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GITHUB_TOKEN:-}" ]; then
+            echo "::warning::GITHUB_TOKEN is empty here; GitHub traffic stays anonymous"
+            exit 0
+          fi
+          git config --global --add credential.https://github.com.helper \
+            '!f() { echo username=x-access-token; echo "password=${GITHUB_TOKEN}"; }; f'
+          if printf 'protocol=https\nhost=github.com\n\n' | git credential fill > /dev/null 2>&1; then
+            echo "git credential helper installed (token not printed)"
+          else
+            echo "::warning::git credential fill returned nothing; later clones stay anonymous"
+          fi
       - name: Resolve frida-gum submodule revision
         id: frida-rev
         shell: bash
@@ -151,22 +176,22 @@ jobs:
               echo "::error title=vcpkg tool tag missing::vcpkg/scripts/vcpkg-tool-metadata.txt has no VCPKG_TOOL_RELEASE_TAG"
               exit 1
             fi
-            url="https://github.com/microsoft/vcpkg-tool/releases/download/${tag}/vcpkg.exe"
-            for attempt in 1 2 3 4; do
-              echo "downloading ${url} (attempt ${attempt}/4)"
-              if curl -fL --retry 3 --retry-all-errors --retry-delay 5 \
-                       --connect-timeout 20 --max-time 300 -o "${bin}.part" "$url"; then
-                mv "${bin}.part" "$bin"
-                break
-              fi
-              rm -f "${bin}.part"
-              echo "::warning title=vcpkg tool download retry::attempt ${attempt}/4 failed; retrying"
-              sleep $((attempt * 15))
-            done
-            if [ ! -x "$bin" ]; then
-              echo "::error title=vcpkg tool download failed::curl could not fetch ${url}"
-              exit 1
+            # gh resolves the release asset through the authenticated API and reports a
+          # real error (rate limit / 5xx / missing asset) instead of tls12-download.exe's
+          # 30 s timeout that only produced "error code 1".
+          for attempt in 1 2 3; do
+            echo "gh release download ${tag} vcpkg.exe (attempt ${attempt}/3)"
+            if gh release download "${tag}" --repo microsoft/vcpkg-tool \
+                     --pattern vcpkg.exe --dir vcpkg --clobber; then
+              break
             fi
+            echo "::warning title=vcpkg tool download retry::attempt ${attempt}/3 failed; retrying"
+            sleep $((attempt * 15))
+          done
+          if [ ! -x "$bin" ]; then
+            echo "::error title=vcpkg tool download failed::gh could not fetch vcpkg.exe ${tag}"
+            exit 1
+          fi
             if ! "$bin" version --disable-metrics >/dev/null; then
               echo "::error title=vcpkg tool invalid::downloaded $bin does not run"
               exit 1
