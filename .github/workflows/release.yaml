@@ -278,14 +278,28 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          # Git Bash puts its own usr/bin first, and that directory carries a GNU
+          # `link`. frida's meson compiler probe then aborts with
+          #   Found GNU link.exe instead of MSVC link.exe in
+          #   C:\\Program Files\\Git\\usr\\bin\\link.EXE
+          # (run 42480666348). Put the MSVC tools directory that
+          # ilammy/msvc-dev-cmd exported ahead of it so `link` resolves to link.exe;
+          # everything else in PATH stays as-is, so the shell's own tools keep working.
+          if [ -n "${VCToolsInstallDir:-}" ]; then
+            _vt="${VCToolsInstallDir%\\}"
+            _vt="${_vt%/}"
+            PATH="$(cygpath -u "$_vt" 2>/dev/null || printf '%s' "$_vt")/bin/Hostx64/x64:$PATH"
+            export PATH
+          fi
+          echo "configure linker: $(command -v link || echo '<none>')"
           for attempt in 1 2 3; do
             if cmake --preset ninja-multi-vcpkg -DCMAKE_OSX_ARCHITECTURES=x86_64; then
               exit 0
             fi
-            echo "::warning title=CMake configure retry::attempt ${attempt}/3 failed (vcpkg source download 5xx is usually the cause); retrying"
+            echo "::warning title=CMake configure retry::attempt ${attempt}/3 failed; retrying"
             sleep $((attempt * 20))
           done
-          echo "::error title=CMake configure failed::3 attempts exhausted — a port source could not be downloaded (check the vcpkg 'Download failed' lines, or set the VCPKG_ASSET_SOURCES repo variable to a mirror)"
+          echo "::error title=CMake configure failed::3 attempts exhausted — see the last failure above (vcpkg download 5xx, or a frida-gum meson/compiler error)"
           exit 1
 
 
