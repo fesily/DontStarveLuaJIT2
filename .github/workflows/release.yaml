@@ -130,35 +130,60 @@ jobs:
             ${{ github.workspace }}/vcpkg/downloads
           key: ${{ runner.os }}-vcpkg-tool-${{ steps.vcpkg-rev.outputs.sha }}
       - name: Bootstrap vcpkg tool (retry)
-        # lukka/run-vcpkg bootstraps by downloading the vcpkg-tool archive from
-        # GitHub and reports nothing but "error code 1" on a 504, with no retry.
-        # The bootstrap is one small download, so do it here: cached per vcpkg
-        # submodule revision, retried, and the CMake toolchain picks the binary up
-        # from the submodule it already lives in.
+        # The upstream Windows bootstrap shells out to scripts/tls12-download.exe,
+        # which has a ~30 s timeout and no retry: run 42479225819 died on
+        # "Downloading .../vcpkg-tool/releases/download/<tag>/vcpkg.exe" ->
+        # "The operation timed out" (33 s). Download the same asset with curl
+        # instead (retries + long timeouts), then let the tool validate itself.
+        # Cached per vcpkg submodule revision, so a warm run downloads nothing.
         shell: bash
         run: |
           set -uo pipefail
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            bin="vcpkg/vcpkg.exe"
-            boot="./vcpkg/bootstrap-vcpkg.bat"
-          else
-            bin="vcpkg/vcpkg"
-            boot="./vcpkg/bootstrap-vcpkg.sh"
-          fi
+          bin="vcpkg/vcpkg"
+          [ "${{ runner.os }}" = "Windows" ] && bin="vcpkg/vcpkg.exe"
           if [ -x "$bin" ]; then
             echo "vcpkg tool present: $bin"
             exit 0
           fi
-          for attempt in 1 2 3; do
-            if $boot -disableMetrics; then
-              echo "bootstrapped on attempt ${attempt}"
-              exit 0
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            tag=$(sed -n 's/^VCPKG_TOOL_RELEASE_TAG=//p' vcpkg/scripts/vcpkg-tool-metadata.txt | tr -d '\r' | head -1)
+            if [ -z "$tag" ]; then
+              echo "::error title=vcpkg tool tag missing::vcpkg/scripts/vcpkg-tool-metadata.txt has no VCPKG_TOOL_RELEASE_TAG"
+              exit 1
             fi
-            echo "::warning title=vcpkg bootstrap retry::attempt ${attempt}/3 failed (vcpkg-tool download 5xx?); retrying"
-            sleep $((attempt * 20))
-          done
-          echo "::error title=vcpkg bootstrap failed::3 attempts exhausted"
-          exit 1
+            url="https://github.com/microsoft/vcpkg-tool/releases/download/${tag}/vcpkg.exe"
+            for attempt in 1 2 3 4; do
+              echo "downloading ${url} (attempt ${attempt}/4)"
+              if curl -fL --retry 3 --retry-all-errors --retry-delay 5 \
+                       --connect-timeout 20 --max-time 300 -o "${bin}.part" "$url"; then
+                mv "${bin}.part" "$bin"
+                break
+              fi
+              rm -f "${bin}.part"
+              echo "::warning title=vcpkg tool download retry::attempt ${attempt}/4 failed; retrying"
+              sleep $((attempt * 15))
+            done
+            if [ ! -x "$bin" ]; then
+              echo "::error title=vcpkg tool download failed::curl could not fetch ${url}"
+              exit 1
+            fi
+            if ! "$bin" version --disable-metrics >/dev/null; then
+              echo "::error title=vcpkg tool invalid::downloaded $bin does not run"
+              exit 1
+            fi
+            echo "vcpkg tool ready (${tag})"
+          else
+            for attempt in 1 2 3; do
+              if ./vcpkg/bootstrap-vcpkg.sh -disableMetrics; then
+                echo "bootstrapped on attempt ${attempt}"
+                exit 0
+              fi
+              echo "::warning title=vcpkg bootstrap retry::attempt ${attempt}/3 failed; retrying"
+              sleep $((attempt * 20))
+            done
+            echo "::error title=vcpkg bootstrap failed::3 attempts exhausted"
+            exit 1
+          fi
       - name: Save vcpkg tool cache
         if: ${{ always() && steps.vcpkg-tool-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
