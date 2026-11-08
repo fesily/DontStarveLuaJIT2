@@ -29,11 +29,13 @@ Dcr_fn original_ShadowDCR = nullptr;
 CacheWorld_fn original_CacheWorld = nullptr;
 bool installed = false;
 
+// 2026-11-06 build (TS 0x6aed2496): the renderer member moved 0x920 -> 0x928.
 function_relocation::MemorySignature AnimDCR_sig{
-    "40 53 57 41 56 48 81 EC 90 04 00 00 48 8B D9 48 8B 8A 20 09 00 00 48 8B FA 48 8B 49 28", 0};
+    "40 53 57 41 56 48 81 EC 90 04 00 00 48 8B D9 48 8B 8A 28 09 00 00 48 8B FA 48 8B 49 28", 0};
 
+// 2026-11-06 build: [rdx+0x930] -> [rdx+0x938] and the short-jump displacement 0xDD -> 0xDA.
 function_relocation::MemorySignature ShadowDCR_sig{
-    "48 89 74 24 10 57 48 83 EC 20 83 BA 30 09 00 00 02 48 8B FA 48 8B F1 0F 85 DD 00 00 00", 0};
+    "48 89 74 24 10 57 48 83 EC 20 83 BA 38 09 00 00 02 48 8B FA 48 8B F1 0F 85 DA 00 00 00", 0};
 
 function_relocation::MemorySignature CacheWorld_sig{
     "48 89 54 24 10 56 41 56 48 81 EC 58 02 00 00 48 8B F1 48 8B 89 70 01 00 00", 0};
@@ -57,6 +59,10 @@ uintptr_t ScanLowest(function_relocation::MemorySignature &sig, const char *path
     sig.targets.clear();
     sig.scan(path);
     if (sig.targets.empty()) {
+        // These scans run with log=false (several patterns intentionally tolerate
+        // multiple hits), so the shared scan audit stays quiet: report the miss here.
+        spdlog::warn("[render.shadow] signature miss: 0 hits for \"{}\" in {}", sig.pattern,
+                     path ? path : "<main module>");
         return 0;
     }
     return *std::min_element(sig.targets.begin(), sig.targets.end());

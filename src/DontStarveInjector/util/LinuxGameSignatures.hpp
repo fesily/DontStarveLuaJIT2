@@ -3,10 +3,12 @@
 namespace ds::linux_signatures {
     inline constexpr char lua_module[] = "81 FE F1 D8 FF FF 7D ?? 81 FE EF D8 FF FF 74 ?? 81 FE F0 D8 FF FF";
     inline constexpr char register_debug_getsize[] = "48 8B 45 18 48 89 EF 48 8B 40 10 48 8B 70 20";
-    // 759671 rewrote the helper body (strlen + __memcpy_chk into a static
-    // 0x1000-byte block). Slots unchanged: flag = compared pointer,
-    // buffer = the first lea destination; decode_execution_error_storage
-    // still recovers both from this window.
+    // 759671 rewrote the helper body (inlined strlen + __memcpy_chk into a
+    // static 0x1000-byte block, read-only empty string for a NULL message).
+    // Slots unchanged: flag = compared pointer, block = the `lea` whose
+    // register the final `mov [flag], reg` publishes (the NULL fallback `lea`
+    // comes later in this body); decode_execution_error_storage traces the
+    // register, so both slots still come out of this window.
     inline constexpr char execution_error[] =
             "F3 0F 1E FA 48 83 3D ?? ?? ?? ?? 00 74 02 C3 90 "
             "41 54 55 48 89 FD 53 48 85 FF 74 ?? "

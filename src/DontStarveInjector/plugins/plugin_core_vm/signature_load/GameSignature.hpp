@@ -8,9 +8,10 @@ extern function_relocation::MemorySignature luaSetExecutionErrorSignature;
 
 namespace ds::core_vm::detail {
 // Decode the engine's execution-error storage from the window matched by
-// luaSetExecutionErrorSignature: the `cmp [flag], 0` slot (cross-checked by the
-// `mov [flag], …` store to the same address) and the `lea` destination of the
-// 0x1000-byte copy. Zero fields mean "not recognized" (fail closed).
+// luaSetExecutionErrorSignature: the `cmp [flag], 0` slot, and the block as the
+// `lea` target of the register that the `mov [flag], …` store publishes (not
+// simply the window's first `lea`). Zero fields mean "not recognized" (fail
+// closed).
 struct ExecutionErrorStorage {
     uintptr_t flag = 0;
     uintptr_t buffer = 0;

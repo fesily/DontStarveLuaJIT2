@@ -533,6 +533,19 @@ Globals (GameRenderer-side, `FUN_140165960`): `DAT_14061e070` = anim.ksh, `DAT_1
 
 Do **not** locate these by image RVA. Mid-function clones exist; `ScanLowest` takes the first (lowest) hit.
 
+> **2026-11-06 build drift (TS `0x6aed2496`, client `dontstarve_steam_x64.exe`).** Two hook
+> patterns above stopped matching; the renderer pass field `+0x930` moved to `+0x938`, and
+> the anim path's member moved `+0x920` → `+0x928`. `AnimDrawHook.cpp` now carries:
+>
+> | Symbol | Current pattern (1 hit each) |
+> |---|---|
+> | Anim DCR | `40 53 57 41 56 48 81 EC 90 04 00 00 48 8B D9 48 8B 8A 28 09 00 00 48 8B FA 48 8B 49 28` (entry `0xf4920`) |
+> | Shadow DCR | `48 89 74 24 10 57 48 83 EC 20 83 BA 38 09 00 00 02 48 8B FA 48 8B F1 0F 85 DA 00 00 00` (entry `0x8f6f0`) |
+>
+> The short-jump displacement also shifted `0xDD` → `0xDA`, so the old 33-byte literal is
+> not fixable by editing the `cmp` immediate alone. `CacheWorld`/`GetAnimFrame`/`HwEffectBind`/
+> `AnimDraw`/`GenerateVB`/`PopulateQuad`/`LoadShader` are unchanged on that build.
+
 Gum: `ds::gum::replace` Shadow DCR, CacheWorldRender, Unbind only. **Do not hook Anim DCR** — its scan lands mid-function and pack/draw from that site crashes HWEffect. GetFrame and Draw are bound by signature, not Rel32 from Anim. Shadow Rel32 still binds set_effect/set_tex/get_ds_list. PreCollect walks every cache-layer node and packs only if `EntityFromTdcViaDsList` matches.
 
 CacheWorldRender (`game.cpp`) walks `cache+0x450` layers. Each slot is a **node**,

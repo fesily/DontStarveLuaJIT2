@@ -280,7 +280,14 @@ namespace SLNet {
 DONTSTARVEINJECTOR_GAME_API void GameNetWorkHookRpc4() {
 #ifdef _WIN32
     auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
-    function_relocation::MemorySignature RakNet__RPC4__Signal{"48 81 EC 30 03 00 00 48 8B 05", -0x7};
+    // 2026-11-06 build (TS 0x6aed2496) added a second `sub rsp,330h; mov rax,[rip]`
+    // function (rva 0x1bde27), which broke the old 11-byte literal's uniqueness. Extend
+    // through the stack-cookie store so only the real RPC4::Signal matches (rva 0x3b7b67,
+    // -0x7 -> entry 0x3b7b60; server: single hit 0x351e27 -> 0x351e20).
+    function_relocation::MemorySignature RakNet__RPC4__Signal{
+        "48 81 EC 30 03 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 20 03 00 00 "
+        "48 8B 9C 24 90 03 00 00",
+        -0x7};
     function_relocation::MemorySignature RakNet_Plugin2_SendUnified{"48 89 84 24 90 00 00 00 48 83 79 08 00", -0x18};
     // function_relocation::MemorySignature RakNet_ReplicaManager3_defaultparams{"C7 43 1C 03 00 00 00", 0x3};
     /*
@@ -289,20 +296,32 @@ mov dword ptr [rdi+134], 3  // pro->reliability = PacketReliability::RELIABLE_OR
 */
     function_relocation::MemorySignature cNetWorkComponent_serialize{"C7 87 34 01 00 00 03 00 00 00"};
     // check channel size = 0x80/4 = 32
-    function_relocation::MemorySignature RakNet_ReliabilityLayer_InitializeVariables_NUMBER_OF_ORDERED_STREAMS{"48 8D 8B 68 12 00 00 33 D2 41 B8 80"};
+    // 2026-11-06 build: ReliabilityLayer's ordered-stream arrays grew, so the first
+    // 0x80-byte memset moved from +0x1268 to +0x12F0 (later ones: +0x1110/+0x1370/+0x16F0).
+    // Anchored on the +0x12F0 memset — still exactly one hit in client and server.
+    function_relocation::MemorySignature RakNet_ReliabilityLayer_InitializeVariables_NUMBER_OF_ORDERED_STREAMS{"48 8D 8B F0 12 00 00 33 D2 41 B8 80"};
     // lea     rax, NetworkComponentReplica3_vtb
     function_relocation::MemorySignature cNetWorkComponent_cNetworkComponent{"48 8D 8B E8 01 00 00 48 89 43 20", -7};
 
     if (RakNet__RPC4__Signal.scan(nullptr)) {
         auto listener = gum_make_probe_listener(+[](GumInvocationContext *context, gpointer user_data) { ResetNextRpcInfo(context); }, nullptr, nullptr);
         ds::gum::attach(interceptor, (uint8_t *) RakNet__RPC4__Signal.target_address, listener);
+    } else {
+        spdlog::warn("[network.rpc] RPC4::Signal probe not installed — per-RPC channel/priority reset is off "
+                     "(see the [signature] MISS audit line)");
     }
 
     // if (RakNet_Plugin2_SendUnified.scan(nullptr)) {
     //     gum_interceptor_replace_fast(interceptor, (uint8_t *) RakNet_Plugin2_SendUnified.target_address, (uint8_t *) SendUnified, (gpointer *) &original_SendUnified);
     // }
 
-    if (cNetWorkComponent_serialize.scan(nullptr) && RakNet_ReliabilityLayer_InitializeVariables_NUMBER_OF_ORDERED_STREAMS.scan(nullptr) && cNetWorkComponent_cNetworkComponent.scan(nullptr)) {
+    // Scan all three before deciding so a single stale pattern names itself in the
+    // audit line instead of short-circuiting the rest of the gates.
+    const bool has_serialize = cNetWorkComponent_serialize.scan(nullptr) != 0;
+    const bool has_ordered_streams =
+            RakNet_ReliabilityLayer_InitializeVariables_NUMBER_OF_ORDERED_STREAMS.scan(nullptr) != 0;
+    const bool has_component_ctor = cNetWorkComponent_cNetworkComponent.scan(nullptr) != 0;
+    if (has_serialize && has_ordered_streams && has_component_ctor) {
         if (EntityNetWorkExtension::initialize_virtual_table((void *) cNetWorkComponent_cNetworkComponent.target_address)) {
             auto listener = gum_make_probe_listener(+[](GumInvocationContext *context, gpointer user_data) {
             // TODO: check this entity is player entity 
@@ -325,6 +344,10 @@ mov dword ptr [rdi+134], 3  // pro->reliability = PacketReliability::RELIABLE_OR
             } }, nullptr, nullptr);
             ds::gum::attach(interceptor, (uint8_t *) cNetWorkComponent_serialize.target_address, listener);
         }
+    } else {
+        spdlog::warn("[network.rpc] entity-channel hooks skipped (serialize={} ordered_streams={} component_ctor={}) "
+                     "— see the [signature] MISS audit line for the failing pattern",
+                     has_serialize, has_ordered_streams, has_component_ctor);
     }
 #endif
 }

@@ -3,12 +3,41 @@
 #include <frida-gum.h>
 #include <cassert>
 #include <cctype>
+#include <cstdio>
 #include <string>
 #include <tuple>
 #include <spdlog/spdlog.h>
 #include "config.hpp"
 namespace function_relocation
 {
+
+// Audit line for a hard signature that could not be resolved. Every caller that
+// asks for exactly one hit (`only_one`, the default) gets one on failure, from
+// the shared "FunctionRelocation" file logger when the context is up, else the
+// process default logger, else stderr — a miss must never be silent.
+// Pure probes (the matching algorithms) set `log=false` and stay quiet on purpose.
+static void log_scan_failure(const MemorySignature &sig, const char *reason, const char *module_path,
+                             size_t hits) {
+    const char *pattern = (sig.pattern && *sig.pattern) ? sig.pattern : "<null>";
+    const char *module = (module_path && *module_path) ? module_path : "<main module>";
+    auto log = spdlog::get(logger_name);
+    if (!log) {
+        log = spdlog::default_logger();
+    }
+    if (!log) {
+        std::fprintf(stderr,
+                     "[signature] MISS reason=%s module=\"%s\" hits=%zu expected=\"exactly 1\" "
+                     "offset=%d pattern=\"%s\"\n",
+                     reason, module, hits, sig.pattern_offset, pattern);
+        return;
+    }
+    log->warn("[signature] MISS reason={} module=\"{}\" hits={} expected=\"exactly 1\" offset={} pattern=\"{}\"",
+              reason, module, hits, sig.pattern_offset, pattern);
+}
+
+static bool audit_enabled(const MemorySignature &sig) {
+    return sig.log && sig.only_one;
+}
 
 // Frida-Gum ≥16 rejects patterns that END with wildcard tokens (??). Trailing
 // wildcards do not change the match start, so strip them before parse. Also
@@ -73,6 +102,7 @@ static uintptr_t scan_module(MemorySignature *signature, const char *module_name
             logger->error("MemorySignature::scan: empty/invalid pattern after normalize: '{}'",
                           signature->pattern ? signature->pattern : "<null>");
         }
+        if (audit_enabled(*signature)) log_scan_failure(*signature, "bad_pattern", module_name, 0);
         return 0;
     }
     auto match_pattern = gum_match_pattern_new_from_string(normalized.c_str());
@@ -80,12 +110,14 @@ static uintptr_t scan_module(MemorySignature *signature, const char *module_name
         if (auto logger = spdlog::get(logger_name)) {
             logger->error("MemorySignature::scan: gum parse failed for '{}'", normalized);
         }
+        if (audit_enabled(*signature)) log_scan_failure(*signature, "gum_parse_failed", module_name, 0);
         return 0;
     }
     auto ctx = std::pair{signature, match_pattern};
     auto m = module_name ? gum_process_find_module_by_name(module_name) : gum_process_get_main_module();
     if (!m) {
         gum_match_pattern_unref(match_pattern);
+        if (audit_enabled(*signature)) log_scan_failure(*signature, "module_not_found", module_name, 0);
         return 0;
     }
     if (signature->log) {
@@ -108,8 +140,13 @@ static uintptr_t scan_module(MemorySignature *signature, const char *module_name
             signature->targets = std::move(entries);
         }
     }
-    if (signature->targets.empty() || (signature->only_one && signature->targets.size() != 1)) signature->target_address = 0;
-    else
+    if (signature->targets.empty() || (signature->only_one && signature->targets.size() != 1)) {
+        signature->target_address = 0;
+        if (audit_enabled(*signature)) {
+            log_scan_failure(*signature, signature->targets.empty() ? "no_hit" : "ambiguous",
+                             gum_module_get_path(m), signature->targets.size());
+        }
+    } else
         signature->target_address = signature->targets.back();
     return signature->target_address;
 }
@@ -130,6 +167,7 @@ uintptr_t MemorySignature::scan(uintptr_t address, size_t size) {
             logger->error("MemorySignature::scan: empty/invalid pattern after normalize: '{}'",
                           pattern ? pattern : "<null>");
         }
+        if (audit_enabled(*this)) log_scan_failure(*this, "bad_pattern", "<scan range>", 0);
         return 0;
     }
     auto match_pattern = gum_match_pattern_new_from_string(normalized.c_str());
@@ -137,6 +175,7 @@ uintptr_t MemorySignature::scan(uintptr_t address, size_t size) {
         if (auto logger = spdlog::get(logger_name)) {
             logger->error("MemorySignature::scan: gum parse failed for '{}'", normalized);
         }
+        if (audit_enabled(*this)) log_scan_failure(*this, "gum_parse_failed", "<scan range>", 0);
         return 0;
     }
     if (log) {
@@ -147,7 +186,12 @@ uintptr_t MemorySignature::scan(uintptr_t address, size_t size) {
     GumMemoryRange range{address, size};
     gum_memory_scan(&range, match_pattern, sacnBaseAddrCb, (void*)this);
     gum_match_pattern_unref(match_pattern);
-    if (only_one && targets.size() != 1) target_address = 0;
+    if (only_one && targets.size() != 1) {
+        target_address = 0;
+        if (audit_enabled(*this)) {
+            log_scan_failure(*this, targets.empty() ? "no_hit" : "ambiguous", "<scan range>", targets.size());
+        }
+    }
     return target_address;
 }
 }// namespace function_relocation
