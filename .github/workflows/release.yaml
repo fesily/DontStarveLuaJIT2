@@ -89,12 +89,6 @@ jobs:
             ${{ github.workspace }}/3rd/angle
             ${{ github.workspace }}/.angle-bincache
           key: ${{ runner.os }}-angle-${{ hashFiles('tools/angle/**', 'cmake/ports/angle/**', 'cmake/custom-triplets/**', 'tools/setup_angle.py') }}
-      - name: Restore vcpkg binary cache
-        id: vcpkg-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ github.workspace }}/.vcpkg-bincache
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'CMakeLists.txt', 'cmake/custom-triplets/**') }}
       - name: Restore vcpkg source downloads
         id: vcpkg-downloads
         uses: actions/cache/restore@v4
@@ -140,6 +134,27 @@ jobs:
           if [ "${{ matrix.target }}" = "windows" ]; then
             mkdir -p "${{ github.workspace }}/.angle-bincache"
           fi
+      - name: Compute vcpkg binary-cache key
+        id: vcpkg-abi
+        # vcpkg names its binary-cache entries by an ABI hash that includes the
+        # compiler version. The manifest-only key therefore hit forever while every
+        # entry belonged to an older toolset (cache created 2026-11-01 under
+        # VCToolsVersion 14.44, runs now use 14.51 → "Restored 0 package(s)" and a
+        # full rebuild, 11 min). Fold the toolset and the vcpkg tool release into the
+        # key: a hit then means the entries really match, and an image update simply
+        # produces a new key and one rebuild + refresh.
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool=$(sed -n 's/^VCPKG_TOOL_RELEASE_TAG=//p' vcpkg/scripts/vcpkg-tool-metadata.txt | tr -d '\r' | head -1)
+          echo "key=${tool:-unknown}-${VCToolsVersion:-no-msvc}-${ImageVersion:-no-image}" >> "$GITHUB_OUTPUT"
+          echo "binary-cache ABI domain: tool=${tool:-unknown} msvc=${VCToolsVersion:-none} image=${ImageVersion:-none}"
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-bincache
+          key: ${{ runner.os }}-vcpkg-${{ steps.vcpkg-abi.outputs.key }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'CMakeLists.txt', 'cmake/custom-triplets/**') }}
       - name: Resolve vcpkg submodule revision
         id: vcpkg-rev
         shell: bash
