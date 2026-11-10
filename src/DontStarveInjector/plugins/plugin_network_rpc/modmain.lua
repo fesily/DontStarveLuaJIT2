@@ -5,6 +5,15 @@ local injector = GameInjector
 if not injector then
     return
 end
+-- The native face is a dynamic module (plugin_network_rpc.dll) and can be absent
+-- (stale/mixed install, load_failed, abi_mismatch, duplicate_stem). Skipping the
+-- wrappers is then the correct behaviour: stock RPCs simply use the default
+-- channel. Calling the nil export instead aborts Shard_OnShardConnected, i.e.
+-- the shard world-settings sync, so the server never finishes starting.
+if type(injector.DS_LUAJIT_SetNextRpcInfo) ~= "function" then
+    print("[luajit][plugin] network.rpc: DS_LUAJIT_SetNextRpcInfo missing (native plugin_network_rpc not loaded); RPC channel hooks skipped")
+    return
+end
 
 local net_mt = getmetatable(TheNet).__index
 local default_packetPriority = 1 -- PacketPriority::HIGH_PRIORITY

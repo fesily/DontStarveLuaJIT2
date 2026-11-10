@@ -18,6 +18,12 @@ return {
         if not injector then
             return
         end
+        -- Same dynamic module as network.rpc: without it the first networked
+        -- prefab would call a nil export and abort world start.
+        if type(injector.DS_LUAJIT_EntityNetWorkExtension_Register) ~= "function" then
+            print("[luajit][plugin] network.entity: DS_LUAJIT_EntityNetWorkExtension_Register missing (native plugin_network_rpc not loaded); SpawnPrefab wrap skipped")
+            return
+        end
 
         local old_SpawnPrefab = SpawnPrefab
         function SpawnPrefab(...)
