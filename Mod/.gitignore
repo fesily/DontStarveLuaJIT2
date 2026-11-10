@@ -4,8 +4,6 @@
 plugins/plugin_*/
 test.log
 
-signatures_client.json
-signatures_server.json
 *.so
 *.so.*
 *.dll
