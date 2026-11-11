@@ -835,6 +835,69 @@ local function test_network_rpc_enable_matrix()
     print("PASS: network_rpc_enable_matrix")
 end
 
+local function test_network_rpc_missing_native_export()
+    -- Native face absent (dynamic plugin_network_rpc.dll skipped): the Lua faces
+    -- must not install wrappers whose first call hits a nil export — that aborts
+    -- Shard_OnShardConnected (world-settings sync) and the server never starts.
+    clear_plugin_modules()
+    local registry = require("plugins.init")
+    local rpc = plugin_by_id(registry, "network.rpc")
+    local entity = plugin_by_id(registry, "network.entity")
+    assert_true(rpc ~= nil, "network.rpc registered")
+    assert_true(entity ~= nil, "network.entity registered")
+
+    local stock_calls = 0
+    local net_index = {
+        SendRPCToServer = function() stock_calls = stock_calls + 1 end,
+        SendRPCToClient = function() stock_calls = stock_calls + 1 end,
+        SendRPCToShard = function() stock_calls = stock_calls + 1 end,
+        SendModRPCToServer = function() stock_calls = stock_calls + 1 end,
+        SendModRPCToClient = function() stock_calls = stock_calls + 1 end,
+        SendModRPCToShard = function() stock_calls = stock_calls + 1 end,
+    }
+    local raw_send_shard = net_index.SendRPCToShard
+    local TheNet = setmetatable({}, { __index = net_index })
+    local spawn_prefab = function(name)
+        return { prefab = name }
+    end
+    local prev_TheNet = rawget(_G, "TheNet")
+    local prev_bit = rawget(_G, "bit")
+    local prev_SpawnPrefab = rawget(_G, "SpawnPrefab")
+    rawset(_G, "TheNet", TheNet)
+    rawset(_G, "bit", make_bit_stub())
+    rawset(_G, "SpawnPrefab", spawn_prefab)
+
+    local ok, err = pcall(function()
+        local host = PluginHost.new()
+        host:register_all({ rpc, entity })
+        -- core.vm exports exist; the two exports of the dynamic RPC module do not.
+        host:resolve(
+            { NetworkOpt = true, NetworkOptEntity = true },
+            { injector = { DS_LUAJIT_get_vm_type_name = function() return "jit" end } }
+        )
+        local lr = host:load_phase(PHASE.AfterModMain)
+        assert_true(lr.ok, "missing native export load ok")
+        assert_eq(host:status("network.rpc"), STATUS.Loaded, "network.rpc Loaded")
+        assert_eq(host:status("network.entity"), STATUS.Loaded, "network.entity Loaded")
+
+        assert_true(net_index.SendRPCToShard == raw_send_shard, "SendRPCToShard not wrapped")
+        assert_eq(net_index.SendRPCToServer2, nil, "SendRPCToServer2 not installed")
+        assert_true(rawget(_G, "SpawnPrefab") == spawn_prefab, "SpawnPrefab not wrapped")
+
+        -- Stock path still works and never reaches a nil export.
+        assert_eq(select("#", net_index.SendRPCToShard(TheNet, 205)), 0, "stock SendRPCToShard returns nothing")
+        assert_eq(stock_calls, 1, "stock SendRPCToShard called once")
+    end)
+
+    rawset(_G, "TheNet", prev_TheNet)
+    rawset(_G, "bit", prev_bit)
+    rawset(_G, "SpawnPrefab", prev_SpawnPrefab)
+    if not ok then
+        error(err, 0)
+    end
+    print("PASS: network_rpc_missing_native_export")
+end
+
 local function test_network_entity_enable_matrix()
     -- L-E / S9: network.entity × network.rpc hard dep matrix.
     clear_plugin_modules()
@@ -1637,6 +1700,7 @@ test_save_fork_enable_matrix()
 test_sim_lagcomp_enable_matrix()
 test_network_sim_enable_matrix()
 test_network_rpc_enable_matrix()
+test_network_rpc_missing_native_export()
 test_network_entity_enable_matrix()
 test_m4_plugin_priorities_and_order()
 test_debug_profiler_enable_matrix()
