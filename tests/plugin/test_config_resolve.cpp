@@ -277,6 +277,49 @@ void test_resolve_without_vm_schema_omits_vm_keys() {
     printf("PASS: resolve_without_vm_schema_omits_vm_keys\n");
 }
 
+// Cold start: the first cascade resolve runs before DynamicPluginLoader, i.e.
+// before core.vm's module_init. ConfigSession seeds the VM trio into the L0
+// schema for that window; without the seed apply_partial() drops LuaVmType as
+// unknown, the injector resolves GameLuaType::unknown (no VM library) and
+// degrades to the game VM, so the mod switches to jit and demands a restart —
+// one extra full vanilla-Lua boot on every cold start.
+void test_first_resolve_applies_lua_vm_type() {
+    ConfigSchemaRegistry reg;
+    RegisterCoreOptionSchema(reg);
+    RegisterCoreVmOptionSchema(reg); // what cascade_option_schema() seeds
+
+    ConfigView defaults;
+    defaults["LuaVmType"] = ConfigValue::string("game"); // modinfo default
+    FakeSource modinfo(ConfigSource::ModinfoDefault, defaults);
+
+    ConfigView env;
+    env["LuaVmType"] = ConfigValue::string("jit"); // lua_vm_type=jit
+    FakeSource env_src(ConfigSource::EnvOrCmd, env);
+
+    CascadeContext ctx;
+    {
+        const std::vector<const IConfigSource *> sources = {&modinfo, &env_src};
+        auto resolved = resolve(reg, ctx, sources);
+        assert(resolved.view.count("LuaVmType") == 1);
+        assert(resolved.view.at("LuaVmType").s == "jit");
+        assert(resolved.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
+        assert(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit);
+    }
+
+    // refresh_cascade_after_plugins re-adds core.vm's identical entries; that
+    // must neither grow the schema nor clobber the env-resolved value.
+    const auto size_before = reg.size();
+    RegisterCoreVmOptionSchema(reg);
+    assert(reg.size() == size_before);
+    {
+        const std::vector<const IConfigSource *> sources = {&env_src};
+        auto resolved = resolve(reg, ctx, sources);
+        assert(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit);
+    }
+
+    printf("PASS: first_resolve_applies_lua_vm_type\n");
+}
+
 } // namespace
 
 int main() {
@@ -287,6 +330,7 @@ int main() {
     test_enabled_gen_gc_excludes_luajit();
     test_resolved_config_accessors();
     test_resolve_without_vm_schema_omits_vm_keys();
+    test_first_resolve_applies_lua_vm_type();
     printf("ALL PASS: config_resolve\n");
     return 0;
 }

@@ -16,6 +16,16 @@ ds::plugin::ConfigSchemaRegistry &cascade_option_schema() {
     static ds::plugin::ConfigSchemaRegistry schema = [] {
         ds::plugin::ConfigSchemaRegistry r;
         ds::plugin::RegisterCoreOptionSchema(r);
+        // VM keys must exist before the first resolve, not only after
+        // DynamicPluginLoader ran: a cold start resolves the config while the
+        // plugin window is still closed, and apply_partial() drops unknown keys
+        // (ignored_unknown). A dropped LuaVmType — from `lua_vm_type` env,
+        // modinfo default or modoverrides — resolves to GameLuaType::unknown,
+        // which cannot pick a VM library and degrades to the game VM; the mod
+        // then switches to jit and demands a restart, i.e. one extra full
+        // vanilla-Lua boot per cold start. core.vm registers the identical
+        // entries in ds_plugin_module_init, so add() stays idempotent.
+        ds::plugin::RegisterCoreVmOptionSchema(r);
         return r;
     }();
     return schema;

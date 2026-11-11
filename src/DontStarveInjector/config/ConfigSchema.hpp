@@ -32,9 +32,13 @@ bool TryCoerceSavedString(std::string_view raw, const OptionSchemaEntry &schema,
 // L0 identity only. Idempotent on conflict-free re-add.
 void RegisterCoreOptionSchema(ConfigSchemaRegistry &r);
 
-// Test/helper seed of VM domain keys (LuaVmType, EnabledGenGC, DisableJITWhenServer).
-// Production registers the same entries in plugin_core_vm::ds_plugin_module_init.
-// Missing module ⇒ keys absent from cascade (soft).
+// L0 seed of the VM domain keys (LuaVmType, EnabledGenGC, DisableJITWhenServer).
+// Seeded into the cascade schema up front (ConfigSession.cpp) so a resolve that
+// happens before plugin_core_vm's ds_plugin_module_init — or on a start where
+// that module was skipped — still sees the keys: apply_partial() drops unknown
+// keys, which used to lose `lua_vm_type` / modinfo default / modoverrides and
+// leave the VM unresolved. plugin_core_vm registers the identical entries, so
+// ConfigSchemaRegistry::add() stays idempotent.
 void RegisterCoreVmOptionSchema(ConfigSchemaRegistry &r);
 
 // Business keys (AngleBackend, EnableVBPool, NetworkOpt, EnableNetSim,
