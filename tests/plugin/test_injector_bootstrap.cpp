@@ -234,12 +234,13 @@ static void test_ugc_directory_base() {
     clear_env_and_state();
     auto root = make_temp("ds_inj_ugc");
     auto game = root / "game";
-    auto ugc = root / "ugc_content";
-    auto planted = plant_mod_injector(game, ugc, "3444078585");
+    auto ugc_root = root / "custom_workshop";          // -ugc_directory value
+    auto ugc_content = ugc_root / "content" / "322330";
+    auto planted = plant_mod_injector(game, ugc_content, "3444078585");
 
     set_marker_game_root_for_test(game);
     set_exe_dir_for_test(game / "bin64");
-    set_cmdline_for_test({"-ugc_directory", ugc.string()});
+    set_cmdline_for_test({"-ugc_directory", ugc_root.string()});
 
     fs::path out;
     assert(resolve_injector_module(out));
@@ -248,6 +249,36 @@ static void test_ugc_directory_base() {
 
     clear_env_and_state();
     printf("PASS: ugc_directory_base\n");
+}
+
+// Custom UGC and the Steam default are mutually exclusive: with
+// -ugc_directory present the default steamapps tree must not be scanned.
+static void test_ugc_directory_excludes_steam_default() {
+    clear_env_and_state();
+    auto root = make_temp("ds_inj_ugc_exclusive");
+    auto steamapps = root / "steamapps";
+    auto game = steamapps / "common" / "game";
+    auto default_ugc = steamapps / "workshop" / "content" / "322330";
+    auto default_module = plant_mod_injector(game, default_ugc, "3444078585");
+    auto custom_root = root / "custom_workshop";
+    auto custom_content = custom_root / "content" / "322330";
+    fs::create_directories(custom_root);
+
+    set_marker_game_root_for_test(game);
+    set_exe_dir_for_test(game / "bin64");
+    set_cmdline_for_test({"-ugc_directory", custom_root.string()});
+
+    fs::path out;
+    assert(!resolve_injector_module(out));
+    assert(fs::exists(default_module));
+
+    // The custom tree is the only workshop base, and it wins when populated.
+    auto custom_module = plant_mod_injector(game, custom_content, "3444078585");
+    assert(resolve_injector_module(out));
+    assert(fs::equivalent(out, custom_module));
+
+    clear_env_and_state();
+    printf("PASS: ugc_directory_excludes_steam_default\n");
 }
 
 
@@ -354,6 +385,7 @@ int main() {
     test_invalid_marker_falls_through_to_scan();
     test_scan_alias_workshop();
     test_ugc_directory_base();
+    test_ugc_directory_excludes_steam_default();
     test_fail_when_nothing();
     test_mod_root_from_module_path();
     test_load_fail_fast_no_module();

@@ -34,9 +34,10 @@ description: "DST LuaJIT2 运行期 attempt to call field 'DS_LUAJIT_X' (a nil v
 
 # 定位
 
-- 原生插件根 ≠ Lua 根的混合安装：原生根来自 `luajit_config` 的 `modmain_path` 或
-  `discover_mod_plugins_dir()`（`core/PluginPath.cpp: default_plugin_search_dirs`），Lua 根来自
-  引擎实际 `MODROOT`。本地 install.bat 旧目录 vs 工坊订阅目录会错配。
+- 原生插件根是唯一的（`core/PluginPath.cpp: default_plugin_search_dirs`：
+  `DS_LUAJIT_PLUGIN_DIR` 或 `injector_module_dir()/plugins`）；Lua 根来自引擎实际
+  `MODROOT`，取不到包列表时回落到同一唯一根。若原生日志的 `plugin root:` 与游戏实际加载的
+  mod 目录不同，先查 `DS_LUAJIT_INJECTOR`/marker 是否钉到了另一棵树。
 - 看 `plugin_network_rpc.dll` 的实际导入：`Injector`(mangled PluginHost 导出) / `frida-gum` /
   `function_relocation` / `spdlog` / `fmt` / MSVC runtime；任一解析失败即只它加载失败。
 - 让报错者给出 stderr 里的 `[DynamicPluginLoader]` 行，don't guess.

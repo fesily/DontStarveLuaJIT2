@@ -29,56 +29,57 @@ static void set_env(const char *k, const char *v) {
 #endif
 }
 
-static void test_plugins_dir_from_modmain() {
-    auto p = plugins_dir_from_modmain("C:/mods/workshop-1/modmain.lua");
-    assert(p.filename() == "plugins");
-    assert(p.parent_path().filename() == "workshop-1" ||
-           p.parent_path().generic_string().ends_with("workshop-1"));
-    assert(plugins_dir_from_modmain("").empty());
-    printf("PASS: plugins_dir_from_modmain\n");
+static void clear_root_state() {
+    set_env(kPluginDirEnv, "");
+    set_injector_module_dir_for_test(fs::path{});
 }
 
-static void test_search_order_env_wins() {
+static void test_env_root_wins() {
     auto env_dir = make_temp("ds_plugin_path_env");
     auto mod_root = make_temp("ds_plugin_path_mod");
     fs::create_directories(mod_root / "plugins");
-    auto modmain = (mod_root / "modmain.lua").string();
-    std::ofstream(mod_root / "modmain.lua") << "--";
 
-    set_modmain_path_override_for_test(modmain); // implement in PluginPath
+    set_injector_module_dir_for_test(mod_root);
     set_env(kPluginDirEnv, env_dir.string().c_str());
 
     auto dirs = default_plugin_search_dirs();
-    assert(!dirs.empty());
-    // env first
+    assert(dirs.size() == 1);
     assert(fs::equivalent(dirs.front(), env_dir));
-    // mod plugins present later if distinct
-    bool saw_mod = false;
-    for (size_t i = 1; i < dirs.size(); ++i) {
-        if (fs::equivalent(dirs[i], mod_root / "plugins"))
-            saw_mod = true;
-    }
-    assert(saw_mod);
 
-    set_env(kPluginDirEnv, "");
-    set_modmain_path_override_for_test("");
-    printf("PASS: search_order_env_wins\n");
+    clear_root_state();
+    fs::remove_all(env_dir);
+    fs::remove_all(mod_root);
+    printf("PASS: env_root_wins\n");
 }
 
-static void test_search_order_mod_without_env() {
+static void test_injector_root_without_env() {
     auto mod_root = make_temp("ds_plugin_path_mod_only");
     fs::create_directories(mod_root / "plugins");
-    auto modmain = (mod_root / "modmain.lua").string();
-    std::ofstream(mod_root / "modmain.lua") << "--";
-    set_env(kPluginDirEnv, "");
-    set_modmain_path_override_for_test(modmain);
+    clear_root_state();
+    set_injector_module_dir_for_test(mod_root);
 
     auto dirs = default_plugin_search_dirs();
-    assert(!dirs.empty());
+    assert(dirs.size() == 1);
     assert(fs::equivalent(dirs.front(), mod_root / "plugins"));
 
-    set_modmain_path_override_for_test("");
-    printf("PASS: search_order_mod_without_env\n");
+    clear_root_state();
+    fs::remove_all(mod_root);
+    printf("PASS: injector_root_without_env\n");
+}
+
+// A broken override is an error, not a hint to scan another install.
+static void test_bad_env_does_not_fall_back() {
+    auto mod_root = make_temp("ds_plugin_path_bad_env");
+    fs::create_directories(mod_root / "plugins");
+    clear_root_state();
+    set_injector_module_dir_for_test(mod_root);
+    set_env(kPluginDirEnv, (mod_root / "missing").string().c_str());
+
+    assert(default_plugin_search_dirs().empty());
+
+    clear_root_state();
+    fs::remove_all(mod_root);
+    printf("PASS: bad_env_does_not_fall_back\n");
 }
 
 static void test_mod_deps_dir_sibling() {
@@ -125,8 +126,7 @@ static void test_configure_dll_search_idempotent() {
 // plugin search root. Full LoadLibrary import-from-deps PE probe is residual.
 static void test_deps_registration_contract() {
     reset_plugin_dll_search_for_test();
-    set_env(kPluginDirEnv, "");
-    set_modmain_path_override_for_test("");
+    clear_root_state();
 
     auto mod = make_temp("ds_mod_root");
     auto plugins = mod / "plugins";
@@ -163,13 +163,15 @@ static void test_deps_registration_contract() {
     printf("PASS: deps_registration_contract\n");
 }
 
-static void test_empty_modmain_does_not_crash() {
-    set_env(kPluginDirEnv, "");
-    set_modmain_path_override_for_test("");
-    // May discover real game install or only injector fallback; must not throw.
+static void test_missing_root_does_not_crash() {
+    auto dir = make_temp("ds_plugin_path_no_tree"); // no plugins/ child
+    clear_root_state();
+    set_injector_module_dir_for_test(dir);
     auto dirs = default_plugin_search_dirs();
-    (void)dirs;
-    printf("PASS: empty_modmain_does_not_crash (dirs=%zu)\n", dirs.size());
+    assert(dirs.empty());
+    clear_root_state();
+    fs::remove_all(dir);
+    printf("PASS: missing_root_does_not_crash\n");
 }
 
 static void test_list_plugin_packages() {
@@ -203,9 +205,8 @@ static void test_list_installed_plugin_packages_fallback() {
     auto mod_root = make_temp("ds_plugin_installed_mod");
     fs::create_directories(mod_root / "plugins" / "plugin_fps_render");
     std::ofstream(mod_root / "plugins" / "plugin_fps_render" / "modinfo.lua") << "--";
-    std::ofstream(mod_root / "modmain.lua") << "--";
-    set_env(kPluginDirEnv, "");
-    set_modmain_path_override_for_test((mod_root / "modmain.lua").string());
+    clear_root_state();
+    set_injector_module_dir_for_test(mod_root);
 
     // A Workshop item is loaded from Steam UGC while the Lua registry hands over
     // MODROOT-relative paths, so the hint does not resolve on disk; the native
@@ -218,20 +219,19 @@ static void test_list_installed_plugin_packages_fallback() {
     auto direct = list_installed_plugin_packages((mod_root / "plugins").string());
     assert(direct.size() == 1 && direct[0] == "plugin_fps_render");
 
-    set_modmain_path_override_for_test("");
-    set_env(kPluginDirEnv, "");
+    clear_root_state();
     fs::remove_all(mod_root);
     printf("PASS: list_installed_plugin_packages_fallback\n");
 }
 
 int main() {
-    test_plugins_dir_from_modmain();
-    test_search_order_env_wins();
-    test_search_order_mod_without_env();
+    test_env_root_wins();
+    test_injector_root_without_env();
+    test_bad_env_does_not_fall_back();
     test_mod_deps_dir_sibling();
     test_configure_dll_search_idempotent();
     test_deps_registration_contract();
-    test_empty_modmain_does_not_crash();
+    test_missing_root_does_not_crash();
     test_list_plugin_packages();
     test_list_installed_plugin_packages_fallback();
     printf("ALL PASS: plugin_path\n");

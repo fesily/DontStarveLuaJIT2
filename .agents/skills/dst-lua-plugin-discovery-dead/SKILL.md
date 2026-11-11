@@ -53,9 +53,9 @@ Fix: `static sol::as_table_t<std::vector<std::string>> f(...) { return sol::as_t
 **B. Lua `MODROOT` is an engine path.** A Workshop item loads from Steam UGC while
 `MODROOT` stays `../mods/workshop-<id>/`, which does not exist relative to `bin64`.
 Native `std::filesystem` on it → 0 packages.
-Fix: list the hint dir; if empty, union `ds::plugin::default_plugin_search_dirs()`
-(the loader's own roots: `DS_LUAJIT_PLUGIN_DIR`, `plugins_dir_from_modmain(luajit_config.json
-modmain_path)`, `injector_module_dir()/plugins`). Dedupe + sort.
+Fix: list the hint dir; if empty, use `ds::plugin::default_plugin_search_dirs()`
+(the single loader root: `DS_LUAJIT_PLUGIN_DIR`, else `injector_module_dir()/plugins`).
+Dedupe + sort.
 
 ## Step 4 — verify for real (do not stop at unit tests)
 

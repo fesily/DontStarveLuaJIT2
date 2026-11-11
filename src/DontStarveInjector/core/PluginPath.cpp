@@ -1,6 +1,5 @@
 #include "PluginPath.hpp"
 
-#include "config/path/ModFolderAliases.hpp"
 #include "util/PathText.hpp"
 
 #include <algorithm>
@@ -29,8 +28,8 @@ namespace {
 
 using namespace std::string_view_literals;
 
-std::string g_modmain_override;
-ModmainPathProvider g_modmain_provider = nullptr;
+// Test seam: non-empty makes injector_module_dir() return this path.
+std::filesystem::path g_injector_dir_override;
 std::mutex g_dll_search_mu;
 // Bookkeeping only: AddDllDirectory USER_DIRS paths (absolute/weakly_canonical).
 // Process-wide SetDefaultDllDirectories is intentionally NOT used — plugin loads
@@ -39,10 +38,6 @@ std::unordered_set<std::filesystem::path, util::PathHash> g_added_dll_dirs;
 // POSIX counterpart: the roots themselves, in registration order, walked by
 // util/platform.cpp loadlib(). Windows keeps the authoritative list in the OS.
 std::vector<std::filesystem::path> g_dll_roots;
-
-// Primary workshop folder + local/dev aliases used when luajit_config.modmain_path
-// is empty (first client boot / dedicated before config is written).
-// Shared list: ds::config::path::kModFolderAliases / kPrimaryWorkshopModName.
 
 // Lua hands us UTF-8 (mod root paths can contain non-ASCII user names). Windows
 // filesystem::path from narrow chars assumes ANSI, so decode explicitly.
@@ -81,21 +76,6 @@ bool iequals_ascii(std::string_view a, std::string_view b) {
     return true;
 }
 
-void try_push_dir(std::vector<std::filesystem::path> &out,
-                  std::unordered_set<std::filesystem::path, util::PathHash> &seen,
-                  const std::filesystem::path &dir) {
-    std::error_code ec;
-    if (dir.empty() || !std::filesystem::is_directory(dir, ec)) {
-        return;
-    }
-    const auto canon = std::filesystem::weakly_canonical(dir, ec);
-    // Path key, not text: dedupe never needs an encoding.
-    if (!seen.insert(ec ? dir : canon).second) {
-        return;
-    }
-    out.push_back(ec ? dir : canon);
-}
-
 void log_once(const char *tag, const char *msg) {
     // Path helpers may run before spdlog is ready; stderr is always available.
     static std::mutex mu;
@@ -109,111 +89,10 @@ void log_once(const char *tag, const char *msg) {
     std::fflush(stderr);
 }
 
-std::filesystem::path exe_directory() {
-#if defined(_WIN32)
-    wchar_t buf[MAX_PATH];
-    const DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
-    if (n == 0 || n >= MAX_PATH) {
-        return {};
-    }
-    return std::filesystem::path(buf).parent_path();
-#else
-    // Linux dedicated/client typically run from bin64; /proc/self/exe is reliable.
-    char buf[PATH_MAX];
-    const ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (n <= 0) {
-        return {};
-    }
-    buf[n] = '\0';
-    return std::filesystem::path(buf).parent_path();
-#endif
-}
-
-// Candidate parents of game `mods/` and Steam workshop content roots.
-void collect_mod_search_bases(std::vector<std::filesystem::path> &bases) {
-    auto push_unique = [&](const std::filesystem::path &p) {
-        if (p.empty()) {
-            return;
-        }
-        for (const auto &existing : bases) {
-            if (existing == p) {
-                return;
-            }
-        }
-        bases.push_back(p);
-    };
-
-    const auto exe = exe_directory();
-    if (!exe.empty()) {
-        // bin64 → game root → mods/
-        push_unique(exe.parent_path() / "mods");
-        // Rare: process cwd already under game root.
-        push_unique(exe / "mods");
-        // Steam workshop content: .../steamapps/common/<game>/bin64
-        // → .../steamapps/workshop/content/322330
-        const auto steamapps = exe.parent_path().parent_path().parent_path();
-        if (!steamapps.empty()) {
-            push_unique(steamapps / "workshop" / "content" / "322330");
-        }
-    }
-
-    // Also probe relative to Injector module (usually game bin64).
-    const auto inj = injector_module_dir();
-    if (!inj.empty()) {
-        push_unique(inj.parent_path() / "mods");
-        push_unique(inj / "mods");
-        const auto steamapps = inj.parent_path().parent_path().parent_path();
-        if (!steamapps.empty()) {
-            push_unique(steamapps / "workshop" / "content" / "322330");
-        }
-    }
-}
-
-// When luajit_config has not written modmain_path yet, locate known mod roots
-// that already have a plugins/ tree (post-install first boot / dedicated).
-std::filesystem::path discover_mod_plugins_dir() {
-    std::vector<std::filesystem::path> bases;
-    collect_mod_search_bases(bases);
-
-    std::error_code ec;
-    for (const auto &base : bases) {
-        if (base.empty() || !std::filesystem::is_directory(base, ec)) {
-            continue;
-        }
-        for (const auto alias : ds::config::path::kModFolderAliases) {
-            const auto mod_root = base / std::string{alias};
-            const auto plugins = mod_root / "plugins";
-            if (std::filesystem::is_directory(plugins, ec)) {
-                // Prefer a root that looks like a real mod install.
-                if (std::filesystem::is_regular_file(mod_root / "modmain.lua", ec) ||
-                    std::filesystem::is_regular_file(mod_root / "modinfo.lua", ec) ||
-                    std::filesystem::is_regular_file(mod_root / "install.bat", ec) ||
-                    std::filesystem::is_regular_file(mod_root / "install_linux.sh", ec)) {
-                    return plugins;
-                }
-                // plugins/ alone is enough after install.bat staged native modules.
-                return plugins;
-            }
-        }
-    }
-    return {};
-}
-
 } // namespace
 
-void set_modmain_path_override_for_test(std::string_view path_or_empty) {
-    g_modmain_override.assign(path_or_empty.begin(), path_or_empty.end());
-}
-
-void set_modmain_path_provider(ModmainPathProvider fn) {
-    g_modmain_provider = fn;
-}
-
-std::filesystem::path plugins_dir_from_modmain(std::string_view modmain_path) {
-    if (modmain_path.empty()) {
-        return {};
-    }
-    return std::filesystem::path(modmain_path).parent_path() / "plugins";
+void set_injector_module_dir_for_test(const std::filesystem::path &module_dir_or_empty) {
+    g_injector_dir_override = module_dir_or_empty;
 }
 
 std::filesystem::path plugins_dir_from_module_dir(const std::filesystem::path &module_dir) {
@@ -242,6 +121,9 @@ std::filesystem::path plugins_dir_from_module_dir(const std::filesystem::path &m
 }
 
 std::filesystem::path injector_module_dir() {
+    if (!g_injector_dir_override.empty()) {
+        return g_injector_dir_override;
+    }
 #if defined(_WIN32)
     HMODULE mod = nullptr;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -265,73 +147,34 @@ std::filesystem::path injector_module_dir() {
 #endif
 }
 
-std::string resolve_modmain_path() {
-    if (!g_modmain_override.empty()) {
-        return g_modmain_override;
-    }
-    if (g_modmain_provider) {
-        return g_modmain_provider();
-    }
-    return {};
-}
-
 std::vector<std::filesystem::path> default_plugin_search_dirs() {
-    std::vector<std::filesystem::path> dirs;
-    std::unordered_set<std::filesystem::path, util::PathHash> seen;
+    const char *env = std::getenv(kPluginDirEnv);
+    const bool env_set = env != nullptr && *env != '\0';
 
-    if (const char *env = std::getenv(kPluginDirEnv); env && *env) {
-        try_push_dir(dirs, seen, std::filesystem::path(env));
-    }
-
-    const auto modmain = resolve_modmain_path();
-    const auto mod_plugins = plugins_dir_from_modmain(modmain);
-    if (!modmain.empty()) {
-        try_push_dir(dirs, seen, mod_plugins);
-        std::error_code mod_plugins_ec;
-        if (mod_plugins.empty() || !std::filesystem::is_directory(mod_plugins, mod_plugins_ec)) {
-            log_once("warn",
-                     "modmain_path set but parent(modmain)/plugins is missing; "
-                     "mod-local plugins unavailable from config path");
-        }
+    std::filesystem::path candidate;
+    if (env_set) {
+        candidate = std::filesystem::path(env);
     } else {
-        // First boot / dedicated: luajit_config may not have modmain_path yet.
-        // Discover known workshop/local mod roots that already staged plugins/.
-        const auto discovered = discover_mod_plugins_dir();
-        if (!discovered.empty()) {
-            try_push_dir(dirs, seen, discovered);
-            log_once("info",
-                     "modmain_path empty; using discovered mod plugins root "
-                     "(workshop/local alias under game mods or Steam UGC)");
-        } else {
-            log_once("warn",
-                     "modmain_path empty and no known mod plugins root found; "
-                     "mod-local plugins unavailable until config is written or "
-                     "DS_LUAJIT_PLUGIN_DIR is set");
+        const auto module_dir = injector_module_dir();
+        if (!module_dir.empty()) {
+            candidate = plugins_dir_from_module_dir(module_dir);
         }
     }
 
-    const auto inj = injector_module_dir();
-    if (!inj.empty()) {
-        const auto inj_plugins = plugins_dir_from_module_dir(inj);
-        const size_t before = dirs.size();
-        try_push_dir(dirs, seen, inj_plugins);
-        if (dirs.size() > before) {
-            // Injector plugins root was added (not deduped). Always warn once:
-            // design treats this as migration/compat fallback, even when env is
-            // also present (env still wins ordering via try_push_dir order).
-            if (before == 0) {
-                log_once("warn",
-                         "using injector_module_dir()/plugins as plugin search fallback "
-                         "(compat); prefer mod-local plugins or DS_LUAJIT_PLUGIN_DIR");
-            } else {
-                log_once("warn",
-                         "also scanning injector_module_dir()/plugins as migration "
-                         "fallback");
-            }
-        }
+    std::error_code ec;
+    if (candidate.empty() || !std::filesystem::is_directory(candidate, ec)) {
+        // No fallback: one tree, or no plugins. Scanning another install would
+        // reintroduce the injector-root/plugin-root split this contract removes.
+        log_once("warn", env_set
+                             ? "DS_LUAJIT_PLUGIN_DIR is not a directory; no plugin root"
+                             : "injector module dir has no plugins/ tree; no plugin root");
+        return {};
     }
 
-    return dirs;
+    const auto canon = std::filesystem::weakly_canonical(candidate, ec);
+    const auto root = ec ? candidate : canon;
+    log_once("info", (std::string{"plugin root: "} + util::path_to_utf8(root)).c_str());
+    return {root};
 }
 
 std::filesystem::path mod_root_from_plugins_dir(const std::filesystem::path &plugins_dir) {
@@ -402,7 +245,7 @@ std::vector<std::string> list_installed_plugin_packages(std::string_view plugins
     // The Lua registry passes its MODROOT-relative plugins dir, which is an
     // engine path and need not exist on disk (a Workshop item is loaded from
     // Steam UGC while MODROOT stays "../mods/workshop-<id>/"), so fall back to
-    // the roots the native loader itself scans.
+    // the single root the native loader itself loads.
     for (const auto &root : default_plugin_search_dirs()) {
         auto stems = list_plugin_packages_in(root);
         out.insert(out.end(), std::make_move_iterator(stems.begin()),

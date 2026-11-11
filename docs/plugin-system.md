@@ -301,11 +301,12 @@ GameInjector.DS_LUAJIT_list_plugin_packages(MODROOT .. "plugins/")
 ```
 
 Backed by `ds::plugin::list_installed_plugin_packages` (`core/PluginPath.cpp`),
-which lists that directory when it exists and otherwise unions
-`default_plugin_search_dirs()` — the roots `DynamicPluginLoader` scans. The
-fallback matters because `MODROOT` is an engine path: a Workshop item is loaded
-from Steam UGC (`…/workshop/content/322330/<id>`) while `MODROOT` stays
-`../mods/workshop-<id>/`, so the listing path need not exist on disk. The export
+which lists that directory when it exists and otherwise uses the single root
+from `default_plugin_search_dirs()` — the same tree `DynamicPluginLoader`
+loads. The fallback matters because `MODROOT` is an engine path: a Workshop
+item is loaded from Steam UGC (`…/workshop/content/322330/<id>`) while
+`MODROOT` stays `../mods/workshop-<id>/`, so the listing path need not exist on
+disk. The export
 returns a Lua sequence table (`sol::as_table`) — a bare `std::vector` would be
 pushed as a container userdata and the registry would disable itself.
 Consequence: the registry is
@@ -574,8 +575,8 @@ When adding a plugin:
 2. Export `ds_plugin_module_init` / optional `ds_plugin_module_abi_version` (see `PluginModuleAbi.hpp`)
 3. Register `IPlugin*` with static storage duration
 4. Add via `ds_add_dynamic_plugin(...)` in Injector CMake (output `Injector/plugins/`)
-5. Deploy under **mod** `plugins/` (primary). Game `bin64/plugins/` is compat/dev fallback only.
-6. Override search with `DS_LUAJIT_PLUGIN_DIR`
+5. Deploy under the **same mod root as the real Injector** (`<mod>/plugins/`, sibling of `deps/` and the module).
+6. Override the root with `DS_LUAJIT_PLUGIN_DIR` (tests/CI/build-tree runs)
 
 EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`, …) already ship as dynamic modules. Keep `RegisterBuiltinPlugins` empty unless you need a true L0-only static plugin.
 
@@ -593,7 +594,11 @@ EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`, �
 
 Override paths: `DS_LUAJIT_INJECTOR` / `DS_LUAJIT_INJECTOR_DIR` (real Injector); `DS_LUAJIT_PLUGIN_DIR` (plugins). Marker: `data/unsafedata/ds_luajit_injector.path`.
 
-Search roots are ordered (env → mod-local `plugins/` → `injector_module_dir()/plugins` as migration fallback) and **one copy per plugin stem wins**: the first root that carries `plugins/<stem>/` handles it and later roots skip it (`skipped duplicate module (stem already handled from an earlier root)`). Without that rule two populated roots (mod-local tree + the injector directory, e.g. dev `DS_LUAJIT_INJECTOR=<repo>/Mod/Injector.dll` while the game loads the Workshop item) initialize the same plugin twice, the host rejects the second registration (`service conflict ds_core_vm_get_game_lua_context`) and unloading that copy crashes the process (`0xC0000374`).
+There is exactly **one plugin root** per process: `DS_LUAJIT_PLUGIN_DIR` when set (and an existing directory), otherwise `plugins_dir_from_module_dir(injector_module_dir())` — i.e. the tree that supplied the real Injector module. There is no modmain/config, game-mods or UGC fallback: if the resolved module has no `plugins/` sibling, the runtime reports "no plugin root" instead of loading plugins from another install. This is what keeps a dev `DS_LUAJIT_INJECTOR=<repo>/Mod/Injector.dll` from running the game's Workshop plugins (or vice versa). `default_plugin_search_dirs()` therefore returns zero or one path; `core.vm` mapping, the signature cache root and the manager inventory all consume the same entry.
+
+The shell's mod-alias scan (used only when env/marker do not resolve) is equally single-valued for Workshop content: `-ugc_directory` (custom workshop root, `content/322330` appended) **replaces** the Steam default `…/steamapps/workshop/content/322330`; the two are never scanned together.
+
+One copy per plugin stem still wins inside the loader: modules from external enabled packs are deduped against the built-in root (`skipped duplicate module (stem already handled from an earlier root)`), so a pack cannot re-initialize a built-in plugin (host rejects the second registration, `service conflict ds_core_vm_get_game_lua_context`, and unloading that copy crashes with `0xC0000374`).
 
 Boot diagnostics: the shell bootstrap (Winmm / InjectorStub) resets and appends `<game>/data/unsafedata/ds_luajit_boot.log` on every boot — header (time/pid/exe), resolve source + module path, load result, exported-entry result, then the shell's outcome. Useful when a failed inject is invisible (Steam hides stderr). `Mod/install_linux.sh` ends with a `[CHECK]` summary (shell / real module / marker / `ldd`) and offers `install_linux.sh selftest` for a live one-process probe.
 

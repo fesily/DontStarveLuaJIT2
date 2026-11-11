@@ -10,9 +10,6 @@ namespace ds::plugin {
 // Env override name (single source of truth).
 inline constexpr const char *kPluginDirEnv = "DS_LUAJIT_PLUGIN_DIR";
 
-// parent(modmain_path) / "plugins". Empty modmain_path → empty path.
-DS_INJECTOR_CXX_API std::filesystem::path plugins_dir_from_modmain(std::string_view modmain_path);
-
 // If module_dir already ends with "plugins", return it; else module_dir / "plugins".
 DS_INJECTOR_CXX_API std::filesystem::path plugins_dir_from_module_dir(const std::filesystem::path &module_dir);
 
@@ -21,28 +18,21 @@ DS_INJECTOR_CXX_API std::filesystem::path plugins_dir_from_module_dir(const std:
 // because the definition lives in Injector.dll (process-wide shared state).
 DS_INJECTOR_CXX_API std::filesystem::path injector_module_dir();
 
-// Resolve modmain_path: non-empty test override, optional provider, else empty.
-// Task 2 registers the production provider that reads luajit_config.
-DS_INJECTOR_CXX_API std::string resolve_modmain_path();
+// Test seam: override injector_module_dir(); empty clears.
+DS_INJECTOR_CXX_API void set_injector_module_dir_for_test(
+    const std::filesystem::path &module_dir_or_empty);
 
-// Optional production hook (Task 2). nullptr → empty when no test override.
-using ModmainPathProvider = std::string (*)();
-DS_INJECTOR_CXX_API void set_modmain_path_provider(ModmainPathProvider fn);
-
-// Test seam: empty clears override.
-DS_INJECTOR_CXX_API void set_modmain_path_override_for_test(std::string_view path_or_empty);
-
-// Search roots in priority order, existing dirs only, weakly-canonical deduped:
-//   1) DS_LUAJIT_PLUGIN_DIR if set and is a directory
-//   2) plugins_dir_from_modmain(resolve_modmain_path()) if non-empty and is dir
-//      OR, when modmain_path is empty: discovered known mod plugins root
-//      (workshop-3444078585 / aliases under game mods/ or Steam UGC content)
-//   3) plugins_dir_from_module_dir(injector_module_dir()) if non-empty and is dir
-// Logs once (stderr) when modmain is empty/missing and when injector fallback is used.
+// The single plugin root this process uses. Exactly zero or one element:
+//   1) DS_LUAJIT_PLUGIN_DIR when set (must name an existing directory)
+//   2) plugins_dir_from_module_dir(injector_module_dir()) when it exists
+// No modmain/config, game-mods or UGC fallback: the tree that supplied the
+// Injector module owns its plugins/. An empty result means the runtime has no
+// plugins tree and must report that instead of scanning somewhere else.
+// Weakly-canonicalized; callers that need "the" root use .front().
 //
-// Process-wide: provider/override/DLL-search bookkeeping live in Injector only.
+// Process-wide: override/DLL-search bookkeeping live in Injector only.
 // Plugins (e.g. plugin_manager) must import these symbols — do not compile
-// PluginPath.cpp into another image or modmain registration is invisible.
+// PluginPath.cpp into another image or the resolved root forks per module.
 DS_INJECTOR_CXX_API std::vector<std::filesystem::path> default_plugin_search_dirs();
 
 // Derive mod root from a plugins directory: leaf "plugins" → parent,
@@ -59,8 +49,9 @@ DS_INJECTOR_CXX_API std::vector<std::string> list_plugin_packages(std::string_vi
 
 // Same listing, but tolerant of an engine-relative path (the Lua registry hands
 // over MODROOT .. "plugins/", which does not exist for a Workshop item loaded
-// from Steam UGC). Empty hint listing → union over default_plugin_search_dirs(),
-// i.e. exactly the roots the native loader scans; deduped and sorted.
+// from Steam UGC). Empty hint listing → the single root from
+// default_plugin_search_dirs(), i.e. exactly what the native loader loads;
+// deduped and sorted.
 DS_INJECTOR_CXX_API std::vector<std::string> list_installed_plugin_packages(std::string_view plugins_dir_utf8);
 
 // Shared runtimes path: mod_root / "deps" (sibling of plugins/, not under it).

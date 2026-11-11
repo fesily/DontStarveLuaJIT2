@@ -252,6 +252,30 @@ bool find_module_in_dir(const fs::path &dir, fs::path &out) {
     return false;
 }
 
+// Workshop content base for the mod alias scan. `-ugc_directory` is a custom
+// workshop root and REPLACES the Steam default — the two are mutually exclusive,
+// custom wins. The value is the workshop root (same contract as
+// sdk/steam/Workshop.cpp), so the app content directory is appended here.
+fs::path workshop_content_base() {
+    const auto cmds = current_cmdline();
+    for (size_t i = 0; i + 1 < cmds.size(); ++i) {
+        if (cmds[i] == "-ugc_directory" && !cmds[i + 1].empty()) {
+            return fs::path(cmds[i + 1]) / "content" / "322330";
+        }
+    }
+
+    const auto exe = current_exe_dir();
+    if (exe.empty()) {
+        return {};
+    }
+    // .../steamapps/common/<game>/bin64 → .../steamapps/workshop/content/322330
+    const auto steamapps = exe.parent_path().parent_path().parent_path();
+    if (steamapps.empty()) {
+        return {};
+    }
+    return steamapps / "workshop" / "content" / "322330";
+}
+
 void collect_scan_bases(std::vector<fs::path> &bases) {
     auto push_unique = [&](const fs::path &p) {
         if (p.empty()) {
@@ -269,19 +293,8 @@ void collect_scan_bases(std::vector<fs::path> &bases) {
     if (!exe.empty()) {
         // Game install: <game>/bin64/exe → <game>/mods
         push_unique(exe.parent_path() / "mods");
-        // Steam UGC: .../steamapps/common/<game>/bin64 → .../steamapps/workshop/content/322330
-        const auto steamapps = exe.parent_path().parent_path().parent_path();
-        if (!steamapps.empty()) {
-            push_unique(steamapps / "workshop" / "content" / "322330");
-        }
     }
-
-    const auto cmds = current_cmdline();
-    for (size_t i = 0; i < cmds.size(); ++i) {
-        if (cmds[i] == "-ugc_directory" && i + 1 < cmds.size() && !cmds[i + 1].empty()) {
-            push_unique(fs::path(cmds[i + 1]));
-        }
-    }
+    push_unique(workshop_content_base());
 }
 
 bool scan_mod_injector(fs::path &out) {

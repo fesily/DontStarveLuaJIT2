@@ -2,6 +2,12 @@
 
 ## 未发布
 
+- 变更：**插件根目录改为唯一解析**。`default_plugin_search_dirs()` 现在只返回 0 或 1 个根：`DS_LUAJIT_PLUGIN_DIR`（必须是已存在目录）优先，否则 `<真实 Injector 模块目录>/plugins`。删除了 `parent(modmain_path)/plugins`、`<game>/mods`/Steam UGC 发现与 `injector_module_dir()/plugins` 兼容回退（`plugins_dir_from_modmain`/`resolve_modmain_path`/provider/override、`discover_mod_plugins_dir`、`collect_mod_search_bases` 一并删除，`DontStarveInjector.cpp` 不再注册 modmain provider）。dev 环境 `DS_LUAJIT_INJECTOR=<repo>/Mod/Injector.dll` 现在必然加载 repo 的 `Mod/plugins`，不会再被存档 `luajit_config.json` 指到工坊树；Lua 注册表（`list_installed_plugin_packages`）在 `MODROOT/plugins` 不存在时回落到同一唯一根。显式设置错误目录时直接报 `no plugin root`，不再回退到别的安装。`test_plugin_path` 新增 env/injector/错误 env 不回退/缺失根用例。
+
+- 修复：**壳的 mod 别名扫描里自定义 UGC 与默认 Steam workshop 互斥**。`-ugc_directory` 的值按 workshop 根处理（追加 `content/322330`，与 `sdk/steam/Workshop.cpp` 一致），存在时不再扫描 `…/steamapps/workshop/content/322330`；此前该值被当成内容目录直接拼别名（实际去找 `…/workshop/workshop-<id>`，永远不命中），且与默认 UGC 同时入列。新增 `test_ugc_directory_excludes_steam_default`：默认树里放着 Injector 也不会被选中，自定义树放进去才命中。
+
+- 验证：`test_plugin_path`、`test_injector_bootstrap`、`test_dynamic_plugin_loader` 全通过，`Injector.dll`（RelWithDebInfo）重建通过。
+
 - 修复**客户端 `render.shadow` 剪影路径在当前 build 762172 上直接失效**（日志 `[render.shadow] silhouette helper Rel32 failed`）：`ShadowDCR` 的实体列表调用地址从 `+0x9D` 移到了 `+0x9A`（实测该 build 客户端：`+0x9A` 处是 `E8` → 目标 rva `0x8f350`，`+0xAA` 处调用 `GenerateVB`@`0x8f100`，其余六个站点 `+0x28/+0x33/+0x41/+0x55/+0x63/+0x7F` 未变），旧偏移读到 `0xFF` 使 `Rel32Target` 返回 null，`BindSilhouetteHelpers` 因此整体判失败、剪影永久关闭。这是上一版按固定偏移取 rel32 目标的后遗症，与本次 provider 重构无关（provider 交出的函数地址与旧 `ScanLowest` 完全一致）。偏移已改正并在注释里留下证据。
 
 - 变更：**固定特征码表按目标平台在编译期过滤**（`DS_SIG_TARGET_WINDOWS_X64` / `_LINUX_X64` / `_MACOS_X64|ARM64`，定义在 `core/SignatureProvider.hpp`）。此前每个 provider 表把所有平台的 `EntryDef` 都编进同一个镜像，只靠运行期 `platform_mask` 过滤：Windows 构建里带着 Linux/macOS 的 pattern，工具/缓存里也逐条走一遍再标 `not-applicable`。现在每个 provider 的可用性只在它自己的 `*Signatures.hpp` 里写一次（`DS_SIG_HAVE_<OWNER>`，按编译器平台宏），provider TU、插件 `module_init` 的注册与离线工具的 provider 表都用这一个开关；不适用该目标的 provider 整个 TU 不编译，因此不存在"0 条目描述符"这种状态。表内再按目标只生成对应变体（core.vm 10→4、debug.profiler 5→2、network.stats 2→1）。32 位目标宏与 `kPlatformWindowsX86/LinuxX86` 一并删除。`platform_mask` 保留为运行期二次校验与缓存分区键。实测（win64，build 762172）：工具枚举条目 39→31、输出不再有跨平台 `not-applicable` 行（只剩真实的 client-only/server-only：`fps.render.notebook_config` 在客户端、`render.*` 在专用服），缓存 client 30 条 / server 20 条且 `platform_mask` 全为 `1`（windows-x64）。
