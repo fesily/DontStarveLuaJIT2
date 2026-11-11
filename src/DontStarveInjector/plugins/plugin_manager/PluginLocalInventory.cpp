@@ -217,13 +217,11 @@ std::vector<LocalPluginEntry> scan_local_inventory(const std::filesystem::path &
 }
 
 std::filesystem::path resolve_plugins_dir() {
-    // Prefer first entry of shared search policy when available.
-    auto dirs = default_plugin_search_dirs();
-    if (!dirs.empty()) {
-        return dirs.front();
-    }
-    // Fallback: module-relative plugins dir even if missing on disk.
-    return plugins_dir_from_module_dir(injector_module_dir());
+    // One root or none: re-deriving a module-relative fallback here would let the
+    // manager scan/apply into a tree the loader refuses to load (e.g. a broken
+    // DS_LUAJIT_PLUGIN_DIR). Callers already handle an empty result.
+    const auto dirs = default_plugin_search_dirs();
+    return dirs.empty() ? std::filesystem::path{} : dirs.front();
 }
 
 std::vector<PluginStatusEntry> build_plugin_status(const PluginPinConfig &cfg,

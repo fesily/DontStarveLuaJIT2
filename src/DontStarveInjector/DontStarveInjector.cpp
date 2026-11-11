@@ -15,14 +15,10 @@
 #include "config/ResolvedConfig.hpp"
 #include "core/RegisterBuiltinPlugins.hpp"
 #include "core/DynamicPluginLoader.hpp"
-#include "core/PluginPath.hpp"
 #include "core/CoreVmBootstrap.hpp"
 #ifdef ENABLE_STEAM_SUPPORT
 #include "sdk/steam/Steam.hpp"
 #endif
-
-
-
 
 #include <spdlog/fmt/std.h>
 #include <spdlog/spdlog.h>

@@ -1,4 +1,5 @@
 #include "loader/bootstrap/InjectorBootstrap.hpp"
+#include "util/PathText.hpp"
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -257,7 +258,51 @@ TEST_CASE("test_injector_bootstrap/ugc_directory_base") {
 
     set_marker_game_root_for_test(game);
     set_exe_dir_for_test(game / "bin64");
-    set_cmdline_for_test({"-ugc_directory", ugc_root.string()});
+    set_cmdline_for_test({"-ugc_directory", ds::util::path_to_utf8(ugc_root)});
+
+    fs::path out;
+    REQUIRE(resolve_injector_module(out));
+    REQUIRE(fs::equivalent(out, planted));
+    REQUIRE_EQ(last_resolve_source_for_test(), "scan");
+}
+
+// Positive control for the derived default: without -ugc_directory the Steam
+// layout must still be scanned (the exclusivity test alone would pass if the
+// default branch were broken).
+TEST_CASE("test_injector_bootstrap/steam_default_base") {
+    BootstrapStateGuard guard;
+    clear_env_and_state();
+    auto root = make_temp("ds_inj_steam_default");
+    auto steamapps = root / "steamapps";
+    auto game = steamapps / "common" / "game";
+    auto default_ugc = steamapps / "workshop" / "content" / "322330";
+    auto planted = plant_mod_injector(game, default_ugc, "3444078585");
+
+    set_marker_game_root_for_test(game);
+    set_exe_dir_for_test(game / "bin64");
+    set_cmdline_for_test({});
+
+    fs::path out;
+    REQUIRE(resolve_injector_module(out));
+    REQUIRE(fs::equivalent(out, planted));
+    REQUIRE_EQ(last_resolve_source_for_test(), "scan");
+}
+
+// Cmdline tokens are UTF-8; a non-ASCII custom workshop root must resolve.
+TEST_CASE("test_injector_bootstrap/ugc_directory_utf8_root") {
+    BootstrapStateGuard guard;
+    clear_env_and_state();
+    auto root = make_temp("ds_inj_ugc_utf8");
+    auto game = root / "game";
+    // U+1F600 cannot be represented in the ANSI code page, so a narrow
+    // fs::path(std::string) misdecodes this UTF-8 token.
+    auto ugc_root = root / fs::path(u8"\u81ea\u5b9a\u4e49\u5de5\u574a\U0001F600");
+    auto ugc_content = ugc_root / "content" / "322330";
+    auto planted = plant_mod_injector(game, ugc_content, "3444078585");
+
+    set_marker_game_root_for_test(game);
+    set_exe_dir_for_test(game / "bin64");
+    set_cmdline_for_test({"-ugc_directory", ds::util::path_to_utf8(ugc_root)});
 
     fs::path out;
     REQUIRE(resolve_injector_module(out));
@@ -281,7 +326,7 @@ TEST_CASE("test_injector_bootstrap/ugc_directory_excludes_steam_default") {
 
     set_marker_game_root_for_test(game);
     set_exe_dir_for_test(game / "bin64");
-    set_cmdline_for_test({"-ugc_directory", custom_root.string()});
+    set_cmdline_for_test({"-ugc_directory", ds::util::path_to_utf8(custom_root)});
 
     fs::path out;
     REQUIRE_FALSE(resolve_injector_module(out));

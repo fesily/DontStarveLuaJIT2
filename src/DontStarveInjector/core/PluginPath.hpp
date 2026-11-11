@@ -23,12 +23,14 @@ DS_INJECTOR_CXX_API void set_injector_module_dir_for_test(
     const std::filesystem::path &module_dir_or_empty);
 
 // The single plugin root this process uses. Exactly zero or one element:
-//   1) DS_LUAJIT_PLUGIN_DIR when set (must name an existing directory)
+//   1) DS_LUAJIT_PLUGIN_DIR when set to a non-empty value (must name an
+//      existing directory; Windows reads the wide environment, POSIX UTF-8)
 //   2) plugins_dir_from_module_dir(injector_module_dir()) when it exists
 // No modmain/config, game-mods or UGC fallback: the tree that supplied the
 // Injector module owns its plugins/. An empty result means the runtime has no
 // plugins tree and must report that instead of scanning somewhere else.
-// Weakly-canonicalized; callers that need "the" root use .front().
+// Weakly-canonicalized (relative values therefore resolve against the CWD at
+// call time — prefer absolute); callers that need "the" root use .front().
 //
 // Process-wide: override/DLL-search bookkeeping live in Injector only.
 // Plugins (e.g. plugin_manager) must import these symbols — do not compile
@@ -47,11 +49,11 @@ DS_INJECTOR_CXX_API std::filesystem::path mod_root_from_plugins_dir(const std::f
 // referenced.
 DS_INJECTOR_CXX_API std::vector<std::string> list_plugin_packages(std::string_view plugins_dir_utf8);
 
-// Same listing, but tolerant of an engine-relative path (the Lua registry hands
-// over MODROOT .. "plugins/", which does not exist for a Workshop item loaded
-// from Steam UGC). Empty hint listing → the single root from
-// default_plugin_search_dirs(), i.e. exactly what the native loader loads;
-// deduped and sorted.
+// Same listing, but native-root first: when default_plugin_search_dirs()
+// resolves, that single root is listed (exactly what the native loader loads).
+// The hint (MODROOT .. "plugins/") is an engine path that need not exist for a
+// Workshop item loaded from Steam UGC, so it is only consulted when no native
+// root resolves. Deduped and sorted.
 DS_INJECTOR_CXX_API std::vector<std::string> list_installed_plugin_packages(std::string_view plugins_dir_utf8);
 
 // Shared runtimes path: mod_root / "deps" (sibling of plugins/, not under it).

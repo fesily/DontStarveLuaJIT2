@@ -28,11 +28,10 @@ struct LocalPluginEntry {
 // Pure filesystem — takes an explicit path so unit tests can use a temp dir.
 std::vector<LocalPluginEntry> scan_local_inventory(const std::filesystem::path &plugins_dir);
 
-// plugins_dir_from_module_dir is declared in core/PluginPath.hpp (Injector export).
-// Shared plugin search policy (default_plugin_search_dirs front), else
-// plugins_dir_from_module_dir(injector_module_dir()) even if missing on disk.
-// Uses Injector's process-wide PluginPath state (modmain provider included).
-// May be empty if both search policy and module path are unavailable.
+// The single plugin root from default_plugin_search_dirs(); empty when the
+// runtime has no root (broken override / no plugins/ sibling). No module-relative
+// fallback: the manager must never operate on a tree the loader refuses.
+// Uses Injector's process-wide PluginPath state.
 std::filesystem::path resolve_plugins_dir();
 
 // Channel cache: plugin id → version from last fetched remote manifest (empty offline).

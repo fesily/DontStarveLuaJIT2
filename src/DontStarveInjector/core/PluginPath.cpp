@@ -6,7 +6,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
-#include <iterator>
+#include <cstring>
 #include <mutex>
 #include <string_view>
 #include <unordered_set>
@@ -25,8 +25,6 @@
 
 namespace ds::plugin {
 namespace {
-
-using namespace std::string_view_literals;
 
 // Test seam: non-empty makes injector_module_dir() return this path.
 std::filesystem::path g_injector_dir_override;
@@ -148,14 +146,25 @@ std::filesystem::path injector_module_dir() {
 }
 
 std::vector<std::filesystem::path> default_plugin_search_dirs() {
-    const char *env = std::getenv(kPluginDirEnv);
-    const bool env_set = env != nullptr && *env != '\0';
+    std::filesystem::path env_root;
+#if defined(_WIN32)
+    // The environment is UTF-16 on Windows; getenv()/path(char*) would narrow it
+    // through the ANSI code page. Copy out of _wgetenv's shared buffer at once.
+    const std::wstring env_key(kPluginDirEnv,
+                               kPluginDirEnv + std::strlen(kPluginDirEnv));
+    if (const wchar_t *env = _wgetenv(env_key.c_str()); env != nullptr && env[0] != L'\0') {
+        env_root = std::filesystem::path(env);
+    }
+#else
+    if (const char *env = std::getenv(kPluginDirEnv); env != nullptr && *env != '\0') {
+        env_root = path_from_utf8(env);
+    }
+#endif
 
-    std::filesystem::path candidate;
-    if (env_set) {
-        candidate = std::filesystem::path(env);
-    } else {
-        const auto module_dir = injector_module_dir();
+    std::filesystem::path module_dir;
+    std::filesystem::path candidate = env_root;
+    if (candidate.empty()) {
+        module_dir = injector_module_dir();
         if (!module_dir.empty()) {
             candidate = plugins_dir_from_module_dir(module_dir);
         }
@@ -165,13 +174,27 @@ std::vector<std::filesystem::path> default_plugin_search_dirs() {
     if (candidate.empty() || !std::filesystem::is_directory(candidate, ec)) {
         // No fallback: one tree, or no plugins. Scanning another install would
         // reintroduce the injector-root/plugin-root split this contract removes.
-        log_once("warn", env_set
-                             ? "DS_LUAJIT_PLUGIN_DIR is not a directory; no plugin root"
-                             : "injector module dir has no plugins/ tree; no plugin root");
+        if (!env_root.empty()) {
+            log_once("warn", (std::string{"DS_LUAJIT_PLUGIN_DIR is not a directory: "} +
+                              util::path_to_utf8(env_root))
+                                 .c_str());
+        } else if (module_dir.empty()) {
+            log_once("warn", "cannot determine the real Injector module dir; no plugin root");
+        } else {
+            log_once("warn",
+                     (std::string{"injector module dir has no plugins/ tree: "} +
+                      util::path_to_utf8(candidate))
+                         .c_str());
+        }
         return {};
     }
 
     const auto canon = std::filesystem::weakly_canonical(candidate, ec);
+    if (ec) {
+        log_once("warn", (std::string{"weakly_canonical failed for "} +
+                          util::path_to_utf8(candidate) + ": " + ec.message())
+                             .c_str());
+    }
     const auto root = ec ? candidate : canon;
     log_once("info", (std::string{"plugin root: "} + util::path_to_utf8(root)).c_str());
     return {root};
@@ -238,22 +261,16 @@ std::vector<std::string> list_plugin_packages(std::string_view plugins_dir_utf8)
 }
 
 std::vector<std::string> list_installed_plugin_packages(std::string_view plugins_dir_utf8) {
-    auto out = list_plugin_packages(plugins_dir_utf8);
-    if (!out.empty()) {
-        return out;
+    // The single native root is the source of truth: the Lua face must register
+    // exactly what DynamicPluginLoader loads. The hint the registry passes is a
+    // MODROOT-relative engine path (a Workshop item loads from Steam UGC while
+    // MODROOT stays "../mods/workshop-<id>/"), so it may not exist on disk and
+    // may even name another install; consult it only when no root resolves.
+    const auto roots = default_plugin_search_dirs();
+    if (!roots.empty()) {
+        return list_plugin_packages_in(roots.front());
     }
-    // The Lua registry passes its MODROOT-relative plugins dir, which is an
-    // engine path and need not exist on disk (a Workshop item is loaded from
-    // Steam UGC while MODROOT stays "../mods/workshop-<id>/"), so fall back to
-    // the single root the native loader itself loads.
-    for (const auto &root : default_plugin_search_dirs()) {
-        auto stems = list_plugin_packages_in(root);
-        out.insert(out.end(), std::make_move_iterator(stems.begin()),
-                   std::make_move_iterator(stems.end()));
-    }
-    std::sort(out.begin(), out.end());
-    out.erase(std::unique(out.begin(), out.end()), out.end());
-    return out;
+    return list_plugin_packages(plugins_dir_utf8);
 }
 
 std::filesystem::path mod_deps_dir(const std::filesystem::path &mod_root) {

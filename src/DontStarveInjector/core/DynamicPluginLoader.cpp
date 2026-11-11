@@ -276,10 +276,10 @@ bool DynamicPluginLoader::load_module_path(PluginHost &host, const std::filesyst
     const auto path = path_ec ? module_path : abs;
     const auto path_str = util::path_to_utf8(path);
 
-    // One copy per plugin stem: the mod-local root and the injector_module_dir()
-    // migration fallback can both carry the same package, and initializing the
-    // second copy re-registers its services (host rejects init, the module is then
-    // unloaded while the first copy's registrations stay live).
+    // One copy per plugin stem: external enabled packs can carry a package whose
+    // stem the built-in root already initialized, and initializing the second copy
+    // re-registers its services (host rejects init, the module is then unloaded
+    // while the first copy's registrations stay live).
     if (!mark_stem_handled(handled_stems_, stem_from_module_path(path))) {
         if (skip_reason) {
             *skip_reason = "duplicate_stem";

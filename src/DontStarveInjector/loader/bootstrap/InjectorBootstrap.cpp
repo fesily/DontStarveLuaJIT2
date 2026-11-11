@@ -252,16 +252,27 @@ bool find_module_in_dir(const fs::path &dir, fs::path &out) {
     return false;
 }
 
+// First non-empty `-ugc_directory` token (first wins, same as
+// sdk/steam/Workshop.cpp). Cmdline tokens are UTF-8 text
+// (production_cmdline_tokens uses path_to_utf8), so decode explicitly.
+std::string custom_ugc_directory() {
+    const auto cmds = current_cmdline();
+    for (size_t i = 0; i + 1 < cmds.size(); ++i) {
+        if (cmds[i] == "-ugc_directory" && !cmds[i + 1].empty()) {
+            return cmds[i + 1];
+        }
+    }
+    return {};
+}
+
 // Workshop content base for the mod alias scan. `-ugc_directory` is a custom
 // workshop root and REPLACES the Steam default — the two are mutually exclusive,
 // custom wins. The value is the workshop root (same contract as
 // sdk/steam/Workshop.cpp), so the app content directory is appended here.
 fs::path workshop_content_base() {
-    const auto cmds = current_cmdline();
-    for (size_t i = 0; i + 1 < cmds.size(); ++i) {
-        if (cmds[i] == "-ugc_directory" && !cmds[i + 1].empty()) {
-            return fs::path(cmds[i + 1]) / "content" / "322330";
-        }
+    const auto custom = custom_ugc_directory();
+    if (!custom.empty()) {
+        return ds::util::path_from_utf8(custom) / "content" / "322330";
     }
 
     const auto exe = current_exe_dir();
@@ -348,11 +359,18 @@ std::string describe_resolve_failure() {
         detail += std::move(line);
     };
 
-    const char *file_env = env_or_null(kInjectorFileEnv);
-    const char *dir_env = env_or_null(kInjectorDirEnv);
+    // env_or_null returns storage shared by all keys; copy each value before
+    // the next call (and never keep its pointer).
+    const auto env_text = [](const char *key) {
+        const char *value = env_or_null(key);
+        return value != nullptr ? std::string{value} : std::string{"<unset>"};
+    };
     add_line("resolve: FAILED (env/marker/scan)");
-    add_line(std::string{"  DS_LUAJIT_INJECTOR="} + (file_env ? file_env : "<unset>"));
-    add_line(std::string{"  DS_LUAJIT_INJECTOR_DIR="} + (dir_env ? dir_env : "<unset>"));
+    add_line("  DS_LUAJIT_INJECTOR=" + env_text(kInjectorFileEnv));
+    add_line("  DS_LUAJIT_INJECTOR_DIR=" + env_text(kInjectorDirEnv));
+    if (const auto ugc = custom_ugc_directory(); !ugc.empty()) {
+        add_line("  -ugc_directory=" + ugc + " (workshop root; Steam default NOT scanned)");
+    }
 
     const auto marker = marker_path();
     if (marker.empty()) {
@@ -522,7 +540,8 @@ bool resolve_injector_module(std::filesystem::path &out_abs) {
         }
     }
 
-    // 4) Mod alias scan under <game>/mods, Steam UGC, -ugc_directory
+    // 4) Mod alias scan under <game>/mods + one workshop content base
+    //    (-ugc_directory root/content/322330, else the Steam default)
     {
         fs::path found;
         if (scan_mod_injector(found)) {

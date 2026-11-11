@@ -2,6 +2,7 @@
 #include "PackagedModule.hpp"
 #include "PluginPath.hpp"
 #include "util/ModulePath.hpp"
+#include "util/PathText.hpp"
 
 #include "config/ResolvedConfig.hpp"
 #include "plugins/plugin_core_vm/VmConfig.hpp"
@@ -201,9 +202,14 @@ bool ForceRunSignatureAndReplace(const BootstrapArgs &args) {
     }
 
     if (!EnsureCoreVmModuleLoaded()) {
-        hard_fail("required plugin_core_vm is missing or failed to load "
-                  "(expected under Mod/plugins/). Install RelWithDebInfo/Debug "
-                  "plugins component, or set DS_LUAJIT_FORCE_NO_CORE_VM=1 for CI.");
+        const auto roots = ds::plugin::default_plugin_search_dirs();
+        const std::string root =
+            roots.empty() ? std::string{"<no plugin root>"}
+                          : ds::util::path_to_utf8(roots.front());
+        hard_fail(("required plugin_core_vm is missing or failed to load (plugin root: " + root +
+                   "). Install RelWithDebInfo/Debug plugins component, or set "
+                   "DS_LUAJIT_FORCE_NO_CORE_VM=1 for CI.")
+                      .c_str());
     }
 
     auto *fn = GetRunSignatureAndReplaceFn();

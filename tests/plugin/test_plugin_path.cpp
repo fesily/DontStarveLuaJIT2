@@ -1,6 +1,8 @@
 #include "core/PluginPath.hpp"
+#include "util/PathText.hpp"
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -28,6 +30,23 @@ static void set_env(const char *k, const char *v) {
 #endif
 }
 
+#if defined(_WIN32)
+static std::wstring wide_key(const char *k) {
+    return std::wstring(k, k + std::strlen(k));
+}
+#endif
+
+// The production reader uses the wide environment on Windows, so tests that
+// carry non-ASCII paths must set it the same way (path::string() would narrow
+// through the ANSI code page and could not catch a misdecoded value).
+static void set_env_path(const char *k, const fs::path &value) {
+#if defined(_WIN32)
+    _wputenv_s(wide_key(k).c_str(), value.wstring().c_str());
+#else
+    setenv(k, value.c_str(), 1);
+#endif
+}
+
 static void clear_root_state() {
     set_env(kPluginDirEnv, "");
     set_injector_module_dir_for_test(fs::path{});
@@ -40,13 +59,25 @@ static void clear_root_state() {
 class RootStateGuard {
 public:
     RootStateGuard() {
-        if (const char *prev = std::getenv(kPluginDirEnv)) {
+#if defined(_WIN32)
+        if (const wchar_t *prev = _wgetenv(wide_key(kPluginDirEnv).c_str());
+            prev != nullptr && prev[0] != L'\0') {
             has_prev_ = true;
             prev_ = prev;
         }
+#else
+        if (const char *prev = std::getenv(kPluginDirEnv); prev != nullptr) {
+            has_prev_ = true;
+            prev_ = prev;
+        }
+#endif
     }
     ~RootStateGuard() {
+#if defined(_WIN32)
+        _wputenv_s(wide_key(kPluginDirEnv).c_str(), has_prev_ ? prev_.c_str() : L"");
+#else
         set_env(kPluginDirEnv, has_prev_ ? prev_.c_str() : nullptr);
+#endif
         set_injector_module_dir_for_test(fs::path{});
         reset_plugin_dll_search_for_test();
     }
@@ -55,7 +86,11 @@ public:
 
 private:
     bool has_prev_ = false;
+#if defined(_WIN32)
+    std::wstring prev_;
+#else
     std::string prev_;
+#endif
 };
 
 // Removes a case's scratch tree on scope exit (a failing REQUIRE used to skip
@@ -83,7 +118,7 @@ TEST_CASE("test_plugin_path/env_root_wins") {
     fs::create_directories(mod_root / "plugins");
 
     set_injector_module_dir_for_test(mod_root);
-    set_env(kPluginDirEnv, env_dir.string().c_str());
+    set_env_path(kPluginDirEnv, env_dir);
 
     auto dirs = default_plugin_search_dirs();
     REQUIRE_EQ(dirs.size(), 1);
@@ -111,7 +146,39 @@ TEST_CASE("test_plugin_path/bad_env_does_not_fall_back") {
     fs::create_directories(mod_root / "plugins");
     clear_root_state();
     set_injector_module_dir_for_test(mod_root);
-    set_env(kPluginDirEnv, (mod_root / "missing").string().c_str());
+    set_env_path(kPluginDirEnv, mod_root / "missing");
+
+    REQUIRE(default_plugin_search_dirs().empty());
+}
+
+TEST_CASE("test_plugin_path/env_root_is_utf8") {
+    RootStateGuard guard;
+    auto base = make_temp("ds_plugin_path_utf8");
+    TempDirGuard cleanup(base);
+    // U+1F600 is not representable in the ANSI code page: the narrow getenv()
+    // path turns it into '?' and cannot find the directory.
+    auto env_dir = base / fs::path(u8"\u63d2\u4ef6\u76ee\u5f55\U0001F600");
+    std::error_code ec;
+    fs::create_directories(env_dir, ec);
+    REQUIRE_FALSE(ec);
+    set_injector_module_dir_for_test(fs::path{});
+    set_env_path(kPluginDirEnv, env_dir);
+
+    auto dirs = default_plugin_search_dirs();
+    REQUIRE_EQ(dirs.size(), 1);
+    REQUIRE(fs::equivalent(dirs.front(), env_dir));
+}
+
+// A broken override must not silently re-root to the injector tree.
+TEST_CASE("test_plugin_path/env_root_must_be_directory") {
+    RootStateGuard guard;
+    auto base = make_temp("ds_plugin_path_file_env");
+    TempDirGuard cleanup(base);
+    auto file = base / "not_a_dir";
+    std::ofstream(file) << "x";
+    fs::create_directories(base / "plugins"); // would satisfy the removed fallback
+    set_injector_module_dir_for_test(base);
+    set_env_path(kPluginDirEnv, file);
 
     REQUIRE(default_plugin_search_dirs().empty());
 }
@@ -187,7 +254,7 @@ TEST_CASE("test_plugin_path/deps_registration_contract") {
     REQUIRE(configure_plugin_dll_search({bare}));
 
     // deps never a plugin search root
-    set_env(kPluginDirEnv, plugins.string().c_str());
+    set_env_path(kPluginDirEnv, plugins);
     auto dirs = default_plugin_search_dirs();
     REQUIRE_FALSE(dirs.empty());
     for (const auto &d : dirs) {
@@ -222,13 +289,25 @@ TEST_CASE("test_plugin_path/list_plugin_packages") {
     // Stray files are not packages.
     std::ofstream(dir / "plugin_flat.dll") << "x";
 
-    auto pkgs = list_plugin_packages(dir.string());
+    auto pkgs = list_plugin_packages(ds::util::path_to_utf8(dir));
     REQUIRE_EQ(pkgs.size(), 2);
     REQUIRE_EQ(pkgs[0], "plugin_a");
     REQUIRE_EQ(pkgs[1], "plugin_c"); // deterministic (sorted)
 
     REQUIRE(list_plugin_packages("").empty());
-    REQUIRE(list_plugin_packages((dir / "missing").string()).empty());
+    REQUIRE(list_plugin_packages(ds::util::path_to_utf8(dir / "missing")).empty());
+}
+
+TEST_CASE("test_plugin_path/list_packages_utf8_roundtrip") {
+    auto dir = make_temp("ds_plugin_list_utf8");
+    TempDirGuard cleanup(dir);
+    auto package = dir / fs::path(u8"plugin_\u6d4b\u8bd5");
+    fs::create_directories(package);
+    std::ofstream(package / "modinfo.lua") << "--";
+
+    auto pkgs = list_plugin_packages(ds::util::path_to_utf8(dir));
+    REQUIRE_EQ(pkgs.size(), 1);
+    REQUIRE_EQ(pkgs[0], ds::util::path_to_utf8(package.filename()));
 }
 
 TEST_CASE("test_plugin_path/list_installed_plugin_packages_fallback") {
@@ -242,13 +321,45 @@ TEST_CASE("test_plugin_path/list_installed_plugin_packages_fallback") {
 
     // A Workshop item is loaded from Steam UGC while the Lua registry hands over
     // MODROOT-relative paths, so the hint does not resolve on disk; the native
-    // search roots must answer instead of a silently empty registry.
+    // root must answer instead of a silently empty registry.
     auto pkgs = list_installed_plugin_packages("workshop-3444078585/plugins/");
     REQUIRE_EQ(pkgs.size(), 1);
     REQUIRE_EQ(pkgs[0], "plugin_fps_render");
+}
 
-    // A resolvable hint is used verbatim.
-    auto direct = list_installed_plugin_packages((mod_root / "plugins").string());
-    REQUIRE_EQ(direct.size(), 1);
-    REQUIRE_EQ(direct[0], "plugin_fps_render");
+// The native root is the source of truth: a resolvable MODROOT hint naming a
+// different tree must not win.
+TEST_CASE("test_plugin_path/installed_packages_prefer_native_root") {
+    RootStateGuard guard;
+    auto native = make_temp("ds_plugin_native_root");
+    TempDirGuard native_cleanup(native);
+    auto hint = make_temp("ds_plugin_hint_root");
+    TempDirGuard hint_cleanup(hint);
+    fs::create_directories(native / "plugins" / "plugin_native_only");
+    std::ofstream(native / "plugins" / "plugin_native_only" / "modinfo.lua") << "--";
+    fs::create_directories(hint / "plugins" / "plugin_hint_only");
+    std::ofstream(hint / "plugins" / "plugin_hint_only" / "modinfo.lua") << "--";
+    clear_root_state();
+    set_injector_module_dir_for_test(native);
+
+    auto pkgs = list_installed_plugin_packages(ds::util::path_to_utf8(hint / "plugins"));
+    REQUIRE_EQ(pkgs.size(), 1);
+    REQUIRE_EQ(pkgs[0], "plugin_native_only");
+}
+
+// Without a native root the engine-relative hint is still usable.
+TEST_CASE("test_plugin_path/installed_packages_use_hint_without_root") {
+    RootStateGuard guard;
+    auto native = make_temp("ds_plugin_no_root");
+    TempDirGuard native_cleanup(native);
+    auto hint = make_temp("ds_plugin_hint_only");
+    TempDirGuard hint_cleanup(hint);
+    fs::create_directories(hint / "plugins" / "plugin_hint_only");
+    std::ofstream(hint / "plugins" / "plugin_hint_only" / "modinfo.lua") << "--";
+    clear_root_state();
+    set_injector_module_dir_for_test(native); // no plugins/ child
+
+    auto pkgs = list_installed_plugin_packages(ds::util::path_to_utf8(hint / "plugins"));
+    REQUIRE_EQ(pkgs.size(), 1);
+    REQUIRE_EQ(pkgs[0], "plugin_hint_only");
 }
