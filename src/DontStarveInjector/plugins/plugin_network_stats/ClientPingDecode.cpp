@@ -652,16 +652,52 @@ std::expected<NetStatsLayout, std::string> decode_net_stats(uintptr_t entry, Pin
         }
         const int fam = family_of(in.ops[0].reg);
         for (size_t j = i + 1; j < insns.size() && !haveRing; ++j) {
+            // The scaled-index use must consume THIS load: a later redefinition of
+            // the register (the GUID copy also loads [this+0x1a0]) must not be
+            // attributed to an earlier field.
+            if (nearest_writer(fam, j) != static_cast<int>(i)) {
+                continue;
+            }
             const auto &use = insns[j];
             for (int k = 0; k < use.opCount; ++k) {
                 const auto &op = use.ops[k];
-                if (op.type == X86_OP_MEM && family_of(op.memBase) == fam && is_reg(op.memIndex) &&
-                    op.memScale > 1 && op.size <= 4) {
-                    ringPtrOff = static_cast<uint32_t>(in.ops[1].memDisp);
-                    ringStride = op.memScale;
-                    haveRing = true;
-                    break;
+                if (op.type != X86_OP_MEM || family_of(op.memBase) != fam || !is_reg(op.memIndex) ||
+                    op.memScale <= 1 || !(op.size <= 4 || use.id == X86_INS_LEA)) {
+                    continue;
                 }
+                // A LEA only computes an address; require the computed slot address
+                // to be dereferenced as [dst+0..7] before this field can claim the
+                // ring. Otherwise unrelated scaled arithmetic on a pointer-ish field
+                // (e.g. the GUID load at [this+0x1a0]) would be misread as the ring.
+                if (use.id == X86_INS_LEA) {
+                    const auto &dst = use.ops[0];
+                    if (dst.type != X86_OP_REG || family_of(dst.reg) < 0) {
+                        continue;
+                    }
+                    const int dstFam = family_of(dst.reg);
+                    bool slot_access = false;
+                    for (size_t a = j + 1; a < insns.size() && !slot_access; ++a) {
+                        if (nearest_writer(dstFam, a) != static_cast<int>(j)) {
+                            break;
+                        }
+                        const auto &acc = insns[a];
+                        for (int m = 0; m < acc.opCount; ++m) {
+                            const auto &mop = acc.ops[m];
+                            if (mop.type == X86_OP_MEM && family_of(mop.memBase) == dstFam &&
+                                !is_reg(mop.memIndex) && mop.memDisp >= 0 && mop.memDisp <= 7) {
+                                slot_access = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!slot_access) {
+                        continue;
+                    }
+                }
+                ringPtrOff = static_cast<uint32_t>(in.ops[1].memDisp);
+                ringStride = op.memScale;
+                haveRing = true;
+                break;
             }
         }
     }
@@ -677,10 +713,60 @@ std::expected<NetStatsLayout, std::string> decode_net_stats(uintptr_t entry, Pin
         }
         const int fam = family_of(in.ops[0].reg);
         for (size_t j = i + 1; j < insns.size() && !haveAccum; ++j) {
+            if (nearest_writer(fam, j) != static_cast<int>(i)) {
+                continue;
+            }
             const auto &use = insns[j];
+            // Direct form: ADD/SUB updates the pointee in place.
             if ((use.id == X86_INS_ADD || use.id == X86_INS_SUB) && use.opCount >= 1 &&
                 use.ops[0].type == X86_OP_MEM && family_of(use.ops[0].memBase) == fam &&
                 !is_reg(use.ops[0].memIndex) && use.ops[0].memDisp >= 0 && use.ops[0].memDisp <= 7) {
+                accumPtrOff = static_cast<uint32_t>(in.ops[1].memDisp);
+                accumLoadIdx = static_cast<int>(i);
+                accumFamily = fam;
+                haveAccum = true;
+                break;
+            }
+            // Register form (2026-11 builds): MOV tmp32,[reg+slot]; ADD/SUB tmp32,imm|reg;
+            // MOV [reg+slot],tmp32 — the accumulation is done in a register and stored
+            // back to the same slot, so there is no in-place ADD to match.
+            if (use.id != X86_INS_MOV || use.opCount < 2 || use.ops[0].type != X86_OP_REG ||
+                use.ops[0].size != 4 || use.ops[1].type != X86_OP_MEM || !is_reg(use.ops[1].memBase) ||
+                family_of(use.ops[1].memBase) != fam || is_reg(use.ops[1].memIndex) ||
+                use.ops[1].size != 4 || use.ops[1].memDisp < 0 || use.ops[1].memDisp > 7) {
+                continue;
+            }
+            const int64_t slotDisp = use.ops[1].memDisp;
+            const int tmpFam = family_of(use.ops[0].reg);
+            // Provenance chain: the first ADD/SUB must consume the just-loaded temp,
+            // every intermediate rewrite of the temp must be the next ADD/SUB link,
+            // and the store must consume the last link through the SAME pointer load.
+            // Otherwise unrelated field traffic (load, clobber, arithmetic, re-point,
+            // store) would be accepted as an accumulation on a different field.
+            int lastLink = static_cast<int>(j);
+            bool stored_back = false;
+            for (size_t k = j + 1; k < insns.size() && !stored_back; ++k) {
+                const auto &link = insns[k];
+                if ((link.id == X86_INS_ADD || link.id == X86_INS_SUB) && link.opCount >= 2 &&
+                    link.ops[0].type == X86_OP_REG && family_of(link.ops[0].reg) == tmpFam &&
+                    nearest_writer(tmpFam, k) == lastLink) {
+                    lastLink = static_cast<int>(k);
+                    continue;
+                }
+                if (link.id == X86_INS_MOV && link.opCount >= 2 && link.ops[0].type == X86_OP_MEM &&
+                    family_of(link.ops[0].memBase) == fam && !is_reg(link.ops[0].memIndex) &&
+                    link.ops[0].size == 4 && link.ops[0].memDisp == slotDisp &&
+                    link.ops[1].type == X86_OP_REG && family_of(link.ops[1].reg) == tmpFam &&
+                    nearest_writer(tmpFam, k) == lastLink && nearest_writer(fam, k) == static_cast<int>(i)) {
+                    stored_back = true;
+                    break;
+                }
+                // Any other writer of the temp or of the pointer breaks the chain.
+                if (insn_writes(k, tmpFam) || insn_writes(k, fam)) {
+                    break;
+                }
+            }
+            if (stored_back) {
                 accumPtrOff = static_cast<uint32_t>(in.ops[1].memDisp);
                 accumLoadIdx = static_cast<int>(i);
                 accumFamily = fam;

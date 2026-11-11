@@ -81,6 +81,15 @@ struct BuildOpts {
     bool slot_def = true;              // Linux register form: MOV R,[vt+slot]
     bool slot_def_twice = false;       // Linux register form: two definitions
     bool window_bleed = false;         // conflicting candidate after RET (next function)
+    // 2026-11 shape: the ring base is consumed by LEA (not an indexed MOV) and
+    // the accumulator is updated through a register round-trip instead of an
+    // in-place ADD.
+    bool register_ring_form = false;
+    // Negative provenance cases: unrelated scaled arithmetic on the GUID field
+    // must not be read as the ring, and a load/clobber/re-point/store sequence
+    // must not be read as an accumulation.
+    bool guid_scaled_lea = false;
+    bool stale_round_trip = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -168,6 +177,11 @@ Code build_linux(const BuildOpts &o) {
     }
     c.put({0x4C, 0x89, 0x9C, 0x24, 0x10, 0x01, 0x00, 0x00});        // mov [rsp+0x110], r11
     c.put({0x66, 0x89, 0x84, 0x24, 0x18, 0x01, 0x00, 0x00});        // mov [rsp+0x118], ax
+    if (o.guid_scaled_lea) {
+        // Unrelated scaled arithmetic on the GUID load; it is never dereferenced,
+        // so it must not be taken for the ring stride computation.
+        c.put({0x4F, 0x8D, 0x14, 0xDB});                            // lea r10, [r11+r11*8]
+    }
     // vtable + slot call.
     c.put({0x48, 0x8B, 0x45, 0x00});                                // mov rax, [rbp]
     if (o.slot_def) {
@@ -196,6 +210,16 @@ Code build_linux(const BuildOpts &o) {
         c.put({0x48, 0x8D, 0xBB, 0xD0, 0x01, 0x00, 0x00});          // lea rdi, [rbx+0x1d0]
         c.put({0xE8, 0x00, 0x00, 0x00, 0x00});                      // call rel32
     }
+    if (o.stale_round_trip) {
+        // A load/clobber/arithmetic/re-point/store on unrelated fields must not
+        // be accepted as the accumulator round-trip.
+        c.put({0x4C, 0x8B, 0x93, 0x00, 0x03, 0x00, 0x00});          // mov r10, [rbx+0x300]
+        c.put({0x45, 0x8B, 0x02});                                  // mov r8d, [r10]
+        c.put({0x41, 0xB8, 0x00, 0x00, 0x00, 0x00});                // mov r8d, 0
+        c.put({0x41, 0x83, 0xC0, 0x01});                            // add r8d, 1
+        c.put({0x4C, 0x8B, 0x93, 0x08, 0x03, 0x00, 0x00});          // mov r10, [rbx+0x308]
+        c.put({0x45, 0x89, 0x02});                                  // mov [r10], r8d
+    }
     // Ring trio (same field layout as Windows).
     c.put({0x48, 0x8B, 0x93, 0x30, 0x03, 0x00, 0x00});              // mov rdx, [rbx+0x330]
     c.put({0x48, 0x8B, 0x8B, 0x38, 0x03, 0x00, 0x00});              // mov rcx, [rbx+0x338]
@@ -203,10 +227,22 @@ Code build_linux(const BuildOpts &o) {
     c.put({0x88, 0x83, 0x40, 0x03, 0x00, 0x00});                    // mov [rbx+0x340], al
     c.put({0x6B, 0xFF, static_cast<int>(o.ring_n)});                // imul edi, edi, N
     c.put({0x89, 0x39});                                            // mov [rcx], edi
-    c.put({0x01, 0x01});                                            // add [rcx], eax
-    c.put({0x42, 0x89, 0x3C, 0xC2});                                // mov [rdx+r8*8], edi
-    c.put({0x66, 0x44, 0x89, 0x4C, 0xC2, 0x04});                    // mov [rdx+r8*8+4], r9w
-    c.put({0x44, 0x88, 0x4C, 0xC2, 0x06});                          // mov [rdx+r8*8+6], r9b
+    if (o.register_ring_form) {
+        // 2026-11 build: LEA forms the slot address and the accumulator is
+        // updated in a register and stored back.
+        c.put({0x4A, 0x8D, 0x04, 0xCA});                            // lea rax, [rdx+r9*8]
+        c.put({0x89, 0x38});                                        // mov [rax], edi
+        c.put({0x66, 0x44, 0x89, 0x48, 0x04});                      // mov [rax+4], r9w
+        c.put({0x44, 0x88, 0x48, 0x06});                            // mov [rax+6], r9b
+        c.put({0x44, 0x8B, 0x01});                                  // mov r8d, [rcx]
+        c.put({0x41, 0x01, 0xE8});                                  // add r8d, ebp
+        c.put({0x44, 0x89, 0x01});                                  // mov [rcx], r8d
+    } else {
+        c.put({0x01, 0x01});                                        // add [rcx], eax
+        c.put({0x42, 0x89, 0x3C, 0xC2});                            // mov [rdx+r8*8], edi
+        c.put({0x66, 0x44, 0x89, 0x4C, 0xC2, 0x04});                // mov [rdx+r8*8+4], r9w
+        c.put({0x44, 0x88, 0x4C, 0xC2, 0x06});                      // mov [rdx+r8*8+6], r9b
+    }
     c.put({0xF3, 0x0F, 0x10, 0x05}); c.put_rip_disp(kFloatOff);     // movss xmm0, [rip+flt]
     c.put({0xC3});                                                  // ret
     if (o.window_bleed) {
@@ -268,6 +304,51 @@ TEST_CASE("test_net_stats_decode/linux_shape") {
     REQUIRE(layout->listingOff == 0x1C0u);
     REQUIRE(layout->ringWindow == 60u);
     REQUIRE(layout->ringStride == 8u);
+}
+
+TEST_CASE("test_net_stats_decode/linux_register_ring_form") {
+    // 2026-11 Linux build: the ring slot address comes from LEA and the
+    // accumulator is updated through a register round-trip; the layout must be
+    // identical to the in-place-ADD shape.
+    REQUIRE(ensure_reloc_context());
+    BuildOpts o;
+    o.register_ring_form = true;
+    Code c = build_linux(o);
+    const auto layout = decode(c, PingCallConv::SysV);
+    require_layout(layout, "linux register ring form");
+    REQUIRE(layout->listingOff == 0x1C0u);
+    REQUIRE(layout->ringPtrOff == 0x330u);
+    REQUIRE(layout->indexOff == 0x340u);
+    REQUIRE(layout->ringWindow == 60u);
+    REQUIRE(layout->ringStride == 8u);
+}
+
+// Unrelated scaled arithmetic on a field that was loaded from [this+disp] must
+// not be accepted as the ring: a LEA only computes an address, so the computed
+// slot address has to be dereferenced before the field can claim the ring.
+TEST_CASE("test_net_stats_decode/guid_scaled_lea_is_not_the_ring") {
+    REQUIRE(ensure_reloc_context());
+    BuildOpts o;
+    o.guid_scaled_lea = true;
+    Code c = build_linux(o);
+    const auto layout = decode(c, PingCallConv::SysV);
+    require_layout(layout, "guid scaled lea");
+    REQUIRE(layout->ringPtrOff == 0x330u);
+    REQUIRE(layout->ringWindow == 60u);
+    REQUIRE(layout->ringStride == 8u);
+}
+
+// A load/clobber/arithmetic/re-point/store sequence is not an accumulation into
+// one pointee; it must not shadow the real in-place accumulator that follows.
+TEST_CASE("test_net_stats_decode/stale_round_trip_is_rejected") {
+    REQUIRE(ensure_reloc_context());
+    BuildOpts o;
+    o.stale_round_trip = true;
+    Code c = build_linux(o);
+    const auto layout = decode(c, PingCallConv::SysV);
+    require_layout(layout, "stale round trip");
+    REQUIRE(layout->ringPtrOff == 0x330u);
+    REQUIRE(layout->ringWindow == 60u);
 }
 
 // Slot count is derived, not hardcoded: N=30 must come back as 30.

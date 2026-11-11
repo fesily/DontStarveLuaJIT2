@@ -16,12 +16,16 @@ constexpr uint32_t kWin = kPlatformWindowsX64;
 constexpr uint32_t kLinux = kPlatformLinuxX64;
 #endif
 
-// cNetworkClientObject2::UpdateNetStats. Verified shapes (2026-10, both binaries
+// cNetworkClientObject2::UpdateNetStats. Verified shapes (2026-11, both binaries
 // scanned; total hits must be exactly 1):
 //   Windows x64  dontstarve_steam_x64.exe and
 //                dontstarve_dedicated_server_nullrenderer_x64.exe
 //                — the same literal covers both Windows binaries.
-//   Linux x64    dontstarve_dedicated_server_nullrenderer_x64.
+//   Linux x64    dontstarve_steam_x64 and
+//                dontstarve_dedicated_server_nullrenderer_x64 — the 2026-11 build
+//                moved the client fetch to [rakpeer+278h] and shrank the frame to
+//                110h; the ring/accumulator idioms also moved from in-place ADD to
+//                register round-trips (see ClientPingDecode rule 4).
 bool verify_net_stats(const EntryDef &, const ContextView &, uintptr_t target, uintptr_t, char *detail,
                       size_t detail_cap) {
     const auto layout = decode_net_stats(target);
@@ -59,11 +63,11 @@ EntryDef g_entries[] = {
                 .owner = "network.stats",
                 .name = "network.stats.update_net_stats",
                 .description = "cNetworkClientObject2::UpdateNetStats anchor (linux-x64)",
-                // push r14; push r13; push r12; push rbp; push rbx; sub rsp,140h;
-                // mov rax,fs:[28h]; mov [rsp+138h],rax; xor eax,eax; mov rax,[rip+d];
-                // mov rbp,[rax+1A0h]; test rbp,rbp
-                .patterns = {"41 56 41 55 41 54 55 53 48 81 EC 40 01 00 00 64 48 8B 04 25 28 00 00 00 48 89 "
-                             "84 24 38 01 00 00 31 C0 48 8B 05 ?? ?? ?? ?? 48 8B A8 A0 01 00 00 48 85 ED"},
+                // push r14; push r13; push r12; push rbp; push rbx; sub rsp,110h;
+                // mov rax,fs:[28h]; mov [rsp+108h],rax; xor eax,eax; mov rax,[rip+d];
+                // mov r12,[rax+278h]; test r12,r12
+                .patterns = {"41 56 41 55 41 54 55 53 48 81 EC 10 01 00 00 64 48 8B 04 25 28 00 00 00 48 89 "
+                             "84 24 08 01 00 00 31 C0 48 8B 05 ?? ?? ?? ?? 4C 8B A0 78 02 00 00 4D 85 E4"},
                 .pattern_offset = 0,
                 .platform_mask = kLinux,
                 .prot_flag = GUM_PAGE_EXECUTE | GUM_PAGE_READ,
