@@ -299,12 +299,17 @@ bool configure_plugin_dll_search(const std::vector<std::filesystem::path> &plugi
                               "AddDllDirectory failed for '%s' (GetLastError=%lu)",
                               key.c_str(), static_cast<unsigned long>(err));
                 log_once("warn", buf);
+                // Not actually registered, so it must not show up in the roots
+                // list either (g_added_dll_dirs already suppresses a retry).
+                continue;
             }
-#else
-            // util/platform.cpp loadlib() walks this instead of probing the ELF
-            // global symbol scope (see plugin_dll_search_roots()).
-            g_dll_roots.push_back(abs_path);
 #endif
+            // Bookkeeping on every platform: POSIX loadlib() walks this list
+            // instead of probing the ELF global symbol scope (util/platform.cpp),
+            // Windows reaches the same dirs through AddDllDirectory(USER_DIRS).
+            // Keeping both in plugin_dll_search_roots() is what makes the
+            // idempotency/dedup contract observable (and testable) on Windows.
+            g_dll_roots.push_back(abs_path);
         }
     }
     return true;
