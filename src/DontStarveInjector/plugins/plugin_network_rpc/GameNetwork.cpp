@@ -5,7 +5,8 @@
 #include "frida-gum.h"
 #include "util/frida_gum_interceptor.hpp"
 #include "config/InjectorHostConfig.hpp"
-#include "MemorySignature.hpp"
+#include "NetworkRpcSignatures.hpp"
+#include "core/SignatureResolveApi.hpp"
 #include <disasm.h>
 #include <spdlog/spdlog.h>
 #include <plf_hive.h>
@@ -280,49 +281,33 @@ namespace SLNet {
 DONTSTARVEINJECTOR_GAME_API void GameNetWorkHookRpc4() {
 #ifdef _WIN32
     auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
-    // 2026-11-06 build (TS 0x6aed2496) added a second `sub rsp,330h; mov rax,[rip]`
-    // function (rva 0x1bde27), which broke the old 11-byte literal's uniqueness. Extend
-    // through the stack-cookie store so only the real RPC4::Signal matches (rva 0x3b7b67,
-    // -0x7 -> entry 0x3b7b60; server: single hit 0x351e27 -> 0x351e20).
-    function_relocation::MemorySignature RakNet__RPC4__Signal{
-        "48 81 EC 30 03 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 20 03 00 00 "
-        "48 8B 9C 24 90 03 00 00",
-        -0x7};
-    function_relocation::MemorySignature RakNet_Plugin2_SendUnified{"48 89 84 24 90 00 00 00 48 83 79 08 00", -0x18};
-    // function_relocation::MemorySignature RakNet_ReplicaManager3_defaultparams{"C7 43 1C 03 00 00 00", 0x3};
-    /*
-C7 87 34 01 00 00 03 00 00 00
-mov dword ptr [rdi+134], 3  // pro->reliability = PacketReliability::RELIABLE_ORDERED;
-*/
-    function_relocation::MemorySignature cNetWorkComponent_serialize{"C7 87 34 01 00 00 03 00 00 00"};
-    // check channel size = 0x80/4 = 32
-    // 2026-11-06 build: ReliabilityLayer's ordered-stream arrays grew, so the first
-    // 0x80-byte memset moved from +0x1268 to +0x12F0 (later ones: +0x1110/+0x1370/+0x16F0).
-    // Anchored on the +0x12F0 memset — still exactly one hit in client and server.
-    function_relocation::MemorySignature RakNet_ReliabilityLayer_InitializeVariables_NUMBER_OF_ORDERED_STREAMS{"48 8D 8B F0 12 00 00 33 D2 41 B8 80"};
-    // lea     rax, NetworkComponentReplica3_vtb
-    function_relocation::MemorySignature cNetWorkComponent_cNetworkComponent{"48 8D 8B E8 01 00 00 48 89 43 20", -7};
+    // Definitions live in NetworkRpcSignatures.cpp; this function only installs
+    // the probes. Each entry is resolved independently so one stale literal names
+    // itself instead of short-circuiting the rest of the gates.
+    ds::sig::ResolveReport rpc4_signal{};
+    ds::sig::ResolveReport component_serialize{};
+    ds::sig::ResolveReport ordered_streams{};
+    ds::sig::ResolveReport component_ctor{};
+    const bool has_rpc4 = ds::sig::host_resolve("network.rpc.rpc4_signal", &rpc4_signal) && rpc4_signal.target_va != 0;
+    const bool has_serialize = ds::sig::host_resolve("network.rpc.component_serialize", &component_serialize) &&
+                               component_serialize.target_va != 0;
+    const bool has_ordered_streams = ds::sig::host_resolve("network.rpc.ordered_streams", &ordered_streams) &&
+                                     ordered_streams.target_va != 0;
+    const bool has_component_ctor = ds::sig::host_resolve("network.rpc.component_ctor", &component_ctor) &&
+                                    component_ctor.target_va != 0;
 
-    if (RakNet__RPC4__Signal.scan(nullptr)) {
+    if (has_rpc4) {
         auto listener = gum_make_probe_listener(+[](GumInvocationContext *context, gpointer user_data) { ResetNextRpcInfo(context); }, nullptr, nullptr);
-        ds::gum::attach(interceptor, (uint8_t *) RakNet__RPC4__Signal.target_address, listener);
+        ds::gum::attach(interceptor, (uint8_t *) rpc4_signal.target_va, listener);
     } else {
         spdlog::warn("[network.rpc] RPC4::Signal probe not installed — per-RPC channel/priority reset is off "
                      "(see the [signature] MISS audit line)");
     }
 
-    // if (RakNet_Plugin2_SendUnified.scan(nullptr)) {
-    //     gum_interceptor_replace_fast(interceptor, (uint8_t *) RakNet_Plugin2_SendUnified.target_address, (uint8_t *) SendUnified, (gpointer *) &original_SendUnified);
-    // }
-
-    // Scan all three before deciding so a single stale pattern names itself in the
-    // audit line instead of short-circuiting the rest of the gates.
-    const bool has_serialize = cNetWorkComponent_serialize.scan(nullptr) != 0;
-    const bool has_ordered_streams =
-            RakNet_ReliabilityLayer_InitializeVariables_NUMBER_OF_ORDERED_STREAMS.scan(nullptr) != 0;
-    const bool has_component_ctor = cNetWorkComponent_cNetworkComponent.scan(nullptr) != 0;
+    // All three gates were scanned before deciding (see the audit line above), so a
+    // single stale literal names itself instead of short-circuiting the others.
     if (has_serialize && has_ordered_streams && has_component_ctor) {
-        if (EntityNetWorkExtension::initialize_virtual_table((void *) cNetWorkComponent_cNetworkComponent.target_address)) {
+        if (EntityNetWorkExtension::initialize_virtual_table((void *) component_ctor.target_va)) {
             auto listener = gum_make_probe_listener(+[](GumInvocationContext *context, gpointer user_data) {
             // TODO: check this entity is player entity 
             // rdi + 134 reliability
@@ -342,7 +327,7 @@ mov dword ptr [rdi+134], 3  // pro->reliability = PacketReliability::RELIABLE_OR
                 assert(sp->pro->sendReceipt == 0);
                 sp->pro->orderingChannel = entityNetworkExtensionVal->channel;
             } }, nullptr, nullptr);
-            ds::gum::attach(interceptor, (uint8_t *) cNetWorkComponent_serialize.target_address, listener);
+            ds::gum::attach(interceptor, (uint8_t *) component_serialize.target_va, listener);
         }
     } else {
         spdlog::warn("[network.rpc] entity-channel hooks skipped (serialize={} ordered_streams={} component_ctor={}) "

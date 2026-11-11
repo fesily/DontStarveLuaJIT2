@@ -2,9 +2,11 @@
 ds_add_dynamic_plugin(plugin_debug_profiler
     plugin_debug_profiler.cpp
     ProfilerApi.cpp
+    ProfilerSignatures.cpp
     FullGcPolicy.cpp)
 target_link_libraries(plugin_debug_profiler PRIVATE
     spdlog::spdlog
+    ds_signature_provider
     function_relocation
     Tracy::TracyClient)
 target_compile_definitions(plugin_debug_profiler PRIVATE

@@ -69,17 +69,19 @@ published into the flag.
 
 ## Resolution path (pattern + wiring)
 
-The pattern lives with the other fixed engine signatures — `luaSetExecutionErrorSignature`
-in `signature_load/GameSignature.cpp` (used through `GameSignature.hpp`) — so the
-resolver never touches the signature table.  The wiring runs in
-`GameLuaContextImpl::HotfixApis`, called once per VM switch right after
+The pattern lives with the other fixed engine signatures — the `core.vm.execution_error`
+entry in `signature_load/CoreVmSignatures.cpp` (owner `core.vm`, resolved through the
+signature providers) — so the resolver never touches the signature table.  The wiring
+runs in `GameLuaContextImpl::HotfixApis`, called once per VM switch right after
 `LoadLuaModule` / `LoadMyLuaApi` / `ReplaceApis`:
 
-1. `luaSetExecutionErrorSignature` is scanned with `only_one = false` and
-   `targets.clear()` first, then `scan(mainPath.c_str())` — **exactly one** hit is
-   required (no first/last-match ambiguity); zero or several → warn, nothing written.
-2. `ds::core_vm::detail::decode_execution_error_storage(hit)` (defined beside the
-   pattern in `signature_load/GameSignature.cpp`) decodes both slots from the matched
+1. `ds::sig::host_resolve("core.vm.execution_error", &report)` asks the Injector's
+   SignatureManager for the entry (definition revision 1, unique-hit rule); the
+   provider's own verifier already ran the ::0x1000::/store/`lea` decode, so a
+   non-resolved answer means "warn, nothing written".
+2. `ds::core_vm::detail::decode_execution_error_storage(report.target_va)` (defined
+   beside the entry in `signature_load/CoreVmSignatures.cpp`) decodes both slots from
+   the matched
    window — the `cmp [flag], 0` slot, and the block as the `lea` target of the register
    that the `mov [flag], …` store publishes (register moves forward a known target, any
    other write to that register forgets it).  This is deliberately *not* "the first
@@ -97,7 +99,7 @@ Any miss (pattern, decode, missing export — e.g. a stale VM DLL) keeps both
 `extern_*` NULL: the VM's private no-op storage stays, nothing is written.
 
 ```cpp
-// luaSetExecutionErrorSignature, GameSignature.cpp (win64/linux-x64; #error otherwise)
+// core.vm.execution_error, CoreVmSignatures.cpp (win64/linux-x64; macOS not defined)
 // win64, build 26474873 (client + server: identical bytes; strlen + checked memcpy)
 "48 83 EC 28 48 83 3D ?? ?? ?? ?? 00 75 76 48 85 C9 48 8D 15 ?? ?? ?? ?? "
 "48 89 5C 24 30 48 8D 1D ?? ?? ?? ?? 48 0F 45 D1 48 3B D3 74 4B "

@@ -1,6 +1,7 @@
 // plugin_network_tick — DS_LUAJIT_replace_network_tick
 #include "config/InjectorHostConfig.hpp"
-#include "MemorySignature.hpp"
+#include "NetworkTickSignatures.hpp"
+#include "core/SignatureResolveApi.hpp"
 #include "disasm.h"
 #include "ScanCtx.hpp"
 
@@ -17,10 +18,6 @@ void protect_memory_writer(T *addr, T val) {
     gum_mprotect(addr, sizeof(T), prot | GUM_PAGE_WRITE);
     *addr = val;
     gum_mprotect(addr, sizeof(T), prot);
-}
-
-const char *main_module_path() {
-    return gum_module_get_path(gum_process_get_main_module());
 }
 
 } // namespace
@@ -49,24 +46,25 @@ DONTSTARVEINJECTOR_GAME_API int DS_LUAJIT_replace_network_tick(char upload_tick,
         char *download_address;
     } ctx{};
     static auto client_network_tick_addr = [] {
-        function_relocation::MemorySignature reset_network_tick_val = {
-            "BB 0F 00 00 00 48 83 B9 88 02 00 00 00", 1};
-        function_relocation::MemorySignature default_client_network_tick_time = {"44 8D 76 64", 0x3};
-        function_relocation::MemorySignature default_client_network_tick_update_fps = {
-            "41 BC 0A 00 00 00 85 D2", 0};
-        auto mainpath = main_module_path();
-        if (reset_network_tick_val.scan(mainpath) && default_client_network_tick_time.scan(mainpath) &&
-            default_client_network_tick_update_fps.scan(mainpath)) {
-            auto patched_address =
-                (std::array<char, 3> *)(default_client_network_tick_update_fps.target_address + 6);
-            protect_memory_writer(patched_address, std::array<char, 3>{char(0x90), char(0x90), char(0xEB)});
-            auto b1 = (char *)default_client_network_tick_time.target_address;
-            ctx.download_address = (char *)reset_network_tick_val.target_address;
-            ctx.uploadtime_address = b1;
-            ctx.upload_address = (char *)default_client_network_tick_update_fps.target_address + 2;
-            return true;
+        // Definitions (and their internal-byte offsets) live in
+        // NetworkTickSignatures.cpp; all three must resolve before anything is
+        // patched, so one stale literal leaves the tick untouched.
+        ds::sig::ResolveReport reset_value{};
+        ds::sig::ResolveReport tick_time{};
+        ds::sig::ResolveReport update_fps{};
+        const bool have_reset = ds::sig::host_resolve("network.tick.reset_value", &reset_value);
+        const bool have_time = ds::sig::host_resolve("network.tick.client_tick_time", &tick_time);
+        const bool have_fps = ds::sig::host_resolve("network.tick.update_fps", &update_fps);
+        if (!have_reset || !have_time || !have_fps) {
+            return false;
         }
-        return false;
+        auto patched_address = (std::array<char, 3> *)(update_fps.target_va + 6);
+        protect_memory_writer(patched_address, std::array<char, 3>{char(0x90), char(0x90), char(0xEB)});
+        auto b1 = (char *)tick_time.target_va;
+        ctx.download_address = (char *)reset_value.target_va;
+        ctx.uploadtime_address = b1;
+        ctx.upload_address = (char *)update_fps.target_va + 2;
+        return true;
     }();
     if (client_network_tick_addr) {
         if (!ictx->DontStarveInjectorIsClient) {

@@ -1,5 +1,7 @@
 // plugin_render_shadow — dynamic EarlyNative face of render.shadow
 #include "gum_plugin_export.hpp"
+#include "ShadowSignatures.hpp"
+#include "core/SignatureProviderRegistration.hpp"
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/GameInjectorLuaBind.hpp"
@@ -240,6 +242,10 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
 
 
 
+#if defined(DS_SIG_HAVE_RENDER_SHADOW)
+    (void) ds::sig::register_provider_with_host(host, ds::shadow::signature_provider(),
+                                               "plugin_render_shadow");
+#endif
     host->register_plugin(&g_render_shadow);
     std::fprintf(stderr, "[plugin_render_shadow] module init registered render.shadow dbg=sil-21\n");
 

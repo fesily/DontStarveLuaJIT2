@@ -21,7 +21,8 @@
 #include "config/InjectorHostConfig.hpp"
 #include "util/frida_gum_interceptor.hpp"
 
-#include "MemorySignature.hpp"
+#include "NetStatsSignatures.hpp"
+#include "core/SignatureResolveApi.hpp"
 #include "ctx.hpp"
 
 #include <frida-gum.h>
@@ -38,32 +39,6 @@
 namespace ds::net_stats {
 
 namespace {
-
-// ---------------------------------------------------------------------------
-// Anchor signatures. Signature-first rule: never hardcode an image RVA.
-// Verified shapes (2026-10, both binaries scanned; total hits must be exactly 1):
-//   Windows x64  dontstarve_steam_x64.exe and
-//                dontstarve_dedicated_server_nullrenderer_x64.exe
-//                — the same literal covers both Windows binaries.
-//   Linux x64    dontstarve_dedicated_server_nullrenderer_x64.
-// Multiple literals per platform are allowed; the combined hit count must be 1.
-// ---------------------------------------------------------------------------
-#if defined(_WIN32)
-constexpr const char *kAnchorPatterns[] = {
-    // mov r11,rsp; push rbx; push rsi; sub rsp,imm32; mov rax,[rip+d];
-    // mov rbx,rcx; mov rsi,[rax+2B0h]; test rsi,rsi
-    "4C 8B DC 53 56 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 8B D9 48 8B B0 B0 02 00 00 48 85 F6",
-};
-#elif defined(__linux__)
-constexpr const char *kAnchorPatterns[] = {
-    // push r14; push r13; push r12; push rbp; push rbx; sub rsp,140h;
-    // mov rax,fs:[28h]; mov [rsp+138h],rax; xor eax,eax; mov rax,[rip+d];
-    // mov rbp,[rax+1A0h]; test rbp,rbp
-    "41 56 41 55 41 54 55 53 48 81 EC 40 01 00 00 64 48 8B 04 25 28 00 00 00 48 89 84 24 38 01 00 00 31 C0 48 8B 05 ?? ?? ?? ?? 48 8B A8 A0 01 00 00 48 85 ED",
-};
-#else
-constexpr const char *kAnchorPatterns[] = {nullptr}; // deferred platform
-#endif
 
 constexpr int32_t kPingClampMax = 99999; // engine clamp constant (invalid marker)
 
@@ -289,41 +264,28 @@ bool install() {
         g_state.disabled.store(true);
     };
 
-    if (kAnchorPatterns[0] == nullptr) {
-        set_disabled("unsupported platform");
-        return false;
-    }
-
     if (!InjectorCtx::instance()) {
         set_disabled("injector context unavailable");
         return false;
     }
 
-    size_t hits = 0;
-    uintptr_t anchor = 0;
-    const char *main_path = gum_module_get_path(gum_process_get_main_module());
-    for (const char *pattern : kAnchorPatterns) {
-        if (pattern == nullptr) {
-            continue;
+    // The anchor, its candidate literals, the combined-hit rule and the layout
+    // decode all live in NetStatsSignatures.cpp; the manager answers with either a
+    // resolved address (the verifier already ran) or a status.
+    ds::sig::ResolveReport anchor_report{};
+    if (!ds::sig::host_resolve("network.stats.update_net_stats", &anchor_report) ||
+        anchor_report.target_va == 0) {
+        std::fprintf(stderr, "[net.stats] anchor miss (%s) — disabled\n", anchor_report.detail);
+        spdlog::error("[net.stats] anchor miss ({}) — disabled", anchor_report.detail);
+        if (anchor_report.status == ds::sig::ResolveStatus::NotApplicable ||
+            anchor_report.status == ds::sig::ResolveStatus::Unsupported) {
+            set_disabled("unsupported platform");
+        } else {
+            set_disabled("anchor miss");
         }
-        function_relocation::MemorySignature sig{pattern, 0};
-        sig.only_one = false;
-        sig.log = false;
-        sig.prot_flag = GUM_PAGE_EXECUTE | GUM_PAGE_READ;
-        if (main_path) {
-            sig.scan(main_path);
-        }
-        hits += sig.targets.size();
-        if (sig.targets.size() == 1 && anchor == 0) {
-            anchor = sig.targets.front();
-        }
-    }
-    if (hits != 1 || anchor == 0) {
-        std::fprintf(stderr, "[net.stats] anchor miss (hits=%zu) — disabled\n", hits);
-        spdlog::error("[net.stats] anchor miss (hits={}) — disabled", hits);
-        set_disabled("anchor miss");
         return false;
     }
+    const uintptr_t anchor = anchor_report.target_va;
 
     const auto layout = decode_net_stats(anchor);
     if (!layout) {

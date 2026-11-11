@@ -1,7 +1,37 @@
 cmake_minimum_required(VERSION 3.15)
 
+set(DONTSTARVEINJECTOR_PLUGINS_DIR ${DONTSTARVEINJECTOR_ROOT}/plugins)
+
+# Repository signature providers, linked into the tool directly: the tool must
+# check every shipped definition without loading the Injector or a plugin DLL.
+# One entry per provider TU — the table itself lives in signature_providers.cpp.
+set(DS_PROVIDER_SOURCES
+        signature_providers.cpp
+        ${DONTSTARVEINJECTOR_ROOT}/core/InjectorSignatures.cpp
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_debug_profiler/ProfilerSignatures.cpp
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_fps_render/FpsSignatures.cpp
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_network_rpc/NetworkRpcSignatures.cpp
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_network_sim/NetworkSimSignatures.cpp
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_network_stats/NetStatsSignatures.cpp
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_network_stats/ClientPingDecode.cpp
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_network_tick/NetworkTickSignatures.cpp
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_render_shadow/ShadowSignatures.cpp
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_render_vbpool/VbpoolSignatures.cpp
+)
+set(DS_PROVIDER_INCLUDE_DIRS
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_debug_profiler
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_fps_render
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_network_rpc
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_network_sim
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_network_stats
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_network_tick
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_render_shadow
+        ${DONTSTARVEINJECTOR_PLUGINS_DIR}/plugin_render_vbpool
+)
+
 set(SOURCES
         main.cpp
+        ${DS_PROVIDER_SOURCES}
         ${DONTSTARVEINJECTOR_ROOT}/config/InjectorHostConfig.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         # loadlib() walks the roots registered by configure_plugin_dll_search();
@@ -33,6 +63,11 @@ if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
                 COMMAND ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" SIGNATURE_TOOL_MODE=create ${GAME_INSTALL_PREFIX}/${GAME_SERVER_EXECUTABLE_NAME}
                 WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
         )
+        add_custom_target(check_signatures
+                COMMAND ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" SIGNATURE_TOOL_MODE=check ${GAME_INSTALL_PREFIX}/${GAME_EXECUTABLE_NAME}
+                COMMAND ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" SIGNATURE_TOOL_MODE=check ${GAME_INSTALL_PREFIX}/${GAME_SERVER_EXECUTABLE_NAME}
+                WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
+        )
         add_custom_target(update_signatures
                 COMMAND ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" SIGNATURE_TOOL_MODE=update ${GAME_INSTALL_PREFIX}/${GAME_EXECUTABLE_NAME}
                 COMMAND ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" SIGNATURE_TOOL_MODE=update ${GAME_INSTALL_PREFIX}/${GAME_SERVER_EXECUTABLE_NAME}
@@ -60,6 +95,11 @@ if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
                 ${CMAKE_CURRENT_SOURCE_DIR}/update_signatures.sh ${LUA_EXECUTABLE_PATH} "./${GAME_EXECUTABLE_NAME}" "./${GAME_SERVER_EXECUTABLE_NAME}"
                 WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
         )
+        add_custom_target(check_signatures
+                COMMAND ${CMAKE_COMMAND} -E env ${PRELOAD_ENV_KEY}="$<TARGET_FILE:signature_updater>" LUA51_SIGNATURE_OUTPUT_DIR="${CMAKE_INSTALL_PREFIX}" SIGNATURE_TOOL_MODE=check
+                ${CMAKE_CURRENT_SOURCE_DIR}/update_signatures.sh ${LUA_EXECUTABLE_PATH} "./${GAME_EXECUTABLE_NAME}" "./${GAME_SERVER_EXECUTABLE_NAME}"
+                WORKING_DIRECTORY ${GAME_INSTALL_PREFIX}
+        )
     endif ()
 else ()
     add_executable(signature_updater ${SOURCES})
@@ -72,6 +112,10 @@ else ()
     )
     add_custom_target(update_signatures
             COMMAND signature_updater update
+    )
+    # Read-only verification of both DBs (Lua + fixed) against the installed game.
+    add_custom_target(check_signatures
+            COMMAND signature_updater check
     )
 endif ()
 
@@ -87,11 +131,12 @@ target_link_libraries(signature_updater PRIVATE Frida::Gum)
 target_link_libraries(signature_updater PRIVATE nlohmann_json::nlohmann_json)
 # Order matters for static archives: dependents first, then providers.
 # ds_signature calls nucleus_analyze_file / apply_nucleus_* in function_relocation_static.
-target_link_libraries(signature_updater PRIVATE ds_signature function_relocation_static)
+target_link_libraries(signature_updater PRIVATE ds_signature ds_signature_provider function_relocation_static)
 if (TARGET stage_lua51_training)
     add_dependencies(signature_updater stage_lua51_training)
 endif()
 target_include_directories(signature_updater PRIVATE ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/signature_load)
+target_include_directories(signature_updater PRIVATE ${DS_PROVIDER_INCLUDE_DIRS})
 target_include_directories(signature_updater PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
 target_compile_definitions(signature_updater PUBLIC
@@ -111,9 +156,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         ${DONTSTARVEINJECTOR_UTIL_DIR}/gum_platform.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/module.cpp)
     target_include_directories(verify_linux_signatures PRIVATE
-        ${PROJECT_SOURCE_DIR}/src ${DONTSTARVEINJECTOR_ROOT} ${DONTSTARVEINJECTOR_UTIL_DIR})
+        ${PROJECT_SOURCE_DIR}/src ${DONTSTARVEINJECTOR_ROOT} ${DONTSTARVEINJECTOR_UTIL_DIR}
+        ${DONTSTARVEINJECTOR_ROOT}/plugins/plugin_core_vm/signature_load
+        ${DS_PROVIDER_INCLUDE_DIRS})
     target_compile_definitions(verify_linux_signatures PRIVATE DS_PLUGIN_HOST_STATIC)
-    target_link_libraries(verify_linux_signatures PRIVATE ds_signature function_relocation_static Frida::Gum)
+    target_link_libraries(verify_linux_signatures PRIVATE ds_signature ds_signature_provider
+        function_relocation_static Frida::Gum)
 endif()
 
 if (MSVC)

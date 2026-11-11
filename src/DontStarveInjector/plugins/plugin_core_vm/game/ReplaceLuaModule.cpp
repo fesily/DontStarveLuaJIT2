@@ -5,7 +5,7 @@
 #include "config/ResolvedConfig.hpp"
 #include "config/ConfigSession.hpp"
 #include "DontStarveSignature.hpp"
-#include "GameSignature.hpp"
+#include "CoreVmSignatures.hpp"
 #include <spdlog/spdlog.h>
 
 using ds::core_vm::detail::CacheRuntimeSetup;
@@ -18,7 +18,7 @@ void ReplaceLuaModule(const std::string &mainPath, const Signatures &signatures,
     // init game lua
     for (auto &[name, address]: exports) {
         auto offset = signatures.funcs.at(name).offset;
-        auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
+        auto target = (uint8_t *) GSIZE_TO_POINTER(ds::core_vm::lua_module_base() + GPOINTER_TO_INT(offset));
         spdlog::info("Game export {}: {}", name, (void *) target);
         ds::core_vm::detail::NoteGameLuaExport(name, (GumAddress) target);
     }

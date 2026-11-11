@@ -1,9 +1,11 @@
 # Outbound net simulation (Path A network.sim). Lazy hook on enable.
 ds_add_dynamic_plugin(plugin_network_sim
     plugin_network_sim.cpp
-    GameNetworkSim.cpp)
+    GameNetworkSim.cpp
+    NetworkSimSignatures.cpp)
 target_link_libraries(plugin_network_sim PRIVATE
     spdlog::spdlog
+    ds_signature_provider
     function_relocation)
 target_compile_definitions(plugin_network_sim PRIVATE
     SPDLOG_COMPILED_LIB

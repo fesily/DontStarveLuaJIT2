@@ -1,5 +1,7 @@
 // plugin_render_vbpool — dynamic EarlyNative face of render.vbpool
 #include "gum_plugin_export.hpp"
+#include "VbpoolSignatures.hpp"
+#include "core/SignatureProviderRegistration.hpp"
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/GameInjectorLuaBind.hpp"
@@ -87,6 +89,10 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     }
 
         (void) host->register_game_injector_export("DS_LUAJIT_set_vbpool_enabled", &DS_LUAJIT_set_vbpool_enabled);
+#if defined(DS_SIG_HAVE_RENDER_VBPOOL)
+    (void) ds::sig::register_provider_with_host(host, ds::render_vbpool::signature_provider(),
+                                               "plugin_render_vbpool");
+#endif
     host->register_plugin(&g_render_vbpool);
     std::fprintf(stderr, "[plugin_render_vbpool] module init registered render.vbpool\n");
     return true;

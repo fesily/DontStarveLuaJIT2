@@ -1,7 +1,8 @@
 #include "SilhouetteBatch.hpp"
 #include "SilhouetteMath.hpp"
 #include "BuildBin.hpp"
-#include "MemorySignature.hpp"
+#include "ShadowSignatures.hpp"
+#include "core/SignatureResolveApi.hpp"
 
 
 #include <spdlog/spdlog.h>
@@ -1274,43 +1275,32 @@ int TryReleaseVb(void *rm, uint32_t vb) {
 #endif
 
 #ifdef _WIN32
-// ResourceManager::Load (= LoadShader). Previously pinned by RVA (0x3e9f00 in
-// the pre-2026-10 build); the current build moved it (RVA 0x12170), so pin by
-// pattern instead. The bare prologue is not unique across builds — include the
-// stack-cookie frame of the 0x100-byte path buffer.
+// ResourceManager::Load (= LoadShader). The definition (and its stack-cookie
+// window) lives in ShadowSignatures.cpp; this function resolves it once per
+// process lifetime and caches the function pointer.
 // Verified against dontstarve_steam_x64.exe (v756039, 2026-10-04):
 //   uint32_t LoadShader(EffectManager* this, const char* path, bool log_error,
 //                       bool do_fallback, uint32_t extra);
-function_relocation::MemorySignature LoadShader_sig{
-    "40 53 55 56 57 41 54 41 55 41 56 48 81 EC 00 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 "
-    "89 84 24 D0 00 00 00 48 8B F9",
-    0};
-
 bool BindSilLoadFns() noexcept {
     if (load_shader != nullptr) {
         return true;
     }
-    // Called on every silhouette attempt: scan once per process lifetime.
+    // Called on every silhouette attempt: resolve once per process lifetime.
     static bool attempted = false;
     if (attempted) {
         return false;
     }
     attempted = true;
 
-    LoadShader_sig.only_one = false;
-    LoadShader_sig.log = false;
-    LoadShader_sig.prot_flag = GUM_PAGE_EXECUTE | GUM_PAGE_READ;
-    LoadShader_sig.target_address = 0;
-    LoadShader_sig.targets.clear();
-    const auto *mainPath = gum_module_get_path(gum_process_get_main_module());
-    if (mainPath == nullptr || LoadShader_sig.scan(mainPath) == 0 ||
-        LoadShader_sig.targets.empty()) {
-        spdlog::warn("[render.shadow] LoadShader signature miss — silhouette shader load disabled");
+    ds::sig::ResolveReport load_shader_report{};
+    if (!ds::sig::host_resolve("render.shadow.load_shader", &load_shader_report) ||
+        load_shader_report.target_va == 0) {
+        spdlog::warn("[render.shadow] LoadShader signature miss ({}) — silhouette shader load disabled",
+                     load_shader_report.detail);
         load_shader = nullptr;
         return false;
     }
-    load_shader = reinterpret_cast<LoadShader_fn>(
-        *std::min_element(LoadShader_sig.targets.begin(), LoadShader_sig.targets.end()));
+    load_shader = reinterpret_cast<LoadShader_fn>(load_shader_report.target_va);
     spdlog::info("[render.shadow] LoadShader = {:#x} (ResourceManager::Load)",
                  reinterpret_cast<uintptr_t>(load_shader));
     return true;
@@ -1783,7 +1773,11 @@ bool BindSilhouetteHelpers(uintptr_t anim_dcr, uintptr_t shadow_dcr, uintptr_t g
     set_vb = reinterpret_cast<SetVb_fn>(Rel32Target(sd + 0x55));
     draw = reinterpret_cast<Draw_fn>(Rel32Target(sd + 0x63));
     release_vb = reinterpret_cast<ReleaseVb_fn>(Rel32Target(sd + 0x7F));
-    get_ds_list = reinterpret_cast<GetDsList_fn>(Rel32Target(sd + 0x9D));
+    // Client build 762172: ShadowDCR's body moved the entity-list call from +0x9D
+    // to +0x9A (the other six sites below/above are unchanged; +0x9A's target is
+    // the list helper, +0xAA calls GenerateVB). A stale offset here returned null
+    // and silently disabled the silhouette path.
+    get_ds_list = reinterpret_cast<GetDsList_fn>(Rel32Target(sd + 0x9A));
 
     get_vert_desc = reinterpret_cast<GetVertDesc_fn>(Rel32Target(gv + 0x32));
     create_vb = reinterpret_cast<CreateVB_fn>(Rel32Target(gv + 0x1A9));

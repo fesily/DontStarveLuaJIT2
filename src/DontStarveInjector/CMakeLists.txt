@@ -22,6 +22,9 @@ set(SOURCES
         core/PluginHost.cpp
         core/PluginServices.cpp
         core/GameInjectorLuaRegistry.cpp
+        core/SignatureManager.cpp
+        core/InjectorSignatures.cpp
+        core/InjectorProviderRegistration.cpp
         core/PluginOptionRules.cpp
         config/ConfigSchema.cpp
         config/CascadeEngine.cpp
@@ -125,6 +128,9 @@ else()
     target_compile_definitions(Injector PRIVATE DISABLE_TRACY_FUTURE)
 endif()
 target_link_libraries(Injector PRIVATE function_relocation)
+# Fixed-signature machinery (shared, global-state-free): the Manager is the only
+# runtime registry, this lib supplies scan/cache/runner primitives.
+target_link_libraries(Injector PRIVATE ds_signature_provider)
 target_include_directories(Injector PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
 # L0 config cascade (save write-back + stock sol2) uses a dedicated PUC

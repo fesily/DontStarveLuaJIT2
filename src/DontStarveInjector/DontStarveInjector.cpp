@@ -7,7 +7,8 @@
 #include "util/platform.hpp"
 #include "util/Unsafedata.hpp"
 #include "ctx.hpp"
-#include "MemorySignature.hpp"
+#include "core/InjectorSignatures.hpp"
+#include "core/SignatureManager.hpp"
 #include "core/PluginHost.hpp"
 #include "core/PluginConfigBridge.hpp"
 #include "config/ConfigSchema.hpp"
@@ -112,28 +113,17 @@ static bool check_crash() {
     return ds::unsafedata::allow_inject(ds::unsafedata::sentinel_path());
 }
 
-/* 把字符串转换成hex数组*/
-std::string String2Hex(std::string_view str) {
-    std::string hex;
-    hex.reserve(str.size() * 3);
-    for (size_t i = 0; i < str.size(); ++i) {
-        hex += fmt::format("{:02x} ", static_cast<uint8_t>(str[i]));
-    }
-    return hex;
-}
-
 void DisableScriptZip() {
     if (!InjectorConfig::instance()->DisableGameScriptsZip) {
         return;
     }
-    // DEV=databundles/scripts.zip
-    auto key = "DEV=databundles/scripts.zip"sv;
-    auto key1 = String2Hex(key);
-    function_relocation::MemorySignature signature = {key1.c_str(), 0};
-    signature.prot_flag = GUM_PAGE_READ;
-    if (signature.scan(nullptr)) {
-        gum_memory_write((void *) signature.target_address, (const guint8 *) "DEV=databundles/script1.zip", key.size());
-        spdlog::info("disable script zip[{}]", (void *) signature.target_address);
+    // DEV=databundles/scripts.zip — resolved through the shared provider registry
+    // (the pattern itself lives in core/InjectorSignatures.cpp, not here).
+    constexpr auto key = "DEV=databundles/scripts.zip"sv;
+    ds::sig::ResolveReport report{};
+    if (ds::sig::resolve_entry("injector.scripts_zip", &report) && report.target_va != 0) {
+        gum_memory_write((void *) report.target_va, (const guint8 *) "DEV=databundles/script1.zip", key.size());
+        spdlog::info("disable script zip[{}]", (void *) report.target_va);
     }
 }
 
@@ -221,6 +211,21 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         return;
     }
 
+    // SignatureManager target context + the L0 provider must exist before
+    // LoadGameModConfig(): its SetThreadName / scripts-zip consumers resolve
+    // through the same registry every plugin uses.
+    {
+        ds::sig::RuntimeTarget target{};
+        target.platform = ds::sig::host_platform();
+        target.is_client = isClient;
+        ds::sig::configure_runtime(target);
+#if defined(DS_SIG_HAVE_INJECTOR)
+        std::string provider_detail;
+        if (!ds::sig::register_injector_provider(&provider_detail)) {
+            spdlog::warn("injector signature provider rejected: {}", provider_detail);
+        }
+#endif
+    }
     LoadGameModConfig();
 
     // Production modmain path for shared plugin search (parent(modmain)/plugins).
@@ -251,6 +256,16 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
             }
             for (auto &s : report.skipped) {
                 spdlog::warn("dynamic plugin module skipped: {}", s);
+            }
+            // Providers published by modules whose init succeeded become the
+            // Manager's registry. Registration order here is load order, so a
+            // duplicate name is rejected deterministically instead of racing.
+            for (size_t i = 0; i < g_plugin_host.signature_provider_count(); ++i) {
+                std::string provider_detail;
+                if (!ds::sig::add_provider(g_plugin_host.signature_provider(i), &provider_detail)) {
+                    spdlog::warn("signature provider rejected: {}", provider_detail);
+                    std::fprintf(stderr, "[signature] provider rejected: %s\n", provider_detail.c_str());
+                }
             }
             for (auto *e : g_plugin_host.option_schema().all()) {
                 const char *type_name = "None";

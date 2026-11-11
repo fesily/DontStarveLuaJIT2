@@ -6,7 +6,8 @@ if [ "$#" -eq 0 ]; then
   exit 1
 fi
 
-# 循环执行每个参数
+# 循环执行每个参数；任一程序失败则整体以 1 退出（CI/gate 需要真实退出码）
+status=0
 for program in "$@"
 do
   if [ ! -f "$program" ]; then
@@ -18,7 +19,9 @@ do
   # 检查程序是否成功执行
   if [ $? -ne 0 ]; then
     echo "程序 $program 执行失败。"
+    status=1
   else
     echo "程序 $program 执行成功。"
   fi
 done
+exit $status

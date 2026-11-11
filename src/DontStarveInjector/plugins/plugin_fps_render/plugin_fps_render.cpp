@@ -1,6 +1,8 @@
 // plugin_fps_render — native face of fps.render (independent of network.tick).
 // Lua face: plugins/plugin_fps_render/ (modinfo + modmain).
 #include "core/PluginModuleAbi.hpp"
+#include "FpsSignatures.hpp"
+#include "core/SignatureProviderRegistration.hpp"
 #include "core/PluginHost.hpp"
 #include "core/GameInjectorLuaBind.hpp"
 #include "core/PluginTypes.hpp"
@@ -69,6 +71,10 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         // Cross-plugin: debug.profiler requests frame time (typed service).
     (void) host->register_service("DS_LUAJIT_get_frame_time_s", &DS_LUAJIT_get_frame_time_s);
     (void) host->register_game_injector_export("DS_LUAJIT_set_target_fps", &DS_LUAJIT_set_target_fps);
+#if defined(DS_SIG_HAVE_FPS_RENDER)
+    (void) ds::sig::register_provider_with_host(host, ds::fps_render::signature_provider(),
+                                               "plugin_fps_render");
+#endif
     host->register_plugin(&g_plugin);
     std::fprintf(stderr, "[plugin_fps_render] module init registered fps.render\n");
     return true;

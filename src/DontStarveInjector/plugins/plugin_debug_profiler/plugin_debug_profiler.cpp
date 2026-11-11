@@ -12,6 +12,8 @@
 #include "config/ConfigSchema.hpp"
 #include "GameProfilerHook.hpp"
 #include "FullGcPolicy.hpp"
+#include "ProfilerSignatures.hpp"
+#include "core/SignatureProviderRegistration.hpp"
 
 #include <cstdio>
 
@@ -136,6 +138,12 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     (void) host->register_game_injector_export("DS_LUAJIT_replace_profiler_api", &DS_LUAJIT_replace_profiler_api);
     (void) host->register_game_injector_export("DS_LUAJIT_enable_tracy", &DS_LUAJIT_enable_tracy);
     (void) host->register_game_injector_export("DS_LUAJIT_enable_framegc", &DS_LUAJIT_enable_framegc);
+    // Fixed signatures (FrameProfiler::Push/Pop + Linux singleton wrapper).
+    // Registration is staged and published only because this init returns true.
+#if defined(DS_SIG_HAVE_DEBUG_PROFILER)
+    (void) ds::sig::register_provider_with_host(host, ds::debug_profiler::signature_provider(),
+                                               "plugin_debug_profiler");
+#endif
     host->register_plugin(&g_plugin);
     std::fprintf(stderr, "[plugin_debug_profiler] module init registered debug.profiler\n");
     return true;

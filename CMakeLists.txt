@@ -429,6 +429,12 @@ add_subdirectory("src/lua51original")
 add_subdirectory("src/FunctionRelocation")
 set(FUNCTION_RELOCATION_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/FunctionRelocation)
 
+# Shared, global-state-free signature-provider machinery (generic scan/select/
+# verify, fixed cache reader/writer, stateless create/update/check runner).
+# The Injector links it for SignatureManager; plugins link it for their own
+# provider TUs; tools link it plus an explicit provider table.
+add_subdirectory("src/SignatureProvider")
+
 add_subdirectory("src/DontStarveInjector")
 
 # core.vm assets:
@@ -458,6 +464,21 @@ if (EXISTS "${_ds_sig_server}")
     install(FILES "${_ds_sig_server}" DESTINATION . COMPONENT plugins)
 else()
     message(STATUS "Mod/signatures_server.json missing — runtime/CI will regenerate via SignatureUpdater")
+endif()
+
+# Fixed-signature caches (plugin providers). Same placement rule as the Lua DBs
+# above: mod root, optional, and only the files that exist are installed.
+set(_ds_fixed_client "${CMAKE_SOURCE_DIR}/Mod/plugin_signatures_client.json")
+set(_ds_fixed_server "${CMAKE_SOURCE_DIR}/Mod/plugin_signatures_server.json")
+if (EXISTS "${_ds_fixed_client}")
+    install(FILES "${_ds_fixed_client}" DESTINATION . COMPONENT plugins)
+else()
+    message(STATUS "Mod/plugin_signatures_client.json missing — generate it with the create_signatures target")
+endif()
+if (EXISTS "${_ds_fixed_server}")
+    install(FILES "${_ds_fixed_server}" DESTINATION . COMPONENT plugins)
+else()
+    message(STATUS "Mod/plugin_signatures_server.json missing — generate it with the create_signatures target")
 endif()
 
 # Install lua VM shared libs into Mod/deps when targets exist.

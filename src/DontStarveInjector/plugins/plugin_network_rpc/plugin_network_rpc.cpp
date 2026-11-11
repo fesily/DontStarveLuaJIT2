@@ -1,6 +1,8 @@
 // plugin_network_rpc — dynamic EarlyNative face of network.rpc
 // Lua face: plugins/plugin_network_rpc/ (modinfo + modmain).
 #include "gum_plugin_export.hpp"
+#include "NetworkRpcSignatures.hpp"
+#include "core/SignatureProviderRegistration.hpp"
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 
@@ -72,6 +74,10 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     }
 
     RegisterNetworkRpcHostServices(host);
+#if defined(DS_SIG_HAVE_NETWORK_RPC)
+    (void) ds::sig::register_provider_with_host(host, ds::network_rpc::signature_provider(),
+                                               "plugin_network_rpc");
+#endif
     host->register_plugin(&g_network_rpc);
     std::fprintf(stderr, "[plugin_network_rpc] module init registered network.rpc\n");
     return true;

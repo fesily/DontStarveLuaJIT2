@@ -977,3 +977,127 @@ mods/<external_mod>/
 
 Design: `docs/superpowers/specs/2026-08-08-external-plugin-discovery-design.md`.
 
+
+## 14. Signature providers (fixed-pattern signatures)
+
+Every hand-written byte pattern in the repository now has **one** definition, owned
+by the plugin (or L0 component) that consumes it, and is resolved through a shared
+registry. No plugin scans for itself and no second copy of a pattern list exists.
+
+### 14.1 Contract
+
+`src/DontStarveInjector/core/SignatureProvider.hpp` (POD, cross-DLL safe):
+
+| Member | Purpose |
+|---|---|
+| `entry_count` / `entry_at` | **names** — this provider's stable names + description/applicability |
+| `get_cached` | **cache** — the known record from `ctx->cache_path` (never scans/repairs/writes) |
+| `extract_from_file` | **cache** — same record from an explicit file (tools) |
+| `resolve` | read-only scan + address rule + verifier |
+| `repair` (optional) | re-derive a stale entry; create/update only, never check |
+
+Rules the contract enforces:
+
+* Names are `<owner>.<symbol>` and never derived from the pattern
+  (`network.rpc.rpc4_signal`, not `rpc4_48_81_EC_...`); the Lua DB keeps its
+  export-name keys and is untouched.
+* Fixed entries never enter the Lua `funcs` map: different key space, different
+  address domain (Lua offsets are relative to the Lua module base).
+* A name may be defined once **per platform variant** (disjoint `platform_mask`):
+  Windows pins a body offset where Linux resolves the exact FDE entry. Duplicate
+  names with overlapping masks are rejected as one atomic registration failure.
+* **Definitions are filtered at compile time by target.** Each provider table is
+  wrapped in `#if defined(DS_SIG_TARGET_WINDOWS_X64) / _LINUX_X64 / _MACOS_*`
+  (`core/SignatureProvider.hpp`), so a Windows build contains no Linux/macOS
+  pattern and a Linux build contains no win64 one: nothing foreign is emitted
+  into the image, enumerated at runtime or written to the cache. A provider that
+  ships no pattern for the current target is not compiled at all — its
+  `*Signatures.hpp` defines one `DS_SIG_HAVE_<OWNER>` switch from the compiler's
+  platform macros, and the provider TU, the plugin's `module_init` registration
+  and the offline tool's provider table all use that switch, so no
+  empty-descriptor state can exist.
+* `platform_mask`, `client_only` and `server_only` stay as the runtime-level
+  check on top of that (a plugin DLL can be copied between trees) and as the
+  cache-section key; they describe where the entry *exists* and are independent
+  of whether a feature option is enabled — a disabled feature still gets a
+  listed entry and installs no hook.
+* `definition_revision` must be bumped whenever the scan/decode contract changes;
+  a cache record with a different revision is stale, never reused.
+
+### 14.2 Registration lifecycle
+
+1. **L0 (`injector` owner)** — registered by the Injector itself before
+   `LoadGameModConfig()`, because `injector.set_thread_name` has to be resolvable
+   before that call and no plugin is loaded yet.
+2. **Plugins** — `ds_plugin_module_init` builds its POD table
+   (`ds::sig::make_provider`) and stages it with
+   `host->register_signature_provider(&table)`. Staging is all-or-nothing; a
+   malformed descriptor or a duplicate name rejects the whole provider.
+3. `DynamicPluginLoader` publishes staged providers **only when init returned
+   true** (and discards them before `close_library` otherwise), then the Injector
+   adopts the published set into `SignatureManager` — the single runtime registry.
+4. Consumers resolve at hook-install time:
+   `ds::sig::host_resolve("render.shadow.generate_vb", &report)` (POD export
+   `ds_signature_resolve_ex`). The Manager memoizes the verified address for the
+   process lifetime, so a second query after the caller's own hook is installed
+   never re-scans patched bytes. Resolution never runs in a frame callback.
+
+### 14.3 Cache file
+
+`plugin_signatures_{client,server}.json` at the mod root (next to the Lua DBs),
+`format_version` 1, one section per `<system>-<arch>`:
+
+```json
+{"format_version": 1,
+ "platforms": {"windows-x64": {
+   "module": {"digest": "fnv1a64", "size": 7811072, "version": "762172"},
+   "owners": {"network.rpc": {"entries": {"network.rpc.rpc4_signal": {
+     "pattern": "48 81 EC …", "pattern_offset": -7, "hits_policy": 0,
+     "resolve_kind": 0, "definition_revision": 1, "platform_mask": 1,
+     "client_only": false, "raw_hit_rvas": [3898215], "target_rva": 3898208}}}}}}
+```
+
+* Identity is the target binary's **content digest** (plus version text and the
+  definition revision); an unchanged version file with a changed binary is stale.
+* Only raw/resolved **RVAs** are stored, never process addresses.
+* Runtime is read-only: a record is reused only after its own bytes re-match and
+  its verifier still passes; otherwise the entry is re-scanned (and never written).
+* A run rewrites only its own platform section and only the owner it just ran:
+  other platforms and other owners survive, and entries that no longer verify are
+  dropped rather than re-stamped with the new identity.
+
+### 14.4 Tools
+
+| Command | Behaviour |
+|---|---|
+| `signature_updater` (no arg) | Auto: in-game semantics (create when missing, update when stale) |
+| `signature_updater create` | Lua DB rebuilt from scratch; fixed providers fully re-scanned/verified/rewritten |
+| `signature_updater update` | Lua DB re-resolved; fixed providers validated, re-scanned, optional repair re-verified |
+| `signature_updater check` | **Read-only**: parses both DBs, re-scans, compares; never writes, never repairs |
+
+* CMake targets: `create_signatures`, `update_signatures`, `check_signatures`
+  (POSIX enters through the preload library with `SIGNATURE_TOOL_MODE`).
+* `SIGNATURE_TOOL_OUTPUT_DIR=<dir>` redirects every write (tests must never touch
+  `Mod/`), and applies to both the Lua and the fixed cache.
+* Exit codes: `0` all applicable entries pass, `1` a check/update failed, `2` bad
+  arguments. Client and server always both run; one side's failure never skips
+  the other.
+* Output is per entry: `owner`, `name`, status (`resolved`, `not-applicable`,
+  `unsupported`, `pattern-missing`, `pattern-ambiguous`, `decode-failed`,
+  `cache-missing`), RVA, raw hit count, cache state and failure detail.
+* The tool links every provider TU directly (`tools/Creater/signature_providers.cpp`)
+  — it never loads the Injector or a plugin DLL.
+
+### 14.5 Adding a signature
+
+1. Add an `EntryDef` to the owning plugin's `*Signatures.cpp` (owner, stable name,
+   pattern list, offset, platform mask, hit policy, resolve kind, revision, and a
+   read-only verifier when the consumer decodes the window) inside the
+   `#if defined(DS_SIG_TARGET_…)` block of the platform it belongs to — an entry
+   is emitted only for the target it is compiled for.
+2. Register it: nothing to do in `module_init` if the plugin already calls
+   `ds::sig::register_provider_with_host(...)`; otherwise add that call.
+3. Add the new `*Signatures.cpp` to `tools/Creater/signature_providers.cpp` so the
+   offline tool sees it.
+4. Replace the consumer's own `MemorySignature` with
+   `ds::sig::host_resolve("<owner>.<symbol>", &report)`.

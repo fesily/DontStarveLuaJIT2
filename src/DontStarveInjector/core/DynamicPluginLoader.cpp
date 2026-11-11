@@ -343,6 +343,14 @@ bool DynamicPluginLoader::load_module_path(PluginHost &host, const std::filesyst
         host.end_module_registration();
         ok = false;
     }
+    // Staged signature providers become visible only for a module that actually
+    // finished init; a failed module must not leave callbacks into a library we
+    // are about to close.
+    if (ok) {
+        host.publish_module_registration();
+    } else {
+        host.discard_module_registration();
+    }
     if (!ok) {
         close_library(handle);
         if (skip_reason) {
@@ -460,6 +468,11 @@ DynamicLoadReport DynamicPluginLoader::load_directory(PluginHost &host, const st
         } catch (...) {
             host.end_module_registration();
             ok = false;
+        }
+        if (ok) {
+            host.publish_module_registration();
+        } else {
+            host.discard_module_registration();
         }
         if (!ok) {
             close_library(handle);

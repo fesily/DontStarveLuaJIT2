@@ -117,6 +117,7 @@ set(DS_CONFIG_SCHEMA_TARGETS
     test_config_view_build
     test_dynamic_plugin_loader
     test_plugin_services
+    test_signature_provider_registration
 )
 # Targets added later that also use PLUGIN_HOST_SOURCES / ConfigSchema should
 # call: add_dependencies(<tgt> create_modinfo_hpp)
@@ -395,6 +396,21 @@ target_compile_definitions(test_lua_event_bus PRIVATE DS_PLUGIN_HOST_STATIC)
 add_test(NAME lua_event_bus COMMAND test_lua_event_bus)
 
 # Process-wide named service table (plugin → host → core.vm)
+# Signature provider registration lifecycle (staging/publish, ids, versions).
+add_executable(test_signature_provider_registration
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_signature_provider_registration.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginHost.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginServices.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginOptionRules.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/GameInjectorLuaRegistry.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/ConfigSchema.cpp)
+target_include_directories(test_signature_provider_registration PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_signature_provider_registration PRIVATE cxx_std_23)
+target_compile_definitions(test_signature_provider_registration PRIVATE DS_PLUGIN_HOST_STATIC)
+add_dependencies(test_signature_provider_registration create_modinfo_hpp)
+add_test(NAME signature_provider_registration COMMAND test_signature_provider_registration)
+
 add_executable(test_plugin_services
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin_services.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/PluginServices.cpp

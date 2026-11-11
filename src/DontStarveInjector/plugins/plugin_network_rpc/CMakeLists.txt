@@ -1,10 +1,12 @@
 # RPC4 / entity network extension (Path A M-N1). Gum via Frida::Gum shared.
 ds_add_dynamic_plugin(plugin_network_rpc
     plugin_network_rpc.cpp
+    NetworkRpcSignatures.cpp
     GameNetwork.cpp)
 target_link_libraries(plugin_network_rpc PRIVATE
     spdlog::spdlog
     SLikeNet
+    ds_signature_provider
     function_relocation)
 target_compile_definitions(plugin_network_rpc PRIVATE
     SPDLOG_COMPILED_LIB

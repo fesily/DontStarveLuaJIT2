@@ -2,6 +2,8 @@
 // Lua face: plugins/plugin_network_sim/ (modinfo + modmain + scripts/netsim).
 // Native APIs: DS_LUAJIT_net_sim_* (lazy hook install on enable).
 #include "gum_plugin_export.hpp"
+#include "NetworkSimSignatures.hpp"
+#include "core/SignatureProviderRegistration.hpp"
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 #include "core/GameInjectorLuaBind.hpp"
@@ -95,6 +97,10 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
         (void) host->register_game_injector_export("DS_LUAJIT_net_sim_enable", &DS_LUAJIT_net_sim_enable);
     (void) host->register_game_injector_export("DS_LUAJIT_net_sim_set", &DS_LUAJIT_net_sim_set);
     (void) host->register_game_injector_export("DS_LUAJIT_net_sim_update", &DS_LUAJIT_net_sim_update);
+#if defined(DS_SIG_HAVE_NETWORK_SIM)
+    (void) ds::sig::register_provider_with_host(host, ds::network_sim::signature_provider(),
+                                               "plugin_network_sim");
+#endif
     (void) host->register_game_injector_export("DS_LUAJIT_net_sim_get_stats", &DS_LUAJIT_net_sim_get_stats);
     host->register_plugin(&g_network_sim);
     std::fprintf(stderr, "[plugin_network_sim] module init registered network.sim\n");

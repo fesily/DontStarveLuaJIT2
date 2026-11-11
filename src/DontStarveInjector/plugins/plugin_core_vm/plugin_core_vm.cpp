@@ -15,7 +15,7 @@
 #include "GameLua.hpp"
 #include "LuaEvent.hpp"
 #include "DontStarveSignature.hpp"
-#include "GameSignature.hpp"
+#include "CoreVmSignatures.hpp"
 #include "ProcessMutex.hpp"
 #include "config/InjectorHostConfig.hpp"
 #include "util/platform.hpp"
@@ -23,7 +23,8 @@
 #include "ctx.hpp"
 #include "ModuleSections.hpp"
 #include "disasm.h"
-#include "MemorySignature.hpp"
+#include "core/SignatureResolveApi.hpp"
+#include "ProviderDesc.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -72,40 +73,7 @@ const char *forced_get_build_type(void *self) {
     return "dev";
 }
 
-uintptr_t find_build_type_function(const function_relocation::ModuleSections &module_main) {
-    function_relocation::MemorySignature build_type_signature{"48 8B 05 ?? ?? ?? ?? C3", 0};
-    build_type_signature.only_one = false;
-    build_type_signature.log = false;
-    build_type_signature.prot_flag = GUM_PAGE_EXECUTE;
-    if (!build_type_signature.scan(module_main.text.base_address, module_main.text.size)) {
-        return 0;
-    }
-
-    for (const auto candidate : build_type_signature.targets) {
-        auto insn = function_relocation::disasm::get_insn(reinterpret_cast<void *>(candidate), 8);
-        if (!insn || insn->detail->x86.op_count != 2) {
-            continue;
-        }
-
-        const auto &x86 = insn->detail->x86;
-        if (x86.operands[0].type != X86_OP_REG || x86.operands[1].type != X86_OP_MEM) {
-            continue;
-        }
-
-        const auto string_ptr_address = function_relocation::read_operand_rip_mem(*insn, x86.operands[1]);
-        if (!string_ptr_address || !module_main.in_rodata(*reinterpret_cast<uintptr_t *>(string_ptr_address))) {
-            continue;
-        }
-
-        const auto build_type = reinterpret_cast<const char *>(*reinterpret_cast<uintptr_t *>(string_ptr_address));
-        if (build_type && std::string_view{build_type} == "release") {
-            return candidate;
-        }
-    }
-
-    return 0;
-}
-#endif
+#endif // _WIN32
 
 void replace_game_branch_flag_to_dev(const std::string &mainPath) {
 #ifdef _WIN32
@@ -118,17 +86,14 @@ void replace_game_branch_flag_to_dev(const std::string &mainPath) {
         return;
     }
 
-    function_relocation::ModuleSections moduleMain{};
-    if (!function_relocation::get_module_sections(mainPath.c_str(), moduleMain)) {
-        spdlog::error("failed to get module sections for {}", mainPath);
+    // The definition (and its "release"-string filter) lives in
+    // CoreVmSignatures.cpp; this call is the same one every other consumer uses.
+    ds::sig::ResolveReport report{};
+    if (!ds::sig::host_resolve("core.vm.build_type", &report) || report.target_va == 0) {
+        spdlog::error("failed to locate GetBuildType function by binary signature ({})", report.detail);
         return;
     }
-
-    const auto target = find_build_type_function(moduleMain);
-    if (!target) {
-        spdlog::error("failed to locate GetBuildType function by binary signature");
-        return;
-    }
+    const auto target = report.target_va;
 
     auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
     auto replace_result = ds::gum::replace(
@@ -208,20 +173,19 @@ bool run_signature_and_replace(const ds::core_vm::BootstrapArgs &args) {
     }
     const std::string mainPath{mainPathC};
 
-    const auto lua_entry =
-#ifdef __linux__
-            luaModuleSignature.scan_function(mainPath.c_str());
-#else
-            luaModuleSignature.scan(mainPath.c_str());
-#endif
-    if (lua_entry == 0) {
-        spdlog::error("can't find luamodule base address");
+    // Anchor through the shared registry (definition in CoreVmSignatures.cpp);
+    // the Lua matcher/generator itself is unchanged and still owns everything
+    // below this point.
+    ds::sig::ResolveReport lua_anchor{};
+    if (!ds::sig::host_resolve("core.vm.lua_module", &lua_anchor) || lua_anchor.target_va == 0) {
+        spdlog::error("can't find luamodule base address ({})", lua_anchor.detail);
         return false;
     }
     ProcessMutex mtx("DontStarveInjectorSignature");
     std::lock_guard guard{mtx};
     const uintptr_t lua_base =
-        args.lua_module_base != 0 ? args.lua_module_base : luaModuleSignature.target_address;
+        args.lua_module_base != 0 ? args.lua_module_base : static_cast<uintptr_t>(lua_anchor.target_va);
+    ds::core_vm::set_lua_module_base(lua_base);
     auto res = SignatureUpdater::create_or_update(args.is_client, lua_base);
     if (!res) {
         showError(res.error());
@@ -305,6 +269,15 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     if (!host->register_service("ds_register_lua_event_listener", &ds_register_lua_event_listener)) {
         std::fprintf(stderr, "[plugin_core_vm] service conflict ds_register_lua_event_listener\n");
         return false;
+    }
+    // Publish this plugin's signature definitions. Registration is staged by the
+    // host and only becomes visible if this init returns true.
+    {
+        ds::sig::ProviderV1 provider{};
+        if (!ds::sig::make_provider(&ds::core_vm::signature_provider(), &provider) ||
+            !host->register_signature_provider(&provider)) {
+            std::fprintf(stderr, "[plugin_core_vm] signature provider registration rejected\n");
+        }
     }
     host->register_plugin(&g_core_vm);
     std::fprintf(stderr,

@@ -1,11 +1,13 @@
 # ds_signature — signature scan/load static library for core.vm + tools.
-# Owns: DontStarveSignature, SignatureJson, GameSignature, Progress (MSVC UI).
+# Owns: DontStarveSignature (Lua matcher/generator), SignatureJson (Lua DB),
+# CoreVmSignatures (core.vm provider definitions + read-only decoders),
+# Progress (MSVC UI).
 # Consumers link this STATIC lib; do not compile these TUs into other targets twice.
 
 set(DS_SIGNATURE_SOURCES
     DontStarveSignature.cpp
     SignatureJson.cpp
-    GameSignature.cpp
+    CoreVmSignatures.cpp
 )
 if (MSVC)
     list(APPEND DS_SIGNATURE_SOURCES Progress.cpp)
@@ -34,6 +36,9 @@ target_link_libraries(ds_signature
     PUBLIC
         nlohmann_json::nlohmann_json
         spdlog::spdlog
+        # CoreVmSignatures.cpp builds the core.vm provider table through the
+        # shared scan/cache primitives; consumers of ds_signature get them too.
+        ds_signature_provider
         range-v3::meta range-v3::concepts range-v3::range-v3
 )
 # Headers/types from function_relocation; link unit chooses SHARED vs STATIC.

@@ -71,7 +71,7 @@ bool UseGameIO() {
 
 void load_game_fn_io_open(const Signatures &signatures) {
     auto offset = signatures.funcs.at("luaopen_io").offset;
-    auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
+    auto target = (uint8_t *) GSIZE_TO_POINTER(ds::core_vm::lua_module_base() + GPOINTER_TO_INT(offset));
     luaopen_game_io = (decltype(luaopen_game_io)) target;
 }
 

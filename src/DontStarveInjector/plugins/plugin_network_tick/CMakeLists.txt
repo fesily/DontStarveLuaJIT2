@@ -1,9 +1,11 @@
 # network.tick — DS_LUAJIT_replace_network_tick only (no rpc/sim coupling).
 ds_add_dynamic_plugin(plugin_network_tick
     plugin_network_tick.cpp
-    NetworkTickApi.cpp)
+    NetworkTickApi.cpp
+    NetworkTickSignatures.cpp)
 target_link_libraries(plugin_network_tick PRIVATE
     spdlog::spdlog
+    ds_signature_provider
     function_relocation)
 target_compile_definitions(plugin_network_tick PRIVATE
     SPDLOG_COMPILED_LIB

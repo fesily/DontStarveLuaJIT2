@@ -3,7 +3,8 @@
 #include "SignatureJson.hpp"
 #include "frida-gum.h"
 
-#include "GameSignature.hpp"
+#include "CoreVmSignatures.hpp"
+#include "SignatureRunner.hpp"
 #include "platform.hpp"
 
 #ifndef GAMEDIR
@@ -48,9 +49,24 @@ int check(const char *path, bool isClient) {
     fprintf(stderr, "game_path:\t%s\n", path);
     if (!loadModule(path))
         return 1;
-    luaModuleSignature.log = false;
-    if (luaModuleSignature.scan(path) == 0) {
-        fprintf(stderr, "%s", "can find lua module base addr\n");
+    // Lua anchor from the shared core.vm definition (never a second local copy of
+    // the pattern): this checker only compares the Lua offsets against the
+    // hand-maintained reference table, it does not own any signature.
+    ds::sig::ContextView ctx{};
+    ctx.platform = ds::sig::host_platform();
+    ctx.is_client = isClient ? 1 : 0;
+    ctx.module_path = path;
+    if (auto *module = gum_process_find_module_by_name(path)) {
+        if (auto *range = gum_module_get_range(module)) {
+            ctx.module_base = range->base_address;
+            ctx.module_size = range->size;
+        }
+    }
+    ds::sig::ProviderV1 provider{};
+    ds::sig::ResolveReport anchor{};
+    if (!ds::sig::make_provider(&ds::core_vm::signature_provider(), &provider) ||
+        !provider.resolve(provider.self, "core.vm.lua_module", &ctx, &anchor) || anchor.target_va == 0) {
+        fprintf(stderr, "cannot find the lua module base addr (%s)\n", anchor.detail);
         return 1;
     }
     using namespace std::literals;

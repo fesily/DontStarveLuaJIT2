@@ -3,7 +3,8 @@
 #include "SilhouetteBatch.hpp"
 #include "SunModel.hpp"
 
-#include "MemorySignature.hpp"
+#include "ShadowSignatures.hpp"
+#include "core/SignatureResolveApi.hpp"
 #include "config/InjectorHostConfig.hpp"
 #include "util/frida_gum_interceptor.hpp"
 
@@ -29,43 +30,22 @@ Dcr_fn original_ShadowDCR = nullptr;
 CacheWorld_fn original_CacheWorld = nullptr;
 bool installed = false;
 
-// 2026-11-06 build (TS 0x6aed2496): the renderer member moved 0x920 -> 0x928.
-function_relocation::MemorySignature AnimDCR_sig{
-    "40 53 57 41 56 48 81 EC 90 04 00 00 48 8B D9 48 8B 8A 28 09 00 00 48 8B FA 48 8B 49 28", 0};
+// Resolved once per process by InstallSilhouetteHooks(). These are consumed
+// addresses (they double as vtable identity values), not definitions: the
+// patterns, the lowest-hit rule and the rel32 windows live in
+// ShadowSignatures.cpp.
+uintptr_t g_anim_dcr = 0;
+uintptr_t g_shadow_dcr = 0;
+uintptr_t g_cache_world = 0;
 
-// 2026-11-06 build: [rdx+0x930] -> [rdx+0x938] and the short-jump displacement 0xDD -> 0xDA.
-function_relocation::MemorySignature ShadowDCR_sig{
-    "48 89 74 24 10 57 48 83 EC 20 83 BA 38 09 00 00 02 48 8B FA 48 8B F1 0F 85 DA 00 00 00", 0};
-
-function_relocation::MemorySignature CacheWorld_sig{
-    "48 89 54 24 10 56 41 56 48 81 EC 58 02 00 00 48 8B F1 48 8B 89 70 01 00 00", 0};
-
-function_relocation::MemorySignature GetAnimFrame_sig{
-    "48 83 EC 28 4C 8B C9 E8 ?? ?? ?? ?? 83 F8 FF 74 13 8B C0 48 8D 14 80", 0};
-
-// HWEffect::Bind — unique prologue @ 1403e92f0. Updates src_data; SetEffect does not.
-function_relocation::MemorySignature HwEffectBind_sig{
-    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 41 8B 40 1C", 0};
-
-function_relocation::MemorySignature AnimDraw_sig{
-    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 48 8B 01 41", 0};
-
-
-uintptr_t ScanLowest(function_relocation::MemorySignature &sig, const char *path) {
-    sig.only_one = false;
-    sig.log = false;
-    sig.prot_flag = GUM_PAGE_EXECUTE | GUM_PAGE_READ;
-    sig.target_address = 0;
-    sig.targets.clear();
-    sig.scan(path);
-    if (sig.targets.empty()) {
-        // These scans run with log=false (several patterns intentionally tolerate
-        // multiple hits), so the shared scan audit stays quiet: report the miss here.
-        spdlog::warn("[render.shadow] signature miss: 0 hits for \"{}\" in {}", sig.pattern,
-                     path ? path : "<main module>");
+// Resolve one entry through the shared registry. A miss is reported by the
+// manager's audit line; the caller decides whether it is fatal.
+uintptr_t ResolveEntry(const char *name, ds::sig::ResolveReport &report) {
+    if (!ds::sig::host_resolve(name, &report) || report.target_va == 0) {
+        report.target_va = 0;
         return 0;
     }
-    return *std::min_element(sig.targets.begin(), sig.targets.end());
+    return static_cast<uintptr_t>(report.target_va);
 }
 
 void RefreshHealthy(void *renderer) {
@@ -113,7 +93,7 @@ void PreCollectCache(void *cache) {
             ++nodes;
             auto *nvt = *reinterpret_cast<void ***>(node);
             void *nvt0 = (nvt != nullptr) ? nvt[0] : nullptr;
-            if (nvt0 != nullptr && nvt0 == reinterpret_cast<void *>(ShadowDCR_sig.target_address)) {
+            if (nvt0 != nullptr && nvt0 == reinterpret_cast<void *>(g_shadow_dcr)) {
                 continue;
             }
             auto *inner = *reinterpret_cast<uint8_t **>(node + 8);
@@ -190,14 +170,12 @@ void RevertAll(GumInterceptor *interceptor) {
     if (interceptor == nullptr) {
         return;
     }
-    if (original_ShadowDCR != nullptr && ShadowDCR_sig.target_address != 0) {
-        gum_interceptor_revert(interceptor,
-                               reinterpret_cast<void *>(ShadowDCR_sig.target_address));
+    if (original_ShadowDCR != nullptr && g_shadow_dcr != 0) {
+        gum_interceptor_revert(interceptor, reinterpret_cast<void *>(g_shadow_dcr));
         original_ShadowDCR = nullptr;
     }
-    if (original_CacheWorld != nullptr && CacheWorld_sig.target_address != 0) {
-        gum_interceptor_revert(interceptor,
-                               reinterpret_cast<void *>(CacheWorld_sig.target_address));
+    if (original_CacheWorld != nullptr && g_cache_world != 0) {
+        gum_interceptor_revert(interceptor, reinterpret_cast<void *>(g_cache_world));
         original_CacheWorld = nullptr;
     }
 }
@@ -244,12 +222,18 @@ bool InstallSilhouetteHooks() {
         SetSilhouetteHealthy(false);
         return false;
     }
-    const uintptr_t anim = ScanLowest(AnimDCR_sig, mainPath);
-    const uintptr_t shadow = ScanLowest(ShadowDCR_sig, mainPath);
-    const uintptr_t cache = ScanLowest(CacheWorld_sig, mainPath);
-    const uintptr_t getframe = ScanLowest(GetAnimFrame_sig, mainPath);
-    const uintptr_t hwbind = ScanLowest(HwEffectBind_sig, mainPath);
-    const uintptr_t animdraw = ScanLowest(AnimDraw_sig, mainPath);
+    ds::sig::ResolveReport anim_report{};
+    ds::sig::ResolveReport shadow_report{};
+    ds::sig::ResolveReport cache_report{};
+    ds::sig::ResolveReport getframe_report{};
+    ds::sig::ResolveReport hwbind_report{};
+    ds::sig::ResolveReport animdraw_report{};
+    const uintptr_t anim = ResolveEntry("render.shadow.anim_dcr", anim_report);
+    const uintptr_t shadow = ResolveEntry("render.shadow.shadow_dcr", shadow_report);
+    const uintptr_t cache = ResolveEntry("render.shadow.cache_world", cache_report);
+    const uintptr_t getframe = ResolveEntry("render.shadow.get_anim_frame", getframe_report);
+    const uintptr_t hwbind = ResolveEntry("render.shadow.hw_effect_bind", hwbind_report);
+    const uintptr_t animdraw = ResolveEntry("render.shadow.anim_draw", animdraw_report);
     SHADOW_TRACE("[render.shadow] resolve gvb={:#x} anim={:#x} shadow={:#x} cache={:#x} "
                  "getframe={:#x} hwbind={:#x} animdraw={:#x}",
                  gvb, anim, shadow, cache, getframe, hwbind, animdraw);
@@ -261,10 +245,10 @@ bool InstallSilhouetteHooks() {
         SetSilhouetteHealthy(false);
         return false;
     }
-    ShadowDCR_sig.target_address = shadow;
-    CacheWorld_sig.target_address = cache;
+    g_shadow_dcr = shadow;
+    g_cache_world = cache;
     if (anim != 0) {
-        AnimDCR_sig.target_address = anim;
+        g_anim_dcr = anim;
     }
     if (!BindSilhouetteHelpers(anim, shadow, gvb)) {
         spdlog::error("[render.shadow] silhouette helper Rel32 failed");
@@ -292,11 +276,11 @@ bool InstallSilhouetteHooks() {
     }
 
     const auto rs = ds::gum::replace(interceptor,
-                                     reinterpret_cast<void *>(ShadowDCR_sig.target_address),
+                                     reinterpret_cast<void *>(g_shadow_dcr),
                                      reinterpret_cast<void *>(&hooked_ShadowDCR),
                                      reinterpret_cast<void **>(&original_ShadowDCR));
     const auto rc = ds::gum::replace(interceptor,
-                                     reinterpret_cast<void *>(CacheWorld_sig.target_address),
+                                     reinterpret_cast<void *>(g_cache_world),
                                      reinterpret_cast<void *>(&hooked_CacheWorld),
                                      reinterpret_cast<void **>(&original_CacheWorld));
     if (rs != GUM_REPLACE_OK || rc != GUM_REPLACE_OK) {

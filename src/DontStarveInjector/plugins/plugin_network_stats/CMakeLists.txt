@@ -3,9 +3,11 @@ ds_add_dynamic_plugin(plugin_network_stats
     plugin_network_stats.cpp
     ClientPingDecode.cpp
     ClientPingHook.cpp
-    ClientPingApi.cpp)
+    ClientPingApi.cpp
+    NetStatsSignatures.cpp)
 target_link_libraries(plugin_network_stats PRIVATE
     spdlog::spdlog
+    ds_signature_provider
     function_relocation)
 target_compile_definitions(plugin_network_stats PRIVATE
     SPDLOG_COMPILED_LIB

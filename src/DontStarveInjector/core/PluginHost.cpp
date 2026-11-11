@@ -4,6 +4,7 @@
 #include "GameInjectorLuaRegistry.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <queue>
 #include <stdexcept>
@@ -66,6 +67,85 @@ bool PluginHost::register_game_injector_export(const char *name, const GiType *t
         return false;
     }
     return ds::plugin::register_game_injector_export(name, types, ntypes, fn);
+}
+
+namespace {
+
+// Structure-only validation: PluginHost must stay linkable without the
+// Injector's SignatureManager (the standalone host tests compile this TU), so it
+// never calls into ds::sig beyond the POD table. The Manager re-validates and is
+// the only place that publishes a provider to consumers.
+bool provider_well_formed(const ds::sig::ProviderV1 *provider) {
+    if (!provider || provider->struct_size != sizeof(ds::sig::ProviderV1) ||
+        provider->interface_version != ds::sig::kProviderInterfaceVersion) {
+        return false;
+    }
+    if (!provider->entry_count || !provider->entry_at || !provider->get_cached ||
+        !provider->extract_from_file || !provider->resolve) {
+        return false;
+    }
+    return provider->entry_count(provider->self) != 0;
+}
+
+bool name_exists(const std::vector<::ds::sig::ProviderV1> &providers, const char *name, uint32_t mask) {
+    for (const auto &provider : providers) {
+        const uint32_t count = provider.entry_count(provider.self);
+        for (uint32_t i = 0; i < count; ++i) {
+            ds::sig::EntryView view{};
+            if (!provider.entry_at(provider.self, i, &view)) {
+                continue;
+            }
+            if (std::strcmp(view.name, name) == 0 && ds::sig::masks_overlap(view.platform_mask, mask)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+bool PluginHost::register_signature_provider(const ds::sig::ProviderV1 *provider) {
+    if (!registration_open_ || !provider_well_formed(provider)) {
+        return false;
+    }
+    // One all-or-nothing check: an empty/duplicate name rejects the whole
+    // provider instead of publishing half of it.
+    const uint32_t count = provider->entry_count(provider->self);
+    for (uint32_t i = 0; i < count; ++i) {
+        ds::sig::EntryView view{};
+        if (!provider->entry_at(provider->self, i, &view)) {
+            return false;
+        }
+        if (view.name[0] == '\0' || view.owner[0] == '\0') {
+            return false;
+        }
+        if (name_exists(providers_, view.name, view.platform_mask) ||
+            name_exists(pending_providers_, view.name, view.platform_mask)) {
+            return false;
+        }
+    }
+    pending_providers_.push_back(*provider);
+    return true;
+}
+
+void PluginHost::publish_module_registration() {
+    for (const auto &provider : pending_providers_) {
+        providers_.push_back(provider);
+    }
+    pending_providers_.clear();
+}
+
+void PluginHost::discard_module_registration() {
+    pending_providers_.clear();
+}
+
+size_t PluginHost::signature_provider_count() const {
+    return providers_.size();
+}
+
+const ds::sig::ProviderV1 *PluginHost::signature_provider(size_t index) const {
+    return index < providers_.size() ? &providers_[index] : nullptr;
 }
 
 void PluginHost::begin_module_registration() {

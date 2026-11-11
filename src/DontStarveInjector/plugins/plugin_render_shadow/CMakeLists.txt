@@ -1,12 +1,14 @@
 # Sun-driven DynamicShadow (Tier A scaffold).
 ds_add_dynamic_plugin(plugin_render_shadow
     plugin_render_shadow.cpp
+    ShadowSignatures.cpp
     SunModel.cpp
     GenerateVBHook.cpp
     SilhouetteBatch.cpp
     SilhouetteMath.cpp
     AnimDrawHook.cpp
     BuildBin.cpp)
+target_link_libraries(plugin_render_shadow PRIVATE ds_signature_provider)
 
 add_custom_command(TARGET plugin_render_shadow POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory

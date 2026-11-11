@@ -3,6 +3,8 @@
 // engine's own stats ring (no engine code is replaced; Windows/Linux x64).
 // Lua face: plugins/plugin_network_stats/ (modinfo + modmain).
 #include "gum_plugin_export.hpp"
+#include "NetStatsSignatures.hpp"
+#include "core/SignatureProviderRegistration.hpp"
 #include "core/PluginModuleAbi.hpp"
 #include "core/PluginHost.hpp"
 
@@ -86,6 +88,10 @@ DS_PLUGIN_MODULE_EXPORT bool ds_plugin_module_init(ds::plugin::PluginHost *host)
     static constexpr GiType kPingTypes[] = {GiType::I32, GiType::CString};
     (void) host->register_game_injector_export("DS_LUAJIT_net_client_ping", kPingTypes,
                                                reinterpret_cast<void *>(&DS_LUAJIT_net_client_ping));
+#if defined(DS_SIG_HAVE_NETWORK_STATS)
+    (void) ds::sig::register_provider_with_host(host, ds::net_stats::signature_provider(),
+                                               "plugin_network_stats");
+#endif
     host->register_plugin(&g_network_stats);
     std::fprintf(stderr, "[plugin_network_stats] module init registered network.stats\n");
     return true;

@@ -3,7 +3,8 @@
 
 
 
-#include "MemorySignature.hpp"
+#include "ShadowSignatures.hpp"
+#include "core/SignatureResolveApi.hpp"
 #include "config/InjectorHostConfig.hpp"
 #include "gum_plugin_export.hpp"
 #include "util/frida_gum_interceptor.hpp"
@@ -47,13 +48,8 @@ bool enabled = false;
 bool ellipse_enabled = true;
 
 
-function_relocation::MemorySignature GenerateVB_sig{
-    "48 89 5C 24 18 48 89 6C 24 20 56 57 41 54 48 83 EC 50 48 8B 41 20 48 8B FA 48 8B F1 8B 90 D4 "
-    "00 00 00",
-    0};
-
-function_relocation::MemorySignature PopulateQuad_sig{
-    "4C 8B DC 48 81 EC A8 00 00 00 48 8B 84 24 D0 00 00 00", 0};
+// Resolved once by InstallGenerateVBHook() (definition in ShadowSignatures.cpp).
+uintptr_t g_generate_vb = 0;
 
 void *Rel32Target(const uint8_t *call) {
     if (call == nullptr || call[0] != 0xE8) {
@@ -65,7 +61,7 @@ void *Rel32Target(const uint8_t *call) {
 }
 
 bool ResolveHelpers() {
-    auto *base = reinterpret_cast<const uint8_t *>(GenerateVB_sig.target_address);
+    auto *base = reinterpret_cast<const uint8_t *>(g_generate_vb);
     get_vert_desc = reinterpret_cast<GetVertDesc_fn>(Rel32Target(base + 0x32));
     alloc_verts = reinterpret_cast<AllocVerts_fn>(Rel32Target(base + 0xAB));
     populate_quad = reinterpret_cast<PopulateQuad_fn>(Rel32Target(base + 0x157));
@@ -196,8 +192,8 @@ bool InstallGenerateVBHook() {
         return false;
     }
     const auto *mainPath = gum_module_get_path(gum_process_get_main_module());
-    if (mainPath == nullptr || !GenerateVB_sig.scan(mainPath)) {
-        spdlog::error("[render.shadow] GenerateVB signature miss");
+    if (mainPath == nullptr) {
+        SHADOW_TRACE("[render.shadow] skip hook: no main module path");
         return false;
     }
     if (std::strstr(mainPath, "dedicated") != nullptr ||
@@ -205,7 +201,12 @@ bool InstallGenerateVBHook() {
         SHADOW_TRACE("[render.shadow] skip hook: dedicated/nullrenderer module");
         return false;
     }
-    (void)PopulateQuad_sig.scan(mainPath);
+    ds::sig::ResolveReport generate_vb{};
+    if (!ds::sig::host_resolve("render.shadow.generate_vb", &generate_vb) || generate_vb.target_va == 0) {
+        spdlog::error("[render.shadow] GenerateVB signature miss ({})", generate_vb.detail);
+        return false;
+    }
+    g_generate_vb = static_cast<uintptr_t>(generate_vb.target_va);
     (void)ResolveHelpers();
 
 
@@ -215,7 +216,7 @@ bool InstallGenerateVBHook() {
         return false;
     }
     const auto r = ds::gum::replace(interceptor,
-                                    reinterpret_cast<void *>(GenerateVB_sig.target_address),
+                                    reinterpret_cast<void *>(g_generate_vb),
                                     reinterpret_cast<void *>(&hooked_GenerateVB),
                                     reinterpret_cast<void **>(&original_GenerateVB));
     if (r != GUM_REPLACE_OK) {
@@ -225,14 +226,14 @@ bool InstallGenerateVBHook() {
     }
     installed = true;
     SHADOW_TRACE("[render.shadow] GenerateVB thin wrap @ {:#x} get_cam={:#x}",
-                 GenerateVB_sig.target_address, reinterpret_cast<uintptr_t>(get_cam));
+                 g_generate_vb, reinterpret_cast<uintptr_t>(get_cam));
 
     return true;
 }
 
 bool IsHookInstalled() noexcept { return installed; }
 uintptr_t GetGenerateVBAddress() noexcept {
-    return installed ? GenerateVB_sig.target_address : 0;
+    return installed ? g_generate_vb : 0;
 }
 
 void SetSunDriveEnabled(bool on) {

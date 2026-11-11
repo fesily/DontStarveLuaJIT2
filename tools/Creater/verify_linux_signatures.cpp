@@ -7,7 +7,10 @@
 #include "NucleusAdapter.hpp"
 #include "ctx.hpp"
 #include "UniqueSignature.hpp"
-#include "util/LinuxGameSignatures.hpp"
+#include "ProviderDesc.hpp"
+#include "CoreVmSignatures.hpp"
+#include "ProfilerSignatures.hpp"
+#include "NetStatsSignatures.hpp"
 
 #include <elf.h>
 #include <sys/mman.h>
@@ -18,6 +21,8 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
+#include <vector>
 #include <spdlog/spdlog.h>
 
 namespace {
@@ -137,14 +142,62 @@ namespace {
         }
     };
 
-    uintptr_t verify_pattern(ElfImage &image, const char *name, const char *pattern) {
-        function_relocation::MemorySignature sig{pattern, 0};
+    // Every Linux definition that the runtime resolves, taken from the SAME
+    // provider tables the Injector and plugins use — the verifier keeps no
+    // pattern list of its own.
+    struct LinuxEntry {
+        const char *provider;
+        const ds::sig::ProviderDesc *desc;
+        const ds::sig::EntryDef *def;
+    };
+
+    std::vector<LinuxEntry> linux_entries() {
+        const ds::sig::ProviderDesc *providers[] = {
+                &ds::core_vm::signature_provider(),
+                &ds::debug_profiler::signature_provider(),
+                &ds::net_stats::signature_provider(),
+        };
+        std::vector<LinuxEntry> entries;
+        for (const auto *desc : providers) {
+            for (size_t i = 0; i < desc->entry_count; ++i) {
+                const auto &def = desc->entries[i];
+                if ((def.platform_mask & ds::sig::kPlatformLinuxX64) == 0 || def.patterns[0] == nullptr) {
+                    continue;
+                }
+                entries.push_back(LinuxEntry{desc->owner, desc, &def});
+            }
+        }
+        return entries;
+    }
+
+    // Verifies one Linux definition against the mapped image: presence, the
+    // definition's own hit rule, and (for FDE entries) that the hit maps to an
+    // instruction boundary in an exact FDE range. The entry's decode verifier is
+    // deliberately not run here: it decodes the *live* module (gum ranges), and this
+    // tool deliberately runs without the game process.
+    uintptr_t verify_pattern(ElfImage &image, const ds::sig::EntryDef &def) {
+        function_relocation::MemorySignature sig{def.patterns[0], 0, /*only_one=*/false};
         sig.log = false;
-        if (!sig.scan(image.module.text.base_address, image.module.text.size)) throw std::runtime_error(std::string{name} + " is missing or ambiguous");
-        const auto entry = function_relocation::resolve_function_entry(image.module, sig.target_address);
-        if (!entry) throw std::runtime_error(std::string{name} + " is not at an instruction boundary in an FDE");
-        std::cout << name << " entry RVA=0x" << std::hex << entry - image.module.details.range.base_address << std::dec << '\n';
-        return entry;
+        sig.scan(image.module.text.base_address, image.module.text.size);
+        if (sig.targets.empty()) throw std::runtime_error(std::string{def.name} + " is missing");
+        if (def.hits_policy == static_cast<int32_t>(ds::sig::HitsPolicy::Unique) && sig.targets.size() != 1)
+            throw std::runtime_error(std::string{def.name} + " is ambiguous");
+        std::ranges::sort(sig.targets);
+        for (const auto raw : sig.targets) {
+            const auto hit = static_cast<uintptr_t>(raw) - static_cast<intptr_t>(def.pattern_offset);
+            uintptr_t target = 0;
+            if (def.resolve_kind == static_cast<int32_t>(ds::sig::ResolveKind::FdeEntry)) {
+                target = function_relocation::resolve_function_entry(image.module, hit);
+                if (target == 0) continue;
+            } else {
+                target = hit;
+            }
+            std::cout << def.name << " entry RVA=0x" << std::hex
+                      << target - image.module.details.range.base_address << std::dec
+                      << " hits=" << sig.targets.size() << '\n';
+            return target;
+        }
+        throw std::runtime_error(std::string{def.name} + " is not at an instruction boundary in an FDE");
     }
 
 }// namespace
@@ -160,12 +213,13 @@ int main(int argc, char **argv) {
     const bool check_cache = argc == 4 && std::string_view{argv[3]} == "--check-cache";
     try {
         ElfImage train{argv[1]}, game{argv[2]};
-        const auto base = verify_pattern(game, "index2adr", ds::linux_signatures::lua_module);
-        verify_pattern(game, "luaopen_getsize", ds::linux_signatures::register_debug_getsize);
-        verify_pattern(game, "execution_error", ds::linux_signatures::execution_error);
-        verify_pattern(game, "FrameProfiler::Push", ds::linux_signatures::profiler_push);
-        verify_pattern(game, "FrameProfiler::Push singleton", ds::linux_signatures::profiler_push_singleton);
-        verify_pattern(game, "FrameProfiler::Pop", ds::linux_signatures::profiler_pop);
+        // Provider patterns first: the same definitions the runtime resolves.
+        uintptr_t base = 0;
+        for (const auto &entry : linux_entries()) {
+            const auto address = verify_pattern(game, *entry.def);
+            if (std::string_view{entry.def->name} == "core.vm.lua_module") base = address;
+        }
+        if (base == 0) throw std::runtime_error("core.vm.lua_module did not resolve");
         const auto scan_range = function_relocation::signature_search_range(game.module, base);
         train.analyze();
         game.analyze();

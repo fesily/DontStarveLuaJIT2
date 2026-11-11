@@ -1,6 +1,7 @@
 // plugin_fps_render — DS_LUAJIT_set_target_fps / get_frame_time_s
 #include "config/InjectorHostConfig.hpp"
-#include "MemorySignature.hpp"
+#include "FpsSignatures.hpp"
+#include "core/SignatureResolveApi.hpp"
 #include "util/inlinehook.hpp"
 #include "disasm.h"
 #include "ScanCtx.hpp"
@@ -19,29 +20,28 @@ namespace {
 float g_frame_time_s = 1.0f / 30.0f;
 float *fps_ptr = nullptr;
 #ifdef _WIN32
-function_relocation::MemorySignature set_notebook_mode{"F3 0F 11 89 D8 01 00 00", -0x3E};
 void set_notebook_mode_config_hook(void *) {}
-function_relocation::MemorySignature set_notebook_mode_config{"80 B9 D4 01 00 00 00", -0x6};
-
 #endif
 
-const char *main_module_path() {
-    return gum_module_get_path(gum_process_get_main_module());
-}
-
+// Replace the four frame-time immediates with pointers into our own block. The
+// definition (and the decoder that proves those four constants are still there)
+// lives in FpsSignatures.cpp; here only the patch mechanics remain.
 bool find_set_notebook_mode_imm() {
 #ifdef _WIN32
+    // Server-only entry: on a client the manager answers NotApplicable, so this
+    // block stays out of the client's way exactly like the previous inline check.
     if (!InjectorCtx::instance()->DontStarveInjectorIsClient) {
-        if (!set_notebook_mode_config.scan(main_module_path())) {
+        ds::sig::ResolveReport config_gate{};
+        if (!ds::sig::host_resolve("fps.render.notebook_config", &config_gate) || config_gate.target_va == 0) {
             return false;
         }
-        Hook((uint8_t *)set_notebook_mode_config.target_address,
-             (uint8_t *)&set_notebook_mode_config_hook);
+        Hook((uint8_t *)config_gate.target_va, (uint8_t *)&set_notebook_mode_config_hook);
     }
-    if (!set_notebook_mode.scan(main_module_path())) {
+    ds::sig::ResolveReport setter{};
+    if (!ds::sig::host_resolve("fps.render.notebook_mode", &setter) || setter.target_va == 0) {
         return false;
     }
-    function_relocation::disasm ds{(uint8_t *)set_notebook_mode.target_address, 256};
+    function_relocation::disasm ds{(uint8_t *)setter.target_va, 256};
     int offset = 0;
     int movss[] = {
         1023969417, // 1/30
@@ -74,7 +74,10 @@ bool find_set_notebook_mode_imm() {
             break;
         }
     }
-    GumAddressSpec spec{(void *)set_notebook_mode.target_address, INT_MAX / 2};
+    if (offset != 4) {
+        return false;
+    }
+    GumAddressSpec spec{(void *)setter.target_va, INT_MAX / 2};
     float *ptr = (float *)gum_memory_allocate_near(&spec, 256, sizeof(void *), GUM_PAGE_RW);
     if (!ptr) {
         return false;

@@ -19,7 +19,8 @@
 //                         matching macOS reference at 0x001e30e0.
 
 #include "config/InjectorHostConfig.hpp"
-#include "MemorySignature.hpp"
+#include "NetworkSimSignatures.hpp"
+#include "core/SignatureResolveApi.hpp"
 #include "NetSimStats.hpp"
 
 #include <cstddef>
@@ -385,26 +386,17 @@ void GameNetworkSimInstallHook(GumInterceptor* interceptor) {
     //   48 89 44 24 58         (MOV [RSP+58], RAX)
     //   41 8B 39               (MOV EDI, [R9] = numberOfBitsUsed)
     // ------------------------------------------------------------------
-    static function_relocation::MemorySignature send_sig{
-        "40 53 55 56 57 41 54 41 55 48 83 EC 68 "
-        "48 8B 05 ?? ?? ?? ?? "
-        "48 33 C4 "
-        "48 89 44 24 58 "
-        "41 8B 39 48",
-        0
-    };
-    send_sig.only_one = true;
-    send_sig.log      = true;
+    ds::sig::ResolveReport send{};
+    const bool has_send = ds::sig::host_resolve("network.sim.send_bitstream", &send) && send.target_va != 0;
 
-    if (send_sig.scan(nullptr)) {
+    if (has_send) {
         auto r = ds::gum::replace(
             interceptor,
-            reinterpret_cast<void*>(send_sig.target_address),
+            reinterpret_cast<void*>(send.target_va),
             reinterpret_cast<void*>(&hooked_SendBitStream),
             reinterpret_cast<void**>(&original_SendBitStream));
         if (r == GUM_REPLACE_OK) {
-            spdlog::info("[NetSim] hooked SendBitStream at {:x}",
-                         send_sig.target_address);
+            spdlog::info("[NetSim] hooked SendBitStream at {:x}", send.target_va);
         } else {
             spdlog::error("[NetSim] failed to hook SendBitStream: {}",
                           static_cast<int>(r));
@@ -436,33 +428,17 @@ void GameNetworkSimInstallHook(GumInterceptor* interceptor) {
     //   33 D2                  XOR EDX, EDX
     //   48 89 41 08            MOV [RCX+8], RAX
     // ------------------------------------------------------------------
-    static function_relocation::MemorySignature dtor_sig{
-        "48 89 5C 24 10 "
-        "48 89 74 24 18 "
-        "57 "
-        "48 83 EC 20 "
-        "48 8D 05 ?? ?? ?? ?? "
-        "41 B9 03 00 00 00 "
-        "45 33 C0 "
-        "48 89 01 "
-        "48 8D 05 ?? ?? ?? ?? "
-        "33 D2 "
-        "48 89 41 08 "
-        "48",
-        0
-    };
-    dtor_sig.only_one = true;
-    dtor_sig.log      = true;
+    ds::sig::ResolveReport dtor{};
+    const bool has_dtor = ds::sig::host_resolve("network.sim.reliability_dtor", &dtor) && dtor.target_va != 0;
 
-    if (dtor_sig.scan(nullptr)) {
+    if (has_dtor) {
         auto r = ds::gum::replace(
             interceptor,
-            reinterpret_cast<void*>(dtor_sig.target_address),
+            reinterpret_cast<void*>(dtor.target_va),
             reinterpret_cast<void*>(&hooked_ReliabilityLayerDtor),
             reinterpret_cast<void**>(&original_ReliabilityLayerDtor));
         if (r == GUM_REPLACE_OK) {
-            spdlog::info("[NetSim] hooked ~ReliabilityLayer at {:x}",
-                         dtor_sig.target_address);
+            spdlog::info("[NetSim] hooked ~ReliabilityLayer at {:x}", dtor.target_va);
         } else {
             spdlog::error("[NetSim] failed to hook ~ReliabilityLayer: {}",
                           static_cast<int>(r));

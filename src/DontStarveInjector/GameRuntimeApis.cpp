@@ -2,6 +2,7 @@
 // fps.render → plugin_fps_render; network.tick → plugin_network_tick.
 #include "config/InjectorHostConfig.hpp"
 #include "MemorySignature.hpp"
+#include "core/SignatureManager.hpp"
 #include "util/inlinehook.hpp"
 #include "util/PathText.hpp"
 
@@ -53,14 +54,16 @@ DONTSTARVEINJECTOR_GAME_API const char *DS_LUAJIT_get_mod_version() {
 
 static void replace_set_thread_name() {
 #ifdef _WIN32
-    function_relocation::MemorySignature set_thread_name_func{"B9 88 13 6D 40", -0x24};
-    if (set_thread_name_func.scan(gum_module_get_path(gum_process_get_main_module()))) {
+    // Pattern lives in core/InjectorSignatures.cpp; the provider is registered
+    // before LoadGameModConfig() calls us.
+    ds::sig::ResolveReport report{};
+    if (ds::sig::resolve_entry("injector.set_thread_name", &report) && report.target_va != 0) {
         static auto set_thread_name = +[](uint32_t /*thread_id*/, const char *name) {
             if (name) {
                 SetThreadDescription(GetCurrentThread(), std::filesystem::path{name}.c_str());
             }
         };
-        Hook((uint8_t *)set_thread_name_func.target_address, (uint8_t *)set_thread_name);
+        Hook((uint8_t *)report.target_va, (uint8_t *)set_thread_name);
     }
 #endif
 }

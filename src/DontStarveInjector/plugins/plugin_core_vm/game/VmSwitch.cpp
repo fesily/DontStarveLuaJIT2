@@ -8,7 +8,6 @@
 #include "config/ConfigSession.hpp"
 
 #include "DontStarveSignature.hpp"
-#include "GameSignature.hpp"
 #include "util/inlinehook.hpp"
 #include "util/platform.hpp"
 #include "util/lua_io2.hpp"

@@ -4,7 +4,8 @@
 #include "game/GameLuaContext.hpp"
 #include "game/GameLuaInternal.hpp"
 #include "DontStarveSignature.hpp"
-#include "GameSignature.hpp"
+#include "CoreVmSignatures.hpp"
+#include "core/SignatureResolveApi.hpp"
 #include "util/inlinehook.hpp"
 #include "util/frida_gum_interceptor.hpp"
 #include "util/FastHook.hpp"
@@ -345,7 +346,7 @@ struct GameLuaContextImpl : GameLuaContext {
         for (auto *_name: hookTargets) {
             auto &name = *_name;
             auto offset = signatures.funcs.at(name).offset;
-            auto target = (uint8_t *) GSIZE_TO_POINTER(luaModuleSignature.target_address + GPOINTER_TO_INT(offset));
+            auto target = (uint8_t *) GSIZE_TO_POINTER(ds::core_vm::lua_module_base() + GPOINTER_TO_INT(offset));
 #ifdef _WIN32
             if (name == "lua_getstack"sv &&
                 target[0] == 0x0f && target[1] == 0xb6 && target[4] == 0xc3) {
@@ -467,17 +468,12 @@ struct GameLuaContextImpl : GameLuaContext {
         // Replace the whole function with our own implementation (same observable contract,
         // no GC-layout read) via FastHook instead of writing a one-way `ret`.
         // Unconditional (every VM); there is deliberately no revert path.
-        const auto register_getsize_entry =
-#ifdef __linux__
-                luaRegisterDebugGetsizeSignature.scan_function(mainPath.c_str());
-#else
-                luaRegisterDebugGetsizeSignature.scan(mainPath.c_str());
-#endif
-        if (register_getsize_entry) {
-            ds::core_vm::detail::hook_register_debug_getsize(
-                    (void *) luaRegisterDebugGetsizeSignature.target_address);
+        ds::sig::ResolveReport getsize{};
+        if (ds::sig::host_resolve("core.vm.register_debug_getsize", &getsize) && getsize.target_va != 0) {
+            ds::core_vm::detail::hook_register_debug_getsize((void *) getsize.target_va);
         } else {
-            spdlog::warn("register_debug_getsize signature not found; getsize may still register");
+            spdlog::warn("register_debug_getsize signature not found ({}); getsize may still register",
+                         getsize.detail);
         }
 #endif
 
@@ -485,15 +481,14 @@ struct GameLuaContextImpl : GameLuaContext {
         // own error display reads its static message block / flag, so the VM's
         // lua_setexecutionerror / getexecutionerror / clearexecutionerror must write through
         // those same slots. Cross-platform note: those two slots are 64-bit engine globals,
-        // resolved from the pattern in GameSignature.cpp (docs/engine-execerror-slots.md).
+        // resolved from the definition in CoreVmSignatures.cpp (docs/engine-execerror-slots.md).
         // A missing window or a VM without the exports keeps the VM's private storage, i.e.
         // the write-through stays disabled (hooks NULL).
-        luaSetExecutionErrorSignature.only_one = false;
-        luaSetExecutionErrorSignature.targets.clear();
-        luaSetExecutionErrorSignature.scan(mainPath.c_str());
-        if (luaSetExecutionErrorSignature.targets.size() == 1) {
+        ds::sig::ResolveReport execution_error{};
+        if (ds::sig::host_resolve("core.vm.execution_error", &execution_error) &&
+            execution_error.target_va != 0) {
             const auto storage = ds::core_vm::detail::decode_execution_error_storage(
-                    luaSetExecutionErrorSignature.targets.front());
+                    execution_error.target_va);
             auto *const buffer = reinterpret_cast<char **>(
                     find_export_by_name(LuaModule, "extern_error_message_buffer"));
             auto *const flag = reinterpret_cast<const char ***>(
@@ -509,8 +504,8 @@ struct GameLuaContextImpl : GameLuaContext {
                         static_cast<bool>(storage), buffer != nullptr, flag != nullptr);
             }
         } else {
-            spdlog::warn("execution-error storage: {} pattern hit(s) in {}; nothing written",
-                         luaSetExecutionErrorSignature.targets.size(), mainPath);
+            spdlog::warn("execution-error storage: pattern not resolved in {} ({}); nothing written", mainPath,
+                         execution_error.detail);
         }
     }
 

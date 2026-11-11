@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config/ConfigSchema.hpp"
+#include "SignatureProvider.hpp"
 #include "PluginTypes.hpp"
 #include "GameInjectorLuaRegistry.hpp"
 #include "GiTypeTraits.hpp"
@@ -65,6 +66,18 @@ public:
         using Sig = ds::plugin::GiSignature<Fn>;
         return register_game_injector_export(name, Sig::types, Sig::ntypes, reinterpret_cast<void *>(fn));
     }
+    // Fixed-signature provider registration (module_init window). The table is
+    // copied; it must stay valid for the process lifetime. Registration is
+    // staged and only published after the module's init succeeded, so a module
+    // that fails init never leaves a provider behind.
+    DS_PLUGIN_HOST_API bool register_signature_provider(const ds::sig::ProviderV1 *provider);
+    DS_PLUGIN_HOST_API void publish_module_registration();
+    DS_PLUGIN_HOST_API void discard_module_registration();
+    // Published providers, for the Injector to adopt into its SignatureManager
+    // (the single runtime registry). Empty in the DS_PLUGIN_HOST_STATIC tests.
+    DS_PLUGIN_HOST_API size_t signature_provider_count() const;
+    DS_PLUGIN_HOST_API const ds::sig::ProviderV1 *signature_provider(size_t index) const;
+
     DS_PLUGIN_HOST_API void begin_module_registration();
     DS_PLUGIN_HOST_API void end_module_registration();
     DS_PLUGIN_HOST_API ConfigSchemaRegistry &option_schema();
@@ -107,6 +120,9 @@ private:
     PluginContext last_ctx_{};
     bool resolved_ = false;
     ConfigSchemaRegistry option_schema_;
+    // Staged during module_init; published only when init reported success.
+    std::vector<::ds::sig::ProviderV1> pending_providers_;
+    std::vector<::ds::sig::ProviderV1> providers_;
     // Production: closed until DynamicPluginLoader opens around module_init.
     // DS_PLUGIN_HOST_STATIC tests: open by default so graph tests stay simple.
 #if defined(DS_PLUGIN_HOST_STATIC)

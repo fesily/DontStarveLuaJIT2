@@ -1,9 +1,11 @@
 # fps.render — TargetRenderFPS / frame budget (Win Gum signatures).
 ds_add_dynamic_plugin(plugin_fps_render
     plugin_fps_render.cpp
-    FpsRenderApi.cpp)
+    FpsRenderApi.cpp
+    FpsSignatures.cpp)
 target_link_libraries(plugin_fps_render PRIVATE
     spdlog::spdlog
+    ds_signature_provider
     function_relocation)
 target_compile_definitions(plugin_fps_render PRIVATE
     SPDLOG_COMPILED_LIB
