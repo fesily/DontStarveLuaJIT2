@@ -1,6 +1,7 @@
 // game/GameLuaContextGame.cpp — in-process game Lua context + instance
 #include "game/GameLuaContextLua51.hpp"
 #include "game/GameLuaInternal.hpp"
+#include "game/LuaModDump.hpp"
 #include "util/lua51_object.hpp"
 #include "util/frida_gum_interceptor.hpp"
 #include "lua_debugger_helper.hpp"
@@ -8,7 +9,6 @@
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
-#include <list>
 #include <algorithm>
 #include <vector>
 #include <string>
@@ -23,6 +23,212 @@
 #endif
 #include "util/PathText.hpp"
 
+namespace {
+
+constexpr auto kDumpOutputDir = "dumped_lua_mods/";
+
+std::vector<std::string> g_dump_mod_names;
+struct DumpSink {
+    std::size_t size = 0;          // bytes in the committed main file
+    std::size_t last_payload = 0;  // bytes written by the previous lua_load call
+};
+std::unordered_map<std::filesystem::path, DumpSink, ds::util::PathHash> g_dump_sinks;
+std::mutex g_dump_mutex;
+std::once_flag g_dump_init_once;
+bool g_dump_enabled = false;
+
+// The engine names file loads "../mods/<mod>/<file>" (optionally '@'-prefixed, the
+// Lua chunkname convention); loads that did not come from a file pass the code block
+// itself as the chunkname, which is not a usable path. Map the former under the dump
+// root and sink everything else into a single thunk.lua.
+std::filesystem::path ChunkDumpPath(const char *chunkname) {
+    constexpr std::string_view mods_prefix = "../mods/";
+    // Characters the filesystem rejects: a chunkname hitting one is not a path.
+    constexpr std::string_view invalid_path_chars = "\\:*?\"<>|\r\n\t";
+    std::string_view name{chunkname ? chunkname : ""};
+    if (!name.empty() && name.front() == '@') name.remove_prefix(1);
+    if (name.starts_with(mods_prefix)) {
+        name.remove_prefix(mods_prefix.size());
+        if (!name.empty() && name.find_first_of(invalid_path_chars) == std::string_view::npos) {
+            auto path = std::filesystem::path{kDumpOutputDir} / std::string{name};
+            if (ds::util::path_to_utf8(path).size() <= 255) {
+                return path;
+            }
+        }
+    }
+    return std::filesystem::path{kDumpOutputDir} / "thunk.lua";
+}
+
+// Encrypted/obfuscated mod loaders (hercules / MyxlHttps family, e.g. workshop-3014076942)
+// feed the decrypted source through lua_load in tiny slices under the file's chunkname.
+// Write every slice straight to disk (no in-memory list): a parser error or an OOM kill
+// then leaves everything read so far behind.
+//
+// Two shapes are supported:
+//  - streamed: many lua_load calls of tiny payloads for one file -> append to the main
+//    file slice by slice (previous payload <= stream_piece_max).
+//  - fresh: a new chunk for a file -> stream into "<path>.partN" and commit it over the
+//    main file at EOI only when it is at least as large as what is already there. A
+//    failed parse leaves the .partN file (evidence) without destroying the previous
+//    complete dump.
+void WriteChunkPiece(ds::core_vm::detail::LuaModDumpCall &call, const char *data,
+                     std::size_t size) {
+    if (!data || size == 0) {
+        return;
+    }
+    constexpr std::size_t stream_piece_max = 32;
+    std::lock_guard guard{g_dump_mutex};
+    auto output_path = ChunkDumpPath(call.chunkname);
+    DumpSink &sink = g_dump_sinks[output_path];
+    if (!call.started) {
+        call.started = true;
+        call.continuation = sink.last_payload != 0 && sink.last_payload <= stream_piece_max;
+        std::filesystem::create_directories(output_path.parent_path());
+        if (call.continuation) {
+            // Re-sync after a previous partial (failed) append.
+            std::error_code size_ec;
+            auto on_disk = std::filesystem::file_size(output_path, size_ec);
+            if (!size_ec) {
+                sink.size = on_disk;
+            }
+            call.part_path = output_path;
+            call.part.open(call.part_path,
+                           std::ios_base::binary | std::ios_base::out | std::ios_base::app);
+        } else {
+            static unsigned long dump_seq = 0;
+            call.part_path = output_path;
+            call.part_path += ".part" + std::to_string(++dump_seq);
+            call.part.open(call.part_path,
+                           std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
+        }
+        if (!call.part) {
+            spdlog::warn("Cannot open lua chunk dump file: {}", call.part_path);
+            return;
+        }
+    }
+    if (!call.part) {
+        return;
+    }
+    call.part.write(data, static_cast<std::streamsize>(size));
+    // Keep the bytes in the kernel page cache instead of the stream buffer, so an OOM
+    // kill or abort still leaves everything read so far on disk.
+    call.part.flush();
+    call.call_bytes += size;
+}
+
+void FinishChunkDump(ds::core_vm::detail::LuaModDumpCall &call) {
+    std::lock_guard guard{g_dump_mutex};
+    if (!call.started) {
+        return;
+    }
+    call.started = false;
+    auto output_path = ChunkDumpPath(call.chunkname);
+    if (call.part.is_open()) {
+        call.part.close();
+    }
+    DumpSink &sink = g_dump_sinks[output_path];
+    if (call.call_bytes == 0) {
+        if (!call.continuation) {
+            std::error_code ec;
+            std::filesystem::remove(call.part_path, ec);
+        }
+        sink.last_payload = 0;
+        return;
+    }
+    if (call.continuation) {
+        sink.size += call.call_bytes;
+    } else if (call.call_bytes >= sink.size) {
+        std::error_code ec;
+        std::filesystem::remove(output_path, ec);
+        std::filesystem::rename(call.part_path, output_path, ec);
+        if (ec) {
+            spdlog::warn("Cannot commit lua chunk dump {} -> {}: {}", call.part_path,
+                         output_path, ec.message());
+        } else {
+            sink.size = call.call_bytes;
+        }
+    } else {
+        std::error_code ec;
+        std::filesystem::remove(call.part_path, ec);
+    }
+    sink.last_payload = call.call_bytes;
+}
+
+void InitDumpConfig() {
+    std::string raw;
+    {
+        InjectorConfig::EnvOrCmdOptValue dump_opts{"dump_lua_mods"};
+        if (const char *value = static_cast<const char *>(dump_opts); value && *value) {
+            raw = value;
+        }
+    }
+    std::string_view sv{raw};
+    size_t start = 0;
+    while (start <= sv.size()) {
+        size_t sep = sv.find(';', start);
+        if (sep == std::string_view::npos) {
+            sep = sv.size();
+        }
+        auto part = sv.substr(start, sep - start);
+        if (!part.empty()) {
+            g_dump_mod_names.emplace_back(part);
+        }
+        if (sep == sv.size()) {
+            break;
+        }
+        start = sep + 1;
+    }
+    g_dump_enabled = !g_dump_mod_names.empty();
+    if (!g_dump_enabled) {
+        return;
+    }
+    // Reset the dump tree once per process, not per Lua state. The engine creates several
+    // states and each one re-loads the mods, so wiping per state erased earlier dumps.
+    std::lock_guard guard{g_dump_mutex};
+    g_dump_sinks.clear();
+    std::filesystem::remove_all(kDumpOutputDir);
+}
+
+} // namespace
+
+namespace ds::core_vm::detail {
+
+bool LuaModDumpEnabled() {
+    std::call_once(g_dump_init_once, InitDumpConfig);
+    return g_dump_enabled;
+}
+
+const std::vector<std::string> &LuaModDumpModNames() {
+    std::call_once(g_dump_init_once, InitDumpConfig);
+    return g_dump_mod_names;
+}
+
+bool LuaModDumpShouldDump(const char *chunkname) {
+    if (!LuaModDumpEnabled()) {
+        return false;
+    }
+    std::string_view name{chunkname ? chunkname : ""};
+    for (const auto &modname: g_dump_mod_names) {
+        if (name.find(modname) != std::string_view::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *LuaModDumpReader(lua_State *L, void *ud, size_t *sz) {
+    auto *call = static_cast<LuaModDumpCall *>(ud);
+    auto buf = call->reader(L, call->data, sz);
+    if (buf && *sz > 0) {
+        WriteChunkPiece(*call, buf, *sz);
+    } else {
+        FinishChunkDump(*call);
+    }
+    return buf;
+}
+
+} // namespace ds::core_vm::detail
+
 struct GameLuaContextGame : GameLua51Context {
     GameLuaContextGame(GameLuaType type)
         : GameLua51Context{"<Game>", type} {
@@ -33,17 +239,6 @@ struct GameLuaContextGame : GameLua51Context {
         // game lua module is already loaded by game
         interceptor = InjectorCtx::instance()->GetGumInterceptor();
         LuaModule = gum_process_get_main_module();
-        InjectorConfig::EnvOrCmdOptValue dump_opts{"dump_lua_mods"};
-        auto dump_mods_str = static_cast<const char *>(dump_opts);
-        if (dump_mods_str && strlen(dump_mods_str) > 0) {
-            //split by ';'
-            std::string_view sv{dump_mods_str};
-            std::vector<std::string_view> outs;
-            split_string(sv, outs, ';');
-            for (const auto &modname: outs) {
-                dump_mod_names.emplace_back(std::string{modname});
-            }
-        }
         return true;
     }
     void luaL_openlibs_hooker(lua_State *L) override {
@@ -64,109 +259,11 @@ struct GameLuaContextGame : GameLua51Context {
             }
         }
         GameLua51Context::luaL_openlibs_hooker(L);
-        if (!dump_mod_names.empty()) {
-            // rm -rf dump directory
-            std::filesystem::remove_all(dump_mod_output_directory);
-            for (const auto &modname: dump_mod_names) {
-                gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, modname);
-            }
+        for (const auto &modname: ds::core_vm::detail::LuaModDumpModNames()) {
+            gameLuaInjectorFramework.forceEnabledLuaMod(*this, L, modname);
         }
     }
 
-    struct LuaReaderWrapper {
-        lua_Reader reader;
-        void *data;  // caller's reader data (must be forwarded)
-        const char *chunkname;
-        GameLuaContextGame *ctx;
-        std::list<std::string> buffers;
-    };
-
-    // The engine names file loads "../mods/<mod>/<file>" (optionally '@'-prefixed, the
-    // Lua chunkname convention); loads that did not come from a file pass the code block
-    // itself as the chunkname, which is not a usable path. Map the former under the dump
-    // root and sink everything else into a single thunk.lua.
-    static std::filesystem::path ChunkDumpPath(const char *chunkname) {
-        constexpr std::string_view mods_prefix = "../mods/";
-        // Characters the filesystem rejects: a chunkname hitting one is not a path.
-        constexpr std::string_view invalid_path_chars = "\\:*?\"<>|\r\n\t";
-        std::string_view name{chunkname ? chunkname : ""};
-        if (!name.empty() && name.front() == '@') name.remove_prefix(1);
-        if (name.starts_with(mods_prefix)) {
-            name.remove_prefix(mods_prefix.size());
-            if (!name.empty() && name.find_first_of(invalid_path_chars) == std::string_view::npos) {
-                auto path = std::filesystem::path{dump_mod_output_directory} / std::string{name};
-                if (ds::util::path_to_utf8(path).size() <= 255) {
-                    return path;
-                }
-            }
-        }
-        return std::filesystem::path{dump_mod_output_directory} / "thunk.lua";
-    }
-
-    struct DumpState {
-        std::size_t size = 0;          // bytes already dumped for this output path
-        std::size_t last_payload = 0;  // size of the previous lua_load payload
-    };
-
-    // Encrypted/obfuscated mod loaders (hercules / MyxlHttps family, e.g. workshop-3014076942)
-    // feed the decrypted source through lua_load in tiny slices under the file's chunkname:
-    // the slices of one pass concatenate to the complete source, and every slice would
-    // otherwise truncate the dump of the previous one. So slices are appended while they keep
-    // coming; a payload at least as large as the dump so far is a complete chunk and replaces
-    // it; a stray slice after a complete dump is dropped instead of shrinking real source.
-    void WriteChunkDump(const std::string &chunkname, const std::list<std::string> &buffers) {
-        constexpr std::size_t stream_piece_max = 32;
-        std::size_t total = 0;
-        for (const auto &b: buffers) {
-            total += b.size();
-        }
-        if (total == 0) {
-            return;
-        }
-        std::lock_guard guard{dump_mutex};
-        auto output_path = ChunkDumpPath(chunkname.c_str());
-        DumpState &state = dump_states[output_path];
-        const bool streamed = state.last_payload != 0 && state.last_payload <= stream_piece_max;
-        const bool append = streamed && total <= state.size;
-        if (!append && total < state.size) {
-            return;
-        }
-        std::filesystem::create_directories(output_path.parent_path());
-        auto mode = std::ios_base::binary |
-                    (append ? std::ios_base::app : std::ios_base::out | std::ios_base::trunc);
-        std::ofstream dump_file(output_path, mode);
-        if (!dump_file) {
-            spdlog::warn("Cannot open lua chunk dump file: {}",
-                         output_path);
-            return;
-        }
-        for (const auto &b: buffers) {
-            dump_file << b;
-        }
-        state.size = append ? state.size + total : total;
-        state.last_payload = total;
-    }
-
-    static const char *myReader(lua_State *L, void *ud, size_t *sz) {
-        LuaReaderWrapper *wrapper = (LuaReaderWrapper *) ud;
-        auto buf = wrapper->reader(L, wrapper->data, sz);
-        if (buf && *sz > 0) {
-            wrapper->buffers.emplace_back(buf, *sz);
-        } else {
-            // complete reading: `buffers` holds every piece of this lua_load call
-            wrapper->ctx->WriteChunkDump(wrapper->chunkname, wrapper->buffers);
-        }
-        return buf;
-    }
-
-    bool ShouldDumpMod(const std::string_view &chunkname) {
-        for (const auto &modname: dump_mod_names) {
-            if (chunkname.find(modname) != std::string_view::npos) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     void LoadMyLuaApi() override {
         GameLua51Context::LoadMyLuaApi();
@@ -230,27 +327,26 @@ struct GameLuaContextGame : GameLua51Context {
         //     auto ctx = static_cast<GameLuaContextGame *>(&GetGameLuaContext());
         //     return ctx->api._lua_load(L, reader, data, chunkname);
         // };
-        if (dump_mod_names.empty()) return;
+        if (!ds::core_vm::detail::LuaModDumpEnabled()) return;
         // game mode (engine 5.1): every buffer/file load funnels into lua_load.
         // The wrapper carries the caller's reader data (non-null for the engine's
         // lauxlib paths), so buffer/file loads are dumped too, not just reader-less ones.
         HOOK_LUA_API(lua_load) + [](lua_State *L, lua_Reader reader, void *data,
                                     const char *chunkname) {
-            auto ctx = static_cast<GameLuaContextGame *>(&GetGameLuaContext());
-            if (!ctx->ShouldDumpMod(chunkname)) {
-                return ctx->api._lua_load(L, reader, data, chunkname);
+            if (!ds::core_vm::detail::LuaModDumpShouldDump(chunkname)) {
+                return (*currentCtx)->_lua_load(L, reader, data, chunkname);
             }
             // One wrapper per lua_load call. Obfuscated mod loaders re-enter lua_load while
             // this call is still draining its reader (the reader is backed by Lua), and a
             // shared/thread_local wrapper would be cleared mid-drain — losing every piece
             // but the last, which is how a dump ends up holding just the file tail. The
             // nested call builds its own wrapper and dumps its own chunk.
-            LuaReaderWrapper wrapper;
-            wrapper.reader = reader;
-            wrapper.data = data;  // caller's data, captured before forwarding our wrapper
-            wrapper.chunkname = chunkname;
-            wrapper.ctx = ctx;
-            return ctx->api._lua_load(L, &myReader, &wrapper, chunkname);
+            ds::core_vm::detail::LuaModDumpCall call;
+            call.reader = reader;
+            call.data = data;  // caller's data, captured before forwarding our wrapper
+            call.chunkname = chunkname;
+            return (*currentCtx)->_lua_load(L, &ds::core_vm::detail::LuaModDumpReader, &call,
+                                           chunkname);
         };
     }
 
@@ -367,10 +463,6 @@ struct GameLuaContextGame : GameLua51Context {
     static GumAddress GameFindExportByName(GumModule *self, const gchar *symbol_name);
     std::unordered_map<std::string, GumAddress> exports;
     GumInterceptor *interceptor = nullptr;
-    std::list<std::string> dump_mod_names;
-    std::unordered_map<std::filesystem::path, DumpState, ds::util::PathHash> dump_states;
-    std::mutex dump_mutex;
-    constexpr static auto dump_mod_output_directory = "dumped_lua_mods/";
 };
 
 
