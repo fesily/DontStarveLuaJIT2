@@ -1,7 +1,6 @@
 #include "config/CascadeEngine.hpp"
 #include "config/ConfigSchema.hpp"
-#include <cstdio>
-#include "support/test_assert.hpp"
+#include <doctest/doctest.h>
 
 using namespace ds::plugin;
 using namespace ds::config;
@@ -15,10 +14,10 @@ static OptionSchemaEntry bool_key(const char *k, bool def, ConfigSourceMask src)
     return e;
 }
 
-static void test_whitelist_blocks_env() {
+TEST_CASE("test_config_source_whitelist/whitelist_blocks_env") {
     ConfigSchemaRegistry reg;
     // SaveFile only
-    DS_REQUIRE(reg.add(bool_key("EnableNetSim", false,
+    REQUIRE(reg.add(bool_key("EnableNetSim", false,
         static_cast<ConfigSourceMask>(ConfigSource::SaveFile) |
         static_cast<ConfigSourceMask>(ConfigSource::ModinfoDefault))));
 
@@ -30,23 +29,22 @@ static void test_whitelist_blocks_env() {
     ConfigView save;
     save["EnableNetSim"] = ConfigValue::boolean(true);
     auto s1 = apply_partial(reg, ConfigSource::SaveFile, save, view, prov);
-    DS_REQUIRE(s1.applied == 1);
-    DS_REQUIRE(view["EnableNetSim"].b == true);
-    DS_REQUIRE(prov["EnableNetSim"] == ConfigSource::SaveFile);
+    REQUIRE_EQ(s1.applied, 1);
+    REQUIRE_EQ(view["EnableNetSim"].b, true);
+    REQUIRE_EQ(prov["EnableNetSim"], ConfigSource::SaveFile);
 
     ConfigView env;
     env["EnableNetSim"] = ConfigValue::boolean(false);
     auto s2 = apply_partial(reg, ConfigSource::EnvOrCmd, env, view, prov);
-    DS_REQUIRE(s2.ignored_source == 1);
-    DS_REQUIRE(s2.applied == 0);
-    DS_REQUIRE(view["EnableNetSim"].b == true); // unchanged
-    DS_REQUIRE(prov["EnableNetSim"] == ConfigSource::SaveFile);
-    printf("PASS: whitelist_blocks_env\n");
+    REQUIRE_EQ(s2.ignored_source, 1);
+    REQUIRE_EQ(s2.applied, 0);
+    REQUIRE_EQ(view["EnableNetSim"].b, true); // unchanged
+    REQUIRE_EQ(prov["EnableNetSim"], ConfigSource::SaveFile);
 }
 
-static void test_priority_when_all_allowed() {
+TEST_CASE("test_config_source_whitelist/priority_when_all_allowed") {
     ConfigSchemaRegistry reg;
-    DS_REQUIRE(reg.add(bool_key("NetworkOpt", true, kConfigSourceAll)));
+    REQUIRE(reg.add(bool_key("NetworkOpt", true, kConfigSourceAll)));
     ConfigView view;
     std::unordered_map<std::string, ConfigSource> prov;
 
@@ -55,31 +53,21 @@ static void test_priority_when_all_allowed() {
 
     ConfigView s; s["NetworkOpt"] = ConfigValue::boolean(false);
     apply_partial(reg, ConfigSource::SaveFile, s, view, prov);
-    DS_REQUIRE(view["NetworkOpt"].b == false);
+    REQUIRE_EQ(view["NetworkOpt"].b, false);
 
     ConfigView e; e["NetworkOpt"] = ConfigValue::boolean(true);
     apply_partial(reg, ConfigSource::EnvOrCmd, e, view, prov);
-    DS_REQUIRE(view["NetworkOpt"].b == true);
-    DS_REQUIRE(prov["NetworkOpt"] == ConfigSource::EnvOrCmd);
-    printf("PASS: priority_when_all_allowed\n");
+    REQUIRE_EQ(view["NetworkOpt"].b, true);
+    REQUIRE_EQ(prov["NetworkOpt"], ConfigSource::EnvOrCmd);
 }
 
-static void test_unknown_key_ignored() {
+TEST_CASE("test_config_source_whitelist/unknown_key_ignored") {
     ConfigSchemaRegistry reg;
     ConfigView view;
     std::unordered_map<std::string, ConfigSource> prov;
     ConfigView partial;
     partial["NotInSchema"] = ConfigValue::boolean(true);
     auto st = apply_partial(reg, ConfigSource::SaveFile, partial, view, prov);
-    DS_REQUIRE(st.ignored_unknown == 1);
-    DS_REQUIRE(view.count("NotInSchema") == 0);
-    printf("PASS: unknown_key_ignored\n");
-}
-
-int main() {
-    test_whitelist_blocks_env();
-    test_priority_when_all_allowed();
-    test_unknown_key_ignored();
-    printf("ALL PASS: config_source_whitelist\n");
-    return 0;
+    REQUIRE_EQ(st.ignored_unknown, 1);
+    REQUIRE_EQ(view.count("NotInSchema"), 0);
 }

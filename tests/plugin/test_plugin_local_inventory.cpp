@@ -1,12 +1,11 @@
 #include "plugins/plugin_manager/PluginLocalInventory.hpp"
 #include "plugins/plugin_manager/PluginPinConfig.hpp"
 
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <optional>
 #include <string>
-#include "support/test_assert.hpp"
+#include <doctest/doctest.h>
 
 using namespace ds::plugin;
 namespace fs = std::filesystem;
@@ -21,9 +20,9 @@ static fs::path temp_dir(const char *name) {
 
 static void write_text(const fs::path &p, const std::string &body) {
     std::ofstream out(p, std::ios::binary);
-    DS_REQUIRE(out.is_open());
+    REQUIRE(out.is_open());
     out << body;
-    DS_REQUIRE(out);
+    REQUIRE(out);
 }
 
 // Package layout is the only supported one: fixtures write plugins/<stem>/<member>.
@@ -34,7 +33,7 @@ static void write_pkg_text(const fs::path &plugins_dir, const char *stem, const 
     write_text(p, body);
 }
 
-static void test_scan_meta_and_module() {
+TEST_CASE("test_plugin_local_inventory/scan_meta_and_module") {
     auto dir = temp_dir("ds_plugin_inv_meta");
     write_pkg_text(dir, "plugin_dummy", "plugin_dummy.meta.json",
                R"({
@@ -48,38 +47,35 @@ static void test_scan_meta_and_module() {
     write_pkg_text(dir, "plugin_dummy", "plugin_dummy.dll", "MZ-fake");
 
     auto inv = scan_local_inventory(dir);
-    DS_REQUIRE(inv.size() == 1);
-    DS_REQUIRE(inv[0].id == "debug.dummy");
-    DS_REQUIRE(inv[0].version.has_value());
-    DS_REQUIRE(*inv[0].version == "1.2.3");
-    DS_REQUIRE(inv[0].sha256.has_value());
-    DS_REQUIRE(*inv[0].sha256 == "abc123");
-    DS_REQUIRE(inv[0].module == "plugin_dummy.dll");
-    DS_REQUIRE(inv[0].has_meta);
-    DS_REQUIRE(inv[0].has_module);
-    printf("PASS: scan_meta_and_module\n");
+    REQUIRE_EQ(inv.size(), 1);
+    REQUIRE_EQ(inv[0].id, "debug.dummy");
+    REQUIRE(inv[0].version.has_value());
+    REQUIRE_EQ(*inv[0].version, "1.2.3");
+    REQUIRE(inv[0].sha256.has_value());
+    REQUIRE_EQ(*inv[0].sha256, "abc123");
+    REQUIRE_EQ(inv[0].module, "plugin_dummy.dll");
+    REQUIRE(inv[0].has_meta);
+    REQUIRE(inv[0].has_module);
 }
 
-static void test_module_without_meta_version_unknown() {
+TEST_CASE("test_plugin_local_inventory/module_without_meta_version_unknown") {
     auto dir = temp_dir("ds_plugin_inv_nometa");
     write_pkg_text(dir, "plugin_core_vm", "plugin_core_vm.dll", "MZ-fake");
 
     auto inv = scan_local_inventory(dir);
-    DS_REQUIRE(inv.size() == 1);
-    DS_REQUIRE(inv[0].id == "core.vm"); // mapped stem
-    DS_REQUIRE(!inv[0].version.has_value());
-    DS_REQUIRE(inv[0].has_module);
-    DS_REQUIRE(!inv[0].has_meta);
-    printf("PASS: module_without_meta_version_unknown\n");
+    REQUIRE_EQ(inv.size(), 1);
+    REQUIRE_EQ(inv[0].id, "core.vm"); // mapped stem
+    REQUIRE_FALSE(inv[0].version.has_value());
+    REQUIRE(inv[0].has_module);
+    REQUIRE_FALSE(inv[0].has_meta);
 }
 
-static void test_missing_dir_empty() {
+TEST_CASE("test_plugin_local_inventory/missing_dir_empty") {
     auto inv = scan_local_inventory(fs::temp_directory_path() / "ds_plugin_inv_missing_xyz");
-    DS_REQUIRE(inv.empty());
-    printf("PASS: missing_dir_empty\n");
+    REQUIRE(inv.empty());
 }
 
-static void test_status_override_update_available() {
+TEST_CASE("test_plugin_local_inventory/status_override_update_available") {
     auto dir = temp_dir("ds_plugin_inv_status");
     write_pkg_text(dir, "plugin_dummy", "plugin_dummy.meta.json",
                R"({"id":"debug.dummy","version":"1.0.0","sha256":"x","module":"plugin_dummy.dll"})");
@@ -90,17 +86,19 @@ static void test_status_override_update_available() {
 
     auto inv = scan_local_inventory(dir);
     auto rows = build_plugin_status(cfg, inv);
-    DS_REQUIRE(rows.size() == 1);
-    DS_REQUIRE(rows[0].id == "debug.dummy");
-    DS_REQUIRE(rows[0].local_version && *rows[0].local_version == "1.0.0");
-    DS_REQUIRE(rows[0].desired_version && *rows[0].desired_version == "2.0.0");
-    DS_REQUIRE(rows[0].pin_source && *rows[0].pin_source == "override");
-    DS_REQUIRE(rows[0].state == "update_available");
-    DS_REQUIRE(!rows[0].channel_version.has_value());
-    printf("PASS: status_override_update_available\n");
+    REQUIRE_EQ(rows.size(), 1);
+    REQUIRE_EQ(rows[0].id, "debug.dummy");
+    REQUIRE(rows[0].local_version.has_value());
+    REQUIRE_EQ(*rows[0].local_version, "1.0.0");
+    REQUIRE(rows[0].desired_version.has_value());
+    REQUIRE_EQ(*rows[0].desired_version, "2.0.0");
+    REQUIRE(rows[0].pin_source.has_value());
+    REQUIRE_EQ(*rows[0].pin_source, "override");
+    REQUIRE_EQ(rows[0].state, "update_available");
+    REQUIRE_FALSE(rows[0].channel_version.has_value());
 }
 
-static void test_status_local_only_ok() {
+TEST_CASE("test_plugin_local_inventory/status_local_only_ok") {
     auto dir = temp_dir("ds_plugin_inv_ok");
     write_pkg_text(dir, "plugin_dummy", "plugin_dummy.meta.json",
                R"({"id":"debug.dummy","version":"1.0.0","module":"plugin_dummy.dll"})");
@@ -109,13 +107,12 @@ static void test_status_local_only_ok() {
     PluginPinConfig cfg = defaults();
     auto inv = scan_local_inventory(dir);
     auto rows = build_plugin_status(cfg, inv);
-    DS_REQUIRE(rows.size() == 1);
-    DS_REQUIRE(rows[0].state == "ok");
-    DS_REQUIRE(!rows[0].desired_version.has_value());
-    printf("PASS: status_local_only_ok\n");
+    REQUIRE_EQ(rows.size(), 1);
+    REQUIRE_EQ(rows[0].state, "ok");
+    REQUIRE_FALSE(rows[0].desired_version.has_value());
 }
 
-static void test_plan_mismatch_and_prefer_present() {
+TEST_CASE("test_plugin_local_inventory/plan_mismatch_and_prefer_present") {
     auto dir = temp_dir("ds_plugin_inv_plan");
     write_pkg_text(dir, "plugin_dummy", "plugin_dummy.meta.json",
                R"({"id":"debug.dummy","version":"1.0.0","module":"plugin_dummy.dll"})");
@@ -127,21 +124,21 @@ static void test_plan_mismatch_and_prefer_present() {
 
     auto inv = scan_local_inventory(dir);
     auto plan = build_plan_actions(cfg, inv);
-    DS_REQUIRE(plan.size() == 2);
+    REQUIRE_EQ(plan.size(), 2);
 
     // sorted by id: debug.dummy then network.rpc
-    DS_REQUIRE(plan[0].id == "debug.dummy");
-    DS_REQUIRE(plan[0].from && *plan[0].from == "1.0.0");
-    DS_REQUIRE(plan[0].to == "9.9.9");
-    DS_REQUIRE(plan[0].reason == "version_mismatch");
+    REQUIRE_EQ(plan[0].id, "debug.dummy");
+    REQUIRE(plan[0].from.has_value());
+    REQUIRE_EQ(*plan[0].from, "1.0.0");
+    REQUIRE_EQ(plan[0].to, "9.9.9");
+    REQUIRE_EQ(plan[0].reason, "version_mismatch");
 
-    DS_REQUIRE(plan[1].id == "network.rpc");
-    DS_REQUIRE(!plan[1].from.has_value());
-    DS_REQUIRE(plan[1].reason == "prefer_present");
-    printf("PASS: plan_mismatch_and_prefer_present\n");
+    REQUIRE_EQ(plan[1].id, "network.rpc");
+    REQUIRE_FALSE(plan[1].from.has_value());
+    REQUIRE_EQ(plan[1].reason, "prefer_present");
 }
 
-static void test_plan_missing_override() {
+TEST_CASE("test_plugin_local_inventory/plan_missing_override") {
     auto dir = temp_dir("ds_plugin_inv_plan_missing");
     // empty dir
 
@@ -150,15 +147,14 @@ static void test_plan_missing_override() {
 
     auto inv = scan_local_inventory(dir);
     auto plan = build_plan_actions(cfg, inv);
-    DS_REQUIRE(plan.size() == 1);
-    DS_REQUIRE(plan[0].id == "core.vm");
-    DS_REQUIRE(!plan[0].from.has_value());
-    DS_REQUIRE(plan[0].to == "0.2.0");
-    DS_REQUIRE(plan[0].reason == "missing");
-    printf("PASS: plan_missing_override\n");
+    REQUIRE_EQ(plan.size(), 1);
+    REQUIRE_EQ(plan[0].id, "core.vm");
+    REQUIRE_FALSE(plan[0].from.has_value());
+    REQUIRE_EQ(plan[0].to, "0.2.0");
+    REQUIRE_EQ(plan[0].reason, "missing");
 }
 
-static void test_status_with_channel_cache() {
+TEST_CASE("test_plugin_local_inventory/status_with_channel_cache") {
     LocalPluginEntry e;
     e.id = "core.vm";
     e.version = "0.1.0";
@@ -174,48 +170,49 @@ static void test_status_with_channel_cache() {
     cache["core.vm"] = "0.3.0";
 
     auto rows = build_plugin_status(cfg, {e}, cache);
-    DS_REQUIRE(rows.size() == 1);
-    DS_REQUIRE(rows[0].channel_version && *rows[0].channel_version == "0.3.0");
-    DS_REQUIRE(rows[0].desired_version && *rows[0].desired_version == "0.3.0");
-    DS_REQUIRE(rows[0].state == "update_available");
-    printf("PASS: status_with_channel_cache\n");
+    REQUIRE_EQ(rows.size(), 1);
+    REQUIRE(rows[0].channel_version.has_value());
+    REQUIRE_EQ(*rows[0].channel_version, "0.3.0");
+    REQUIRE(rows[0].desired_version.has_value());
+    REQUIRE_EQ(*rows[0].desired_version, "0.3.0");
+    REQUIRE_EQ(rows[0].state, "update_available");
 }
 
-static void test_plugins_dir_from_module_dir() {
+TEST_CASE("test_plugin_local_inventory/plugins_dir_from_module_dir") {
     // Already inside plugins/ → do not append again.
     {
         const fs::path mod = fs::path("C:/game/bin64/plugins");
         const auto out = plugins_dir_from_module_dir(mod);
-        DS_REQUIRE(out == mod);
-        DS_REQUIRE(out.filename() == "plugins" || out.filename() == "Plugins");
+        REQUIRE_EQ(out, mod);
+        const bool plugins_leaf = out.filename() == "plugins" || out.filename() == "Plugins";
+        REQUIRE(plugins_leaf);
     }
     // Injector-style dir → append plugins.
     {
         const fs::path mod = fs::path("C:/game/bin64");
         const auto out = plugins_dir_from_module_dir(mod);
-        DS_REQUIRE(out == mod / "plugins");
+        REQUIRE_EQ(out, mod / "plugins");
     }
     // Case-insensitive leaf match (Windows).
     {
         const fs::path mod = fs::path("D:/Install/Plugins");
         const auto out = plugins_dir_from_module_dir(mod);
-        DS_REQUIRE(out == mod);
+        REQUIRE_EQ(out, mod);
     }
     // Empty → empty.
     {
-        DS_REQUIRE(plugins_dir_from_module_dir({}).empty());
+        REQUIRE(plugins_dir_from_module_dir({}).empty());
     }
     // Relative plugins leaf.
     {
         const fs::path mod = fs::path("plugins");
-        DS_REQUIRE(plugins_dir_from_module_dir(mod) == mod);
+        REQUIRE_EQ(plugins_dir_from_module_dir(mod), mod);
     }
     // Nested plugins/plugins still ends with plugins → leave as-is (caller already there).
     {
         const fs::path mod = fs::path("/opt/app/plugins");
-        DS_REQUIRE(plugins_dir_from_module_dir(mod) == mod);
+        REQUIRE_EQ(plugins_dir_from_module_dir(mod), mod);
     }
-    printf("PASS: plugins_dir_from_module_dir\n");
 }
 
 
@@ -225,7 +222,7 @@ static void write_file(const fs::path &p, const std::string &content) {
     out << content;
 }
 
-static void test_cross_tag_pin_unavailable() {
+TEST_CASE("test_plugin_local_inventory/cross_tag_pin_unavailable") {
     // Spec: an override pin must exist on the CURRENT channel tag; otherwise the row is
     // pin_unavailable (and apply refuses with "switch channel/tag first").
     auto dir = temp_dir("ds_inv_pin_offtag");
@@ -240,25 +237,26 @@ static void test_cross_tag_pin_unavailable() {
 
     const auto inv = scan_local_inventory(dir);
     const auto rows = build_plugin_status(cfg, inv, channel);
-    DS_REQUIRE(rows.size() == 1);
-    DS_REQUIRE(rows[0].desired_version.has_value() && *rows[0].desired_version == "0.9.0");
-    DS_REQUIRE(rows[0].channel_version.has_value() && *rows[0].channel_version == "2.0.0");
-    DS_REQUIRE(rows[0].state == "pin_unavailable");
+    REQUIRE_EQ(rows.size(), 1);
+    REQUIRE(rows[0].desired_version.has_value());
+    REQUIRE_EQ(*rows[0].desired_version, "0.9.0");
+    REQUIRE(rows[0].channel_version.has_value());
+    REQUIRE_EQ(*rows[0].channel_version, "2.0.0");
+    REQUIRE_EQ(rows[0].state, "pin_unavailable");
 
     // The plan still lists it (so the UI shows the intent) but marked unsatisfiable.
     const auto plan = build_plan_actions(cfg, inv, channel);
-    DS_REQUIRE(plan.size() == 1);
-    DS_REQUIRE(plan[0].to == "0.9.0");
-    DS_REQUIRE(plan[0].reason == "pin_unavailable");
+    REQUIRE_EQ(plan.size(), 1);
+    REQUIRE_EQ(plan[0].to, "0.9.0");
+    REQUIRE_EQ(plan[0].reason, "pin_unavailable");
 
     // Pin equal to the channel version is satisfiable: normal update_available.
     cfg.pins["debug.dummy"] = PinEntry{"2.0.0", "override"};
     const auto rows2 = build_plugin_status(cfg, inv, channel);
-    DS_REQUIRE(rows2[0].state == "update_available");
-    printf("PASS: cross_tag_pin_unavailable\n");
+    REQUIRE_EQ(rows2[0].state, "update_available");
 }
 
-static void test_flat_module_ignored() {
+TEST_CASE("test_plugin_local_inventory/flat_module_ignored") {
     // Flat modules are unsupported (the loader ignores them), so they must not show up in
     // the inventory either — only the package copy counts.
     auto dir = temp_dir("ds_inv_flat_ignored");
@@ -269,30 +267,14 @@ static void test_flat_module_ignored() {
                R"({"id":"debug.dummy","version":"2.0.0"})");
 
     const auto inv = scan_local_inventory(dir);
-    DS_REQUIRE(inv.size() == 1);
-    DS_REQUIRE(inv[0].id == "debug.dummy");
-    DS_REQUIRE(inv[0].path == dir / "plugin_dummy" / "plugin_dummy.dll");
-    DS_REQUIRE(inv[0].version.has_value() && *inv[0].version == "2.0.0");
+    REQUIRE_EQ(inv.size(), 1);
+    REQUIRE_EQ(inv[0].id, "debug.dummy");
+    REQUIRE_EQ(inv[0].path, dir / "plugin_dummy" / "plugin_dummy.dll");
+    REQUIRE(inv[0].version.has_value());
+    REQUIRE_EQ(*inv[0].version, "2.0.0");
 
     // Flat-only tree: no plugins at all.
     auto flat_only = temp_dir("ds_inv_flat_only");
     write_file(flat_only / "plugin_dummy.dll", "FLAT");
-    DS_REQUIRE(scan_local_inventory(flat_only).empty());
-    printf("PASS: flat_module_ignored\n");
-}
-
-int main() {
-    test_scan_meta_and_module();
-    test_module_without_meta_version_unknown();
-    test_missing_dir_empty();
-    test_status_override_update_available();
-    test_status_local_only_ok();
-    test_plan_mismatch_and_prefer_present();
-    test_plan_missing_override();
-    test_status_with_channel_cache();
-    test_plugins_dir_from_module_dir();
-    test_cross_tag_pin_unavailable();
-    test_flat_module_ignored();
-    printf("ALL PASS plugin_local_inventory\n");
-    return 0;
+    REQUIRE(scan_local_inventory(flat_only).empty());
 }

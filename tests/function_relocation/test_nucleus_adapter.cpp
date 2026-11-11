@@ -1,11 +1,12 @@
 #include "FunctionTable.hpp"
 #include "NucleusAdapter.hpp"
 
+#include <doctest/doctest.h>
+
 #include <algorithm>
 
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -15,14 +16,6 @@
 using function_relocation::FunctionTable;
 using function_relocation::nucleus_analyze_file;
 using function_relocation::pe_image_base;
-
-#define REQUIRE(cond)                                                                          \
-  do {                                                                                         \
-    if (!(cond)) {                                                                             \
-      std::fprintf(stderr, "REQUIRE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__);        \
-      std::abort();                                                                            \
-    }                                                                                          \
-  } while (0)
 
 static std::filesystem::path repo_lua51() {
   // Prefer Mod/deps/lua51.dll relative to cwd (ctest WORKING_DIRECTORY = source root).
@@ -49,32 +42,34 @@ static std::vector<PeExport> pe_exports(const std::filesystem::path &path) {
   REQUIRE(static_cast<bool>(f));
   std::vector<char> data((std::istreambuf_iterator<char>(f)),
                          std::istreambuf_iterator<char>());
-  REQUIRE(data.size() > 0x40);
-  REQUIRE(data[0] == 'M' && data[1] == 'Z');
+  REQUIRE_GT(data.size(), 0x40);
+  REQUIRE_EQ(data[0], 'M');
+  REQUIRE_EQ(data[1], 'Z');
 
   auto rd16 = [&](size_t off) -> uint16_t {
-    REQUIRE(off + 2 <= data.size());
+    REQUIRE_LE(off + 2, data.size());
     uint16_t v;
     std::memcpy(&v, data.data() + off, 2);
     return v;
   };
   auto rd32 = [&](size_t off) -> uint32_t {
-    REQUIRE(off + 4 <= data.size());
+    REQUIRE_LE(off + 4, data.size());
     uint32_t v;
     std::memcpy(&v, data.data() + off, 4);
     return v;
   };
 
   const uint32_t e_lfanew = rd32(0x3c);
-  REQUIRE(e_lfanew + 24 < data.size());
-  REQUIRE(data[e_lfanew] == 'P' && data[e_lfanew + 1] == 'E');
+  REQUIRE_LT(e_lfanew + 24, data.size());
+  REQUIRE_EQ(data[e_lfanew], 'P');
+  REQUIRE_EQ(data[e_lfanew + 1], 'E');
 
   const uint16_t magic = rd16(e_lfanew + 4 + 20);
-  REQUIRE(magic == 0x20b); // PE32+ (lua51.dll)
+  REQUIRE_EQ(magic, 0x20b); // PE32+ (lua51.dll)
 
   // DataDirectory[0] = Export Table (RVA, Size) at optional+112 for PE32+.
   const uint32_t export_rva = rd32(e_lfanew + 4 + 20 + 112);
-  REQUIRE(export_rva != 0);
+  REQUIRE_NE(export_rva, 0);
 
   const uint16_t nsec = rd16(e_lfanew + 4 + 2);
   const uint16_t opt_size = rd16(e_lfanew + 4 + 16);
@@ -138,16 +133,16 @@ static uint32_t pe_export_rva(const std::filesystem::path &path, const char *nam
   return 0;
 }
 
-static void test_table_containing_unit() {
+TEST_CASE("test_nucleus_adapter/table_containing_unit") {
   FunctionTable t;
   t.add({0x1000, 0x1100});
   t.add({0x2000, 0x2200});
-  REQUIRE(t.containing(0x1000) == 0x1000);
-  REQUIRE(t.containing(0x10ff) == 0x1000);
-  REQUIRE(t.containing(0x1100) == 0);
-  REQUIRE(t.containing(0x2100) == 0x2000);
-  REQUIRE(t.containing(0x50) == 0);
-  REQUIRE(t.span_containing(0x10ff) != nullptr);
+  REQUIRE_EQ(t.containing(0x1000), 0x1000);
+  REQUIRE_EQ(t.containing(0x10ff), 0x1000);
+  REQUIRE_EQ(t.containing(0x1100), 0);
+  REQUIRE_EQ(t.containing(0x2100), 0x2000);
+  REQUIRE_EQ(t.containing(0x50), 0);
+  REQUIRE_NE(t.span_containing(0x10ff), nullptr);
   REQUIRE(t.span_containing(0x10ff)->end == 0x1100);
 
   // Nested spans with a dedicated interior entry span.
@@ -155,7 +150,7 @@ static void test_table_containing_unit() {
   nested.add({0xad60, 0xb5ae}); // outer (e.g. pre-split yield body)
   nested.add({0xae30, 0xaf31}); // sibling inside outer
   nested.add({0xb4f0, 0xb54a}); // tight resume body
-  REQUIRE(nested.containing(0xb4f0) == 0xb4f0);
+  REQUIRE_EQ(nested.containing(0xb4f0), 0xb4f0);
   REQUIRE(nested.span_containing(0xb4f0)->end == 0xb54a);
 
   // Export-aware split: interior export VAs become sub-span starts.
@@ -163,32 +158,32 @@ static void test_table_containing_unit() {
   only_outer.add({0xad60, 0xb5ae});
   only_outer.add({0xae30, 0xaf31});
   only_outer.split_at_known_entries({0xade0, 0xb4f0}); // yield, resume
-  REQUIRE(only_outer.containing(0xb4f0) == 0xb4f0);
+  REQUIRE_EQ(only_outer.containing(0xb4f0), 0xb4f0);
   REQUIRE(only_outer.span_containing(0xb4f0)->start == 0xb4f0);
   REQUIRE(only_outer.span_containing(0xb4f0)->end == 0xb5ae);
-  REQUIRE(only_outer.containing(0xade0) == 0xade0);
+  REQUIRE_EQ(only_outer.containing(0xade0), 0xade0);
   REQUIRE(only_outer.span_containing(0xade0)->end == 0xb4f0);
   // Size for interior export E is End-E, not End-S.
   REQUIRE(only_outer.span_containing(0xb4f0)->end - 0xb4f0 == 0xb5ae - 0xb4f0);
 }
 
-static void test_lua51_getstack_span() {
+TEST_CASE("test_nucleus_adapter/lua51_getstack_span") {
   auto path = repo_lua51();
   if (!std::filesystem::exists(path)) {
     std::printf("FAIL test_lua51_getstack_span: missing %s\n", path.string().c_str());
-    std::abort();
   }
+  REQUIRE(std::filesystem::exists(path));
 
   auto res = nucleus_analyze_file(path);
   if (!res) {
     std::fprintf(stderr, "nucleus_analyze_file failed: %s\n", res.error().c_str());
-    std::abort();
   }
+  REQUIRE(static_cast<bool>(res));
   const auto &table = res->table;
-  REQUIRE(!table.empty());
+  REQUIRE_FALSE(table.empty());
 
   const uint32_t exp_rva = pe_export_rva(path, "lua_getstack");
-  REQUIRE(exp_rva != 0);
+  REQUIRE_NE(exp_rva, 0);
 
   // VA convention: image VA = preferred ImageBase + export RVA (same as Nucleus).
   uint64_t image_base = res->image_base;
@@ -200,9 +195,9 @@ static void test_lua51_getstack_span() {
   const uint64_t getstack_va = image_base + exp_rva;
 
   const uint64_t entry = table.containing(getstack_va);
-  REQUIRE(entry != 0);
+  REQUIRE_NE(entry, 0);
   auto *sp = table.span_containing(getstack_va);
-  REQUIRE(sp != nullptr);
+  REQUIRE_NE(sp, nullptr);
   REQUIRE(sp->end > sp->start);
   REQUIRE(getstack_va >= sp->start);
   REQUIRE(getstack_va < sp->end);
@@ -217,7 +212,7 @@ static void test_lua51_getstack_span() {
       next_rva = entry.rva;
     }
   }
-  REQUIRE(next_rva != 0);
+  REQUIRE_NE(next_rva, 0);
   const uint64_t next_va = image_base + next_rva;
   if (span_size >= 0x120 || sp->end > next_va) {
     std::fprintf(stderr,
@@ -241,12 +236,12 @@ static void test_lua51_getstack_span() {
               static_cast<unsigned long long>(image_base));
 }
 
-static void test_lua51_resume_containing() {
+TEST_CASE("test_nucleus_adapter/lua51_resume_containing") {
   auto path = repo_lua51();
   if (!std::filesystem::exists(path)) {
     std::printf("FAIL test_lua51_resume_containing: missing %s\n", path.string().c_str());
-    std::abort();
   }
+  REQUIRE(std::filesystem::exists(path));
   auto res = nucleus_analyze_file(path);
   REQUIRE(res.has_value());
   uint64_t image_base = res->image_base;
@@ -258,17 +253,17 @@ static void test_lua51_resume_containing() {
 
   const uint32_t resume_rva = pe_export_rva(path, "lua_resume");
   const uint32_t yield_rva = pe_export_rva(path, "lua_yield");
-  REQUIRE(resume_rva != 0);
-  REQUIRE(yield_rva != 0);
-  REQUIRE(resume_rva != yield_rva);
+  REQUIRE_NE(resume_rva, 0);
+  REQUIRE_NE(yield_rva, 0);
+  REQUIRE_NE(resume_rva, yield_rva);
 
   const uint64_t resume_va = image_base + resume_rva;
   const uint64_t yield_va = image_base + yield_rva;
 
   auto *sp_resume = res->table.span_containing(resume_va);
   auto *sp_yield = res->table.span_containing(yield_va);
-  REQUIRE(sp_resume != nullptr);
-  REQUIRE(sp_yield != nullptr);
+  REQUIRE_NE(sp_resume, nullptr);
+  REQUIRE_NE(sp_yield, nullptr);
   // Export-aware split: each export is its own span start (not outer entry).
   REQUIRE(sp_resume->start == resume_va);
   REQUIRE(sp_yield->start == yield_va);
@@ -296,25 +291,26 @@ static std::vector<uint32_t> pe_pdata_begin_rvas(const std::filesystem::path &pa
   std::vector<char> data((std::istreambuf_iterator<char>(f)),
                          std::istreambuf_iterator<char>());
   auto rd16 = [&](size_t off) -> uint16_t {
-    REQUIRE(off + 2 <= data.size());
+    REQUIRE_LE(off + 2, data.size());
     uint16_t v;
     std::memcpy(&v, data.data() + off, 2);
     return v;
   };
   auto rd32 = [&](size_t off) -> uint32_t {
-    REQUIRE(off + 4 <= data.size());
+    REQUIRE_LE(off + 4, data.size());
     uint32_t v;
     std::memcpy(&v, data.data() + off, 4);
     return v;
   };
   const uint32_t e_lfanew = rd32(0x3c);
-  REQUIRE(data[e_lfanew] == 'P' && data[e_lfanew + 1] == 'E');
+  REQUIRE_EQ(data[e_lfanew], 'P');
+  REQUIRE_EQ(data[e_lfanew + 1], 'E');
   const uint16_t magic = rd16(e_lfanew + 4 + 20);
-  REQUIRE(magic == 0x20b);
+  REQUIRE_EQ(magic, 0x20b);
   const uint32_t pdata_rva = rd32(e_lfanew + 4 + 20 + 112 + 3 * 8);
   const uint32_t pdata_size = rd32(e_lfanew + 4 + 20 + 116 + 3 * 8);
-  REQUIRE(pdata_rva != 0);
-  REQUIRE(pdata_size >= 12);
+  REQUIRE_NE(pdata_rva, 0);
+  REQUIRE_GE(pdata_size, 12);
 
   const uint16_t nsec = rd16(e_lfanew + 4 + 2);
   const uint16_t opt_size = rd16(e_lfanew + 4 + 16);
@@ -361,18 +357,18 @@ static std::vector<uint32_t> pe_pdata_begin_rvas(const std::filesystem::path &pa
     }
     out.push_back(begin);
   }
-  REQUIRE(!out.empty());
+  REQUIRE_FALSE(out.empty());
   return out;
 }
 
-static void test_lua51_pdata_starts_are_span_entries() {
+TEST_CASE("test_nucleus_adapter/lua51_pdata_starts_are_span_entries") {
   auto path = repo_lua51();
   REQUIRE(std::filesystem::exists(path));
   auto res = nucleus_analyze_file(path);
   if (!res) {
     std::fprintf(stderr, "nucleus_analyze_file failed: %s\n", res.error().c_str());
-    std::abort();
   }
+  REQUIRE(static_cast<bool>(res));
   uint64_t image_base = res->image_base;
   if (image_base == 0) {
     auto base = pe_image_base(path);
@@ -394,8 +390,8 @@ static void test_lua51_pdata_starts_are_span_entries() {
   }
   const uint32_t isn = pe_export_rva(path, "lua_isnumber");
   const uint32_t toi = pe_export_rva(path, "lua_tointeger");
-  REQUIRE(isn != 0);
-  REQUIRE(toi != 0);
+  REQUIRE_NE(isn, 0);
+  REQUIRE_NE(toi, 0);
   REQUIRE(res->table.containing(image_base + isn) == image_base + isn);
   REQUIRE(res->table.containing(image_base + toi) == image_base + toi);
 
@@ -403,22 +399,5 @@ static void test_lua51_pdata_starts_are_span_entries() {
               begins.size(), miss, res->table.size(), first_miss);
   // Windows function starts live in .pdata, not PE exports. Every non-chained
   // pdata BeginAddress must be a FunctionTable span start.
-  REQUIRE(miss == 0);
-}
-
-
-int main() {
-  {
-    const auto path = repo_lua51();
-    std::error_code ec;
-    const auto size = std::filesystem::file_size(path, ec);
-    std::printf("reference lua51: %s (%llu bytes)\n", path.string().c_str(),
-                static_cast<unsigned long long>(ec ? 0 : size));
-  }
-  test_table_containing_unit();
-  test_lua51_getstack_span();
-  test_lua51_resume_containing();
-  test_lua51_pdata_starts_are_span_entries();
-  std::puts("test_nucleus_adapter: ok");
-  return 0;
+  REQUIRE_EQ(miss, 0);
 }

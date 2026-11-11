@@ -1,10 +1,9 @@
 #include "core/ExternalPluginDiscovery.hpp"
 
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
-#include "support/test_assert.hpp"
+#include <doctest/doctest.h>
 
 namespace fs = std::filesystem;
 using namespace ds::plugin;
@@ -24,15 +23,14 @@ void touch(const fs::path &p) {
     std::ofstream(p, std::ios::binary) << "x";
 }
 
-void test_path_under_root_accepts_child() {
+TEST_CASE("test_external_plugin_discovery/path_under_root_accepts_child") {
     auto root = make_temp_dir("ds_ext_disc_root_ok");
     auto child = root / "plugins" / "plugin_x" / "plugin_x.dll";
     touch(child);
-    DS_REQUIRE(path_under_root(root, child));
-    std::puts("ok path_under_root_accepts_child");
+    REQUIRE(path_under_root(root, child));
 }
 
-void test_path_under_root_rejects_escape() {
+TEST_CASE("test_external_plugin_discovery/path_under_root_rejects_escape") {
     auto root = make_temp_dir("ds_ext_disc_root_esc");
     auto outside = root.parent_path() / "ds_ext_disc_evil" / "evil.dll";
     touch(outside);
@@ -40,11 +38,10 @@ void test_path_under_root_rejects_escape() {
     auto escaped = root / "plugins" / ".." / ".." / outside.filename();
     // Even if file doesn't exist at escaped, jail uses weakly_canonical.
     // Use outside absolute path which is not under root.
-    DS_REQUIRE(!path_under_root(root, outside));
-    std::puts("ok path_under_root_rejects_escape");
+    REQUIRE_FALSE(path_under_root(root, outside));
 }
 
-void test_list_pack_modules_finds_package_dll() {
+TEST_CASE("test_external_plugin_discovery/list_pack_modules_finds_package_dll") {
     auto root = make_temp_dir("ds_ext_disc_list_ok");
 #if defined(_WIN32)
     const char *ext = ".dll";
@@ -57,19 +54,17 @@ void test_list_pack_modules_finds_package_dll() {
     touch(root / "plugins" / "readme.txt");
     touch(root / "plugins" / "plugin_y" / "not_matching.dll");
     auto mods = list_pack_modules_under_mod(root);
-    DS_REQUIRE(mods.size() == 1);
-    DS_REQUIRE(mods[0].filename().string().find("plugin_x") != std::string::npos);
-    std::puts("ok list_pack_modules_finds_package_dll");
+    REQUIRE_EQ(mods.size(), 1);
+    REQUIRE_NE(mods[0].filename().string().find("plugin_x"), std::string::npos);
 }
 
-void test_list_pack_modules_empty_without_plugins() {
+TEST_CASE("test_external_plugin_discovery/list_pack_modules_empty_without_plugins") {
     auto root = make_temp_dir("ds_ext_disc_list_empty");
     auto mods = list_pack_modules_under_mod(root);
-    DS_REQUIRE(mods.empty());
-    std::puts("ok list_pack_modules_empty_without_plugins");
+    REQUIRE(mods.empty());
 }
 
-void test_list_ignores_non_plugin_prefix_dirs() {
+TEST_CASE("test_external_plugin_discovery/list_ignores_non_plugin_prefix_dirs") {
     auto root = make_temp_dir("ds_ext_disc_list_prefix");
 #if defined(_WIN32)
     const char *ext = ".dll";
@@ -78,18 +73,7 @@ void test_list_ignores_non_plugin_prefix_dirs() {
 #endif
     touch(root / "plugins" / "other_x" / (std::string("other_x") + ext));
     auto mods = list_pack_modules_under_mod(root);
-    DS_REQUIRE(mods.empty());
-    std::puts("ok list_ignores_non_plugin_prefix_dirs");
+    REQUIRE(mods.empty());
 }
 
 } // namespace
-
-int main() {
-    test_path_under_root_accepts_child();
-    test_path_under_root_rejects_escape();
-    test_list_pack_modules_finds_package_dll();
-    test_list_pack_modules_empty_without_plugins();
-    test_list_ignores_non_plugin_prefix_dirs();
-    std::puts("ALL PASS external_plugin_discovery");
-    return 0;
-}

@@ -506,6 +506,53 @@ No production `conflicts` entries today; the host still enforces conflicts if yo
 
 Unit binaries for Host graph/options **do not** link real `RegisterBuiltinPlugins` (it pulls Frida / game hooks). Use manifest-compatible stand-ins in tests.
 
+### 8.1 C++ test binaries (doctest)
+
+Each `tests/**/*.cpp` stays one executable, but its scenarios are doctest
+`TEST_CASE`s named `<file stem>/<scenario>` and all executables share one runner
+(`tests/support/doctest_main.cpp`, linked as `ds_test_doctest`). Two executables
+keep their own `main` because they own a process protocol:
+`test_plugin_process_lock` (`--hold-lock <dir> <ms>` child mode, and the parent
+re-spawns itself via `argv[0]`) and `test_elf_plt_symbols` (four positional
+library paths, doctest options may follow them).
+
+- Assertions: `REQUIRE` ends the current case, `CHECK` keeps collecting,
+  `REQUIRE_MESSAGE` / `CHECK_MESSAGE` attach a message. Use the form that names
+  the check instead of the single generic one — `REQUIRE_EQ` / `_NE` / `_LT` /
+  `_LE` / `_GT` / `_GE` for a comparison, `REQUIRE_FALSE` / `CHECK_FALSE` for a
+  negated condition, `FAIL` / `FAIL_CHECK` for "must never happen". The report
+  then names the operation (`REQUIRE_EQ( 3, 2 )`) and the operands stay
+  independent of operator precedence inside the macro. Keep plain `REQUIRE` for a
+  boolean-returning call or a helper predicate, and remember that
+  `x == true/false` stays a comparison (`int == true` means `== 1`, not `!= 0`).
+  doctest has no `*_EQ_MESSAGE`: keep the message with
+  `{ INFO("why it matters"); REQUIRE_EQ(a, b); }` — the block scopes `INFO` to
+  that one check.
+- doctest rejects a top-level `&&` / `||` inside an assertion ("Expression Too
+  Complex Please Rewrite As Binary Comparison") — split it into one assertion per
+  condition.
+- A case cannot rely on cleanup that runs *after* an assertion, and `ctest` must
+  not depend on execution order: restore environment variables, plugin roots,
+  DLL search roots, global function pointers, temp dirs and handles with local
+  RAII (`std::jthread` for a joined helper thread). Never assert from a C
+  callback, a `noexcept` function or a thread entry point — record the result
+  and assert it in the case body.
+- List / filter: `tests/<Config>/test_<name>.exe --list-test-cases`,
+  `--test-case=test_<name>/<scenario>`, `--test-case-exclude=…`.
+- `no-breaks` defaults to on (a failing assertion unwinds instead of raising a
+  debugger breakpoint that would stall an attached-debugger run);
+  `--no-breaks=false` restores the breakpoint.
+- Quick gate: `ctest -j 8 -LE "^(game|game_signatures)$"` skips every test that
+  launches the game and every platform signature gate, and keeps the offline
+  harness units in the run.
+- Scheduling: `ctest -j N` runs one process per executable, so doctest cases run
+  serially *inside* a binary. Resource locks are per ctest process and only
+  serialize tests that share a resource: `dst_game_server` (real game install,
+  injected files/Mod tree, save environment), `ds_relocation_log`
+  (`tests/<Config>/FunctionRelocation.log`, path derived from the main module),
+  `ds_signature_tool_log` (the signature tools' rotating log). Unrelated tests
+  keep running concurrently.
+
 When adding a plugin:
 
 1. Unit: option rule + resolve status (on → Loaded, off → Disabled, hard dep down → Failed).

@@ -4,9 +4,9 @@
 #include "config/ConfigSchema.hpp"
 #include "plugins/plugin_core_vm/VmConfig.hpp"
 #include "plugins/plugin_core_vm/GameLuaType.hpp"
-#include <cstdio>
+#include <ostream>
 #include <vector>
-#include "support/test_assert.hpp"
+#include <doctest/doctest.h>
 
 using namespace ds::plugin;
 using namespace ds::config;
@@ -39,10 +39,10 @@ private:
     ConfigView values_;
 };
 
-void test_resolve_respects_source_order_and_whitelist() {
+TEST_CASE("test_config_resolve/resolve_respects_source_order_and_whitelist") {
     ConfigSchemaRegistry reg;
     // SaveFile + ModinfoDefault only — EnvOrCmd blocked
-    DS_REQUIRE(reg.add(bool_key(
+    REQUIRE(reg.add(bool_key(
         "EnableNetSim", false,
         static_cast<ConfigSourceMask>(ConfigSource::SaveFile) |
             static_cast<ConfigSourceMask>(ConfigSource::ModinfoDefault))));
@@ -63,24 +63,22 @@ void test_resolve_respects_source_order_and_whitelist() {
     const std::vector<const IConfigSource *> sources = {&modinfo, &save_src, &env_src};
     auto resolved = resolve(reg, ctx, sources);
 
-    DS_REQUIRE(resolved.view.count("EnableNetSim") == 1);
-    DS_REQUIRE(resolved.view.at("EnableNetSim").b == true);
-    DS_REQUIRE(resolved.source_of.at("EnableNetSim") == ConfigSource::SaveFile);
-    printf("PASS: resolve_respects_source_order_and_whitelist\n");
+    REQUIRE_EQ(resolved.view.count("EnableNetSim"), 1);
+    REQUIRE_EQ(resolved.view.at("EnableNetSim").b, true);
+    REQUIRE_EQ(resolved.source_of.at("EnableNetSim"), ConfigSource::SaveFile);
 }
 
-void test_resolve_empty_sources_yields_empty_view() {
+TEST_CASE("test_config_resolve/resolve_empty_sources_yields_empty_view") {
     ConfigSchemaRegistry reg;
-    DS_REQUIRE(reg.add(bool_key("NetworkOpt", true, kConfigSourceAll)));
+    REQUIRE(reg.add(bool_key("NetworkOpt", true, kConfigSourceAll)));
     CascadeContext ctx;
     std::vector<const IConfigSource *> sources;
     auto resolved = resolve(reg, ctx, sources);
-    DS_REQUIRE(resolved.view.empty());
-    DS_REQUIRE(resolved.source_of.empty());
-    printf("PASS: resolve_empty_sources_yields_empty_view\n");
+    REQUIRE(resolved.view.empty());
+    REQUIRE(resolved.source_of.empty());
 }
 
-void test_resolve_env_lua_vm_type_aliases() {
+TEST_CASE("test_config_resolve/resolve_env_lua_vm_type_aliases") {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
     RegisterCoreVmOptionSchema(reg);
@@ -94,11 +92,11 @@ void test_resolve_env_lua_vm_type_aliases() {
     const std::vector<const IConfigSource *> sources = {&env_src};
     auto resolved = resolve(reg, ctx, sources);
 
-    DS_REQUIRE(resolved.view.count("LuaVmType") == 1);
-    DS_REQUIRE(resolved.view.at("LuaVmType").type == ConfigValueType::String);
-    DS_REQUIRE(resolved.view.at("LuaVmType").s == "lua51");
-    DS_REQUIRE(resolved.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
-    DS_REQUIRE(resolved.view.count("EnabledGenGC") == 0);
+    REQUIRE_EQ(resolved.view.count("LuaVmType"), 1);
+    REQUIRE_EQ(resolved.view.at("LuaVmType").type, ConfigValueType::String);
+    REQUIRE_EQ(resolved.view.at("LuaVmType").s, "lua51");
+    REQUIRE_EQ(resolved.source_of.at("LuaVmType"), ConfigSource::EnvOrCmd);
+    REQUIRE_EQ(resolved.view.count("EnabledGenGC"), 0);
 
     // Emulate EnvOrCmdSource::read for jit_gen → LuaVmType=jit + EnabledGenGC=true.
     ConfigView env_jit_gen;
@@ -108,11 +106,11 @@ void test_resolve_env_lua_vm_type_aliases() {
     const std::vector<const IConfigSource *> sources_gen = {&env_gen};
     auto resolved_gen = resolve(reg, ctx, sources_gen);
 
-    DS_REQUIRE(resolved_gen.view.at("LuaVmType").s == "jit");
-    DS_REQUIRE(resolved_gen.view.at("EnabledGenGC").type == ConfigValueType::Bool);
-    DS_REQUIRE(resolved_gen.view.at("EnabledGenGC").b == true);
-    DS_REQUIRE(resolved_gen.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
-    DS_REQUIRE(resolved_gen.source_of.at("EnabledGenGC") == ConfigSource::EnvOrCmd);
+    REQUIRE_EQ(resolved_gen.view.at("LuaVmType").s, "jit");
+    REQUIRE_EQ(resolved_gen.view.at("EnabledGenGC").type, ConfigValueType::Bool);
+    REQUIRE_EQ(resolved_gen.view.at("EnabledGenGC").b, true);
+    REQUIRE_EQ(resolved_gen.source_of.at("LuaVmType"), ConfigSource::EnvOrCmd);
+    REQUIRE_EQ(resolved_gen.source_of.at("EnabledGenGC"), ConfigSource::EnvOrCmd);
 
     // _51 alias accepted by schema.allowed.
     ConfigView env_51;
@@ -120,21 +118,19 @@ void test_resolve_env_lua_vm_type_aliases() {
     FakeSource env_u51(ConfigSource::EnvOrCmd, env_51);
     const std::vector<const IConfigSource *> sources_51 = {&env_u51};
     auto resolved_51 = resolve(reg, ctx, sources_51);
-    DS_REQUIRE(resolved_51.view.at("LuaVmType").s == "_51");
+    REQUIRE_EQ(resolved_51.view.at("LuaVmType").s, "_51");
 
     // Without VM schema, LuaVmType is unknown and ignored (soft optional).
     ConfigSchemaRegistry base_only;
     RegisterCoreOptionSchema(base_only);
-    DS_REQUIRE(base_only.find("LuaVmType") == nullptr);
+    REQUIRE_EQ(base_only.find("LuaVmType"), nullptr);
     FakeSource env_no_schema(ConfigSource::EnvOrCmd, env_lua51);
     const std::vector<const IConfigSource *> sources_no = {&env_no_schema};
     auto resolved_no = resolve(base_only, ctx, sources_no);
-    DS_REQUIRE(resolved_no.view.count("LuaVmType") == 0);
-
-    printf("PASS: resolve_env_lua_vm_type_aliases\n");
+    REQUIRE_EQ(resolved_no.view.count("LuaVmType"), 0);
 }
 
-void test_identity_keys_luajit_only() {
+TEST_CASE("test_config_resolve/identity_keys_luajit_only") {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
 
@@ -157,22 +153,20 @@ void test_identity_keys_luajit_only() {
     const std::vector<const IConfigSource *> sources = {&lj, &save, &env};
     auto resolved = resolve(reg, ctx, sources);
 
-    DS_REQUIRE(resolved.view.at("modmain_path").s == "mods/workshop-123/modmain.lua");
-    DS_REQUIRE(resolved.view.at("modname").s == "workshop-123");
-    DS_REQUIRE(resolved.view.at("modid").s == "123");
-    DS_REQUIRE(resolved.source_of.at("modmain_path") == ConfigSource::LuajitConfig);
-    DS_REQUIRE(resolved.source_of.at("modname") == ConfigSource::LuajitConfig);
-    DS_REQUIRE(resolved.source_of.at("modid") == ConfigSource::LuajitConfig);
+    REQUIRE_EQ(resolved.view.at("modmain_path").s, "mods/workshop-123/modmain.lua");
+    REQUIRE_EQ(resolved.view.at("modname").s, "workshop-123");
+    REQUIRE_EQ(resolved.view.at("modid").s, "123");
+    REQUIRE_EQ(resolved.source_of.at("modmain_path"), ConfigSource::LuajitConfig);
+    REQUIRE_EQ(resolved.source_of.at("modname"), ConfigSource::LuajitConfig);
+    REQUIRE_EQ(resolved.source_of.at("modid"), ConfigSource::LuajitConfig);
 
     // Accessors fall back to view
-    DS_REQUIRE(resolved.modmain_path() == "mods/workshop-123/modmain.lua");
-    DS_REQUIRE(resolved.modname() == "workshop-123");
-    DS_REQUIRE(resolved.modid() == "123");
-
-    printf("PASS: identity_keys_luajit_only\n");
+    REQUIRE_EQ(resolved.modmain_path(), "mods/workshop-123/modmain.lua");
+    REQUIRE_EQ(resolved.modname(), "workshop-123");
+    REQUIRE_EQ(resolved.modid(), "123");
 }
 
-void test_enabled_gen_gc_excludes_luajit() {
+TEST_CASE("test_config_resolve/enabled_gen_gc_excludes_luajit") {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
     RegisterCoreVmOptionSchema(reg);
@@ -194,22 +188,21 @@ void test_enabled_gen_gc_excludes_luajit() {
     {
         const std::vector<const IConfigSource *> sources = {&def, &luajit};
         auto resolved = resolve(reg, ctx, sources);
-        DS_REQUIRE(resolved.view.at("EnabledGenGC").b == false);
-        DS_REQUIRE(resolved.source_of.at("EnabledGenGC") == ConfigSource::ModinfoDefault);
-        DS_REQUIRE(!ds::core_vm::enabled_gen_gc(resolved));
+        REQUIRE_EQ(resolved.view.at("EnabledGenGC").b, false);
+        REQUIRE_EQ(resolved.source_of.at("EnabledGenGC"), ConfigSource::ModinfoDefault);
+        REQUIRE_FALSE(ds::core_vm::enabled_gen_gc(resolved));
     }
     // SaveFile may set it.
     {
         const std::vector<const IConfigSource *> sources = {&def, &luajit, &save_src};
         auto resolved = resolve(reg, ctx, sources);
-        DS_REQUIRE(resolved.view.at("EnabledGenGC").b == true);
-        DS_REQUIRE(resolved.source_of.at("EnabledGenGC") == ConfigSource::SaveFile);
-        DS_REQUIRE(ds::core_vm::enabled_gen_gc(resolved));
+        REQUIRE_EQ(resolved.view.at("EnabledGenGC").b, true);
+        REQUIRE_EQ(resolved.source_of.at("EnabledGenGC"), ConfigSource::SaveFile);
+        REQUIRE(ds::core_vm::enabled_gen_gc(resolved));
     }
-    printf("PASS: enabled_gen_gc_excludes_luajit\n");
 }
 
-void test_resolved_config_accessors() {
+TEST_CASE("test_config_resolve/resolved_config_accessors") {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
     RegisterCoreVmOptionSchema(reg);
@@ -225,7 +218,7 @@ void test_resolved_config_accessors() {
             static_cast<ConfigSourceMask>(ConfigSource::ModinfoDefault) |
             static_cast<ConfigSourceMask>(ConfigSource::SaveFile) |
             static_cast<ConfigSourceMask>(ConfigSource::EnvOrCmd);
-        DS_REQUIRE(reg.add(std::move(e)));
+        REQUIRE(reg.add(std::move(e)));
     }
 
     ConfigView values;
@@ -243,14 +236,12 @@ void test_resolved_config_accessors() {
     const std::vector<const IConfigSource *> sources = {&lj, &env};
     auto resolved = resolve(reg, ctx, sources);
 
-    DS_REQUIRE(ds::core_vm::disable_jit_when_server(resolved));
-    DS_REQUIRE(ds::core_vm::enabled_gen_gc(resolved));
-    DS_REQUIRE(ds::core_vm::lua_vm_type_string(resolved) == "jit");
-    DS_REQUIRE(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit_gen); // EnabledGenGC wins
-    DS_REQUIRE(resolved.string_opt("AngleBackend") == std::optional<std::string_view>{"vulkan"});
-    DS_REQUIRE(resolved.modname() == "workshop-9");
-
-    printf("PASS: resolved_config_accessors\n");
+    REQUIRE(ds::core_vm::disable_jit_when_server(resolved));
+    REQUIRE(ds::core_vm::enabled_gen_gc(resolved));
+    REQUIRE_EQ(ds::core_vm::lua_vm_type_string(resolved), "jit");
+    REQUIRE_EQ(ds::core_vm::get_lua_vm_type(resolved), GameLuaType::jit_gen); // EnabledGenGC wins
+    REQUIRE(resolved.string_opt("AngleBackend") == std::optional<std::string_view>{"vulkan"});
+    REQUIRE_EQ(resolved.modname(), "workshop-9");
 }
 
 // write-back removed: no map_to_game_jit_mod_config / has_vm_options.
@@ -259,7 +250,7 @@ void test_resolved_config_accessors() {
 // Generic unknown-key behaviour: a key absent from the schema is dropped by
 // apply_partial(). Production reaches this only for keys no plugin owns — the VM
 // trio is seeded by BuildCascadeSchema(), business keys by plugin_core_vm's peers.
-void test_resolve_without_vm_schema_omits_vm_keys() {
+TEST_CASE("test_config_resolve/resolve_without_vm_schema_omits_vm_keys") {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
 
@@ -271,12 +262,10 @@ void test_resolve_without_vm_schema_omits_vm_keys() {
     const std::vector<const IConfigSource *> sources = {&modinfo};
     auto resolved = resolve(reg, ctx, sources);
 
-    DS_REQUIRE(resolved.view.count("LuaVmType") == 0);
-    DS_REQUIRE(resolved.view.count("EnabledGenGC") == 0);
-    DS_REQUIRE(resolved.view.count("DisableJITWhenServer") == 0);
-    DS_REQUIRE(resolved.view.count("AlwaysEnableMod") == 0);
-
-    printf("PASS: resolve_without_vm_schema_omits_vm_keys\n");
+    REQUIRE_EQ(resolved.view.count("LuaVmType"), 0);
+    REQUIRE_EQ(resolved.view.count("EnabledGenGC"), 0);
+    REQUIRE_EQ(resolved.view.count("DisableJITWhenServer"), 0);
+    REQUIRE_EQ(resolved.view.count("AlwaysEnableMod"), 0);
 }
 
 // Regression: the cascade schema must carry the VM trio without any plugin
@@ -288,11 +277,11 @@ void test_resolve_without_vm_schema_omits_vm_keys() {
 // the modinfo default and modoverrides at once, resolves to
 // GameLuaType::unknown and degrades to the game VM — one extra vanilla-Lua boot
 // plus a restart request.
-void test_cascade_schema_carries_vm_keys() {
+TEST_CASE("test_config_resolve/cascade_schema_carries_vm_keys") {
     ConfigSchemaRegistry reg = BuildCascadeSchema(); // same call the session makes
-    DS_REQUIRE(reg.find("LuaVmType") != nullptr);
-    DS_REQUIRE(reg.find("EnabledGenGC") != nullptr);
-    DS_REQUIRE(reg.find("DisableJITWhenServer") != nullptr);
+    REQUIRE_NE(reg.find("LuaVmType"), nullptr);
+    REQUIRE_NE(reg.find("EnabledGenGC"), nullptr);
+    REQUIRE_NE(reg.find("DisableJITWhenServer"), nullptr);
     const std::string seeded_default = reg.find("LuaVmType")->default_value.s;
 
     ConfigView defaults;
@@ -306,17 +295,17 @@ void test_cascade_schema_carries_vm_keys() {
     CascadeContext ctx;
     const std::vector<const IConfigSource *> sources = {&modinfo, &env_src};
     auto resolved = resolve(reg, ctx, sources);
-    DS_REQUIRE(resolved.view.count("LuaVmType") == 1);
-    DS_REQUIRE(resolved.view.at("LuaVmType").s == "jit");
-    DS_REQUIRE(resolved.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
-    DS_REQUIRE(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit);
+    REQUIRE_EQ(resolved.view.count("LuaVmType"), 1);
+    REQUIRE_EQ(resolved.view.at("LuaVmType").s, "jit");
+    REQUIRE_EQ(resolved.source_of.at("LuaVmType"), ConfigSource::EnvOrCmd);
+    REQUIRE_EQ(ds::core_vm::get_lua_vm_type(resolved), GameLuaType::jit);
 
     // refresh_cascade_after_plugins() re-adds plugin_core_vm's entries: identical
     // copies are a no-op, a divergent one returns false (the refresh logs it and
     // the seeded entry stays authoritative).
     const auto size_before = reg.size();
     RegisterCoreVmOptionSchema(reg);
-    DS_REQUIRE(reg.size() == size_before);
+    REQUIRE_EQ(reg.size(), size_before);
 
     OptionSchemaEntry divergent;
     divergent.key = "LuaVmType";
@@ -324,24 +313,8 @@ void test_cascade_schema_carries_vm_keys() {
     divergent.default_value = ConfigValue::string("game");
     divergent.allowed = {"jit", "game"};
     divergent.allowed_sources = kConfigSourceAll;
-    DS_REQUIRE(!reg.add(std::move(divergent)));
-    DS_REQUIRE(reg.find("LuaVmType")->default_value.s == seeded_default);
-
-    printf("PASS: cascade_schema_carries_vm_keys\n");
+    REQUIRE_FALSE(reg.add(std::move(divergent)));
+    REQUIRE(reg.find("LuaVmType")->default_value.s == seeded_default);
 }
 
 } // namespace
-
-int main() {
-    test_resolve_respects_source_order_and_whitelist();
-    test_resolve_empty_sources_yields_empty_view();
-    test_resolve_env_lua_vm_type_aliases();
-    test_identity_keys_luajit_only();
-    test_enabled_gen_gc_excludes_luajit();
-    test_resolved_config_accessors();
-    test_resolve_without_vm_schema_omits_vm_keys();
-    test_cascade_schema_carries_vm_keys();
-    printf("ALL PASS: config_resolve\n");
-    return 0;
-}
-

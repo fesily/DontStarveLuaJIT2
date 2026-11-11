@@ -7,10 +7,9 @@
 // the fake global slot and the 1/N float constant are resolvable at decode time.
 
 #include "ClientPingDecode.hpp"
+#include "support/fr_context_env.hpp"
 
-#include "ctx.hpp"
-
-#include <frida-gum.h>
+#include <doctest/doctest.h>
 
 #include <algorithm>
 #include <cctype>
@@ -36,27 +35,6 @@ namespace {
 constexpr size_t kBufSize = 0x800;
 constexpr size_t kFakeGlobalOff = 0x700; // fake rakPeer-root global slot
 constexpr size_t kFloatOff = 0x7F0;      // float constant referenced by MOVSS
-
-[[noreturn]] void fail(const char *what, int line) {
-    std::fprintf(stderr, "REQUIRE failed: %s (%s:%d)\n", what, __FILE__, line);
-    std::abort();
-}
-
-#define REQUIRE(cond)                          \
-    do {                                       \
-        if (!(cond)) fail(#cond, __LINE__);    \
-    } while (0)
-
-#define REQUIRE_EQ(a, b)                                                                     \
-    do {                                                                                     \
-        const auto va = (a);                                                                 \
-        const auto vb = (b);                                                                 \
-        if (!(va == vb)) {                                                                   \
-            std::fprintf(stderr, "REQUIRE_EQ failed: %s == %s (%s:%d): %lld vs %lld\n", #a,  \
-                         #b, __FILE__, __LINE__, (long long)va, (long long)vb);              \
-            std::abort();                                                                    \
-        }                                                                                    \
-    } while (0)
 
 struct Code {
     std::vector<uint8_t> bytes;
@@ -259,39 +237,42 @@ void expect_hard_failure(Code &c, PingCallConv conv, const char *needle) {
     const auto layout = decode(c, conv);
     if (layout) {
         std::fprintf(stderr, "expected failure containing '%s', got a layout\n", needle);
-        std::abort();
     }
+    REQUIRE_FALSE(layout.has_value());
     if (layout.error().find(needle) == std::string::npos) {
         std::fprintf(stderr, "expected failure reason containing '%s', got '%s'\n", needle,
                      layout.error().c_str());
-        std::abort();
     }
+    REQUIRE_NE(layout.error().find(needle), std::string::npos);
 }
 
-void check_windows_shape() {
+TEST_CASE("test_net_stats_decode/windows_shape") {
+    REQUIRE(ensure_reloc_context());
     BuildOpts o;
     Code c = build_windows(o);
     const auto layout = decode(c, PingCallConv::MsX64);
     require_layout(layout, "windows shape");
-    REQUIRE_EQ(layout->listingOff, 0x1C0u);
-    REQUIRE_EQ(layout->ringPtrOff, 0x330u);
-    REQUIRE_EQ(layout->indexOff, 0x340u);
-    REQUIRE_EQ(layout->ringWindow, 60u);
-    REQUIRE_EQ(layout->ringStride, 8u);
+    REQUIRE(layout->listingOff == 0x1C0u);
+    REQUIRE(layout->ringPtrOff == 0x330u);
+    REQUIRE(layout->indexOff == 0x340u);
+    REQUIRE(layout->ringWindow == 60u);
+    REQUIRE(layout->ringStride == 8u);
 }
 
-void check_linux_shape() {
+TEST_CASE("test_net_stats_decode/linux_shape") {
+    REQUIRE(ensure_reloc_context());
     BuildOpts o;
     Code c = build_linux(o);
     const auto layout = decode(c, PingCallConv::SysV);
     require_layout(layout, "linux shape");
-    REQUIRE_EQ(layout->listingOff, 0x1C0u);
-    REQUIRE_EQ(layout->ringWindow, 60u);
-    REQUIRE_EQ(layout->ringStride, 8u);
+    REQUIRE(layout->listingOff == 0x1C0u);
+    REQUIRE(layout->ringWindow == 60u);
+    REQUIRE(layout->ringStride == 8u);
 }
 
 // Slot count is derived, not hardcoded: N=30 must come back as 30.
-void check_derived_slot_count() {
+TEST_CASE("test_net_stats_decode/derived_slot_count") {
+    REQUIRE(ensure_reloc_context());
     for (bool win : {true, false}) {
         BuildOpts o;
         o.ring_n = 30;
@@ -299,13 +280,14 @@ void check_derived_slot_count() {
         Code c = win ? build_windows(o) : build_linux(o);
         const auto layout = decode(c, win ? PingCallConv::MsX64 : PingCallConv::SysV);
         REQUIRE(layout.has_value());
-        REQUIRE_EQ(layout->ringWindow, 30u);
+        REQUIRE(layout->ringWindow == 30u);
     }
 }
 
 // Float cross-check mismatch: the 1/N divisor disagrees with the derived slot
 // count, so the ring cannot be trusted and the decode fails closed.
-void check_ring_float_mismatch_fails() {
+TEST_CASE("test_net_stats_decode/ring_float_mismatch_fails") {
+    REQUIRE(ensure_reloc_context());
     BuildOpts o;
     o.ring_n = 30;
     o.float_const = 1.0f / 60.0f; // stale divisor
@@ -316,7 +298,8 @@ void check_ring_float_mismatch_fails() {
 // Regression for the real-binary layout: the next function in .text uses the
 // same registers (its own [rbx+disp] argument setups). Those bytes sit inside
 // the 0x800 window but are unreachable — they must not create ambiguity.
-void check_window_bleed_is_pruned() {
+TEST_CASE("test_net_stats_decode/window_bleed_is_pruned") {
+    REQUIRE(ensure_reloc_context());
     for (bool win : {true, false}) {
         BuildOpts o;
         o.window_bleed = true;
@@ -324,12 +307,13 @@ void check_window_bleed_is_pruned() {
         const auto conv = win ? PingCallConv::MsX64 : PingCallConv::SysV;
         const auto layout = decode(c, conv);
         require_layout(layout, win ? "windows shape (bleed)" : "linux shape (bleed)");
-        REQUIRE_EQ(layout->listingOff, 0x1C0u);
-        REQUIRE_EQ(layout->ringWindow, 60u);
+        REQUIRE(layout->listingOff == 0x1C0u);
+        REQUIRE(layout->ringWindow == 60u);
     }
 }
 
-void check_negative_cases() {
+TEST_CASE("test_net_stats_decode/negative_cases") {
+    REQUIRE(ensure_reloc_context());
     { // clamp constant family only once
         BuildOpts o;
         o.clamp_second = false;
@@ -392,7 +376,19 @@ uintptr_t scan_pattern(const uint8_t *data, size_t size, const std::vector<int> 
     return 0;
 }
 
-void run_real_probe() {
+// Image mapping owned by the optional probe; released on failure too.
+struct ImageMapping {
+    void *base = nullptr;
+
+    ~ImageMapping() {
+        if (base != nullptr) {
+            VirtualFree(base, 0, MEM_RELEASE);
+        }
+    }
+};
+
+TEST_CASE("test_net_stats_decode/real_probe") {
+    REQUIRE(ensure_reloc_context());
     const char *path = std::getenv("NET_STATS_PROBE_EXE");
     if (path == nullptr || *path == '\0') {
         return;
@@ -410,11 +406,11 @@ void run_real_probe() {
     std::vector<uint8_t> file(static_cast<size_t>(file_size));
     const size_t got = std::fread(file.data(), 1, file.size(), f);
     std::fclose(f);
-    REQUIRE(got == file.size());
+    REQUIRE_EQ(got, file.size());
 
-    REQUIRE(file.size() > 0x40);
+    REQUIRE_GT(file.size(), 0x40);
     const uint32_t pe_off = *reinterpret_cast<const uint32_t *>(file.data() + 0x3C);
-    REQUIRE(std::memcmp(file.data() + pe_off, "PE\0\0", 4) == 0);
+    REQUIRE_EQ(std::memcmp(file.data() + pe_off, "PE\0\0", 4), 0);
     const auto *coff = file.data() + pe_off + 4;
     const uint16_t section_count = *reinterpret_cast<const uint16_t *>(coff + 2);
     const uint16_t opt_size = *reinterpret_cast<const uint16_t *>(coff + 16);
@@ -422,14 +418,15 @@ void run_real_probe() {
     const uint64_t image_base = *reinterpret_cast<const uint64_t *>(opt + 24);
     const uint32_t image_size = *reinterpret_cast<const uint32_t *>(opt + 56);
 
-    void *mapped = VirtualAlloc(reinterpret_cast<void *>(image_base), image_size,
-                                MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    if (!mapped) {
+    ImageMapping image;
+    image.base = VirtualAlloc(reinterpret_cast<void *>(image_base), image_size,
+                              MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (!image.base) {
         std::fprintf(stderr, "probe: SKIP (image base 0x%llx unavailable)\n",
                     static_cast<unsigned long long>(image_base));
         return;
     }
-    std::memcpy(mapped, file.data(), std::min<size_t>(file.size(), opt_size + 20 + 4));
+    std::memcpy(image.base, file.data(), std::min<size_t>(file.size(), opt_size + 20 + 4));
 
     const auto *sh = opt + opt_size;
     uintptr_t text_va = 0;
@@ -450,49 +447,28 @@ void run_real_probe() {
             text_size = vsize;
         }
     }
-    REQUIRE(text_va != 0);
+    REQUIRE_NE(text_va, 0);
 
     std::vector<int> pattern;
     REQUIRE(parse_pattern(kProbePattern, &pattern));
     const uintptr_t anchor = scan_pattern(reinterpret_cast<const uint8_t *>(text_va), text_size, pattern);
-    REQUIRE(anchor != 0);
+    REQUIRE_NE(anchor, 0);
 
     const auto layout = ds::net_stats::decode_net_stats(anchor, ds::net_stats::PingCallConv::Host);
     if (!layout) {
         std::fprintf(stderr, "probe: decode FAILED: %s\n", layout.error().c_str());
-        std::abort();
     }
+    REQUIRE(layout.has_value());
     std::fprintf(stderr, "probe: anchor=0x%llx listing=+0x%x ring=+0x%x/+0x%x n=%u stride=%u\n",
                 static_cast<unsigned long long>(anchor), layout->listingOff, layout->ringPtrOff,
                 layout->indexOff, layout->ringWindow, layout->ringStride);
     // Shape invariants that must hold for any game build with this pattern.
     REQUIRE(layout->listingOff > 0);
     REQUIRE(layout->ringStride >= 2);
-    REQUIRE(layout->ringWindow >= 2 && layout->ringWindow <= 4096);
+    REQUIRE(layout->ringWindow >= 2);
+    REQUIRE(layout->ringWindow <= 4096);
     std::fprintf(stderr, "probe: OK\n");
 }
 
 } // namespace
 #endif
-
-int main() {
-    gum_init_embedded();
-    if (!function_relocation::init_ctx()) {
-        std::fprintf(stderr, "function_relocation::init_ctx failed\n");
-        return 1;
-    }
-
-    check_windows_shape();
-    check_linux_shape();
-    check_derived_slot_count();
-    check_ring_float_mismatch_fails();
-    check_window_bleed_is_pruned();
-    check_negative_cases();
-#if defined(_WIN32)
-    run_real_probe();
-#endif
-
-    function_relocation::deinit_ctx();
-    std::printf("net_stats_decode: all cases passed\n");
-    return 0;
-}

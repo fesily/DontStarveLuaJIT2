@@ -24,10 +24,19 @@ if (WIN32)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif ()
 
-# Test assertion macro (tests/support/test_assert.hpp). assert() is compiled out
-# under /DNDEBUG (Release/RelWithDebInfo), so tests use DS_REQUIRE, which stays
-# active in every configuration. Directory scope: every target below gets it.
+# tests/ is on the include path so shared test headers are spelled from the test
+# root ("support/fr_context_env.hpp"). Directory scope: every target below.
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+
+# doctest runner shared by every migrated C++ test executable: one test source
+# per executable, TEST_CASEs inside. Test targets link ds_test_doctest (which
+# exports doctest::doctest); the two protocol executables keep their own main and
+# link doctest::doctest only. See tests/support/doctest_main.cpp.
+find_package(doctest CONFIG REQUIRED)
+add_library(ds_test_doctest STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/support/doctest_main.cpp)
+target_link_libraries(ds_test_doctest PUBLIC doctest::doctest)
+target_compile_features(ds_test_doctest PRIVATE cxx_std_17)
 
 # Gate: no path may be narrowed through the ANSI code page outside util/PathText.
 # A name the code page cannot map makes path::string() throw error 1113, which
@@ -660,10 +669,12 @@ set_tests_properties(game_mod_throw_abort PROPERTIES
     TIMEOUT 180
     LABELS "game;harness")
 
-# Game-launching tests share the game install and bind fixed UDP ports
-# (cluster server.ini: ServerPort 10999 / SteamAuthPort 8766 /
-# SteamMasterServerPort 27016), so a parallel `ctest -j` run fails with
-# SOCKET_PORT_ALREADY_IN_USE. Serialize them with a resource lock.
+# Game-launching tests share the installed game, the injected files/Mod tree,
+# the save environment and runtime caches; the cluster server.ini also pins
+# ServerPort 10999 / SteamAuthPort 8766 / SteamMasterServerPort 27016, so a
+# parallel `ctest -j` run fails with SOCKET_PORT_ALREADY_IN_USE. Serialize them
+# with a resource lock. A dynamic port would not be enough: the shared install
+# and save environment are the real contention, not only the ports.
 set_tests_properties(
     plugin_dedicated_sim_pause
     plugin_client_inject_smoke
@@ -999,3 +1010,153 @@ set_tests_properties(
     orchestration
     schema_freeze
     PROPERTIES LABELS match_v2)
+
+# --- doctest wiring: one runner per test executable ---
+# One test source per executable, TEST_CASEs inside, one doctest runner. Every
+# ordinary test target links ds_test_doctest (STATIC, exports doctest::doctest);
+# the two protocol executables (test_plugin_process_lock keeps --hold-lock,
+# test_elf_plt_symbols keeps its four positional library arguments) define their
+# own main and only link doctest::doctest. Listed explicitly instead of a loop
+# over all targets so a new test target cannot silently skip the runner; targets
+# that a platform does not build are guarded with if(TARGET ...).
+set(DS_DOCTEST_RUNNER_TARGETS
+    test_buffer_name_pool
+    test_fast_hook
+    test_plugin_host_graph
+    test_plugin_option_rules
+    test_config_schema
+    test_sun_model
+    test_shadow_matrix
+    test_config_source_whitelist
+    test_packaged_module
+    test_config_resolve
+    test_config_view_build
+    test_dynamic_plugin_loader
+    test_plugin_path
+    test_signature_mod_root
+    test_signature_json_format
+    test_injector_bootstrap
+    test_crash_sentinel
+    test_plugin_pending_updates
+    test_plugin_pin_config
+    test_plugin_proxy_url
+    test_plugin_local_inventory
+    test_plugin_hash_zip
+    test_plugin_apply_offline
+    test_lua_event_bus
+    test_signature_provider_registration
+    test_plugin_services
+    test_plugin_pack_modinfo
+    test_external_plugin_discovery
+    test_enabled_dst_mods
+    test_external_discover_gate
+    test_net_stats_decode
+    test_game_info_arguments
+    test_function_ranges
+    test_nucleus_adapter
+    test_eh_frame_starts
+    test_function_table_refinement
+    test_match_accept_policy
+    test_micro_windows
+    test_xref_pattern
+    test_graph_seed
+    test_unique_signature
+    test_memory_signature_abi
+    test_soft_score
+    test_virtual_flatten
+    test_orchestration
+    test_schema_freeze
+)
+foreach(_ds_doctest_target IN LISTS DS_DOCTEST_RUNNER_TARGETS)
+    if (TARGET ${_ds_doctest_target})
+        target_link_libraries(${_ds_doctest_target} PRIVATE ds_test_doctest)
+    endif()
+endforeach()
+
+set(DS_DOCTEST_PROTOCOL_TARGETS
+    test_plugin_process_lock
+    test_elf_plt_symbols
+)
+foreach(_ds_doctest_target IN LISTS DS_DOCTEST_PROTOCOL_TARGETS)
+    if (TARGET ${_ds_doctest_target})
+        target_link_libraries(${_ds_doctest_target} PRIVATE doctest::doctest)
+    endif()
+endforeach()
+
+# --- CTest scheduling: classification labels + resource locks ---
+# Isolated tests run under `ctest -j N` without locks. Only shared resources get
+# one, and RESOURCE_LOCK (never RUN_SERIAL) so a locked group still overlaps
+# every unrelated test:
+#   game                 real game launches: one install, one Mod tree, one save
+#                        environment -> dst_game_server (set where registered).
+#   game_signatures      drive the signature tools over the installed binaries.
+#   ds_relocation_log    share tests/<Config>/FunctionRelocation.log: its path is
+#                        derived from the main module location (core/ctx.cpp,
+#                        config.hpp), so it cannot be isolated with a cwd.
+#   ds_signature_tool_log shares the rotating log next to the signature tool exe.
+# Labels/locks are appended, never replaced, and only to tests this platform
+# actually registered. Resource locks are per-ctest-process: two build trees or
+# two concurrent ctest runs do not share them.
+get_property(DS_REGISTERED_TESTS DIRECTORY PROPERTY TESTS)
+
+function(ds_test_append_label label)
+    foreach(_t IN LISTS ARGN)
+        if (NOT _t IN_LIST DS_REGISTERED_TESTS)
+            continue()
+        endif()
+        get_property(_existing TEST ${_t} PROPERTY LABELS)
+        if (label IN_LIST _existing)
+            continue()
+        endif()
+        set_property(TEST ${_t} APPEND PROPERTY LABELS ${label})
+    endforeach()
+endfunction()
+
+function(ds_test_append_lock lock)
+    foreach(_t IN LISTS ARGN)
+        if (NOT _t IN_LIST DS_REGISTERED_TESTS)
+            continue()
+        endif()
+        get_property(_existing TEST ${_t} PROPERTY RESOURCE_LOCK)
+        if (lock IN_LIST _existing)
+            continue()
+        endif()
+        set_property(TEST ${_t} APPEND PROPERTY RESOURCE_LOCK ${lock})
+    endforeach()
+endfunction()
+
+# Tests that really start the game. harness_unit / game_performance_unit /
+# game_info_arguments do not launch it and stay outside this label.
+ds_test_append_label(game
+    plugin_dedicated_sim_pause
+    plugin_client_inject_smoke
+    plugin_client_host_smoke
+    game_mod_throw_abort
+    game_performance_worldgen
+    game_performance_startup)
+# Platform signature gates: windows_* on Windows, linux_* on Linux.
+ds_test_append_label(game_signatures
+    windows_signatures
+    windows_signatures_cache
+    linux_signatures_client
+    linux_signatures_server
+    linux_signatures_cache_client
+    linux_signatures_cache_server)
+
+# Every test that initializes the function_relocation ctx writes the same
+# tests/<Config>/FunctionRelocation.log. memory_signature_abi / fast_hook only
+# use gum and nucleus_adapter never initializes ctx, so they stay unlocked.
+ds_test_append_lock(ds_relocation_log
+    xref_pattern
+    graph_seed
+    unique_signature
+    net_stats_decode
+    eh_frame_starts
+    elf_plt_symbols)
+ds_test_append_lock(ds_signature_tool_log
+    windows_signatures
+    windows_signatures_cache
+    linux_signatures_client
+    linux_signatures_server
+    linux_signatures_cache_client
+    linux_signatures_cache_server)

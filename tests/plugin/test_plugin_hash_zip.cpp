@@ -3,7 +3,6 @@
 #include "plugins/plugin_manager/PluginZipExtract.hpp"
 
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -12,7 +11,7 @@
 
 
 #include <zip.h>
-#include "support/test_assert.hpp"
+#include <doctest/doctest.h>
 
 namespace fs = std::filesystem;
 using namespace ds::plugin_manager;
@@ -25,46 +24,50 @@ static fs::path make_temp_dir(const char *tag) {
     return base;
 }
 
+// Removes the scratch tree even when an assertion unwinds the case.
+struct TempDirGuard {
+    fs::path dir;
+    explicit TempDirGuard(const fs::path &d) : dir(d) {}
+    ~TempDirGuard() {
+        std::error_code ec;
+        fs::remove_all(dir, ec);
+    }
+};
+
 static void write_bytes(const fs::path &p, const std::string &s) {
     std::ofstream out(p, std::ios::binary | std::ios::trunc);
-    DS_REQUIRE(out.is_open());
+    REQUIRE(out.is_open());
     out.write(s.data(), static_cast<std::streamsize>(s.size()));
-    DS_REQUIRE(out);
+    REQUIRE(out);
 }
 
 static std::string read_bytes(const fs::path &p) {
     std::ifstream in(p, std::ios::binary);
-    DS_REQUIRE(in.is_open());
+    REQUIRE(in.is_open());
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
 
-static void test_sha256_known_vectors() {
+TEST_CASE("test_plugin_hash_zip/sha256_known_vectors") {
     // FIPS / common test vectors
-    DS_REQUIRE(sha256_hex("") ==
-           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-    DS_REQUIRE(sha256_hex("abc") ==
-           "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    DS_REQUIRE(sha256_hex("hello") ==
-           "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
-    DS_REQUIRE(sha256_hex_equal(
+    REQUIRE_EQ(sha256_hex(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    REQUIRE_EQ(sha256_hex("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    REQUIRE_EQ(sha256_hex("hello"), "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+    REQUIRE(sha256_hex_equal(
         "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD",
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
-    DS_REQUIRE(sha256_hex_equal(
+    REQUIRE(sha256_hex_equal(
         "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
-    printf("PASS: sha256_known_vectors\n");
 }
 
-static void test_sha256_file() {
+TEST_CASE("test_plugin_hash_zip/sha256_file") {
     const auto dir = make_temp_dir("sha_file");
+    TempDirGuard guard{dir};
     const auto p = dir / "blob.bin";
     write_bytes(p, "abc");
     auto dig = sha256_file_hex(p);
-    DS_REQUIRE(dig.has_value());
-    DS_REQUIRE(*dig == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    std::error_code ec;
-    fs::remove_all(dir, ec);
-    printf("PASS: sha256_file\n");
+    REQUIRE(dig.has_value());
+    REQUIRE_EQ(*dig, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 }
 
 static fs::path build_zip_with_entries(
@@ -72,39 +75,39 @@ static fs::path build_zip_with_entries(
     const std::vector<std::pair<std::string, std::string>> &entries) {
     int zerr = 0;
     zip_t *za = zip_open(zip_path.string().c_str(), ZIP_CREATE | ZIP_TRUNCATE, &zerr);
-    DS_REQUIRE(za);
+    REQUIRE(za);
     for (const auto &e : entries) {
         void *copy = malloc(e.second.size() ? e.second.size() : 1);
-        DS_REQUIRE(copy);
+        REQUIRE(copy);
         if (!e.second.empty()) {
             memcpy(copy, e.second.data(), e.second.size());
         }
         zip_source_t *src = zip_source_buffer(za, copy, e.second.size(), 1);
-        DS_REQUIRE(src);
-        DS_REQUIRE(zip_file_add(za, e.first.c_str(), src, ZIP_FL_ENC_UTF_8) >= 0);
+        REQUIRE(src);
+        REQUIRE_GE(zip_file_add(za, e.first.c_str(), src, ZIP_FL_ENC_UTF_8), 0);
     }
-    DS_REQUIRE(zip_close(za) == 0);
+    REQUIRE_EQ(zip_close(za), 0);
     return zip_path;
 }
 
-static void test_zip_unsafe_detection() {
-    DS_REQUIRE(zip_entry_is_unsafe(".."));
-    DS_REQUIRE(zip_entry_is_unsafe("../evil.dll"));
-    DS_REQUIRE(zip_entry_is_unsafe("foo/../../x.dll"));
-    DS_REQUIRE(zip_entry_is_unsafe("/abs.dll"));
-    DS_REQUIRE(zip_entry_is_unsafe("C:/abs.dll"));
-    DS_REQUIRE(zip_entry_is_unsafe("nested/../escape.dll"));
-    DS_REQUIRE(!zip_entry_is_unsafe("plugin_dummy.dll"));
-    DS_REQUIRE(!zip_entry_is_unsafe("plugin_dummy.meta.json"));
-    DS_REQUIRE(zip_entry_safe_basename("../x").empty());
-    DS_REQUIRE(zip_entry_safe_basename("plugin_dummy.dll") == "plugin_dummy.dll");
-    printf("PASS: zip_unsafe_detection\n");
+TEST_CASE("test_plugin_hash_zip/zip_unsafe_detection") {
+    REQUIRE(zip_entry_is_unsafe(".."));
+    REQUIRE(zip_entry_is_unsafe("../evil.dll"));
+    REQUIRE(zip_entry_is_unsafe("foo/../../x.dll"));
+    REQUIRE(zip_entry_is_unsafe("/abs.dll"));
+    REQUIRE(zip_entry_is_unsafe("C:/abs.dll"));
+    REQUIRE(zip_entry_is_unsafe("nested/../escape.dll"));
+    REQUIRE_FALSE(zip_entry_is_unsafe("plugin_dummy.dll"));
+    REQUIRE_FALSE(zip_entry_is_unsafe("plugin_dummy.meta.json"));
+    REQUIRE(zip_entry_safe_basename("../x").empty());
+    REQUIRE_EQ(zip_entry_safe_basename("plugin_dummy.dll"), "plugin_dummy.dll");
 }
 
-static void test_zip_extract_empty_allowlist() {
+TEST_CASE("test_plugin_hash_zip/zip_extract_empty_allowlist") {
     // Empty allowlist = every SAFE member (fixtures/tests); the manager always passes
     // manifest files[]. Unsafe members are still rejected regardless.
     const auto dir = make_temp_dir("zip_def");
+    TempDirGuard guard{dir};
     const auto zip = dir / "pkg.zip";
     build_zip_with_entries(zip, {
                                     {"plugin_dummy.dll", "MZ-dummy"},
@@ -114,18 +117,16 @@ static void test_zip_extract_empty_allowlist() {
     const auto out = dir / "out";
     std::string err;
     auto n = extract_plugin_zip(zip, out, /*allow_files=*/{}, &err);
-    DS_REQUIRE(n.has_value());
-    DS_REQUIRE(*n == 3);
-    DS_REQUIRE(read_bytes(out / "plugin_dummy.dll") == "MZ-dummy");
-    DS_REQUIRE(fs::exists(out / "plugin_dummy.meta.json"));
-    DS_REQUIRE(fs::exists(out / "readme.txt"));
-    std::error_code ec;
-    fs::remove_all(dir, ec);
-    printf("PASS: zip_extract_empty_allowlist\n");
+    REQUIRE(n.has_value());
+    REQUIRE_EQ(*n, 3);
+    REQUIRE_EQ(read_bytes(out / "plugin_dummy.dll"), "MZ-dummy");
+    REQUIRE(fs::exists(out / "plugin_dummy.meta.json"));
+    REQUIRE(fs::exists(out / "readme.txt"));
 }
 
-static void test_zip_extract_explicit_allowlist() {
+TEST_CASE("test_plugin_hash_zip/zip_extract_explicit_allowlist") {
     const auto dir = make_temp_dir("zip_allow");
+    TempDirGuard guard{dir};
     const auto zip = dir / "pkg.zip";
     build_zip_with_entries(zip, {
                                     {"plugin_dummy.dll", "MZ"},
@@ -135,18 +136,16 @@ static void test_zip_extract_explicit_allowlist() {
     const auto out = dir / "out";
     std::string err;
     auto n = extract_plugin_zip(zip, out, {"plugin_dummy.dll"}, &err);
-    DS_REQUIRE(n.has_value());
-    DS_REQUIRE(*n == 1);
-    DS_REQUIRE(fs::exists(out / "plugin_dummy.dll"));
-    DS_REQUIRE(!fs::exists(out / "plugin_dummy.meta.json"));
-    DS_REQUIRE(!fs::exists(out / "extra.txt"));
-    std::error_code ec;
-    fs::remove_all(dir, ec);
-    printf("PASS: zip_extract_explicit_allowlist\n");
+    REQUIRE(n.has_value());
+    REQUIRE_EQ(*n, 1);
+    REQUIRE(fs::exists(out / "plugin_dummy.dll"));
+    REQUIRE_FALSE(fs::exists(out / "plugin_dummy.meta.json"));
+    REQUIRE_FALSE(fs::exists(out / "extra.txt"));
 }
 
-static void test_zip_reject_dotdot() {
+TEST_CASE("test_plugin_hash_zip/zip_reject_dotdot") {
     const auto dir = make_temp_dir("zip_dot");
+    TempDirGuard guard{dir};
     const auto zip = dir / "evil.zip";
     // libzip may normalize names; craft with explicit .. segment.
     build_zip_with_entries(zip, {
@@ -155,19 +154,17 @@ static void test_zip_reject_dotdot() {
     const auto out = dir / "out";
     std::string err;
     auto n = extract_plugin_zip(zip, out, {}, &err);
-    DS_REQUIRE(!n.has_value());
-    DS_REQUIRE(!err.empty());
-    DS_REQUIRE(!fs::exists(out / "evil.dll"));
-    std::error_code ec;
-    fs::remove_all(dir, ec);
-    printf("PASS: zip_reject_dotdot\n");
+    REQUIRE_FALSE(n.has_value());
+    REQUIRE_FALSE(err.empty());
+    REQUIRE_FALSE(fs::exists(out / "evil.dll"));
 }
 
-static void test_zip_nested_members() {
+TEST_CASE("test_plugin_hash_zip/zip_nested_members") {
     // Package layout: nested members (modinfo.lua, scripts/...) extract with their
     // subdirectories preserved; escaping paths are still rejected.
     {
         const auto dir = make_temp_dir("zip_nest_ok");
+        TempDirGuard guard{dir};
         const auto zip = dir / "nest.zip";
         build_zip_with_entries(zip, {
                                         {"plugin_dummy.dll", "MZ"},
@@ -177,16 +174,14 @@ static void test_zip_nested_members() {
         std::string err;
         auto n = extract_plugin_zip(zip, out,
                                     {"plugin_dummy.dll", "scripts/a.lua"}, &err);
-        DS_REQUIRE(n.has_value());
-        DS_REQUIRE(*n == 2);
-        DS_REQUIRE(read_bytes(out / "plugin_dummy.dll") == "MZ");
-        DS_REQUIRE(read_bytes(out / "scripts" / "a.lua") == "return 1");
-        std::error_code ec;
-        fs::remove_all(dir, ec);
-        printf("PASS: zip_nested_members_extract\n");
+        REQUIRE(n.has_value());
+        REQUIRE_EQ(*n, 2);
+        REQUIRE_EQ(read_bytes(out / "plugin_dummy.dll"), "MZ");
+        REQUIRE_EQ(read_bytes(out / "scripts" / "a.lua"), "return 1");
     }
     {
         const auto dir = make_temp_dir("zip_nest_escape");
+        TempDirGuard guard{dir};
         const auto zip = dir / "nest.zip";
         build_zip_with_entries(zip, {
                                         {"scripts/../../escape.lua", "bad"},
@@ -194,29 +189,26 @@ static void test_zip_nested_members() {
         const auto out = dir / "out";
         std::string err;
         auto n = extract_plugin_zip(zip, out, {}, &err);
-        DS_REQUIRE(!n.has_value());
-        DS_REQUIRE(err.find("unsafe") != std::string::npos || err.find("nested") != std::string::npos);
-        DS_REQUIRE(!fs::exists(dir / "escape.lua"));
-        std::error_code ec;
-        fs::remove_all(dir, ec);
-        printf("PASS: zip_reject_escaping_nested\n");
+        REQUIRE_FALSE(n.has_value());
+        const bool unsafe_err = err.find("unsafe") != std::string::npos ||
+                                err.find("nested") != std::string::npos;
+        REQUIRE(unsafe_err);
+        REQUIRE_FALSE(fs::exists(dir / "escape.lua"));
     }
 }
 
-static void test_zip_memory_extract() {
+TEST_CASE("test_plugin_hash_zip/zip_memory_extract") {
     const auto dir = make_temp_dir("zip_mem");
+    TempDirGuard guard{dir};
     const auto zip = dir / "pkg.zip";
     build_zip_with_entries(zip, {{"plugin_x.dll", "DLLDATA"}});
     const std::string bytes = read_bytes(zip);
     const auto out = dir / "out";
     std::string err;
     auto n = extract_plugin_zip_memory(bytes.data(), bytes.size(), out, {"plugin_x.dll"}, &err);
-    DS_REQUIRE(n.has_value());
-    DS_REQUIRE(*n == 1);
-    DS_REQUIRE(read_bytes(out / "plugin_x.dll") == "DLLDATA");
-    std::error_code ec;
-    fs::remove_all(dir, ec);
-    printf("PASS: zip_memory_extract\n");
+    REQUIRE(n.has_value());
+    REQUIRE_EQ(*n, 1);
+    REQUIRE_EQ(read_bytes(out / "plugin_x.dll"), "DLLDATA");
 }
 
 // Minimal stored zip with forged uncompressed size in local + central headers.
@@ -286,11 +278,12 @@ static std::string craft_zip_forged_uncompressed(const std::string &name,
     return local + central + eocd;
 }
 
-static void test_zip_reject_oversized_entry() {
-    DS_REQUIRE(kMaxZipEntryUncompressedBytes == 64ull * 1024ull * 1024ull);
-    DS_REQUIRE(kMaxZipTotalUncompressedBytes == 128ull * 1024ull * 1024ull);
+TEST_CASE("test_plugin_hash_zip/zip_reject_oversized_entry") {
+    REQUIRE_EQ(kMaxZipEntryUncompressedBytes, 64ull * 1024ull * 1024ull);
+    REQUIRE_EQ(kMaxZipTotalUncompressedBytes, 128ull * 1024ull * 1024ull);
 
     const auto dir = make_temp_dir("zip_over");
+    TempDirGuard guard{dir};
     const auto zip = dir / "huge.zip";
     const std::uint32_t over =
         static_cast<std::uint32_t>(kMaxZipEntryUncompressedBytes) + 1u;
@@ -301,27 +294,7 @@ static void test_zip_reject_oversized_entry() {
     const auto out = dir / "out";
     std::string err;
     auto n = extract_plugin_zip(zip, out, {"plugin_huge.dll"}, &err);
-    DS_REQUIRE(!n.has_value());
-    DS_REQUIRE(err.find("exceeds") != std::string::npos);
-    DS_REQUIRE(!fs::exists(out / "plugin_huge.dll"));
-    std::error_code ec;
-    fs::remove_all(dir, ec);
-    printf("PASS: zip_reject_oversized_entry\n");
+    REQUIRE_FALSE(n.has_value());
+    REQUIRE_NE(err.find("exceeds"), std::string::npos);
+    REQUIRE_FALSE(fs::exists(out / "plugin_huge.dll"));
 }
-
-
-
-int main() {
-    test_sha256_known_vectors();
-    test_sha256_file();
-    test_zip_unsafe_detection();
-    test_zip_extract_empty_allowlist();
-    test_zip_extract_explicit_allowlist();
-    test_zip_reject_dotdot();
-    test_zip_nested_members();
-    test_zip_memory_extract();
-    test_zip_reject_oversized_entry();
-    printf("ALL PASS plugin_hash_zip\n");
-    return 0;
-}
-

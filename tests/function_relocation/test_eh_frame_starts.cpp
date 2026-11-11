@@ -2,10 +2,11 @@
 #include "MemorySignature.hpp"
 #include "GraphSeed.hpp"
 #include "ModuleSections.hpp"
-#include "ctx.hpp"
-#include <dlfcn.h>
-#include <frida-gum.h>
+#include "support/fr_context_env.hpp"
 
+#include <doctest/doctest.h>
+
+#include <dlfcn.h>
 
 #include <cstdint>
 #include <algorithm>
@@ -18,13 +19,24 @@
 
 using function_relocation::nucleus_analyze_file;
 
-#define REQUIRE(cond)                                                                          \
-  do {                                                                                         \
-    if (!(cond)) {                                                                             \
-      std::fprintf(stderr, "REQUIRE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__);        \
-      std::abort();                                                                            \
-    }                                                                                          \
-  } while (0)
+namespace {
+
+    // Closes a dlopen handle on scope exit; close() reports the dlclose result.
+    struct DlHandle {
+        void *handle = nullptr;
+
+        ~DlHandle() {
+            if (handle != nullptr) dlclose(handle);
+        }
+
+        int close() {
+            void *open = handle;
+            handle = nullptr;
+            return dlclose(open);
+        }
+    };
+
+}// namespace
 
 static std::filesystem::path repo_lua51_so() {
   std::filesystem::path p = "Mod/deps/liblua51.so";
@@ -42,9 +54,12 @@ static uint64_t elf_dynsym_value(const std::filesystem::path &path, const char *
   std::ifstream f(path, std::ios::binary);
   REQUIRE(static_cast<bool>(f));
   std::vector<char> data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-  REQUIRE(data.size() > 64);
-  REQUIRE(data[0] == 0x7f && data[1] == 'E' && data[2] == 'L' && data[3] == 'F');
-  REQUIRE(data[4] == 2); // ELF64
+  REQUIRE_GT(data.size(), 64);
+  REQUIRE_EQ(data[0], 0x7f);
+  REQUIRE_EQ(data[1], 'E');
+  REQUIRE_EQ(data[2], 'L');
+  REQUIRE_EQ(data[3], 'F');
+  REQUIRE_EQ(data[4], 2); // ELF64
 
   auto rd16 = [&](size_t off) -> uint16_t {
     uint16_t v;
@@ -65,7 +80,7 @@ static uint64_t elf_dynsym_value(const std::filesystem::path &path, const char *
   const uint64_t e_shoff = rd64(40);
   const uint16_t e_shentsize = rd16(58);
   const uint16_t e_shnum = rd16(60);
-  REQUIRE(e_shentsize >= 64);
+  REQUIRE_GE(e_shentsize, 64);
   REQUIRE(e_shoff + static_cast<uint64_t>(e_shnum) * e_shentsize <= data.size());
 
   uint64_t dynsym_off = 0, dynsym_size = 0, dynsym_entsize = 0;
@@ -82,14 +97,14 @@ static uint64_t elf_dynsym_value(const std::filesystem::path &path, const char *
     dynsym_entsize = rd64(sh + 56);
     break;
   }
-  REQUIRE(dynsym_off != 0);
-  REQUIRE(dynsym_entsize >= 24);
-  REQUIRE(dynsym_link < e_shnum);
+  REQUIRE_NE(dynsym_off, 0);
+  REQUIRE_GE(dynsym_entsize, 24);
+  REQUIRE_LT(dynsym_link, e_shnum);
 
   const size_t str_sh = static_cast<size_t>(e_shoff) + static_cast<size_t>(dynsym_link) * e_shentsize;
   const uint64_t str_off = rd64(str_sh + 24);
   const uint64_t str_size = rd64(str_sh + 32);
-  REQUIRE(str_off + str_size <= data.size());
+  REQUIRE_LE(str_off + str_size, data.size());
   const char *strtab = data.data() + str_off;
 
   const size_t n = static_cast<size_t>(dynsym_size / dynsym_entsize);
@@ -111,29 +126,30 @@ static uint64_t elf_dynsym_value(const std::filesystem::path &path, const char *
   return 0;
 }
 
-static void test_lua51_dump_yield_are_span_starts() {
+TEST_CASE("test_eh_frame_starts/lua51_dump_yield_are_span_starts") {
+  REQUIRE(ensure_reloc_context());
   auto path = repo_lua51_so();
   if (!std::filesystem::exists(path)) {
     std::fprintf(stderr, "FAIL missing %s\n", path.string().c_str());
-    std::abort();
   }
+  REQUIRE(std::filesystem::exists(path));
   const uint64_t dump_va = elf_dynsym_value(path, "lua_dump");
   const uint64_t yield_va = elf_dynsym_value(path, "lua_yield");
-  REQUIRE(dump_va != 0);
-  REQUIRE(yield_va != 0);
-  REQUIRE(dump_va != yield_va);
+  REQUIRE_NE(dump_va, 0);
+  REQUIRE_NE(yield_va, 0);
+  REQUIRE_NE(dump_va, yield_va);
 
   auto res = nucleus_analyze_file(path);
   if (!res) {
     std::fprintf(stderr, "nucleus_analyze_file failed: %s\n", res.error().c_str());
-    std::abort();
   }
+  REQUIRE(static_cast<bool>(res));
   REQUIRE(res->table.containing(dump_va) == dump_va);
   REQUIRE(res->table.containing(yield_va) == yield_va);
   auto *sp_dump = res->table.span_containing(dump_va);
   auto *sp_yield = res->table.span_containing(yield_va);
-  REQUIRE(sp_dump != nullptr);
-  REQUIRE(sp_yield != nullptr);
+  REQUIRE_NE(sp_dump, nullptr);
+  REQUIRE_NE(sp_yield, nullptr);
   REQUIRE(sp_dump->start != sp_yield->start);
   REQUIRE(sp_dump->end <= dump_va + 0x80);
 
@@ -156,12 +172,14 @@ static void test_loaded_pic_lua_call(const std::string &path, void *library) {
     REQUIRE(function_relocation::apply_nucleus_function_table(module, table->table, table->image_base));
     const auto caller = reinterpret_cast<uintptr_t>(dlsym(library, "luaL_checklstring"));
     const auto callee = reinterpret_cast<uintptr_t>(dlsym(library, "lua_tolstring"));
-    REQUIRE(caller && callee);
+    REQUIRE_NE(caller, 0);
+    REQUIRE_NE(callee, 0);
     auto *fn = module.find_function(caller);
-    REQUIRE(fn && fn->size);
+    REQUIRE_NE(fn, nullptr);
+    REQUIRE(fn->size != 0);
     const auto raw = function_relocation::collect_rel32_call_targets(caller, fn->size);
     const auto resolved = function_relocation::collect_rel32_call_targets(module, caller, fn->size);
-    REQUIRE(raw.size() == resolved.size());
+    REQUIRE_EQ(raw.size(), resolved.size());
     bool saw_plt_call = false;
     for (size_t i = 0; i < raw.size(); ++i) saw_plt_call |= module.in_plt(raw[i]) && resolved[i] == callee;
     REQUIRE(saw_plt_call);
@@ -176,26 +194,20 @@ static void test_loaded_pic_lua_call(const std::string &path, void *library) {
     std::puts("loaded PIC luaL_checklstring -> lua_tolstring: GraphSeed/body/ScanCtx agree");
 }
 
-int main() {
-    gum_init_embedded();
-    REQUIRE(function_relocation::init_ctx());
-    test_lua51_dump_yield_are_span_starts();
+TEST_CASE("test_eh_frame_starts/loaded_pic_lua_call") {
+    REQUIRE(ensure_reloc_context());
     const auto path = std::filesystem::absolute(repo_lua51_so()).string();
-    auto *library = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-    REQUIRE(library);
-    test_loaded_pic_lua_call(path, library);
-    const auto entry = reinterpret_cast<uintptr_t>(dlsym(library, "lua_gettop"));
-    REQUIRE(entry);
+    DlHandle library{dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL)};
+    REQUIRE_NE(library.handle, nullptr);
+    test_loaded_pic_lua_call(path, library.handle);
+    const auto entry = reinterpret_cast<uintptr_t>(dlsym(library.handle, "lua_gettop"));
+    REQUIRE_NE(entry, 0);
     function_relocation::MemorySignature signature{"48 8B 47 10 48 2B 47 18", 7};
     signature.log = false;
     const auto raw = signature.scan(path.c_str());
-    REQUIRE(raw);
-    REQUIRE(signature.scan_function(path.c_str()) == entry);
-    REQUIRE(signature.pattern_offset == 7);
-    REQUIRE(signature.scan(path.c_str()) == raw);
-    REQUIRE(dlclose(library) == 0);
-    function_relocation::deinit_ctx();
-    gum_deinit_embedded();
-    std::puts("test_eh_frame_starts: ok");
-    return 0;
+    REQUIRE_NE(raw, 0);
+    REQUIRE_EQ(signature.scan_function(path.c_str()), entry);
+    REQUIRE_EQ(signature.pattern_offset, 7);
+    REQUIRE_EQ(signature.scan(path.c_str()), raw);
+    REQUIRE_EQ(library.close(), 0);
 }

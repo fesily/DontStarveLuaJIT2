@@ -1,13 +1,14 @@
 #include "core/ExternalPluginDiscovery.hpp"
 #include "core/PluginHost.hpp"
 
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <string>
+#include <utility>
 #include <vector>
-#include "support/test_assert.hpp"
+#include <doctest/doctest.h>
 
 #if defined(_WIN32)
 #  include <Windows.h>
@@ -37,7 +38,42 @@ static void write_file(const fs::path &p, const std::string &body) {
     std::ofstream(p, std::ios::binary) << body;
 }
 
-static void test_unmarked_never_loads() {
+// Restores the discovery env this case mutates; a failed REQUIRE unwinds past
+// the tail set_env("", ...) calls, so the restore runs from the destructor. An
+// entry value is put back verbatim instead of being blanket-cleared.
+class EnvGuard {
+public:
+    explicit EnvGuard(std::initializer_list<const char *> names) {
+        for (const char *n : names) {
+            Entry e;
+            e.name = n;
+            if (const char *prev = std::getenv(n)) {
+                e.had = true;
+                e.value = prev;
+            }
+            saved_.push_back(std::move(e));
+        }
+    }
+    ~EnvGuard() {
+        for (const auto &e : saved_) {
+            set_env(e.name.c_str(), e.had ? e.value.c_str() : nullptr);
+        }
+    }
+    EnvGuard(const EnvGuard &) = delete;
+    EnvGuard &operator=(const EnvGuard &) = delete;
+
+private:
+    struct Entry {
+        std::string name;
+        bool had = false;
+        std::string value;
+    };
+    std::vector<Entry> saved_;
+};
+
+TEST_CASE("test_external_discover_gate/unmarked_never_loads") {
+    EnvGuard env{"DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "DS_LUAJIT_MODOVERRIDES_PATH",
+                "DS_LUAJIT_CLIENT_ENABLED_MODS"};
     auto sandbox = make_temp_dir("ds_ext_gate_unmarked");
     auto mod = sandbox / "evil_mod";
     write_file(mod / "modinfo.lua", "name='x'\n");
@@ -57,13 +93,13 @@ static void test_unmarked_never_loads() {
             ++loads;
             return true;
         });
-    DS_REQUIRE(loads == 0);
-    DS_REQUIRE(rep.modules_loaded == 0);
-    set_env("DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "");
-    std::puts("ok unmarked_never_loads");
+    REQUIRE_EQ(loads, 0);
+    REQUIRE_EQ(rep.modules_loaded, 0);
 }
 
-static void test_marked_calls_load_fn() {
+TEST_CASE("test_external_discover_gate/marked_calls_load_fn") {
+    EnvGuard env{"DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "DS_LUAJIT_MODOVERRIDES_PATH",
+                "DS_LUAJIT_CLIENT_ENABLED_MODS"};
     auto sandbox = make_temp_dir("ds_ext_gate_marked");
     auto mod = sandbox / "good_mod";
     write_file(mod / "modinfo.lua",
@@ -83,15 +119,15 @@ static void test_marked_calls_load_fn() {
             loaded.push_back(p.filename().string());
             return true;
         });
-    DS_REQUIRE(rep.mods_accepted == 1);
-    DS_REQUIRE(rep.modules_loaded == 1);
-    DS_REQUIRE(loaded.size() == 1);
-    DS_REQUIRE(loaded[0].find("plugin_x") != std::string::npos);
-    set_env("DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "");
-    std::puts("ok marked_calls_load_fn");
+    REQUIRE_EQ(rep.mods_accepted, 1);
+    REQUIRE_EQ(rep.modules_loaded, 1);
+    REQUIRE_EQ(loaded.size(), 1);
+    REQUIRE_NE(loaded[0].find("plugin_x"), std::string::npos);
 }
 
-static void test_missing_plugin_id_skips() {
+TEST_CASE("test_external_discover_gate/missing_plugin_id_skips") {
+    EnvGuard env{"DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "DS_LUAJIT_MODOVERRIDES_PATH",
+                "DS_LUAJIT_CLIENT_ENABLED_MODS"};
     auto sandbox = make_temp_dir("ds_ext_gate_noid");
     auto mod = sandbox / "noid_mod";
     write_file(mod / "modinfo.lua", "luajit_plugin_pack = true\nname='n'\n");
@@ -109,16 +145,6 @@ static void test_missing_plugin_id_skips() {
             ++loads;
             return true;
         });
-    DS_REQUIRE(loads == 0);
-    DS_REQUIRE(rep.mods_accepted == 0);
-    set_env("DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "");
-    std::puts("ok missing_plugin_id_skips");
-}
-
-int main() {
-    test_unmarked_never_loads();
-    test_marked_calls_load_fn();
-    test_missing_plugin_id_skips();
-    std::puts("ALL PASS external_discover_gate");
-    return 0;
+    REQUIRE_EQ(loads, 0);
+    REQUIRE_EQ(rep.mods_accepted, 0);
 }

@@ -4,18 +4,9 @@
 
 #include "MatchPolicy.hpp"
 
-#include <cstdio>
-#include <cstdlib>
+#include <doctest/doctest.h>
 
 using namespace function_relocation::match_policy;
-
-#define REQUIRE(cond)                                                                          \
-  do {                                                                                         \
-    if (!(cond)) {                                                                             \
-      std::fprintf(stderr, "REQUIRE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__);        \
-      std::abort();                                                                            \
-    }                                                                                          \
-  } while (0)
 
 static MatchCandidate make_candidate(uint64_t entry, std::vector<uintptr_t> matches,
                                       float score_compact, float score_flat) {
@@ -28,7 +19,7 @@ static MatchCandidate make_candidate(uint64_t entry, std::vector<uintptr_t> matc
 }
 
 // Happy: sole entry score 4.0 -> accept.
-static void test_accept_sole() {
+TEST_CASE("test_match_accept_policy/accept_sole") {
     auto r = accept_candidates({make_candidate(0x1000, {0x1000}, 4.0f, 4.0f)});
     REQUIRE(r.has_value());
     REQUIRE(r->entry == 0x1000);
@@ -37,16 +28,16 @@ static void test_accept_sole() {
 }
 
 // Failure: twin scores 5.0 / 4.0 gap 1.0 < SCORE_M(1.5) -> reject.
-static void test_reject_twin_small_gap() {
+TEST_CASE("test_match_accept_policy/reject_twin_small_gap") {
     auto r = accept_candidates({
         make_candidate(0x1000, {0x1000}, 5.0f, 5.0f),
         make_candidate(0x2000, {0x2000}, 4.0f, 4.0f),
     });
-    REQUIRE(!r.has_value());
+    REQUIRE_FALSE(r.has_value());
 }
 
 // Happy: gap 2.0 >= SCORE_M -> accept best.
-static void test_accept_gap_two() {
+TEST_CASE("test_match_accept_policy/accept_gap_two") {
     auto r = accept_candidates({
         make_candidate(0x1000, {0x1000}, 5.0f, 5.0f),
         make_candidate(0x2000, {0x2000}, 3.0f, 3.0f),
@@ -57,22 +48,22 @@ static void test_accept_gap_two() {
 }
 
 // Failure: score 2.9 < SCORE_T(3.0) -> reject even as sole candidate.
-static void test_reject_below_threshold() {
+TEST_CASE("test_match_accept_policy/reject_below_threshold") {
     auto r = accept_candidates({make_candidate(0x1000, {0x1000}, 2.9f, 2.9f)});
-    REQUIRE(!r.has_value());
+    REQUIRE_FALSE(r.has_value());
 }
 
 // Failure: compact best entry != flat best entry -> fail-closed.
-static void test_reject_compact_flat_disagree() {
+TEST_CASE("test_match_accept_policy/reject_compact_flat_disagree") {
     auto r = accept_candidates({
         make_candidate(0x1000, {0x1000}, 5.0f, 0.0f),
         make_candidate(0x2000, {0x2000}, 0.0f, 4.0f),
     });
-    REQUIRE(!r.has_value());
+    REQUIRE_FALSE(r.has_value());
 }
 
 // Extra coverage: chosen_raw_match is the earliest raw match for the winner.
-static void test_earliest_raw_match() {
+TEST_CASE("test_match_accept_policy/earliest_raw_match") {
     auto r = accept_candidates({
         make_candidate(0x1000, {0x1010, 0x1000, 0x1008}, 4.0f, 4.0f),
     });
@@ -82,26 +73,13 @@ static void test_earliest_raw_match() {
 }
 
 // Extra coverage: empty candidate list -> reject.
-static void test_reject_empty() {
+TEST_CASE("test_match_accept_policy/reject_empty") {
     auto r = accept_candidates({});
-    REQUIRE(!r.has_value());
+    REQUIRE_FALSE(r.has_value());
 }
 
 // Extra coverage: both channels zero -> no positive signal -> reject.
-static void test_reject_no_positive_signal() {
+TEST_CASE("test_match_accept_policy/reject_no_positive_signal") {
     auto r = accept_candidates({make_candidate(0x1000, {0x1000}, 0.0f, 0.0f)});
-    REQUIRE(!r.has_value());
-}
-
-int main() {
-    test_accept_sole();
-    test_reject_twin_small_gap();
-    test_accept_gap_two();
-    test_reject_below_threshold();
-    test_reject_compact_flat_disagree();
-    test_earliest_raw_match();
-    test_reject_empty();
-    test_reject_no_positive_signal();
-    std::puts("test_match_accept_policy: ok");
-    return 0;
+    REQUIRE_FALSE(r.has_value());
 }

@@ -1,21 +1,13 @@
 #include "FunctionTableRefinement.hpp"
 
+#include <doctest/doctest.h>
+
 #include <algorithm>
-#include <cstdio>
-#include <cstdlib>
 #include <limits>
 #include <vector>
 
 using function_relocation::FunctionSpan;
 using function_relocation::FunctionTable;
-
-#define REQUIRE(cond) \
-    do { \
-        if (!(cond)) { \
-            std::fprintf(stderr, "REQUIRE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
-            std::abort(); \
-        } \
-    } while (0)
 
 static bool same_span(const FunctionSpan &a, const FunctionSpan &b) {
     return a.start == b.start && a.end == b.end;
@@ -40,7 +32,7 @@ static void check_refinement(const std::vector<FunctionSpan> &fallback_spans,
     };
     std::sort(actual.begin(), actual.end(), order);
     std::sort(expected.begin(), expected.end(), order);
-    REQUIRE(actual.size() == expected.size());
+    REQUIRE_EQ(actual.size(), expected.size());
     for (size_t i = 0; i < actual.size(); ++i) REQUIRE(same_span(actual[i], expected[i]));
 
     std::vector<uint64_t> probes{0, std::numeric_limits<uint64_t>::max()};
@@ -55,9 +47,9 @@ static void check_refinement(const std::vector<FunctionSpan> &fallback_spans,
     for (uint64_t address: probes) {
         const auto *span = result.span_containing(address);
         // The original union of covered bytes must be preserved exactly.
-        REQUIRE((span != nullptr) == (covers(fallback_spans, address) || covers(authoritative, address)));
+        REQUIRE_EQ((span != nullptr), (covers(fallback_spans, address) || covers(authoritative, address)));
         if (covers(authoritative, address)) {
-            REQUIRE(span != nullptr);
+            REQUIRE_NE(span, nullptr);
             REQUIRE(std::any_of(authoritative.begin(), authoritative.end(),
                                 [&](const auto &fde) { return same_span(*span, fde); }));
         }
@@ -67,12 +59,12 @@ static void check_refinement(const std::vector<FunctionSpan> &fallback_spans,
                         [&](const auto &fde) { return same_span(span, fde); })) continue;
         for (const auto &fde: authoritative) {
             if (fde.end <= fde.start) continue;
-            REQUIRE(span.end <= fde.start || span.start >= fde.end);
+            REQUIRE((span.end <= fde.start || span.start >= fde.end));
         }
     }
 }
 
-int main() {
+TEST_CASE("test_function_table_refinement/all") {
     // Regression: a Nucleus start inside an FDE must not lose the outside tail.
     check_refinement({{100, 200}}, {{80, 150}}, {{80, 150}, {150, 200}});
     check_refinement({{100, 200}}, {{150, 220}}, {{100, 150}, {150, 220}});
@@ -103,7 +95,4 @@ int main() {
     constexpr uint64_t high = std::numeric_limits<uint64_t>::max();
     check_refinement({{high - 20, high}}, {{high - 30, high - 10}},
                      {{high - 30, high - 10}, {high - 10, high}});
-
-    std::puts("test_function_table_refinement: ok");
-    return 0;
 }

@@ -1,11 +1,13 @@
 #include "core/EnabledDstMods.hpp"
 
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <string>
-#include "support/test_assert.hpp"
+#include <utility>
+#include <vector>
+#include <doctest/doctest.h>
 
 #if defined(_WIN32)
 #  include <Windows.h>
@@ -42,7 +44,42 @@ void set_env(const char *k, const char *v) {
 #endif
 }
 
-void test_parse_modoverrides_enabled_only() {
+// Restores the DS_LUAJIT_* variables a case mutates; a failed REQUIRE unwinds
+// past the tail set_env("", ...) calls, so the restore runs from the destructor.
+// Entry values are put back verbatim (including a value the user had set).
+class EnvGuard {
+public:
+    explicit EnvGuard(std::initializer_list<const char *> names) {
+        for (const char *n : names) {
+            Entry e;
+            e.name = n;
+            if (const char *prev = std::getenv(n)) {
+                e.had = true;
+                e.value = prev;
+            }
+            saved_.push_back(std::move(e));
+        }
+    }
+    ~EnvGuard() {
+        for (const auto &e : saved_) {
+            set_env(e.name.c_str(), e.had ? e.value.c_str() : nullptr);
+        }
+    }
+    EnvGuard(const EnvGuard &) = delete;
+    EnvGuard &operator=(const EnvGuard &) = delete;
+
+private:
+    struct Entry {
+        std::string name;
+        bool had = false;
+        std::string value;
+    };
+    std::vector<Entry> saved_;
+};
+
+} // namespace
+
+TEST_CASE("test_enabled_dst_mods/parse_modoverrides_enabled_only") {
     auto dir = make_temp_dir("ds_enabled_mods_ov");
     auto path = dir / "modoverrides.lua";
     write_file(path, R"lua(
@@ -54,7 +91,7 @@ return {
 }
 )lua");
     auto names = parse_modoverrides_enabled_names(path);
-    DS_REQUIRE(names.size() == 2);
+    REQUIRE_EQ(names.size(), 2);
     bool has111 = false, hasplain = false, haslocal = false;
     for (const auto &n : names) {
         if (n == "workshop-111") {
@@ -67,18 +104,20 @@ return {
             haslocal = true;
         }
     }
-    DS_REQUIRE(has111 && hasplain && !haslocal);
-    std::puts("ok parse_modoverrides_enabled_only");
+    REQUIRE(has111);
+    REQUIRE(hasplain);
+    REQUIRE_FALSE(haslocal);
 }
 
-void test_parse_missing_file() {
+TEST_CASE("test_enabled_dst_mods/parse_missing_file") {
     auto names = parse_modoverrides_enabled_names(
         fs::temp_directory_path() / "ds_enabled_mods_missing" / "nope.lua");
-    DS_REQUIRE(names.empty());
-    std::puts("ok parse_missing_file");
+    REQUIRE(names.empty());
 }
 
-void test_resolve_and_enumerate_server() {
+TEST_CASE("test_enabled_dst_mods/resolve_and_enumerate_server") {
+    EnvGuard env{"DS_LUAJIT_MODS_ROOT", "DS_LUAJIT_MODOVERRIDES_PATH",
+                "DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "DS_LUAJIT_CLIENT_ENABLED_MODS"};
     auto sandbox = make_temp_dir("ds_enabled_mods_enum");
     auto mods_root = sandbox / "mods";
     auto mod_a = mods_root / "workshop-111";
@@ -99,17 +138,15 @@ return {
     set_env("DS_LUAJIT_CLIENT_ENABLED_MODS", "");
 
     auto list = enumerate_enabled_dst_mods(/*is_client=*/false);
-    DS_REQUIRE(list.size() == 1);
-    DS_REQUIRE(list[0].name == "workshop-111");
-    DS_REQUIRE(!list[0].root.empty());
-    DS_REQUIRE(fs::exists(list[0].root));
-
-    set_env("DS_LUAJIT_MODS_ROOT", "");
-    set_env("DS_LUAJIT_MODOVERRIDES_PATH", "");
-    std::puts("ok resolve_and_enumerate_server");
+    REQUIRE_EQ(list.size(), 1);
+    REQUIRE_EQ(list[0].name, "workshop-111");
+    REQUIRE_FALSE(list[0].root.empty());
+    REQUIRE(fs::exists(list[0].root));
 }
 
-void test_extra_roots_seam() {
+TEST_CASE("test_enabled_dst_mods/extra_roots_seam") {
+    EnvGuard env{"DS_LUAJIT_MODS_ROOT", "DS_LUAJIT_MODOVERRIDES_PATH",
+                "DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "DS_LUAJIT_CLIENT_ENABLED_MODS"};
     auto sandbox = make_temp_dir("ds_enabled_mods_extra");
     auto mod = sandbox / "my_pack";
     fs::create_directories(mod);
@@ -117,19 +154,6 @@ void test_extra_roots_seam() {
     set_env("DS_LUAJIT_MODOVERRIDES_PATH", "");
     set_env("DS_LUAJIT_CLIENT_ENABLED_MODS", "");
     auto list = enumerate_enabled_dst_mods(true);
-    DS_REQUIRE(list.size() == 1);
-    DS_REQUIRE(list[0].name == "my_pack");
-    set_env("DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "");
-    std::puts("ok extra_roots_seam");
-}
-
-} // namespace
-
-int main() {
-    test_parse_modoverrides_enabled_only();
-    test_parse_missing_file();
-    test_resolve_and_enumerate_server();
-    test_extra_roots_seam();
-    std::puts("ALL PASS enabled_dst_mods");
-    return 0;
+    REQUIRE_EQ(list.size(), 1);
+    REQUIRE_EQ(list[0].name, "my_pack");
 }

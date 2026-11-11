@@ -8,21 +8,14 @@
 #include "MemorySignature.hpp"
 #include "ModuleSections.hpp"
 #include "Signature.hpp"
+#include "support/fr_context_env.hpp"
+
+#include <doctest/doctest.h>
 
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
-
-#define REQUIRE(cond)                                                                          \
-    do {                                                                                       \
-        if (!(cond)) {                                                                         \
-            std::fprintf(stderr, "REQUIRE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__);  \
-            std::abort();                                                                      \
-        }                                                                                      \
-    } while (0)
 
 static bool token_is_wildcard(const std::string &tok) { return tok == "??"; }
 
@@ -43,10 +36,44 @@ static std::vector<std::string> split_tokens(const std::string &pat) {
     return out;
 }
 
+// Section lookup and token-level pattern checks that ran inline in the old
+// main(), ahead of the scenario bodies.
+TEST_CASE("test_xref_pattern/sections_and_pattern_tokens") {
+    REQUIRE(ensure_reloc_context());
+    function_relocation::ModuleSections sections;
+    sections.sections[".plt.sec"] = {0x1000, 0x100};
+    sections.sections[".got"] = {0x2000, 0x100};
+    REQUIRE(sections.in_plt(0x1000));
+    REQUIRE_FALSE(sections.in_plt(0x1100));
+    REQUIRE(sections.in_got_plt(0x2000));
+    REQUIRE_FALSE(sections.in_got_plt(0x2100));
+    uint8_t repeated[] = {0xaa, 0xbb, 0xcc, 0xaa, 0xbb, 0xcc};
+    function_relocation::MemorySignature scan{"aa bb cc", 0};
+    scan.log = false;
+    REQUIRE_EQ(scan.scan(reinterpret_cast<uintptr_t>(repeated), sizeof(repeated)), 0);
+    REQUIRE_EQ(scan.targets.size(), 2);
+    REQUIRE(scan.scan(reinterpret_cast<uintptr_t>(repeated), 3) == reinterpret_cast<uintptr_t>(repeated));
+    REQUIRE_EQ(scan.targets.size(), 1);
+    const uint8_t movabs[] = {0x49, 0xb8, 1, 2, 3, 4, 5, 6, 7, 8};
+    const auto wide = function_relocation::make_xref_wildcard_pattern(movabs, 0, 0);
+    REQUIRE_EQ(wide.insn_len, 10);
+    REQUIRE_EQ(wide.pattern, "49 b8 ?? ?? ?? ?? ?? ?? ?? ??");
+    const uint8_t lea32[] = {0x8d, 0x05, 0, 0, 0, 0};
+    const auto compact = function_relocation::make_xref_wildcard_pattern(lea32, 0, 0);
+    REQUIRE_EQ(compact.insn_len, 6);
+    REQUIRE_EQ(compact.pattern, "8d 05 ?? ?? ?? ??");
+    const uint8_t prefixed[] = {0x66, 0x48, 0x8d, 0x05, 0, 0, 0, 0};
+    auto decoded = function_relocation::disasm::get_insn(const_cast<uint8_t *>(prefixed), sizeof(prefixed));
+    REQUIRE(decoded);
+    REQUIRE_EQ(function_relocation::instruction_pattern(*decoded), "66 48 8d 05 ?? ?? ?? ??");
+    decoded.reset();
+}
+
 // RIP LEA at +8: 48 8d 05 disp32. Pattern must keep opcode/ModRM and
 // wildcard exactly the 4 displacement bytes. pattern_offset maps window
 // start back to entry (byte 0).
-static void test_rip_lea_wildcards_disp32() {
+TEST_CASE("test_xref_pattern/rip_lea_wildcards_disp32") {
+    REQUIRE(ensure_reloc_context());
     std::vector<uint8_t> body(40, 0x90); // nop pad
     // entry+0: 48 83 ec 28   sub rsp, 28h
     body[0] = 0x48;
@@ -71,24 +98,25 @@ static void test_rip_lea_wildcards_disp32() {
 
     const auto xp = function_relocation::make_xref_wildcard_pattern(
             std::span<const uint8_t>{body.data(), body.size()}, 8, /*pad=*/8);
-    REQUIRE(!xp.pattern.empty());
-    REQUIRE(xp.insn_len == 7);
+    REQUIRE_FALSE(xp.pattern.empty());
+    REQUIRE_EQ(xp.insn_len, 7);
     // window starts at 0 (xref 8, pad 8) -> pattern_offset 0
 
     const auto toks = split_tokens(xp.pattern);
-    REQUIRE(toks.size() >= 15);
-    REQUIRE(toks[8] == "48");
-    REQUIRE(toks[9] == "8d");
-    REQUIRE(toks[10] == "05");
+    REQUIRE_GE(toks.size(), 15);
+    REQUIRE_EQ(toks[8], "48");
+    REQUIRE_EQ(toks[9], "8d");
+    REQUIRE_EQ(toks[10], "05");
     REQUIRE(token_is_wildcard(toks[11]));
     REQUIRE(token_is_wildcard(toks[12]));
     REQUIRE(token_is_wildcard(toks[13]));
     REQUIRE(token_is_wildcard(toks[14]));
-    REQUIRE(toks[15] == "48");
-    REQUIRE(!token_is_wildcard(toks[0]));
+    REQUIRE_EQ(toks[15], "48");
+    REQUIRE_FALSE(token_is_wildcard(toks[0]));
 }
 
-static void test_mov_imm32_wildcards_imm() {
+TEST_CASE("test_xref_pattern/mov_imm32_wildcards_imm") {
+    REQUIRE(ensure_reloc_context());
     std::vector<uint8_t> body(24, 0x90);
     body[0] = 0x56; // push rsi
     body[1] = 0x57;
@@ -104,19 +132,20 @@ static void test_mov_imm32_wildcards_imm() {
 
     const auto xp = function_relocation::make_xref_wildcard_pattern(
             std::span<const uint8_t>{body.data(), body.size()}, 2, /*pad=*/2);
-    REQUIRE(!xp.pattern.empty());
-    REQUIRE(xp.insn_len == 5);
-    REQUIRE(xp.pattern_offset == 0);
+    REQUIRE_FALSE(xp.pattern.empty());
+    REQUIRE_EQ(xp.insn_len, 5);
+    REQUIRE_EQ(xp.pattern_offset, 0);
     const auto toks = split_tokens(xp.pattern);
-    REQUIRE(toks[2] == "be");
+    REQUIRE_EQ(toks[2], "be");
     REQUIRE(token_is_wildcard(toks[3]));
     REQUIRE(token_is_wildcard(toks[4]));
     REQUIRE(token_is_wildcard(toks[5]));
     REQUIRE(token_is_wildcard(toks[6]));
-    REQUIRE(toks[7] == "48");
+    REQUIRE_EQ(toks[7], "48");
 }
 
-static void test_mid_body_xref_negative_pattern_offset() {
+TEST_CASE("test_xref_pattern/mid_body_xref_negative_pattern_offset") {
+    REQUIRE(ensure_reloc_context());
     std::vector<uint8_t> body(64, 0x90);
     body[24] = 0x48;
     body[25] = 0x8d;
@@ -127,26 +156,28 @@ static void test_mid_body_xref_negative_pattern_offset() {
     body[30] = 0xdd;
     const auto xp = function_relocation::make_xref_wildcard_pattern(
             std::span<const uint8_t>{body.data(), body.size()}, 24, /*pad=*/8);
-    REQUIRE(!xp.pattern.empty());
-    REQUIRE(xp.insn_len == 7);
+    REQUIRE_FALSE(xp.pattern.empty());
+    REQUIRE_EQ(xp.insn_len, 7);
     // window_start = 24-8 = 16, pattern_offset = -16 (entry is byte 0)
-    REQUIRE(xp.pattern_offset == -16);
+    REQUIRE_EQ(xp.pattern_offset, -16);
     const auto toks = split_tokens(xp.pattern);
-    REQUIRE(toks[8] == "48");
-    REQUIRE(toks[9] == "8d");
-    REQUIRE(toks[10] == "0d");
+    REQUIRE_EQ(toks[8], "48");
+    REQUIRE_EQ(toks[9], "8d");
+    REQUIRE_EQ(toks[10], "0d");
     REQUIRE(token_is_wildcard(toks[11]));
 }
 
-static void test_unknown_insn_empty() {
+TEST_CASE("test_xref_pattern/unknown_insn_empty") {
+    REQUIRE(ensure_reloc_context());
     std::vector<uint8_t> body(16, 0x90);
     const auto xp = function_relocation::make_xref_wildcard_pattern(
             std::span<const uint8_t>{body.data(), body.size()}, 4);
     REQUIRE(xp.pattern.empty());
-    REQUIRE(xp.insn_len == 0);
+    REQUIRE_EQ(xp.insn_len, 0);
 }
 
-static void test_early_return_does_not_hide_type_check() {
+TEST_CASE("test_xref_pattern/early_return_does_not_hide_type_check") {
+    REQUIRE(ensure_reloc_context());
     // Identical success paths, different type constants in the failure path.
     uint8_t train_bytes[] = {0x85, 0xf6, 0x74, 0x06, 0xb8, 1, 0, 0, 0, 0xc3, 0xb8, 4, 0, 0, 0, 0xc3};
     uint8_t target_bytes[96]{};
@@ -172,43 +203,7 @@ static void test_early_return_does_not_hide_type_check() {
     original.name = "typed_check";
     original.module = &train;
     REQUIRE(function_relocation::ensure_function_features(original));
-    REQUIRE(original.size == sizeof(train_bytes));
+    REQUIRE_EQ(original.size, sizeof(train_bytes));
     function_relocation::SignatureInfo signature{};
-    REQUIRE(target.try_fix_func_address(original, &signature, target_base + 1) == target_base + 64);
-}
-
-int main() {
-    gum_init_embedded();
-    REQUIRE(function_relocation::init_ctx());
-    function_relocation::ModuleSections sections;
-    sections.sections[".plt.sec"] = {0x1000, 0x100};
-    sections.sections[".got"] = {0x2000, 0x100};
-    REQUIRE(sections.in_plt(0x1000) && !sections.in_plt(0x1100));
-    REQUIRE(sections.in_got_plt(0x2000) && !sections.in_got_plt(0x2100));
-    uint8_t repeated[] = {0xaa, 0xbb, 0xcc, 0xaa, 0xbb, 0xcc};
-    function_relocation::MemorySignature scan{"aa bb cc", 0};
-    scan.log = false;
-    REQUIRE(scan.scan(reinterpret_cast<uintptr_t>(repeated), sizeof(repeated)) == 0);
-    REQUIRE(scan.targets.size() == 2);
-    REQUIRE(scan.scan(reinterpret_cast<uintptr_t>(repeated), 3) == reinterpret_cast<uintptr_t>(repeated));
-    REQUIRE(scan.targets.size() == 1);
-    const uint8_t movabs[] = {0x49, 0xb8, 1, 2, 3, 4, 5, 6, 7, 8};
-    const auto wide = function_relocation::make_xref_wildcard_pattern(movabs, 0, 0);
-    REQUIRE(wide.insn_len == 10 && wide.pattern == "49 b8 ?? ?? ?? ?? ?? ?? ?? ??");
-    const uint8_t lea32[] = {0x8d, 0x05, 0, 0, 0, 0};
-    const auto compact = function_relocation::make_xref_wildcard_pattern(lea32, 0, 0);
-    REQUIRE(compact.insn_len == 6 && compact.pattern == "8d 05 ?? ?? ?? ??");
-    const uint8_t prefixed[] = {0x66, 0x48, 0x8d, 0x05, 0, 0, 0, 0};
-    auto decoded = function_relocation::disasm::get_insn(const_cast<uint8_t *>(prefixed), sizeof(prefixed));
-    REQUIRE(decoded && function_relocation::instruction_pattern(*decoded) == "66 48 8d 05 ?? ?? ?? ??");
-    decoded.reset();
-    test_rip_lea_wildcards_disp32();
-    test_mov_imm32_wildcards_imm();
-    test_mid_body_xref_negative_pattern_offset();
-    test_unknown_insn_empty();
-    test_early_return_does_not_hide_type_check();
-    std::puts("test_xref_pattern: ok");
-    function_relocation::deinit_ctx();
-    gum_deinit_embedded();
-    return 0;
+    REQUIRE_EQ(target.try_fix_func_address(original, &signature, target_base + 1), target_base + 64);
 }

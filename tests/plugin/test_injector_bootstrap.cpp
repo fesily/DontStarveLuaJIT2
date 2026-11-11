@@ -1,12 +1,11 @@
 #include "loader/bootstrap/InjectorBootstrap.hpp"
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
 #include <vector>
-#include "support/test_assert.hpp"
+#include <doctest/doctest.h>
 
 namespace fs = std::filesystem;
 using namespace ds::bootstrap;
@@ -39,6 +38,37 @@ static void clear_env_and_state() {
     reset_for_test();
 }
 
+// Restores the env overrides and the resolution seams a case mutates; a failed
+// REQUIRE unwinds past the tail cleanup, which would otherwise leak a game root,
+// an exe dir or a module override into the next case. Pre-existing
+// DS_LUAJIT_INJECTOR(_DIR) values are put back, never cleared.
+class BootstrapStateGuard {
+public:
+    BootstrapStateGuard() {
+        capture(kInjectorFileEnv, has_file_, file_);
+        capture(kInjectorDirEnv, has_dir_, dir_);
+    }
+    ~BootstrapStateGuard() {
+        set_env(kInjectorFileEnv, has_file_ ? file_.c_str() : nullptr);
+        set_env(kInjectorDirEnv, has_dir_ ? dir_.c_str() : nullptr);
+        reset_for_test();
+    }
+    BootstrapStateGuard(const BootstrapStateGuard &) = delete;
+    BootstrapStateGuard &operator=(const BootstrapStateGuard &) = delete;
+
+private:
+    static void capture(const char *k, bool &has, std::string &value) {
+        if (const char *prev = std::getenv(k)) {
+            has = true;
+            value = prev;
+        }
+    }
+    bool has_file_ = false;
+    bool has_dir_ = false;
+    std::string file_;
+    std::string dir_;
+};
+
 // Layout helper: fake game + mod with the real module at the mod root.
 static fs::path plant_mod_injector(const fs::path &game_root,
                                    const fs::path &mods_base,
@@ -50,7 +80,8 @@ static fs::path plant_mod_injector(const fs::path &game_root,
     return module;
 }
 
-static void test_env_file_wins() {
+TEST_CASE("test_injector_bootstrap/env_file_wins") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_env_file");
     auto game = root / "game";
@@ -64,21 +95,19 @@ static void test_env_file_wins() {
     set_env(kInjectorFileEnv, env_mod.string().c_str());
 
     fs::path out;
-    DS_REQUIRE(resolve_injector_module(out));
-    DS_REQUIRE(fs::equivalent(out, env_mod));
-    DS_REQUIRE(last_resolve_source_for_test() == "env_file");
+    REQUIRE(resolve_injector_module(out));
+    REQUIRE(fs::equivalent(out, env_mod));
+    REQUIRE_EQ(last_resolve_source_for_test(), "env_file");
     // env success must pin marker
     fs::path marker_val;
-    DS_REQUIRE(read_injector_marker(marker_val));
-    DS_REQUIRE(fs::equivalent(marker_val, env_mod));
-
-    clear_env_and_state();
-    printf("PASS: env_file_wins\n");
+    REQUIRE(read_injector_marker(marker_val));
+    REQUIRE(fs::equivalent(marker_val, env_mod));
 }
 
 // Workshop layout: the item ships "<module>.pkg" only; the shell materializes the
 // canonical name while resolving, so the rest of the boot sees the normal layout.
-static void test_packaged_twin_materialized_on_resolve() {
+TEST_CASE("test_injector_bootstrap/packaged_twin_materialized_on_resolve") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_pkg_twin");
     auto game = root / "game";
@@ -94,22 +123,20 @@ static void test_packaged_twin_materialized_on_resolve() {
 
     set_marker_game_root_for_test(game);
     set_exe_dir_for_test(game / "bin64");
-    DS_REQUIRE(!fs::exists(module));
+    REQUIRE_FALSE(fs::exists(module));
 
     fs::path out;
-    DS_REQUIRE(resolve_injector_module(out)); // scan base -> alias -> ".pkg" twin
-    DS_REQUIRE(fs::equivalent(out, module));
-    DS_REQUIRE(last_resolve_source_for_test() == "scan");
-    DS_REQUIRE(fs::exists(module));
-    DS_REQUIRE(fs::exists(fs::path(module.string() + ".pkg"))); // the item copy stays
-
-    clear_env_and_state();
-    printf("PASS: packaged_twin_materialized_on_resolve\n");
+    REQUIRE(resolve_injector_module(out)); // scan base -> alias -> ".pkg" twin
+    REQUIRE(fs::equivalent(out, module));
+    REQUIRE_EQ(last_resolve_source_for_test(), "scan");
+    REQUIRE(fs::exists(module));
+    REQUIRE(fs::exists(fs::path(module.string() + ".pkg"))); // the item copy stays
 }
 
 // A replaced "<module>.pkg" must win over the canonical file the previous build left:
 // resolution compares the twin and refreshes the derivative, it does not stop at "present".
-static void test_packaged_twin_refreshes_stale_canonical_on_resolve() {
+TEST_CASE("test_injector_bootstrap/packaged_twin_refreshes_stale_canonical_on_resolve") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_pkg_twin_stale");
     auto game = root / "game";
@@ -125,20 +152,18 @@ static void test_packaged_twin_refreshes_stale_canonical_on_resolve() {
     set_exe_dir_for_test(game / "bin64");
 
     fs::path out;
-    DS_REQUIRE(resolve_injector_module(out));
-    DS_REQUIRE(fs::equivalent(out, module));
+    REQUIRE(resolve_injector_module(out));
+    REQUIRE(fs::equivalent(out, module));
     {
         std::ifstream in(module, std::ios::binary);
         const std::string bytes((std::istreambuf_iterator<char>(in)),
                                 std::istreambuf_iterator<char>());
-        DS_REQUIRE(bytes == "NEW-BUILD-REPLACED");
+        REQUIRE_EQ(bytes, "NEW-BUILD-REPLACED");
     }
-
-    clear_env_and_state();
-    printf("PASS: packaged_twin_refreshes_stale_canonical_on_resolve\n");
 }
 
-static void test_env_dir_wins_over_marker() {
+TEST_CASE("test_injector_bootstrap/env_dir_wins_over_marker") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_env_dir");
     auto game = root / "game";
@@ -151,19 +176,17 @@ static void test_env_dir_wins_over_marker() {
     set_marker_game_root_for_test(game);
     set_exe_dir_for_test(game / "bin64");
     // stale marker points at planted
-    DS_REQUIRE(write_injector_marker(planted));
+    REQUIRE(write_injector_marker(planted));
     set_env(kInjectorDirEnv, env_dir.string().c_str());
 
     fs::path out;
-    DS_REQUIRE(resolve_injector_module(out));
-    DS_REQUIRE(fs::equivalent(out, env_mod));
-    DS_REQUIRE(last_resolve_source_for_test() == "env_dir");
-
-    clear_env_and_state();
-    printf("PASS: env_dir_wins_over_marker\n");
+    REQUIRE(resolve_injector_module(out));
+    REQUIRE(fs::equivalent(out, env_mod));
+    REQUIRE_EQ(last_resolve_source_for_test(), "env_dir");
 }
 
-static void test_marker_used_when_no_env() {
+TEST_CASE("test_injector_bootstrap/marker_used_when_no_env") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_marker");
     auto game = root / "game";
@@ -172,18 +195,16 @@ static void test_marker_used_when_no_env() {
 
     set_marker_game_root_for_test(game);
     set_exe_dir_for_test(game / "bin64");
-    DS_REQUIRE(write_injector_marker(planted));
+    REQUIRE(write_injector_marker(planted));
 
     fs::path out;
-    DS_REQUIRE(resolve_injector_module(out));
-    DS_REQUIRE(fs::equivalent(out, planted));
-    DS_REQUIRE(last_resolve_source_for_test() == "marker");
-
-    clear_env_and_state();
-    printf("PASS: marker_used_when_no_env\n");
+    REQUIRE(resolve_injector_module(out));
+    REQUIRE(fs::equivalent(out, planted));
+    REQUIRE_EQ(last_resolve_source_for_test(), "marker");
 }
 
-static void test_invalid_marker_falls_through_to_scan() {
+TEST_CASE("test_injector_bootstrap/invalid_marker_falls_through_to_scan") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_bad_marker");
     auto game = root / "game";
@@ -199,19 +220,17 @@ static void test_invalid_marker_falls_through_to_scan() {
     set_exe_dir_for_test(game / "bin64");
 
     fs::path out;
-    DS_REQUIRE(resolve_injector_module(out));
-    DS_REQUIRE(fs::equivalent(out, planted));
-    DS_REQUIRE(last_resolve_source_for_test() == "scan");
+    REQUIRE(resolve_injector_module(out));
+    REQUIRE(fs::equivalent(out, planted));
+    REQUIRE_EQ(last_resolve_source_for_test(), "scan");
     // successful scan rewrites marker
     fs::path marker_val;
-    DS_REQUIRE(read_injector_marker(marker_val));
-    DS_REQUIRE(fs::equivalent(marker_val, planted));
-
-    clear_env_and_state();
-    printf("PASS: invalid_marker_falls_through_to_scan\n");
+    REQUIRE(read_injector_marker(marker_val));
+    REQUIRE(fs::equivalent(marker_val, planted));
 }
 
-static void test_scan_alias_workshop() {
+TEST_CASE("test_injector_bootstrap/scan_alias_workshop") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_scan");
     auto game = root / "game";
@@ -222,15 +241,13 @@ static void test_scan_alias_workshop() {
     set_exe_dir_for_test(game / "bin64");
 
     fs::path out;
-    DS_REQUIRE(resolve_injector_module(out));
-    DS_REQUIRE(fs::equivalent(out, planted));
-    DS_REQUIRE(last_resolve_source_for_test() == "scan");
-
-    clear_env_and_state();
-    printf("PASS: scan_alias_workshop\n");
+    REQUIRE(resolve_injector_module(out));
+    REQUIRE(fs::equivalent(out, planted));
+    REQUIRE_EQ(last_resolve_source_for_test(), "scan");
 }
 
-static void test_ugc_directory_base() {
+TEST_CASE("test_injector_bootstrap/ugc_directory_base") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_ugc");
     auto game = root / "game";
@@ -243,17 +260,15 @@ static void test_ugc_directory_base() {
     set_cmdline_for_test({"-ugc_directory", ugc_root.string()});
 
     fs::path out;
-    DS_REQUIRE(resolve_injector_module(out));
-    DS_REQUIRE(fs::equivalent(out, planted));
-    DS_REQUIRE(last_resolve_source_for_test() == "scan");
-
-    clear_env_and_state();
-    printf("PASS: ugc_directory_base\n");
+    REQUIRE(resolve_injector_module(out));
+    REQUIRE(fs::equivalent(out, planted));
+    REQUIRE_EQ(last_resolve_source_for_test(), "scan");
 }
 
 // Custom UGC and the Steam default are mutually exclusive: with
 // -ugc_directory present the default steamapps tree must not be scanned.
-static void test_ugc_directory_excludes_steam_default() {
+TEST_CASE("test_injector_bootstrap/ugc_directory_excludes_steam_default") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_ugc_exclusive");
     auto steamapps = root / "steamapps";
@@ -269,20 +284,17 @@ static void test_ugc_directory_excludes_steam_default() {
     set_cmdline_for_test({"-ugc_directory", custom_root.string()});
 
     fs::path out;
-    DS_REQUIRE(!resolve_injector_module(out));
-    DS_REQUIRE(fs::exists(default_module));
+    REQUIRE_FALSE(resolve_injector_module(out));
+    REQUIRE(fs::exists(default_module));
 
     // The custom tree is the only workshop base, and it wins when populated.
     auto custom_module = plant_mod_injector(game, custom_content, "3444078585");
-    DS_REQUIRE(resolve_injector_module(out));
-    DS_REQUIRE(fs::equivalent(out, custom_module));
-
-    clear_env_and_state();
-    printf("PASS: ugc_directory_excludes_steam_default\n");
+    REQUIRE(resolve_injector_module(out));
+    REQUIRE(fs::equivalent(out, custom_module));
 }
 
-
-static void test_fail_when_nothing() {
+TEST_CASE("test_injector_bootstrap/fail_when_nothing") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_none");
     auto game = root / "game";
@@ -292,22 +304,19 @@ static void test_fail_when_nothing() {
     set_exe_dir_for_test(game / "bin64");
 
     fs::path out;
-    DS_REQUIRE(!resolve_injector_module(out));
-    DS_REQUIRE(last_resolve_source_for_test().empty() ||
-           last_resolve_source_for_test() == "none");
-
-    clear_env_and_state();
-    printf("PASS: fail_when_nothing\n");
+    REQUIRE_FALSE(resolve_injector_module(out));
+    REQUIRE((last_resolve_source_for_test().empty() ||
+             last_resolve_source_for_test() == "none"));
 }
 
-static void test_mod_root_from_module_path() {
+TEST_CASE("test_injector_bootstrap/mod_root_from_module_path") {
     auto p = fs::path("C:/mods/luajit") / injector_module_filename();
     auto root = mod_root_from_injector_module(p);
-    DS_REQUIRE(root.filename() == "luajit");
-    printf("PASS: mod_root_from_module_path\n");
+    REQUIRE_EQ(root.filename(), "luajit");
 }
 
-static void test_load_fail_fast_no_module() {
+TEST_CASE("test_injector_bootstrap/load_fail_fast_no_module") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_load_fail");
     auto game = root / "game";
@@ -317,9 +326,7 @@ static void test_load_fail_fast_no_module() {
     set_exe_dir_for_test(game / "bin64");
 
     auto fn = load_injector_hook_entry();
-    DS_REQUIRE(fn == nullptr);
-    clear_env_and_state();
-    printf("PASS: load_fail_fast_no_module\n");
+    REQUIRE_EQ(fn, nullptr);
 }
 
 static std::string read_all(const fs::path &p) {
@@ -328,29 +335,28 @@ static std::string read_all(const fs::path &p) {
                        std::istreambuf_iterator<char>());
 }
 
-static void test_boot_log_written() {
+TEST_CASE("test_injector_bootstrap/boot_log_written") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_boot_log");
     auto game = root / "game";
     fs::create_directories(game);
     set_marker_game_root_for_test(game);
 
-    DS_REQUIRE(boot_log_path() == game / "data" / "unsafedata" / kBootLogFileName);
+    REQUIRE_EQ(boot_log_path(), game / "data" / "unsafedata" / kBootLogFileName);
     reset_boot_log();
     append_boot_log("resolve: source=test module=/tmp/x");
     append_boot_log("shell(stub): HookStartupEntry OK");
 
     const auto text = read_all(boot_log_path());
-    DS_REQUIRE(text.find("ds-bootstrap boot log") != std::string::npos);
-    DS_REQUIRE(text.find("pid=") != std::string::npos);
-    DS_REQUIRE(text.find("resolve: source=test module=/tmp/x") != std::string::npos);
-    DS_REQUIRE(text.find("shell(stub): HookStartupEntry OK") != std::string::npos);
-
-    clear_env_and_state();
-    printf("PASS: boot_log_written\n");
+    REQUIRE_NE(text.find("ds-bootstrap boot log"), std::string::npos);
+    REQUIRE_NE(text.find("pid="), std::string::npos);
+    REQUIRE_NE(text.find("resolve: source=test module=/tmp/x"), std::string::npos);
+    REQUIRE_NE(text.find("shell(stub): HookStartupEntry OK"), std::string::npos);
 }
 
-static void test_boot_log_records_failed_resolve() {
+TEST_CASE("test_injector_bootstrap/boot_log_records_failed_resolve") {
+    BootstrapStateGuard guard;
     clear_env_and_state();
     auto root = make_temp("ds_inj_boot_log_fail");
     auto game = root / "game";
@@ -360,37 +366,14 @@ static void test_boot_log_records_failed_resolve() {
     set_exe_dir_for_test(game / "bin64");
 
     auto fn = load_injector_hook_entry();
-    DS_REQUIRE(fn == nullptr);
+    REQUIRE_EQ(fn, nullptr);
 
     const auto text = read_all(boot_log_path());
-    DS_REQUIRE(text.find("ds-bootstrap boot log") != std::string::npos);
-    DS_REQUIRE(text.find("resolve: FAILED") != std::string::npos);
-    DS_REQUIRE(text.find("DS_LUAJIT_INJECTOR=<unset>") != std::string::npos);
-    DS_REQUIRE(text.find("marker: ") != std::string::npos);
-    DS_REQUIRE(text.find("(missing)") != std::string::npos);
-    DS_REQUIRE(text.find("scan bases:") != std::string::npos);
-    DS_REQUIRE(text.find("shell(stub)") == std::string::npos);
-
-    clear_env_and_state();
-    printf("PASS: boot_log_records_failed_resolve\n");
-}
-
-
-int main() {
-    test_env_file_wins();
-    test_packaged_twin_materialized_on_resolve();
-    test_packaged_twin_refreshes_stale_canonical_on_resolve();
-    test_env_dir_wins_over_marker();
-    test_marker_used_when_no_env();
-    test_invalid_marker_falls_through_to_scan();
-    test_scan_alias_workshop();
-    test_ugc_directory_base();
-    test_ugc_directory_excludes_steam_default();
-    test_fail_when_nothing();
-    test_mod_root_from_module_path();
-    test_load_fail_fast_no_module();
-    test_boot_log_written();
-    test_boot_log_records_failed_resolve();
-    printf("ALL PASS test_injector_bootstrap\n");
-    return 0;
+    REQUIRE_NE(text.find("ds-bootstrap boot log"), std::string::npos);
+    REQUIRE_NE(text.find("resolve: FAILED"), std::string::npos);
+    REQUIRE_NE(text.find("DS_LUAJIT_INJECTOR=<unset>"), std::string::npos);
+    REQUIRE_NE(text.find("marker: "), std::string::npos);
+    REQUIRE_NE(text.find("(missing)"), std::string::npos);
+    REQUIRE_NE(text.find("scan bases:"), std::string::npos);
+    REQUIRE_EQ(text.find("shell(stub)"), std::string::npos);
 }

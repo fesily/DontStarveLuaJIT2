@@ -11,19 +11,10 @@
 
 #include "MicroWindow.hpp"
 
-#include <cstdio>
-#include <cstdlib>
+#include <doctest/doctest.h>
 
 using namespace function_relocation::micro_window;
 namespace mp = function_relocation::match_policy;
-
-#define REQUIRE(cond)                                                                          \
-    do {                                                                                       \
-        if (!(cond)) {                                                                         \
-            std::fprintf(stderr, "REQUIRE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__);  \
-            std::abort();                                                                      \
-        }                                                                                      \
-    } while (0)
 
 static mp::FunctionFeatures make_feats(std::vector<std::string> consts,
                                        std::vector<int64_t> imms,
@@ -38,56 +29,56 @@ static mp::FunctionFeatures make_feats(std::vector<std::string> consts,
 // --- Pure call-edit label tests ---
 
 // 3. StillCall: target callee fingerprint-matches helper -> +W_CALL_STILL.
-static void test_stillcall_label() {
+TEST_CASE("test_virtual_flatten/stillcall_label") {
     auto helper = make_feats({"helper_str"}, {0x10}, 50);
     auto callee = make_feats({"helper_str", "extra"}, {0x10}, 50);
     auto entry  = make_feats({"parent"}, {}, 100);
 
     std::vector<mp::FunctionFeatures> callees = {callee};
-    REQUIRE(mp::label_call_edge(helper, callees, entry) == mp::CallEdit::StillCall);
-    REQUIRE(mp::call_edit_component(helper, callees, entry) == mp::W_CALL_STILL);
-    REQUIRE(mp::call_edit_component(helper, callees, entry) == 1.0f);
+    REQUIRE_EQ(mp::label_call_edge(helper, callees, entry), mp::CallEdit::StillCall);
+    REQUIRE_EQ(mp::call_edit_component(helper, callees, entry), mp::W_CALL_STILL);
+    REQUIRE_EQ(mp::call_edit_component(helper, callees, entry), 1.0f);
 }
 
 // 4. Missing: no matching call, no coverage -> -W_CALL_MISSING.
-static void test_missing_label() {
+TEST_CASE("test_virtual_flatten/missing_label") {
     auto helper = make_feats({"helper_str"}, {0x10}, 50);
     auto entry  = make_feats({"unrelated"}, {0x99}, 100);
 
     std::vector<mp::FunctionFeatures> callees;
-    REQUIRE(mp::label_call_edge(helper, callees, entry) == mp::CallEdit::Missing);
-    REQUIRE(mp::call_edit_component(helper, callees, entry) == mp::W_CALL_MISSING);
-    REQUIRE(mp::call_edit_component(helper, callees, entry) == -0.5f);
+    REQUIRE_EQ(mp::label_call_edge(helper, callees, entry), mp::CallEdit::Missing);
+    REQUIRE_EQ(mp::call_edit_component(helper, callees, entry), mp::W_CALL_MISSING);
+    REQUIRE_EQ(mp::call_edit_component(helper, callees, entry), -0.5f);
 }
 
 // Inlined pure label: no call, but target covers >=50% of helper features.
-static void test_inlined_label_pure() {
+TEST_CASE("test_virtual_flatten/inlined_label_pure") {
     auto helper = make_feats({"a", "b"}, {0x10}, 50);
     auto entry  = make_feats({"a", "b", "c"}, {0x10}, 100); // 3 of 3 helper features
 
     std::vector<mp::FunctionFeatures> callees;
-    REQUIRE(mp::label_call_edge(helper, callees, entry) == mp::CallEdit::Inlined);
-    REQUIRE(mp::call_edit_component(helper, callees, entry) == mp::W_CALL_INLINED);
-    REQUIRE(mp::call_edit_component(helper, callees, entry) == 0.8f);
+    REQUIRE_EQ(mp::label_call_edge(helper, callees, entry), mp::CallEdit::Inlined);
+    REQUIRE_EQ(mp::call_edit_component(helper, callees, entry), mp::W_CALL_INLINED);
+    REQUIRE_EQ(mp::call_edit_component(helper, callees, entry), 0.8f);
 }
 
 // flatten1_features: union of own + helpers, size stays own.
-static void test_flatten1_features() {
+TEST_CASE("test_virtual_flatten/flatten1_features") {
     auto own = make_feats({"own_str"}, {0x10}, 100);
     auto h1  = make_feats({"helper1"}, {0x20}, 50);
     auto h2  = make_feats({"helper2"}, {0x30}, 30);
 
     auto flat = mp::flatten1_features(own, {h1, h2});
-    REQUIRE(flat.size == 100); // size unchanged
-    REQUIRE(flat.consts.size() == 3);
-    REQUIRE(flat.imms.size() == 3);
+    REQUIRE_EQ(flat.size, 100); // size unchanged
+    REQUIRE_EQ(flat.consts.size(), 3);
+    REQUIRE_EQ(flat.imms.size(), 3);
 }
 
 // --- Dual-channel resolve integration tests ---
 
 // 1. Inline case: parent train has call helper; target has helper body inlined
 //    (no call). Inlined contributes +0.8; accept parent when features match.
-static void test_inline_accept() {
+TEST_CASE("test_virtual_flatten/inline_accept") {
     const uint64_t E = 0x1000;
 
     // Train own features: parent only.
@@ -128,7 +119,7 @@ static void test_inline_accept() {
 }
 
 // 2. Disagree: compact best entry != flat best entry -> FAIL-CLOSED.
-static void test_disagree_reject() {
+TEST_CASE("test_virtual_flatten/disagree_reject") {
     const uint64_t E1 = 0x1000; // matches compact (own features)
     const uint64_t E2 = 0x2000; // matches flat (flattened features)
 
@@ -171,11 +162,11 @@ static void test_disagree_reject() {
     //   + call_edit(Inlined 0.8) = 4 + 5 + 2 + 2 + 0.8 = 13.8
     //   flat best = E2 (13.8)
     // compact best E1 != flat best E2 -> FAIL-CLOSED
-    REQUIRE(!r.has_value());
+    REQUIRE_FALSE(r.has_value());
 }
 
 // StillCall integration: target has a call whose callee matches helper fingerprint.
-static void test_stillcall_accept() {
+TEST_CASE("test_virtual_flatten/stillcall_accept") {
     const uint64_t E = 0x1000;
 
     auto train_own = make_feats({"parent"}, {0x10}, 100);
@@ -208,7 +199,7 @@ static void test_stillcall_accept() {
 }
 
 // Missing integration: no call, no coverage -> -0.5 contribution.
-static void test_missing_contribute() {
+TEST_CASE("test_virtual_flatten/missing_contribute") {
     const uint64_t E = 0x1000;
 
     auto train_own = make_feats({"parent"}, {0x10}, 100);
@@ -238,7 +229,7 @@ static void test_missing_contribute() {
 }
 
 // No helper edges: degrades to T3 behavior (compact == flat).
-static void test_no_helpers_degrades() {
+TEST_CASE("test_virtual_flatten/no_helpers_degrades") {
     const uint64_t E = 0x1000;
     auto train = make_feats({"a"}, {0x10}, 100);
     auto tgt = make_feats({"a"}, {0x10}, 100);
@@ -257,19 +248,4 @@ static void test_no_helpers_degrades() {
     REQUIRE(r->entry == E);
     // vote(3) + const(10) + imm(4) + size(2) = 19.0
     REQUIRE(r->score == 19.0f);
-}
-
-int main(int argc, char **argv) {
-    std::string sel = (argc > 1) ? argv[1] : "all";
-    if (sel == "all" || sel == "stillcall-label") test_stillcall_label();
-    if (sel == "all" || sel == "missing-label") test_missing_label();
-    if (sel == "all" || sel == "inlined-label") test_inlined_label_pure();
-    if (sel == "all" || sel == "flatten1") test_flatten1_features();
-    if (sel == "all" || sel == "inline-accept") test_inline_accept();
-    if (sel == "all" || sel == "disagree") test_disagree_reject();
-    if (sel == "all" || sel == "stillcall-accept") test_stillcall_accept();
-    if (sel == "all" || sel == "missing-contribute") test_missing_contribute();
-    if (sel == "all" || sel == "no-helpers") test_no_helpers_degrades();
-    std::puts("test_virtual_flatten: ok");
-    return 0;
 }

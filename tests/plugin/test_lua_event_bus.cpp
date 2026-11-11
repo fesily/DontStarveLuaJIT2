@@ -1,9 +1,8 @@
 // L0 lua_event bus: plugins register listeners; notifyer does not hardcode DLL names.
 #include "plugins/plugin_core_vm/LuaEvent.hpp"
 
-#include <cstdio>
 #include <vector>
-#include "support/test_assert.hpp"
+#include <doctest/doctest.h>
 
 // listeners use free-function C API from LuaEvent.hpp
 
@@ -24,47 +23,30 @@ void listener_b(LUA_EVENT, lua_State *) { ++g_calls_b; }
 
 } // namespace
 
-static void test_no_listener_is_noop() {
+// Lifecycle order matters: the bus has no unregister/reset API, so registration,
+// duplicate rejection and notification all depend on the steps before them.
+TEST_CASE("test_lua_event_bus/all") {
     // Clear by re-registering only after; first notify with empty bus is fine.
     lua_event_notifyer(LUA_EVENT::new_state, nullptr);
-    printf("PASS: no_listener_is_noop\n");
-}
 
-static void test_register_and_notify() {
     g_calls = 0;
     g_last_L = reinterpret_cast<lua_State *>(0x1);
-    DS_REQUIRE(ds_register_lua_event_listener(&listener_a));
+    REQUIRE(ds_register_lua_event_listener(&listener_a));
     auto *L = reinterpret_cast<lua_State *>(0xABCDu);
     lua_event_notifyer(LUA_EVENT::call_lua_gc, L);
-    DS_REQUIRE(g_calls == 1);
-    DS_REQUIRE(g_last == LUA_EVENT::call_lua_gc);
-    DS_REQUIRE(g_last_L == L);
-    printf("PASS: register_and_notify\n");
-}
+    REQUIRE_EQ(g_calls, 1);
+    REQUIRE_EQ(g_last, LUA_EVENT::call_lua_gc);
+    REQUIRE_EQ(g_last_L, L);
 
-static void test_duplicate_register_ignored() {
     g_calls = 0;
-    DS_REQUIRE(!ds_register_lua_event_listener(&listener_a)); // already registered
+    REQUIRE_FALSE(ds_register_lua_event_listener(&listener_a)); // already registered
     lua_event_notifyer(LUA_EVENT::close_state, nullptr);
-    DS_REQUIRE(g_calls == 1);
-    printf("PASS: duplicate_register_ignored\n");
-}
+    REQUIRE_EQ(g_calls, 1);
 
-static void test_multiple_listeners() {
     g_calls = 0;
     g_calls_b = 0;
-    DS_REQUIRE(ds_register_lua_event_listener(&listener_b));
+    REQUIRE(ds_register_lua_event_listener(&listener_b));
     lua_event_notifyer(LUA_EVENT::new_state, nullptr);
-    DS_REQUIRE(g_calls == 1);
-    DS_REQUIRE(g_calls_b == 1);
-    printf("PASS: multiple_listeners\n");
-}
-
-int main() {
-    test_no_listener_is_noop();
-    test_register_and_notify();
-    test_duplicate_register_ignored();
-    test_multiple_listeners();
-    printf("ALL PASS: lua_event_bus\n");
-    return 0;
+    REQUIRE_EQ(g_calls, 1);
+    REQUIRE_EQ(g_calls_b, 1);
 }

@@ -13,21 +13,13 @@
 
 #include "MicroWindow.hpp"
 
-#include <cstdio>
-#include <cstdlib>
+#include <doctest/doctest.h>
+
 #include <functional>
 #include <type_traits>
 
 using namespace function_relocation::micro_window;
 namespace mp = function_relocation::match_policy;
-
-#define REQUIRE(cond)                                                                          \
-    do {                                                                                       \
-        if (!(cond)) {                                                                         \
-            std::fprintf(stderr, "REQUIRE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__);  \
-            std::abort();                                                                      \
-        }                                                                                      \
-    } while (0)
 
 static mp::FunctionFeatures make_feats(std::vector<std::string> consts,
                                         std::vector<int64_t> imms,
@@ -46,7 +38,7 @@ static mp::FunctionFeatures make_feats(std::vector<std::string> consts,
 // must not carry a skip_check argument. We assert this by taking their address
 // and checking the arity/types against the expected signatures.
 
-static void test_soft_helpers_have_no_skip_check() {
+TEST_CASE("test_orchestration/soft_helpers_have_no_skip_check") {
     using BuildFn = std::vector<mp::MatchCandidate> (*)(
             const std::vector<HitVote> &,
             const mp::FunctionFeatures &,
@@ -70,7 +62,7 @@ static void test_soft_helpers_have_no_skip_check() {
 // resolves uniquely with adequate margin is accepted; one that creates twin
 // ambiguity is rejected — proving the limit path uses accept_candidates, not
 // a unique-byte "targets.size()==1" gate.
-static void test_limit_path_uses_accept_candidates() {
+TEST_CASE("test_orchestration/limit_path_uses_accept_candidates") {
     const uint64_t E = 0x1000;
     auto train_own = make_feats({"a"}, {0x10}, 100);
     auto train_flat = make_feats({"a"}, {0x10}, 100);
@@ -101,11 +93,11 @@ static void test_limit_path_uses_accept_candidates() {
     auto cand_twin = build_feature_candidates(
             votes_twin, train_own, train_flat, helper_edges, target_feats, target_callees);
     auto r_twin = mp::accept_candidates(std::move(cand_twin));
-    REQUIRE(!r_twin.has_value());
+    REQUIRE_FALSE(r_twin.has_value());
 }
 
 // --- summarize_candidates: best/second/entries for fail-closed logging. ---
-static void test_summarize_candidates_two() {
+TEST_CASE("test_orchestration/summarize_candidates_two") {
     std::vector<mp::MatchCandidate> cands;
     mp::MatchCandidate a;
     a.entry = 0x1000;
@@ -118,16 +110,16 @@ static void test_summarize_candidates_two() {
     cands.push_back(a);
     cands.push_back(b);
     auto s = summarize_candidates(cands);
-    REQUIRE(s.count == 2);
+    REQUIRE_EQ(s.count, 2);
     REQUIRE(s.has_second);
-    REQUIRE(s.best_entry == 0x1000);
-    REQUIRE(s.best_score == 5.0f);
-    REQUIRE(s.second_entry == 0x2000);
-    REQUIRE(s.second_score == 3.5f);
-    REQUIRE(s.margin == 1.5f);
+    REQUIRE_EQ(s.best_entry, 0x1000);
+    REQUIRE_EQ(s.best_score, 5.0f);
+    REQUIRE_EQ(s.second_entry, 0x2000);
+    REQUIRE_EQ(s.second_score, 3.5f);
+    REQUIRE_EQ(s.margin, 1.5f);
 }
 
-static void test_summarize_candidates_sole() {
+TEST_CASE("test_orchestration/summarize_candidates_sole") {
     std::vector<mp::MatchCandidate> cands;
     mp::MatchCandidate a;
     a.entry = 0x1000;
@@ -135,18 +127,18 @@ static void test_summarize_candidates_sole() {
     a.score_flat = 2.0f;
     cands.push_back(a);
     auto s = summarize_candidates(cands);
-    REQUIRE(s.count == 1);
-    REQUIRE(!s.has_second);
-    REQUIRE(s.best_entry == 0x1000);
-    REQUIRE(s.best_score == 2.0f);
+    REQUIRE_EQ(s.count, 1);
+    REQUIRE_FALSE(s.has_second);
+    REQUIRE_EQ(s.best_entry, 0x1000);
+    REQUIRE_EQ(s.best_score, 2.0f);
 }
 
-static void test_summarize_candidates_empty() {
+TEST_CASE("test_orchestration/summarize_candidates_empty") {
     std::vector<mp::MatchCandidate> cands;
     auto s = summarize_candidates(cands);
-    REQUIRE(s.count == 0);
-    REQUIRE(!s.has_second);
-    REQUIRE(s.best_score == 0.0f);
+    REQUIRE_EQ(s.count, 0);
+    REQUIRE_FALSE(s.has_second);
+    REQUIRE_EQ(s.best_score, 0.0f);
 }
 
 // --- Orchestration order: knowns (skip_check) -> soft-only -> legacy. ---
@@ -155,7 +147,7 @@ static void test_summarize_candidates_empty() {
 // here, so we assert the contract via the accept policy the soft path uses:
 // a fail-closed accept (twin) returns nullopt, which the orchestrator must
 // propagate as nullptr rather than falling back.
-static void test_soft_fail_closed_propagates_null() {
+TEST_CASE("test_orchestration/soft_fail_closed_propagates_null") {
     const uint64_t E1 = 0x1000;
     const uint64_t E2 = 0x2000;
     auto train = make_feats({"a"}, {0x10}, 100);
@@ -168,17 +160,5 @@ static void test_soft_fail_closed_propagates_null() {
             {0x2010, E2}, {0x2020, E2}, {0x2030, E2}, {0x2040, E2},
     };
     auto r = resolve_multi_hit_entry(votes, train, target_feats);
-    REQUIRE(!r.has_value());
-}
-
-int main(int argc, char **argv) {
-    std::string sel = (argc > 1) ? argv[1] : "all";
-    if (sel == "all" || sel == "no-skip-check") test_soft_helpers_have_no_skip_check();
-    if (sel == "all" || sel == "limit-accept") test_limit_path_uses_accept_candidates();
-    if (sel == "all" || sel == "summarize-two") test_summarize_candidates_two();
-    if (sel == "all" || sel == "summarize-sole") test_summarize_candidates_sole();
-    if (sel == "all" || sel == "summarize-empty") test_summarize_candidates_empty();
-    if (sel == "all" || sel == "soft-fail-null") test_soft_fail_closed_propagates_null();
-    std::puts("test_orchestration: ok");
-    return 0;
+    REQUIRE_FALSE(r.has_value());
 }

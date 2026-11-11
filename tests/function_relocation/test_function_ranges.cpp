@@ -1,24 +1,16 @@
 #include "FunctionRanges.hpp"
 #include "ModuleSections.hpp"
 
+#include <doctest/doctest.h>
+
 #include <cstdint>
 #include <cstring>
 #include <vector>
-#include <cstdio>
-#include <cstdlib>
 
 using function_relocation::FuncRange;
 using function_relocation::ModuleSections;
 using function_relocation::enumerate_function_ranges_win;
 using function_relocation::find_range_containing;
-
-#define REQUIRE(cond)                                                                          \
-    do {                                                                                       \
-        if (!(cond)) {                                                                         \
-            std::fprintf(stderr, "REQUIRE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
-            std::abort();                                                                      \
-        }                                                                                      \
-    } while (0)
 
 // Minimal RUNTIME_FUNCTION: Begin, End, UnwindInfo RVA (unused in v1 merge-by-adjacent).
 #pragma pack(push, 1)
@@ -42,7 +34,7 @@ static ModuleSections make_module(uintptr_t image_base, uintptr_t text_rva, size
     return m;
 }
 
-static void test_two_independent() {
+TEST_CASE("test_function_ranges/two_independent") {
     // image_base 0x140000000; text at rva 0x1000 size 0x5000
     const uintptr_t base = 0x140000000ull;
     RtFn table[] = {
@@ -53,14 +45,14 @@ static void test_two_independent() {
     auto m = make_module(base, 0x1000, 0x5000, table, 3);
     std::vector<FuncRange> out;
     REQUIRE(enumerate_function_ranges_win(m, out));
-    REQUIRE(out.size() == 2);
-    REQUIRE(out[0].start == base + 0x1000);
-    REQUIRE(out[0].end == base + 0x1100);
-    REQUIRE(out[1].start == base + 0x1200);
-    REQUIRE(out[1].end == base + 0x1300);
+    REQUIRE_EQ(out.size(), 2);
+    REQUIRE_EQ(out[0].start, base + 0x1000);
+    REQUIRE_EQ(out[0].end, base + 0x1100);
+    REQUIRE_EQ(out[1].start, base + 0x1200);
+    REQUIRE_EQ(out[1].end, base + 0x1300);
 }
 
-static void test_chain_merge() {
+TEST_CASE("test_function_ranges/chain_merge") {
     const uintptr_t base = 0x140000000ull;
     // r1.End == r2.Begin → one logical function
     RtFn table[] = {
@@ -71,12 +63,12 @@ static void test_chain_merge() {
     auto m = make_module(base, 0x1000, 0x5000, table, 3);
     std::vector<FuncRange> out;
     REQUIRE(enumerate_function_ranges_win(m, out));
-    REQUIRE(out.size() == 1);
-    REQUIRE(out[0].start == base + 0x2000);
-    REQUIRE(out[0].end == base + 0x2200);
+    REQUIRE_EQ(out.size(), 1);
+    REQUIRE_EQ(out[0].start, base + 0x2000);
+    REQUIRE_EQ(out[0].end, base + 0x2200);
 }
 
-static void test_terminator() {
+TEST_CASE("test_function_ranges/terminator") {
     const uintptr_t base = 0x140000000ull;
     RtFn table[] = {
         {0x1000, 0x1080, 0},
@@ -86,11 +78,11 @@ static void test_terminator() {
     auto m = make_module(base, 0x1000, 0x5000, table, 3);
     std::vector<FuncRange> out;
     REQUIRE(enumerate_function_ranges_win(m, out));
-    REQUIRE(out.size() == 1);
-    REQUIRE(out[0].start == base + 0x1000);
+    REQUIRE_EQ(out.size(), 1);
+    REQUIRE_EQ(out[0].start, base + 0x1000);
 }
 
-static void test_empty_pdata() {
+TEST_CASE("test_function_ranges/empty_pdata") {
     ModuleSections m{};
     m.details.range.base_address = 0x140000000ull;
     m.details.range.size = 0x10000;
@@ -98,11 +90,11 @@ static void test_empty_pdata() {
     m.text.size = 0x1000;
     m.pdata = {0, 0};
     std::vector<FuncRange> out;
-    REQUIRE(!enumerate_function_ranges_win(m, out));
+    REQUIRE_FALSE(enumerate_function_ranges_win(m, out));
     REQUIRE(out.empty());
 }
 
-static void test_find_containing() {
+TEST_CASE("test_function_ranges/find_containing") {
     std::vector<FuncRange> ranges = {
         {0x1000, 0x1100, FuncRange::Source::Pdata},
         {0x2000, 0x2200, FuncRange::Source::Pdata},
@@ -110,16 +102,6 @@ static void test_find_containing() {
     REQUIRE(find_range_containing(ranges, 0x1000)->start == 0x1000);
     REQUIRE(find_range_containing(ranges, 0x10FF)->start == 0x1000);
     REQUIRE(find_range_containing(ranges, 0x2100)->start == 0x2000);
-    REQUIRE(find_range_containing(ranges, 0x1100) == nullptr);
-    REQUIRE(find_range_containing(ranges, 0x50) == nullptr);
-}
-
-int main() {
-    test_two_independent();
-    test_chain_merge();
-    test_terminator();
-    test_empty_pdata();
-    test_find_containing();
-    std::puts("function_ranges: all passed");
-    return 0;
+    REQUIRE_EQ(find_range_containing(ranges, 0x1100), nullptr);
+    REQUIRE_EQ(find_range_containing(ranges, 0x50), nullptr);
 }

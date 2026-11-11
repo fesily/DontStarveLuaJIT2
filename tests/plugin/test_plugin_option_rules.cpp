@@ -1,89 +1,81 @@
 #include "core/PluginOptionRules.hpp"
 
-#include <cstdio>
 #include <string>
-#include "support/test_assert.hpp"
+#include <doctest/doctest.h>
 
 using namespace ds::plugin;
 
-static void test_all_of_true() {
+TEST_CASE("test_plugin_option_rules/all_of_true") {
     OptionRule r;
     r.kind = OptionRuleKind::AllOf;
     r.keys = {"A", "B"};
     ConfigView c;
     c["A"] = ConfigValue::boolean(true);
     c["B"] = ConfigValue::boolean(true);
-    DS_REQUIRE(EvaluateOptionRule(r, c));
-    printf("PASS: all_of_true\n");
+    REQUIRE(EvaluateOptionRule(r, c));
 }
 
-static void test_all_of_partial() {
+TEST_CASE("test_plugin_option_rules/all_of_partial") {
     OptionRule r;
     r.kind = OptionRuleKind::AllOf;
     r.keys = {"A", "B"};
     ConfigView c;
     c["A"] = ConfigValue::boolean(true);
     c["B"] = ConfigValue::boolean(false);
-    DS_REQUIRE(!EvaluateOptionRule(r, c));
-    printf("PASS: all_of_partial\n");
+    REQUIRE_FALSE(EvaluateOptionRule(r, c));
 }
 
-static void test_any_of_one() {
+TEST_CASE("test_plugin_option_rules/any_of_one") {
     OptionRule r;
     r.kind = OptionRuleKind::AnyOf;
     r.keys = {"A", "B"};
     ConfigView c;
     c["A"] = ConfigValue::boolean(false);
     c["B"] = ConfigValue::boolean(true);
-    DS_REQUIRE(EvaluateOptionRule(r, c));
-    printf("PASS: any_of_one\n");
+    REQUIRE(EvaluateOptionRule(r, c));
 }
 
-static void test_any_of_none() {
+TEST_CASE("test_plugin_option_rules/any_of_none") {
     OptionRule r;
     r.kind = OptionRuleKind::AnyOf;
     r.keys = {"A", "B"};
     ConfigView c;
     c["A"] = ConfigValue::boolean(false);
     c["B"] = ConfigValue::boolean(false);
-    DS_REQUIRE(!EvaluateOptionRule(r, c));
-    printf("PASS: any_of_none\n");
+    REQUIRE_FALSE(EvaluateOptionRule(r, c));
 }
 
-static void test_shorthand_option() {
+TEST_CASE("test_plugin_option_rules/shorthand_option") {
     // shorthand = AllOf single key
     OptionRule r;
     r.kind = OptionRuleKind::AllOf;
     r.keys = {"A"};
     ConfigView c;
     c["A"] = ConfigValue::boolean(true);
-    DS_REQUIRE(EvaluateOptionRule(r, c));
-    printf("PASS: shorthand_option\n");
+    REQUIRE(EvaluateOptionRule(r, c));
 }
 
-static void test_string_ne_off() {
+TEST_CASE("test_plugin_option_rules/string_ne_off") {
     OptionRule r;
     r.kind = OptionRuleKind::StringNeq;
     r.pred_key = "EnableProfiler";
     r.pred_expected = "off";
     ConfigView c;
     c["EnableProfiler"] = ConfigValue::string("fzvp");
-    DS_REQUIRE(EvaluateOptionRule(r, c));
-    printf("PASS: string_ne_off\n");
+    REQUIRE(EvaluateOptionRule(r, c));
 }
 
-static void test_string_off() {
+TEST_CASE("test_plugin_option_rules/string_off") {
     OptionRule r;
     r.kind = OptionRuleKind::StringNeq;
     r.pred_key = "EnableProfiler";
     r.pred_expected = "off";
     ConfigView c;
     c["EnableProfiler"] = ConfigValue::string("off");
-    DS_REQUIRE(!EvaluateOptionRule(r, c));
-    printf("PASS: string_off\n");
+    REQUIRE_FALSE(EvaluateOptionRule(r, c));
 }
 
-static void test_string_eq_on() {
+TEST_CASE("test_plugin_option_rules/string_eq_on") {
     OptionRule r;
     r.kind = OptionRuleKind::StringEq;
     r.pred_key = "EnableTracy";
@@ -91,12 +83,11 @@ static void test_string_eq_on() {
     ConfigView on, off;
     on["EnableTracy"] = ConfigValue::string("on");
     off["EnableTracy"] = ConfigValue::string("off");
-    DS_REQUIRE(EvaluateOptionRule(r, on));
-    DS_REQUIRE(!EvaluateOptionRule(r, off));
-    printf("PASS: string_eq_on\n");
+    REQUIRE(EvaluateOptionRule(r, on));
+    REQUIRE_FALSE(EvaluateOptionRule(r, off));
 }
 
-static void test_when_false_via_host() {
+TEST_CASE("test_plugin_option_rules/when_false_via_host") {
     // can_load false with options on => Disabled (covered in host graph style here lightly)
     // Pure option rule still true:
     OptionRule r;
@@ -104,28 +95,11 @@ static void test_when_false_via_host() {
     r.keys = {"A"};
     ConfigView c;
     c["A"] = ConfigValue::boolean(true);
-    DS_REQUIRE(EvaluateOptionRule(r, c));
-    printf("PASS: when_false_option_still_true\n");
+    REQUIRE(EvaluateOptionRule(r, c));
 }
 
-static void test_always_on() {
+TEST_CASE("test_plugin_option_rules/always_on") {
     OptionRule r;
     r.kind = OptionRuleKind::AlwaysOn;
-    DS_REQUIRE(EvaluateOptionRule(r, ConfigView{}));
-    printf("PASS: always_on\n");
-}
-
-int main() {
-    test_all_of_true();
-    test_all_of_partial();
-    test_any_of_one();
-    test_any_of_none();
-    test_shorthand_option();
-    test_string_ne_off();
-    test_string_off();
-    test_string_eq_on();
-    test_when_false_via_host();
-    test_always_on();
-    printf("All option rule tests passed!\n");
-    return 0;
+    REQUIRE(EvaluateOptionRule(r, ConfigView{}));
 }

@@ -12,20 +12,12 @@
 
 #include "MicroWindow.hpp"
 
+#include <doctest/doctest.h>
+
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
 
 using namespace function_relocation::micro_window;
 using function_relocation::match_policy::AcceptResult;
-
-#define REQUIRE(cond)                                                                          \
-    do {                                                                                       \
-        if (!(cond)) {                                                                         \
-            std::fprintf(stderr, "REQUIRE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__);  \
-            std::abort();                                                                      \
-        }                                                                                      \
-    } while (0)
 
 static MicroInsn mk(uint64_t addr, const char *hex, float weight = 1.0f) {
     MicroInsn m;
@@ -61,7 +53,7 @@ static MicroInsn mkjmp(uint64_t addr) {
 // Synthetic body: 8 unique movs, one CALL helper, then 8 unique movs.
 // The generator must NOT emit any window whose pattern contains the CALL
 // opcode ("e8") as an interior instruction.
-static void test_call_not_interior() {
+TEST_CASE("test_micro_windows/call_not_interior") {
     std::vector<MicroInsn> body;
     uint64_t a = 0x1000;
     for (int k = 0; k < 8; ++k) {
@@ -80,10 +72,10 @@ static void test_call_not_interior() {
     }
 
     auto windows = generate_micro_windows(body, 0x1000);
-    REQUIRE(!windows.empty());
+    REQUIRE_FALSE(windows.empty());
     for (const auto &w : windows) {
         // No window pattern may contain the CALL opcode "e8".
-        REQUIRE(w.pattern.find("e8") == std::string::npos);
+        REQUIRE_EQ(w.pattern.find("e8"), std::string::npos);
     }
     // Sanity: both segments are >=5 insns, so windows exist on both sides.
     // Before-call windows contain "48 89" (mov store); after-call "48 8b" (mov load).
@@ -98,7 +90,7 @@ static void test_call_not_interior() {
 
 // Same entry, two distinct raw match addresses, three votes -> score 3.0 >= SCORE_T.
 // Accept entry E; pattern_offset = E - min(matches).
-static void test_same_entry_accept() {
+TEST_CASE("test_micro_windows/same_entry_accept") {
     const uint64_t E = 0x2000;
     std::vector<HitVote> votes = {
         {0x2010, E},
@@ -116,7 +108,7 @@ static void test_same_entry_accept() {
 
 // Two entries with equal votes and no margin -> fail-closed null.
 // SignatureInfo would be left unchanged (the production path only writes on accept).
-static void test_ambiguous_fail_closed() {
+TEST_CASE("test_micro_windows/ambiguous_fail_closed") {
     const uint64_t E1 = 0x1000;
     const uint64_t E2 = 0x3000;
     std::vector<HitVote> votes = {
@@ -124,19 +116,19 @@ static void test_ambiguous_fail_closed() {
         {0x3010, E2}, {0x3010, E2}, {0x3010, E2},
     };
     auto r = resolve_multi_hit_entry(votes);
-    REQUIRE(!r.has_value());
+    REQUIRE_FALSE(r.has_value());
 }
 
 // Below SCORE_T with a single entry -> reject (vote=2 -> score 2.0 < 3.0).
-static void test_below_threshold_reject() {
+TEST_CASE("test_micro_windows/below_threshold_reject") {
     const uint64_t E = 0x4000;
     std::vector<HitVote> votes = {{0x4010, E}, {0x4020, E}};
     auto r = resolve_multi_hit_entry(votes);
-    REQUIRE(!r.has_value());
+    REQUIRE_FALSE(r.has_value());
 }
 
 // Unconditional JMP also splits (not a separator for interior inclusion).
-static void test_jmp_splits() {
+TEST_CASE("test_micro_windows/jmp_splits") {
     std::vector<MicroInsn> body;
     uint64_t a = 0x5000;
     for (int k = 0; k < 6; ++k) {
@@ -150,14 +142,14 @@ static void test_jmp_splits() {
         a += 3;
     }
     auto windows = generate_micro_windows(body, 0x5000);
-    REQUIRE(!windows.empty());
+    REQUIRE_FALSE(windows.empty());
     for (const auto &w : windows) {
-        REQUIRE(w.pattern.find("e9") == std::string::npos);
+        REQUIRE_EQ(w.pattern.find("e9"), std::string::npos);
     }
 }
 
 // Window with <5 non-wildcard bytes is skipped (all-wildcard insns).
-static void test_skip_low_distinguishing() {
+TEST_CASE("test_micro_windows/skip_low_distinguishing") {
     std::vector<MicroInsn> body;
     uint64_t a = 0x6000;
     for (int k = 0; k < 10; ++k) {
@@ -175,7 +167,7 @@ static void test_skip_low_distinguishing() {
 }
 
 // Higher-weight regions are emitted first (sort by weight desc).
-static void test_weight_ordering() {
+TEST_CASE("test_micro_windows/weight_ordering") {
     std::vector<MicroInsn> body;
     uint64_t a = 0x7000;
     for (int k = 0; k < 7; ++k) {
@@ -183,21 +175,8 @@ static void test_weight_ordering() {
         a += 3;
     }
     auto windows = generate_micro_windows(body, 0x7000);
-    REQUIRE(!windows.empty());
+    REQUIRE_FALSE(windows.empty());
     // Every window containing the high-weight insn has weight 5.0f; windows
     // without it have weight 1.0f. The first emitted window has the max weight.
-    REQUIRE(windows.front().weight >= 5.0f);
-}
-
-int main(int argc, char **argv) {
-    std::string sel = (argc > 1) ? argv[1] : "all";
-    if (sel == "all" || sel == "call-interior") test_call_not_interior();
-    if (sel == "all" || sel == "same-entry") test_same_entry_accept();
-    if (sel == "all" || sel == "ambiguous") test_ambiguous_fail_closed();
-    if (sel == "all" || sel == "below-threshold") test_below_threshold_reject();
-    if (sel == "all" || sel == "jmp-splits") test_jmp_splits();
-    if (sel == "all" || sel == "low-distinguishing") test_skip_low_distinguishing();
-    if (sel == "all" || sel == "weight-ordering") test_weight_ordering();
-    std::puts("test_micro_windows: ok");
-    return 0;
+    REQUIRE_GE(windows.front().weight, 5.0f);
 }
