@@ -8,9 +8,7 @@
 #include "ctx.hpp"
 #include "UniqueSignature.hpp"
 #include "ProviderDesc.hpp"
-#include "CoreVmSignatures.hpp"
-#include "ProfilerSignatures.hpp"
-#include "NetStatsSignatures.hpp"
+#include "signature_providers.hpp"
 
 #include <elf.h>
 #include <sys/mman.h>
@@ -152,13 +150,9 @@ namespace {
     };
 
     std::vector<LinuxEntry> linux_entries() {
-        const ds::sig::ProviderDesc *providers[] = {
-                &ds::core_vm::signature_provider(),
-                &ds::debug_profiler::signature_provider(),
-                &ds::net_stats::signature_provider(),
-        };
         std::vector<LinuxEntry> entries;
-        for (const auto *desc : providers) {
+        for (const auto &binding : ds::sig::repository_providers()) {
+            const auto *desc = &binding.desc();
             for (size_t i = 0; i < desc->entry_count; ++i) {
                 const auto &def = desc->entries[i];
                 if ((def.platform_mask & ds::sig::kPlatformLinuxX64) == 0 || def.patterns[0] == nullptr) {

@@ -150,6 +150,7 @@ target_compile_definitions(signature_updater PUBLIC
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_executable(verify_linux_signatures
         verify_linux_signatures.cpp
+        ${DS_PROVIDER_SOURCES}
         ${DONTSTARVEINJECTOR_ROOT}/config/InjectorHostConfig.cpp
         ${DONTSTARVEINJECTOR_UTIL_DIR}/platform.cpp
         ${DONTSTARVEINJECTOR_ROOT}/core/PluginPath.cpp
