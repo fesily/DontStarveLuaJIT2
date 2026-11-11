@@ -5,6 +5,7 @@
 #include <frida-gum.h>
 
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <string_view>
 
