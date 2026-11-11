@@ -158,15 +158,19 @@ bool package_plugin_candidate(const std::filesystem::directory_entry &entry,
     if (util::path_to_utf8(entry.path().filename()).rfind("plugin_", 0) != 0) {
         return false;
     }
-    // The package dir name IS the module stem, so appending the suffix to the
-    // directory path never narrows anything through the ANSI code page.
-    auto candidate = entry.path();
-    candidate += plugin_module_extension();
+    // The package dir name IS the module stem, and the module lives INSIDE that
+    // directory: <plugins>/<stem>/<stem><ext>. The file name is built by appending
+    // to the filename's native string, so no text conversion (and no code-page
+    // narrowing) is involved.
+    std::filesystem::path module_name = entry.path().filename();
+    module_name += plugin_module_extension();
+    auto candidate = entry.path() / module_name;
     if (!ds::packaged::exists_or_materialize(candidate)) {
 #if defined(__APPLE__)
         // Prefer .dylib, fall back .so on Apple.
-        candidate = entry.path();
-        candidate += ".so";
+        module_name = entry.path().filename();
+        module_name += ".so";
+        candidate = entry.path() / module_name;
         if (!ds::packaged::exists_or_materialize(candidate)) {
             return false;
         }
