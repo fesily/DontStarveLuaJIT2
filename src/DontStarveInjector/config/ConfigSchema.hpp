@@ -33,12 +33,9 @@ bool TryCoerceSavedString(std::string_view raw, const OptionSchemaEntry &schema,
 void RegisterCoreOptionSchema(ConfigSchemaRegistry &r);
 
 // L0 seed of the VM domain keys (LuaVmType, EnabledGenGC, DisableJITWhenServer).
-// Seeded into the cascade schema up front (ConfigSession.cpp) so a resolve that
-// happens before plugin_core_vm's ds_plugin_module_init — or on a start where
-// that module was skipped — still sees the keys: apply_partial() drops unknown
-// keys, which used to lose `lua_vm_type` / modinfo default / modoverrides and
-// leave the VM unresolved. plugin_core_vm registers the identical entries, so
-// ConfigSchemaRegistry::add() stays idempotent.
+// plugin_core_vm registers the identical entries in ds_plugin_module_init; they
+// are seeded here as well because that module can be skipped — see
+// BuildCascadeSchema().
 void RegisterCoreVmOptionSchema(ConfigSchemaRegistry &r);
 
 // Business keys (AngleBackend, EnableVBPool, NetworkOpt, EnableNetSim,
@@ -57,5 +54,19 @@ public:
 private:
     std::unordered_map<std::string, OptionSchemaEntry> entries_;
 };
+
+// Cascade schema for ds::config::resolve(): L0 identity keys plus the VM trio.
+// The VM keys must be present even when plugin_core_vm's ds_plugin_module_init
+// never runs: DynamicPluginLoader can skip that module (load_failed /
+// abi_mismatch / missing_init / init_failed / duplicate_stem) while
+// CoreVmBootstrap still maps the DLL by path and calls only
+// ds_core_vm_run_signature_and_replace. apply_partial() drops unknown keys, so
+// without the seed LuaVmType is lost from the `lua_vm_type` env/cmd, the modinfo
+// default and modoverrides alike; get_lua_vm_type() then returns
+// GameLuaType::unknown, no VM library can be picked, the injector degrades to the
+// game VM and the mod asks for a restart — one extra full vanilla-Lua boot.
+// plugin_core_vm re-registers the identical entries (add() compares entries), and
+// refresh_cascade_after_plugins() logs any divergence instead of ignoring it.
+ConfigSchemaRegistry BuildCascadeSchema();
 
 } // namespace ds::plugin

@@ -13,21 +13,9 @@
 namespace {
 
 ds::plugin::ConfigSchemaRegistry &cascade_option_schema() {
-    static ds::plugin::ConfigSchemaRegistry schema = [] {
-        ds::plugin::ConfigSchemaRegistry r;
-        ds::plugin::RegisterCoreOptionSchema(r);
-        // VM keys must exist before the first resolve, not only after
-        // DynamicPluginLoader ran: a cold start resolves the config while the
-        // plugin window is still closed, and apply_partial() drops unknown keys
-        // (ignored_unknown). A dropped LuaVmType — from `lua_vm_type` env,
-        // modinfo default or modoverrides — resolves to GameLuaType::unknown,
-        // which cannot pick a VM library and degrades to the game VM; the mod
-        // then switches to jit and demands a restart, i.e. one extra full
-        // vanilla-Lua boot per cold start. core.vm registers the identical
-        // entries in ds_plugin_module_init, so add() stays idempotent.
-        ds::plugin::RegisterCoreVmOptionSchema(r);
-        return r;
-    }();
+    // L0 identity keys + the VM trio (see BuildCascadeSchema: the VM keys must
+    // survive a core.vm module_init that never ran).
+    static ds::plugin::ConfigSchemaRegistry schema = ds::plugin::BuildCascadeSchema();
     return schema;
 }
 
@@ -86,7 +74,14 @@ DS_INJECTOR_CXX_API void refresh_cascade_after_plugins(
         if (e == nullptr) {
             continue;
         }
-        (void) cascade.add(*e);
+        // add() keeps the existing entry on a conflict. A VM-key conflict means
+        // plugin_core_vm's copy and the BuildCascadeSchema() seed diverged; the
+        // seeded entries win, so make that visible instead of silently dropping
+        // the plugin's definition.
+        if (!cascade.add(*e)) {
+            spdlog::warn("config: plugin schema '{}' differs from the cascade seed; keeping the seeded entry",
+                         e->key);
+        }
     }
     auto ctx = build_cascade_context();
     g_resolved_config = ds::config::resolve(cascade, ctx);

@@ -256,7 +256,9 @@ void test_resolved_config_accessors() {
 // write-back removed: no map_to_game_jit_mod_config / has_vm_options.
 
 
-// OB-S2: without VM schema registration, cascade never carries VM keys.
+// Generic unknown-key behaviour: a key absent from the schema is dropped by
+// apply_partial(). Production reaches this only for keys no plugin owns — the VM
+// trio is seeded by BuildCascadeSchema(), business keys by plugin_core_vm's peers.
 void test_resolve_without_vm_schema_omits_vm_keys() {
     ConfigSchemaRegistry reg;
     RegisterCoreOptionSchema(reg);
@@ -277,16 +279,21 @@ void test_resolve_without_vm_schema_omits_vm_keys() {
     printf("PASS: resolve_without_vm_schema_omits_vm_keys\n");
 }
 
-// Cold start: the first cascade resolve runs before DynamicPluginLoader, i.e.
-// before core.vm's module_init. ConfigSession seeds the VM trio into the L0
-// schema for that window; without the seed apply_partial() drops LuaVmType as
-// unknown, the injector resolves GameLuaType::unknown (no VM library) and
-// degrades to the game VM, so the mod switches to jit and demands a restart —
-// one extra full vanilla-Lua boot on every cold start.
-void test_first_resolve_applies_lua_vm_type() {
-    ConfigSchemaRegistry reg;
-    RegisterCoreOptionSchema(reg);
-    RegisterCoreVmOptionSchema(reg); // what cascade_option_schema() seeds
+// Regression: the cascade schema must carry the VM trio without any plugin
+// module_init. DynamicPluginLoader can skip plugin_core_vm (load_failed /
+// abi_mismatch / missing_init / init_failed / duplicate_stem) while
+// CoreVmBootstrap still maps the DLL by path and only runs
+// ds_core_vm_run_signature_and_replace, so nothing registers the keys. Since
+// apply_partial() drops unknown keys, a missing LuaVmType loses `lua_vm_type`,
+// the modinfo default and modoverrides at once, resolves to
+// GameLuaType::unknown and degrades to the game VM — one extra vanilla-Lua boot
+// plus a restart request.
+void test_cascade_schema_carries_vm_keys() {
+    ConfigSchemaRegistry reg = BuildCascadeSchema(); // same call the session makes
+    DS_REQUIRE(reg.find("LuaVmType") != nullptr);
+    DS_REQUIRE(reg.find("EnabledGenGC") != nullptr);
+    DS_REQUIRE(reg.find("DisableJITWhenServer") != nullptr);
+    const std::string seeded_default = reg.find("LuaVmType")->default_value.s;
 
     ConfigView defaults;
     defaults["LuaVmType"] = ConfigValue::string("game"); // modinfo default
@@ -297,27 +304,30 @@ void test_first_resolve_applies_lua_vm_type() {
     FakeSource env_src(ConfigSource::EnvOrCmd, env);
 
     CascadeContext ctx;
-    {
-        const std::vector<const IConfigSource *> sources = {&modinfo, &env_src};
-        auto resolved = resolve(reg, ctx, sources);
-        DS_REQUIRE(resolved.view.count("LuaVmType") == 1);
-        DS_REQUIRE(resolved.view.at("LuaVmType").s == "jit");
-        DS_REQUIRE(resolved.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
-        DS_REQUIRE(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit);
-    }
+    const std::vector<const IConfigSource *> sources = {&modinfo, &env_src};
+    auto resolved = resolve(reg, ctx, sources);
+    DS_REQUIRE(resolved.view.count("LuaVmType") == 1);
+    DS_REQUIRE(resolved.view.at("LuaVmType").s == "jit");
+    DS_REQUIRE(resolved.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
+    DS_REQUIRE(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit);
 
-    // refresh_cascade_after_plugins re-adds core.vm's identical entries; that
-    // must neither grow the schema nor clobber the env-resolved value.
+    // refresh_cascade_after_plugins() re-adds plugin_core_vm's entries: identical
+    // copies are a no-op, a divergent one returns false (the refresh logs it and
+    // the seeded entry stays authoritative).
     const auto size_before = reg.size();
     RegisterCoreVmOptionSchema(reg);
     DS_REQUIRE(reg.size() == size_before);
-    {
-        const std::vector<const IConfigSource *> sources = {&env_src};
-        auto resolved = resolve(reg, ctx, sources);
-        DS_REQUIRE(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit);
-    }
 
-    printf("PASS: first_resolve_applies_lua_vm_type\n");
+    OptionSchemaEntry divergent;
+    divergent.key = "LuaVmType";
+    divergent.type = ConfigValueType::String;
+    divergent.default_value = ConfigValue::string("game");
+    divergent.allowed = {"jit", "game"};
+    divergent.allowed_sources = kConfigSourceAll;
+    DS_REQUIRE(!reg.add(std::move(divergent)));
+    DS_REQUIRE(reg.find("LuaVmType")->default_value.s == seeded_default);
+
+    printf("PASS: cascade_schema_carries_vm_keys\n");
 }
 
 } // namespace
@@ -330,7 +340,7 @@ int main() {
     test_enabled_gen_gc_excludes_luajit();
     test_resolved_config_accessors();
     test_resolve_without_vm_schema_omits_vm_keys();
-    test_first_resolve_applies_lua_vm_type();
+    test_cascade_schema_carries_vm_keys();
     printf("ALL PASS: config_resolve\n");
     return 0;
 }

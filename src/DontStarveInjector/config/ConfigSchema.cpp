@@ -128,8 +128,9 @@ void RegisterCoreOptionSchema(ConfigSchemaRegistry &r) {
     constexpr auto kLuajitOnly =
         static_cast<ds::config::ConfigSourceMask>(ds::config::ConfigSource::LuajitConfig);
     // D7 identity keys — path/name identity owned by L0, tight sources.
-    // VM keys (LuaVmType / EnabledGenGC / DisableJITWhenServer) are owned by
-    // plugin_core_vm via RegisterCoreVmOptionSchema (OB-S2).
+    // VM keys (LuaVmType / EnabledGenGC / DisableJITWhenServer) are registered by
+    // plugin_core_vm in ds_plugin_module_init and seeded by BuildCascadeSchema()
+    // so a skipped core.vm module cannot drop them from the cascade.
     {
         OptionSchemaEntry e;
         e.key = std::string{ds::config::keys::kModmainPath};
@@ -204,6 +205,13 @@ void RegisterCoreVmOptionSchema(ConfigSchemaRegistry &r) {
         e.allowed_sources = kDefaultSaveEnv;
         (void) r.add(std::move(e));
     }
+}
+
+ConfigSchemaRegistry BuildCascadeSchema() {
+    ConfigSchemaRegistry r;
+    RegisterCoreOptionSchema(r);
+    RegisterCoreVmOptionSchema(r);
+    return r;
 }
 
 
