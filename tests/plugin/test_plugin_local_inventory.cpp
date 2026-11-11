@@ -1,6 +1,8 @@
+#include "core/PluginPath.hpp"
 #include "plugins/plugin_manager/PluginLocalInventory.hpp"
 #include "plugins/plugin_manager/PluginPinConfig.hpp"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -23,6 +25,43 @@ static void write_text(const fs::path &p, const std::string &body) {
     REQUIRE(out.is_open());
     out << body;
     REQUIRE(out);
+}
+
+static void set_env(const char *k, const char *v) {
+#if defined(_WIN32)
+    _putenv_s(k, v ? v : "");
+#else
+    if (!v || !*v)
+        unsetenv(k);
+    else
+        setenv(k, v, 1);
+#endif
+}
+
+TEST_CASE("test_plugin_local_inventory/resolve_plugins_dir_has_no_fallback") {
+    auto base = temp_dir("ds_plugin_inv_root");
+    auto mod = base / "mod";
+    auto plugins = mod / "plugins";
+    fs::create_directories(plugins);
+    auto file = base / "not_a_dir";
+    write_text(file, "x");
+
+    // No override: the manager sees exactly the loader's root.
+    set_env(ds::plugin::kPluginDirEnv, "");
+    ds::plugin::set_injector_module_dir_for_test(mod);
+    const auto root = ds::plugin::resolve_plugins_dir();
+
+    // Broken override: no root and no module-relative fallback (the manager must
+    // not scan/apply into a tree the loader refuses).
+    set_env(ds::plugin::kPluginDirEnv, file.string().c_str());
+    const auto broken = ds::plugin::resolve_plugins_dir();
+
+    set_env(ds::plugin::kPluginDirEnv, "");
+    ds::plugin::set_injector_module_dir_for_test(fs::path{});
+    fs::remove_all(base);
+
+    REQUIRE_EQ(root, plugins);
+    REQUIRE(broken.empty());
 }
 
 // Package layout is the only supported one: fixtures write plugins/<stem>/<member>.

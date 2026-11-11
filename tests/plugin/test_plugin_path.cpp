@@ -176,7 +176,9 @@ TEST_CASE("test_plugin_path/env_root_must_be_directory") {
     TempDirGuard cleanup(base);
     auto file = base / "not_a_dir";
     std::ofstream(file) << "x";
-    fs::create_directories(base / "plugins"); // would satisfy the removed fallback
+    // A module-relative fallback (the removed PluginLocalInventory path) would
+    // find this plugins/ dir; the root resolver itself must still return empty.
+    fs::create_directories(base / "plugins");
     set_injector_module_dir_for_test(base);
     set_env_path(kPluginDirEnv, file);
 

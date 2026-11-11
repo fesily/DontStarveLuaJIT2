@@ -37,29 +37,6 @@ std::unordered_set<std::filesystem::path, util::PathHash> g_added_dll_dirs;
 // util/platform.cpp loadlib(). Windows keeps the authoritative list in the OS.
 std::vector<std::filesystem::path> g_dll_roots;
 
-// Lua hands us UTF-8 (mod root paths can contain non-ASCII user names). Windows
-// filesystem::path from narrow chars assumes ANSI, so decode explicitly.
-std::filesystem::path path_from_utf8(std::string_view s) {
-#if defined(_WIN32)
-    if (s.empty()) {
-        return {};
-    }
-    const int need = ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                                           nullptr, 0);
-    if (need <= 0) {
-        return std::filesystem::path(std::string(s));
-    }
-    std::wstring wide(static_cast<size_t>(need), L'\0');
-    if (::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), wide.data(),
-                              need) != need) {
-        return std::filesystem::path(std::string(s));
-    }
-    return std::filesystem::path(wide);
-#else
-    return std::filesystem::path(std::string(s));
-#endif
-}
-
 bool iequals_ascii(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) {
         return false;
@@ -150,14 +127,14 @@ std::vector<std::filesystem::path> default_plugin_search_dirs() {
 #if defined(_WIN32)
     // The environment is UTF-16 on Windows; getenv()/path(char*) would narrow it
     // through the ANSI code page. Copy out of _wgetenv's shared buffer at once.
-    const std::wstring env_key(kPluginDirEnv,
-                               kPluginDirEnv + std::strlen(kPluginDirEnv));
+    static const std::wstring env_key(kPluginDirEnv,
+                                      kPluginDirEnv + std::strlen(kPluginDirEnv));
     if (const wchar_t *env = _wgetenv(env_key.c_str()); env != nullptr && env[0] != L'\0') {
         env_root = std::filesystem::path(env);
     }
 #else
     if (const char *env = std::getenv(kPluginDirEnv); env != nullptr && *env != '\0') {
-        env_root = path_from_utf8(env);
+        env_root = util::path_from_utf8(env);
     }
 #endif
 
@@ -257,7 +234,7 @@ std::vector<std::string> list_plugin_packages(std::string_view plugins_dir_utf8)
     if (plugins_dir_utf8.empty()) {
         return {};
     }
-    return list_plugin_packages_in(path_from_utf8(plugins_dir_utf8));
+    return list_plugin_packages_in(util::path_from_utf8(plugins_dir_utf8));
 }
 
 std::vector<std::string> list_installed_plugin_packages(std::string_view plugins_dir_utf8) {

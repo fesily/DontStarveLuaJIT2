@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <fstream>
 #include <unordered_map>
 #include <unordered_set>

@@ -49,11 +49,11 @@ DS_INJECTOR_CXX_API std::filesystem::path mod_root_from_plugins_dir(const std::f
 // referenced.
 DS_INJECTOR_CXX_API std::vector<std::string> list_plugin_packages(std::string_view plugins_dir_utf8);
 
-// Same listing, but native-root first: when default_plugin_search_dirs()
-// resolves, that single root is listed (exactly what the native loader loads).
-// The hint (MODROOT .. "plugins/") is an engine path that need not exist for a
-// Workshop item loaded from Steam UGC, so it is only consulted when no native
-// root resolves. Deduped and sorted.
+// Same listing, but with the native root as the source of truth: when
+// default_plugin_search_dirs() resolves, only that root is listed (exactly what
+// the native loader loads). The hint (MODROOT .. "plugins/") is an engine path
+// that need not exist for a Workshop item loaded from Steam UGC, and it is only
+// consulted when no native root resolves. Sorted.
 DS_INJECTOR_CXX_API std::vector<std::string> list_installed_plugin_packages(std::string_view plugins_dir_utf8);
 
 // Shared runtimes path: mod_root / "deps" (sibling of plugins/, not under it).

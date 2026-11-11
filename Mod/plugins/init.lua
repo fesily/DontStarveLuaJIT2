@@ -82,9 +82,78 @@ end
 local R = load_package_load()
 local api = get_api()
 
-local function load_flat(name)
-    -- Keep existing kleiloadlua path behavior for flat faces during P0.
+local function injector_get(name)
     local env = getfenv(1)
+    if type(env) == "table" then
+        local v = rawget(env, name)
+        if v == nil then
+            v = env[name]
+        end
+        if v ~= nil then
+            return v
+        end
+    end
+    return rawget(_G, name)
+end
+
+-- The injector resolves exactly one native plugin root and can read package
+-- files from it. MODROOT is an engine path: for a Workshop item it names the
+-- UGC tree, and with a dev Injector it may name a different install entirely,
+-- so package Lua must not be loaded relative to it when a native root exists.
+local injector = injector_get("GameInjector")
+local native_root, abs_load
+if injector then
+    if type(injector.DS_LUAJIT_plugin_root) == "function" then
+        local ok, root = pcall(injector.DS_LUAJIT_plugin_root)
+        if ok and type(root) == "string" and root ~= "" then
+            native_root = root
+        end
+    end
+    if type(injector.DS_LUAJIT_readfile_abs) == "function" then
+        local read_abs = injector.DS_LUAJIT_readfile_abs
+        abs_load = function(path)
+            local source = read_abs(path)
+            if type(source) ~= "string" then
+                return "cannot read " .. path
+            end
+            local chunk, err = loadstring(source, "@" .. path)
+            if type(chunk) ~= "function" then
+                return err or ("cannot compile " .. path)
+            end
+            return chunk
+        end
+    end
+end
+
+local function package_api()
+    if not (native_root and abs_load) then
+        return api
+    end
+    local p = setmetatable({ kleiloadlua = abs_load }, { __index = api })
+    p.package_modimport = function(package_root, rel, package_env)
+        local path = package_root .. rel .. ".lua"
+        local chunk = abs_load(path)
+        if type(chunk) == "function" then
+            setfenv(chunk, package_env or getfenv(2))
+            return chunk()
+        end
+        error("package modimport failed: " .. path .. " " .. tostring(chunk))
+    end
+    return p
+end
+
+local function load_flat(name)
+    -- Flat faces live under the same native root; prefer reading them there.
+    local env = getfenv(1)
+    if native_root and abs_load then
+        local path = native_root:gsub("\\", "/") .. "/" .. name .. ".lua"
+        local chunk = abs_load(path)
+        if type(chunk) == "function" then
+            setfenv(chunk, env)
+            return chunk()
+        end
+        error("failed to load plugin " .. path .. ": " .. tostring(chunk))
+    end
     local root = api.MODROOT
     local loadlua = api.kleiloadlua
     if root and loadlua then
@@ -100,6 +169,14 @@ local function load_flat(name)
 end
 
 local function load_package(stem)
+    -- Native root first: the same tree the native loader initializes.
+    if native_root and abs_load then
+        local root = native_root:gsub("\\", "/")
+        if root:sub(-1) ~= "/" then
+            root = root .. "/"
+        end
+        return R.load_package_from_root(root .. stem .. "/", stem, package_api())
+    end
     -- Test path (require plugins.*): no MODROOT; resolve package under package.path root.
     if not api.MODROOT then
         local root = (os.getenv("REPO_ROOT") or "."):gsub("\\", "/")
@@ -117,19 +194,6 @@ end
 -- therefore exactly the installed set: a package that is not installed (e.g.
 -- the Windows-only plugin_render_shadow on Linux/macOS) is never referenced,
 -- which used to raise inside load_package and drop every plugin.
-local function injector_get(name)
-    local env = getfenv(1)
-    if type(env) == "table" then
-        local v = rawget(env, name)
-        if v == nil then
-            v = env[name]
-        end
-        if v ~= nil then
-            return v
-        end
-    end
-    return rawget(_G, name)
-end
 
 -- No GameInjector means no Lua bridge (core.vm absent / not injected / unit-test
 -- run): every Lua face would be inert, so the plugin system stays off entirely.
@@ -140,8 +204,7 @@ local function plugin_system_disabled(reason)
     return {}
 end
 
-local packages_dir = api.MODROOT and (api.MODROOT .. "plugins/") or ""
-local injector = injector_get("GameInjector")
+local packages_dir = native_root or (api.MODROOT and (api.MODROOT .. "plugins/") or "")
 local list_fn = injector and injector.DS_LUAJIT_list_plugin_packages
 if type(list_fn) ~= "function" then
     return plugin_system_disabled("GameInjector.DS_LUAJIT_list_plugin_packages unavailable")

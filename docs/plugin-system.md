@@ -303,10 +303,13 @@ GameInjector.DS_LUAJIT_list_plugin_packages(MODROOT .. "plugins/")
 Backed by `ds::plugin::list_installed_plugin_packages` (`core/PluginPath.cpp`),
 which lists the single root from `default_plugin_search_dirs()` — the same tree
 `DynamicPluginLoader` loads — and only consults the `MODROOT` hint when no root
-resolves. The hint is an engine path: a Workshop item is loaded from Steam UGC
-(`…/workshop/content/322330/<id>`) while `MODROOT` stays
-`../mods/workshop-<id>/`, so it need not exist on disk and must never override
-the native root. The export
+resolves. Package files are then read from that same root through
+`DS_LUAJIT_plugin_root` + `DS_LUAJIT_readfile_abs` (source text jailed to the
+root; Lua compiles it with its own `loadstring`), so listing and loading never
+fork. The hint is an engine path: a
+Workshop item is loaded from Steam UGC (`…/workshop/content/322330/<id>`) while
+`MODROOT` stays `../mods/workshop-<id>/`, so it need not exist on disk and must
+never override the native root. The export
 returns a Lua sequence table (`sol::as_table`) — a bare `std::vector` would be
 pushed as a container userdata and the registry would disable itself.
 Consequence: the registry is
@@ -641,7 +644,7 @@ EarlyNative business plugins (`network.rpc`, `render.vbpool`, `render.angle`, �
 
 Override paths: `DS_LUAJIT_INJECTOR` / `DS_LUAJIT_INJECTOR_DIR` (real Injector); `DS_LUAJIT_PLUGIN_DIR` (plugins). Marker: `data/unsafedata/ds_luajit_injector.path`.
 
-There is exactly **one plugin root** per process: `DS_LUAJIT_PLUGIN_DIR` when set (and an existing directory), otherwise `plugins_dir_from_module_dir(injector_module_dir())` — i.e. the tree that supplied the real Injector module. There is no modmain/config, game-mods or UGC fallback: if the resolved module has no `plugins/` sibling, the runtime reports "no plugin root" instead of loading plugins from another install. This is what keeps a dev `DS_LUAJIT_INJECTOR=<repo>/Mod/Injector.dll` from running the game's Workshop plugins (or vice versa). `default_plugin_search_dirs()` therefore returns zero or one path; `core.vm` mapping, the signature cache root, the manager inventory and the Lua registry (`list_installed_plugin_packages`, which prefers this root over the `MODROOT` hint) all consume the same entry.
+There is exactly **one plugin root** per process: `DS_LUAJIT_PLUGIN_DIR` when it names an existing directory, otherwise `plugins_dir_from_module_dir(injector_module_dir())` — i.e. the tree that supplied the real Injector module. A set-but-invalid override yields no root (it does **not** fall through to the module dir). There is no modmain/config, game-mods or UGC fallback: if the resolved module has no `plugins/` sibling, the runtime reports "no plugin root" instead of loading plugins from another install. This is what keeps a dev `DS_LUAJIT_INJECTOR=<repo>/Mod/Injector.dll` from running the game's Workshop plugins (or vice versa). `default_plugin_search_dirs()` therefore returns zero or one path; `core.vm` mapping, the signature cache root, the manager inventory and the Lua registry (`list_installed_plugin_packages`, plus `DS_LUAJIT_readfile_abs` for reading the package files) all consume the same entry; the `MODROOT` hint is only used when no root resolves.
 
 The shell's mod-alias scan (used only when env/marker do not resolve) is equally single-valued for Workshop content: `-ugc_directory` (custom workshop root, `content/322330` appended) **replaces** the Steam default `…/steamapps/workshop/content/322330`; the two are never scanned together.
 

@@ -1175,6 +1175,11 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 #endif
 #include "config/ConfigSchema.hpp"
 #include "core/PluginPath.hpp"
+#include "core/ExternalPluginDiscovery.hpp"
+#include "util/PathText.hpp"
+
+#include <fstream>
+#include <iterator>
 #include "util/PersistentString.hpp"
 
 
@@ -1199,6 +1204,37 @@ static sol::as_table_t<std::vector<std::string>> game_injector_list_plugin_packa
     return sol::as_table(ds::plugin::list_installed_plugin_packages(plugins_dir));
 }
 
+// The single native root the loader uses. The Lua registry lists packages from
+// it and must read their files from the same tree: MODROOT is an engine path
+// (UGC mapping) and may name another install when the Injector is overridden.
+static std::string game_injector_plugin_root() {
+    const auto roots = ds::plugin::default_plugin_search_dirs();
+    return roots.empty() ? std::string{} : ds::util::path_to_utf8(roots.front());
+}
+
+// Read a Lua source file under the native root. Klei's kleiloadlua resolves the
+// engine-loaded mod tree, and the game's captured luaL_loadfile belongs to the
+// original PUC VM (running it on the LuaJIT state crashes), so the injector only
+// hands back source text; Lua compiles it with its own loadstring. The path is
+// jailed to the resolved plugin root on purpose.
+static sol::object game_injector_readfile_abs(sol::this_state ts, const std::string &path) {
+    lua_State *L = ts;
+    const auto roots = ds::plugin::default_plugin_search_dirs();
+    const auto candidate = ds::util::path_from_utf8(path);
+    if (roots.empty() || !ds::plugin::path_under_root(roots.front(), candidate)) {
+        return sol::nil;
+    }
+    std::ifstream in(candidate, std::ios::binary);
+    if (!in) {
+        return sol::nil;
+    }
+    std::string source((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (!in.eof() && in.fail()) {
+        return sol::nil;
+    }
+    return sol::make_object(L, source);
+}
+
 int luaopen_GameInjector(lua_State* L) {
     sol::state_view lua(L);
     sol::table module = lua.create_table();
@@ -1211,6 +1247,8 @@ int luaopen_GameInjector(lua_State* L) {
     module.set_function("DS_LUAJIT_update", &DS_LUAJIT_update);
     module.set_function("DS_LUAJIT_get_mod_version", &DS_LUAJIT_get_mod_version);
     module.set_function("DS_LUAJIT_list_plugin_packages", &game_injector_list_plugin_packages);
+    module.set_function("DS_LUAJIT_plugin_root", &game_injector_plugin_root);
+    module.set_function("DS_LUAJIT_readfile_abs", &game_injector_readfile_abs);
 
     // Typed exports from plugins (GiSig trampolines / LuaCFunction).
     module.push();

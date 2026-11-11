@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <fstream>
 #include <mutex>
@@ -72,24 +73,25 @@ std::string trim_copy(std::string s) {
     return s;
 }
 
-const char *env_or_null(const char *key) {
+// Environment value as a path: wide on Windows, UTF-8 on POSIX. Empty when
+// unset/empty. Copying out of the CRT buffer immediately also removes the shared
+// thread_local storage that used to make two env reads alias each other.
+fs::path env_path(const char *key) {
 #if defined(_WIN32)
-    char *buf = nullptr;
+    const std::wstring wkey(key, key + std::strlen(key));
+    wchar_t *buf = nullptr;
     size_t len = 0;
-    if (_dupenv_s(&buf, &len, key) != 0 || buf == nullptr || len == 0 || buf[0] == '\0') {
+    if (_wdupenv_s(&buf, &len, wkey.c_str()) != 0 || buf == nullptr || len == 0 ||
+        buf[0] == L'\0') {
         free(buf);
-        return nullptr;
+        return {};
     }
-    thread_local std::string storage;
-    storage.assign(buf);
+    fs::path value(buf);
     free(buf);
-    return storage.c_str();
+    return value;
 #else
     const char *v = std::getenv(key);
-    if (!v || !*v) {
-        return nullptr;
-    }
-    return v;
+    return (v != nullptr && *v != '\0') ? ds::util::path_from_utf8(v) : fs::path{};
 #endif
 }
 
@@ -252,9 +254,10 @@ bool find_module_in_dir(const fs::path &dir, fs::path &out) {
     return false;
 }
 
-// First non-empty `-ugc_directory` token (first wins, same as
-// sdk/steam/Workshop.cpp). Cmdline tokens are UTF-8 text
-// (production_cmdline_tokens uses path_to_utf8), so decode explicitly.
+// First non-empty `-ugc_directory` token. (sdk/steam/Workshop.cpp takes the
+// first occurrence unconditionally; skipping an empty value is deliberately
+// safer.) Cmdline tokens are UTF-8 text (production_cmdline_tokens uses
+// path_to_utf8), so decode explicitly.
 std::string custom_ugc_directory() {
     const auto cmds = current_cmdline();
     for (size_t i = 0; i + 1 < cmds.size(); ++i) {
@@ -359,17 +362,24 @@ std::string describe_resolve_failure() {
         detail += std::move(line);
     };
 
-    // env_or_null returns storage shared by all keys; copy each value before
-    // the next call (and never keep its pointer).
-    const auto env_text = [](const char *key) {
-        const char *value = env_or_null(key);
-        return value != nullptr ? std::string{value} : std::string{"<unset>"};
+    const auto one_line = [](std::string text) {
+        for (char &c : text) {
+            if (c == '\r' || c == '\n') {
+                c = ' ';
+            }
+        }
+        return text;
+    };
+    const auto env_text = [&](const char *key) {
+        const auto value = env_path(key);
+        return value.empty() ? std::string{"<unset>"} : one_line(ds::util::path_to_utf8(value));
     };
     add_line("resolve: FAILED (env/marker/scan)");
     add_line("  DS_LUAJIT_INJECTOR=" + env_text(kInjectorFileEnv));
     add_line("  DS_LUAJIT_INJECTOR_DIR=" + env_text(kInjectorDirEnv));
     if (const auto ugc = custom_ugc_directory(); !ugc.empty()) {
-        add_line("  -ugc_directory=" + ugc + " (workshop root; Steam default NOT scanned)");
+        add_line("  -ugc_directory=" + one_line(ugc) +
+                 " (workshop root; Steam default NOT scanned)");
     }
 
     const auto marker = marker_path();
@@ -512,19 +522,18 @@ bool resolve_injector_module(std::filesystem::path &out_abs) {
     std::lock_guard lock(g_state_mu);
 
     // 1) DS_LUAJIT_INJECTOR file
-    if (const char *file_env = env_or_null(kInjectorFileEnv)) {
-        fs::path cand = file_env;
-        if (ds::packaged::exists_or_materialize(cand)) {
-            const auto abs = absolute_if_possible(cand);
+    if (const auto file_env = env_path(kInjectorFileEnv); !file_env.empty()) {
+        if (ds::packaged::exists_or_materialize(file_env)) {
+            const auto abs = absolute_if_possible(file_env);
             out_abs = abs;
             return pin_success(abs, "env_file");
         }
     }
 
     // 2) DS_LUAJIT_INJECTOR_DIR directory
-    if (const char *dir_env = env_or_null(kInjectorDirEnv)) {
+    if (const auto dir_env = env_path(kInjectorDirEnv); !dir_env.empty()) {
         fs::path found;
-        if (find_module_in_dir(fs::path(dir_env), found)) {
+        if (find_module_in_dir(dir_env, found)) {
             out_abs = found;
             return pin_success(found, "env_dir");
         }

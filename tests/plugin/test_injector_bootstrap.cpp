@@ -409,6 +409,14 @@ TEST_CASE("test_injector_bootstrap/boot_log_records_failed_resolve") {
     fs::create_directories(game / "mods");
     set_marker_game_root_for_test(game);
     set_exe_dir_for_test(game / "bin64");
+    // Distinct values: the old env_or_null() shared buffer made both lines print
+    // the last value, and the raw token line did not exist.
+    const auto missing_file = root / "missing" / injector_module_filename();
+    const auto missing_dir = root / "missing_dir";
+    const auto ugc = root / "ugc";
+    set_env(kInjectorFileEnv, missing_file.string().c_str());
+    set_env(kInjectorDirEnv, missing_dir.string().c_str());
+    set_cmdline_for_test({"-ugc_directory", ds::util::path_to_utf8(ugc)});
 
     auto fn = load_injector_hook_entry();
     REQUIRE_EQ(fn, nullptr);
@@ -416,7 +424,13 @@ TEST_CASE("test_injector_bootstrap/boot_log_records_failed_resolve") {
     const auto text = read_all(boot_log_path());
     REQUIRE_NE(text.find("ds-bootstrap boot log"), std::string::npos);
     REQUIRE_NE(text.find("resolve: FAILED"), std::string::npos);
-    REQUIRE_NE(text.find("DS_LUAJIT_INJECTOR=<unset>"), std::string::npos);
+    REQUIRE_NE(text.find("DS_LUAJIT_INJECTOR=" + ds::util::path_to_utf8(missing_file)),
+               std::string::npos);
+    REQUIRE_NE(text.find("DS_LUAJIT_INJECTOR_DIR=" + ds::util::path_to_utf8(missing_dir)),
+               std::string::npos);
+    REQUIRE_NE(text.find("  -ugc_directory=" + ds::util::path_to_utf8(ugc) +
+                         " (workshop root; Steam default NOT scanned)"),
+               std::string::npos);
     REQUIRE_NE(text.find("marker: "), std::string::npos);
     REQUIRE_NE(text.find("(missing)"), std::string::npos);
     REQUIRE_NE(text.find("scan bases:"), std::string::npos);

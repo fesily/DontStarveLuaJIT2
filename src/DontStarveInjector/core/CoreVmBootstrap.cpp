@@ -164,11 +164,13 @@ RunSigReplaceFn GetRunSignatureAndReplaceFn() {
 }
 
 [[noreturn]] static void hard_fail(const char *msg) {
-#ifdef _WIN32
-    MessageBoxA(NULL, msg, "core.vm required", 0);
-#else
+    // Always leave a log line: a dedicated server / CI run has no visible box,
+    // and the resolved plugin root may be a UTF-8 path.
     std::fprintf(stderr, "[core.vm] FATAL: %s\n", msg);
     std::fflush(stderr);
+#ifdef _WIN32
+    const std::wstring wide_msg = ds::util::path_from_utf8(msg).wstring();
+    MessageBoxW(NULL, wide_msg.c_str(), L"core.vm required", 0);
 #endif
     std::exit(1);
 }
