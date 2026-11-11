@@ -7,7 +7,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include <cassert>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -17,6 +16,7 @@
 #include <vector>
 
 #include <zip.h>
+#include "support/test_assert.hpp"
 
 namespace fs = std::filesystem;
 using namespace ds::plugin_manager;
@@ -64,7 +64,7 @@ static fs::path make_temp_dir(const char *tag) {
 
 static std::string read_bytes(const fs::path &p) {
     std::ifstream in(p, std::ios::binary);
-    assert(in.is_open());
+    DS_REQUIRE(in.is_open());
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
 
@@ -73,18 +73,18 @@ static std::string build_zip_bytes(const std::vector<std::pair<std::string, std:
     const auto zip_path = dir / "a.zip";
     int zerr = 0;
     zip_t *za = zip_open(zip_path.string().c_str(), ZIP_CREATE | ZIP_TRUNCATE, &zerr);
-    assert(za);
+    DS_REQUIRE(za);
     for (const auto &e : entries) {
         void *copy = malloc(e.second.size() ? e.second.size() : 1);
-        assert(copy);
+        DS_REQUIRE(copy);
         if (!e.second.empty()) {
             memcpy(copy, e.second.data(), e.second.size());
         }
         zip_source_t *src = zip_source_buffer(za, copy, e.second.size(), 1);
-        assert(src);
-        assert(zip_file_add(za, e.first.c_str(), src, ZIP_FL_ENC_UTF_8) >= 0);
+        DS_REQUIRE(src);
+        DS_REQUIRE(zip_file_add(za, e.first.c_str(), src, ZIP_FL_ENC_UTF_8) >= 0);
     }
-    assert(zip_close(za) == 0);
+    DS_REQUIRE(zip_close(za) == 0);
     auto bytes = read_bytes(zip_path);
     std::error_code ec;
     fs::remove_all(dir, ec);
@@ -121,16 +121,16 @@ static void test_channel_cache_and_lookup() {
     })");
 
     auto cache = channel_cache_from_manifest(manifest);
-    assert(cache.size() == 1);
-    assert(cache["debug.dummy"] == "1.2.3");
+    DS_REQUIRE(cache.size() == 1);
+    DS_REQUIRE(cache["debug.dummy"] == "1.2.3");
 
     std::string err;
     auto asset = lookup_manifest_asset(manifest, "debug.dummy", current_platform_key(), &err);
-    assert(asset.has_value());
-    assert(asset->id == "debug.dummy");
-    assert(asset->version == "1.2.3");
-    assert(!asset->asset.empty());
-    assert(!asset->module.empty());
+    DS_REQUIRE(asset.has_value());
+    DS_REQUIRE(asset->id == "debug.dummy");
+    DS_REQUIRE(asset->version == "1.2.3");
+    DS_REQUIRE(!asset->asset.empty());
+    DS_REQUIRE(!asset->module.empty());
     printf("PASS: channel_cache_and_lookup (platform=%s module=%s)\n",
            current_platform_key().c_str(), asset->module.c_str());
 }
@@ -190,15 +190,15 @@ static void test_apply_plan_with_mock_http() {
     action.reason = "version_mismatch";
 
     auto result = apply_plan(cfg, manifest, {action}, plugins_dir, "");
-    assert(result.succeeded == 1);
-    assert(result.attempted == 1);
+    DS_REQUIRE(result.succeeded == 1);
+    DS_REQUIRE(result.attempted == 1);
     // Package layout is the only supported install target.
     const auto pkg_dir = plugins_dir / "plugin_dummy";
-    assert(fs::exists(pkg_dir / module_name));
-    assert(read_bytes(pkg_dir / module_name) == module_bytes);
-    assert(fs::exists(pkg_dir / "plugin_dummy.meta.json"));
-    assert(!fs::exists(plugins_dir / module_name));
-    assert(g_http_hits >= 1);
+    DS_REQUIRE(fs::exists(pkg_dir / module_name));
+    DS_REQUIRE(read_bytes(pkg_dir / module_name) == module_bytes);
+    DS_REQUIRE(fs::exists(pkg_dir / "plugin_dummy.meta.json"));
+    DS_REQUIRE(!fs::exists(plugins_dir / module_name));
+    DS_REQUIRE(g_http_hits >= 1);
 
     // Bad sha256 fails and leaves old content? no prior content — dest should not update on fail.
     g_http_map.clear();
@@ -212,9 +212,9 @@ static void test_apply_plan_with_mock_http() {
     fs::remove_all(plugins_dir, ec);
     fs::create_directories(plugins_dir, ec);
     result = apply_plan(cfg, manifest, {action}, plugins_dir, "");
-    assert(result.succeeded == 0);
-    assert(!result.last_error.empty());
-    assert(result.last_error.find("sha256") != std::string::npos);
+    DS_REQUIRE(result.succeeded == 0);
+    DS_REQUIRE(!result.last_error.empty());
+    DS_REQUIRE(result.last_error.find("sha256") != std::string::npos);
 
     set_http_get_override(nullptr);
     fs::remove_all(plugins_dir, ec);
@@ -236,14 +236,14 @@ static void test_fetch_manifest_mock() {
     cfg.prefer_proxy = "never";
     std::string err;
     auto man = fetch_plugins_manifest(cfg, tag, &err);
-    assert(man.has_value());
-    assert((*man)["release_tag"] == "v3.1.4");
+    DS_REQUIRE(man.has_value());
+    DS_REQUIRE((*man)["release_tag"] == "v3.1.4");
     auto cache = channel_cache_from_manifest(*man);
-    assert(cache["a"] == "1");
+    DS_REQUIRE(cache["a"] == "1");
 
     // resolve uses explicit arg
     auto t = resolve_release_tag(cfg, "v9", &err);
-    assert(t && *t == "v9");
+    DS_REQUIRE(t && *t == "v9");
 
     set_http_get_override(nullptr);
     printf("PASS: fetch_manifest_mock\n");
@@ -260,25 +260,25 @@ static void test_install_package_only() {
     }
     bool pending = false;
     std::string err;
-    assert(install_extracted_files(staging, plugins, "plugin_x", {"plugin_x.dll"}, &pending, &err));
-    assert(!pending);
-    assert(read_bytes(plugins / "plugin_x" / "plugin_x.dll") == "DATA");
-    assert(!fs::exists(plugins / "plugin_x.dll")); // never flat
+    DS_REQUIRE(install_extracted_files(staging, plugins, "plugin_x", {"plugin_x.dll"}, &pending, &err));
+    DS_REQUIRE(!pending);
+    DS_REQUIRE(read_bytes(plugins / "plugin_x" / "plugin_x.dll") == "DATA");
+    DS_REQUIRE(!fs::exists(plugins / "plugin_x.dll")); // never flat
 
     // Safe replace: existing live content is not wiped before new bytes land.
     {
         std::ofstream out(staging / "plugin_x.dll", std::ios::binary | std::ios::trunc);
         out << "NEWDATA";
     }
-    assert(install_extracted_files(staging, plugins, "plugin_x", {"plugin_x.dll"}, &pending, &err));
-    assert(read_bytes(plugins / "plugin_x" / "plugin_x.dll") == "NEWDATA");
+    DS_REQUIRE(install_extracted_files(staging, plugins, "plugin_x", {"plugin_x.dll"}, &pending, &err));
+    DS_REQUIRE(read_bytes(plugins / "plugin_x" / "plugin_x.dll") == "NEWDATA");
 
     // Unsafe package dir / members rejected at install.
-    assert(!install_extracted_files(staging, plugins, "../evil", {"plugin_x.dll"}, &pending, &err));
-    assert(err.find("unsafe package") != std::string::npos);
-    assert(!install_extracted_files(staging, plugins, "plugin_x", {"../evil.dll"}, &pending, &err));
-    assert(err.find("unsafe") != std::string::npos);
-    assert(!install_extracted_files(staging, plugins, "plugin_x", {"/abs.lua"}, &pending, &err));
+    DS_REQUIRE(!install_extracted_files(staging, plugins, "../evil", {"plugin_x.dll"}, &pending, &err));
+    DS_REQUIRE(err.find("unsafe package") != std::string::npos);
+    DS_REQUIRE(!install_extracted_files(staging, plugins, "plugin_x", {"../evil.dll"}, &pending, &err));
+    DS_REQUIRE(err.find("unsafe") != std::string::npos);
+    DS_REQUIRE(!install_extracted_files(staging, plugins, "plugin_x", {"/abs.lua"}, &pending, &err));
 
     std::error_code ec;
     fs::remove_all(staging, ec);
@@ -321,10 +321,10 @@ static void test_reject_pathlike_module_and_files() {
     })");
     std::string err;
     auto asset = lookup_manifest_asset(manifest, "evil.path", current_platform_key(), &err);
-    assert(!asset.has_value());
+    DS_REQUIRE(!asset.has_value());
     // Path-like module: rejected (package inferred from the stem fails the segment check,
     // or the module fails the relative-member check).
-    assert(err.find("unsafe") != std::string::npos);
+    DS_REQUIRE(err.find("unsafe") != std::string::npos);
 
     // Nested files[] without a package field: the release is clearly packaged, so the
     // module stem is used as the package dir (see test_package_layout_install).
@@ -359,9 +359,9 @@ static void test_reject_pathlike_module_and_files() {
     })");
     err.clear();
     asset = lookup_manifest_asset(man2, "evil.files", current_platform_key(), &err);
-    assert(asset.has_value());
-    assert(asset->package == "plugin_ok"); // inferred package dir, nested member kept
-    assert(asset->files.size() == 2);
+    DS_REQUIRE(asset.has_value());
+    DS_REQUIRE(asset->package == "plugin_ok"); // inferred package dir, nested member kept
+    DS_REQUIRE(asset->files.size() == 2);
 
     // Traversal attempts are still rejected (absolute members / escaping package dirs).
     nlohmann::json man3 = nlohmann::json::parse(R"({
@@ -383,8 +383,8 @@ static void test_reject_pathlike_module_and_files() {
     })");
     err.clear();
     asset = lookup_manifest_asset(man3, "evil.escape", current_platform_key(), &err);
-    assert(!asset.has_value());
-    assert(err.find("unsafe files") != std::string::npos);
+    DS_REQUIRE(!asset.has_value());
+    DS_REQUIRE(err.find("unsafe files") != std::string::npos);
 
     nlohmann::json man4 = nlohmann::json::parse(R"({
       "plugins": [{
@@ -405,8 +405,8 @@ static void test_reject_pathlike_module_and_files() {
     })");
     err.clear();
     asset = lookup_manifest_asset(man4, "evil.pkg", current_platform_key(), &err);
-    assert(!asset.has_value());
-    assert(err.find("unsafe package") != std::string::npos);
+    DS_REQUIRE(!asset.has_value());
+    DS_REQUIRE(err.find("unsafe package") != std::string::npos);
 
     // Module must be <package><ext> — the loader only looks for plugins/<pkg>/<pkg>.<ext>.
     nlohmann::json man5 = nlohmann::json::parse(R"({
@@ -425,8 +425,8 @@ static void test_reject_pathlike_module_and_files() {
     })");
     err.clear();
     asset = lookup_manifest_asset(man5, "evil.mismatch", current_platform_key(), &err);
-    assert(!asset.has_value());
-    assert(err.find("must be <package><ext>") != std::string::npos);
+    DS_REQUIRE(!asset.has_value());
+    DS_REQUIRE(err.find("must be <package><ext>") != std::string::npos);
     printf("PASS: reject_pathlike_module_and_files\n");
 }
 
@@ -457,9 +457,9 @@ static void test_reject_foreign_platform() {
 
     std::string err;
     auto asset = lookup_manifest_asset(manifest, "only.foreign", current_platform_key(), &err);
-    assert(!asset.has_value());
-    assert(err.find("platform") != std::string::npos);
-    assert(err.find("missing") != std::string::npos);
+    DS_REQUIRE(!asset.has_value());
+    DS_REQUIRE(err.find("platform") != std::string::npos);
+    DS_REQUIRE(err.find("missing") != std::string::npos);
 
     // available:false for current platform also fails.
     plug["platforms"] = nlohmann::json::object();
@@ -470,18 +470,18 @@ static void test_reject_foreign_platform() {
     manifest["plugins"] = nlohmann::json::array({plug});
     err.clear();
     asset = lookup_manifest_asset(manifest, "only.foreign", current_platform_key(), &err);
-    assert(!asset.has_value());
-    assert(err.find("unavailable") != std::string::npos);
+    DS_REQUIRE(!asset.has_value());
+    DS_REQUIRE(err.find("unavailable") != std::string::npos);
     printf("PASS: reject_foreign_platform\n");
 }
 
 static void test_http_body_size_cap_constant() {
     // Cap is exposed for transport paths; mock override bypasses platform GET.
-    assert(kMaxHttpBodyBytes == 64ull * 1024ull * 1024ull);
+    DS_REQUIRE(kMaxHttpBodyBytes == 64ull * 1024ull * 1024ull);
     // Document expected error substring used by WinHTTP/curl bound paths.
     const std::string sample_err =
         "http_get: response exceeds " + std::to_string(kMaxHttpBodyBytes) + " bytes";
-    assert(sample_err.find("exceeds") != std::string::npos);
+    DS_REQUIRE(sample_err.find("exceeds") != std::string::npos);
     printf("PASS: http_body_size_cap_constant\n");
 }
 
@@ -536,11 +536,11 @@ static void test_apply_requires_nonempty_files() {
     action.reason = "version_mismatch";
 
     auto result = apply_plan(cfg, manifest, {action}, plugins_dir, "");
-    assert(result.succeeded == 0);
-    assert(result.attempted == 1);
-    assert(!result.last_error.empty());
-    assert(result.last_error.find("files[]") != std::string::npos);
-    assert(!fs::exists(plugins_dir / module_name));
+    DS_REQUIRE(result.succeeded == 0);
+    DS_REQUIRE(result.attempted == 1);
+    DS_REQUIRE(!result.last_error.empty());
+    DS_REQUIRE(result.last_error.find("files[]") != std::string::npos);
+    DS_REQUIRE(!fs::exists(plugins_dir / module_name));
 
     set_http_get_override(nullptr);
     std::error_code ec;
@@ -554,24 +554,24 @@ static void test_apply_requires_nonempty_files() {
 static void test_build_config_compatibility_classes() {
     using ds::plugin_manager::build_config_compatible;
     // Unconstrained sides always pass (legacy manifests / ad-hoc builds).
-    assert(build_config_compatible("", "Debug"));
-    assert(build_config_compatible("Release", ""));
-    assert(build_config_compatible("any", "Debug"));
-    assert(build_config_compatible("Debug", "any"));
+    DS_REQUIRE(build_config_compatible("", "Debug"));
+    DS_REQUIRE(build_config_compatible("Release", ""));
+    DS_REQUIRE(build_config_compatible("any", "Debug"));
+    DS_REQUIRE(build_config_compatible("Debug", "any"));
     // Release family is mutually compatible on every platform.
-    assert(build_config_compatible("Release", "RelWithDebInfo"));
-    assert(build_config_compatible("MinSizeRel", "Release"));
-    assert(build_config_compatible("RelWithDebInfo", "RelWithDebInfo"));
+    DS_REQUIRE(build_config_compatible("Release", "RelWithDebInfo"));
+    DS_REQUIRE(build_config_compatible("MinSizeRel", "Release"));
+    DS_REQUIRE(build_config_compatible("RelWithDebInfo", "RelWithDebInfo"));
 #if defined(_WIN32)
     // MSVC: debug CRT + iterator-debug level make Debug a separate ABI.
-    assert(!build_config_compatible("Debug", "RelWithDebInfo"));
-    assert(!build_config_compatible("Release", "Debug"));
-    assert(!build_config_compatible("Debug", "Debug") == false);
-    assert(build_config_compatible("Debug", "Debug"));
+    DS_REQUIRE(!build_config_compatible("Debug", "RelWithDebInfo"));
+    DS_REQUIRE(!build_config_compatible("Release", "Debug"));
+    DS_REQUIRE(!build_config_compatible("Debug", "Debug") == false);
+    DS_REQUIRE(build_config_compatible("Debug", "Debug"));
 #else
     // POSIX: one libstdc++/libc++ ABI — the axis does not exist.
-    assert(build_config_compatible("Debug", "Release"));
-    assert(build_config_compatible("RelWithDebInfo", "Debug"));
+    DS_REQUIRE(build_config_compatible("Debug", "Release"));
+    DS_REQUIRE(build_config_compatible("RelWithDebInfo", "Debug"));
 #endif
     printf("PASS: build_config_compatibility_classes\n");
 }
@@ -660,18 +660,18 @@ static void test_build_config_stamp_matrix() {
 
         const auto result = apply_plan(cfg, manifest, {action}, plugins_dir, "");
         if (c.expect_install) {
-            assert(result.succeeded == 1);
-            assert(result.refused == 0);
-            assert(fs::exists(plugins_dir / "plugin_dummy" / module_name));
-            assert(read_bytes(plugins_dir / "plugin_dummy" / module_name) == module_bytes);
-            assert(g_http_hits >= 1);
+            DS_REQUIRE(result.succeeded == 1);
+            DS_REQUIRE(result.refused == 0);
+            DS_REQUIRE(fs::exists(plugins_dir / "plugin_dummy" / module_name));
+            DS_REQUIRE(read_bytes(plugins_dir / "plugin_dummy" / module_name) == module_bytes);
+            DS_REQUIRE(g_http_hits >= 1);
         } else {
-            assert(result.succeeded == 0);
-            assert(result.refused == 1);
-            assert(result.attempted == 1);
-            assert(result.last_error.empty()); // refusal is not an error
-            assert(!fs::exists(plugins_dir / "plugin_dummy" / module_name)); // nothing installed
-            assert(g_http_hits == 0);                      // refused before the download
+            DS_REQUIRE(result.succeeded == 0);
+            DS_REQUIRE(result.refused == 1);
+            DS_REQUIRE(result.attempted == 1);
+            DS_REQUIRE(result.last_error.empty()); // refusal is not an error
+            DS_REQUIRE(!fs::exists(plugins_dir / "plugin_dummy" / module_name)); // nothing installed
+            DS_REQUIRE(g_http_hits == 0);                      // refused before the download
         }
         printf("PASS: build_config_%s\n", c.name);
     }
@@ -687,12 +687,12 @@ static void test_build_config_stamp_matrix() {
         const auto plugins_dir = make_temp_dir("stamp_mixed");
         const auto result = apply_plan(cfg, manifest, {action}, plugins_dir, "");
 #if defined(_WIN32)
-        assert(result.refused == 1 && result.succeeded == 0);
+        DS_REQUIRE(result.refused == 1 && result.succeeded == 0);
 #else
         // POSIX: no debug-CRT ABI split, so the RelWithDebInfo stamp stays installable.
-        assert(result.refused == 0 && result.succeeded == 1);
+        DS_REQUIRE(result.refused == 0 && result.succeeded == 1);
 #endif
-        assert(result.attempted == result.succeeded + result.refused);
+        DS_REQUIRE(result.attempted == result.succeeded + result.refused);
         printf("PASS: build_config_attempted_accounting\n");
     }
 }
@@ -758,11 +758,11 @@ static void test_cross_tag_pin_refused() {
 
     const auto plugins_dir = make_temp_dir("offtag");
     const auto result = apply_plan(cfg, manifest, {action}, plugins_dir, "");
-    assert(result.succeeded == 0);
-    assert(result.attempted == 1);
-    assert(result.last_error.find("switch channel/tag first") != std::string::npos);
-    assert(g_http_hits == 0); // refused before any download
-    assert(!fs::exists(plugins_dir / "plugin_dummy" / module_name));
+    DS_REQUIRE(result.succeeded == 0);
+    DS_REQUIRE(result.attempted == 1);
+    DS_REQUIRE(result.last_error.find("switch channel/tag first") != std::string::npos);
+    DS_REQUIRE(g_http_hits == 0); // refused before any download
+    DS_REQUIRE(!fs::exists(plugins_dir / "plugin_dummy" / module_name));
     printf("PASS: cross_tag_pin_refused\n");
 }
 
@@ -806,17 +806,17 @@ static void test_package_layout_install() {
         const auto manifest = pkg_manifest(asset_name, digest, platform, module_name, files,
                                           variant == 0, "plugin_dummy");
         const auto result = apply_plan(cfg, manifest, {action}, plugins_dir, "");
-        assert(result.succeeded == 1);
-        assert(result.refused == 0);
+        DS_REQUIRE(result.succeeded == 1);
+        DS_REQUIRE(result.refused == 0);
         const auto pkg = plugins_dir / "plugin_dummy";
-        assert(fs::exists(pkg / module_name));
-        assert(read_bytes(pkg / module_name) == module_bytes);
-        assert(fs::exists(pkg / "modinfo.lua"));
-        assert(fs::exists(pkg / "scripts" / "extra.lua"));
-        assert(read_bytes(pkg / "scripts" / "extra.lua") == "return 1");
+        DS_REQUIRE(fs::exists(pkg / module_name));
+        DS_REQUIRE(read_bytes(pkg / module_name) == module_bytes);
+        DS_REQUIRE(fs::exists(pkg / "modinfo.lua"));
+        DS_REQUIRE(fs::exists(pkg / "scripts" / "extra.lua"));
+        DS_REQUIRE(read_bytes(pkg / "scripts" / "extra.lua") == "return 1");
         // Nothing flat: the loader would otherwise see two copies of one plugin.
-        assert(!fs::exists(plugins_dir / module_name));
-        assert(!fs::exists(plugins_dir / "script")); // no stray dirs
+        DS_REQUIRE(!fs::exists(plugins_dir / module_name));
+        DS_REQUIRE(!fs::exists(plugins_dir / "script")); // no stray dirs
     }
     printf("PASS: package_layout_install (explicit + legacy-inferred)\n");
 }
@@ -857,11 +857,11 @@ static void test_package_layout_traversal_rejected() {
         const auto manifest = pkg_manifest(asset_name, digest, platform, module_name, c.files, true,
                                           c.package);
         const auto result = apply_plan(cfg, manifest, {action}, plugins_dir, "");
-        assert(result.succeeded == 0);
-        assert(result.attempted == 1);
-        assert(!result.last_error.empty());          // lookup rejected the asset
-        assert(!fs::exists(plugins_dir / module_name));
-        assert(!fs::exists(fs::temp_directory_path() / "evil.dll"));
+        DS_REQUIRE(result.succeeded == 0);
+        DS_REQUIRE(result.attempted == 1);
+        DS_REQUIRE(!result.last_error.empty());          // lookup rejected the asset
+        DS_REQUIRE(!fs::exists(plugins_dir / module_name));
+        DS_REQUIRE(!fs::exists(fs::temp_directory_path() / "evil.dll"));
         printf("PASS: package_traversal_rejected_%s\n", c.name);
     }
 }
@@ -882,11 +882,11 @@ static void test_package_layout_pending_mirror() {
 
     bool pending = false;
     std::string err;
-    assert(install_extracted_files(staging, plugins, "plugin_dummy",
+    DS_REQUIRE(install_extracted_files(staging, plugins, "plugin_dummy",
                                    {"plugin_dummy.dll", "scripts/a.lua"}, &pending, &err));
-    assert(pending);
-    assert(read_bytes(plugins / "update_pending" / "plugin_dummy" / "plugin_dummy.dll") == "NEW");
-    assert(read_bytes(plugins / "update_pending" / "plugin_dummy" / "scripts" / "a.lua") == "LUA");
+    DS_REQUIRE(pending);
+    DS_REQUIRE(read_bytes(plugins / "update_pending" / "plugin_dummy" / "plugin_dummy.dll") == "NEW");
+    DS_REQUIRE(read_bytes(plugins / "update_pending" / "plugin_dummy" / "scripts" / "a.lua") == "LUA");
     printf("PASS: package_layout_pending_mirror\n");
 }
 
@@ -903,11 +903,11 @@ static void test_install_prefers_packaged_twin() {
         std::ofstream(plugins / "plugin_dummy" / "plugin_dummy.dll", std::ios::binary) << "OLD";
         bool pending = false;
         std::string err;
-        assert(install_extracted_files(staging, plugins, "plugin_dummy", {"plugin_dummy.dll"},
+        DS_REQUIRE(install_extracted_files(staging, plugins, "plugin_dummy", {"plugin_dummy.dll"},
                                        &pending, &err));
-        assert(!pending);
-        assert(read_bytes(plugins / "plugin_dummy" / "plugin_dummy.dll.pkg") == "NEW");
-        assert(read_bytes(plugins / "plugin_dummy" / "plugin_dummy.dll") == "OLD");
+        DS_REQUIRE(!pending);
+        DS_REQUIRE(read_bytes(plugins / "plugin_dummy" / "plugin_dummy.dll.pkg") == "NEW");
+        DS_REQUIRE(read_bytes(plugins / "plugin_dummy" / "plugin_dummy.dll") == "OLD");
     }
     {
         const auto staging = make_temp_dir("pkg_stage_notwin");
@@ -915,10 +915,10 @@ static void test_install_prefers_packaged_twin() {
         std::ofstream(staging / "plugin_dummy.dll", std::ios::binary) << "NEW";
         bool pending = false;
         std::string err;
-        assert(install_extracted_files(staging, plugins, "plugin_dummy", {"plugin_dummy.dll"},
+        DS_REQUIRE(install_extracted_files(staging, plugins, "plugin_dummy", {"plugin_dummy.dll"},
                                        &pending, &err));
-        assert(read_bytes(plugins / "plugin_dummy" / "plugin_dummy.dll") == "NEW");
-        assert(!fs::exists(plugins / "plugin_dummy" / "plugin_dummy.dll.pkg"));
+        DS_REQUIRE(read_bytes(plugins / "plugin_dummy" / "plugin_dummy.dll") == "NEW");
+        DS_REQUIRE(!fs::exists(plugins / "plugin_dummy" / "plugin_dummy.dll.pkg"));
     }
     printf("PASS: install_prefers_packaged_twin\n");
 }

@@ -1,9 +1,9 @@
 // L0 lua_event bus: plugins register listeners; notifyer does not hardcode DLL names.
 #include "plugins/plugin_core_vm/LuaEvent.hpp"
 
-#include <cassert>
 #include <cstdio>
 #include <vector>
+#include "support/test_assert.hpp"
 
 // listeners use free-function C API from LuaEvent.hpp
 
@@ -33,30 +33,30 @@ static void test_no_listener_is_noop() {
 static void test_register_and_notify() {
     g_calls = 0;
     g_last_L = reinterpret_cast<lua_State *>(0x1);
-    assert(ds_register_lua_event_listener(&listener_a));
+    DS_REQUIRE(ds_register_lua_event_listener(&listener_a));
     auto *L = reinterpret_cast<lua_State *>(0xABCDu);
     lua_event_notifyer(LUA_EVENT::call_lua_gc, L);
-    assert(g_calls == 1);
-    assert(g_last == LUA_EVENT::call_lua_gc);
-    assert(g_last_L == L);
+    DS_REQUIRE(g_calls == 1);
+    DS_REQUIRE(g_last == LUA_EVENT::call_lua_gc);
+    DS_REQUIRE(g_last_L == L);
     printf("PASS: register_and_notify\n");
 }
 
 static void test_duplicate_register_ignored() {
     g_calls = 0;
-    assert(!ds_register_lua_event_listener(&listener_a)); // already registered
+    DS_REQUIRE(!ds_register_lua_event_listener(&listener_a)); // already registered
     lua_event_notifyer(LUA_EVENT::close_state, nullptr);
-    assert(g_calls == 1);
+    DS_REQUIRE(g_calls == 1);
     printf("PASS: duplicate_register_ignored\n");
 }
 
 static void test_multiple_listeners() {
     g_calls = 0;
     g_calls_b = 0;
-    assert(ds_register_lua_event_listener(&listener_b));
+    DS_REQUIRE(ds_register_lua_event_listener(&listener_b));
     lua_event_notifyer(LUA_EVENT::new_state, nullptr);
-    assert(g_calls == 1);
-    assert(g_calls_b == 1);
+    DS_REQUIRE(g_calls == 1);
+    DS_REQUIRE(g_calls_b == 1);
     printf("PASS: multiple_listeners\n");
 }
 

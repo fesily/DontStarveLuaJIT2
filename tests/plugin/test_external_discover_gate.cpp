@@ -1,13 +1,13 @@
 #include "core/ExternalPluginDiscovery.hpp"
 #include "core/PluginHost.hpp"
 
-#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
+#include "support/test_assert.hpp"
 
 #if defined(_WIN32)
 #  include <Windows.h>
@@ -57,8 +57,8 @@ static void test_unmarked_never_loads() {
             ++loads;
             return true;
         });
-    assert(loads == 0);
-    assert(rep.modules_loaded == 0);
+    DS_REQUIRE(loads == 0);
+    DS_REQUIRE(rep.modules_loaded == 0);
     set_env("DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "");
     std::puts("ok unmarked_never_loads");
 }
@@ -83,10 +83,10 @@ static void test_marked_calls_load_fn() {
             loaded.push_back(p.filename().string());
             return true;
         });
-    assert(rep.mods_accepted == 1);
-    assert(rep.modules_loaded == 1);
-    assert(loaded.size() == 1);
-    assert(loaded[0].find("plugin_x") != std::string::npos);
+    DS_REQUIRE(rep.mods_accepted == 1);
+    DS_REQUIRE(rep.modules_loaded == 1);
+    DS_REQUIRE(loaded.size() == 1);
+    DS_REQUIRE(loaded[0].find("plugin_x") != std::string::npos);
     set_env("DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "");
     std::puts("ok marked_calls_load_fn");
 }
@@ -109,8 +109,8 @@ static void test_missing_plugin_id_skips() {
             ++loads;
             return true;
         });
-    assert(loads == 0);
-    assert(rep.mods_accepted == 0);
+    DS_REQUIRE(loads == 0);
+    DS_REQUIRE(rep.mods_accepted == 0);
     set_env("DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "");
     std::puts("ok missing_plugin_id_skips");
 }

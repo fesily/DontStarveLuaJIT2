@@ -1,9 +1,9 @@
 #include "SignatureModRoot.hpp"
 
-#include <cassert>
 #include <cstdio>
 #include <filesystem>
 #include <string>
+#include "support/test_assert.hpp"
 
 namespace fs = std::filesystem;
 
@@ -16,7 +16,7 @@ static void expect_root(const fs::path &module_dir, const fs::path &want, const 
     if (g(got) != g(want)) {
         std::fprintf(stderr, "FAIL %s: dir=%s got=%s want=%s\n", tag, g(module_dir).c_str(),
                      g(got).c_str(), g(want).c_str());
-        assert(g(got) == g(want));
+        DS_REQUIRE(g(got) == g(want));
     }
 }
 
@@ -44,7 +44,7 @@ static void test_legacy_shell_dirs() {
 }
 
 static void test_empty() {
-    assert(signature_mod_root_from_module_dir({}).empty());
+    DS_REQUIRE(signature_mod_root_from_module_dir({}).empty());
 }
 
 int main() {

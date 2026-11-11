@@ -7,9 +7,9 @@
 #include "core/PluginTypes.hpp"
 
 #include <algorithm>
-#include <cassert>
 #include <cstdio>
 #include <string>
+#include "support/test_assert.hpp"
 
 using namespace ds::plugin;
 
@@ -25,21 +25,21 @@ static ConfigSchemaRegistry make_production_schema() {
         e.key = "NetworkOpt";
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(true);
-        assert(schema.add(std::move(e)));
+        DS_REQUIRE(schema.add(std::move(e)));
     }
     {
         OptionSchemaEntry e;
         e.key = "EnableNetSim";
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(false);
-        assert(schema.add(std::move(e)));
+        DS_REQUIRE(schema.add(std::move(e)));
     }
     {
         OptionSchemaEntry e;
         e.key = "EnableVBPool";
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(false);
-        assert(schema.add(std::move(e)));
+        DS_REQUIRE(schema.add(std::move(e)));
     }
     {
         OptionSchemaEntry e;
@@ -47,7 +47,7 @@ static ConfigSchemaRegistry make_production_schema() {
         e.type = ConfigValueType::String;
         e.default_value = ConfigValue::string("auto");
         e.allowed = {"auto", "vulkan", "d3d11", "d3d9"};
-        assert(schema.add(std::move(e)));
+        DS_REQUIRE(schema.add(std::move(e)));
     }
     return schema;
 }
@@ -74,9 +74,9 @@ static void test_vbpool_true_maps_to_config_key() {
 
     ConfigView view = BuildConfigView(make_production_schema(), resolved);
     auto it = view.find("EnableVBPool");
-    assert(it != view.end());
-    assert(it->second.type == ConfigValueType::Bool);
-    assert(it->second.b == true);
+    DS_REQUIRE(it != view.end());
+    DS_REQUIRE(it->second.type == ConfigValueType::Bool);
+    DS_REQUIRE(it->second.b == true);
     printf("PASS: vbpool_true_maps_to_config_key\n");
 }
 
@@ -89,24 +89,24 @@ static void test_vbpool_false_maps_to_config_key() {
 
     ConfigView view = BuildConfigView(make_production_schema(), resolved);
     auto it = view.find("EnableVBPool");
-    assert(it != view.end());
-    assert(it->second.type == ConfigValueType::Bool);
-    assert(it->second.b == false);
+    DS_REQUIRE(it != view.end());
+    DS_REQUIRE(it->second.type == ConfigValueType::Bool);
+    DS_REQUIRE(it->second.b == false);
 
     auto angle = view.find("AngleBackend");
-    assert(angle != view.end());
-    assert(angle->second.type == ConfigValueType::String);
-    assert(angle->second.s == "vulkan");
+    DS_REQUIRE(angle != view.end());
+    DS_REQUIRE(angle->second.type == ConfigValueType::String);
+    DS_REQUIRE(angle->second.s == "vulkan");
 
     auto server_disabled = view.find("DisableJITWhenServer");
-    assert(server_disabled != view.end());
-    assert(server_disabled->second.type == ConfigValueType::Bool);
-    assert(server_disabled->second.b == false);
+    DS_REQUIRE(server_disabled != view.end());
+    DS_REQUIRE(server_disabled->second.type == ConfigValueType::Bool);
+    DS_REQUIRE(server_disabled->second.b == false);
 
     auto net = view.find("NetworkOpt");
-    assert(net != view.end());
-    assert(net->second.type == ConfigValueType::Bool);
-    assert(net->second.b == true); // late schema default
+    DS_REQUIRE(net != view.end());
+    DS_REQUIRE(net->second.type == ConfigValueType::Bool);
+    DS_REQUIRE(net->second.b == true); // late schema default
     printf("PASS: vbpool_false_and_early_keys\n");
 }
 
@@ -123,19 +123,19 @@ static void test_build_config_view_schema_defaults_and_overlay() {
     ConfigView view = BuildConfigView(schema, resolved);
 
     // Schema defaults for keys cascade did not set.
-    assert(view.at("NetworkOpt").type == ConfigValueType::Bool);
-    assert(view.at("NetworkOpt").b == true);
-    assert(view.at("EnableNetSim").type == ConfigValueType::Bool);
-    assert(view.at("EnableNetSim").b == false);
+    DS_REQUIRE(view.at("NetworkOpt").type == ConfigValueType::Bool);
+    DS_REQUIRE(view.at("NetworkOpt").b == true);
+    DS_REQUIRE(view.at("EnableNetSim").type == ConfigValueType::Bool);
+    DS_REQUIRE(view.at("EnableNetSim").b == false);
 
     // Cascade-resolved overlays preserved.
-    assert(view.at("EnableVBPool").b == true);
-    assert(view.at("AngleBackend").s == "d3d11");
+    DS_REQUIRE(view.at("EnableVBPool").b == true);
+    DS_REQUIRE(view.at("AngleBackend").s == "d3d11");
 
     // Core from resolved.
-    assert(view.at("DisableJITWhenServer").b == true);
-    assert(view.at("LuaVmType").s == "jit");
-    assert(view.at("EnabledGenGC").b == true);
+    DS_REQUIRE(view.at("DisableJITWhenServer").b == true);
+    DS_REQUIRE(view.at("LuaVmType").s == "jit");
+    DS_REQUIRE(view.at("EnabledGenGC").b == true);
 
     printf("PASS: build_config_view_schema_defaults_and_overlay\n");
 }
@@ -151,10 +151,10 @@ static void test_resolved_values_not_overwritten_by_schema_defaults() {
 
     ConfigView view = BuildConfigView(schema, resolved);
     // Cascade values win; schema defaults must not clobber.
-    assert(view.at("EnableVBPool").b == false);
-    assert(view.at("AngleBackend").s == "auto");
-    assert(view.at("NetworkOpt").b == false);
-    assert(view.at("EnableNetSim").b == true);
+    DS_REQUIRE(view.at("EnableVBPool").b == false);
+    DS_REQUIRE(view.at("AngleBackend").s == "auto");
+    DS_REQUIRE(view.at("NetworkOpt").b == false);
+    DS_REQUIRE(view.at("EnableNetSim").b == true);
     printf("PASS: resolved_values_not_overwritten_by_schema_defaults\n");
 }
 
@@ -165,17 +165,17 @@ static void test_late_schema_defaults_for_missing_keys() {
     ConfigView view = BuildConfigView(schema, resolved);
 
     auto it = view.find("EnableNetSim");
-    assert(it != view.end());
-    assert(it->second.type == ConfigValueType::Bool);
-    assert(it->second.b == false);
+    DS_REQUIRE(it != view.end());
+    DS_REQUIRE(it->second.type == ConfigValueType::Bool);
+    DS_REQUIRE(it->second.b == false);
 
     // Empty schema must not invent EnableNetSim or NetworkOpt.
     ConfigSchemaRegistry empty;
     ConfigView legacy = BuildConfigView(empty, resolved);
-    assert(legacy.find("EnableNetSim") == legacy.end());
-    assert(legacy.find("NetworkOpt") == legacy.end());
+    DS_REQUIRE(legacy.find("EnableNetSim") == legacy.end());
+    DS_REQUIRE(legacy.find("NetworkOpt") == legacy.end());
     // Resolved VM keys still present.
-    assert(legacy.find("DisableJITWhenServer") != legacy.end());
+    DS_REQUIRE(legacy.find("DisableJITWhenServer") != legacy.end());
 
     printf("PASS: late_schema_defaults_for_missing_keys\n");
 }
@@ -187,11 +187,11 @@ static void test_network_opt_not_forced_when_schema_has_false() {
         e.key = "NetworkOpt";
         e.type = ConfigValueType::Bool;
         e.default_value = ConfigValue::boolean(false);
-        assert(schema.add(std::move(e)));
+        DS_REQUIRE(schema.add(std::move(e)));
     }
     ConfigView resolved = make_resolved();
     ConfigView view = BuildConfigView(schema, resolved);
-    assert(view.at("NetworkOpt").b == false);
+    DS_REQUIRE(view.at("NetworkOpt").b == false);
     printf("PASS: network_opt_not_forced_when_schema_has_false\n");
 }
 
@@ -289,22 +289,22 @@ static void test_empty_registry_resolve_after_bridge_is_noop() {
     PluginContext ctx;
     ctx.is_client = true;
     auto rr = host.resolve(view, ctx);
-    assert(rr.enabled.empty());
-    assert(rr.failed.empty());
-    assert(rr.disabled.empty());
+    DS_REQUIRE(rr.enabled.empty());
+    DS_REQUIRE(rr.failed.empty());
+    DS_REQUIRE(rr.disabled.empty());
 
     auto lr = host.load_phase(PluginPhase::EarlyNative);
-    assert(lr.ok);
-    assert(lr.loaded_order.empty());
-    assert(host.loaded_order(PluginPhase::EarlyNative).empty());
+    DS_REQUIRE(lr.ok);
+    DS_REQUIRE(lr.loaded_order.empty());
+    DS_REQUIRE(host.loaded_order(PluginPhase::EarlyNative).empty());
     printf("PASS: empty_registry_resolve_after_bridge_noop\n");
 }
 
 static void test_network_rpc_standin_from_bridge_default() {
     ConfigView resolved = make_resolved();
     ConfigView view = BuildConfigView(make_production_schema(), resolved);
-    assert(view.at("NetworkOpt").type == ConfigValueType::Bool);
-    assert(view.at("NetworkOpt").b == true);
+    DS_REQUIRE(view.at("NetworkOpt").type == ConfigValueType::Bool);
+    DS_REQUIRE(view.at("NetworkOpt").b == true);
 
     NetworkRpcStandIn standin;
     PluginHost host;
@@ -312,15 +312,15 @@ static void test_network_rpc_standin_from_bridge_default() {
     PluginContext ctx;
     ctx.is_client = true;
     auto rr = host.resolve(view, ctx);
-    assert(std::find(rr.enabled.begin(), rr.enabled.end(), "network.rpc") != rr.enabled.end());
-    assert(rr.failed.empty());
+    DS_REQUIRE(std::find(rr.enabled.begin(), rr.enabled.end(), "network.rpc") != rr.enabled.end());
+    DS_REQUIRE(rr.failed.empty());
 
     auto lr = host.load_phase(PluginPhase::EarlyNative);
-    assert(lr.ok);
-    assert(lr.loaded_order.size() == 1);
-    assert(lr.loaded_order[0] == "network.rpc");
-    assert(standin.load_count == 1);
-    assert(host.status("network.rpc") == PluginStatus::Loaded);
+    DS_REQUIRE(lr.ok);
+    DS_REQUIRE(lr.loaded_order.size() == 1);
+    DS_REQUIRE(lr.loaded_order[0] == "network.rpc");
+    DS_REQUIRE(standin.load_count == 1);
+    DS_REQUIRE(host.status("network.rpc") == PluginStatus::Loaded);
     printf("PASS: network_rpc_standin_from_bridge_default\n");
 }
 
@@ -333,13 +333,13 @@ static void test_network_rpc_standin_disabled_when_off() {
     view["NetworkOpt"] = ConfigValue::boolean(false);
     PluginContext ctx;
     auto rr = host.resolve(view, ctx);
-    assert(std::find(rr.disabled.begin(), rr.disabled.end(), "network.rpc") != rr.disabled.end());
+    DS_REQUIRE(std::find(rr.disabled.begin(), rr.disabled.end(), "network.rpc") != rr.disabled.end());
 
     auto lr = host.load_phase(PluginPhase::EarlyNative);
-    assert(lr.ok);
-    assert(lr.loaded_order.empty());
-    assert(standin.load_count == 0);
-    assert(host.status("network.rpc") == PluginStatus::Disabled);
+    DS_REQUIRE(lr.ok);
+    DS_REQUIRE(lr.loaded_order.empty());
+    DS_REQUIRE(standin.load_count == 0);
+    DS_REQUIRE(host.status("network.rpc") == PluginStatus::Disabled);
     printf("PASS: network_rpc_standin_disabled_when_off\n");
 }
 
@@ -348,19 +348,19 @@ static void test_network_sim_enable_matrix() {
     {
         ConfigView resolved = make_resolved();
         ConfigView view = BuildConfigView(make_production_schema(), resolved);
-        assert(view.at("EnableNetSim").b == false);
+        DS_REQUIRE(view.at("EnableNetSim").b == false);
 
         NetworkSimStandIn standin;
         PluginHost host;
         host.register_plugin(&standin);
         PluginContext ctx;
         auto rr = host.resolve(view, ctx);
-        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "network.sim") != rr.disabled.end());
+        DS_REQUIRE(std::find(rr.disabled.begin(), rr.disabled.end(), "network.sim") != rr.disabled.end());
         auto lr = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr.ok);
-        assert(lr.loaded_order.empty());
-        assert(standin.load_count == 0);
-        assert(host.status("network.sim") == PluginStatus::Disabled);
+        DS_REQUIRE(lr.ok);
+        DS_REQUIRE(lr.loaded_order.empty());
+        DS_REQUIRE(standin.load_count == 0);
+        DS_REQUIRE(host.status("network.sim") == PluginStatus::Disabled);
     }
 
     // EnableNetSim true (cascade overlay / save) → network.sim enabled + load
@@ -369,20 +369,20 @@ static void test_network_sim_enable_matrix() {
             {"EnableNetSim", ConfigValue::boolean(true)},
         });
         ConfigView view = BuildConfigView(make_production_schema(), resolved);
-        assert(view.at("EnableNetSim").b == true);
+        DS_REQUIRE(view.at("EnableNetSim").b == true);
 
         NetworkSimStandIn standin;
         PluginHost host;
         host.register_plugin(&standin);
         PluginContext ctx;
         auto rr = host.resolve(view, ctx);
-        assert(std::find(rr.enabled.begin(), rr.enabled.end(), "network.sim") != rr.enabled.end());
+        DS_REQUIRE(std::find(rr.enabled.begin(), rr.enabled.end(), "network.sim") != rr.enabled.end());
         auto lr = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr.ok);
-        assert(lr.loaded_order.size() == 1);
-        assert(lr.loaded_order[0] == "network.sim");
-        assert(standin.load_count == 1);
-        assert(host.status("network.sim") == PluginStatus::Loaded);
+        DS_REQUIRE(lr.ok);
+        DS_REQUIRE(lr.loaded_order.size() == 1);
+        DS_REQUIRE(lr.loaded_order[0] == "network.sim");
+        DS_REQUIRE(standin.load_count == 1);
+        DS_REQUIRE(host.status("network.sim") == PluginStatus::Loaded);
     }
 
     // NetworkOpt false → network.rpc disabled (paired gate matrix row)
@@ -391,7 +391,7 @@ static void test_network_sim_enable_matrix() {
             {"NetworkOpt", ConfigValue::boolean(false)},
         });
         ConfigView view = BuildConfigView(make_production_schema(), resolved);
-        assert(view.at("NetworkOpt").b == false);
+        DS_REQUIRE(view.at("NetworkOpt").b == false);
 
         NetworkRpcStandIn rpc;
         NetworkSimStandIn sim;
@@ -400,11 +400,11 @@ static void test_network_sim_enable_matrix() {
         host.register_plugin(&sim);
         PluginContext ctx;
         auto rr = host.resolve(view, ctx);
-        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "network.rpc") != rr.disabled.end());
-        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "network.sim") != rr.disabled.end());
+        DS_REQUIRE(std::find(rr.disabled.begin(), rr.disabled.end(), "network.rpc") != rr.disabled.end());
+        DS_REQUIRE(std::find(rr.disabled.begin(), rr.disabled.end(), "network.sim") != rr.disabled.end());
         host.load_phase(PluginPhase::EarlyNative);
-        assert(rpc.load_count == 0);
-        assert(sim.load_count == 0);
+        DS_REQUIRE(rpc.load_count == 0);
+        DS_REQUIRE(sim.load_count == 0);
     }
 
     printf("PASS: network_sim_enable_matrix\n");
@@ -418,7 +418,7 @@ static void test_render_vbpool_from_bridge_enable_matrix() {
             {"AngleBackend", ConfigValue::string("auto")},
         });
         ConfigView view = BuildConfigView(make_production_schema(), resolved);
-        assert(view.at("EnableVBPool").b == true);
+        DS_REQUIRE(view.at("EnableVBPool").b == true);
 
         RenderVbpoolStandIn standin;
         PluginHost host;
@@ -426,11 +426,11 @@ static void test_render_vbpool_from_bridge_enable_matrix() {
         PluginContext ctx;
         ctx.is_client = true;
         auto rr = host.resolve(view, ctx);
-        assert(std::find(rr.enabled.begin(), rr.enabled.end(), "render.vbpool") != rr.enabled.end());
+        DS_REQUIRE(std::find(rr.enabled.begin(), rr.enabled.end(), "render.vbpool") != rr.enabled.end());
         auto lr = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr.ok);
-        assert(standin.load_count == 1);
-        assert(host.status("render.vbpool") == PluginStatus::Loaded);
+        DS_REQUIRE(lr.ok);
+        DS_REQUIRE(standin.load_count == 1);
+        DS_REQUIRE(host.status("render.vbpool") == PluginStatus::Loaded);
     }
 
     // EnableVBPool false → Disabled
@@ -447,10 +447,10 @@ static void test_render_vbpool_from_bridge_enable_matrix() {
         PluginContext ctx;
         ctx.is_client = true;
         auto rr = host.resolve(view, ctx);
-        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "render.vbpool") != rr.disabled.end());
+        DS_REQUIRE(std::find(rr.disabled.begin(), rr.disabled.end(), "render.vbpool") != rr.disabled.end());
         host.load_phase(PluginPhase::EarlyNative);
-        assert(standin.load_count == 0);
-        assert(host.status("render.vbpool") == PluginStatus::Disabled);
+        DS_REQUIRE(standin.load_count == 0);
+        DS_REQUIRE(host.status("render.vbpool") == PluginStatus::Disabled);
     }
 
     printf("PASS: render_vbpool_from_bridge_enable_matrix\n");
@@ -465,7 +465,7 @@ static void test_render_angle_backend_reaches_plugin() {
             {"AngleBackend", ConfigValue::string(backend)},
         });
         ConfigView view = BuildConfigView(make_production_schema(), resolved);
-        assert(view.at("AngleBackend").s == backend);
+        DS_REQUIRE(view.at("AngleBackend").s == backend);
 
         RenderAngleStandIn standin;
         PluginHost host;
@@ -473,11 +473,11 @@ static void test_render_angle_backend_reaches_plugin() {
         PluginContext ctx;
         ctx.is_client = true;
         auto rr = host.resolve(view, ctx);
-        assert(std::find(rr.enabled.begin(), rr.enabled.end(), "render.angle") != rr.enabled.end());
+        DS_REQUIRE(std::find(rr.enabled.begin(), rr.enabled.end(), "render.angle") != rr.enabled.end());
         auto lr = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr.ok);
-        assert(standin.load_count == 1);
-        assert(standin.last_backend == backend);
+        DS_REQUIRE(lr.ok);
+        DS_REQUIRE(standin.load_count == 1);
+        DS_REQUIRE(standin.last_backend == backend);
     }
 
     // Server/dedicated: can_load false → Disabled (no ANGLE init on dedicated)
@@ -492,9 +492,9 @@ static void test_render_angle_backend_reaches_plugin() {
         PluginContext ctx;
         ctx.is_client = false;
         auto rr = host.resolve(view, ctx);
-        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "render.angle") != rr.disabled.end());
+        DS_REQUIRE(std::find(rr.disabled.begin(), rr.disabled.end(), "render.angle") != rr.disabled.end());
         host.load_phase(PluginPhase::EarlyNative);
-        assert(standin.load_count == 0);
+        DS_REQUIRE(standin.load_count == 0);
     }
 
     printf("PASS: render_angle_backend_reaches_plugin\n");

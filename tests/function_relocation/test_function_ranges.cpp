@@ -1,11 +1,6 @@
 #include "FunctionRanges.hpp"
 #include "ModuleSections.hpp"
 
-// Keep checks active under RelWithDebInfo (NDEBUG would strip assert).
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
-#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <vector>

@@ -2,6 +2,10 @@
 
 ## 未发布
 
+- 变更：**测试集不再依赖 CRT `assert`**。`assert` 在 `Release`/`RelWithDebInfo`（`/DNDEBUG`）下被编译成空操作，Release 的 ctest 只能发现崩溃、发现不了断言失败（`test_plugin_path` 里 `g_dll_roots` 那个缺陷就是这样潜伏的）。新增 `tests/support/test_assert.hpp` 的 `DS_REQUIRE`：永远求值，失败时向 stderr 打印 `file:line: DS_REQUIRE failed: <表达式>` 并以状态 3 退出——不经过 CRT 的 `assert`/`abort`，没有调试器弹窗，MSVC 与 POSIX 退出码一致，ctest 直接判失败。`tests/` 目录加入 include 路径，30 个测试源文件里的 1241 处 `assert(` 全部替换；顺带删掉因此不再需要的 `<cassert>`/`<assert.h>` 与 5 处 `#undef NDEBUG` 补丁（`assert` 的定义被头文件守卫固定，那些 `#undef` 本来就是死代码）。
+
+- 验证：`Debug`/`Release` 全量构建通过；Release 下把 `g_dll_roots.push_back` 临时删掉重建，`test_plugin_path` 输出 `tests/plugin/test_plugin_path.cpp:114: DS_REQUIRE failed: has(mod / "deps")` 且 `exit=3`（旧版本在 Release 下会打印 `PASS`）；恢复后 `ctest -C Release -j 8 -E "windows_signatures|plugin_client_|plugin_dedicated_sim_pause"` 91/91；`ctest -C Debug -j 8` 96/96。
+
 - 变更：**插件根目录改为唯一解析**。`default_plugin_search_dirs()` 现在只返回 0 或 1 个根：`DS_LUAJIT_PLUGIN_DIR`（必须是已存在目录）优先，否则 `<真实 Injector 模块目录>/plugins`。删除了 `parent(modmain_path)/plugins`、`<game>/mods`/Steam UGC 发现与 `injector_module_dir()/plugins` 兼容回退（`plugins_dir_from_modmain`/`resolve_modmain_path`/provider/override、`discover_mod_plugins_dir`、`collect_mod_search_bases` 一并删除，`DontStarveInjector.cpp` 不再注册 modmain provider）。dev 环境 `DS_LUAJIT_INJECTOR=<repo>/Mod/Injector.dll` 现在必然加载 repo 的 `Mod/plugins`，不会再被存档 `luajit_config.json` 指到工坊树；Lua 注册表（`list_installed_plugin_packages`）在 `MODROOT/plugins` 不存在时回落到同一唯一根。显式设置错误目录时直接报 `no plugin root`，不再回退到别的安装。`test_plugin_path` 新增 env/injector/错误 env 不回退/缺失根用例。
 
 - 修复：**壳的 mod 别名扫描里自定义 UGC 与默认 Steam workshop 互斥**。`-ugc_directory` 的值按 workshop 根处理（追加 `content/322330`，与 `sdk/steam/Workshop.cpp` 一致），存在时不再扫描 `…/steamapps/workshop/content/322330`；此前该值被当成内容目录直接拼别名（实际去找 `…/workshop/workshop-<id>`，永远不命中），且与默认 UGC 同时入列。新增 `test_ugc_directory_excludes_steam_default`：默认树里放着 Injector 也不会被选中，自定义树放进去才命中。

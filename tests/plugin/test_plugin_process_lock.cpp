@@ -3,7 +3,6 @@
 // and real exclusion against a second OS process (spawns itself in --hold-lock mode).
 #include "core/PluginProcessLock.hpp"
 
-#include <cassert>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -11,6 +10,7 @@
 #include <fstream>
 #include <string>
 #include <thread>
+#include "support/test_assert.hpp"
 
 namespace fs = std::filesystem;
 using ds::plugin::LockResult;
@@ -55,22 +55,22 @@ static void test_same_process_exclusion() {
     PluginProcessLock b;
     std::string err;
     std::string holder;
-    assert(a.acquire(dir, 0, &err, &holder) == LockResult::Acquired);
-    assert(a.held());
+    DS_REQUIRE(a.acquire(dir, 0, &err, &holder) == LockResult::Acquired);
+    DS_REQUIRE(a.held());
 
     err.clear();
-    assert(b.acquire(dir, 0, &err, &holder) == LockResult::Busy);
-    assert(!b.held());
-    assert(!err.empty());
+    DS_REQUIRE(b.acquire(dir, 0, &err, &holder) == LockResult::Busy);
+    DS_REQUIRE(!b.held());
+    DS_REQUIRE(!err.empty());
 
     const auto path = plugin_update_lock_path(dir);
-    assert(fs::exists(path)); // file exists while held
+    DS_REQUIRE(fs::exists(path)); // file exists while held
     a.release();
-    assert(!a.held());
-    assert(fs::exists(path)); // and is never deleted (deleting it would break exclusion)
+    DS_REQUIRE(!a.held());
+    DS_REQUIRE(fs::exists(path)); // and is never deleted (deleting it would break exclusion)
 
     err.clear();
-    assert(b.acquire(dir, 500, &err, &holder) == LockResult::Acquired);
+    DS_REQUIRE(b.acquire(dir, 500, &err, &holder) == LockResult::Acquired);
     b.release();
     printf("PASS: same_process_exclusion\n");
 }
@@ -81,18 +81,18 @@ static void test_bounded_wait() {
     PluginProcessLock b;
     std::string err;
     std::string holder;
-    assert(a.acquire(dir, 0, &err, &holder) == LockResult::Acquired);
+    DS_REQUIRE(a.acquire(dir, 0, &err, &holder) == LockResult::Acquired);
 
     const auto t0 = now_ms();
-    assert(b.acquire(dir, 400, &err, &holder) == LockResult::Busy);
+    DS_REQUIRE(b.acquire(dir, 400, &err, &holder) == LockResult::Busy);
     const auto waited = now_ms() - t0;
-    assert(waited >= 300); // honored the timeout instead of giving up instantly
-    assert(waited < 5000);
+    DS_REQUIRE(waited >= 300); // honored the timeout instead of giving up instantly
+    DS_REQUIRE(waited < 5000);
 
     // A zero-timeout attempt must not spin: it returns immediately-ish.
     const auto t1 = now_ms();
-    assert(b.acquire(dir, 0, &err, &holder) == LockResult::Busy);
-    assert(now_ms() - t1 < 500);
+    DS_REQUIRE(b.acquire(dir, 0, &err, &holder) == LockResult::Busy);
+    DS_REQUIRE(now_ms() - t1 < 500);
     a.release();
     printf("PASS: bounded_wait (%lld ms)\n", static_cast<long long>(waited));
 }
@@ -103,9 +103,9 @@ static void test_holder_stamp_reported() {
     PluginProcessLock b;
     std::string err;
     std::string holder;
-    assert(a.acquire(dir, 0, &err, &holder) == LockResult::Acquired);
-    assert(b.acquire(dir, 0, &err, &holder) == LockResult::Busy);
-    assert(holder.find("pid=") != std::string::npos);
+    DS_REQUIRE(a.acquire(dir, 0, &err, &holder) == LockResult::Acquired);
+    DS_REQUIRE(b.acquire(dir, 0, &err, &holder) == LockResult::Busy);
+    DS_REQUIRE(holder.find("pid=") != std::string::npos);
     a.release();
     printf("PASS: holder_stamp (%s)\n", holder.c_str());
 }
@@ -118,9 +118,9 @@ static void test_unavailable_reported() {
     PluginProcessLock lock;
     std::string err;
     std::string holder;
-    assert(lock.acquire(missing, 0, &err, &holder) == LockResult::Unavailable);
-    assert(!err.empty());
-    assert(!lock.held());
+    DS_REQUIRE(lock.acquire(missing, 0, &err, &holder) == LockResult::Unavailable);
+    DS_REQUIRE(!err.empty());
+    DS_REQUIRE(!lock.held());
     printf("PASS: unavailable_reported\n");
 }
 
@@ -148,20 +148,20 @@ static void test_cross_process_exclusion(const char *argv0) {
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    assert(saw_ready); // child holds the lock now
+    DS_REQUIRE(saw_ready); // child holds the lock now
 
     PluginProcessLock lock;
     std::string err;
     std::string holder;
-    assert(lock.acquire(dir, 0, &err, &holder) == LockResult::Busy);
-    assert(holder.find("pid=") != std::string::npos); // stamp from the other process
+    DS_REQUIRE(lock.acquire(dir, 0, &err, &holder) == LockResult::Busy);
+    DS_REQUIRE(holder.find("pid=") != std::string::npos); // stamp from the other process
 
     // Child exits after ~1500 ms; waiting acquire must succeed afterwards.
     err.clear();
-    assert(lock.acquire(dir, 15000, &err, &holder) == LockResult::Acquired);
+    DS_REQUIRE(lock.acquire(dir, 15000, &err, &holder) == LockResult::Acquired);
     lock.release();
     child.join();
-    assert(child_status == 0); // child acquired, held and released cleanly
+    DS_REQUIRE(child_status == 0); // child acquired, held and released cleanly
     printf("PASS: cross_process_exclusion\n");
 }
 

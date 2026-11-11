@@ -6,10 +6,6 @@
 #include <dlfcn.h>
 #include <frida-gum.h>
 
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
-#include <cassert>
 
 #include <cstdint>
 #include <algorithm>

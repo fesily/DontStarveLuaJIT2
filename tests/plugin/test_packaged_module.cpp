@@ -3,7 +3,6 @@
 #include "core/PackagedModule.hpp"
 
 #include <atomic>
-#include <cassert>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -11,6 +10,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "support/test_assert.hpp"
 
 #if defined(_WIN32)
 #  ifndef NOMINMAX
@@ -47,9 +47,9 @@ static void test_no_twin_is_a_noop() {
     const auto dir = temp_dir("ds_pkg_notwin");
     const auto canonical = dir / "Injector.dll";
     write_file(canonical, "BUILD");
-    assert(!ds::packaged::materialize(canonical));
-    assert(read_file(canonical) == "BUILD");
-    assert(!ds::packaged::exists_or_materialize(dir / "Missing.dll"));
+    DS_REQUIRE(!ds::packaged::materialize(canonical));
+    DS_REQUIRE(read_file(canonical) == "BUILD");
+    DS_REQUIRE(!ds::packaged::exists_or_materialize(dir / "Missing.dll"));
     printf("PASS: no_twin_is_a_noop\n");
 }
 
@@ -57,12 +57,12 @@ static void test_materializes_from_twin() {
     const auto dir = temp_dir("ds_pkg_fresh");
     const auto canonical = dir / "Injector.dll";
     write_file(ds::packaged::packaged_path(canonical), "ITEM");
-    assert(ds::packaged::exists_or_materialize(canonical));
-    assert(read_file(canonical) == "ITEM");
+    DS_REQUIRE(ds::packaged::exists_or_materialize(canonical));
+    DS_REQUIRE(read_file(canonical) == "ITEM");
     // The twin stays: it is the durable published copy.
-    assert(read_file(ds::packaged::packaged_path(canonical)) == "ITEM");
+    DS_REQUIRE(read_file(ds::packaged::packaged_path(canonical)) == "ITEM");
     // No staging leftovers.
-    assert(!fs::exists(ds::packaged::materialize_temp_path(canonical)));
+    DS_REQUIRE(!fs::exists(ds::packaged::materialize_temp_path(canonical)));
     printf("PASS: materializes_from_twin\n");
 }
 
@@ -71,8 +71,8 @@ static void test_replaces_stale_canonical() {
     const auto canonical = dir / "lua51DS.dll";
     write_file(canonical, "OLD-VM");
     write_file(ds::packaged::packaged_path(canonical), "NEW-VM-BUILD");
-    assert(ds::packaged::materialize(canonical));
-    assert(read_file(canonical) == "NEW-VM-BUILD");
+    DS_REQUIRE(ds::packaged::materialize(canonical));
+    DS_REQUIRE(read_file(canonical) == "NEW-VM-BUILD");
     printf("PASS: replaces_stale_canonical\n");
 }
 
@@ -82,8 +82,8 @@ static void test_identical_twin_does_not_rewrite() {
     write_file(canonical, "SAME");
     write_file(ds::packaged::packaged_path(canonical), "SAME");
     const auto before = fs::last_write_time(canonical);
-    assert(!ds::packaged::materialize(canonical));
-    assert(fs::last_write_time(canonical) == before);
+    DS_REQUIRE(!ds::packaged::materialize(canonical));
+    DS_REQUIRE(fs::last_write_time(canonical) == before);
     printf("PASS: identical_twin_does_not_rewrite\n");
 }
 
@@ -95,13 +95,13 @@ static void test_exists_or_materialize_refreshes_stale_canonical() {
     const auto canonical = dir / "Injector.dll";
     write_file(canonical, "OLD-BUILD");
     write_file(ds::packaged::packaged_path(canonical), "NEW-BUILD-REPLACED");
-    assert(ds::packaged::exists_or_materialize(canonical));
-    assert(read_file(canonical) == "NEW-BUILD-REPLACED");
-    assert(read_file(ds::packaged::packaged_path(canonical)) == "NEW-BUILD-REPLACED");
+    DS_REQUIRE(ds::packaged::exists_or_materialize(canonical));
+    DS_REQUIRE(read_file(canonical) == "NEW-BUILD-REPLACED");
+    DS_REQUIRE(read_file(ds::packaged::packaged_path(canonical)) == "NEW-BUILD-REPLACED");
     // Same build again: still present, still no rewrite.
     const auto before = fs::last_write_time(canonical);
-    assert(ds::packaged::exists_or_materialize(canonical));
-    assert(fs::last_write_time(canonical) == before);
+    DS_REQUIRE(ds::packaged::exists_or_materialize(canonical));
+    DS_REQUIRE(fs::last_write_time(canonical) == before);
     printf("PASS: exists_or_materialize_refreshes_stale_canonical\n");
 }
 
@@ -110,11 +110,11 @@ static void test_materialize_directory() {
     write_file(ds::packaged::packaged_path(dir / "lua51DS.dll"), "VM");
     write_file(ds::packaged::packaged_path(dir / "zlib1.dll"), "ZLIB");
     write_file(dir / "notes.txt", "keep");
-    assert(ds::packaged::materialize_directory(dir) == 2);
-    assert(read_file(dir / "lua51DS.dll") == "VM");
-    assert(read_file(dir / "zlib1.dll") == "ZLIB");
-    assert(read_file(dir / "notes.txt") == "keep");
-    assert(ds::packaged::materialize_directory(dir / "no_such_dir") == 0);
+    DS_REQUIRE(ds::packaged::materialize_directory(dir) == 2);
+    DS_REQUIRE(read_file(dir / "lua51DS.dll") == "VM");
+    DS_REQUIRE(read_file(dir / "zlib1.dll") == "ZLIB");
+    DS_REQUIRE(read_file(dir / "notes.txt") == "keep");
+    DS_REQUIRE(ds::packaged::materialize_directory(dir / "no_such_dir") == 0);
     printf("PASS: materialize_directory\n");
 }
 
@@ -133,22 +133,22 @@ static void test_tree_is_packaged_and_prune() {
     // Dev tree: no twins anywhere -> never pruned.
     const auto dev = plugins / "plugin_dev" / platform_module_name("plugin_dev");
     write_file(dev, "DEV");
-    assert(!ds::packaged::tree_is_packaged(plugins));
-    assert(!ds::packaged::prune_unpackaged_module(plugins, dev));
-    assert(fs::exists(dev));
+    DS_REQUIRE(!ds::packaged::tree_is_packaged(plugins));
+    DS_REQUIRE(!ds::packaged::prune_unpackaged_module(plugins, dev));
+    DS_REQUIRE(fs::exists(dev));
 
     // Packaged tree: a member the item stopped shipping keeps only our derivative.
     write_file(ds::packaged::packaged_path(
                        plugins / "plugin_live" / platform_module_name("plugin_live")), "LIVE");
-    assert(ds::packaged::tree_is_packaged(plugins));
+    DS_REQUIRE(ds::packaged::tree_is_packaged(plugins));
     const auto live = plugins / "plugin_live" / platform_module_name("plugin_live");
     const auto dropped = plugins / "plugin_dropped" / platform_module_name("plugin_dropped");
     write_file(live, "LIVE");
     write_file(dropped, "DROPPED");
-    assert(!ds::packaged::prune_unpackaged_module(plugins, live)); // twin present -> keep
-    assert(fs::exists(live));
-    assert(ds::packaged::prune_unpackaged_module(plugins, dropped)); // no twin -> dropped member
-    assert(!fs::exists(dropped));
+    DS_REQUIRE(!ds::packaged::prune_unpackaged_module(plugins, live)); // twin present -> keep
+    DS_REQUIRE(fs::exists(live));
+    DS_REQUIRE(ds::packaged::prune_unpackaged_module(plugins, dropped)); // no twin -> dropped member
+    DS_REQUIRE(!fs::exists(dropped));
     printf("PASS: tree_is_packaged_and_prune\n");
 }
 
@@ -158,7 +158,7 @@ static fs::path self_image() {
 #if defined(_WIN32)
     wchar_t buf[MAX_PATH] = {};
     const DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
-    assert(n != 0 && n < MAX_PATH);
+    DS_REQUIRE(n != 0 && n < MAX_PATH);
     return fs::path(buf);
 #else
     return fs::path("/proc/self/exe");
@@ -179,30 +179,30 @@ static void test_pe_time_stamp_detects_same_size_rebuild() {
     fs::copy_file(self_image(), twin);
     // Identical build: present, never rewritten.
     const auto before = fs::last_write_time(canonical);
-    assert(ds::packaged::exists_or_materialize(canonical));
-    assert(fs::last_write_time(canonical) == before);
+    DS_REQUIRE(ds::packaged::exists_or_materialize(canonical));
+    DS_REQUIRE(fs::last_write_time(canonical) == before);
 
     std::uint32_t lfanew = 0;
     {
         std::ifstream in(twin, std::ios::binary);
         in.seekg(0x3C);
         in.read(reinterpret_cast<char *>(&lfanew), sizeof(lfanew));
-        assert(in);
+        DS_REQUIRE(in);
     }
     {
         std::fstream io(twin, std::ios::binary | std::ios::in | std::ios::out);
         std::uint32_t stamp = 0;
         io.seekg(static_cast<std::streamoff>(lfanew) + 8);
         io.read(reinterpret_cast<char *>(&stamp), sizeof(stamp));
-        assert(io);
+        DS_REQUIRE(io);
         stamp ^= 0x5A5A5A5Au;
         io.seekp(static_cast<std::streamoff>(lfanew) + 8);
         io.write(reinterpret_cast<const char *>(&stamp), sizeof(stamp));
-        assert(io);
+        DS_REQUIRE(io);
     }
-    assert(fs::file_size(canonical) == fs::file_size(twin)); // same size: only the stamp differs
-    assert(ds::packaged::exists_or_materialize(canonical));
-    assert(read_file(canonical) == read_file(twin));
+    DS_REQUIRE(fs::file_size(canonical) == fs::file_size(twin)); // same size: only the stamp differs
+    DS_REQUIRE(ds::packaged::exists_or_materialize(canonical));
+    DS_REQUIRE(read_file(canonical) == read_file(twin));
     printf("PASS: pe_time_stamp_detects_same_size_rebuild\n");
 }
 #endif
@@ -225,7 +225,7 @@ static void test_concurrent_materialize_is_safe() {
     const auto dir = temp_dir("ds_pkg_race");
     const auto canonical = dir / "Injector.dll";
     fs::copy_file(self_image(), ds::packaged::packaged_path(canonical));
-    assert(!fs::exists(canonical));
+    DS_REQUIRE(!fs::exists(canonical));
     const auto expected = fs::file_size(self_image());
 
     // Transient open failures are legitimate while a peer swaps the name; a *wrong size*
@@ -258,9 +258,9 @@ static void test_concurrent_materialize_is_safe() {
     for (auto &th : threads) {
         th.join();
     }
-    assert(failures.load() == 0);
-    assert(fs::file_size(canonical) == fs::file_size(self_image()));
-    assert(count_temp_files(dir) == 0);
+    DS_REQUIRE(failures.load() == 0);
+    DS_REQUIRE(fs::file_size(canonical) == fs::file_size(self_image()));
+    DS_REQUIRE(count_temp_files(dir) == 0);
     printf("PASS: concurrent_materialize_is_safe\n");
 }
 
@@ -275,9 +275,9 @@ static void test_torn_twin_is_refused() {
     const auto full = fs::file_size(twin);
     fs::resize_file(twin, full / 2); // keep the headers, cut the payload
 
-    assert(!ds::packaged::materialize(canonical));
-    assert(read_file(canonical) == "WORKING-OLD");
-    assert(count_temp_files(dir) == 0);
+    DS_REQUIRE(!ds::packaged::materialize(canonical));
+    DS_REQUIRE(read_file(canonical) == "WORKING-OLD");
+    DS_REQUIRE(count_temp_files(dir) == 0);
     printf("PASS: torn_twin_is_refused\n");
 }
 
@@ -290,12 +290,12 @@ static void test_locked_canonical_is_kept() {
     // No share flags: models another process holding the image mapped.
     HANDLE h = CreateFileW(canonical.wstring().c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING,
                            FILE_ATTRIBUTE_NORMAL, nullptr);
-    assert(h != INVALID_HANDLE_VALUE);
+    DS_REQUIRE(h != INVALID_HANDLE_VALUE);
     const bool written = ds::packaged::materialize(canonical);
     CloseHandle(h);
-    assert(!written);
-    assert(read_file(canonical) == "IN-USE"); // old bytes survive; next boot retries
-    assert(!fs::exists(ds::packaged::materialize_temp_path(canonical)));
+    DS_REQUIRE(!written);
+    DS_REQUIRE(read_file(canonical) == "IN-USE"); // old bytes survive; next boot retries
+    DS_REQUIRE(!fs::exists(ds::packaged::materialize_temp_path(canonical)));
     printf("PASS: locked_canonical_is_kept\n");
 }
 #endif

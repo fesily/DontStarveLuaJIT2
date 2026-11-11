@@ -12,9 +12,9 @@
 
 #include "core/PluginHost.hpp"
 
-#include <cassert>
 #include <cstdio>
 #include <cstring>
+#include "support/test_assert.hpp"
 
 using namespace ds::plugin;
 using namespace ds::sig;
@@ -89,27 +89,27 @@ void test_window_and_versions() {
     host.end_module_registration();
     FakeProvider fake;
     auto provider = make_fake(fake);
-    assert(!host.register_signature_provider(&provider));
-    assert(host.signature_provider_count() == 0);
+    DS_REQUIRE(!host.register_signature_provider(&provider));
+    DS_REQUIRE(host.signature_provider_count() == 0);
 
     host.begin_module_registration();
     auto wrong_size = provider;
     wrong_size.struct_size = sizeof(ProviderV1) - 8;
-    assert(!host.register_signature_provider(&wrong_size));
+    DS_REQUIRE(!host.register_signature_provider(&wrong_size));
     auto wrong_version = provider;
     wrong_version.interface_version = kProviderInterfaceVersion + 1;
-    assert(!host.register_signature_provider(&wrong_version));
+    DS_REQUIRE(!host.register_signature_provider(&wrong_version));
     auto missing_fn = provider;
     missing_fn.resolve = nullptr;
-    assert(!host.register_signature_provider(&missing_fn));
+    DS_REQUIRE(!host.register_signature_provider(&missing_fn));
     auto empty_count = provider;
     fake.entry_count_value = 0;
-    assert(!host.register_signature_provider(&empty_count));
+    DS_REQUIRE(!host.register_signature_provider(&empty_count));
     fake.entry_count_value = 1;
-    assert(host.register_signature_provider(&provider));
+    DS_REQUIRE(host.register_signature_provider(&provider));
     host.end_module_registration();
     host.publish_module_registration();
-    assert(host.signature_provider_count() == 1);
+    DS_REQUIRE(host.signature_provider_count() == 1);
     printf("PASS: window_and_versions\n");
 }
 
@@ -117,15 +117,15 @@ void test_failed_init_publishes_nothing() {
     PluginHost host;
     FakeProvider fake;
     auto provider = make_fake(fake);
-    assert(!run_module(host, provider, /*init_result=*/false));
-    assert(host.signature_provider_count() == 0);
+    DS_REQUIRE(!run_module(host, provider, /*init_result=*/false));
+    DS_REQUIRE(host.signature_provider_count() == 0);
 
     // A staged provider from a failed module must not leak into the next one.
     host.begin_module_registration();
-    assert(host.register_signature_provider(&provider));
+    DS_REQUIRE(host.register_signature_provider(&provider));
     host.end_module_registration();
     host.discard_module_registration();
-    assert(host.signature_provider_count() == 0);
+    DS_REQUIRE(host.signature_provider_count() == 0);
     printf("PASS: failed_init_publishes_nothing\n");
 }
 
@@ -134,28 +134,28 @@ void test_names() {
     FakeProvider empty_name;
     empty_name.name = "";
     auto empty_provider = make_fake(empty_name);
-    assert(!run_module(host, empty_provider, true));
-    assert(host.signature_provider_count() == 0);
+    DS_REQUIRE(!run_module(host, empty_provider, true));
+    DS_REQUIRE(host.signature_provider_count() == 0);
 
     FakeProvider first;
     auto first_provider = make_fake(first);
-    assert(run_module(host, first_provider, true));
-    assert(host.signature_provider_count() == 1);
+    DS_REQUIRE(run_module(host, first_provider, true));
+    DS_REQUIRE(host.signature_provider_count() == 1);
 
     // Same name, overlapping platform: rejected.
     FakeProvider duplicate;
     duplicate.name = first.name;
     auto duplicate_provider = make_fake(duplicate);
-    assert(!run_module(host, duplicate_provider, true));
-    assert(host.signature_provider_count() == 1);
+    DS_REQUIRE(!run_module(host, duplicate_provider, true));
+    DS_REQUIRE(host.signature_provider_count() == 1);
 
     // Same name, disjoint platform: a legitimate platform variant.
     FakeProvider variant;
     variant.name = first.name;
     variant.platform_mask = kPlatformLinuxX64;
     auto variant_provider = make_fake(variant);
-    assert(run_module(host, variant_provider, true));
-    assert(host.signature_provider_count() == 2);
+    DS_REQUIRE(run_module(host, variant_provider, true));
+    DS_REQUIRE(host.signature_provider_count() == 2);
     printf("PASS: names\n");
 }
 

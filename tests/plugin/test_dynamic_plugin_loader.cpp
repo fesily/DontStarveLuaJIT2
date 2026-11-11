@@ -1,12 +1,12 @@
 #include "core/DynamicPluginLoader.hpp"
 #include "core/PluginHost.hpp"
 
-#include <cassert>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include "support/test_assert.hpp"
 
 using namespace ds::plugin;
 namespace fs = std::filesystem;
@@ -24,8 +24,8 @@ static void test_empty_dir() {
     DynamicPluginLoader loader;
     auto dir = temp_dir("ds_plugin_loader_empty");
     auto r = loader.load_directory(host, dir);
-    assert(r.loaded_modules.empty());
-    assert(r.skipped.empty());
+    DS_REQUIRE(r.loaded_modules.empty());
+    DS_REQUIRE(r.skipped.empty());
     printf("PASS: empty_dir\n");
 }
 
@@ -35,7 +35,7 @@ static void test_non_plugin_file_ignored() {
     auto dir = temp_dir("ds_plugin_loader_noise");
     std::ofstream(dir / "readme.txt") << "x";
     auto r = loader.load_directory(host, dir);
-    assert(r.loaded_modules.empty());
+    DS_REQUIRE(r.loaded_modules.empty());
     printf("PASS: noise_ignored\n");
 }
 
@@ -52,8 +52,8 @@ static void test_flat_module_ignored() {
 #endif
     std::ofstream(bad, std::ios::binary) << "not a pe/elf";
     auto r = loader.load_directory(host, dir);
-    assert(r.loaded_modules.empty());
-    assert(r.skipped.empty());
+    DS_REQUIRE(r.loaded_modules.empty());
+    DS_REQUIRE(r.skipped.empty());
     printf("PASS: flat_module_ignored\n");
 }
 
@@ -71,8 +71,8 @@ static void test_package_subdir_bad_library_skipped() {
     std::ofstream(bad, std::ios::binary) << "not a pe/elf";
     std::ofstream(pkg / "modinfo.lua") << "name='x'\n";
     auto r = loader.load_directory(host, dir);
-    assert(r.loaded_modules.empty());
-    assert(!r.skipped.empty());
+    DS_REQUIRE(r.loaded_modules.empty());
+    DS_REQUIRE(!r.skipped.empty());
     printf("PASS: package_subdir_bad_library_skipped\n");
 }
 
@@ -92,12 +92,12 @@ static void test_packaged_twin_materialized_before_load() {
     fs::create_directories(pkg);
     const auto canonical = pkg / (std::string("plugin_pkgonly") + ext);
     std::ofstream(canonical.string() + ".pkg", std::ios::binary) << "not a pe/elf";
-    assert(!fs::exists(canonical));
+    DS_REQUIRE(!fs::exists(canonical));
 
     auto r = loader.load_directory(host, dir);
-    assert(fs::exists(canonical));      // materialized from the twin
-    assert(r.loaded_modules.empty());   // garbage payload: attempted and refused
-    assert(!r.skipped.empty());
+    DS_REQUIRE(fs::exists(canonical));      // materialized from the twin
+    DS_REQUIRE(r.loaded_modules.empty());   // garbage payload: attempted and refused
+    DS_REQUIRE(!r.skipped.empty());
     printf("PASS: packaged_twin_materialized_before_load\n");
 }
 
@@ -122,9 +122,9 @@ static void test_packaged_twin_refreshes_stale_canonical() {
     std::ifstream in(canonical, std::ios::binary);
     const std::string materialized((std::istreambuf_iterator<char>(in)),
                                    std::istreambuf_iterator<char>());
-    assert(materialized == "replaced item payload");
-    assert(r.loaded_modules.empty()); // garbage payload: attempted and refused
-    assert(!r.skipped.empty());
+    DS_REQUIRE(materialized == "replaced item payload");
+    DS_REQUIRE(r.loaded_modules.empty()); // garbage payload: attempted and refused
+    DS_REQUIRE(!r.skipped.empty());
     printf("PASS: packaged_twin_refreshes_stale_canonical\n");
 }
 
@@ -145,19 +145,19 @@ static void test_flat_ignored_beside_package() {
     std::ofstream(dir / (std::string("plugin_notalib") + ext), std::ios::binary) << "not a pe/elf";
 
     auto r = loader.load_directory(host, dir);
-    assert(r.loaded_modules.empty());
+    DS_REQUIRE(r.loaded_modules.empty());
     const std::string flat = (dir / (std::string("plugin_notalib") + ext)).string();
     const std::string packaged = (pkg / (std::string("plugin_notalib") + ext)).string();
     bool package_attempted = false;
     for (const auto &entry : r.skipped) {
         if (entry.find(flat) != std::string::npos) {
-            assert(false && "flat module must never be attempted");
+            DS_REQUIRE(false && "flat module must never be attempted");
         }
         if (entry.find(packaged) != std::string::npos) {
             package_attempted = true;
         }
     }
-    assert(package_attempted);
+    DS_REQUIRE(package_attempted);
     printf("PASS: flat_ignored_beside_package\n");
 }
 
@@ -185,27 +185,27 @@ static void test_duplicate_stem_across_roots() {
     make_pkg(root2, "plugin_only2");
 
     auto r1 = loader.load_directory(host, root1);
-    assert(r1.loaded_modules.empty());
-    assert(!r1.skipped.empty()); // garbage payload: attempted and refused
+    DS_REQUIRE(r1.loaded_modules.empty());
+    DS_REQUIRE(!r1.skipped.empty()); // garbage payload: attempted and refused
 
     auto r2 = loader.load_directory(host, root2);
-    assert(r2.loaded_modules.empty());
+    DS_REQUIRE(r2.loaded_modules.empty());
     const std::string dupe2 = (root2 / "plugin_dupe" / (std::string("plugin_dupe") + ext)).string();
     const std::string only2 = (root2 / "plugin_only2" / (std::string("plugin_only2") + ext)).string();
     bool dupe_skipped = false;
     bool only2_attempted = false;
     for (const auto &entry : r2.skipped) {
         if (entry.find(dupe2) != std::string::npos) {
-            assert(entry.find("duplicate_stem") != std::string::npos);
+            DS_REQUIRE(entry.find("duplicate_stem") != std::string::npos);
             dupe_skipped = true;
         }
         if (entry.find(only2) != std::string::npos) {
-            assert(entry.find("duplicate_stem") == std::string::npos);
+            DS_REQUIRE(entry.find("duplicate_stem") == std::string::npos);
             only2_attempted = true;
         }
     }
-    assert(dupe_skipped);
-    assert(only2_attempted);
+    DS_REQUIRE(dupe_skipped);
+    DS_REQUIRE(only2_attempted);
     printf("PASS: duplicate_stem_across_roots\n");
 }
 

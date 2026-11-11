@@ -1,10 +1,10 @@
 #include "core/ExternalPluginDiscovery.hpp"
 
-#include <cassert>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include "support/test_assert.hpp"
 
 namespace fs = std::filesystem;
 using namespace ds::plugin;
@@ -28,7 +28,7 @@ void test_path_under_root_accepts_child() {
     auto root = make_temp_dir("ds_ext_disc_root_ok");
     auto child = root / "plugins" / "plugin_x" / "plugin_x.dll";
     touch(child);
-    assert(path_under_root(root, child));
+    DS_REQUIRE(path_under_root(root, child));
     std::puts("ok path_under_root_accepts_child");
 }
 
@@ -40,7 +40,7 @@ void test_path_under_root_rejects_escape() {
     auto escaped = root / "plugins" / ".." / ".." / outside.filename();
     // Even if file doesn't exist at escaped, jail uses weakly_canonical.
     // Use outside absolute path which is not under root.
-    assert(!path_under_root(root, outside));
+    DS_REQUIRE(!path_under_root(root, outside));
     std::puts("ok path_under_root_rejects_escape");
 }
 
@@ -57,15 +57,15 @@ void test_list_pack_modules_finds_package_dll() {
     touch(root / "plugins" / "readme.txt");
     touch(root / "plugins" / "plugin_y" / "not_matching.dll");
     auto mods = list_pack_modules_under_mod(root);
-    assert(mods.size() == 1);
-    assert(mods[0].filename().string().find("plugin_x") != std::string::npos);
+    DS_REQUIRE(mods.size() == 1);
+    DS_REQUIRE(mods[0].filename().string().find("plugin_x") != std::string::npos);
     std::puts("ok list_pack_modules_finds_package_dll");
 }
 
 void test_list_pack_modules_empty_without_plugins() {
     auto root = make_temp_dir("ds_ext_disc_list_empty");
     auto mods = list_pack_modules_under_mod(root);
-    assert(mods.empty());
+    DS_REQUIRE(mods.empty());
     std::puts("ok list_pack_modules_empty_without_plugins");
 }
 
@@ -78,7 +78,7 @@ void test_list_ignores_non_plugin_prefix_dirs() {
 #endif
     touch(root / "plugins" / "other_x" / (std::string("other_x") + ext));
     auto mods = list_pack_modules_under_mod(root);
-    assert(mods.empty());
+    DS_REQUIRE(mods.empty());
     std::puts("ok list_ignores_non_plugin_prefix_dirs");
 }
 

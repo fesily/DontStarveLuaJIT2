@@ -30,10 +30,6 @@
 #include <windows.h>
 #endif
 
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
-#include <cassert>
 
 namespace {
 

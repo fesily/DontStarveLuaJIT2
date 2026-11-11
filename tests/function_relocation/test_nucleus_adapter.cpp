@@ -1,12 +1,7 @@
 #include "FunctionTable.hpp"
 #include "NucleusAdapter.hpp"
 
-// Keep checks active under RelWithDebInfo (NDEBUG would strip assert).
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
 #include <algorithm>
-#include <cassert>
 
 #include <cstdint>
 #include <cstdio>

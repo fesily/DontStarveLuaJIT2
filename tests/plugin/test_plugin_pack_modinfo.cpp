@@ -1,10 +1,10 @@
 #include "core/PluginPackModinfo.hpp"
 
-#include <cassert>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include "support/test_assert.hpp"
 
 namespace fs = std::filesystem;
 using namespace ds::plugin;
@@ -25,7 +25,7 @@ fs::path write_modinfo(const fs::path &mod_root, const std::string &body) {
     std::ofstream out(p, std::ios::binary);
     out << body;
     out.close();
-    assert(out.good() || fs::exists(p));
+    DS_REQUIRE(out.good() || fs::exists(p));
     return p;
 }
 
@@ -34,11 +34,11 @@ void test_missing_file() {
     std::error_code ec;
     fs::remove_all(missing.parent_path(), ec);
     auto info = parse_plugin_pack_modinfo(missing);
-    assert(!info.ok);
-    assert(!info.luajit_plugin_pack);
-    assert(info.plugin_id.empty());
-    assert(info.parse_error == "open_failed");
-    assert(!external_pack_trust_ok(info));
+    DS_REQUIRE(!info.ok);
+    DS_REQUIRE(!info.luajit_plugin_pack);
+    DS_REQUIRE(info.plugin_id.empty());
+    DS_REQUIRE(info.parse_error == "open_failed");
+    DS_REQUIRE(!external_pack_trust_ok(info));
     std::puts("ok missing_file");
 }
 
@@ -49,11 +49,11 @@ name = "Plain Mod"
 description = "no pack marker"
 )lua");
     auto info = parse_plugin_pack_modinfo(path);
-    assert(info.ok);
-    assert(!info.luajit_plugin_pack);
-    assert(info.plugin_id.empty());
-    assert(info.parse_error.empty());
-    assert(!external_pack_trust_ok(info));
+    DS_REQUIRE(info.ok);
+    DS_REQUIRE(!info.luajit_plugin_pack);
+    DS_REQUIRE(info.plugin_id.empty());
+    DS_REQUIRE(info.parse_error.empty());
+    DS_REQUIRE(!external_pack_trust_ok(info));
     std::puts("ok no_pack_marker");
 }
 
@@ -64,10 +64,10 @@ luajit_plugin_pack = true
 name = "Pack Missing Id"
 )lua");
     auto info = parse_plugin_pack_modinfo(path);
-    assert(info.ok);
-    assert(info.luajit_plugin_pack);
-    assert(info.plugin_id.empty());
-    assert(!external_pack_trust_ok(info));
+    DS_REQUIRE(info.ok);
+    DS_REQUIRE(info.luajit_plugin_pack);
+    DS_REQUIRE(info.plugin_id.empty());
+    DS_REQUIRE(!external_pack_trust_ok(info));
     std::puts("ok pack_without_plugin_id");
 }
 
@@ -79,11 +79,11 @@ plugin_id = "vendor.x"
 name = "Trusted Pack"
 )lua");
     auto info = parse_plugin_pack_modinfo(path);
-    assert(info.ok);
-    assert(info.luajit_plugin_pack);
-    assert(info.plugin_id == "vendor.x");
-    assert(info.parse_error.empty());
-    assert(external_pack_trust_ok(info));
+    DS_REQUIRE(info.ok);
+    DS_REQUIRE(info.luajit_plugin_pack);
+    DS_REQUIRE(info.plugin_id == "vendor.x");
+    DS_REQUIRE(info.parse_error.empty());
+    DS_REQUIRE(external_pack_trust_ok(info));
     std::puts("ok pack_with_plugin_id");
 }
 
@@ -95,9 +95,9 @@ luajit_plugin_pack = true
 plugin_id = "never.reached"
 )lua");
     auto info = parse_plugin_pack_modinfo(path);
-    assert(!info.ok);
-    assert(!external_pack_trust_ok(info));
-    assert(!info.parse_error.empty());
+    DS_REQUIRE(!info.ok);
+    DS_REQUIRE(!external_pack_trust_ok(info));
+    DS_REQUIRE(!info.parse_error.empty());
     std::puts("ok throw_in_modinfo");
 }
 
@@ -114,9 +114,9 @@ end
 TheNet:GetIsServer()
 )lua");
     auto info = parse_plugin_pack_modinfo(path);
-    assert(!info.ok);
-    assert(!external_pack_trust_ok(info));
-    assert(!info.parse_error.empty());
+    DS_REQUIRE(!info.ok);
+    DS_REQUIRE(!external_pack_trust_ok(info));
+    DS_REQUIRE(!info.parse_error.empty());
     std::puts("ok thenet_missing_errors");
 }
 
@@ -128,10 +128,10 @@ luajit_plugin_pack = true
 plugin_id = "vendor." .. tostring(folder_name)
 )lua");
     auto info = parse_plugin_pack_modinfo(path);
-    assert(info.ok);
-    assert(info.luajit_plugin_pack);
-    assert(info.plugin_id.find("vendor.") == 0);
-    assert(external_pack_trust_ok(info));
+    DS_REQUIRE(info.ok);
+    DS_REQUIRE(info.luajit_plugin_pack);
+    DS_REQUIRE(info.plugin_id.find("vendor.") == 0);
+    DS_REQUIRE(external_pack_trust_ok(info));
     std::puts("ok folder_name_available");
 }
 
@@ -142,10 +142,10 @@ luajit_plugin_pack = true
 plugin_id = ""
 )lua");
     auto info = parse_plugin_pack_modinfo(path);
-    assert(info.ok);
-    assert(info.luajit_plugin_pack);
-    assert(info.plugin_id.empty());
-    assert(!external_pack_trust_ok(info));
+    DS_REQUIRE(info.ok);
+    DS_REQUIRE(info.luajit_plugin_pack);
+    DS_REQUIRE(info.plugin_id.empty());
+    DS_REQUIRE(!external_pack_trust_ok(info));
     std::puts("ok empty_plugin_id_not_trusted");
 }
 
@@ -156,10 +156,10 @@ luajit_plugin_pack = true
 plugin_id = 12345
 )lua");
     auto info = parse_plugin_pack_modinfo(path);
-    assert(info.ok);
-    assert(info.luajit_plugin_pack);
-    assert(info.plugin_id.empty());
-    assert(!external_pack_trust_ok(info));
+    DS_REQUIRE(info.ok);
+    DS_REQUIRE(info.luajit_plugin_pack);
+    DS_REQUIRE(info.plugin_id.empty());
+    DS_REQUIRE(!external_pack_trust_ok(info));
     std::puts("ok non_string_plugin_id_ignored");
 }
 

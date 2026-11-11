@@ -24,6 +24,11 @@ if (WIN32)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif ()
 
+# Test assertion macro (tests/support/test_assert.hpp). assert() is compiled out
+# under /DNDEBUG (Release/RelWithDebInfo), so tests use DS_REQUIRE, which stays
+# active in every configuration. Directory scope: every target below gets it.
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+
 # Gate: no path may be narrowed through the ANSI code page outside util/PathText.
 # A name the code page cannot map makes path::string() throw error 1113, which
 # used to abort inject before core.vm loaded (0xE06D7363). See

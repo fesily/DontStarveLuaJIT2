@@ -2,11 +2,11 @@
 #include "core/PluginServices.hpp"
 
 #include <algorithm>
-#include <cassert>
 #include <cstdio>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include "support/test_assert.hpp"
 using namespace ds::plugin;
 
 namespace {
@@ -66,8 +66,8 @@ static void test_empty_registry() {
     PluginContext ctx;
     host.resolve(cfg, ctx);
     auto lr = host.load_phase(PluginPhase::AfterModMain);
-    assert(lr.loaded_order.empty());
-    assert(lr.ok);
+    DS_REQUIRE(lr.loaded_order.empty());
+    DS_REQUIRE(lr.ok);
     printf("PASS: empty_registry\n");
 }
 
@@ -89,12 +89,12 @@ static void test_topo_linear() {
     PluginContext ctx;
     host.resolve(ConfigView{}, ctx);
     auto lr = host.load_phase(PluginPhase::AfterModMain);
-    assert(lr.loaded_order.size() == 2);
-    assert(lr.loaded_order[0] == "B");
-    assert(lr.loaded_order[1] == "A");
-    assert(b.load_count == 1 && a.load_count == 1);
-    assert(host.status("A") == PluginStatus::Loaded);
-    assert(host.status("B") == PluginStatus::Loaded);
+    DS_REQUIRE(lr.loaded_order.size() == 2);
+    DS_REQUIRE(lr.loaded_order[0] == "B");
+    DS_REQUIRE(lr.loaded_order[1] == "A");
+    DS_REQUIRE(b.load_count == 1 && a.load_count == 1);
+    DS_REQUIRE(host.status("A") == PluginStatus::Loaded);
+    DS_REQUIRE(host.status("B") == PluginStatus::Loaded);
     printf("PASS: topo_linear\n");
 }
 
@@ -128,16 +128,16 @@ static void test_topo_diamond() {
     PluginContext ctx;
     host.resolve({}, ctx);
     auto lr = host.load_phase(PluginPhase::AfterModMain);
-    assert(lr.loaded_order.size() == 4);
+    DS_REQUIRE(lr.loaded_order.size() == 4);
     auto pos = [&](const char *id) {
         auto it = std::find(lr.loaded_order.begin(), lr.loaded_order.end(), id);
-        assert(it != lr.loaded_order.end());
+        DS_REQUIRE(it != lr.loaded_order.end());
         return static_cast<int>(it - lr.loaded_order.begin());
     };
-    assert(pos("D") < pos("B"));
-    assert(pos("D") < pos("C"));
-    assert(pos("B") < pos("A"));
-    assert(pos("C") < pos("A"));
+    DS_REQUIRE(pos("D") < pos("B"));
+    DS_REQUIRE(pos("D") < pos("C"));
+    DS_REQUIRE(pos("B") < pos("A"));
+    DS_REQUIRE(pos("C") < pos("A"));
     printf("PASS: topo_diamond\n");
 }
 
@@ -152,9 +152,9 @@ static void test_soft_dep_missing() {
     PluginContext ctx;
     host.resolve({}, ctx);
     auto lr = host.load_phase(PluginPhase::AfterModMain);
-    assert(a.load_count == 1);
-    assert(host.status("A") == PluginStatus::Loaded);
-    assert(host.fail_reason("A") == PluginFailReason::None);
+    DS_REQUIRE(a.load_count == 1);
+    DS_REQUIRE(host.status("A") == PluginStatus::Loaded);
+    DS_REQUIRE(host.fail_reason("A") == PluginFailReason::None);
     printf("PASS: soft_dep_missing\n");
 }
 
@@ -175,9 +175,9 @@ static void test_soft_dep_present() {
     PluginContext ctx;
     host.resolve({}, ctx);
     auto lr = host.load_phase(PluginPhase::AfterModMain);
-    assert(lr.loaded_order.size() == 2);
-    assert(lr.loaded_order[0] == "Z");
-    assert(lr.loaded_order[1] == "A");
+    DS_REQUIRE(lr.loaded_order.size() == 2);
+    DS_REQUIRE(lr.loaded_order[0] == "Z");
+    DS_REQUIRE(lr.loaded_order[1] == "A");
     printf("PASS: soft_dep_present\n");
 }
 
@@ -192,9 +192,9 @@ static void test_hard_dep_missing() {
     PluginContext ctx;
     host.resolve({}, ctx);
     auto lr = host.load_phase(PluginPhase::AfterModMain);
-    assert(a.load_count == 0);
-    assert(host.status("A") == PluginStatus::Failed);
-    assert(host.fail_reason("A") == PluginFailReason::MissingHardDep);
+    DS_REQUIRE(a.load_count == 0);
+    DS_REQUIRE(host.status("A") == PluginStatus::Failed);
+    DS_REQUIRE(host.fail_reason("A") == PluginFailReason::MissingHardDep);
     printf("PASS: hard_dep_missing\n");
 }
 
@@ -214,11 +214,11 @@ static void test_conflict_both_enabled() {
     PluginContext ctx;
     host.resolve({}, ctx);
     host.load_phase(PluginPhase::AfterModMain);
-    assert(a.load_count == 0 && b.load_count == 0);
-    assert(host.status("A") == PluginStatus::Failed);
-    assert(host.status("B") == PluginStatus::Failed);
-    assert(host.fail_reason("A") == PluginFailReason::Conflict);
-    assert(host.fail_reason("B") == PluginFailReason::Conflict);
+    DS_REQUIRE(a.load_count == 0 && b.load_count == 0);
+    DS_REQUIRE(host.status("A") == PluginStatus::Failed);
+    DS_REQUIRE(host.status("B") == PluginStatus::Failed);
+    DS_REQUIRE(host.fail_reason("A") == PluginFailReason::Conflict);
+    DS_REQUIRE(host.fail_reason("B") == PluginFailReason::Conflict);
     printf("PASS: conflict_both_enabled\n");
 }
 
@@ -241,10 +241,10 @@ static void test_conflict_one_enabled() {
     cfg["enB"] = ConfigValue::boolean(false);
     host.resolve(cfg, ctx);
     host.load_phase(PluginPhase::AfterModMain);
-    assert(a.load_count == 1);
-    assert(b.load_count == 0);
-    assert(host.status("A") == PluginStatus::Loaded);
-    assert(host.status("B") == PluginStatus::Disabled);
+    DS_REQUIRE(a.load_count == 1);
+    DS_REQUIRE(b.load_count == 0);
+    DS_REQUIRE(host.status("A") == PluginStatus::Loaded);
+    DS_REQUIRE(host.status("B") == PluginStatus::Disabled);
     printf("PASS: conflict_one_enabled\n");
 }
 
@@ -269,11 +269,11 @@ static void test_cycle_three() {
     PluginContext ctx;
     host.resolve({}, ctx);
     host.load_phase(PluginPhase::AfterModMain);
-    assert(a.load_count == 0 && b.load_count == 0 && c.load_count == 0);
-    assert(host.status("A") == PluginStatus::Failed);
-    assert(host.status("B") == PluginStatus::Failed);
-    assert(host.status("C") == PluginStatus::Failed);
-    assert(host.fail_reason("A") == PluginFailReason::Cycle);
+    DS_REQUIRE(a.load_count == 0 && b.load_count == 0 && c.load_count == 0);
+    DS_REQUIRE(host.status("A") == PluginStatus::Failed);
+    DS_REQUIRE(host.status("B") == PluginStatus::Failed);
+    DS_REQUIRE(host.status("C") == PluginStatus::Failed);
+    DS_REQUIRE(host.fail_reason("A") == PluginFailReason::Cycle);
     printf("PASS: cycle_three\n");
 }
 
@@ -292,13 +292,13 @@ static void test_phase_barrier() {
     PluginContext ctx;
     host.resolve({}, ctx);
     auto early = host.load_phase(PluginPhase::EarlyNative);
-    assert(early.loaded_order.size() == 1);
-    assert(early.loaded_order[0] == "X");
-    assert(y.load_count == 0);
+    DS_REQUIRE(early.loaded_order.size() == 1);
+    DS_REQUIRE(early.loaded_order[0] == "X");
+    DS_REQUIRE(y.load_count == 0);
     auto late = host.load_phase(PluginPhase::AfterModMain);
-    assert(late.loaded_order.size() == 1);
-    assert(late.loaded_order[0] == "Y");
-    assert(y.load_count == 1);
+    DS_REQUIRE(late.loaded_order.size() == 1);
+    DS_REQUIRE(late.loaded_order[0] == "Y");
+    DS_REQUIRE(y.load_count == 1);
     printf("PASS: phase_barrier\n");
 }
 
@@ -314,8 +314,8 @@ static void test_phase_skip_disabled() {
     cfg["on"] = ConfigValue::boolean(false);
     host.resolve(cfg, ctx);
     host.load_phase(PluginPhase::AfterModMain);
-    assert(a.load_count == 0);
-    assert(host.status("A") == PluginStatus::Disabled);
+    DS_REQUIRE(a.load_count == 0);
+    DS_REQUIRE(host.status("A") == PluginStatus::Disabled);
     printf("PASS: phase_skip_disabled\n");
 }
 
@@ -343,14 +343,14 @@ static void test_load_throw_fails_dependents() {
     PluginContext ctx;
     host.resolve({}, ctx);
     host.load_phase(PluginPhase::AfterModMain);
-    assert(b.load_count == 1);
-    assert(a.load_count == 0);
-    assert(c.load_count == 0);
-    assert(host.status("B") == PluginStatus::Loaded);
-    assert(host.status("A") == PluginStatus::Failed);
-    assert(host.fail_reason("A") == PluginFailReason::LoadThrew);
-    assert(host.status("C") == PluginStatus::Failed);
-    assert(host.fail_reason("C") == PluginFailReason::MissingHardDep);
+    DS_REQUIRE(b.load_count == 1);
+    DS_REQUIRE(a.load_count == 0);
+    DS_REQUIRE(c.load_count == 0);
+    DS_REQUIRE(host.status("B") == PluginStatus::Loaded);
+    DS_REQUIRE(host.status("A") == PluginStatus::Failed);
+    DS_REQUIRE(host.fail_reason("A") == PluginFailReason::LoadThrew);
+    DS_REQUIRE(host.status("C") == PluginStatus::Failed);
+    DS_REQUIRE(host.fail_reason("C") == PluginFailReason::MissingHardDep);
     printf("PASS: load_throw_fails_dependents\n");
 }
 
@@ -370,9 +370,9 @@ static void test_priority_tiebreak() {
     PluginContext ctx;
     host.resolve({}, ctx);
     auto lr = host.load_phase(PluginPhase::AfterModMain);
-    assert(lr.loaded_order.size() == 2);
-    assert(lr.loaded_order[0] == "A");
-    assert(lr.loaded_order[1] == "B");
+    DS_REQUIRE(lr.loaded_order.size() == 2);
+    DS_REQUIRE(lr.loaded_order[0] == "A");
+    DS_REQUIRE(lr.loaded_order[1] == "B");
     printf("PASS: priority_tiebreak\n");
 }
 
@@ -392,9 +392,9 @@ static void test_profiler_before_hide() {
     PluginContext ctx;
     host.resolve({}, ctx);
     auto lr = host.load_phase(PluginPhase::AfterModMain);
-    assert(lr.loaded_order.size() == 2);
-    assert(lr.loaded_order[0] == "debug.profiler");
-    assert(lr.loaded_order[1] == "jit.runtime");
+    DS_REQUIRE(lr.loaded_order.size() == 2);
+    DS_REQUIRE(lr.loaded_order[0] == "debug.profiler");
+    DS_REQUIRE(lr.loaded_order[1] == "jit.runtime");
     printf("PASS: profiler_before_hide\n");
 }
 
@@ -409,9 +409,9 @@ static void test_sticky_no_unload() {
     PluginContext ctx;
     host.resolve({}, ctx);
     host.load_phase(PluginPhase::AfterModMain);
-    assert(!host.unload_plugin("A", ctx));
-    assert(a.unload_count == 0);
-    assert(host.status("A") == PluginStatus::Loaded);
+    DS_REQUIRE(!host.unload_plugin("A", ctx));
+    DS_REQUIRE(a.unload_count == 0);
+    DS_REQUIRE(host.status("A") == PluginStatus::Loaded);
     printf("PASS: sticky_no_unload\n");
 }
 
@@ -426,8 +426,8 @@ static void test_reload_unload() {
     PluginContext ctx;
     host.resolve({}, ctx);
     host.load_phase(PluginPhase::AfterModMain);
-    assert(host.unload_plugin("A", ctx));
-    assert(a.unload_count == 1);
+    DS_REQUIRE(host.unload_plugin("A", ctx));
+    DS_REQUIRE(a.unload_count == 1);
     printf("PASS: reload_unload\n");
 }
 
@@ -446,11 +446,11 @@ static void test_network_rpc_option_matrix() {
         ConfigView cfg = cfg_true({"NetworkOpt"});
         host.resolve(cfg, ctx);
         auto lr = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr.ok);
-        assert(lr.loaded_order.size() == 1);
-        assert(lr.loaded_order[0] == "network.rpc");
-        assert(rpc.load_count == 1);
-        assert(host.status("network.rpc") == PluginStatus::Loaded);
+        DS_REQUIRE(lr.ok);
+        DS_REQUIRE(lr.loaded_order.size() == 1);
+        DS_REQUIRE(lr.loaded_order[0] == "network.rpc");
+        DS_REQUIRE(rpc.load_count == 1);
+        DS_REQUIRE(host.status("network.rpc") == PluginStatus::Loaded);
     }
     rpc.load_count = 0;
     {
@@ -461,10 +461,10 @@ static void test_network_rpc_option_matrix() {
         cfg["NetworkOpt"] = ConfigValue::boolean(false);
         host.resolve(cfg, ctx);
         auto lr = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr.ok);
-        assert(lr.loaded_order.empty());
-        assert(rpc.load_count == 0);
-        assert(host.status("network.rpc") == PluginStatus::Disabled);
+        DS_REQUIRE(lr.ok);
+        DS_REQUIRE(lr.loaded_order.empty());
+        DS_REQUIRE(rpc.load_count == 0);
+        DS_REQUIRE(host.status("network.rpc") == PluginStatus::Disabled);
     }
     printf("PASS: network_rpc_option_matrix\n");
 }
@@ -485,12 +485,12 @@ static void test_network_sim_option_matrix() {
         ConfigView cfg;
         cfg["EnableNetSim"] = ConfigValue::boolean(false);
         auto rr = host.resolve(cfg, ctx);
-        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "network.sim") != rr.disabled.end());
+        DS_REQUIRE(std::find(rr.disabled.begin(), rr.disabled.end(), "network.sim") != rr.disabled.end());
         auto lr = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr.ok);
-        assert(lr.loaded_order.empty());
-        assert(sim.load_count == 0);
-        assert(host.status("network.sim") == PluginStatus::Disabled);
+        DS_REQUIRE(lr.ok);
+        DS_REQUIRE(lr.loaded_order.empty());
+        DS_REQUIRE(sim.load_count == 0);
+        DS_REQUIRE(host.status("network.sim") == PluginStatus::Disabled);
     }
     sim.load_count = 0;
     // EnableNetSim true → enabled + load
@@ -500,13 +500,13 @@ static void test_network_sim_option_matrix() {
         PluginContext ctx;
         ConfigView cfg = cfg_true({"EnableNetSim"});
         auto rr = host.resolve(cfg, ctx);
-        assert(std::find(rr.enabled.begin(), rr.enabled.end(), "network.sim") != rr.enabled.end());
+        DS_REQUIRE(std::find(rr.enabled.begin(), rr.enabled.end(), "network.sim") != rr.enabled.end());
         auto lr = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr.ok);
-        assert(lr.loaded_order.size() == 1);
-        assert(lr.loaded_order[0] == "network.sim");
-        assert(sim.load_count == 1);
-        assert(host.status("network.sim") == PluginStatus::Loaded);
+        DS_REQUIRE(lr.ok);
+        DS_REQUIRE(lr.loaded_order.size() == 1);
+        DS_REQUIRE(lr.loaded_order[0] == "network.sim");
+        DS_REQUIRE(sim.load_count == 1);
+        DS_REQUIRE(host.status("network.sim") == PluginStatus::Loaded);
     }
     printf("PASS: network_sim_option_matrix\n");
 }
@@ -535,14 +535,14 @@ static void test_network_entity_hard_dep_on_rpc() {
         cfg["NetworkOpt"] = ConfigValue::boolean(false);
         cfg["NetworkOptEntity"] = ConfigValue::boolean(true);
         auto rr = host.resolve(cfg, ctx);
-        assert(host.status("network.rpc") == PluginStatus::Disabled);
-        assert(host.status("network.entity") == PluginStatus::Failed);
-        assert(host.fail_reason("network.entity") == PluginFailReason::MissingHardDep);
-        assert(std::find(rr.failed.begin(), rr.failed.end(), "network.entity") != rr.failed.end());
+        DS_REQUIRE(host.status("network.rpc") == PluginStatus::Disabled);
+        DS_REQUIRE(host.status("network.entity") == PluginStatus::Failed);
+        DS_REQUIRE(host.fail_reason("network.entity") == PluginFailReason::MissingHardDep);
+        DS_REQUIRE(std::find(rr.failed.begin(), rr.failed.end(), "network.entity") != rr.failed.end());
         host.load_phase(PluginPhase::EarlyNative);
         host.load_phase(PluginPhase::AfterModMain);
-        assert(rpc.load_count == 0);
-        assert(entity.load_count == 0);
+        DS_REQUIRE(rpc.load_count == 0);
+        DS_REQUIRE(entity.load_count == 0);
     }
 
     // Row: both on → rpc EarlyNative then entity AfterModMain
@@ -555,27 +555,27 @@ static void test_network_entity_hard_dep_on_rpc() {
         PluginContext ctx;
         ConfigView cfg = cfg_true({"NetworkOpt", "NetworkOptEntity"});
         auto rr = host.resolve(cfg, ctx);
-        assert(rr.failed.empty());
-        assert(host.status("network.rpc") == PluginStatus::Registered);
-        assert(host.status("network.entity") == PluginStatus::Registered);
+        DS_REQUIRE(rr.failed.empty());
+        DS_REQUIRE(host.status("network.rpc") == PluginStatus::Registered);
+        DS_REQUIRE(host.status("network.entity") == PluginStatus::Registered);
 
         auto lr_early = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr_early.ok);
-        assert(lr_early.loaded_order.size() == 1);
-        assert(lr_early.loaded_order[0] == "network.rpc");
-        assert(rpc.load_count == 1);
+        DS_REQUIRE(lr_early.ok);
+        DS_REQUIRE(lr_early.loaded_order.size() == 1);
+        DS_REQUIRE(lr_early.loaded_order[0] == "network.rpc");
+        DS_REQUIRE(rpc.load_count == 1);
 
         auto lr_late = host.load_phase(PluginPhase::AfterModMain);
-        assert(lr_late.ok);
-        assert(entity.load_count == 1);
-        assert(host.status("network.entity") == PluginStatus::Loaded);
-        assert(host.status("network.rpc") == PluginStatus::Loaded);
+        DS_REQUIRE(lr_late.ok);
+        DS_REQUIRE(entity.load_count == 1);
+        DS_REQUIRE(host.status("network.entity") == PluginStatus::Loaded);
+        DS_REQUIRE(host.status("network.rpc") == PluginStatus::Loaded);
         // entity after rpc within AfterModMain when both phases load
         auto pos_rpc = std::find(lr_late.loaded_order.begin(), lr_late.loaded_order.end(), "network.rpc");
         auto pos_ent = std::find(lr_late.loaded_order.begin(), lr_late.loaded_order.end(), "network.entity");
-        assert(pos_ent != lr_late.loaded_order.end());
+        DS_REQUIRE(pos_ent != lr_late.loaded_order.end());
         if (pos_rpc != lr_late.loaded_order.end()) {
-            assert(pos_rpc < pos_ent);
+            DS_REQUIRE(pos_rpc < pos_ent);
         }
     }
 
@@ -591,12 +591,12 @@ static void test_network_entity_hard_dep_on_rpc() {
         cfg["NetworkOpt"] = ConfigValue::boolean(true);
         cfg["NetworkOptEntity"] = ConfigValue::boolean(false);
         host.resolve(cfg, ctx);
-        assert(host.status("network.rpc") == PluginStatus::Registered);
-        assert(host.status("network.entity") == PluginStatus::Disabled);
+        DS_REQUIRE(host.status("network.rpc") == PluginStatus::Registered);
+        DS_REQUIRE(host.status("network.entity") == PluginStatus::Disabled);
         host.load_phase(PluginPhase::EarlyNative);
         host.load_phase(PluginPhase::AfterModMain);
-        assert(rpc.load_count >= 1);
-        assert(entity.load_count == 0);
+        DS_REQUIRE(rpc.load_count >= 1);
+        DS_REQUIRE(entity.load_count == 0);
     }
 
     printf("PASS: network_entity_hard_dep_on_rpc\n");
@@ -619,14 +619,14 @@ static void test_render_vbpool_option_matrix() {
         ConfigView cfg;
         cfg["EnableVBPool"] = ConfigValue::boolean(true);
         auto rr = host.resolve(cfg, ctx);
-        assert(std::find(rr.enabled.begin(), rr.enabled.end(), "render.vbpool") != rr.enabled.end());
-        assert(rr.failed.empty());
+        DS_REQUIRE(std::find(rr.enabled.begin(), rr.enabled.end(), "render.vbpool") != rr.enabled.end());
+        DS_REQUIRE(rr.failed.empty());
         auto lr = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr.ok);
-        assert(lr.loaded_order.size() == 1);
-        assert(lr.loaded_order[0] == "render.vbpool");
-        assert(vb.load_count == 1);
-        assert(host.status("render.vbpool") == PluginStatus::Loaded);
+        DS_REQUIRE(lr.ok);
+        DS_REQUIRE(lr.loaded_order.size() == 1);
+        DS_REQUIRE(lr.loaded_order[0] == "render.vbpool");
+        DS_REQUIRE(vb.load_count == 1);
+        DS_REQUIRE(host.status("render.vbpool") == PluginStatus::Loaded);
     }
 
     // Row: EnableVBPool false → Disabled, no load
@@ -639,12 +639,12 @@ static void test_render_vbpool_option_matrix() {
         ConfigView cfg;
         cfg["EnableVBPool"] = ConfigValue::boolean(false);
         auto rr = host.resolve(cfg, ctx);
-        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "render.vbpool") != rr.disabled.end());
+        DS_REQUIRE(std::find(rr.disabled.begin(), rr.disabled.end(), "render.vbpool") != rr.disabled.end());
         auto lr = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr.ok);
-        assert(lr.loaded_order.empty());
-        assert(vb.load_count == 0);
-        assert(host.status("render.vbpool") == PluginStatus::Disabled);
+        DS_REQUIRE(lr.ok);
+        DS_REQUIRE(lr.loaded_order.empty());
+        DS_REQUIRE(vb.load_count == 0);
+        DS_REQUIRE(host.status("render.vbpool") == PluginStatus::Disabled);
     }
 
     // Row: option true but dedicated (not client) → can_load false → Disabled
@@ -658,10 +658,10 @@ static void test_render_vbpool_option_matrix() {
         ConfigView cfg;
         cfg["EnableVBPool"] = ConfigValue::boolean(true);
         auto rr = host.resolve(cfg, ctx);
-        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "render.vbpool") != rr.disabled.end());
+        DS_REQUIRE(std::find(rr.disabled.begin(), rr.disabled.end(), "render.vbpool") != rr.disabled.end());
         auto lr = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr.loaded_order.empty());
-        assert(vb.load_count == 0);
+        DS_REQUIRE(lr.loaded_order.empty());
+        DS_REQUIRE(vb.load_count == 0);
     }
     vb.allow = true;
 
@@ -709,15 +709,15 @@ static void test_render_angle_backend_parameter_matrix() {
         ConfigView cfg;
         cfg["AngleBackend"] = ConfigValue::string(backend);
         auto rr = host.resolve(cfg, ctx);
-        assert(std::find(rr.enabled.begin(), rr.enabled.end(), "render.angle") != rr.enabled.end());
-        assert(rr.failed.empty());
+        DS_REQUIRE(std::find(rr.enabled.begin(), rr.enabled.end(), "render.angle") != rr.enabled.end());
+        DS_REQUIRE(rr.failed.empty());
         auto lr = host.load_phase(PluginPhase::EarlyNative);
-        assert(lr.ok);
-        assert(lr.loaded_order.size() == 1);
-        assert(lr.loaded_order[0] == "render.angle");
-        assert(angle.load_count == 1);
-        assert(angle.last_backend == backend);
-        assert(host.status("render.angle") == PluginStatus::Loaded);
+        DS_REQUIRE(lr.ok);
+        DS_REQUIRE(lr.loaded_order.size() == 1);
+        DS_REQUIRE(lr.loaded_order[0] == "render.angle");
+        DS_REQUIRE(angle.load_count == 1);
+        DS_REQUIRE(angle.last_backend == backend);
+        DS_REQUIRE(host.status("render.angle") == PluginStatus::Loaded);
     }
 
     // Non-client gate → Disabled even with AlwaysOn options
@@ -731,9 +731,9 @@ static void test_render_angle_backend_parameter_matrix() {
         ConfigView cfg;
         cfg["AngleBackend"] = ConfigValue::string("vulkan");
         auto rr = host.resolve(cfg, ctx);
-        assert(std::find(rr.disabled.begin(), rr.disabled.end(), "render.angle") != rr.disabled.end());
+        DS_REQUIRE(std::find(rr.disabled.begin(), rr.disabled.end(), "render.angle") != rr.disabled.end());
         host.load_phase(PluginPhase::EarlyNative);
-        assert(angle.load_count == 0);
+        DS_REQUIRE(angle.load_count == 0);
     }
 
     printf("PASS: render_angle_backend_parameter_matrix\n");
@@ -753,14 +753,14 @@ static void test_requires_services_missing_fails() {
     PluginContext ctx;
     ConfigView cfg;
     auto r = host.resolve(cfg, ctx);
-    assert(std::find(r.failed.begin(), r.failed.end(), "need.svc") != r.failed.end());
-    assert(host.fail_reason("need.svc") == PluginFailReason::MissingService);
+    DS_REQUIRE(std::find(r.failed.begin(), r.failed.end(), "need.svc") != r.failed.end());
+    DS_REQUIRE(host.fail_reason("need.svc") == PluginFailReason::MissingService);
     printf("PASS: requires_services_missing_fails\n");
 }
 
 static void test_requires_services_present_injects() {
     PluginHost host;
-    assert(host.register_service("svc.dummy", &dummy_svc));
+    DS_REQUIRE(host.register_service("svc.dummy", &dummy_svc));
     struct CapturePlugin : FakePlugin {
         void *seen = nullptr;
         void load(PluginContext &c) override {
@@ -777,11 +777,11 @@ static void test_requires_services_present_injects() {
     PluginContext ctx;
     ConfigView cfg;
     auto r = host.resolve(cfg, ctx);
-    assert(std::find(r.failed.begin(), r.failed.end(), "has.svc") == r.failed.end());
-    assert(std::find(r.enabled.begin(), r.enabled.end(), "has.svc") != r.enabled.end());
+    DS_REQUIRE(std::find(r.failed.begin(), r.failed.end(), "has.svc") == r.failed.end());
+    DS_REQUIRE(std::find(r.enabled.begin(), r.enabled.end(), "has.svc") != r.enabled.end());
     auto lr = host.load_phase(PluginPhase::EarlyNative);
-    assert(lr.ok);
-    assert(a.seen == reinterpret_cast<void *>(&dummy_svc));
+    DS_REQUIRE(lr.ok);
+    DS_REQUIRE(a.seen == reinterpret_cast<void *>(&dummy_svc));
     printf("PASS: requires_services_present_injects\n");
 }
 
@@ -804,10 +804,10 @@ static void test_failed_provider_poisons_dependents() {
     PluginContext ctx;
     ConfigView cfg;
     auto r = host.resolve(cfg, ctx);
-    assert(host.fail_reason("B") == PluginFailReason::MissingService);
-    assert(host.fail_reason("A") == PluginFailReason::MissingHardDep);
-    assert(std::find(r.failed.begin(), r.failed.end(), "A") != r.failed.end());
-    assert(std::find(r.failed.begin(), r.failed.end(), "B") != r.failed.end());
+    DS_REQUIRE(host.fail_reason("B") == PluginFailReason::MissingService);
+    DS_REQUIRE(host.fail_reason("A") == PluginFailReason::MissingHardDep);
+    DS_REQUIRE(std::find(r.failed.begin(), r.failed.end(), "A") != r.failed.end());
+    DS_REQUIRE(std::find(r.failed.begin(), r.failed.end(), "B") != r.failed.end());
     printf("PASS: failed_provider_poisons_dependents\n");
 }
 

@@ -1,11 +1,11 @@
 #include "core/PluginPendingUpdates.hpp"
 #include "core/PluginProcessLock.hpp"
 
-#include <cassert>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include "support/test_assert.hpp"
 
 using namespace ds::plugin;
 namespace fs = std::filesystem;
@@ -37,13 +37,13 @@ static void write_file(const fs::path &p, const std::string &content) {
 
 static void test_empty_or_missing_pending() {
     auto plugins = temp_dir("ds_plugin_pending_empty");
-    assert(apply_pending_plugin_updates(plugins) == 0);
+    DS_REQUIRE(apply_pending_plugin_updates(plugins) == 0);
 
     auto missing = plugins / "does_not_exist_plugins_root";
-    assert(apply_pending_plugin_updates(missing) == 0);
+    DS_REQUIRE(apply_pending_plugin_updates(missing) == 0);
 
     fs::create_directories(plugins / "update_pending");
-    assert(apply_pending_plugin_updates(plugins) == 0);
+    DS_REQUIRE(apply_pending_plugin_updates(plugins) == 0);
     printf("PASS: empty_or_missing_pending\n");
 }
 
@@ -53,9 +53,9 @@ static void test_apply_overwrites_and_clears_pending() {
     write_file(plugins / "update_pending" / "plugin_x" / (std::string("plugin_x") + kModExt), "NEW");
 
     const size_t n = apply_pending_plugin_updates(plugins);
-    assert(n >= 1);
-    assert(read_all(plugins / "plugin_x" / (std::string("plugin_x") + kModExt)) == "NEW");
-    assert(!fs::exists(plugins / "update_pending" / "plugin_x" / (std::string("plugin_x") + kModExt)));
+    DS_REQUIRE(n >= 1);
+    DS_REQUIRE(read_all(plugins / "plugin_x" / (std::string("plugin_x") + kModExt)) == "NEW");
+    DS_REQUIRE(!fs::exists(plugins / "update_pending" / "plugin_x" / (std::string("plugin_x") + kModExt)));
     printf("PASS: apply_overwrites_and_clears_pending\n");
 }
 
@@ -65,9 +65,9 @@ static void test_apply_fresh_install_from_pending() {
     write_file(plugins / "update_pending" / "plugin_y" / (std::string("plugin_y") + kModExt),
                "FRESH");
     const size_t n = apply_pending_plugin_updates(plugins);
-    assert(n >= 1);
-    assert(read_all(plugins / "plugin_y" / (std::string("plugin_y") + kModExt)) == "FRESH");
-    assert(!fs::exists(plugins / "update_pending" / "plugin_y" / (std::string("plugin_y") + kModExt)));
+    DS_REQUIRE(n >= 1);
+    DS_REQUIRE(read_all(plugins / "plugin_y" / (std::string("plugin_y") + kModExt)) == "FRESH");
+    DS_REQUIRE(!fs::exists(plugins / "update_pending" / "plugin_y" / (std::string("plugin_y") + kModExt)));
     printf("PASS: apply_fresh_install_from_pending\n");
 }
 
@@ -77,8 +77,8 @@ static void test_ignores_staging_temps() {
     write_file(plugins / "update_pending" / (name + ".ds_pending_tmp_999"), "TEMP");
     write_file(plugins / "update_pending" / "plugin_z" / name, "REAL");
     const size_t n = apply_pending_plugin_updates(plugins);
-    assert(n >= 1);
-    assert(read_all(plugins / "plugin_z" / name) == "REAL");
+    DS_REQUIRE(n >= 1);
+    DS_REQUIRE(read_all(plugins / "plugin_z" / name) == "REAL");
     // Staging leftover may remain; only the real pending should apply.
     printf("PASS: ignores_staging_temps\n");
 }
@@ -93,11 +93,11 @@ static void test_translates_legacy_flat_pending() {
     write_file(plugins / "update_pending" / "modinfo.lua", "ORPHAN");
 
     const size_t n = apply_pending_plugin_updates(plugins);
-    assert(n == 2); // module + meta translated; modinfo.lua ignored
-    assert(read_all(plugins / "plugin_legacy" / mod) == "LEGACY-MOD");
-    assert(read_all(plugins / "plugin_legacy" / "plugin_legacy.meta.json") == "LEGACY-META");
-    assert(!fs::exists(plugins / mod)); // never flat
-    assert(fs::exists(plugins / "update_pending" / "modinfo.lua")); // left for the user
+    DS_REQUIRE(n == 2); // module + meta translated; modinfo.lua ignored
+    DS_REQUIRE(read_all(plugins / "plugin_legacy" / mod) == "LEGACY-MOD");
+    DS_REQUIRE(read_all(plugins / "plugin_legacy" / "plugin_legacy.meta.json") == "LEGACY-META");
+    DS_REQUIRE(!fs::exists(plugins / mod)); // never flat
+    DS_REQUIRE(fs::exists(plugins / "update_pending" / "modinfo.lua")); // left for the user
     printf("PASS: translates_legacy_flat_pending\n");
 }
 
@@ -113,15 +113,15 @@ static void test_defers_while_another_holder_runs() {
     PluginProcessLock holder;
     std::string err;
     std::string stamp;
-    assert(holder.acquire(plugins, 0, &err, &stamp) == LockResult::Acquired);
+    DS_REQUIRE(holder.acquire(plugins, 0, &err, &stamp) == LockResult::Acquired);
 
-    assert(apply_pending_plugin_updates(plugins) == 0); // deferred, nothing applied
-    assert(!fs::exists(plugins / "plugin_deferred" / name)); // tree untouched
-    assert(fs::exists(plugins / "update_pending" / "plugin_deferred" / name)); // kept for retry
+    DS_REQUIRE(apply_pending_plugin_updates(plugins) == 0); // deferred, nothing applied
+    DS_REQUIRE(!fs::exists(plugins / "plugin_deferred" / name)); // tree untouched
+    DS_REQUIRE(fs::exists(plugins / "update_pending" / "plugin_deferred" / name)); // kept for retry
 
     holder.release();
-    assert(apply_pending_plugin_updates(plugins) == 1); // next inject applies it
-    assert(read_all(plugins / "plugin_deferred" / name) == "DEFERRED");
+    DS_REQUIRE(apply_pending_plugin_updates(plugins) == 1); // next inject applies it
+    DS_REQUIRE(read_all(plugins / "plugin_deferred" / name) == "DEFERRED");
     printf("PASS: defers_while_another_holder_runs\n");
 }
 
@@ -134,11 +134,11 @@ static void test_moves_package_members() {
     write_file(plugins / "update_pending" / "plugin_pkg" / "scripts" / "a.lua", "LUA");
 
     const size_t n = apply_pending_plugin_updates(plugins);
-    assert(n == 3);
-    assert(read_all(plugins / "plugin_pkg" / "plugin_pkg.dll") == "PKG");
-    assert(read_all(plugins / "plugin_pkg" / "plugin_pkg.meta.json") == "META");
-    assert(read_all(plugins / "plugin_pkg" / "scripts" / "a.lua") == "LUA");
-    assert(!fs::exists(plugins / "plugin_pkg.dll")); // never flattened
+    DS_REQUIRE(n == 3);
+    DS_REQUIRE(read_all(plugins / "plugin_pkg" / "plugin_pkg.dll") == "PKG");
+    DS_REQUIRE(read_all(plugins / "plugin_pkg" / "plugin_pkg.meta.json") == "META");
+    DS_REQUIRE(read_all(plugins / "plugin_pkg" / "scripts" / "a.lua") == "LUA");
+    DS_REQUIRE(!fs::exists(plugins / "plugin_pkg.dll")); // never flattened
     printf("PASS: moves_package_members\n");
 }
 
@@ -152,11 +152,11 @@ static void test_consolidates_shadowed_flat_modules() {
     write_file(plugins / (std::string("plugin_manual") + kModExt), "MANUAL");
 
     const size_t removed = consolidate_flat_plugin_layout(plugins);
-    assert(removed == 2);
-    assert(!fs::exists(plugins / (std::string("plugin_shadow") + kModExt)));
-    assert(!fs::exists(plugins / "plugin_shadow.meta.json"));
-    assert(fs::exists(plugins / "plugin_shadow" / (std::string("plugin_shadow") + kModExt)));
-    assert(fs::exists(plugins / (std::string("plugin_manual") + kModExt)));
+    DS_REQUIRE(removed == 2);
+    DS_REQUIRE(!fs::exists(plugins / (std::string("plugin_shadow") + kModExt)));
+    DS_REQUIRE(!fs::exists(plugins / "plugin_shadow.meta.json"));
+    DS_REQUIRE(fs::exists(plugins / "plugin_shadow" / (std::string("plugin_shadow") + kModExt)));
+    DS_REQUIRE(fs::exists(plugins / (std::string("plugin_manual") + kModExt)));
     printf("PASS: consolidates_shadowed_flat_modules\n");
 }
 

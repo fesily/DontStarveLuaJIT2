@@ -1,11 +1,11 @@
 #include "core/EnabledDstMods.hpp"
 
-#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include "support/test_assert.hpp"
 
 #if defined(_WIN32)
 #  include <Windows.h>
@@ -54,7 +54,7 @@ return {
 }
 )lua");
     auto names = parse_modoverrides_enabled_names(path);
-    assert(names.size() == 2);
+    DS_REQUIRE(names.size() == 2);
     bool has111 = false, hasplain = false, haslocal = false;
     for (const auto &n : names) {
         if (n == "workshop-111") {
@@ -67,14 +67,14 @@ return {
             haslocal = true;
         }
     }
-    assert(has111 && hasplain && !haslocal);
+    DS_REQUIRE(has111 && hasplain && !haslocal);
     std::puts("ok parse_modoverrides_enabled_only");
 }
 
 void test_parse_missing_file() {
     auto names = parse_modoverrides_enabled_names(
         fs::temp_directory_path() / "ds_enabled_mods_missing" / "nope.lua");
-    assert(names.empty());
+    DS_REQUIRE(names.empty());
     std::puts("ok parse_missing_file");
 }
 
@@ -99,10 +99,10 @@ return {
     set_env("DS_LUAJIT_CLIENT_ENABLED_MODS", "");
 
     auto list = enumerate_enabled_dst_mods(/*is_client=*/false);
-    assert(list.size() == 1);
-    assert(list[0].name == "workshop-111");
-    assert(!list[0].root.empty());
-    assert(fs::exists(list[0].root));
+    DS_REQUIRE(list.size() == 1);
+    DS_REQUIRE(list[0].name == "workshop-111");
+    DS_REQUIRE(!list[0].root.empty());
+    DS_REQUIRE(fs::exists(list[0].root));
 
     set_env("DS_LUAJIT_MODS_ROOT", "");
     set_env("DS_LUAJIT_MODOVERRIDES_PATH", "");
@@ -117,8 +117,8 @@ void test_extra_roots_seam() {
     set_env("DS_LUAJIT_MODOVERRIDES_PATH", "");
     set_env("DS_LUAJIT_CLIENT_ENABLED_MODS", "");
     auto list = enumerate_enabled_dst_mods(true);
-    assert(list.size() == 1);
-    assert(list[0].name == "my_pack");
+    DS_REQUIRE(list.size() == 1);
+    DS_REQUIRE(list[0].name == "my_pack");
     set_env("DS_LUAJIT_EXTRA_PLUGIN_MOD_ROOTS", "");
     std::puts("ok extra_roots_seam");
 }

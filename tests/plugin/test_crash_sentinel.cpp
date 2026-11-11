@@ -4,11 +4,11 @@
 // after a recorded crash, and never turn an empty (cleared) record into a skip.
 #include "util/Unsafedata.hpp"
 
-#include <cassert>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include "support/test_assert.hpp"
 
 namespace fs = std::filesystem;
 using namespace ds::unsafedata;
@@ -30,39 +30,39 @@ int main() {
     // Missing record: inject and arm (directories created on demand).
     {
         auto p = make_temp("ds_crash_absent");
-        assert(allow_inject(p));
-        assert(read_sentinel(p) == std::string{kArmed});
+        DS_REQUIRE(allow_inject(p));
+        DS_REQUIRE(read_sentinel(p) == std::string{kArmed});
     }
 
     // An unresolvable root (dedicated server, no save dir) must not block boot.
     {
-        assert(allow_inject(fs::path{}));
+        DS_REQUIRE(allow_inject(fs::path{}));
     }
 
     // Recorded crash: skip exactly one boot, then retry.
     {
         auto p = make_temp("ds_crash_skip_once");
         put(p, kArmed);
-        assert(!allow_inject(p));
-        assert(read_sentinel(p) == std::string{kSkipped});
-        assert(allow_inject(p));
-        assert(read_sentinel(p) == std::string{kArmed});
+        DS_REQUIRE(!allow_inject(p));
+        DS_REQUIRE(read_sentinel(p) == std::string{kSkipped});
+        DS_REQUIRE(allow_inject(p));
+        DS_REQUIRE(read_sentinel(p) == std::string{kArmed});
     }
 
     // Cleared by the mod (empty file): a normal boot, not a crash.
     {
         auto p = make_temp("ds_crash_cleared");
         put(p, "");
-        assert(allow_inject(p));
-        assert(read_sentinel(p) == std::string{kArmed});
+        DS_REQUIRE(allow_inject(p));
+        DS_REQUIRE(read_sentinel(p) == std::string{kArmed});
     }
 
     // Unknown content (older builds wrote plain crash payloads): treat as crash.
     {
         auto p = make_temp("ds_crash_legacy");
         put(p, "{crash}");
-        assert(allow_inject(p));
-        assert(read_sentinel(p) == std::string{kArmed});
+        DS_REQUIRE(allow_inject(p));
+        DS_REQUIRE(read_sentinel(p) == std::string{kArmed});
     }
 
     std::puts("test_crash_sentinel: OK");

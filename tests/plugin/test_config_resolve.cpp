@@ -4,9 +4,9 @@
 #include "config/ConfigSchema.hpp"
 #include "plugins/plugin_core_vm/VmConfig.hpp"
 #include "plugins/plugin_core_vm/GameLuaType.hpp"
-#include <cassert>
 #include <cstdio>
 #include <vector>
+#include "support/test_assert.hpp"
 
 using namespace ds::plugin;
 using namespace ds::config;
@@ -42,7 +42,7 @@ private:
 void test_resolve_respects_source_order_and_whitelist() {
     ConfigSchemaRegistry reg;
     // SaveFile + ModinfoDefault only — EnvOrCmd blocked
-    assert(reg.add(bool_key(
+    DS_REQUIRE(reg.add(bool_key(
         "EnableNetSim", false,
         static_cast<ConfigSourceMask>(ConfigSource::SaveFile) |
             static_cast<ConfigSourceMask>(ConfigSource::ModinfoDefault))));
@@ -63,20 +63,20 @@ void test_resolve_respects_source_order_and_whitelist() {
     const std::vector<const IConfigSource *> sources = {&modinfo, &save_src, &env_src};
     auto resolved = resolve(reg, ctx, sources);
 
-    assert(resolved.view.count("EnableNetSim") == 1);
-    assert(resolved.view.at("EnableNetSim").b == true);
-    assert(resolved.source_of.at("EnableNetSim") == ConfigSource::SaveFile);
+    DS_REQUIRE(resolved.view.count("EnableNetSim") == 1);
+    DS_REQUIRE(resolved.view.at("EnableNetSim").b == true);
+    DS_REQUIRE(resolved.source_of.at("EnableNetSim") == ConfigSource::SaveFile);
     printf("PASS: resolve_respects_source_order_and_whitelist\n");
 }
 
 void test_resolve_empty_sources_yields_empty_view() {
     ConfigSchemaRegistry reg;
-    assert(reg.add(bool_key("NetworkOpt", true, kConfigSourceAll)));
+    DS_REQUIRE(reg.add(bool_key("NetworkOpt", true, kConfigSourceAll)));
     CascadeContext ctx;
     std::vector<const IConfigSource *> sources;
     auto resolved = resolve(reg, ctx, sources);
-    assert(resolved.view.empty());
-    assert(resolved.source_of.empty());
+    DS_REQUIRE(resolved.view.empty());
+    DS_REQUIRE(resolved.source_of.empty());
     printf("PASS: resolve_empty_sources_yields_empty_view\n");
 }
 
@@ -94,11 +94,11 @@ void test_resolve_env_lua_vm_type_aliases() {
     const std::vector<const IConfigSource *> sources = {&env_src};
     auto resolved = resolve(reg, ctx, sources);
 
-    assert(resolved.view.count("LuaVmType") == 1);
-    assert(resolved.view.at("LuaVmType").type == ConfigValueType::String);
-    assert(resolved.view.at("LuaVmType").s == "lua51");
-    assert(resolved.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
-    assert(resolved.view.count("EnabledGenGC") == 0);
+    DS_REQUIRE(resolved.view.count("LuaVmType") == 1);
+    DS_REQUIRE(resolved.view.at("LuaVmType").type == ConfigValueType::String);
+    DS_REQUIRE(resolved.view.at("LuaVmType").s == "lua51");
+    DS_REQUIRE(resolved.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
+    DS_REQUIRE(resolved.view.count("EnabledGenGC") == 0);
 
     // Emulate EnvOrCmdSource::read for jit_gen → LuaVmType=jit + EnabledGenGC=true.
     ConfigView env_jit_gen;
@@ -108,11 +108,11 @@ void test_resolve_env_lua_vm_type_aliases() {
     const std::vector<const IConfigSource *> sources_gen = {&env_gen};
     auto resolved_gen = resolve(reg, ctx, sources_gen);
 
-    assert(resolved_gen.view.at("LuaVmType").s == "jit");
-    assert(resolved_gen.view.at("EnabledGenGC").type == ConfigValueType::Bool);
-    assert(resolved_gen.view.at("EnabledGenGC").b == true);
-    assert(resolved_gen.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
-    assert(resolved_gen.source_of.at("EnabledGenGC") == ConfigSource::EnvOrCmd);
+    DS_REQUIRE(resolved_gen.view.at("LuaVmType").s == "jit");
+    DS_REQUIRE(resolved_gen.view.at("EnabledGenGC").type == ConfigValueType::Bool);
+    DS_REQUIRE(resolved_gen.view.at("EnabledGenGC").b == true);
+    DS_REQUIRE(resolved_gen.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
+    DS_REQUIRE(resolved_gen.source_of.at("EnabledGenGC") == ConfigSource::EnvOrCmd);
 
     // _51 alias accepted by schema.allowed.
     ConfigView env_51;
@@ -120,16 +120,16 @@ void test_resolve_env_lua_vm_type_aliases() {
     FakeSource env_u51(ConfigSource::EnvOrCmd, env_51);
     const std::vector<const IConfigSource *> sources_51 = {&env_u51};
     auto resolved_51 = resolve(reg, ctx, sources_51);
-    assert(resolved_51.view.at("LuaVmType").s == "_51");
+    DS_REQUIRE(resolved_51.view.at("LuaVmType").s == "_51");
 
     // Without VM schema, LuaVmType is unknown and ignored (soft optional).
     ConfigSchemaRegistry base_only;
     RegisterCoreOptionSchema(base_only);
-    assert(base_only.find("LuaVmType") == nullptr);
+    DS_REQUIRE(base_only.find("LuaVmType") == nullptr);
     FakeSource env_no_schema(ConfigSource::EnvOrCmd, env_lua51);
     const std::vector<const IConfigSource *> sources_no = {&env_no_schema};
     auto resolved_no = resolve(base_only, ctx, sources_no);
-    assert(resolved_no.view.count("LuaVmType") == 0);
+    DS_REQUIRE(resolved_no.view.count("LuaVmType") == 0);
 
     printf("PASS: resolve_env_lua_vm_type_aliases\n");
 }
@@ -157,17 +157,17 @@ void test_identity_keys_luajit_only() {
     const std::vector<const IConfigSource *> sources = {&lj, &save, &env};
     auto resolved = resolve(reg, ctx, sources);
 
-    assert(resolved.view.at("modmain_path").s == "mods/workshop-123/modmain.lua");
-    assert(resolved.view.at("modname").s == "workshop-123");
-    assert(resolved.view.at("modid").s == "123");
-    assert(resolved.source_of.at("modmain_path") == ConfigSource::LuajitConfig);
-    assert(resolved.source_of.at("modname") == ConfigSource::LuajitConfig);
-    assert(resolved.source_of.at("modid") == ConfigSource::LuajitConfig);
+    DS_REQUIRE(resolved.view.at("modmain_path").s == "mods/workshop-123/modmain.lua");
+    DS_REQUIRE(resolved.view.at("modname").s == "workshop-123");
+    DS_REQUIRE(resolved.view.at("modid").s == "123");
+    DS_REQUIRE(resolved.source_of.at("modmain_path") == ConfigSource::LuajitConfig);
+    DS_REQUIRE(resolved.source_of.at("modname") == ConfigSource::LuajitConfig);
+    DS_REQUIRE(resolved.source_of.at("modid") == ConfigSource::LuajitConfig);
 
     // Accessors fall back to view
-    assert(resolved.modmain_path() == "mods/workshop-123/modmain.lua");
-    assert(resolved.modname() == "workshop-123");
-    assert(resolved.modid() == "123");
+    DS_REQUIRE(resolved.modmain_path() == "mods/workshop-123/modmain.lua");
+    DS_REQUIRE(resolved.modname() == "workshop-123");
+    DS_REQUIRE(resolved.modid() == "123");
 
     printf("PASS: identity_keys_luajit_only\n");
 }
@@ -194,17 +194,17 @@ void test_enabled_gen_gc_excludes_luajit() {
     {
         const std::vector<const IConfigSource *> sources = {&def, &luajit};
         auto resolved = resolve(reg, ctx, sources);
-        assert(resolved.view.at("EnabledGenGC").b == false);
-        assert(resolved.source_of.at("EnabledGenGC") == ConfigSource::ModinfoDefault);
-        assert(!ds::core_vm::enabled_gen_gc(resolved));
+        DS_REQUIRE(resolved.view.at("EnabledGenGC").b == false);
+        DS_REQUIRE(resolved.source_of.at("EnabledGenGC") == ConfigSource::ModinfoDefault);
+        DS_REQUIRE(!ds::core_vm::enabled_gen_gc(resolved));
     }
     // SaveFile may set it.
     {
         const std::vector<const IConfigSource *> sources = {&def, &luajit, &save_src};
         auto resolved = resolve(reg, ctx, sources);
-        assert(resolved.view.at("EnabledGenGC").b == true);
-        assert(resolved.source_of.at("EnabledGenGC") == ConfigSource::SaveFile);
-        assert(ds::core_vm::enabled_gen_gc(resolved));
+        DS_REQUIRE(resolved.view.at("EnabledGenGC").b == true);
+        DS_REQUIRE(resolved.source_of.at("EnabledGenGC") == ConfigSource::SaveFile);
+        DS_REQUIRE(ds::core_vm::enabled_gen_gc(resolved));
     }
     printf("PASS: enabled_gen_gc_excludes_luajit\n");
 }
@@ -225,7 +225,7 @@ void test_resolved_config_accessors() {
             static_cast<ConfigSourceMask>(ConfigSource::ModinfoDefault) |
             static_cast<ConfigSourceMask>(ConfigSource::SaveFile) |
             static_cast<ConfigSourceMask>(ConfigSource::EnvOrCmd);
-        assert(reg.add(std::move(e)));
+        DS_REQUIRE(reg.add(std::move(e)));
     }
 
     ConfigView values;
@@ -243,12 +243,12 @@ void test_resolved_config_accessors() {
     const std::vector<const IConfigSource *> sources = {&lj, &env};
     auto resolved = resolve(reg, ctx, sources);
 
-    assert(ds::core_vm::disable_jit_when_server(resolved));
-    assert(ds::core_vm::enabled_gen_gc(resolved));
-    assert(ds::core_vm::lua_vm_type_string(resolved) == "jit");
-    assert(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit_gen); // EnabledGenGC wins
-    assert(resolved.string_opt("AngleBackend") == std::optional<std::string_view>{"vulkan"});
-    assert(resolved.modname() == "workshop-9");
+    DS_REQUIRE(ds::core_vm::disable_jit_when_server(resolved));
+    DS_REQUIRE(ds::core_vm::enabled_gen_gc(resolved));
+    DS_REQUIRE(ds::core_vm::lua_vm_type_string(resolved) == "jit");
+    DS_REQUIRE(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit_gen); // EnabledGenGC wins
+    DS_REQUIRE(resolved.string_opt("AngleBackend") == std::optional<std::string_view>{"vulkan"});
+    DS_REQUIRE(resolved.modname() == "workshop-9");
 
     printf("PASS: resolved_config_accessors\n");
 }
@@ -269,10 +269,10 @@ void test_resolve_without_vm_schema_omits_vm_keys() {
     const std::vector<const IConfigSource *> sources = {&modinfo};
     auto resolved = resolve(reg, ctx, sources);
 
-    assert(resolved.view.count("LuaVmType") == 0);
-    assert(resolved.view.count("EnabledGenGC") == 0);
-    assert(resolved.view.count("DisableJITWhenServer") == 0);
-    assert(resolved.view.count("AlwaysEnableMod") == 0);
+    DS_REQUIRE(resolved.view.count("LuaVmType") == 0);
+    DS_REQUIRE(resolved.view.count("EnabledGenGC") == 0);
+    DS_REQUIRE(resolved.view.count("DisableJITWhenServer") == 0);
+    DS_REQUIRE(resolved.view.count("AlwaysEnableMod") == 0);
 
     printf("PASS: resolve_without_vm_schema_omits_vm_keys\n");
 }
@@ -300,21 +300,21 @@ void test_first_resolve_applies_lua_vm_type() {
     {
         const std::vector<const IConfigSource *> sources = {&modinfo, &env_src};
         auto resolved = resolve(reg, ctx, sources);
-        assert(resolved.view.count("LuaVmType") == 1);
-        assert(resolved.view.at("LuaVmType").s == "jit");
-        assert(resolved.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
-        assert(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit);
+        DS_REQUIRE(resolved.view.count("LuaVmType") == 1);
+        DS_REQUIRE(resolved.view.at("LuaVmType").s == "jit");
+        DS_REQUIRE(resolved.source_of.at("LuaVmType") == ConfigSource::EnvOrCmd);
+        DS_REQUIRE(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit);
     }
 
     // refresh_cascade_after_plugins re-adds core.vm's identical entries; that
     // must neither grow the schema nor clobber the env-resolved value.
     const auto size_before = reg.size();
     RegisterCoreVmOptionSchema(reg);
-    assert(reg.size() == size_before);
+    DS_REQUIRE(reg.size() == size_before);
     {
         const std::vector<const IConfigSource *> sources = {&env_src};
         auto resolved = resolve(reg, ctx, sources);
-        assert(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit);
+        DS_REQUIRE(ds::core_vm::get_lua_vm_type(resolved) == GameLuaType::jit);
     }
 
     printf("PASS: first_resolve_applies_lua_vm_type\n");

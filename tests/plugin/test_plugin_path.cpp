@@ -1,11 +1,11 @@
 #include "core/PluginPath.hpp"
 #include <algorithm>
-#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include "support/test_assert.hpp"
 
 namespace fs = std::filesystem;
 using namespace ds::plugin;
@@ -43,8 +43,8 @@ static void test_env_root_wins() {
     set_env(kPluginDirEnv, env_dir.string().c_str());
 
     auto dirs = default_plugin_search_dirs();
-    assert(dirs.size() == 1);
-    assert(fs::equivalent(dirs.front(), env_dir));
+    DS_REQUIRE(dirs.size() == 1);
+    DS_REQUIRE(fs::equivalent(dirs.front(), env_dir));
 
     clear_root_state();
     fs::remove_all(env_dir);
@@ -59,8 +59,8 @@ static void test_injector_root_without_env() {
     set_injector_module_dir_for_test(mod_root);
 
     auto dirs = default_plugin_search_dirs();
-    assert(dirs.size() == 1);
-    assert(fs::equivalent(dirs.front(), mod_root / "plugins"));
+    DS_REQUIRE(dirs.size() == 1);
+    DS_REQUIRE(fs::equivalent(dirs.front(), mod_root / "plugins"));
 
     clear_root_state();
     fs::remove_all(mod_root);
@@ -75,7 +75,7 @@ static void test_bad_env_does_not_fall_back() {
     set_injector_module_dir_for_test(mod_root);
     set_env(kPluginDirEnv, (mod_root / "missing").string().c_str());
 
-    assert(default_plugin_search_dirs().empty());
+    DS_REQUIRE(default_plugin_search_dirs().empty());
 
     clear_root_state();
     fs::remove_all(mod_root);
@@ -85,25 +85,25 @@ static void test_bad_env_does_not_fall_back() {
 static void test_mod_deps_dir_sibling() {
     auto plugins = fs::path("C:/mods/workshop-1/plugins");
     auto mod = mod_root_from_plugins_dir(plugins);
-    assert(mod.filename() == "workshop-1" || mod.generic_string().ends_with("workshop-1"));
+    DS_REQUIRE(mod.filename() == "workshop-1" || mod.generic_string().ends_with("workshop-1"));
     auto d = mod_deps_dir(mod);
-    assert(d.filename() == "deps");
-    assert(d.parent_path() == mod);
+    DS_REQUIRE(d.filename() == "deps");
+    DS_REQUIRE(d.parent_path() == mod);
     // NOT under plugins/
-    assert(d.parent_path().filename() != "plugins");
+    DS_REQUIRE(d.parent_path().filename() != "plugins");
     // plugins_root/deps layout is wrong for shared runtimes
-    assert(d != plugins / "deps");
+    DS_REQUIRE(d != plugins / "deps");
     printf("PASS: mod_deps_dir_sibling\n");
 }
 
 static void test_configure_dll_search_idempotent() {
     reset_plugin_dll_search_for_test();
-    assert(plugin_dll_search_roots().empty());
+    DS_REQUIRE(plugin_dll_search_roots().empty());
     auto mod = make_temp("ds_plugin_path_deps");
     auto plugins = mod / "plugins";
     fs::create_directories(plugins);
     fs::create_directories(mod / "deps");
-    assert(configure_plugin_dll_search({plugins}));
+    DS_REQUIRE(configure_plugin_dll_search({plugins}));
     // loadlib() walks this list instead of probing the ELF global symbol scope,
     // so it must hold the roots the caller got a module from: <mod>/deps (canonical)
     // and the plugins root itself. plugins/deps does not exist here -> not listed.
@@ -111,14 +111,14 @@ static void test_configure_dll_search_idempotent() {
     auto has = [&](const fs::path &p) {
         return std::find(roots.begin(), roots.end(), p) != roots.end();
     };
-    assert(has(mod / "deps"));
-    assert(has(plugins));
-    assert(!has(plugins / "deps"));
+    DS_REQUIRE(has(mod / "deps"));
+    DS_REQUIRE(has(plugins));
+    DS_REQUIRE(!has(plugins / "deps"));
     const auto count = roots.size();
-    assert(configure_plugin_dll_search({plugins})); // second call OK
-    assert(plugin_dll_search_roots().size() == count); // idempotent, no duplicates
+    DS_REQUIRE(configure_plugin_dll_search({plugins})); // second call OK
+    DS_REQUIRE(plugin_dll_search_roots().size() == count); // idempotent, no duplicates
     reset_plugin_dll_search_for_test();
-    assert(plugin_dll_search_roots().empty());
+    DS_REQUIRE(plugin_dll_search_roots().empty());
     printf("PASS: configure_dll_search_idempotent\n");
 }
 
@@ -133,29 +133,29 @@ static void test_deps_registration_contract() {
     fs::create_directories(plugins);
     fs::create_directories(mod / "deps");
 
-    assert(mod_root_from_plugins_dir(plugins) == mod);
-    assert(mod_deps_dir(mod) == mod / "deps");
-    assert(fs::is_directory(mod / "deps"));
-    assert(configure_plugin_dll_search({plugins}));
+    DS_REQUIRE(mod_root_from_plugins_dir(plugins) == mod);
+    DS_REQUIRE(mod_deps_dir(mod) == mod / "deps");
+    DS_REQUIRE(fs::is_directory(mod / "deps"));
+    DS_REQUIRE(configure_plugin_dll_search({plugins}));
 
     // missing deps still OK
     auto mod2 = make_temp("ds_mod_root_nodeps");
     fs::create_directories(mod2 / "plugins");
-    assert(configure_plugin_dll_search({mod2 / "plugins"}));
+    DS_REQUIRE(configure_plugin_dll_search({mod2 / "plugins"}));
 
     // bare env override (leaf not "plugins") still uses that dir as mod root
     auto bare = make_temp("ds_plugin_path_bare");
     fs::create_directories(bare / "deps");
-    assert(mod_root_from_plugins_dir(bare) == bare);
-    assert(mod_deps_dir(bare) == bare / "deps");
-    assert(configure_plugin_dll_search({bare}));
+    DS_REQUIRE(mod_root_from_plugins_dir(bare) == bare);
+    DS_REQUIRE(mod_deps_dir(bare) == bare / "deps");
+    DS_REQUIRE(configure_plugin_dll_search({bare}));
 
     // deps never a plugin search root
     set_env(kPluginDirEnv, plugins.string().c_str());
     auto dirs = default_plugin_search_dirs();
-    assert(!dirs.empty());
+    DS_REQUIRE(!dirs.empty());
     for (const auto &d : dirs) {
-        assert(d.filename() != "deps");
+        DS_REQUIRE(d.filename() != "deps");
     }
 
     set_env(kPluginDirEnv, "");
@@ -168,7 +168,7 @@ static void test_missing_root_does_not_crash() {
     clear_root_state();
     set_injector_module_dir_for_test(dir);
     auto dirs = default_plugin_search_dirs();
-    assert(dirs.empty());
+    DS_REQUIRE(dirs.empty());
     clear_root_state();
     fs::remove_all(dir);
     printf("PASS: missing_root_does_not_crash\n");
@@ -191,12 +191,12 @@ static void test_list_plugin_packages() {
     std::ofstream(dir / "plugin_flat.dll") << "x";
 
     auto pkgs = list_plugin_packages(dir.string());
-    assert(pkgs.size() == 2);
-    assert(pkgs[0] == "plugin_a");
-    assert(pkgs[1] == "plugin_c"); // deterministic (sorted)
+    DS_REQUIRE(pkgs.size() == 2);
+    DS_REQUIRE(pkgs[0] == "plugin_a");
+    DS_REQUIRE(pkgs[1] == "plugin_c"); // deterministic (sorted)
 
-    assert(list_plugin_packages("").empty());
-    assert(list_plugin_packages((dir / "missing").string()).empty());
+    DS_REQUIRE(list_plugin_packages("").empty());
+    DS_REQUIRE(list_plugin_packages((dir / "missing").string()).empty());
     fs::remove_all(dir);
     printf("PASS: list_plugin_packages\n");
 }
@@ -212,12 +212,12 @@ static void test_list_installed_plugin_packages_fallback() {
     // MODROOT-relative paths, so the hint does not resolve on disk; the native
     // search roots must answer instead of a silently empty registry.
     auto pkgs = list_installed_plugin_packages("workshop-3444078585/plugins/");
-    assert(pkgs.size() == 1);
-    assert(pkgs[0] == "plugin_fps_render");
+    DS_REQUIRE(pkgs.size() == 1);
+    DS_REQUIRE(pkgs[0] == "plugin_fps_render");
 
     // A resolvable hint is used verbatim.
     auto direct = list_installed_plugin_packages((mod_root / "plugins").string());
-    assert(direct.size() == 1 && direct[0] == "plugin_fps_render");
+    DS_REQUIRE(direct.size() == 1 && direct[0] == "plugin_fps_render");
 
     clear_root_state();
     fs::remove_all(mod_root);
