@@ -22,6 +22,30 @@ if not global or global.rawget(global, "WORLDGEN_MAIN") == nil then
     return
 end
 
+-- LuaJIT mode: the string.dump mod blacklist must be installed here as well.
+-- The worldgen pass loads only modworldgenmain.lua (scripts/mods.lua), so the
+-- hook installed by modmain's plugin phase never runs for it. Real LuaJIT is
+-- detected with the same require("jit") probe; the shared script installs itself
+-- when modimport runs it in this mod env. A missing game API is an initialization
+-- error, never a silent skip.
+if type(global.pcall) ~= "function" or type(global.require) ~= "function" then
+    global.error("[luajit] Cannot initialize mod blacklist: pcall/require", 0)
+end
+local has_luajit = global.pcall(global.require, "jit") and true or false
+if has_luajit then
+    if type(modimport) ~= "function" then
+        global.error("[luajit] Cannot initialize mod blacklist: modimport", 0)
+    end
+    -- modimport runs the script in this mod env (GLOBAL + modname), where it installs
+    -- itself; this happens before the HideGlobalJIT hiding below.
+    modimport("scripts/luajit_mod_blacklist")
+    local manager = global.ModManager
+        and global.rawget(global.ModManager, "_ds_luajit_mod_blacklist_installed")
+    if type(manager) ~= "table" then
+        global.error("[luajit] mod blacklist did not install (scripts/luajit_mod_blacklist.lua)", 0)
+    end
+end
+
 local hide = true
 if type(global.GetModConfigData) == "function" then
     local ok, value = global.pcall(global.GetModConfigData, "HideGlobalJIT")

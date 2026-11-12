@@ -1,7 +1,9 @@
--- jit.runtime — ForceJitOpt + EnabledJIT + HideGlobalJIT + ModBlackList/frostxx kleiloadlua hook.
+-- jit.runtime — ForceJitOpt + EnabledJIT + HideGlobalJIT + frostxx/encrypted kleiloadlua hook.
 -- Priority 70: HideGlobalJIT last among jit-related (after debug.profiler prio 20).
 --
 -- Reads ctx.encrypted_mod_manager / ctx.frostxx_mods produced by jit.tailcall (prio 10).
+-- The string.dump mod blacklist lives in scripts/luajit_mod_blacklist.lua; this file only
+-- re-wraps kleiloadlua with that manager (ctx.mod_blacklist) so its refusal stays outermost.
 
 local function get_config(ctx, key)
     local config = ctx and ctx.config
@@ -135,11 +137,6 @@ local function HideGlobalJIT(ctx)
 end
 
 local function HookKleiloadlua(encryptedMods, frostxxMods, injector, ctx)
-    local enbaleBlackList = get_config(ctx, "ModBlackList")
-    local blacklists = {
-        --- format
-        --- 'workshop-<modid>'
-    }
     local function decrypt_file(filename)
         if not injector then
             return
@@ -151,14 +148,12 @@ local function HookKleiloadlua(encryptedMods, frostxxMods, injector, ctx)
         end
     end
 
-    if enbaleBlackList then
-        enbaleBlackList = #blacklists > 0
-    end
     local hmask = table_hmask(frostxxMods)
-    -- Heuristically detected encrypted mods are treated like blacklisted ones: their
-    -- chunks get PROTO_NOJIT so the encrypted loader never runs under the JIT.
+    -- Heuristically detected encrypted mods get PROTO_NOJIT so the encrypted
+    -- loader never runs under the JIT. This is not the persistent string.dump
+    -- blacklist (scripts/luajit_mod_blacklist.lua) and never feeds it.
     local emask = table_hmask(encryptedMods)
-    if enbaleBlackList or hmask > 0 or emask > 0 then
+    if hmask > 0 or emask > 0 then
         local _kleiloadlua = kleiloadlua
         local jit_table = (ctx and ctx.jit) or jit
 
@@ -181,8 +176,7 @@ local function HookKleiloadlua(encryptedMods, frostxxMods, injector, ctx)
 
             local m = _kleiloadlua(filename, ...)
             if modname and type(m) == "function" and jit_table and jit_table.off then
-                if (enbaleBlackList and blacklists[modname])
-                    or (emask > 0 and encryptedMods[modname]) then
+                if emask > 0 and encryptedMods[modname] then
                     jit_table.off(m, true)
                 end
             end
@@ -236,6 +230,13 @@ return {
         local encrypted = (manager and manager.EncryptedMods) or {}
         local frostxx = (ctx and ctx.frostxx_mods) or {}
         HookKleiloadlua(encrypted, frostxx, injector, ctx)
+
+        -- Re-install the mod blacklist loader wrapper on top of the chain above, so a
+        -- recorded mod is refused before frostxx decryption or any file load happens.
+        local blacklist = ctx and ctx.mod_blacklist
+        if blacklist and type(blacklist.wrap_loader) == "function" then
+            blacklist:wrap_loader()
+        end
 
         -- Hide global jit AFTER profiler / other jit.* requires in this phase.
         HideGlobalJIT(ctx)

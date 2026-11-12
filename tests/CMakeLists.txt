@@ -544,6 +544,15 @@ set_tests_properties(plugin_package_load PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 add_test(
+    NAME plugin_mod_blacklist
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_mod_blacklist.py
+)
+set_tests_properties(plugin_mod_blacklist PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+add_test(
     NAME plugin_option_bake
     COMMAND ${CMAKE_COMMAND} -E env
         REPO_ROOT=${CMAKE_SOURCE_DIR}

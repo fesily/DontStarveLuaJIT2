@@ -213,15 +213,6 @@ configuration_options = {
     --     default = 15
     -- },
     {
-        name = "ModBlackList",
-        label = translate({ en = "Mod JIT Blacklist", zh = "MODJit黑名单" }),
-        hover = translate({ en = "Some mods may not be appropriate for JIT", zh = "有些mod可能写的特别,不合适jit模式" }),
-        options = toggle,
-        default = false,
-        disabled_value = false,
-        disabled_by = disable_by_lua51
-    },
-    {
         name = "DisableJITWhenServer",
         label = translate({ en = "Disable JIT on Server", zh = "服务器禁用luajit" }),
         hover = translate({ en = "Disable luajit on the server process", zh = "服务器进程禁用luajit" }),

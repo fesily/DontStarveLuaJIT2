@@ -58,6 +58,19 @@ local function main()
 	local os_is_windows = _G.IsWin32()
 	local GameInjector = LoadGameInjector()
 
+	-- LuaJIT mode always enforces the string.dump mod blacklist, independent of
+	-- HideGlobalJIT / EnabledJIT / luajit_compatible. The script installs itself from
+	-- this mod's env (modimport) and publishes the manager on ModManager; install it
+	-- before the plugin host so jit.runtime can keep the loader wrapper outermost.
+	local mod_blacklist = nil
+	if hasluajit then
+		modimport("scripts/luajit_mod_blacklist")
+		mod_blacklist = _G.rawget(ModManager, "_ds_luajit_mod_blacklist_installed")
+		if type(mod_blacklist) ~= "table" then
+			error("[luajit] mod blacklist did not install (scripts/luajit_mod_blacklist.lua)", 2)
+		end
+	end
+
 	local ModManagerFile = { filepath = nil, json_mode = true }
 	function ModManagerFile:read_file()
 		if not self.filepath then return end
@@ -754,6 +767,9 @@ local function main()
 				jit = env.jit or jit,
 				mod_env = env,
 				config_for_mod = config_for_mod,
+				-- Shared string.dump blacklist manager (installed above when LuaJIT
+				-- is the VM); jit.runtime re-wraps kleiloadlua with it.
+				mod_blacklist = mod_blacklist,
 			}
 			print(string.format(
 				"[luajit][plugin] resolve has_luajit=%s is_client=%s LuaVmType=%s",

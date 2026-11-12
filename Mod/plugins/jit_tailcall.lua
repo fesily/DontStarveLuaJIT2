@@ -2,8 +2,8 @@
 -- compat.frostxx encrypt detect is folded here (thin merge per §7.3 / inventory).
 -- Priority 10: runs before debug.profiler (20) and jit.runtime (70).
 --
--- Stores EncryptedModManager on ctx: jit.runtime reads EncryptedMods (JIT disabled for
--- those mods, same as the blacklist) and frostxx_mods (HookKleiloadlua decrypt path).
+-- Stores EncryptedModManager on ctx: jit.runtime reads EncryptedMods (their chunks get
+-- jit.off(m, true)) and frostxx_mods (HookKleiloadlua decrypt path).
 
 local function make_file_io()
     local ModManagerFile = { filepath = nil, json_mode = true }
@@ -206,7 +206,7 @@ return {
     soft_depends = {},
     conflicts = {},
     phases = "AfterModMain",
-    -- AlwaysOn when has_luajit: encrypted-mod detection feeds the jit.runtime blacklist path.
+    -- AlwaysOn when has_luajit: encrypted-mod detection feeds jit.runtime's encrypted hook.
     options = { always = true },
     support_reload = false,
     priority = 10,
