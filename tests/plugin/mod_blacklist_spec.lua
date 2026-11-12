@@ -538,21 +538,31 @@ local function run_reload()
 	write_fixture(MOD_A, "modinfo.lua", [[name = "A"]])
 	write_fixture(MOD_B, "modmain.lua", [[io.open("unsafedata/marker_b_reload.txt", "w"):write("ran")]])
 
-	for _, rel in ipairs({ "modmain.lua", "modworldgenmain.lua", "scripts/sub.lua" }) do
+	-- Entry files carry the incompatibility error, which disables the mod.
+	for _, rel in ipairs({ "modmain.lua", "modworldgenmain.lua" }) do
 		local path = mod_path(MOD_A, rel)
 		local chunk = assert_func(sb.global.kleiloadlua(path), "refusal chunk for " .. rel)
 		local ok, err = run_in_env(chunk, env_a)
 		expect_refusal(ok, err, MOD_A)
 		assert_eq(sb.engine.calls[path], nil, "the underlying loader must not run for " .. rel)
 	end
+	-- Other scripts of a recorded mod are replaced by an empty chunk: their code
+	-- never runs, but a late engine require must not abort on our error either.
+	do
+		local path = mod_path(MOD_A, "scripts/sub.lua")
+		local chunk = assert_func(sb.global.kleiloadlua(path), "blocked chunk for the sub-file")
+		local ok = run_in_env(chunk, env_a)
+		assert_eq(ok, true, "a non-entry script is blocked silently, not refused")
+		assert_eq(sb.engine.calls[path], nil, "the underlying loader must not run for the sub-file")
+	end
 	assert_true(not data_file_exists("unsafedata/marker_a_modmain.txt"), "refused modmain must not run")
 	assert_true(not data_file_exists("unsafedata/marker_a_worldgen.txt"), "refused modworldgenmain must not run")
-	assert_true(not data_file_exists("unsafedata/marker_a_sub.txt"), "refused sub-file must not run")
+	assert_true(not data_file_exists("unsafedata/marker_a_sub.txt"), "blocked sub-file must not run")
 
 	-- The refusal chunk closes over its report/error functions: a bare env (no
 	-- print/error/string) must still report and raise.
 	do
-		local bare_chunk = assert_func(sb.global.kleiloadlua(mod_path(MOD_A, "main.lua")))
+		local bare_chunk = assert_func(sb.global.kleiloadlua(mod_path(MOD_A, "modmain.lua")))
 		local ok_bare, err_bare = run_in_env(bare_chunk, {})
 		expect_refusal(ok_bare, err_bare, MOD_A)
 	end

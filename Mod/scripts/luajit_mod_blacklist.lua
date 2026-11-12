@@ -31,7 +31,9 @@
 -- The manager installs, once per process:
 --   * a copied per-mod env string table whose dump front end blames that mod,
 --   * a global string.dump wrapper (GLOBAL.string.dump / engine Lua wrappers),
---   * a kleiloadlua wrapper that returns a refusal chunk for recorded mods,
+--   * a kleiloadlua wrapper that refuses a recorded mod's entry files (a chunk that
+--     reports and raises) and blanks every other script of it (an empty chunk: the
+--     code never runs, but a late engine require cannot abort on our error),
 --   * a ModManager:InitializeModMain hook that registers every mod env.
 -- It is enforced whenever LuaJIT is the VM: no config key, no luajit_compatible
 -- exemption, no HideGlobalJIT interaction. Heuristic *encrypted* mod detection
