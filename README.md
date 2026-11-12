@@ -90,7 +90,7 @@ Linux：
 curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.sh | sh
 ```
 
-脚本会自动：挑最新 release（`preview` 或正式版取较新者）→ 从 Steam 安装位置（Windows 注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf`，与 `tools/steam_env.py` 同一套规则）定位游戏根目录 → 把包解到目标目录 → 运行包内安装脚本（装壳；Linux 另写 marker 并做自检）。
+脚本会自动：挑最新 release（`preview` 或正式版取较新者）→ 从 Steam 安装位置（Windows 注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf`，与 `tools/steam_env.py` 同一套规则）定位游戏根目录 → 把包解到目标目录 → 运行包内安装脚本（装壳）→ 把本次安装的模块绝对路径**覆写**进 `data/unsafedata/ds_luajit_injector.path`（Windows/Linux 两个入口都写；Linux 另做自检）。
 
 目标目录：游戏所在库存在工坊内容（`…\steamapps\workshop\content\322330`）时，Windows 装到 `…\workshop\content\322330\3444078585`（订阅者实际加载的目录，`install.bat` 按 `workshop\content\322330` 分支把壳装回同库的 `common\Don't Starve Together\bin64`）；没有工坊内容时退回 `<游戏>/mods/DontStarveLuaJit2`。
 
@@ -115,7 +115,7 @@ curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/ins
 1. 先在游戏根目录下的mods文件夹中创建一个新的文件夹，比如`DontStarveLuaJit2`（**大小写敏感**；也可直接用下面别名列表里的其它拼写，如 `luajit`、`Luajit2`）
 2. 解压后里面是一个 `Mod` 文件夹：把 **`Mod` 文件夹里面的内容**（`modinfo.lua`、`modmain.lua`、`plugins/`、`deps/`、`bin64/`、`install.bat` 等）复制到该目录，确认 `…/mods/DontStarveLuaJit2/modmain.lua` 直接存在（**不要**复制成 `mods/DontStarveLuaJit2/Mod/modmain.lua`）
 
-> 目录名说明：真实 Injector 的查找顺序是 `环境变量 → data/unsafedata/ds_luajit_injector.path → 扫描 mods 目录`，扫描只认这些目录名：`workshop-3444078585`、`3444078585`、`luajit`、`Luajit`、`luajit2`、`Luajit2`、`DontStarveLuaJit2`、`dontstarveluajit2`、`DontStarveLuaJIT2`（Windows 大小写不敏感，Linux/macOS 敏感；几种大小写混排的拼写只是为兼容旧文档/旧安装才并列列出，别指望大小写不敏感兜底）。用其它名字时扫描不会命中，也没人替你写 marker：必须自己设环境变量 `DS_LUAJIT_INJECTOR`（指向 mod 根的 `Injector.dll`）或 `DS_LUAJIT_INJECTOR_DIR`，否则不会注入（壳解析成功后会顺手把 marker 补写到 `data/unsafedata/ds_luajit_injector.path`，之后就不用再设了）。
+> 目录名说明：真实 Injector 的查找顺序是 `环境变量 → data/unsafedata/ds_luajit_injector.path → 扫描 mods 目录`，扫描只认这些目录名：`workshop-3444078585`、`3444078585`、`luajit`、`Luajit`、`luajit2`、`Luajit2`、`DontStarveLuaJit2`、`dontstarveluajit2`、`DontStarveLuaJIT2`（Windows 大小写不敏感，Linux/macOS 敏感；几种大小写混排的拼写只是为兼容旧文档/旧安装才并列列出，别指望大小写不敏感兜底）。用其它名字时扫描不会命中：上面那几种自动安装都会把本次安装的模块绝对路径**覆写**进 marker，因此自动安装的目录名可以随便起；手动安装时得自己设环境变量 `DS_LUAJIT_INJECTOR`（指向 mod 根的 `Injector.dll`）或 `DS_LUAJIT_INJECTOR_DIR`，或在 `data/unsafedata/ds_luajit_injector.path` 里写一行绝对路径，否则不会注入（壳解析成功后会顺手把 marker 补写到同一位置，之后就不用再设了）。
 
 ## 2.注入部分：
 
@@ -124,8 +124,9 @@ curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/ins
 > 排查：每次启动都会把解析来源/模块路径/加载结果写到 `<游戏>/data/unsafedata/ds_luajit_boot.log`（Linux 可随时 `./install_linux.sh selftest` 做一次实测自检）。装了没效果时先看这个日志。
 
 ### 方法 1（自动安装）
-- Windows：运行 mod 文件夹内的 `install.bat`。它**只做一件事**——把包内 `bin64\windows\Winmm.dll` 复制到游戏 `bin64`（内容一致时直接跳过，重复运行结果不变）：不迁移、不删除、不写任何其它文件
-- Linux：运行 `./install_linux.sh`（可能需要先执行 `chmod +x ./install_linux.sh`）；它只装壳——把包内 `bin64/linux/lib64/libInjector.so` 放进游戏 `bin64/lib64`，并把启动器改写为 `LD_PRELOAD` 包装（原二进制保留为 `*_1`）
+- Windows：运行 mod 文件夹内的 `install.bat`。它只做两件事——把包内 `bin64\windows\Winmm.dll` 复制到游戏 `bin64`（内容一致时直接跳过，重复运行结果不变），再把 `data\unsafedata\ds_luajit_injector.path` **覆写**为本次安装的 `Injector.dll` 绝对路径（壳解析真实 Injector 时优先读它，见下面的查找顺序）；该目录里的其它文件（启动日志、`luajit_plugins.json`）不动。另外它还会结束仍在运行的 `dontstarve_*` 进程，以及删掉包根下「有 `.pkg` 孪生」的规范名 `.dll`（那是加载器可随时重建的派生物，没有孪生的 `.dll` 一律不动）；它不迁移 mod 文件
+- Linux：运行 `./install_linux.sh`（可能需要先执行 `chmod +x ./install_linux.sh`）；它只装壳——把包内 `bin64/linux/lib64/libInjector.so` 放进游戏 `bin64/lib64`，把启动器改写为 `LD_PRELOAD` 包装（原二进制保留为 `*_1`），并同样把 `data/unsafedata/ds_luajit_injector.path` 覆写为 `libInjector.so` 的绝对路径
+- 那两个 marker 每次安装都会**覆写**（不是删除后留空；找不到真实模块时跳过并告警），所以上一次安装、另一个库或已删除的目录留下的固定点不会再把壳引到别的树上；marker 与 `data/unsafedata/` 里的其它文件（启动日志、`luajit_plugins.json`）互不影响
 - 模组更新（工坊更新 / 换 Release 包）后要**重新运行一次**安装脚本，让游戏 `bin64` 里的壳与包内 Injector 版本一致（mod 在版本不匹配时也会弹窗提示重跑）
 
 ### 方法 2（手动安装）

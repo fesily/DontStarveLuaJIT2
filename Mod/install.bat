@@ -5,10 +5,13 @@ REM DontStarveLuaJIT2 shell installer (Windows x64).
 REM
 REM Sole job: put the injection shell (Winmm.dll) into the game bin64.
 REM The rest of the package - Injector.dll, plugins\, deps\, signatures_*.json -
-REM is shipped in place by the release package. This script never stages,
-REM migrates or deletes mod files. The one thing it drops in the game data dir
-REM is <game>\data\unsafedata - injector state (resolution marker, boot log,
-REM plugin config) - so a stale marker cannot pin a path that no longer exists.
+REM is shipped in place by the release package. This script never stages or
+REM migrates mod files; under the package root it only drops canonical .dll
+REM files that have a .pkg twin (see clean_pkg_mirrors). The one file it writes
+REM in the game data dir is the resolve pin
+REM <game>\data\unsafedata\ds_luajit_injector.path - the
+REM absolute path of the real module, overwritten on every install so a stale
+REM pin can never keep loading a previous tree.
 
 set "processes=dontstarve_steam_x64.exe dontstarve_dedicated_server_nullrenderer_x64.exe"
 
@@ -99,19 +102,35 @@ for /R "%mod_root%" %%F in (*.dll.pkg) do (
 )
 if !pkg_mirrors_removed! gtr 0 echo [INFO] removed !pkg_mirrors_removed! materialized dll^(s^) whose .pkg twin is authoritative
 if !pkg_mirrors_busy! gtr 0 echo [WARN] !pkg_mirrors_busy! dll^(s^) still in use - the loader keeps the mapped copy until the next boot
-goto clean_data
+goto write_marker
 
-:clean_data
-REM The loader keeps its own state - the resolution marker, the boot log and
-REM the plugin config - in <game>\data\unsafedata. A marker left by a previous
-REM install pins a path that may be gone (the usual "installed but no effect"
-REM cause), so every install starts from an empty dir; the shell recreates it
-REM at boot. Best effort: a file still held by another process only warns.
-set "data_dir=%destination%\..\data\unsafedata"
-if not exist "%data_dir%" goto end
-echo [INFO] removing game data -^> %data_dir%
-rd /S /Q "%data_dir%" >NUL 2>&1
-if exist "%data_dir%" echo [WARN] cannot fully remove %data_dir% (still in use?)
+:write_marker
+REM The loader's resolve pin - ds_luajit_injector.path - lives in
+REM <game>\data\unsafedata: one UTF-8 line with the absolute path of the real
+REM module. The shell resolves from that pin before it scans any mod folder, so
+REM every install overwrites it with the module in this folder - a marker left by
+REM a previous install (another library, a removed package) can never keep
+REM loading a different tree. Nothing else in that folder is touched: the boot
+REM log is truncated by the shell at boot and luajit_plugins.json is user state.
+REM PowerShell does the write on purpose: cmd's redirection emits the console
+REM code page while the shell decodes the marker as UTF-8, so a non-ASCII install
+REM path would pin garbage. Values travel through the environment (UTF-16 in the
+REM kernel, no re-encoding) - never through the command line.
+for %%I in ("%destination%\..\data\unsafedata") do set "data_dir=%%~fI"
+set "DSJ_MARKER_FILE=%data_dir%\ds_luajit_injector.path"
+set "DSJ_MARKER_TARGET=%mod_root%\Injector.dll"
+if not exist "%DSJ_MARKER_TARGET%" if not exist "%DSJ_MARKER_TARGET%.pkg" (
+    REM Delayed expansion for the path: %-expansion is re-parsed inside this
+    REM block, so a parenthesis in the folder name would break it.
+    echo [WARN] real module missing in !mod_root! - marker not written
+    goto end
+)
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$e=$env:DSJ_MARKER_FILE; $t=$env:DSJ_MARKER_TARGET; try { $ErrorActionPreference='Stop'; [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($e)); [IO.File]::WriteAllText($e, $t + [char]10, (New-Object System.Text.UTF8Encoding($false))) } catch { exit 1 }"
+if errorlevel 1 (
+    echo [WARN] cannot write !DSJ_MARKER_FILE! - an earlier marker, if any, keeps pinning its tree; delete it by hand
+    goto end
+)
+echo [INFO] marker -^> !DSJ_MARKER_TARGET!
 goto end
 
 :uninstall

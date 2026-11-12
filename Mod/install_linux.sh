@@ -6,10 +6,10 @@
 # game's bin64/lib64 plus the LD_PRELOAD launchers. The rest of the package -
 # libInjector.so, plugins/, deps/, signatures_*.json - is shipped in place by
 # the release package. This script never stages, migrates or deletes mod files.
-# The one thing it drops in the game data dir is <game>/data/unsafedata -
-# injector state (resolution marker, boot log, plugin config) - so a stale
-# marker cannot pin a path that no longer exists; the shell recreates it at
-# boot.
+# The one thing it writes in the game data dir is the resolve pin
+# <game>/data/unsafedata/ds_luajit_injector.path: one UTF-8 line with the
+# absolute path of the real module, overwritten on every install so a stale pin
+# can never keep loading a previous tree.
 
 # Needs bash (arrays + `local`); re-exec instead of dying with a dash syntax
 # error when started as `sh install_linux.sh`.
@@ -78,6 +78,23 @@ static_check() {
     echo "[CHECK] module: $real"
     if [ -f "$real" ]; then
         echo "[CHECK]         ok ($(stat -c%s "$real" 2>/dev/null || echo '?') bytes)"
+    else
+        echo "[CHECK]         MISSING"
+        fail=1
+    fi
+
+    # The resolve pin this installer just wrote: one line, the module above.
+    local marker="$game_root/data/unsafedata/ds_luajit_injector.path"
+    echo "[CHECK] marker: $marker"
+    if [ -f "$marker" ]; then
+        local pinned
+        pinned=$(head -n1 "$marker" 2>/dev/null)
+        if [ "$pinned" = "$real" ]; then
+            echo "[CHECK]         ok -> $pinned"
+        else
+            echo "[CHECK]         MISMATCH -> ${pinned:-<empty>} (expected $real)"
+            fail=1
+        fi
     else
         echo "[CHECK]         MISSING"
         fail=1
@@ -234,18 +251,27 @@ else
     echo "skip rewrite dontstarve_dedicated_server_nullrenderer_x64."
 fi
 
-# 3) Injector state: <game>/data/unsafedata holds the resolution marker, the
-#    boot log and the plugin config. A marker left by a previous install pins a
-#    path that may be gone (the usual "installed but no effect" cause), so every
-#    install starts from an empty dir; the shell recreates it at boot. Best
-#    effort - a file still held by another process only warns.
+# 3) Injector resolve pin: <game>/data/unsafedata/ds_luajit_injector.path holds
+#    one UTF-8 line with the absolute path of the real module. The shell resolves
+#    from that pin before it scans any mod folder, so every install overwrites it
+#    with the module it just deployed - a pin left by a previous install (another
+#    library, a removed package) can never keep loading a different tree. Nothing
+#    else in that folder is touched: the shell truncates the boot log at boot and
+#    luajit_plugins.json is user state.
 data_dir="$game_root/data/unsafedata"
-if [ -d "$data_dir" ]; then
-    echo "[INFO] removing game data -> $data_dir"
-    rm -rf "$data_dir"
-    if [ -d "$data_dir" ]; then
-        echo "[WARN] cannot fully remove $data_dir (still in use?)"
+marker="$data_dir/ds_luajit_injector.path"
+if [ ! -f "$script_dir/libInjector.so" ]; then
+    echo "[WARN] real module missing: $script_dir/libInjector.so - marker not written"
+elif mkdir -p "$data_dir" && printf '%s\n' "$script_dir/libInjector.so" > "$marker" 2>/dev/null; then
+    # Running as root (root-owned Steam library) would leave the folder and the
+    # pin root-owned, and the game user could then neither truncate the boot log
+    # nor refresh the pin - hand both to whoever owns the game root.
+    if [ "$(id -u)" = "0" ]; then
+        chown "$(stat -c '%u:%g' "$game_root" 2>/dev/null || echo 0:0)" "$data_dir" "$marker" 2>/dev/null || true
     fi
+    echo "[INFO] marker -> $script_dir/libInjector.so"
+else
+    echo "[WARN] cannot write $marker - an earlier marker, if any, keeps pinning its tree; delete it by hand"
 fi
 
 echo "[INFO] Operation completed successfully"

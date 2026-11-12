@@ -26,13 +26,16 @@
 #   5. if the client or a dedicated server is still running, asks before
 #      force-closing it (the mod DLLs stay mapped otherwise) and aborts the
 #      whole install when that is not confirmed
-#   6. wipes <game>\data\unsafedata (stale Injector marker, boot log, plugin
-#      config) once the package is verified on disk, so the deployed shell
-#      starts from a clean slate
-#   7. runs the packaged install.bat (Winmm shell -> game bin64, real Injector
-#      stays in the mod; install.bat then drops every materialized .dll whose
-#      .pkg twin is authoritative - bin64/ excluded - and the injector state
-#      dir) and reports the result
+#   6. runs the packaged install.bat (Winmm shell -> game bin64, real Injector
+#      stays in the mod; install.bat also drops every materialized .dll whose
+#      .pkg twin is authoritative - bin64/ excluded)
+#   7. overwrites <game>\data\unsafedata\ds_luajit_injector.path with the
+#      absolute path of the module it just staged: the shell resolves the
+#      Injector from that pin before it ever scans a mod folder, so a marker
+#      left by an earlier install (another library, a removed package, a dev
+#      tree) cannot win - and nothing else in that folder is touched (the boot
+#      log is truncated by the shell at boot, luajit_plugins.json is user
+#      state)
 #
 # Everything runs inside one script block so a piped `iex` does not leak
 # variables/functions into the caller's session; `exit` is never used.
@@ -99,13 +102,15 @@ $DsjScriptArgs = $args
         'staging'           = 'staging package -> {0}'
         'modinfo.missing'   = 'modinfo.lua not found inside {0}'
         'staged.incomplete' = 'staged package is incomplete (modmain.lua missing)'
-        'cleanup.unsafedata' = 'removing game data (stale marker / boot log / plugin config): {0}'
-        'cleanup.fail'      = 'cannot fully remove ''{0}'': {1} - continuing'
-        'run.bat'           = 'running the packaged installer (deploys the Winmm shell; the marker is written by the shell at boot) ...'
+        'marker.write'      = 'injector marker (resolve pin): {0}'
+        'marker.nomodule'   = 'no real Injector module (Injector.dll / Injector.dll.pkg) in {0} - marker not written'
+        'marker.fail'       = 'cannot write ''{0}'': {1} - continuing (a stale marker, if any, keeps pinning its tree)'
+        'marker.foreign'    = 'injector marker points at ''{0}'', expected ''{1}'''
+        'run.bat'           = 'running the packaged installer (deploys the Winmm shell) ...'
         'check.ok'          = 'CHECK {0}: {1} ({2} bytes)'
         'check.missing'     = 'CHECK {0}: {1} MISSING'
-        'check.pending'     = 'CHECK {0}: {1} (absent - the shell writes it on the first boot)'
         'marker.dangling'   = 'marker points at ''{0}'', which does not exist'
+        'marker.empty'      = 'injector marker ''{0}'' is empty'
         'done'              = 'done: {0} installed in {1}'
         'selfcheck'         = 'the self-check found problems above - see the boot log after launching the game'
         'next.enable'       = 'next: enable {0} in the in-game mod list; the version label'
@@ -281,21 +286,36 @@ $DsjScriptArgs = $args
         return (Join-Path $content $WorkshopItem)
     }
 
-    # <game>\data\unsafedata holds only what the injector wrote: the marker
-    # (absolute path of the previous install), the boot log and the plugin
-    # config. The Lua-side luajit_*.json moved to the save dir, so a leftover
-    # marker pointing at a removed package is the usual cause of "installed but
-    # no effect". Wiped by the caller after the package is verified on disk and
-    # before install.bat deploys the shell; the shell recreates the dir at boot.
-    function Remove-GameData($game) {
+    # <game>\data\unsafedata\ds_luajit_injector.path is the shell's resolve pin:
+    # one UTF-8 line with the absolute path of the real module
+    # (loader/bootstrap/InjectorBootstrap.cpp; canonical name even when the
+    # package ships only "<name>.pkg" - it is materialized before LoadLibrary).
+    # Every install overwrites it with the module it just staged, because the
+    # pin outranks the mod-folder scan: a marker left by an earlier install
+    # (another library, a removed package, a dev tree) would otherwise silently
+    # keep loading that tree. Written after install.bat, so the packaged
+    # installer can never wipe what this wrote.
+    function Set-InjectorMarker($game, $modDir) {
         $dir = Join-Path $game 'data\unsafedata'
-        if (-not (Test-Path -LiteralPath $dir)) { return }
-        Write-Log (Msg 'cleanup.unsafedata' $dir)
-        try {
-            Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction Stop
-        } catch {
-            Write-Warn (Msg 'cleanup.fail' $dir, $_.Exception.Message)
+        $file = Join-Path $dir 'ds_luajit_injector.path'
+        $module = Join-Path $modDir 'Injector.dll'
+        if (-not (Test-Path -LiteralPath $module) -and
+            -not (Test-Path -LiteralPath ($module + '.pkg'))) {
+            Write-Warn (Msg 'marker.nomodule' $modDir)
+            return $false
         }
+        try {
+            New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop | Out-Null
+            # No BOM: the shell decodes the marker as UTF-8 and a BOM would
+            # become part of the path (path_from_utf8 in the bootstrap).
+            $utf8 = New-Object System.Text.UTF8Encoding($false)
+            [IO.File]::WriteAllText($file, $module + "`n", $utf8)
+        } catch {
+            Write-Warn (Msg 'marker.fail' $file, $_.Exception.Message)
+            return $false
+        }
+        Write-Log (Msg 'marker.write' $file)
+        return $true
     }
 
     # --- running-game consent gate -------------------------------------------
@@ -356,6 +376,11 @@ $DsjScriptArgs = $args
 
         if ($GameDirEnv) {
             $game = $GameDirEnv.TrimEnd('\')
+            # The marker pin written below must be absolute: the shell resolves
+            # it from the game process' CWD, which is not this shell's.
+            if (-not [IO.Path]::IsPathRooted($game)) {
+                $game = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $game))
+            }
             Write-Log (Msg 'game.override' $game)
         } else {
             Write-Log (Msg 'game.search')
@@ -426,8 +451,6 @@ $DsjScriptArgs = $args
                 throw (Msg 'staged.incomplete')
             }
 
-            Remove-GameData $game
-
             Write-Log (Msg 'run.bat')
             Push-Location $modDir
             try {
@@ -438,6 +461,10 @@ $DsjScriptArgs = $args
                 $ErrorActionPreference = 'Continue'
                 try { & cmd.exe /c install.bat } finally { $ErrorActionPreference = $prevEap }
             } finally { Pop-Location }
+
+            # install.bat is done with the game data dir; pin the module it just
+            # staged (also covers releases whose install.bat still clears the dir).
+            [void](Set-InjectorMarker $game $modDir)
         } finally {
             Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -463,23 +490,35 @@ $DsjScriptArgs = $args
                 $fail = $true
             }
         }
-        # The marker is written by the shell on its first boot, never by the
-        # installer - and the cleanup above guarantees it is gone right after an
-        # install - so its absence is expected, not a failure. A marker that is
-        # present but points at a vanished module still is one.
-        $real = Join-Path $modDir $moduleFile
+        # The marker is this installer's own resolve pin, so it has to exist and
+        # name the module just staged; anything else means the pin would send the
+        # shell to a different tree on the next boot.
+        $canonical = Join-Path $modDir 'Injector.dll'
         $marker = Join-Path $game 'data\unsafedata\ds_luajit_injector.path'
+        $target = $null
         if (Test-Path -LiteralPath $marker) {
             Write-Log (Msg 'check.ok' 'marker', $marker, (Get-Item -LiteralPath $marker).Length)
+            # Read it back as UTF-8 explicitly: PS 5.1's Get-Content decodes with
+            # the ANSI code page, which would turn a byte-perfect pin under a
+            # non-ASCII install path into a bogus "foreign marker" failure.
+            $raw = [IO.File]::ReadAllText($marker, (New-Object System.Text.UTF8Encoding($false)))
+            if ($raw -and $raw.Trim()) { $target = $raw.Trim() }
         } else {
-            Write-Log (Msg 'check.pending' 'marker', $marker)
+            Write-Log (Msg 'check.missing' 'marker', $marker)
+            $fail = $true
         }
-        if ((Test-Path -LiteralPath $real) -and (Test-Path -LiteralPath $marker)) {
-            $target = (Get-Content -LiteralPath $marker -Raw).Trim()
-            if ($target -and -not (Test-Path -LiteralPath $target)) {
+        if ($target) {
+            if ($target -ne $canonical) {
+                Write-Warn (Msg 'marker.foreign' $target, $canonical)
+                $fail = $true
+            } elseif (-not (Test-Path -LiteralPath $target) -and
+                      -not (Test-Path -LiteralPath ($target + '.pkg'))) {
                 Write-Warn (Msg 'marker.dangling' $target)
                 $fail = $true
             }
+        } elseif (Test-Path -LiteralPath $marker) {
+            Write-Warn (Msg 'marker.empty' $marker)
+            $fail = $true
         }
 
         Write-Log (Msg 'done' $release.tag_name, $modDir)

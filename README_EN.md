@@ -59,7 +59,9 @@ curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/ins
 The script picks the newest GitHub release (`preview` or stable, whichever is
 newer), locates the game through Steam (Windows registry / `libraryfolders.vdf` /
 `appmanifest_322330.acf` - the same rules as `tools/steam_env.py`), stages the
-package and runs the packaged installer (shell deploy, marker, self-check).
+package, runs the packaged installer (shell deploy) and **overwrites**
+`data/unsafedata/ds_luajit_injector.path` with the absolute path of the module it
+just staged (both Windows and Linux; Linux also runs a self-check).
 
 Where it stages: if the library holding the game has Workshop content
 (`...\steamapps\workshop\content\322330`), Windows installs into
@@ -97,13 +99,15 @@ Download the package for your platform from GitHub Releases (`windows_Mod.zip` /
 1. Create a new folder in the mods folder in the root directory of the game, e.g. `DontStarveLuaJit2` (the name is **case-sensitive**; any spelling from the alias list below works, e.g. `luajit`, `Luajit2`).
 2. The archive contains a `Mod` folder: copy **the contents of that `Mod` folder** (`modinfo.lua`, `modmain.lua`, `plugins/`, `deps/`, `bin64/`, `install.bat`, …) into your new folder, so that `…/mods/DontStarveLuaJit2/modmain.lua` exists directly (**not** `mods/DontStarveLuaJit2/Mod/modmain.lua`).
 
-> Folder name: the real Injector is resolved as `env vars → data/unsafedata/ds_luajit_injector.path → scan of the mods dir`, and the scan only recognizes these names: `workshop-3444078585`, `3444078585`, `luajit`, `Luajit`, `luajit2`, `Luajit2`, `DontStarveLuaJit2`, `dontstarveluajit2`, `DontStarveLuaJIT2` (case-insensitive on Windows, case-sensitive on Linux/macOS; the mixed-case spellings are listed side by side only for compatibility with older docs/installs — do not count on a case-insensitive filesystem to rescue you). With any other name the scan misses it and nothing writes the marker for you: set `DS_LUAJIT_INJECTOR` (the mod-root `Injector.dll`) or `DS_LUAJIT_INJECTOR_DIR` yourself, otherwise nothing gets injected. (Once the shell resolves the mod it rewrites `data/unsafedata/ds_luajit_injector.path` itself, so the env var is a one-time help.)
+> Folder name: the real Injector is resolved as `env vars → data/unsafedata/ds_luajit_injector.path → scan of the mods dir`, and the scan only recognizes these names: `workshop-3444078585`, `3444078585`, `luajit`, `Luajit`, `luajit2`, `Luajit2`, `DontStarveLuaJit2`, `dontstarveluajit2`, `DontStarveLuaJIT2` (case-insensitive on Windows, case-sensitive on Linux/macOS; the mixed-case spellings are listed side by side only for compatibility with older docs/installs — do not count on a case-insensitive filesystem to rescue you). With any other name the scan misses it: every automated install listed above **overwrites** the marker with the absolute path it just staged, so an automated install may use any folder name; a manual install has to set `DS_LUAJIT_INJECTOR` (the mod-root `Injector.dll`) or `DS_LUAJIT_INJECTOR_DIR` itself, or write one absolute path line into `data/unsafedata/ds_luajit_injector.path`, otherwise nothing gets injected. (Once the shell resolves the mod it rewrites that marker itself, so the env var is a one-time help.)
 
 ### Automated install
 
-Windows: run `install.bat` inside the mod folder. It does **one thing** - copy the packaged `bin64\windows\Winmm.dll` into game `bin64` (skipped when the copy is already identical, so re-running changes nothing); no staging, no deletion, no other file touched.
+Windows: run `install.bat` inside the mod folder. It does two things - copy the packaged `bin64\windows\Winmm.dll` into game `bin64` (skipped when the copy is already identical, so re-running changes nothing), then **overwrite** `data\unsafedata\ds_luajit_injector.path` with the absolute path of this install's `Injector.dll` (the resolve pin the shell reads before scanning any mod folder); nothing else in that folder is touched. It also force-closes a running `dontstarve_*` process and drops canonical `.dll`s under the package root that have a `.pkg` twin (a derivative the loader re-materializes at any time; a `.dll` without a twin is never touched), and it does not migrate mod files.
 
-Linux: run `./install_linux.sh` (may need `chmod +x install_linux.sh` first). Shell only: it puts the packaged `bin64/linux/lib64/libInjector.so` into game `bin64/lib64` and rewrites the launchers as `LD_PRELOAD` wrappers (the real binaries are kept as `*_1`).
+Linux: run `./install_linux.sh` (may need `chmod +x install_linux.sh` first). Shell only: it puts the packaged `bin64/linux/lib64/libInjector.so` into game `bin64/lib64`, rewrites the launchers as `LD_PRELOAD` wrappers (the real binaries are kept as `*_1`), and likewise overwrites `data/unsafedata/ds_luajit_injector.path` with the absolute path of `libInjector.so`.
+
+Both markers are **overwritten** on every install that finds the module (never deleted and left empty; a missing module is reported and skipped), so a pin left by an earlier install, another library or a removed folder can no longer send the shell to a different tree; the boot log and `luajit_plugins.json` in `data/unsafedata/` are untouched.
 
 After a mod update (Workshop update / new Release package) **re-run** the installer so the shell in game `bin64` matches the packaged Injector (the mod also pops up a reminder on version mismatch).
 

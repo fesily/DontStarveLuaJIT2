@@ -10,9 +10,12 @@
 #   3. locates the game through Steam (registry-free: env overrides, ~/.steam,
 #      libraryfolders.vdf libraries, appmanifest_322330.acf) unless --game-dir
 #   4. stages the package under <game>/mods/<mod-folder>
-#   5. wipes <game>/data/unsafedata (stale Injector marker, boot log, plugin
-#      config) once the package is verified on disk, so the deployed shell
-#      starts from a clean slate
+#   5. overwrites <game>/data/unsafedata/ds_luajit_injector.path with the
+#      absolute path of the module it just staged - the shell resolves the
+#      Injector from that pin before it ever scans a mod folder, so a marker
+#      left by an earlier install cannot win (nothing else in that folder is
+#      touched: the boot log is truncated by the shell at boot and
+#      luajit_plugins.json is user state)
 #   6. runs the packaged install_linux.sh (shell stub -> game, real module stays
 #      in the mod, marker + launcher rewrite, [CHECK] self-check)
 #
@@ -218,6 +221,9 @@ else
 fi
 [ -d "$GAME/bin64" ] || warn "$GAME/bin64 is missing - is this the right game root?"
 [ -d "$GAME/mods" ] || die "$GAME/mods not found - unexpected game layout"
+# Everything below (stage path, resolve pin, checks) assumes an absolute game
+# root: the shell resolves the marker from the game process' CWD, not this one.
+GAME="$(cd "$GAME" && pwd)" || die "cannot resolve '$GAME' to an absolute path"
 
 MOD_DIR="$GAME/mods/$MOD_FOLDER"
 case "$MOD_DIR" in
@@ -249,17 +255,7 @@ mkdir -p "$MOD_DIR"
 cp -R "$SRC"/. "$MOD_DIR"/
 [ -f "$MOD_DIR/modmain.lua" ] || die "staged package is incomplete (modmain.lua missing)"
 
-# Injector state - resolution marker, boot log, plugin config - lives in
-# <game>/data/unsafedata. A marker left by a previous install pins a path that
-# may be gone (the usual "installed but no effect" cause), so start from an
-# empty dir; the shell recreates it at boot. Runs only now that the package is
-# verified on disk; a failed delete warns instead of aborting.
-if [ -d "$GAME/data/unsafedata" ]; then
-    log "removing game data: $GAME/data/unsafedata"
-    rm -rf "$GAME/data/unsafedata" || warn "cannot fully remove $GAME/data/unsafedata - continuing"
-fi
-
-log "running the packaged installer (deploys the shell + writes the marker) ..."
+log "running the packaged installer (deploys the shell stub, rewrites the launchers) ..."
 # The packaged script needs bash; older releases predate its own sh->bash
 # re-exec guard, so prefer bash here.
 if command -v bash >/dev/null 2>&1; then
@@ -268,21 +264,40 @@ else
     (cd "$MOD_DIR" && sh ./install_linux.sh)
 fi
 
+# Resolve pin for the shell: <game>/data/unsafedata/ds_luajit_injector.path holds
+# one UTF-8 line with the absolute path of the real module, and the shell prefers
+# it over the mod-folder scan. Every install overwrites it with the module it just
+# staged, so a pin left by a previous install (another library, a removed package)
+# can never keep loading a different tree. Written after the packaged installer,
+# which owns the shell deploy (and, in older releases, clears that folder).
+marker_dir="$GAME/data/unsafedata"
+marker="$marker_dir/ds_luajit_injector.path"
+module="$MOD_DIR/libInjector.so"
+if [ ! -f "$module" ]; then
+    warn "real module missing: $module - marker not written"
+elif mkdir -p "$marker_dir" && printf '%s\n' "$module" > "$marker"; then
+    log "marker: $module"
+else
+    warn "cannot write $marker - an earlier marker, if any, keeps pinning its tree; delete it by hand"
+fi
+
 # Version-independent post-check (the packaged installer adds its own [CHECK]).
-# The marker is written by the shell on its first boot, never by the installer -
-# and the cleanup above guarantees it is gone right after an install - so only
-# the shell is a hard requirement here.
+# The marker above pins the module this run installed, so it must exist and name
+# exactly that path; a stale pin would send the shell to another tree.
 stub="$GAME/bin64/lib64/libInjector.so"
-marker="$GAME/data/unsafedata/ds_luajit_injector.path"
 if [ -f "$stub" ]; then
     log "shell: $stub"
 else
     warn "shell missing after the install - see the messages above"
 fi
 if [ -f "$marker" ]; then
-    log "marker: $(head -n1 "$marker" 2>/dev/null)"
+    marker_target="$(head -n1 "$marker" 2>/dev/null || true)"
+    log "marker: $marker_target"
+    if [ "$marker_target" != "$module" ]; then
+        warn "marker pins '$marker_target', expected '$module'"
+    fi
 else
-    log "marker: absent (the shell writes it on the first boot)"
+    warn "marker missing: $marker"
 fi
 
 log "done: $TAG installed in $MOD_DIR"
