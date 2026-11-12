@@ -126,4 +126,4 @@ output_file:write(modified_code)
 output_file:close()
 -- lua tests/sect/fold_const.lua tests/2847908822/modmain2.lua tests/2847908822/modmain3.lua consts.lua a
 -- lua tests/sect/fold_const.lua tests/2847908822/modmain3.lua tests/2847908822/modmain4.lua consts.lua c -p "(get%_const%_string%((.-)%))" -e "-11118+"
--- .\builds\ninja-multi-vcpkg\src\lua51original\Debug\lua.exe tests/sect/fold_const.lua .\tests\2847908822\modmain_.lua .\tests\2847908822\modmain_1.lua .\tests\2847908822\const_string_table.decoded.lua "nil" -p "(get%_const%_string%((.-)%))" -e "50983+" 
+-- .\builds\ninja-multi-vcpkg\3rd\lua51original\Debug\lua.exe tests/sect/fold_const.lua .\tests\2847908822\modmain_.lua .\tests\2847908822\modmain_1.lua .\tests\2847908822\const_string_table.decoded.lua "nil" -p "(get%_const%_string%((.-)%))" -e "50983+" 
