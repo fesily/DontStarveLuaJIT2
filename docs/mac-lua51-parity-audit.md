@@ -165,7 +165,7 @@
 
 ### 5.2 LuaJIT 侧 traceback/命名 parity 修补（2026-10-04）
 
-引擎嵌入的 Lua 5.1 与本项目 LuaJIT 变体（`lua51DS.dll`，`jit`/`jit_gen`）在**同一份 mod 报错**上输出的 traceback 曾不一致，逐行 diff 定位到四处，均在 `luajit/src/`：
+引擎嵌入的 Lua 5.1 与本项目 LuaJIT 变体（`lua51DS.dll`，`jit`/`jit_gen`）在**同一份 mod 报错**上输出的 traceback 曾不一致，逐行 diff 定位到四处，均在 `3rd/luajit/src/`：
 
 1. **metamethod 帧名（已修）**：5.1 `getfuncname`（ldebug.c:544-555）只在调用方指令是 `OP_CALL/OP_TAILCALL/OP_TFORLOOP` 时取名，metamethod（VM 直接调用的 `__index`/`__newindex`…）帧得到 `namewhat == ""`，`db_errorfb` 于是不打印后缀；LuaJIT `lj_debug_funcname`（lj_debug.c:365-369）对这些帧返回 `"metamethod"` + 事件名，于是打出 `in function '__index'`。
    实测：`scripts/strict.lua(23,1) in function '__index'`（jit）vs `scripts/strict.lua(23,1)`（game VM）。
@@ -194,7 +194,7 @@
 - 同一 mod 内 `top()→mid()→deep()` 两处 Lua 尾调用 + 深处报错：`(...tail calls...)` ×2 → `        =(tail call) ?` ×2，与 game VM **逐行一致**。
 - 两 VM 均 `PASS`；mod 报错链、`Error loading main.lua` / `Error during game initialization!` 全同（退出码可落在 `0xC0000409` / `0xC0000005` / `1`，属收尾竞态，测试只报告不断言）。
 
-**主 chunk 顶层尾调用的 `tail` 层（`LUA_COMPAT_TAILCALL_COUNT`，2026-10-07 修复）**：C 调入的 Lua 帧（主 chunk / `kleiloadlua` 载入的 chunk）其帧槽 ftuz 是 C 调用者 delta 标记（`FRAME_C/FRAME_CP/FRAME_PCALL`）而非 PC；顶层 `return f(...)` 原位复用该槽后，`lj_debug_frame` 只在 `frame_islua`（PC 型）时读 5.1 尾计数 ⇒ 该链上每消一帧少一层、其后**绝对层号整体前移**（受保护 mod 壳按层号走查加载器帧 ⇒ 命中错帧 ⇒ 静默空桩）。修复 = `lj_debug.c` 的 `debug_isluaframe()`（读取侧放宽到"C 家族标记且函数槽为 Lua 函数"；写入侧本就写在 `(BASE-1)`，无需改动）。详见 `luajit/doc/tailcall-level-parity.md`；回归用例 `luajit/test/compat51/mainchunk_tailcall.lua`（外层 ctest 登记为 `luajit_parity_mainchunk_tailcall`）。
+**主 chunk 顶层尾调用的 `tail` 层（`LUA_COMPAT_TAILCALL_COUNT`，2026-10-07 修复）**：C 调入的 Lua 帧（主 chunk / `kleiloadlua` 载入的 chunk）其帧槽 ftuz 是 C 调用者 delta 标记（`FRAME_C/FRAME_CP/FRAME_PCALL`）而非 PC；顶层 `return f(...)` 原位复用该槽后，`lj_debug_frame` 只在 `frame_islua`（PC 型）时读 5.1 尾计数 ⇒ 该链上每消一帧少一层、其后**绝对层号整体前移**（受保护 mod 壳按层号走查加载器帧 ⇒ 命中错帧 ⇒ 静默空桩）。修复 = `lj_debug.c` 的 `debug_isluaframe()`（读取侧放宽到"C 家族标记且函数槽为 Lua 函数"；写入侧本就写在 `(BASE-1)`，无需改动）。详见 `3rd/luajit/doc/tailcall-level-parity.md`；回归用例 `3rd/luajit/test/compat51/mainchunk_tailcall.lua`（外层 ctest 登记为 `luajit_parity_mainchunk_tailcall`）。
 
 **已对齐（`LUA_COMPAT_TAILCALL_CFRAME`，2026-10-05）**：`return xpcall(fn, debug.traceback)`（C 被调者尾调用，util.lua:788）现在与引擎一致——`BC_CALLT` 按被调者 ffid 分流，C/FF 被调者按普通调用执行、parser 追加的 `BC_RETM` 把结果转交上层，故 traceback 为 error 站点 → `=[C] in function 'xpcall'` → `in function 'RunInEnvironment'` → 其余不变；`jit.disabletailcall(true)` 不再需要（2026-10-27 起该绑定与 `LUA_COMPAT_DYNAMIC_DISABLE_TAILCALL`、`ForceDisableTailCall` 选项一并删除）。新路径还从调用帧恢复 `KBASE`：`BC_CALLT` 序言把它改成旧 `BASE`，而 `fff_res` 假设“返回时 KBASE 已按调用帧设定”、`vmeta_call` 又用 `KBASE == BASE` 当“来自 CALLT”的标志——不恢复会让 FFH_TAILCALL→`__call` 的角落按旧语义误解（复帧、caller 帧被消除，且随栈布局变化）。门控 = `LJ_DS && LJ_TARGET_X64 && LJ_FR2`（仅 `vm_x64.dasc`）；x86、x64 非 GC64、arm 等后端保持 stock。
 **字节码格式（`BCDUMP_VERSION`，2026-10-05）**：CALLT 后跟随的 `BC_RETM` 属于字节码本身，改动前的 dump（stock CALLT、其后无指令）会让 C 返回落到原型之外，故按 `lj_bcdump.h` 的私有改动规则把 `BCDUMP_VERSION` 由 2 升到 `0x80`（宏关时仍为 2）——旧 chunk 现在在 load 时以 `cannot load incompatible bytecode` 拒绝，而不是越界执行；预编译产物（含构建期 `luajit -bg` 的 “Luajitted” 脚本）需用新 VM 重新生成（CMake 规则已把 VM 目标列为依赖，会自动重建）。
@@ -204,7 +204,7 @@
 - 不是这些原因：栈重分配（所有 `resizestack` 实测 `delta==0`，栈从未移动）、`jit_base`（崩点时 NULL，且 `lj_gc_step_jit` 每次取到的都在范围内）、JIT（关掉同样崩）。
 - 只在 arena 变体「崩」而非「歪」：同一处野指针读在默认变体落进已映射内存，退化成无害的「无名帧」；arena 的地址布局让它落进未映射页 → AV。
 - 尚未定位：第一个把 `L->base` 写成野值的写入点。下一步：对 `&L->base` 下条件硬件断点（cdb `ba w 8`，字段偏移 base=0x18 / stack=0x30 / stacksize=0x58），命中即抓写入者；之后按该写入者修复。
-- **2026-10-05 更新：已定位并修复。** 根因不是帧路径本身，而是 arena 变体 x64 的 `barrierback` 宏：它把 `RC/TMPR/ITYPE/RA/BASE` 用 `push` 保存在**被调 C 函数的 Win64 shadow space** 内，被 `lj_gc_barrierback_arena` 序言（`mov [rsp+10h],rbx`）覆盖 ⇒ 弹栈后 `RA` 变成 `rbx`(DISPATCH)，随后 `mov RB,[BASE+RA*8]` 读野地址（cdb：`lj_BC_TSETV+0x67`，fault = `rdx+rcx*8`）；ASan 构建里被调方把入参也 spill 进该区，`CARG1 = G(L)` 覆盖保存的 `BASE`，于是表现为“`L->base` = `G(L)`”，与上面观察到的“`L->base` 在栈外”一致（下游现象）。修复：改为 `sub rsp, 0x50` 预留 shadow space、用 `mov [rsp+0x20..0x40]` 保存/恢复（同时修正 call 时 16 字节对齐），落在 `luajit/src/vm_x64.dasc`；详见 `luajit/doc/arenagc-wild-base-crash.md` 追记 14。
+- **2026-10-05 更新：已定位并修复。** 根因不是帧路径本身，而是 arena 变体 x64 的 `barrierback` 宏：它把 `RC/TMPR/ITYPE/RA/BASE` 用 `push` 保存在**被调 C 函数的 Win64 shadow space** 内，被 `lj_gc_barrierback_arena` 序言（`mov [rsp+10h],rbx`）覆盖 ⇒ 弹栈后 `RA` 变成 `rbx`(DISPATCH)，随后 `mov RB,[BASE+RA*8]` 读野地址（cdb：`lj_BC_TSETV+0x67`，fault = `rdx+rcx*8`）；ASan 构建里被调方把入参也 spill 进该区，`CARG1 = G(L)` 覆盖保存的 `BASE`，于是表现为“`L->base` = `G(L)`”，与上面观察到的“`L->base` 在栈外”一致（下游现象）。修复：改为 `sub rsp, 0x50` 预留 shadow space、用 `mov [rsp+0x20..0x40]` 保存/恢复（同时修正 call 时 16 字节对齐），落在 `3rd/luajit/src/vm_x64.dasc`；详见 `3rd/luajit/doc/arenagc-wild-base-crash.md` 追记 14。
 - 验证：cdb（release 构建）跑 `test_gc_invariants`、`white1_free_assert`、`udata_finalize_assert`、`c_tailcall_values`、`xpcall_tailcall`、`metamethod_name`、`tailcall_lines` 全部 0 次 AV（修复前三 gc 测试必崩）；ASan 三测试 0 报告、exit=0。
 
 **容量边界（2026-10-05 复核，可接受）**：`PROTO_FIXUP_RETURN`（函数在首个闭包之前就有大量 `return`）会把每个返回点复制到函数尾；本改动给每个 C/FF 尾调用多带一条 `BC_RETM`，因此同一 16 位前向跳转预算（`LJ_ERR_XFIXUP`）更早用尽：实测同一生成函数——开关开接受 4,500 个 `return math.abs(-i)` 站点（40,508 条字节码）、5,000 个即报 `function too long for return fixup`；开关关接受 5,000（35,007 条）、5,500 报错。两者都是**编译期明确报错**（非内存破坏），只影响「首个闭包前有数千个 return 点」的极端生成代码，按现状接受。

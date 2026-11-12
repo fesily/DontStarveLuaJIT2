@@ -4,7 +4,7 @@
 -- elided tail call (info_tailcall: what="tail", source="=(tail call)",
 -- namewhat="") through db_errorfb.  LuaJIT's patched luaL_traceback used to
 -- collapse the same virtual levels into a tab-indented "(...tail calls...)"
--- marker.  Gated by LJ_DS_TRACEBACK_PATCH (luajit/src/lj_arch.h): with that
+-- marker.  Gated by LJ_DS_TRACEBACK_PATCH (3rd/luajit/src/lj_arch.h): with that
 -- switch off the marker (and the stock "stack traceback:" header) comes back and
 -- this test must fail.
 --

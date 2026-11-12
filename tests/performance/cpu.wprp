@@ -26,7 +26,7 @@
     <EventProvider Id="Markers" Name="7c99be35-b55c-4ba7-9c44-31fd1e0da826"
                    Level="5"/>
     <!-- LuaJIT JIT symbols use the Microsoft-JScript protocol (see
-         luajit/src/lj_etw.c): 0x1 runtime load/unload, 0x2 start rundown,
+         3rd/luajit/src/lj_etw.c): 0x1 runtime load/unload, 0x2 start rundown,
          0x4 end rundown. All three are subscribed so a session attached to an
          already running process still resolves the existing traces. -->
     <EventProvider Id="LuaJITJScript" Name="57277741-3638-4a4b-bdba-0ac6e45da56c"

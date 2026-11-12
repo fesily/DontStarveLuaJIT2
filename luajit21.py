@@ -1,5 +1,5 @@
 # GDB extension for LuaJIT post-mortem analysis.
-# To use, just put 'source <path-to-repo>/src/luajit-gdb.py' in gdb.
+# To use, just put 'source <path-to-repo>/3rd/luajit/src/luajit-gdb.py' in gdb.
 
 import re
 import gdb
@@ -233,7 +233,7 @@ def L(L=None):
     # XXX Fragile: though the loop initialization looks like a crap but it
     # respects both Python 2 and Python 3.
     for lstate in [L] + list(map(lambda main: lookup(main), (
-        # LuaJIT main coro (see luajit/src/luajit.c)
+        # LuaJIT main coro (see 3rd/luajit/src/luajit.c)
         'globalL',
         # Tarantool main coro (see tarantool/src/lua/init.h)
         'tarantool_L',

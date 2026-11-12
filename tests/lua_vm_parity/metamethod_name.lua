@@ -6,7 +6,7 @@
 -- LuaJIT's lj_debug_funcname() reports "metamethod" + the event name for those
 -- frames, which used to leak into debug.getinfo() and debug.traceback() as
 -- namewhat="metamethod" / " in function '__index'".
--- Gated by LJ_DS_DEBUG_FUNCNAME_PATCH (luajit/src/lj_arch.h): with that switch
+-- Gated by LJ_DS_DEBUG_FUNCNAME_PATCH (3rd/luajit/src/lj_arch.h): with that switch
 -- off this test must fail.
 --
 -- Positive control: frames pushed by a normal call keep their name.
