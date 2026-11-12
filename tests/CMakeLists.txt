@@ -242,8 +242,8 @@ add_executable(test_dynamic_plugin_loader
 target_include_directories(test_dynamic_plugin_loader PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
     ${SOL2_INCLUDE_DIRS}
-    ${PROJECT_SOURCE_DIR}/src/lua51original/src
-    ${CMAKE_BINARY_DIR}/src/lua51original)
+    ${PROJECT_SOURCE_DIR}/3rd/lua51original/src
+    ${CMAKE_BINARY_DIR}/3rd/lua51original)
 target_compile_features(test_dynamic_plugin_loader PRIVATE cxx_std_23)
 target_compile_definitions(test_dynamic_plugin_loader PRIVATE DS_PLUGIN_HOST_STATIC)
 if (TARGET liblua_static)
@@ -445,8 +445,8 @@ add_executable(test_plugin_pack_modinfo
 target_include_directories(test_plugin_pack_modinfo PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
     ${SOL2_INCLUDE_DIRS}
-    ${PROJECT_SOURCE_DIR}/src/lua51original/src
-    ${CMAKE_BINARY_DIR}/src/lua51original)
+    ${PROJECT_SOURCE_DIR}/3rd/lua51original/src
+    ${CMAKE_BINARY_DIR}/3rd/lua51original)
 target_compile_features(test_plugin_pack_modinfo PRIVATE cxx_std_23)
 target_compile_definitions(test_plugin_pack_modinfo PRIVATE DS_PLUGIN_HOST_STATIC)
 if (TARGET liblua_static)
@@ -465,8 +465,8 @@ add_executable(test_external_plugin_discovery
 target_include_directories(test_external_plugin_discovery PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
     ${SOL2_INCLUDE_DIRS}
-    ${PROJECT_SOURCE_DIR}/src/lua51original/src
-    ${CMAKE_BINARY_DIR}/src/lua51original)
+    ${PROJECT_SOURCE_DIR}/3rd/lua51original/src
+    ${CMAKE_BINARY_DIR}/3rd/lua51original)
 target_compile_features(test_external_plugin_discovery PRIVATE cxx_std_23)
 target_compile_definitions(test_external_plugin_discovery PRIVATE DS_PLUGIN_HOST_STATIC)
 if (TARGET liblua_static)
@@ -482,8 +482,8 @@ add_executable(test_enabled_dst_mods
 target_include_directories(test_enabled_dst_mods PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
     ${SOL2_INCLUDE_DIRS}
-    ${PROJECT_SOURCE_DIR}/src/lua51original/src
-    ${CMAKE_BINARY_DIR}/src/lua51original)
+    ${PROJECT_SOURCE_DIR}/3rd/lua51original/src
+    ${CMAKE_BINARY_DIR}/3rd/lua51original)
 target_compile_features(test_enabled_dst_mods PRIVATE cxx_std_23)
 target_compile_definitions(test_enabled_dst_mods PRIVATE DS_PLUGIN_HOST_STATIC)
 if (TARGET liblua_static)
@@ -504,8 +504,8 @@ add_executable(test_external_discover_gate
 target_include_directories(test_external_discover_gate PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
     ${SOL2_INCLUDE_DIRS}
-    ${PROJECT_SOURCE_DIR}/src/lua51original/src
-    ${CMAKE_BINARY_DIR}/src/lua51original)
+    ${PROJECT_SOURCE_DIR}/3rd/lua51original/src
+    ${CMAKE_BINARY_DIR}/3rd/lua51original)
 target_compile_features(test_external_discover_gate PRIVATE cxx_std_23)
 target_compile_definitions(test_external_discover_gate PRIVATE DS_PLUGIN_HOST_STATIC)
 if (TARGET liblua_static)
@@ -696,7 +696,7 @@ set_tests_properties(
 # prints: unnamed metamethod frames (LJ_DS_DEBUG_FUNCNAME_PATCH) and one
 # "        =(tail call) ?" line per elided tail call instead of the upstream
 # "(...tail calls...)" marker (LJ_DS_TRACEBACK_PATCH). Both cases fail when the
-# corresponding switch in luajit/src/lj_arch.h is turned off.
+# corresponding switch in 3rd/luajit/src/lj_arch.h is turned off.
 foreach(_ds_vm_parity_case metamethod_name tailcall_lines)
     add_test(NAME luajit_parity_${_ds_vm_parity_case}
         COMMAND ${LUAJIT_HOST_EXECUTABLE_TARGET}
@@ -710,8 +710,8 @@ endforeach()
 # Main-chunk top-level tail calls: the chunk is called from C, so its frame
 # carries a C-caller marker; an in-place tail call must still leave one 5.1
 # "tail" level per elided frame.  The repro ships in tests/lua_vm_parity/
-# (fork-side copy in luajit/test/compat51/); details in
-# luajit/doc/tailcall-level-parity.md.  Fails when LUA_COMPAT_TAILCALL_COUNT
+# (fork-side copy in 3rd/luajit/test/compat51/); details in
+# 3rd/luajit/doc/tailcall-level-parity.md.  Fails when LUA_COMPAT_TAILCALL_COUNT
 # is switched off.
 add_test(NAME luajit_parity_mainchunk_tailcall
     COMMAND ${LUAJIT_HOST_EXECUTABLE_TARGET}

@@ -377,7 +377,7 @@ def main() -> int:
     if game is None or not smoke.find_server_exe(game):
         return skip_code("DST dedicated server binary not found")
     groups = args.vm or [("luajit", build_release.build(
-        repo_root() / "luajit", build_release.DEFAULT_BUILD))]
+        repo_root() / "3rd" / "luajit", build_release.DEFAULT_BUILD))]
     if not any(module is None for _, module in groups):
         groups.insert(0, ("game", None))
     labels = [label for label, _ in groups]

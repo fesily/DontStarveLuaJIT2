@@ -121,8 +121,8 @@ luajit_register_variant(
     TARGET luajit-5.1
     EXECUTABLE luajit
     INCLUDE_DIR
-        ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src
-        ${CMAKE_CURRENT_BINARY_DIR}/luajit/variants/default
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rd/luajit/src
+        ${CMAKE_CURRENT_BINARY_DIR}/3rd/luajit/variants/default
     OUTPUT_NAME lua51DS
 )
 
@@ -131,8 +131,8 @@ luajit_register_variant(
     TARGET luajit-5.1-gengc
     EXECUTABLE luajit-gengc
     INCLUDE_DIR
-        ${CMAKE_CURRENT_SOURCE_DIR}/luajit/src
-        ${CMAKE_CURRENT_BINARY_DIR}/luajit/variants/arenagc
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rd/luajit/src
+        ${CMAKE_CURRENT_BINARY_DIR}/3rd/luajit/variants/arenagc
     OUTPUT_NAME lua51DS_gengc
 )
 
@@ -162,7 +162,7 @@ add_custom_command(OUTPUT ${Lua51_output_dir}/lua51.dll ${Lua51_output_dir}/lua5
 
 add_custom_target(build_lua51 DEPENDS ${Lua51_output_dir}/lua51${CMAKE_SHARED_LIBRARY_SUFFIX})
 
-add_subdirectory("luajit")
+add_subdirectory("3rd/luajit")
 
 # Host tool for codegen: default-variant CLI.
 # luajit-arenagc currently AVs on tools/modinfo2cpp.lua (Windows c0000005 /
@@ -424,7 +424,7 @@ find_package(keystone REQUIRED)
 set(DONTSTARVEINJECTOR_ROOT ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
 set(DONTSTARVEINJECTOR_UTIL_DIR ${DONTSTARVEINJECTOR_ROOT}/util)
 
-add_subdirectory("src/lua51original")
+add_subdirectory("3rd/lua51original")
 
 add_subdirectory("src/FunctionRelocation")
 set(FUNCTION_RELOCATION_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/FunctionRelocation)
@@ -445,7 +445,7 @@ add_subdirectory("src/DontStarveInjector")
 # at runtime / via tools/Creater signature_updater (CI may pre-generate later).
 set(DS_CORE_VM_DEPS_DEST "deps")  # under DS_MOD_ROOT_ABS
 if (TARGET liblua)
-    # lua51Original already installed by src/lua51original; ensure dest matches.
+    # lua51Original already installed by 3rd/lua51original; ensure dest matches.
 endif()
 # LuaJIT variants (lua51DS / gengc) — install runtime artifacts into Mod/deps.
 if (TARGET libluajit OR TARGET luajit)
@@ -529,8 +529,8 @@ if (WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/src/lua51")
       foreach(_name IN ITEMS lua51DS.dll lua51DS_gengc.dll lua51Original.dll)
         set(_ds_picked \"\")
         foreach(_root IN ITEMS
-            \"${CMAKE_BINARY_DIR}/luajit/\${_ds_cfg}\"
-            \"${CMAKE_BINARY_DIR}/src/lua51original/\${_ds_cfg}\")
+            \"${CMAKE_BINARY_DIR}/3rd/luajit/\${_ds_cfg}\"
+            \"${CMAKE_BINARY_DIR}/3rd/lua51original/\${_ds_cfg}\")
           if(EXISTS \"\${_root}/\${_name}\")
             set(_ds_picked \"\${_root}/\${_name}\")
             break()

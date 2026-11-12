@@ -29,9 +29,9 @@ def project_luajit_candidates() -> list[str]:
 
     candidates: list[str] = []
     for config in configs:
-        for pattern in (f"builds/*/luajit/{config}/luajit.exe", f"builds/*/luajit/{config}/luajit"):
+        for pattern in (f"builds/*/3rd/luajit/{config}/luajit.exe", f"builds/*/3rd/luajit/{config}/luajit"):
             candidates.extend(sorted(str(path) for path in ROOT.glob(pattern)))
-    for pattern in ("build/luajit/luajit.exe", "build/luajit/luajit"):
+    for pattern in ("build/3rd/luajit/luajit.exe", "build/3rd/luajit/luajit"):
         path = ROOT / pattern
         if path.is_file():
             candidates.append(str(path))

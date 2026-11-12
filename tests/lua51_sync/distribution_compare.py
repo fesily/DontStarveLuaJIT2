@@ -15,8 +15,8 @@ PROBE = Path(__file__).resolve().with_name("string_hash_distribution_probe.lua")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run as suite  # noqa: E402
 
-DEFAULT_LUA51 = suite.default_runtime_path("src", "lua51original", "lua.exe")
-DEFAULT_LUAJIT = suite.default_runtime_path("luajit", "luajit.exe")
+DEFAULT_LUA51 = suite.default_runtime_path("3rd", "lua51original", "lua.exe")
+DEFAULT_LUAJIT = suite.default_runtime_path("3rd", "luajit", "luajit.exe")
 
 
 def runtime_path(env_name: str, default_path: Path) -> Path:

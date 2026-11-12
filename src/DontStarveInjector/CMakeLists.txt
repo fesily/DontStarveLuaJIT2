@@ -134,15 +134,15 @@ target_link_libraries(Injector PRIVATE ds_signature_provider)
 target_include_directories(Injector PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
 # L0 config cascade (save write-back + stock sol2) uses a dedicated PUC
-# Lua 5.1 VM (src/lua51original → liblua_static). Do NOT link game LuaJIT here:
+# Lua 5.1 VM (3rd/lua51original → liblua_static). Do NOT link game LuaJIT here:
 # core.vm owns the game VM; sol in GameLuaModule is GameDbg-specialized and lives
 # only in plugin_core_vm.
 #
-# Headers: PRIVATE lua51original so Injector TUs (sol cascade
+# Headers: PRIVATE 3rd/lua51original so Injector TUs (sol cascade
 # incomplete type) see stock lua.h — not LUAJIT_INCLUDE_DIR (that stays on core.vm).
 target_include_directories(Injector PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/lua51original/src
-    ${CMAKE_BINARY_DIR}/src/lua51original  # generated luaconf.h if needed
+    ${PROJECT_SOURCE_DIR}/3rd/lua51original/src
+    ${CMAKE_BINARY_DIR}/3rd/lua51original  # generated luaconf.h if needed
 )
 # Prefer build-tree include for configured luaconf.h
 if (TARGET liblua_static)
@@ -155,7 +155,7 @@ if (TARGET liblua_static)
         target_link_options(Injector PRIVATE "-Wl,--exclude-libs,ALL")
     endif()
 else()
-    message(FATAL_ERROR "liblua_static (src/lua51original) required for L0 config cascade")
+    message(FATAL_ERROR "liblua_static (3rd/lua51original) required for L0 config cascade")
 endif()
 
 # Optional legacy switches: macros only — do not re-link game JIT into L0.

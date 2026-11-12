@@ -1,5 +1,5 @@
 [submodule "luajit"]
-	path = luajit
+	path = 3rd/luajit
 	url = https://github.com/fesily/luajit.git
 	branch = dontstarve
 [submodule "vcpkg"]

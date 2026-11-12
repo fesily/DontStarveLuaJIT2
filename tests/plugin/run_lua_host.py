@@ -19,10 +19,10 @@ def lua_command_candidates() -> list[list[str]]:
 
     # Prefer project-built LuaJIT when present (Windows multi-config tree).
     build_roots = [
-        ROOT / "builds" / "ninja-multi-vcpkg" / "luajit" / "Release" / "luajit.exe",
-        ROOT / "builds" / "ninja-multi-vcpkg" / "luajit" / "Debug" / "luajit.exe",
-        ROOT / "build" / "luajit" / "luajit",
-        ROOT / "build" / "luajit" / "luajit.exe",
+        ROOT / "builds" / "ninja-multi-vcpkg" / "3rd" / "luajit" / "Release" / "luajit.exe",
+        ROOT / "builds" / "ninja-multi-vcpkg" / "3rd" / "luajit" / "Debug" / "luajit.exe",
+        ROOT / "build" / "3rd" / "luajit" / "luajit",
+        ROOT / "build" / "3rd" / "luajit" / "luajit.exe",
     ]
     for path in build_roots:
         if path.is_file():
