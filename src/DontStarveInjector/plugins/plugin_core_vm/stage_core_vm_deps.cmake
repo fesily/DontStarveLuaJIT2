@@ -78,8 +78,8 @@ foreach(_name IN ITEMS lua51DS.dll lua51DS_gengc.dll lua51Original.dll
                        liblua51DS.dylib liblua51DS_gengc.dylib liblua51Original.dylib)
   set(_picked "")
   foreach(_root IN ITEMS
-      "${DS_BINARY_DIR}/luajit/${DS_CFG}"
-      "${DS_BINARY_DIR}/src/lua51original/${DS_CFG}")
+      "${DS_BINARY_DIR}/3rd/luajit/${DS_CFG}"
+      "${DS_BINARY_DIR}/3rd/lua51original/${DS_CFG}")
     if(EXISTS "${_root}/${_name}")
       set(_picked "${_root}/${_name}")
       break()
@@ -88,10 +88,10 @@ foreach(_name IN ITEMS lua51DS.dll lua51DS_gengc.dll lua51Original.dll
   # Non-Debug may fall back to RelWithDebInfo/Release build trees only (never Debug CRT).
   if(NOT _picked AND NOT DS_CFG MATCHES "^[Dd][Ee][Bb][Uu][Gg]$")
     foreach(_root IN ITEMS
-        "${DS_BINARY_DIR}/luajit/RelWithDebInfo"
-        "${DS_BINARY_DIR}/luajit/Release"
-        "${DS_BINARY_DIR}/src/lua51original/RelWithDebInfo"
-        "${DS_BINARY_DIR}/src/lua51original/Release")
+        "${DS_BINARY_DIR}/3rd/luajit/RelWithDebInfo"
+        "${DS_BINARY_DIR}/3rd/luajit/Release"
+        "${DS_BINARY_DIR}/3rd/lua51original/RelWithDebInfo"
+        "${DS_BINARY_DIR}/3rd/lua51original/Release")
       if(EXISTS "${_root}/${_name}")
         set(_picked "${_root}/${_name}")
         break()
@@ -100,8 +100,8 @@ foreach(_name IN ITEMS lua51DS.dll lua51DS_gengc.dll lua51Original.dll
   endif()
   if(NOT _picked AND DS_CFG MATCHES "^[Dd][Ee][Bb][Uu][Gg]$")
     foreach(_root IN ITEMS
-        "${DS_BINARY_DIR}/luajit/Debug"
-        "${DS_BINARY_DIR}/src/lua51original/Debug")
+        "${DS_BINARY_DIR}/3rd/luajit/Debug"
+        "${DS_BINARY_DIR}/3rd/lua51original/Debug")
       if(EXISTS "${_root}/${_name}")
         set(_picked "${_root}/${_name}")
         break()

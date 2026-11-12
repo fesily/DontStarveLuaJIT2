@@ -20,16 +20,16 @@ def lua_command_candidates() -> list[list[str]]:
     # Prefer project-built LuaJIT when present (Windows multi-config tree).
     # Worktrees often lack builds/; also probe ancestor checkouts.
     build_roots = [
-        ROOT / "builds" / "ninja-multi-vcpkg" / "luajit" / "Release" / "luajit.exe",
-        ROOT / "builds" / "ninja-multi-vcpkg" / "luajit" / "Debug" / "luajit.exe",
-        ROOT / "build" / "luajit" / "luajit",
-        ROOT / "build" / "luajit" / "luajit.exe",
+        ROOT / "builds" / "ninja-multi-vcpkg" / "3rd" / "luajit" / "Release" / "luajit.exe",
+        ROOT / "builds" / "ninja-multi-vcpkg" / "3rd" / "luajit" / "Debug" / "luajit.exe",
+        ROOT / "build" / "3rd" / "luajit" / "luajit",
+        ROOT / "build" / "3rd" / "luajit" / "luajit.exe",
     ]
     for parent in ROOT.parents:
         build_roots.extend(
             [
-                parent / "builds" / "ninja-multi-vcpkg" / "luajit" / "Release" / "luajit.exe",
-                parent / "builds" / "ninja-multi-vcpkg" / "luajit" / "Debug" / "luajit.exe",
+                parent / "builds" / "ninja-multi-vcpkg" / "3rd" / "luajit" / "Release" / "luajit.exe",
+                parent / "builds" / "ninja-multi-vcpkg" / "3rd" / "luajit" / "Debug" / "luajit.exe",
             ]
         )
     for path in build_roots:

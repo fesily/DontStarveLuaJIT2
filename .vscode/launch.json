@@ -355,7 +355,7 @@
             "name": "Launch luajit",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/builds/ninja-multi-vcpkg/luajit/Debug/luajit",
+            "program": "${workspaceFolder}/builds/ninja-multi-vcpkg/3rd/luajit/Debug/luajit",
             "args": [
                 //"-bl",
                 "${workspaceFolder}/test.lua",
@@ -369,7 +369,7 @@
             "name": "Launch lua51",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/builds/ninja-multi-vcpkg/src/lua51original/Debug/lua.exe",
+            "program": "${workspaceFolder}/builds/ninja-multi-vcpkg/3rd/lua51original/Debug/lua.exe",
             "args": [
                 "${workspaceFolder}/test.lua",
             ],
@@ -390,8 +390,8 @@
                 "tests/2847908822/5.lua",
                 "../mods/workshop-2847908822/5.lua"
             ],
-            //"luaexe": "${workspaceFolder}/builds/ninja-multi-vcpkg/luajit/Debug/luajit.exe",
-            "luaexe": "${workspaceFolder}/builds/ninja-multi-vcpkg/src/lua51original/Debug/lua.exe",
+            //"luaexe": "${workspaceFolder}/builds/ninja-multi-vcpkg/3rd/luajit/Debug/luajit.exe",
+            "luaexe": "${workspaceFolder}/builds/ninja-multi-vcpkg/3rd/lua51original/Debug/lua.exe",
             "stopOnEntry": true,
             "env": {},
             "sourceMaps": [
@@ -519,8 +519,8 @@
             "name": "Debug Lua Vm",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/builds/ninja-multi-vcpkg/luajit/Debug/luajit",
-            //"program": "${workspaceFolder}/builds/ninja-multi-vcpkg/src/lua51original/RelWithDebInfo/lua",
+            "program": "${workspaceFolder}/builds/ninja-multi-vcpkg/3rd/luajit/Debug/luajit",
+            //"program": "${workspaceFolder}/builds/ninja-multi-vcpkg/3rd/lua51original/RelWithDebInfo/lua",
             "args": [
                 "${workspaceFolder}/tests/sect/simulator.lua",
                 "tests/2847908822/modmain12345.lua",

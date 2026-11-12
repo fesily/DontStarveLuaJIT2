@@ -97,19 +97,19 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
 
 # PUC 5.1 dump service (DS: real Lua 5.1 string.dump for mods). Private static
 # library: it owns the second PUC 5.1 state per call, so the game VM never links a
-# PUC runtime and only ever sees the POD ABI in luajit/src/lua_ds_pucdump.h.
+# PUC runtime and only ever sees the POD ABI in 3rd/luajit/src/lua_ds_pucdump.h.
 add_library(ds_puc51_dump STATIC core/LuaPucDumpService.cpp)
 set_target_properties(ds_puc51_dump PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(ds_puc51_dump PRIVATE
     # PUC 5.1 internal headers first: lobject.h/lstate.h/lundump.h must resolve to
-    # the src/lua51original tree, never to the LuaJIT one.
-    ${PROJECT_SOURCE_DIR}/src/lua51original/src
-    ${CMAKE_BINARY_DIR}/src/lua51original
+    # the 3rd/lua51original tree, never to the LuaJIT one.
+    ${PROJECT_SOURCE_DIR}/3rd/lua51original/src
+    ${CMAKE_BINARY_DIR}/3rd/lua51original
     ${CMAKE_CURRENT_SOURCE_DIR}
     # ABI header only (lua_ds_pucdump.h); it defines no lua_* type. Kept PRIVATE:
-    # Injector compiles against src/lua51original and must not gain a LuaJIT
+    # Injector compiles against 3rd/lua51original and must not gain a LuaJIT
     # include path (it would resolve lualib.h/luaconf.h to the other VM).
-    ${PROJECT_SOURCE_DIR}/luajit/src
+    ${PROJECT_SOURCE_DIR}/3rd/luajit/src
 )
 target_compile_features(ds_puc51_dump PRIVATE cxx_std_23)
 if (NOT MSVC)
@@ -119,7 +119,7 @@ if (TARGET liblua_static)
     target_link_libraries(ds_puc51_dump PRIVATE liblua_static)
     add_dependencies(ds_puc51_dump liblua_static)
 else()
-    message(FATAL_ERROR "liblua_static (src/lua51original) required for ds_puc51_dump")
+    message(FATAL_ERROR "liblua_static (3rd/lua51original) required for ds_puc51_dump")
 endif ()
 
 add_library(Injector SHARED ${SOURCES})
@@ -192,15 +192,15 @@ target_link_libraries(Injector PRIVATE ds_signature_provider)
 target_include_directories(Injector PUBLIC ${FUNCTION_RELOCATION_INCLUDE_DIR})
 
 # L0 config cascade (save write-back + stock sol2) uses a dedicated PUC
-# Lua 5.1 VM (src/lua51original → liblua_static). Do NOT link game LuaJIT here:
+# Lua 5.1 VM (3rd/lua51original → liblua_static). Do NOT link game LuaJIT here:
 # core.vm owns the game VM; sol in GameLuaModule is GameDbg-specialized and lives
 # only in plugin_core_vm.
 #
-# Headers: PRIVATE lua51original so Injector TUs (sol cascade
+# Headers: PRIVATE 3rd/lua51original so Injector TUs (sol cascade
 # incomplete type) see stock lua.h — not LUAJIT_INCLUDE_DIR (that stays on core.vm).
 target_include_directories(Injector PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/lua51original/src
-    ${CMAKE_BINARY_DIR}/src/lua51original  # generated luaconf.h if needed
+    ${PROJECT_SOURCE_DIR}/3rd/lua51original/src
+    ${CMAKE_BINARY_DIR}/3rd/lua51original  # generated luaconf.h if needed
 )
 # Prefer build-tree include for configured luaconf.h
 if (TARGET liblua_static)
@@ -213,7 +213,7 @@ if (TARGET liblua_static)
         target_link_options(Injector PRIVATE "-Wl,--exclude-libs,ALL")
     endif()
 else()
-    message(FATAL_ERROR "liblua_static (src/lua51original) required for L0 config cascade")
+    message(FATAL_ERROR "liblua_static (3rd/lua51original) required for L0 config cascade")
 endif()
 
 # Optional legacy switches: macros only — do not re-link game JIT into L0.
