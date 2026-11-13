@@ -49,6 +49,10 @@ Usage
     python tools/update_workshop_tags.py --language schinese --description-file docs/ws-zh.txt --yes
     python tools/update_workshop_tags.py --language english  --description-file docs/ws-en.txt --yes
 
+The change note (`--note`, `--note-file`) is the text of the entry on the item's Change Notes page.
+Steam creates such an entry only for content updates, and the note is one global string: the
+`--language` switch localizes the title/description, never the note.
+
 Content pushes stage a filtered copy first (Windows-only item, like the release shape):
 debug/link artifacts (`*.pdb`, `*.lib`, `*.exp`, `*.ilk`), foreign-platform libraries
 (`*.so`, `*.so.*`, `*.dylib`), `bin64/osx`, `bin64/linux`, `plugins/update_pending`,
@@ -828,6 +832,10 @@ def main(argv: list[str]) -> int:
             raise SystemExit(f"note file is empty: {args.note_file}")
     if len(args.note) > 8000:  # Steamworks k_cchMaxChangenote
         raise SystemExit(f"change note is {len(args.note)} chars; Steam accepts at most 8000")
+    if args.language is not None and args.note:
+        log("note: a change note is one global string — SetItemUpdateLanguage localizes title/description "
+            "only, so both languages would read this same text; put both blocks in the note, or keep the "
+            "localized changelog in the description")
     if args.description_file is not None:
         if args.description is not None:
             raise SystemExit("pass either --description or --description-file, not both")
