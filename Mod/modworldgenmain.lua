@@ -32,7 +32,9 @@ if type(global.pcall) ~= "function" or type(global.require) ~= "function" then
     global.error("[luajit] Cannot initialize mod blacklist: pcall/require", 0)
 end
 local has_luajit = global.pcall(global.require, "jit") and true or false
-if has_luajit then
+-- TEMPORARY: same kill switch as modmain -- without GLOBAL._ds_luajit_mod_blacklist_enabled
+-- nothing is installed here either (tests set it), so no mod is refused in worldgen.
+if has_luajit and global.rawget(global, "_ds_luajit_mod_blacklist_enabled") == true then
     if type(modimport) ~= "function" then
         global.error("[luajit] Cannot initialize mod blacklist: modimport", 0)
     end

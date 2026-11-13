@@ -58,12 +58,15 @@ local function main()
 	local os_is_windows = _G.IsWin32()
 	local GameInjector = LoadGameInjector()
 
-	-- LuaJIT mode always enforces the string.dump mod blacklist, independent of
+	-- TEMPORARY: the string.dump mod blacklist (detection + refusal) is disabled at
+	-- this entry point: nothing is imported, so no string.dump/kleiloadlua wrapper is
+	-- installed and a recorded mod is not refused. Set GLOBAL._ds_luajit_mod_blacklist_enabled
+	-- to true to re-enable (tests do); otherwise LuaJIT mode enforces it regardless of
 	-- HideGlobalJIT / EnabledJIT / luajit_compatible. The script installs itself from
 	-- this mod's env (modimport) and publishes the manager on ModManager; install it
 	-- before the plugin host so jit.runtime can keep the loader wrapper outermost.
 	local mod_blacklist = nil
-	if hasluajit then
+	if hasluajit and _G.rawget(_G, "_ds_luajit_mod_blacklist_enabled") == true then
 		modimport("scripts/luajit_mod_blacklist")
 		mod_blacklist = _G.rawget(ModManager, "_ds_luajit_mod_blacklist_installed")
 		if type(mod_blacklist) ~= "table" then

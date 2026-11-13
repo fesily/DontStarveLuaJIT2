@@ -36,7 +36,10 @@
 --     code never runs, but a late engine require cannot abort on our error),
 --   * a ModManager:InitializeModMain hook that registers every mod env.
 -- It is enforced whenever LuaJIT is the VM: no config key, no luajit_compatible
--- exemption, no HideGlobalJIT interaction. Heuristic *encrypted* mod detection
+-- exemption, no HideGlobalJIT interaction -- TEMPORARILY disabled at the entry
+-- points, which import this file only when GLOBAL._ds_luajit_mod_blacklist_enabled
+-- is true (modmain and modworldgenmain both check it; tests set it themselves).
+-- Heuristic *encrypted* mod detection
 -- keeps its own JIT-off behaviour in jit.runtime and never feeds this list.
 -- The installing mod is not exempt either: its own scripts (including the bundled
 -- jit/*.lua) must never call string.dump through the mod env, or it records itself

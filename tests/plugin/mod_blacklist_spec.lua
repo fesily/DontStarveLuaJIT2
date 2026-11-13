@@ -1105,6 +1105,8 @@ local function case_worldgen_entry()
 	do
 		local sb = new_sandbox()
 		sb.global.WORLDGEN_MAIN = 1
+		-- The kill switch: the entry points install the blacklist only when this is true.
+		sb.global._ds_luajit_mod_blacklist_enabled = true
 		sb.global.GetModConfigData = function()
 			return false
 		end
@@ -1118,6 +1120,24 @@ local function case_worldgen_entry()
 		local ok_dump, dump_err = run_in_env(chunk, worldgen_env)
 		expect_refusal(ok_dump, dump_err, MOD_A)
 		assert_blacklist(sorted_names(MOD_A), "the worldgen path persists the hit")
+	end
+
+	-- TEMPORARY kill switch: without GLOBAL._ds_luajit_mod_blacklist_enabled the
+	-- worldgen entry point installs nothing, so no mod is refused.
+	do
+		local sb = new_sandbox()
+		sb.global.WORLDGEN_MAIN = 1
+		sb.global.GetModConfigData = function()
+			return false
+		end
+		ensure_jit_probe(sb)
+		local loader_before = sb.global.kleiloadlua
+		local ok, err = run_worldgen(sb.global, MOD_A, ROOT .. "/Mod/")
+		assert_eq(ok, true, "the disabled worldgen entry must not error: " .. tostring(err))
+		assert_eq(sb.global.ModManager._ds_luajit_mod_blacklist_installed, nil,
+			"the kill switch leaves the blacklist uninstalled")
+		assert_eq(sb.global.kleiloadlua, loader_before, "kleiloadlua must stay untouched")
+		assert_eq(read_blacklist(), nil, "no blacklist file access while disabled")
 	end
 
 	-- Not a worldgen load: nothing is installed, nothing is read or written.
@@ -1148,6 +1168,7 @@ local function case_worldgen_entry()
 	do
 		local sb = new_sandbox()
 		sb.global.WORLDGEN_MAIN = 1
+		sb.global._ds_luajit_mod_blacklist_enabled = true
 		sb.global.io = nil
 		ensure_jit_probe(sb)
 		local ok, err = run_worldgen(sb.global, MOD_A, ROOT .. "/Mod/")
