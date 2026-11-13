@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Update the Steam Workshop item's plain tags (the `version:<modinfo.version>` tag).
+r"""Publish the Steam Workshop item: content, the `version:<modinfo.version>` tag, and metadata.
 
 Why this tool exists
 --------------------
@@ -42,8 +42,9 @@ Usage
     python tools/update_workshop_tags.py --version 3.2.3  # override the version
     python tools/update_workshop_tags.py --push-content --ignore-file ignore.txt
     python tools/update_workshop_tags.py --visibility 0 --yes   # flip to public, no prompt
+    python tools/update_workshop_tags.py --tags-only     # write the tag alone (no content, no metadata)
     python tools/update_workshop_tags.py --verify-content      # download the item and diff it
-    python tools/update_workshop_tags.py --verify-content --download-dir D:\\ws-check
+    python tools/update_workshop_tags.py --verify-content --download-dir D:\ws-check
     python tools/update_workshop_tags.py --description-file docs/workshop-zh.txt --yes
     python tools/update_workshop_tags.py --title "..." --preview Mod/preview.jpg --yes
     python tools/update_workshop_tags.py --language schinese --description-file docs/ws-zh.txt --yes
@@ -780,6 +781,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--dry-run", action="store_true", help="compose the tag list but do not write")
     parser.add_argument("--push-content", action="store_true",
                         help="also upload the staged content folder (Mod/ by default) in the same update")
+    parser.add_argument("--tags-only", action="store_true",
+                        help="write only the version tag: no content, no metadata (a bare run refuses "
+                             "because that is how the item ends up advertising a version whose files "
+                             "were never uploaded)")
     parser.add_argument("--content", type=pathlib.Path, default=REPO_ROOT / "Mod",
                         help="mod root to upload with --push-content (default: <repo>/Mod)")
     parser.add_argument("--note", default="", help="changenote for a content push (default: v<version>)")
@@ -878,7 +883,23 @@ def main(argv: list[str]) -> int:
         return 0 if ok else 3
     tags = compose_tags(existing, version)
     log(f"tag list to write: {tags}")
+    metadata = any(value is not None for value in (args.title, args.description, args.description_file,
+                                                   args.preview, args.visibility))
+    if args.tags_only and (args.push_content or metadata):
+        raise SystemExit("--tags-only cannot be combined with --push-content or metadata flags")
+    if not (args.push_content or metadata or args.tags_only) and not (args.dry_run or args.print_only
+                                                                     or args.verify_content):
+        raise SystemExit(
+            "nothing selected: a bare run would only rewrite the version tag and leave content and "
+            "metadata exactly as published.\n"
+            "  --push-content   upload Mod/ (filtered; mapped modules as *.pkg) and write the tag  [release]\n"
+            "  --tags-only      write the tag alone (after an upload done elsewhere)\n"
+            "  --title / --description / --description-file / --preview / --visibility [--language]\n"
+            "                   metadata only\n"
+            "  --verify-content download the published item and diff it against the local payload\n"
+            "  --dry-run / --print  inspect without writing anything")
 
+    files = total = 0
     staged: pathlib.Path | None = None
     if args.push_content:
         if extra:
@@ -894,7 +915,9 @@ def main(argv: list[str]) -> int:
 
     plan = []
     if staged is not None:
-        plan.append("content")
+        plan.append(f"content {files} files / {total:,} B")
+    else:
+        plan.append("content: unchanged")
     plan.append(f"tags={tags}")
     for label, value in (("title", args.title), ("description", args.description),
                          ("preview", args.preview), ("visibility", args.visibility)):
@@ -903,6 +926,11 @@ def main(argv: list[str]) -> int:
     if args.language is not None:
         plan.append(f"language={args.language}")
     log(f"update plan: {' + '.join(plan)} (item {args.item}, note {brief_note(args.note) if args.note else version!r})")
+    published_version = next((tag.split(":", 1)[1] for tag in existing if tag.startswith("version:")), None)
+    if staged is None and published_version is not None and version != published_version:
+        log(f"WARNING: published content is the {published_version} upload, but this run writes "
+            f"version:{version} without files — subscribers would get the new version with the old "
+            f"content. Use --push-content, or --version {published_version} for a metadata-only update.")
     if args.dry_run:
         log("dry run: nothing uploaded" if not args.push_content else "dry run: staging only, nothing uploaded")
         return 0
