@@ -19,6 +19,18 @@ Metadata (title/description/visibility/preview) is only touched when explicitly 
 the one-shot `--title`/`--description`/`--preview`/`--visibility` flags: the UGC update handle
 applies exactly what is set on it, so an unset field stays as it is.
 
+Paths: workshop writes go through the **Steam client** session (`--steam-client`, `$STEAM_CLIENT`,
+`HKCU\Software\Valve\Steam`, else the DST install's ancestor) — its `steam.exe` must be running and
+signed in, and it is what `steam_api64.dll` talks to. **SteamCMD** (`--steamcmd`, `$STEAMCMD`,
+`C:\steamcmd`) is a separate tool used only by `--verify-content`, where it downloads anonymously;
+logging SteamCMD in with the account would replace the client's session, so it is never used for writes.
+
+Localization: Steam keeps one title/description per language. `--language <ELanguage name>`
+routes the `--title`/`--description` one-shots into that entry only, so `schinese` and `english`
+are two independent updates on the same item; omit it to write the item's default language. The
+public details API only ever returns the default language, so a localized write is reported by
+its submit result rather than read back.
+
 Usage
 -----
     python tools/update_workshop_tags.py                  # tags only, version from Mod/modinfo.lua
@@ -31,6 +43,10 @@ Usage
     python tools/update_workshop_tags.py --visibility 0 --yes   # flip to public, no prompt
     python tools/update_workshop_tags.py --verify-content      # download the item and diff it
     python tools/update_workshop_tags.py --verify-content --download-dir D:\\ws-check
+    python tools/update_workshop_tags.py --description-file docs/workshop-zh.txt --yes
+    python tools/update_workshop_tags.py --title "..." --preview Mod/preview.jpg --yes
+    python tools/update_workshop_tags.py --language schinese --description-file docs/ws-zh.txt --yes
+    python tools/update_workshop_tags.py --language english  --description-file docs/ws-en.txt --yes
 
 Content pushes stage a filtered copy first (Windows-only item, like the release shape):
 debug/link artifacts (`*.pdb`, `*.lib`, `*.exp`, `*.ilk`), foreign-platform libraries
@@ -104,6 +120,12 @@ _DEBUG_RUNTIME = re.compile(r"^(?P<base>.+?)d(?P<digits>\d*)\.dll$", re.IGNORECA
 EXCLUDE_DEBUG_RUNTIMES = ("bz2d.dll", "fmtd.dll", "mimalloc-debug.dll", "spdlogd.dll",
                           "zlibd1.dll", "zstdd.dll")
 DEFAULT_APPID = 322330  # Don't Starve Together
+# Steamworks ELanguage names SetItemUpdateLanguage accepts (Steamworks SDK isteamugc.h).
+STEAM_LANGUAGES = ("arabic", "brazilian", "bulgarian", "czech", "danish", "dutch", "english",
+                   "finnish", "french", "german", "greek", "hungarian", "indonesian", "italian",
+                   "japanese", "koreana", "latam", "norwegian", "polish", "portuguese",
+                   "romanian", "russian", "schinese", "spanish", "swedish", "tchinese", "thai",
+                   "turkish", "ukrainian", "vietnamese")
 DETAILS_URL = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -257,6 +279,62 @@ def dst_install_dir() -> pathlib.Path:
     raise SystemExit("DST install not found (no bin64/steam_api64.dll); pass DST_DIR=<game dir>")
 
 
+def normalize_client_path(value: pathlib.Path) -> pathlib.Path:
+    """Accept the install dir or steam.exe itself; insist on a real client install."""
+    path = value.parent if value.name.lower() == "steam.exe" else value
+    if not (path / "steam.exe").is_file():
+        raise SystemExit(f"not a Steam client install (no steam.exe): {path}")
+    return path.resolve()
+
+
+def steam_client_dir() -> pathlib.Path | None:
+    """The Steam client whose session performs every workshop write.
+
+    SteamCMD is a *different* tool with its own path (`--steamcmd`): it is used only for
+    anonymous downloads, and its account login would replace this client's session.
+    """
+    if os.environ.get("STEAM_CLIENT"):
+        try:
+            return normalize_client_path(pathlib.Path(os.environ["STEAM_CLIENT"]))
+        except SystemExit:
+            pass
+    if os.name == "nt":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
+                for value in ("SteamPath", "SteamExe"):
+                    try:
+                        raw = str(winreg.QueryValueEx(key, value)[0])
+                    except OSError:
+                        continue
+                    try:
+                        return normalize_client_path(pathlib.Path(raw.replace("/", os.sep)))
+                    except SystemExit:
+                        continue
+        except OSError:
+            pass
+    try:
+        game = dst_install_dir()
+    except SystemExit:
+        return None
+    for parent in game.parents:  # <client>/steamapps/common/<game>
+        if (parent / "steam.exe").is_file():
+            return parent
+    return None
+
+
+def steam_client_running() -> bool | None:
+    """Whether steam.exe is up; None when it cannot be told (non-Windows, tasklist missing)."""
+    if os.name != "nt":
+        return None
+    try:
+        result = subprocess.run(["tasklist", "/FI", "IMAGENAME eq steam.exe", "/NH"],
+                                capture_output=True, text=True, errors="replace", timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return "steam.exe" in (result.stdout or "").lower()
+
+
 class SteamParamStringArray(ctypes.Structure):
     # { const char **m_ppStrings; int32 m_nNumStrings; } — same layout for pack(4) or pack(8)
     _pack_ = 4
@@ -325,10 +403,12 @@ class SteamSession:
                content_dir: pathlib.Path | None = None, note: str = "",
                title: str | None = None, description: str | None = None,
                preview: pathlib.Path | None = None, visibility: int | None = None,
+               language: str | None = None,
                push_timeout: float = 1800.0) -> int:
         """One update handle: optionally set the content folder, optionally the tags, then submit.
 
-        Nothing else is set, so title/description/visibility/preview stay untouched.
+        Nothing else is set, so title/description/visibility/preview stay untouched. A language
+        routes the title/description into that localization instead of the item's default one.
         """
         dll = self.dll
         dll.SteamAPI_ISteamUGC_StartItemUpdate.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint64]
@@ -337,6 +417,14 @@ class SteamSession:
         if not handle:
             log("StartItemUpdate failed")
             return 2
+
+        if language is not None:
+            dll.SteamAPI_ISteamUGC_SetItemUpdateLanguage.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p]
+            dll.SteamAPI_ISteamUGC_SetItemUpdateLanguage.restype = ctypes.c_bool
+            if not dll.SteamAPI_ISteamUGC_SetItemUpdateLanguage(self.ugc, handle, language.encode("ascii")):
+                log(f"SetItemUpdateLanguage was refused: {language}")
+                return 2
+            log(f"update language set: {language}")
 
         if content_dir is not None:
             dll.SteamAPI_ISteamUGC_SetItemContent.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p]
@@ -465,7 +553,8 @@ def snapshot(item: int) -> dict:
 
 
 def verify(item: int, version: str, before: dict, timeout: float, content_pushed: bool = False,
-           metadata_expected: bool = False) -> bool:
+           metadata_expected: bool = False, language: str | None = None,
+           client: pathlib.Path | None = None) -> bool:
     """Tags must land, metadata must not move, and a content push must change something."""
     wanted = f"version:{version}"
     if not before:
@@ -491,12 +580,23 @@ def verify(item: int, version: str, before: dict, timeout: float, content_pushed
         content_moved = any(before.get(key) != after.get(key) for key in CONTENT_FIELDS)
         tags = fetch_tags(item)
         if wanted in tags and (content_moved or not content_pushed):
-            detail = f" (content: hcontent_file={after.get('hcontent_file')} size={after.get('file_size')})" \
-                if content_pushed else " (title/description/visibility/preview untouched)"
+            if content_pushed:
+                detail = f" (content: hcontent_file={after.get('hcontent_file')} size={after.get('file_size')})"
+            elif metadata_expected:
+                detail = (" (metadata set for %s, other fields unchanged)" % language
+                          if language else " (metadata set, other fields unchanged)")
+            else:
+                detail = " (title/description/visibility/preview untouched)"
             log(f"verified: tags={tags}{detail}")
             return True
         if time.time() >= deadline:
             log(f"NOT verified after {timeout:.0f}s: tags={tags} (wanted {wanted}), content_moved={content_moved}")
+            logs = (client / "logs") if client is not None else pathlib.Path("<Steam>/logs")
+            log(f"hint: check {logs / 'connection_log.txt'} — 'Session Replaced' means another login "
+                f"(SteamCMD with this account, or another platform) took this client's session and it "
+                f"never reconnects on its own; sign in again and re-run")
+            log(f"hint: {logs / 'workshop_log.txt'} says 'Getting Workshop info … failed : No Connection' "
+                f"while the client has no session; a long uptime can also wedge UGC writes (restart helps)")
             return False
         time.sleep(5)
 
@@ -675,9 +775,14 @@ def main(argv: list[str]) -> int:
                         help="do not ask for confirmation before a written update")
     parser.add_argument("--title", help="one-shot: also set the item title")
     parser.add_argument("--description", help="one-shot: also set the item description")
+    parser.add_argument("--description-file", type=pathlib.Path,
+                        help="one-shot: read the description (UTF-8) from this file instead of --description")
     parser.add_argument("--preview", type=pathlib.Path, help="one-shot: also upload a new preview image")
     parser.add_argument("--visibility", type=int, choices=(0, 1, 2, 3),
                         help="one-shot: also set visibility (0 public, 1 friends, 2 private, 3 unlisted)")
+    parser.add_argument("--language", metavar="LANG",
+                        help="localization the --title/--description apply to (Steamworks ELanguage "
+                             "name, e.g. schinese, tchinese, english; omit for the item default)")
     parser.add_argument("--push-timeout", type=float, default=1800.0,
                         help="seconds to wait for the upload to finish (default 1800)")
     parser.add_argument("--timeout", type=float, default=120.0, help="seconds to wait for verification (default 120)")
@@ -691,12 +796,39 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--download-dir", type=pathlib.Path,
                         help="also keep the downloaded copy in this folder (default: SteamCMD's workshop cache)")
     parser.add_argument("--steamcmd", type=pathlib.Path,
-                        help="SteamCMD executable (default: $STEAMCMD, C:\\steamcmd, then PATH)")
+                        help="SteamCMD executable for --verify-content downloads (default: $STEAMCMD, "
+                             "C:\\steamcmd, then PATH); separate from the Steam client")
+    parser.add_argument("--steam-client", type=pathlib.Path,
+                        help="Steam client install dir (or steam.exe) whose session does the writes "
+                             "(default: $STEAM_CLIENT, HKCU\\Software\\Valve\\Steam, else the DST "
+                             "install's ancestor)")
     parser.add_argument("--download-timeout", type=float, default=900.0,
                         help="seconds for the SteamCMD download (default 900)")
     args = parser.parse_args(argv)
+    if args.description_file is not None:
+        if args.description is not None:
+            raise SystemExit("pass either --description or --description-file, not both")
+        if not args.description_file.is_file():
+            raise SystemExit(f"description file not found: {args.description_file}")
+        args.description = args.description_file.read_text(encoding="utf-8")
+    if args.language is not None:
+        args.language = args.language.strip().lower()
+        if args.language not in STEAM_LANGUAGES:
+            raise SystemExit(f"unknown Steam language {args.language!r}; one of: {', '.join(STEAM_LANGUAGES)}")
+        if args.title is None and args.description is None:
+            raise SystemExit("--language applies to --title/--description; pass one of them too")
 
     version = args.version or version_from_modinfo(args.modinfo)
+    client = normalize_client_path(args.steam_client) if args.steam_client is not None else steam_client_dir()
+    running = steam_client_running() if client is not None else None
+    if client is not None:
+        state = "" if running is None else (" (steam.exe running)" if running else " (steam.exe NOT running)")
+        log(f"steam client: {client}{state} — every workshop write goes through this session")
+    else:
+        log("steam client: not found (pass --steam-client; writes need a running, signed-in client)")
+    if not (args.print_only or args.verify_content or args.dry_run) and running is False:
+        raise SystemExit("the Steam client is not running: workshop writes go through its session, so start it "
+                         "and sign in first (SteamCMD is a separate tool here and only downloads anonymously)")
     existing = fetch_tags(args.item, allow_unreadable=args.allow_unreadable)
     log(f"item {args.item} tags now: {existing} (mod version {version})")
     if args.print_only:
@@ -736,6 +868,8 @@ def main(argv: list[str]) -> int:
                          ("preview", args.preview), ("visibility", args.visibility)):
         if value is not None:
             plan.append(f"{label}")
+    if args.language is not None:
+        plan.append(f"language={args.language}")
     log(f"update plan: {' + '.join(plan)} (item {args.item}, note {args.note or version!r})")
     if not args.assume_yes:
         if not sys.stdin.isatty():
@@ -752,6 +886,7 @@ def main(argv: list[str]) -> int:
         code = session.submit(args.appid, args.item, tags=tags, content_dir=staged, note=note,
                               title=args.title, description=args.description,
                               preview=args.preview, visibility=args.visibility,
+                              language=args.language,
                               push_timeout=args.push_timeout)
     finally:
         session.close()
@@ -759,7 +894,8 @@ def main(argv: list[str]) -> int:
         return code
     pushed_metadata = any(v is not None for v in (args.title, args.description, args.preview, args.visibility))
     return 0 if verify(args.item, version, before, args.timeout,
-                       content_pushed=staged is not None, metadata_expected=pushed_metadata) else 3
+                       content_pushed=staged is not None, metadata_expected=pushed_metadata,
+                       language=args.language, client=client) else 3
 
 
 if __name__ == "__main__":
