@@ -51,7 +51,9 @@ Usage
 
 The change note (`--note`, `--note-file`) is the text of the entry on the item's Change Notes page.
 Steam creates such an entry only for content updates, and the note is one global string: the
-`--language` switch localizes the title/description, never the note.
+`--language` switch localizes the title/description, never the note. `{version}` in a note expands
+to the resolved version (`--version`, else modinfo), so `--note "v{version}: fix X"` stays correct
+when the version moves; the default note when none is given is `v<version>`.
 
 Content pushes stage a filtered copy first (Windows-only item, like the release shape):
 debug/link artifacts (`*.pdb`, `*.lib`, `*.exp`, `*.ilk`), foreign-platform libraries
@@ -850,6 +852,9 @@ def main(argv: list[str]) -> int:
             raise SystemExit("--language applies to --title/--description; pass one of them too")
 
     version = args.version or version_from_modinfo(args.modinfo)
+    if "{version}" in args.note:
+        args.note = args.note.replace("{version}", version)
+        log(f"note: {{version}} -> {version}")
     client = normalize_client_path(args.steam_client) if args.steam_client is not None else steam_client_dir()
     running = steam_client_running() if client is not None else None
     if client is not None:
