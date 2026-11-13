@@ -36,6 +36,7 @@ Usage
     python tools/update_workshop_tags.py                  # tags only, version from Mod/modinfo.lua
     python tools/update_workshop_tags.py --push-content   # Mod/ content + tags in one upload
     python tools/update_workshop_tags.py --push-content --content <dir> --note "..."
+    python tools/update_workshop_tags.py --push-content --note-file .steam/changelog.txt --yes
     python tools/update_workshop_tags.py --print          # show the current tags only
     python tools/update_workshop_tags.py --dry-run        # stage/compose + print, no write
     python tools/update_workshop_tags.py --version 3.2.3  # override the version
@@ -132,6 +133,15 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 def log(msg: str) -> None:
     print(f"[workshop-tags] {msg}", flush=True)
+
+
+def brief_note(note: str) -> str:
+    """One-line preview of a possibly multi-line change note for the plan line."""
+    text = note.strip()
+    first = text.splitlines()[0] if text else ""
+    if len(text) == len(first):
+        return repr(first[:70])
+    return f"{first[:50]!r}… ({len(text)} chars, {text.count(chr(10)) + 1} lines)"
 
 
 # ---------------------------------------------------------------- version / tags
@@ -767,6 +777,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--content", type=pathlib.Path, default=REPO_ROOT / "Mod",
                         help="mod root to upload with --push-content (default: <repo>/Mod)")
     parser.add_argument("--note", default="", help="changenote for a content push (default: v<version>)")
+    parser.add_argument("--note-file", type=pathlib.Path,
+                        help="read the change note (UTF-8; the entry on the item's Change Notes page) from a "
+                             "file, for multi-line changelogs")
     parser.add_argument("--no-filter", action="store_true",
                         help="upload the content folder as-is (keep debug symbols and other platforms)")
     parser.add_argument("--ignore-file", type=pathlib.Path,
@@ -805,6 +818,16 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--download-timeout", type=float, default=900.0,
                         help="seconds for the SteamCMD download (default 900)")
     args = parser.parse_args(argv)
+    if args.note_file is not None:
+        if args.note:
+            raise SystemExit("pass either --note or --note-file, not both")
+        if not args.note_file.is_file():
+            raise SystemExit(f"note file not found: {args.note_file}")
+        args.note = args.note_file.read_text(encoding="utf-8").strip()
+        if not args.note:
+            raise SystemExit(f"note file is empty: {args.note_file}")
+    if len(args.note) > 8000:  # Steamworks k_cchMaxChangenote
+        raise SystemExit(f"change note is {len(args.note)} chars; Steam accepts at most 8000")
     if args.description_file is not None:
         if args.description is not None:
             raise SystemExit("pass either --description or --description-file, not both")
@@ -856,10 +879,6 @@ def main(argv: list[str]) -> int:
         if args.preview is not None and not args.preview.is_file():
             raise SystemExit(f"preview not found: {args.preview}")
 
-    if args.dry_run:
-        log("dry run: nothing uploaded" if not args.push_content else "dry run: staging only, nothing uploaded")
-        return 0
-
     plan = []
     if staged is not None:
         plan.append("content")
@@ -870,7 +889,10 @@ def main(argv: list[str]) -> int:
             plan.append(f"{label}")
     if args.language is not None:
         plan.append(f"language={args.language}")
-    log(f"update plan: {' + '.join(plan)} (item {args.item}, note {args.note or version!r})")
+    log(f"update plan: {' + '.join(plan)} (item {args.item}, note {brief_note(args.note) if args.note else version!r})")
+    if args.dry_run:
+        log("dry run: nothing uploaded" if not args.push_content else "dry run: staging only, nothing uploaded")
+        return 0
     if not args.assume_yes:
         if not sys.stdin.isatty():
             raise SystemExit("refusing to write without confirmation in a non-interactive shell; pass --yes")
