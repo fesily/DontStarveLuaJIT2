@@ -34,11 +34,107 @@ int JitDumpLuaLoadX(lua_State *L, lua_Reader reader, void *data, const char *chu
                                     chunkname, mode);
 }
 
+// ---- Engine-equivalent file loaders (JIT context only) --------------------
+//
+// LuaJIT's dofile/loadfile end up in its own luaL_loadfile, i.e. the injector's
+// lj_fopen path mapping, while io/modimport use the engine's file access. The
+// engine's luaL_loadfile is not reachable (its body walks internal lauxlib
+// layout), so this is a C equivalent: chunk name "@<path>"/"=stdin", hashbang
+// and precompiled-chunk blocking, and reads through the engine io table that
+// the same openlibs hook installed.
+//
+// Klei's errfile("OLDFILEACCESSMETHOD") marker is not reproduced: it is an
+// anti-old-API watermark that ends up inside Proto->source (the second marker
+// call replaces "@path" with the marker text and lua_load takes it as the chunk
+// name); it never stays on the stack.
+static int DsEngineLoadFile(lua_State *L, const char *path, size_t len) {
+    auto &api = GetGameLuaContext().api;
+    const std::string name = path != nullptr ? std::string{"@"} + std::string{path, len} : std::string{"=stdin"};
+
+    api._lua_getfield(L, LUA_GLOBALSINDEX, "io");
+    if (api._lua_type(L, -1) != LUA_TTABLE) {
+        api._lua_settop(L, -(1) - 1);
+        api._lua_pushfstring(L, "cannot open %s", path != nullptr ? path : "stdin");
+        return LUA_ERRFILE;
+    }
+    if (path != nullptr) {
+        api._lua_getfield(L, -1, "open");
+        api._lua_pushlstring(L, path, len);
+        api._lua_pushstring(L, "rb");
+        api._lua_call(L, 2, 1);
+        api._lua_remove(L, -2);
+    } else {
+        api._lua_getfield(L, -1, "stdin");
+        api._lua_remove(L, -2);
+    }
+    if (api._lua_type(L, -1) != LUA_TUSERDATA) {
+        api._lua_settop(L, -(1) - 1);
+        api._lua_pushfstring(L, "cannot open %s", path != nullptr ? path : "stdin");
+        return LUA_ERRFILE;
+    }
+    api._lua_getfield(L, -1, "read");
+    api._lua_pushvalue(L, -2);
+    api._lua_pushstring(L, "*a");
+    api._lua_call(L, 2, 1);
+    api._lua_remove(L, -2);
+    size_t srclen = 0;
+    const char *src = api._lua_tolstring(L, -1, &srclen);
+    if (src == nullptr) {
+        api._lua_settop(L, -(1) - 1);
+        api._lua_pushfstring(L, "cannot read %s", path != nullptr ? path : "stdin");
+        return LUA_ERRFILE;
+    }
+    if (srclen > 0) {
+        const auto first = static_cast<unsigned char>(src[0]);
+        if (first == '#') {
+            api._lua_pushfstring(L, "%s - Hashbang blocked.", name.c_str());
+            api._lua_remove(L, -2);
+            return LUA_ERRSYNTAX;
+        }
+        if (first == 0x1B && path != nullptr) {
+            api._lua_pushfstring(L, "%s - Compiled Lua blocked.", name.c_str());
+            api._lua_remove(L, -2);
+            return LUA_ERRSYNTAX;
+        }
+    }
+    const int status = api._luaL_loadbuffer(L, src, srclen, name.c_str());
+    api._lua_remove(L, -2);
+    return status;
+}
+
+static int DsDoFile(lua_State *L) {
+    auto &api = GetGameLuaContext().api;
+    const int nargs = api._lua_gettop(L);
+    size_t len = 0;
+    const char *path = api._luaL_optlstring(L, 1, nullptr, &len);
+    if (DsEngineLoadFile(L, path, len) != 0) {
+        return api._lua_error(L);
+    }
+    api._lua_call(L, 0, LUA_MULTRET);
+    return api._lua_gettop(L) - nargs;
+}
+
+// JIT states only: the PUC/game state already runs the engine's luaL_loadfile.
+// loadfile is left alone on purpose: main.lua replaces it with the engine's
+// loadfn (-> kleiloadlua), which is already engine file access; only dofile
+// stays LuaJIT's lbaselib + luaL_loadfile, which is the leaking path.
+static void InstallEngineDofile(lua_State *L) {
+    auto &api = GetGameLuaContext().api;
+    api._lua_pushcfunction(L, DsDoFile);
+    api._lua_setfield(L, LUA_GLOBALSINDEX, "dofile");
+    spdlog::info("Replaced Lua dofile with the engine file access");
+}
+
 } // namespace
 
 struct GameLuaContextJit : GameLuaContextImpl {
     using GameLuaContextImpl::GameLuaContextImpl;
     virtual ~GameLuaContextJit() = default;
+
+    void luaL_openlibs_hooker(lua_State *L) override {
+        GameLuaContextImpl::luaL_openlibs_hooker(L);
+        InstallEngineDofile(L);
+    }
 
     void LoadAllInterfaces() override {
         GameLuaContextImpl::LoadAllInterfaces();

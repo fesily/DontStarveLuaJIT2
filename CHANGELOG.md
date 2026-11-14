@@ -2,6 +2,14 @@
 
 ## 未发布
 
+## 3.5.4
+
+- 修复 **`da5b9f0` 引入的 Workshop 路径重复模组 ID**（`plugins/plugin_core_vm/io/gameio.cpp` 的 `lj_fpath_format`）。当 `<游戏>/mods/workshop-<id>` 不存在、需要按 Workshop 内容根解析时，旧代码把仍带 `<id>/` 的 `left_path` 拼到已经包含 ID 的 `workshop_mod` 上，得到 `<content>/<id>/<id>/<file>`。凡是通过 Lua 侧文件访问（`dofile`/`loadfile`/`io2`）打开的工坊模组文件都会指向不存在的目录：专用服实测 `cannot open ../mods/workshop-3435352667/main/ia_preparedfoods.lua: No error`，随后「岛屿冒险 - 核心」被禁用（`ia_loader_utils.lua` 的 `dofile` 路径失败，引擎的 prefab 校验级联）。现在只拼接 ID 之后的相对段，并把纯映射抽到 `io/workshop_path.hpp`。
+
+- 修复 **Lua `dofile` 仍走注入器自己的文件路径规则**。LuaJIT 的 `dofile` 经 `luaL_loadfile` 落到注入器 `lj_fopen`（`lj_fpath_format`），而 `io`/`modimport` 走引擎文件访问（KleiFile、UGC/manifest、`databundles` zip、引擎解密）——同一个文件名两套规则，上一行的回归正是这样咬到 `dofile`。现在在 **LuaJIT 上下文**的 `luaL_openlibs` 钩子里用 C 函数替换 `dofile`，自带一个与引擎等价的 `luaL_loadfile`：chunk 名 `@<path>`/`=stdin`、首字节 `#` 与 `0x1B` 分别报 `<name> - Hashbang blocked.` / `<name> - Compiled Lua blocked.`、读取经引擎 `io` 表、每条路径栈平衡；`game`（PUC）VM 不安装（它本来就跑引擎自己的 `luaL_loadfile`）。`loadfile` 保持引擎行为（`main.lua` 已把它换成 `loadfn` → `kleiloadlua`）。故意不复刻引擎的 `errfile("OLDFILEACCESSMETHOD")` 水印——它会变成 chunk 的 `Proto->source`，只会毁掉 `debug.getinfo`。
+
+- 验证：新增 `workshop_path_map`（`tests/plugin/test_workshop_path_map.cpp`，doctest，4 cases / 19 assertions）覆盖单一 ID、反斜杠、裸模组根、非 workshop 路径，并把 `da5b9f0` 的重复拼接写进断言——临时塞回该形式会让 7 条断言失败（牙已双向确认）。专用服（LuaJIT + 运行时 mod 3.5.4）实测：`debug.getinfo(dofile).what` 为 `C`、`loadfile` 仍是引擎 Lua；`dofile` 组件返回 chunk 结果、缺失文件报 `cannot open <path>`（无位置前缀）、hashbang/预编译夹具报对应拦截消息；先用 `-ugc_directory` 指向 Steam 工坊目录复现旧版 `cannot open ...: No error`，换新版后同路径成功；「岛屿冒险 - 核心」注册 86 个 prefab、`MOD ERROR 0`、`World generated`。
+
 ## 3.4.3
 
 - 新增 **LuaJIT 模组 `string.dump` 黑名单（强制、持久化）**。`Mod/scripts/luajit_mod_blacklist.lua` 在 mod 调用 `string.dump` 时按**调用者**归属（mod env 的 `string.dump` 前端 → `GLOBAL.string.dump` → 加载期 `ModManager.currentlyloadingmod`），立即把该 mod 文件夹名写入 `unsafedata/luajit_mod_blacklist.json`（JSON 数组，`json.encode`/`decode`，一行一名字的自定义格式已删除）并抛 `[luajit] Mod '<name>' is incompatible with LuaJIT (此模组不兼容): string.dump is not supported for mods.`；下一次加载该 mod 时 `kleiloadlua` 对 `modmain.lua`/`modworldgenmain.lua` 返回拒绝 chunk（在目标 mod 的 `setfenv`+`xpcall` 里报错并禁用该 mod，不再解密/编译源码），`modinfo.lua` 仍可读，同一 mod 的其它脚本一律换成空 chunk——代码绝不执行，也不从 loader 抛错：引擎在 mod 失败后仍会 `require "stacktrace"`/`debughelpers`/`consolecommands` 等，`package.path` 可能落到该 mod 的副本上，抛错会打断 main.lua 并崩在关服路径。归属只看调用者：mod B dump mod A 的函数只记录 B，引擎/控制台 dump 原样返回字节码。名单通过游戏 `io.open` 同步 read-merge-write（Klei VFS 只认 `r`/`w`，`a`/`w+` 按读），读出后排序去重，写失败仍然拒绝并在错误尾部追加 `; blacklist persistence failed: <原因>`，进程内命中保留。LuaJIT 下强制启用：删除 modinfo 的 `ModBlackList` 开关（旧表恒为空，实际无效），`luajit_compatible`、`HideGlobalJIT`、`EnabledJIT` 都不参与；加密启发式仍只在 `jit.runtime` 里 `jit.off(chunk, true)`，不进入该名单。`modworldgenmain.lua` 在 `WORLDGEN_MAIN` + 真 LuaJIT 时安装同一套（worldgen 只加载 modworldgenmain.lua，plugin 阶段不会执行），缺 game io 直接初始化报错而不是静默跳过。
