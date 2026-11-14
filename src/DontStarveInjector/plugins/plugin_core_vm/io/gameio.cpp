@@ -1,5 +1,6 @@
 ﻿#include "config/InjectorHostConfig.hpp"
 #include "gameio.h"
+#include "workshop_path.hpp"
 #include "frida-gum.h"
 
 #include "util/gum_platform.hpp"
@@ -95,21 +96,21 @@ static FILE *os_fopen(const std::filesystem::path &path, const char *mode) {
 static std::filesystem::path lj_fpath_format(std::filesystem::path const &path) {
     const auto &workshop_dir = ds::sdk::steam::GetWorkshopDirectory();
     auto path_s = ds::util::path_to_utf8_generic(path);
-    constexpr auto mods_root = "../mods/workshop-"sv;
-    if (path_s.starts_with(mods_root)) {
-        // get mod dir
-        auto left_path = path_s.substr(mods_root.size());
-        auto npos = path_s.find_first_of("/\\", mods_root.size());
-        if (npos == std::string::npos) return {};
+    const auto split = ds::injector::io::split_workshop_mod_path(path_s);
+    if (!split) return path;
 
-        auto mod_id = path_s.substr(mods_root.size(), npos - mods_root.size());
-        if (std::filesystem::exists(std::string(mods_root).append(mod_id)))
-            return path;
+    // Keep the engine-visible copy when <game>/mods has one.
+    if (std::filesystem::exists(std::string(ds::injector::io::kWorkshopModsPrefix).append(split->mod_id)))
+        return path;
 
-        if (workshop_dir) {
-            const auto workshop_mod = workshop_dir.value() / ds::util::path_from_utf8(mod_id);
-            if (std::filesystem::exists(workshop_mod))
-                return workshop_mod / ds::util::path_from_utf8(left_path);
+    // Otherwise resolve against the Workshop content root. The mapping appends
+    // only the remainder after the id: re-appending the id-carrying prefix here
+    // is the da5b9f0 regression (../mods/workshop-<id>/<id>/...).
+    if (workshop_dir) {
+        const auto workshop_mod = workshop_dir.value() / std::string{split->mod_id};
+        if (std::filesystem::exists(workshop_mod)) {
+            const auto mapped = ds::injector::io::map_workshop_mod_path(path_s, workshop_dir.value());
+            if (mapped) return *mapped;
         }
     }
     return path;

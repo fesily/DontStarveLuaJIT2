@@ -199,6 +199,16 @@ target_include_directories(test_packaged_module PRIVATE
 target_compile_features(test_packaged_module PRIVATE cxx_std_23)
 add_test(NAME packaged_module COMMAND test_packaged_module)
 
+# Lua-visible game IO: "../mods/workshop-<id>/<file>" must resolve to
+# <workshop root>/<id>/<file> exactly once (da5b9f0 doubled the id).
+add_executable(test_workshop_path_map
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_workshop_path_map.cpp)
+target_include_directories(test_workshop_path_map PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_link_libraries(test_workshop_path_map PRIVATE ds_test_doctest)
+target_compile_features(test_workshop_path_map PRIVATE cxx_std_17)
+add_test(NAME workshop_path_map COMMAND test_workshop_path_map)
+
 add_executable(test_config_resolve
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_config_resolve.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/config/CascadeEngine.cpp
