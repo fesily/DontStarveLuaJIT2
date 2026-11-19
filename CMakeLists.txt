@@ -424,6 +424,10 @@ find_package(keystone REQUIRED)
 set(DONTSTARVEINJECTOR_ROOT ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
 set(DONTSTARVEINJECTOR_UTIL_DIR ${DONTSTARVEINJECTOR_ROOT}/util)
 
+# Vendored third-party: fast_assert (ASSERT/DEBUG_ASSERT/ASSUME/PANIC/UNREACHABLE).
+# One static library owns the switchable handler for the whole process.
+add_subdirectory("3rd/fast_assert")
+
 add_subdirectory("src/lua51original")
 
 add_subdirectory("src/FunctionRelocation")

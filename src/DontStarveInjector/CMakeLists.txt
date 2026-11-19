@@ -93,6 +93,13 @@ target_compile_definitions(Injector PRIVATE MOD_VERSION="${CMAKE_PROJECT_VERSION
 target_compile_definitions(Injector PRIVATE DONTSTARVEINJECTOR_BUILD)
 target_include_directories(Injector PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+# fast_assert implementation: the Injector is its single owner in this process
+# (fast_assert_owner is compiled with FAST_ASSERT_BUILD, so every entry point is
+# dllexport / visibility("default") here). Plugins link only the header-only
+# `fast_assert` view and import the code through Injector's import library /
+# DT_NEEDED — same arrangement as core/PluginPath.
+target_link_libraries(Injector PRIVATE fast_assert fast_assert_owner)
+
 if (ENABLE_STEAM_SUPPORT)
     target_compile_definitions(Injector PRIVATE ENABLE_STEAM_SUPPORT)
     target_include_directories(Injector PRIVATE ${STEAM_INCLUDE_DIR} ${STEAM_SDK_INCLUDE_DIR})

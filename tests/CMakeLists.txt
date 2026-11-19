@@ -869,6 +869,34 @@ if (UNIX AND NOT APPLE)
       $<TARGET_FILE:elf_plt_provider_fixture> "${LUA_LIBRARIES_PATH}")
 endif()
 
+# fast_assert across dynamic modules: owner (Injector stand-in), importing
+# consumer, and a consumer that keeps its own copy (negative control).
+add_library(fa_test_owner SHARED fast_assert/owner.cpp)
+target_compile_features(fa_test_owner PRIVATE cxx_std_23)
+target_link_libraries(fa_test_owner PRIVATE fast_assert fast_assert_owner)
+
+add_library(fa_test_consumer SHARED fast_assert/consumer.cpp)
+target_compile_features(fa_test_consumer PRIVATE cxx_std_23)
+# Headers only + the owner: every fast_assert symbol is imported (import lib /
+# DT_NEEDED), nothing is compiled into this module.
+target_link_libraries(fa_test_consumer PRIVATE fast_assert fa_test_owner)
+
+add_library(fa_test_consumer_own SHARED fast_assert/consumer.cpp)
+target_compile_features(fa_test_consumer_own PRIVATE cxx_std_23)
+# Compiles the implementation itself: must keep an independent copy.
+target_link_libraries(fa_test_consumer_own PRIVATE fast_assert fast_assert_owner)
+
+add_executable(test_fast_assert_cross_dso fast_assert/test_cross_dso.cpp)
+target_compile_features(test_fast_assert_cross_dso PRIVATE cxx_std_23)
+target_link_libraries(test_fast_assert_cross_dso PRIVATE fast_assert ${CMAKE_DL_LIBS})
+add_dependencies(test_fast_assert_cross_dso fa_test_owner fa_test_consumer fa_test_consumer_own)
+add_test(NAME fast_assert_cross_dso
+    COMMAND ${CMAKE_COMMAND} -E env
+        DS_FA_OWNER=$<TARGET_FILE:fa_test_owner>
+        DS_FA_CONSUMER=$<TARGET_FILE:fa_test_consumer>
+        DS_FA_CONSUMER_OWN=$<TARGET_FILE:fa_test_consumer_own>
+        $<TARGET_FILE:test_fast_assert_cross_dso>)
+
 # Header-only interval refinement: authoritative extents plus uncovered fallback.
 add_executable(test_function_table_refinement
     ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_function_table_refinement.cpp)
@@ -1033,6 +1061,7 @@ set_tests_properties(
 # that a platform does not build are guarded with if(TARGET ...).
 set(DS_DOCTEST_RUNNER_TARGETS
     test_buffer_name_pool
+    test_fast_assert_cross_dso
     test_fast_hook
     test_plugin_host_graph
     test_plugin_option_rules
