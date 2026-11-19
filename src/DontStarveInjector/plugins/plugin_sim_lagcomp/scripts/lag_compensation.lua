@@ -6,7 +6,12 @@
 assert(TheWorld.ismastersim)
 local ffi = require("ffi")
 local load_library_ex = require("luavm.ffi_load")
-local GameInjector = _G.rawget(_G, "GameInjector")
+-- The state hand-off clears GLOBAL.GameInjector; the package env carries the owning mod's
+-- table, so prefer it and keep the GLOBAL read only for pre-hand-off hosts.
+local GameInjector = GameInjector
+if type(GameInjector) ~= "table" then
+    GameInjector = _G.rawget(_G, "GameInjector")
+end
 if not GameInjector then return end
 
 local lib = load_library_ex("plugin_sim_lagcomp")

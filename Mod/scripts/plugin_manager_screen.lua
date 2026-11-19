@@ -45,8 +45,12 @@ local function decode_json(str)
 	return nil
 end
 
+-- The state hand-off clears GLOBAL.GameInjector, and this module is loaded through `require`
+-- (GLOBAL env), so the owning mod hands its env-bound table in explicitly.
+local bound_injector
+
 local function injector()
-	return rawget(_G, "GameInjector")
+	return bound_injector or rawget(_G, "GameInjector")
 end
 
 local function manager_available()
@@ -739,6 +743,9 @@ return setmetatable({
 	show_manual_install_popup = show_manual_install_popup,
 	open_plugin_manager = open_plugin_manager,
 	translate = translate,
+	set_injector = function(api)
+		bound_injector = api
+	end,
 }, {
 	__call = function(_, ...)
 		return PluginManagerScreen(...)

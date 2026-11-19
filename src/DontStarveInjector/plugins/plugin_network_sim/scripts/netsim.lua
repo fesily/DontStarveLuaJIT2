@@ -2,7 +2,12 @@
 -- Lua bridge for the native C++ network simulator (client-side only).
 -- Bridge functions accessible via GameInjector sol2 table — no ffi/cdef needed.
 
-local GameInjector = rawget(_G, "GameInjector")
+-- The state hand-off clears GLOBAL.GameInjector; the package env carries the owning mod's
+-- table, so prefer it and keep the GLOBAL read only for pre-hand-off hosts.
+local GameInjector = GameInjector
+if type(GameInjector) ~= "table" then
+    GameInjector = rawget(_G, "GameInjector")
+end
 if not GameInjector then return end
 if GameInjector.DS_LUAJIT_net_sim_enable == nil then return end
 

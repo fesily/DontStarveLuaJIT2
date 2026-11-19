@@ -618,6 +618,11 @@ local function main()
 					-- Plugin Manager entry is available on all platforms (soft-absent when DLL missing).
 					do
 						local pm = require "plugin_manager_screen"
+						-- The hand-off cleared GLOBAL.GameInjector; the module is loaded through
+						-- require (GLOBAL env), so hand it the env-bound table.
+						if pm.set_injector then
+							pm.set_injector(GameInjector)
+						end
 						local actions = self.dialog and self.dialog.actions
 						if actions then
 							self.plugin_manager_btn = actions:AddItem(
