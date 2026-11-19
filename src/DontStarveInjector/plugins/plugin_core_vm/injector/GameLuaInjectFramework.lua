@@ -25,10 +25,6 @@ function _M.relocation_file(target_filename, new_filename)
     _M.relocations[target_filename] = new_filename
 end
 
-function _M.get(filename)
-    return _M.injectors[filename]
-end
-
 local function do_inject(injector_list, m)
     if not injector_list then
         return
@@ -51,29 +47,11 @@ local function do_inject(injector_list, m)
     end
 end
 
-local inited = false;
-function _M.init()
-    if inited then
-        return
-    end
-    inited = true
-    local old_require = require
-    function require(filename)
-        filename = _M.relocations[filename] or filename
-        local m = old_require(filename)
-        local injector = _M.get(filename)
-        do_inject(injector, m)
-        return m
-    end
-
-    local old_kleiloadlua = kleiloadlua
-    function kleiloadlua(filename, ...)
-        filename = _M.relocations[filename] or filename
-        local m = old_kleiloadlua(filename, ...)
-        local injector = _M.get(filename)
-        do_inject(injector, m)
-        return m
-    end
+-- Runs the one-shot afterload callbacks registered for `filename` with the loaded module.
+-- Called from the C entry hook of the global `require`/`kleiloadlua`
+-- (game/InjectorFileHijack*.cpp); relocation and afterload policy stay in these tables.
+function _M.run_inject(filename, m)
+    do_inject(_M.injectors[filename], m)
 end
 
 local EnableForceLoadMod = false
@@ -265,7 +243,7 @@ function _M.register_event_game_initialized_injector_file(file, args)
 end
 
 function _M.tostring()
-    return "GameLuaInjector", inited, "EnableForceLoadMod", EnableForceLoadMod, "ModName", ModName
+    return "GameLuaInjector", "EnableForceLoadMod", EnableForceLoadMod, "ModName", ModName
 end
 
 function _M.check_enable_debugger()

@@ -38,6 +38,9 @@ set(PLUGIN_CORE_VM_GAME_SOURCES
     game/GameLuaContextGame.cpp
     game/GameLuaContextJit.cpp
     game/GameLuaContextLua51.cpp
+    game/CfunctionHook.cpp
+    game/InjectorFileHijack.cpp
+    game/InjectorFileHijackInstall.cpp
     game/VmSwitch.cpp
     game/ReplaceLuaModule.cpp
     game/GameDbgExports.cpp

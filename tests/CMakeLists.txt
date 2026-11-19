@@ -111,6 +111,37 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64
     add_test(NAME fast_hook COMMAND test_fast_hook)
 endif()
 
+# Injector file hijack: the production relocation/afterload policy driven through a real C
+# entry hook on the VM's stock `require` (dlopen'd, never linked). The policy TU is compiled
+# in directly; the installer (InjectorFileHijackInstall.cpp) stays game-side.
+if(TARGET luajit-5.1 AND TARGET ds_test_doctest)
+    add_executable(test_injector_file_hijack_host
+        plugin/injector_file_hijack_host.cpp
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/game/CfunctionHook.cpp
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/game/InjectorFileHijack.cpp)
+    target_include_directories(test_injector_file_hijack_host PRIVATE
+        ${DONTSTARVEINJECTOR_ROOT}
+        ${FRIDA_GUM_INCLUDE_DIR}
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/signature_load
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/util
+        ${CMAKE_SOURCE_DIR}/src/FunctionRelocation
+        ${PROJECT_SOURCE_DIR}/luajit/src
+        ${CMAKE_BINARY_DIR}/luajit/variants/default
+        ${CMAKE_SOURCE_DIR}/3rd)
+    target_compile_features(test_injector_file_hijack_host PRIVATE cxx_std_23)
+    target_link_libraries(test_injector_file_hijack_host PRIVATE ds_test_doctest spdlog::spdlog ${CMAKE_DL_LIBS})
+    add_test(NAME plugin_injector_file_hijack
+        COMMAND ${CMAKE_COMMAND} -E env
+            DS_HIJACK_VM=$<TARGET_FILE:luajit-5.1>
+            DS_HIJACK_FRAMEWORK=${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/injector/GameLuaInjectFramework.lua
+            $<TARGET_FILE:test_injector_file_hijack_host>)
+    set_tests_properties(plugin_injector_file_hijack PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        LABELS "plugin")
+    add_dependencies(test_injector_file_hijack_host luajit-5.1)
+endif()
+
 # --- PluginHost pure-logic unit tests (M0) ---
 find_path(SOL2_INCLUDE_DIRS "sol/abort.hpp")
 set(PLUGIN_HOST_SOURCES
