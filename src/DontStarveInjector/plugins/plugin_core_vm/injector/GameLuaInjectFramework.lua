@@ -32,12 +32,15 @@ local function do_inject(injector_list, m)
     for _, entry in ipairs(injector_list) do
         local afterload = entry.afterload
         if afterload then
+            -- PUC 5.1's xpcall(f, err) calls f with no arguments (extra arguments are a 5.2
+            -- extension); LuaJIT accepts them. Pass the module through a closure so the same
+            -- afterload sees it on both VMs while the one-shot/xpcall error handling stays.
             if type(afterload) == "function" then
-                xpcall(afterload, debug.traceback, m)
+                xpcall(function() return afterload(m) end, debug.traceback)
             elseif type(afterload) == "string" then
                 local f, err = loadstring(afterload)
                 if f then
-                    xpcall(f, debug.traceback, m)
+                    xpcall(function() return f(m) end, debug.traceback)
                 else
                     print("[luajit] Error in afterload function: " .. err)
                 end
@@ -187,7 +190,15 @@ if type(os.getenv) == "nil" then
     os.getenv = native_getenv
 end
 
-myenv = setmetatable({ io = myio, dofile = mydofile, spdlog = spdlog, os=os }, { __index = _G, __newindex = _G })
+myenv = setmetatable({ io = myio, dofile = mydofile, spdlog = spdlog, os=os,
+    -- Both injector tables are captured by reference when this chunk runs: the host publishes
+    -- the native table before loading the framework, and this mod removes the real GLOBAL
+    -- fields while the game keeps booting, so the event scripts must not look them up later.
+    -- A table constructor is a rawset, so neither field reaches the real GLOBAL via __newindex.
+    -- Without a published native table (standalone framework) the field is nil: an event script
+    -- that needs it fails loudly instead of silently using an empty shell.
+    GameLuaInjector = _M, GameInjector = GameInjector },
+    { __index = _G, __newindex = _G })
 
 local function register_event_code(event_name, script)
     if not script or type(script) ~= "string" or script == "" then
@@ -198,9 +209,9 @@ local function register_event_code(event_name, script)
         local f, err = loadstring(script)
         if f then
             spdlog.info("execute_event[script] " .. event_name)
-            if event_name == "before_main" then
-                setfenv(f, myenv)
-            end
+            -- Every deferred script runs in myenv: the real GLOBAL.GameInjector/GameLuaInjector
+            -- are gone by the time events fire, so the environment is the only source of them.
+            setfenv(f, myenv)
             local res = xpcall(f, function(error)
                 spdlog.error("[luajit] in " ..
                 event_name .. " script Error :" .. tostring(error) .. "\n" .. debug.traceback())
@@ -234,7 +245,9 @@ function _M.register_event_game_initialized_injector_file(file, args)
         inject_fp:close()
         if fn then
             local inject_args = args or {}
-            setfenv(fn, setmetatable({ arg = inject_args }, { __index = _G, __newindex = _G }))
+            -- GAME_INJECTOR_FILE scripts share myenv's GameInjector/GameLuaInjector; writes
+            -- still land in GLOBAL exactly like the pre-root behaviour.
+            setfenv(fn, setmetatable({ arg = inject_args }, { __index = myenv, __newindex = _G }))
             return xpcall(fn, debug.traceback)
         else
             print("[luajit] Error in injector file: " .. file)

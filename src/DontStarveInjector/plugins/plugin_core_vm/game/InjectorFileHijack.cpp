@@ -10,6 +10,7 @@
 // .injectors); this TU only reads them and calls GameLuaInjector.run_inject, which keeps the
 // one-shot/xpcall semantics the Lua wrapper had.
 #include "game/InjectorFileHijack.hpp"
+#include "game/PrivateLuaRegistry.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -19,11 +20,7 @@ namespace {
 // truthy value replaces the name, one level only. Leaves extra values on the stack; the caller
 // restores the argument count with lua_settop.
 void relocate_filename(LuaApis &api, lua_State *L) {
-    api._lua_getglobal(L, GameLuaInjectorName);
-    if (!api._lua_istable(L, -1)) {
-        api._lua_pop(L, 1);
-        return;
-    }
+    api.push_game_injector(L);
     api._lua_getfield(L, -1, "relocations");
     if (!api._lua_istable(L, -1)) {
         api._lua_pop(L, 2);
@@ -42,11 +39,7 @@ void relocate_filename(LuaApis &api, lua_State *L) {
 // afterload runner, including its traceback handling. `first_result` is the stack slot of the
 // loader's first result; the caller's stack is left exactly as it was found.
 void run_afterload(LuaApis &api, lua_State *L, int first_result, int nres) {
-    api._lua_getglobal(L, GameLuaInjectorName);
-    if (!api._lua_istable(L, -1)) {
-        api._lua_pop(L, 1);
-        return;
-    }
+    api.push_game_injector(L);
     api._lua_getfield(L, -1, "run_inject");
     if (!api._lua_isfunction(L, -1)) {
         api._lua_pop(L, 2);

@@ -53,6 +53,16 @@ endif ()
 
 project(DontStarveLuaJIT VERSION 3.5.3)
 
+# LuaJIT's LUA_REGISTRYINDEX2 is an alias for LUA_REGISTRYINDEX by default (the
+# VM header default is 0). The DS product enables the separate second registry;
+# pass -DLJ_DS_REGISTRY2=OFF for the alias-only build.
+option(LJ_DS_REGISTRY2 "Use the separate DS second registry" ON)
+if(LJ_DS_REGISTRY2)
+    add_compile_definitions(LJ_DS_REGISTRY2=1)
+else()
+    add_compile_definitions(LJ_DS_REGISTRY2=0)
+endif()
+
 message(STATUS "CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
 message(STATUS "VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}")
 message(STATUS "VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR}")

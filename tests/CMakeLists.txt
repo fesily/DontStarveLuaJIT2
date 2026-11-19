@@ -118,6 +118,7 @@ if(TARGET luajit-5.1 AND TARGET ds_test_doctest)
     add_executable(test_injector_file_hijack_host
         plugin/injector_file_hijack_host.cpp
         ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/game/CfunctionHook.cpp
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/game/PrivateLuaRegistry.cpp
         ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/game/InjectorFileHijack.cpp)
     target_include_directories(test_injector_file_hijack_host PRIVATE
         ${DONTSTARVEINJECTOR_ROOT}
@@ -130,16 +131,29 @@ if(TARGET luajit-5.1 AND TARGET ds_test_doctest)
         ${CMAKE_BINARY_DIR}/luajit/variants/default
         ${CMAKE_SOURCE_DIR}/3rd)
     target_compile_features(test_injector_file_hijack_host PRIVATE cxx_std_23)
-    target_link_libraries(test_injector_file_hijack_host PRIVATE ds_test_doctest spdlog::spdlog ${CMAKE_DL_LIBS})
+    target_link_libraries(test_injector_file_hijack_host PRIVATE ds_test_doctest spdlog::spdlog fast_assert fast_assert_owner ${CMAKE_DL_LIBS})
     add_test(NAME plugin_injector_file_hijack
         COMMAND ${CMAKE_COMMAND} -E env
             DS_HIJACK_VM=$<TARGET_FILE:luajit-5.1>
+            DS_HIJACK_IS_LUAJIT=1
             DS_HIJACK_FRAMEWORK=${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/injector/GameLuaInjectFramework.lua
             $<TARGET_FILE:test_injector_file_hijack_host>)
     set_tests_properties(plugin_injector_file_hijack PROPERTIES
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         LABELS "plugin")
     add_dependencies(test_injector_file_hijack_host luajit-5.1)
+    # Same production TUs against the engine's classic VM: no jit helper, so the key is the
+    # static one from PrivateLuaRegistry.cpp. A separate registration keeps both paths covered.
+    add_test(NAME plugin_injector_file_hijack_puc51
+        COMMAND ${CMAKE_COMMAND} -E env
+            DS_HIJACK_VM=$<TARGET_FILE:liblua>
+            DS_HIJACK_IS_LUAJIT=0
+            DS_HIJACK_FRAMEWORK=${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/injector/GameLuaInjectFramework.lua
+            $<TARGET_FILE:test_injector_file_hijack_host>)
+    set_tests_properties(plugin_injector_file_hijack_puc51 PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        LABELS "plugin")
+    add_dependencies(test_injector_file_hijack_host liblua)
 endif()
 
 # --- PluginHost pure-logic unit tests (M0) ---
@@ -506,6 +520,65 @@ if (TARGET liblua_static)
 endif()
 add_test(NAME external_plugin_discovery COMMAND test_external_plugin_discovery)
 
+# --- PUC 5.1 string.dump proof host ---
+# Dual-VM by construction: the host links the production dump service and the
+# PUC reference oracle, then loads the LuaJIT library under test at runtime with
+# dlopen(RTLD_LOCAL)/LoadLibraryW and resolves every lua_* entry point from that
+# handle. It must never link LuaJIT, so the same binary can drive the default,
+# arena-GC, no-JIT and macro-off VMs (see the make-tree matrix in the plan).
+add_executable(test_puc_dump_host
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/puc_dump_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/puc_dump_reference.cpp)
+target_include_directories(test_puc_dump_host PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin
+    ${PROJECT_SOURCE_DIR}/src/lua51original/src
+    ${CMAKE_BINARY_DIR}/src/lua51original
+    ${PROJECT_SOURCE_DIR}/luajit/src)
+target_compile_features(test_puc_dump_host PRIVATE cxx_std_23)
+set_target_properties(test_puc_dump_host PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>")
+if (TARGET ds_puc51_dump)
+    target_link_libraries(test_puc_dump_host PRIVATE ds_puc51_dump)
+    add_dependencies(test_puc_dump_host ds_puc51_dump)
+else()
+    message(FATAL_ERROR "ds_puc51_dump required for test_puc_dump_host")
+endif()
+if (TARGET liblua_static)
+    target_link_libraries(test_puc_dump_host PRIVATE liblua_static)
+    add_dependencies(test_puc_dump_host liblua_static)
+else()
+    message(FATAL_ERROR "liblua_static required for test_puc_dump_host")
+endif()
+if (NOT WIN32)
+    target_link_libraries(test_puc_dump_host PRIVATE ${CMAKE_DL_LIBS})
+endif()
+
+# Absolute host path for ad-hoc build matrices that live outside this build tree.
+file(GENERATE
+    OUTPUT "${CMAKE_BINARY_DIR}/tests/$<CONFIG>/puc_dump_host_artifact.txt"
+    CONTENT "$<TARGET_FILE:test_puc_dump_host>")
+
+# The two shipped VMs; the arena-GC build exercises the GCMARK traversal path.
+set(DS_PUC_DUMP_VM_DEFAULT $<TARGET_FILE:luajit-5.1>)
+set(DS_PUC_DUMP_VM_ARENAGC $<TARGET_FILE:luajit-5.1-arenagc>)
+
+add_test(NAME puc_string_dump_default
+    COMMAND test_puc_dump_host --vm ${DS_PUC_DUMP_VM_DEFAULT} --self-test)
+set_tests_properties(puc_string_dump_default PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    LABELS "plugin;puc_dump")
+
+add_test(NAME puc_string_dump_arenagc
+    COMMAND test_puc_dump_host --vm ${DS_PUC_DUMP_VM_ARENAGC} --self-test)
+set_tests_properties(puc_string_dump_arenagc PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    LABELS "plugin;puc_dump")
+
+# One build target that produces everything the two tests and the Lua spec need.
+add_custom_target(puc_string_dump_artifacts
+    DEPENDS test_puc_dump_host luajit-5.1 luajit-5.1-arenagc lua luac)
+
 # Enabled DST mod enumeration (modoverrides parse + root resolve)
 add_executable(test_enabled_dst_mods
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_enabled_dst_mods.cpp
@@ -574,14 +647,32 @@ add_test(
 set_tests_properties(plugin_package_load PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
+# The Lua spec runs inside the real VM through the dual-VM host: no bare or
+# system Lua fallback, and the arena-GC VM is a second registration so both GC
+# implementations answer the same for the same scripts.
 add_test(
     NAME plugin_mod_blacklist
     COMMAND ${CMAKE_COMMAND} -E env
         REPO_ROOT=${CMAKE_SOURCE_DIR}
         ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_mod_blacklist.py
+        --host $<TARGET_FILE:test_puc_dump_host>
+        --vm $<TARGET_FILE:luajit-5.1>
 )
 set_tests_properties(plugin_mod_blacklist PROPERTIES
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 600)
+
+add_test(
+    NAME plugin_mod_blacklist_arenagc
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_mod_blacklist.py
+        --host $<TARGET_FILE:test_puc_dump_host>
+        --vm $<TARGET_FILE:luajit-5.1-arenagc>
+)
+set_tests_properties(plugin_mod_blacklist_arenagc PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 600)
 
 add_test(
     NAME plugin_option_bake
@@ -709,6 +800,24 @@ set_tests_properties(game_mod_throw_abort PROPERTIES
     TIMEOUT 180
     LABELS "game;harness")
 
+# game_puc_string_dump: a mod's string.dump must return real PUC Lua 5.1
+# bytecode in modmain and worldgen, and a record carried to a second fresh save
+# must not stop the mod from loading. The built injector/core.vm paths are passed
+# explicitly so the run never depends on whatever sits in Mod/deps.
+add_test(NAME game_puc_string_dump
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+        GAME_DIR=${DS_TEST_GAME_DIR}
+        DST_GAME_DIR=${DS_TEST_GAME_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/game_mods/test_puc_dump.py
+        --injector $<TARGET_FILE:Injector>
+        --core-vm $<TARGET_FILE:plugin_core_vm>)
+set_tests_properties(game_puc_string_dump PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 1800
+    LABELS "game;harness")
+
 # Game-launching tests share the installed game, the injected files/Mod tree,
 # the save environment and runtime caches; the cluster server.ini also pins
 # ServerPort 10999 / SteamAuthPort 8766 / SteamMasterServerPort 27016, so a
@@ -720,6 +829,7 @@ set_tests_properties(
     plugin_client_inject_smoke
     plugin_client_host_smoke
     game_mod_throw_abort
+    game_puc_string_dump
     PROPERTIES RESOURCE_LOCK dst_game_server)
 
 # --- LuaJIT traceback engine-parity ---

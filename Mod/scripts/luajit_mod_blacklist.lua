@@ -1,59 +1,63 @@
--- Shared LuaJIT mod blacklist.
+-- Shared LuaJIT mod string.dump policy.
 --
--- A mod that calls string.dump is reported as incompatible with LuaJIT and is
--- refused the next time it loads, before any of its chunks run. The record is a
--- JSON array of mod folder names in the game save scope:
+-- A mod that calls string.dump is recorded in a JSON array of mod folder names in
+-- the game save scope:
 --   unsafedata/luajit_mod_blacklist.json   e.g. ["workshop-1991746508"]
--- It is read/written with the engine's json (module("json") sets _G.json, and
+-- The record is a compatibility log, not a kill switch: a recorded mod still
+-- loads on the next start, and the name is never used to skip a chunk. It is
+-- read/written with the engine's json (module("json") sets _G.json, and
 -- main.lua/worldgen_main.lua load it before LoadMods) and with the game io, which
 -- only treats mode "w" as a write ("a"/"w+" are reads) and only allows a single
 -- unsafedata/* id (docs/mac-lua51-parity-audit.md 4.2, src/lua51/src/liolib.c).
 -- That json4lua build escapes ' as \' (engine-specific, round-trips through its
 -- own decode); this file is internal state, never exported or shared.
 --
--- Loaded with modimport("scripts/luajit_mod_blacklist") from modmain and
--- modworldgenmain: the chunk runs in the mod env, which carries GLOBAL + modname,
--- so it installs itself. Explicit entry point: install(global, modname, modenv).
---   global  real GLOBAL (holds io/string/ModManager/kleiloadlua/debug/getfenv)
---   modname folder name of the mod that installs this module
---   modenv  that mod's environment (registered for string.dump attribution)
+-- Entry point: install(global, modname, modenv, private_root, real_registry). The bootstrap
+-- (Mod/scripts/luajit_env_bootstrap.lua) loads this chunk with kleiloadlua + setfenv and passes
+-- what the native GameInjector.InitializeModEnvironment returned:
+--   global          real GLOBAL (holds io/string/ModManager/debug/getfenv)
+--   modname         folder name of the mod that installs this module
+--   modenv          that mod's environment (registered for string.dump attribution)
+--   private_root    this state's single private registry root (the manager owns it)
+--   real_registry   the real registry table (root writes stay private to this mod)
+-- The manager is published at private_root.controller, never on ModManager or in the registry.
 --
 -- The chunk env is not guaranteed to be GLOBAL (modimport hands the mod env, a
 -- whitelist without getfenv/pcall/rawget), so every privileged API is reached
 -- through the global argument; the only chunk-env globals used are type (name
 -- validation), string/table methods, and error as a last-resort fallback.
 --
+-- How the mod gets real bytecode: the VM's own string.dump asks the Lua function stored in the
+-- private root (root.LJ_DS_PUC51_DUMP_POLICY) who is calling. This manager
+-- answers with the calling mod's folder name (or nil for the engine), and the VM
+-- then returns genuine PUC Lua 5.1 bytecode for that function -- the mod's own
+-- detection canary keeps working and no mod is refused. The policy function is
+-- the only thing installed here: GLOBAL.string.dump keeps its native C identity,
+-- so an alias saved before the install still reaches the same decision point.
+--
 -- A torn write cannot be repaired here: the game io only offers "w" (truncate),
 -- there is no atomic replace, so a crash mid-write leaves partial JSON. That is
 -- reported as an initialization error (the file must be deleted), never silently
--- treated as an empty list -- an empty list would let a recorded mod dump again.
+-- treated as an empty list.
 --
--- The manager installs, once per process:
---   * a copied per-mod env string table whose dump front end blames that mod,
---   * a global string.dump wrapper (GLOBAL.string.dump / engine Lua wrappers),
---   * a kleiloadlua wrapper that refuses a recorded mod's entry files (a chunk that
---     reports and raises) and blanks every other script of it (an empty chunk: the
---     code never runs, but a late engine require cannot abort on our error),
+-- Attribution is always by caller: mod B dumping mod A's function records B, and
+-- the bytecode still comes from A's function (its own saved source). The manager
+-- installs, once per state:
+--   * a copied per-mod env string table whose dump front end names that mod,
+--   * the registry policy closure the VM consults (Lua cannot be reached from C
+--     any other way, and only Lua can walk its own caller stack),
 --   * a ModManager:InitializeModMain hook that registers every mod env.
 -- It is enforced whenever LuaJIT is the VM: no config key, no luajit_compatible
--- exemption, no HideGlobalJIT interaction -- TEMPORARILY disabled at the entry
--- points, which import this file only when GLOBAL._ds_luajit_mod_blacklist_enabled
--- is true (modmain and modworldgenmain both check it; tests set it themselves).
--- Heuristic *encrypted* mod detection
--- keeps its own JIT-off behaviour in jit.runtime and never feeds this list.
+-- exemption, no HideGlobalJIT interaction.
+-- Heuristic *encrypted* mod detection keeps its own JIT-off behaviour in
+-- jit.runtime and never feeds this list.
 -- The installing mod is not exempt either: its own scripts (including the bundled
--- jit/*.lua) must never call string.dump through the mod env, or it records itself
--- and its own entry files are refused on the next start.
+-- jit/*.lua) must never call string.dump through the mod env, or it records itself.
 
 local BLACKLIST_PATH = "unsafedata/luajit_mod_blacklist.json"
-local ERROR_TEXT = "[luajit] Mod '%s' is incompatible with LuaJIT (此模组不兼容): string.dump is not supported for mods."
-local PERSIST_FAILED = "; blacklist persistence failed: "
+local POLICY_KEY = "LJ_DS_PUC51_DUMP_POLICY"
+local DUMP_FAILED = "[luajit] Mod '%s': PUC 5.1 string.dump failed: %s"
 local INVALID_ENTRY = "[luajit] Invalid mod blacklist entry ignored"
--- Compiles to a factory: chunkname is the target file, the message is passed as
--- an argument (never spliced into source), and the result only uses upvalues, so
--- the engine's later setfenv/RunInEnvironment cannot change its behaviour.
-local FACTORY_SOURCE = "local report, fail, message = ...\n"
-	.. "return function() report(message) fail(message) end\n"
 
 local function is_valid_modname(name)
 	if type(name) ~= "string" or name == "" then
@@ -71,9 +75,36 @@ local function is_valid_modname(name)
 	return true
 end
 
+-- Module names that exist only in LuaJIT. Masked for mod callers; engine/tools keep
+-- the real loader. `bit` is a LuaJIT library too: the reference PUC 5.1 VM does not load it
+-- (src/lua51/src/linit.c), so it is part of the same grant.
+local function is_luajit_module(name)
+	if type(name) ~= "string" then
+		return false
+	end
+	if name == "ffi" or name == "bit" or name == "jit" or name:sub(1, 4) == "jit." then
+		return true
+	end
+	return name == "table.new" or name == "table.clear" or name == "string.buffer"
+		or name == "memprof"
+end
+
+-- package.loadlib init names that either return a LuaJIT extension or repopulate its preload
+-- entries (luaopen_table/string/debug are stock but reinstall table.new/clear, string.buffer and
+-- upvalueid/upvaluejoin into the shared registry).
+local function is_extension_opener(name)
+	if type(name) ~= "string" or name:sub(1, 8) ~= "luaopen_" then
+		return false
+	end
+	return name == "luaopen_ffi" or name == "luaopen_bit" or name == "luaopen_jit"
+		or name == "luaopen_memprof" or name == "luaopen_string_buffer"
+		or name == "luaopen_string" or name == "luaopen_table" or name == "luaopen_debug"
+		or name:sub(1, 12) == "luaopen_jit_"
+end
+
 -- Decodes the JSON array of names. A whitespace-only file is an empty list (no
 -- record can be lost); anything that is not an array of strings is an error, so a
--- damaged file never silently drops a recorded mod.
+-- damaged file is reported instead of silently read as "nothing recorded".
 local function parse_entries(api, text)
 	local names = {}
 	if text:match("^%s*$") then
@@ -176,8 +207,8 @@ local Manager = {}
 Manager.__index = Manager
 
 -- Adds a mod name to the in-memory list and, on the first hit, merges the file
--- and rewrites it. Persistence failure never blocks the refusal; the caller
--- reports it in the error text. Nothing here expires a record.
+-- and rewrites it. The record is a compatibility log: a failure here does not
+-- block the dump, it is reported (see dump_policy). Nothing expires.
 function Manager:record(modname)
 	if not is_valid_modname(modname) then
 		return false, "invalid mod name " .. self.api.tostring(modname)
@@ -199,24 +230,6 @@ function Manager:record(modname)
 	end
 	self.persisted[modname] = true
 	return true, nil
-end
-
--- Fixed template + original modname: never a display name, translation or modinfo.
-function Manager:message(modname, persist_ok, persist_err)
-	local message = self.api.format(ERROR_TEXT, modname)
-	if not persist_ok and persist_err then
-		message = message .. PERSIST_FAILED .. persist_err
-	end
-	return message
-end
-
--- Persist first, then report, then raise: the original dump never runs and the
--- caller's protection layer (xpcall/RunInEnvironment) attributes the error here.
-function Manager:reject(modname)
-	local persist_ok, persist_err = self:record(modname)
-	local message = self:message(modname, persist_ok, persist_err)
-	self.api.print(message)
-	self.api.error(message, 0)
 end
 
 -- Maps a game path (or a debug source) to a mod folder name. Only the exact
@@ -256,22 +269,39 @@ function Manager:locate(path)
 	return nil, nil
 end
 
--- Walks outward from the innermost frame until a frame can name a mod:
--- registered env, env raw modname, then its source path. C frames, tail-call
--- pseudo frames and this manager's own frames are skipped.
+function Manager:current_loading_modname()
+	local ok, name = self.api.pcall(function()
+		return self.modmanager.currentlyloadingmod
+	end)
+	if ok and is_valid_modname(name) then
+		return name
+	end
+	return nil
+end
+
+-- Walks outward from the innermost frame until a frame can name a mod. C frames,
+-- tail-call pseudo frames and this manager's own frames are skipped. Priority:
+-- visible mod frame -> currentlyloadingmod.
 function Manager:caller_modname()
 	local level = 1
 	while true do
 		local ok, info = self.api.pcall(self.api.getinfo, level, "fS")
 		if not ok or self.api.type(info) ~= "table" then
-			return nil
+			break
 		end
 		local func = info.func
 		local source = info.source
-		if not func or info.what == "C" or self.own_functions[func]
-			or (self.api.type(source) == "string" and source:sub(1, 1) == "=") then
-			level = level + 1
-		else
+		local skip = true
+		if func and info.what ~= "C" then
+			if self.own_functions[func] then
+				skip = true
+			elseif self.api.type(source) == "string" and source:sub(1, 1) == "=" then
+				skip = true
+			else
+				skip = false
+			end
+		end
+		if not skip then
 			local ok_env, fenv = self.api.pcall(self.api.getfenv, func)
 			if ok_env and self.api.type(fenv) == "table" and fenv ~= self.global then
 				local owner = self.env_owner[fenv]
@@ -287,151 +317,448 @@ function Manager:caller_modname()
 			if modname then
 				return modname
 			end
-			level = level + 1
 		end
+		level = level + 1
 	end
+	return self:current_loading_modname()
 end
 
--- Attribution is always by caller, never by the dumped function: mod B dumping
--- mod A's function records B, and the engine dumping it records nobody.
-function Manager:dump_from_owner(owner, ...)
+-- The VM's string.dump policy only names the caller for the blacklist record and
+-- error text. The VM dumps PUC 5.1 for every Lua function while the host bridge
+-- exists, so nil here is not a bytecode decision.
+-- before the answer, so the JSON always contains the mod whose dump the VM is
+-- about to convert; a failing write is reported instead of silently losing it.
+function Manager:dump_policy()
 	local modname = self:caller_modname()
 	if not is_valid_modname(modname) then
-		modname = owner
+		return nil
 	end
-	if not is_valid_modname(modname) then
-		return self.original_dump(...)
+	local ok, err = self:record(modname)
+	if not ok then
+		self.api.error(self.api.format(DUMP_FAILED, modname,
+			"blacklist persistence failed: " .. self.api.tostring(err)), 0)
 	end
-	self:reject(modname)
+	return modname
 end
 
-function Manager:current_loading_modname()
-	local ok, name = self.api.pcall(function()
-		return self.modmanager.currentlyloadingmod
-	end)
-	if ok and is_valid_modname(name) then
-		return name
-	end
-	return nil
-end
-
-function Manager:global_dump(...)
-	local modname = self:caller_modname()
-	if not is_valid_modname(modname) then
-		modname = self:current_loading_modname()
-	end
-	if not is_valid_modname(modname) then
-		return self.original_dump(...)
-	end
-	self:reject(modname)
-end
-
--- Builds the load-time refusal chunk. Never errors from inside kleiloadlua: the
--- engine runs the returned function in the target mod, so the failure lands on
--- that mod instead of on whoever requested the file.
-function Manager:refusal_chunk(modname, filename)
-	local message = self:message(modname, true, nil)
-	local ok, factory = self.api.pcall(self.api.loadstring, FACTORY_SOURCE, "@" .. self.api.tostring(filename))
-	if ok and self.api.type(factory) == "function" then
-		return factory(self.api.print, self.api.error, message)
-	end
-	-- No compiler available: still hand back a chunk that only uses upvalues, so the
-	-- engine's loader is not aborted from inside this call.
-	return function()
-		self.api.print(message)
-		self.api.error(message, 0)
-	end
-end
-
--- Returns the refusal chunk for a recorded mod (modinfo stays readable so the
--- game can still list/manage it) and delegates everything else untouched.
--- `inner` is the exact loader this wrapper replaced: it is captured per wrapper,
--- never read from the manager, because jit.runtime may have wrapped an older
--- wrapper of ours in between (re-pointing a shared field would cycle).
-function Manager:dispatch_load(inner, filename, ...)
-	local modname, rest = self:locate(filename)
-	if modname and self.recorded[modname] then
-		if rest == "modinfo.lua" then
-			return inner(filename, ...)
-		end
-		if rest == "modmain.lua" or rest == "modworldgenmain.lua" then
-			local chunk = self:refusal_chunk(modname, filename)
-			if chunk ~= nil then
-				return chunk
-			end
-		end
-		-- The engine keeps loading base modules after the mod error
-		-- (`require "stacktrace"`, "debughelpers", "consolecommands", ...), and
-		-- package.path may resolve them to the blacklisted mod's copies. Never run
-		-- the mod's code, but do not raise from here either: a failing require
-		-- aborts main.lua ("Error loading main.lua") and crashes shutdown. An empty
-		-- chunk keeps the engine's error path alive; the entry refusal above is what
-		-- reports the incompatibility and disables the mod.
-		return function() end
-	end
-	return inner(filename, ...)
-end
-
--- Wrapping is identity checked: when jit.runtime replaces kleiloadlua with its
--- frostxx/encrypted hook, the next call makes this check outermost again.
-function Manager:wrap_loader()
-	local current = self.api.rawget(self.global, "kleiloadlua")
-	if current == self.loader_wrapper then
-		return self
-	end
-	if self.api.type(current) ~= "function" then
-		self.api.print("[luajit] Cannot wrap kleiloadlua for the mod blacklist: not a function")
-		return self
-	end
-	local wrapper = function(filename, ...)
-		return self:dispatch_load(current, filename, ...)
-	end
-	self.loader_wrapper = wrapper
-	self.api.rawset(self.global, "kleiloadlua", wrapper)
-	return self
-end
-
--- Registers a mod env: attribution for its frames, its MODROOT prefix, and a
--- copy of its string table with only dump replaced (idempotent per env).
+-- Registers a mod env. Attribution (frames + MODROOT prefix) is recorded for every mod;
+-- then the env either gets the LuaJIT access environment (a mod that declared
+-- `modinfo.luajit_compatible`) or the stock surface scrub (everyone else). This runs from the
+-- one InitializeModMain hook, before the engine executes the mod's own modmain.
 function Manager:register_env(modname, env)
 	if not is_valid_modname(modname) or self.api.type(env) ~= "table" then
 		return false
 	end
 	self.env_owner[env] = modname
-	local ok_root, root = self.api.pcall(function()
+	self.envs[modname] = env
+	self:remember_root(modname, env)
+	if not self.has_luajit then
+		-- The classic VM has no LuaJIT surface to hand out and nothing to scrub.
+		return true
+	end
+	if self.compat[env] ~= nil then
+		return true
+	end
+	if modname == self.installing_modname then
+		-- This mod's own env is where the manager itself lives: it gets the same local
+		-- capability containers, plus the private registry and the two injector tables.
+		return self:install_access_env(modname, env, true)
+	end
+	if self:declares_compat(env) then
+		return self:install_access_env(modname, env, false)
+	end
+	return self:scrub_env(modname, env)
+end
+
+-- The authorised local env of a registered mod (discovery hands it to that mod's external
+-- packages as their parent; it never goes through a plugin context).
+function Manager:mod_env(modname)
+	if not is_valid_modname(modname) then
+		return nil
+	end
+	return self.envs[modname]
+end
+
+function Manager:remember_root(modname, env)
+	local api = self.api
+	local ok, root = api.pcall(function()
 		return env.MODROOT
 	end)
-	if ok_root and self.api.type(root) == "string" and root ~= "" then
+	if ok and api.type(root) == "string" and root ~= "" then
 		local norm = root:gsub("\\", "/")
 		if norm:sub(-1) ~= "/" then
 			norm = norm .. "/"
 		end
 		self.roots[norm] = modname
 	end
-	local env_string = self.api.rawget(env, "string")
-	if self.api.type(env_string) ~= "table" then
-		-- Proxy envs (e.g. modmain's own env) only expose string through __index.
-		local ok, indexed = self.api.pcall(function()
-			return env.string
+end
+
+-- The declaration is the only grant: `modinfo.luajit_compatible == true` or a table. A mod
+-- name substring, the caller stack or EnabledJIT/HideGlobalJIT never grants access.
+function Manager:declares_compat(env)
+	local api = self.api
+	local info = api.rawget(env, "modinfo")
+	if api.type(info) ~= "table" then
+		local ok, value = api.pcall(function()
+			return env.modinfo
 		end)
 		if ok then
-			env_string = indexed
+			info = value
 		end
 	end
-	if self.api.type(env_string) == "table" and self.string_copies[env_string] ~= modname then
-		local copy = {}
-		for key, value in self.api.pairs(env_string) do
-			copy[key] = value
+	if api.type(info) ~= "table" then
+		return false
+	end
+	local flag = api.rawget(info, "luajit_compatible")
+	if flag == nil then
+		local ok, value = api.pcall(function()
+			return info.luajit_compatible
+		end)
+		if ok then
+			flag = value
 		end
-		local dump_wrapper = function(...)
-			return self:dump_from_owner(modname, ...)
+	end
+	return flag == true or api.type(flag) == "table"
+end
+
+-- Shallow copy of a family table (jit/bit/ffi/debug/table/string and the jit submodules).
+-- Functions and the VM state behind them stay shared by reference; the metatable stays the
+-- original one, so a copy is interchangeable with stock.
+function Manager:copy_family(source)
+	local api = self.api
+	local copy = {}
+	for key, value in api.pairs(source) do
+		copy[key] = value
+	end
+	return api.setmetatable(copy, api.getmetatable(source))
+end
+
+-- The env's own copy for an extension module name, or nil when this build does not ship it.
+function Manager:extension_value(name, state)
+	local copies = state.copies
+	if name == "jit" then return copies.jit end
+	if name == "bit" then return copies.bit end
+	if name == "ffi" then return copies.ffi end
+	if name == "table.new" then return copies["table.new"] end
+	if name == "table.clear" then return copies["table.clear"] end
+	if name == "string.buffer" then return copies["string.buffer"] end
+	if name == "jit.opt" or name == "jit.util" or name == "jit.profile" then
+		return copies[name]
+	end
+	if name == "memprof" then return copies.memprof end
+	return nil
+end
+
+-- Per-env LuaJIT capability. Every container is private to this env and points at exactly the
+-- same function objects; nothing is deep-copied and the VM state stays one.
+function Manager:install_access_env(modname, env, is_installer)
+	local api = self.api
+	local copies = {}
+	for _, name in api.pairs({"jit", "bit", "ffi", "debug", "table", "string"}) do
+		local source = self.modules[name]
+		if api.type(source) == "table" then
+			copies[name] = self:copy_family(source)
 		end
-		self.own_functions[dump_wrapper] = true
-		copy.dump = dump_wrapper
-		self.string_copies[copy] = modname
-		self.api.rawset(env, "string", copy)
+	end
+	if copies.jit then
+		for _, sub in api.pairs({"jit.opt", "jit.util", "jit.profile"}) do
+			if api.type(self.modules[sub]) == "table" then
+				copies[sub] = self:copy_family(self.modules[sub])
+				copies.jit[sub:sub(5)] = copies[sub]
+			end
+		end
+	end
+	if api.type(self.modules.memprof) == "table" then
+		copies.memprof = self:copy_family(self.modules.memprof)
+	end
+	if copies.debug then
+		copies.debug.upvalueid = self.modules.upvalueid
+		copies.debug.upvaluejoin = self.modules.upvaluejoin
+	end
+	-- Require-only extension modules: their values are also fields of the family copy, so
+	-- `luajit.table.new` and `require("table.new")` are the same function.
+	for _, name in api.pairs({"table.new", "table.clear", "string.buffer"}) do
+		local module = self.modules[name]
+		if module ~= nil then
+			copies[name] = api.type(module) == "table" and self:copy_family(module) or module
+		end
+	end
+	if copies.table then
+		copies.table.new = copies["table.new"]
+		copies.table.clear = copies["table.clear"]
+	end
+	if copies.string then
+		copies.string.buffer = copies["string.buffer"]
+	end
+
+	local luajit = {}
+	for _, name in api.pairs({"jit", "bit", "ffi", "debug", "table", "string"}) do
+		luajit[name] = copies[name]
+	end
+	if is_installer then
+		-- Only this mod reads/writes the real registry (the engine's own table, not the
+		-- filtered getregistry snapshot other mods see).
+		luajit.registry = self.registry
+	end
+
+	-- Declared mods see the real package table. Its loaded/preload are overlays over the safe
+	-- base, so this env can use the captured extensions without the ordinary surface seeing
+	-- them; the shared require remains bound to the safe package.
+	local package_copy = self.real_package or self.safe_package or self.global.package
+	local loaded = {}
+	local preload = {}
+	for _, name in api.pairs({"jit", "bit", "ffi", "table.new", "table.clear",
+		"string.buffer", "memprof", "jit.opt", "jit.util", "jit.profile"}) do
+		local value = self:extension_value(name, { copies = copies })
+		if value ~= nil then
+			loaded[name] = value
+		end
+	end
+	if api.type(self.real_package) == "table" then
+		if api.type(self.real_package.loaded) == "table" then
+			api.setmetatable(loaded, { __index = self.real_package.loaded })
+		end
+		if api.type(self.real_package.preload) == "table" then
+			api.setmetatable(preload, { __index = self.real_package.preload })
+		end
+	end
+
+	-- Local GLOBAL: explicit extension fields stay here, every other game field is read live
+	-- from the real GLOBAL and ordinary writes keep going to the shared table, so the game's
+	-- state (TheWorld, ...) is one table for all mods.
+	local proxy = {}
+	api.setmetatable(proxy, {
+		__index = function(_, key)
+			return self.global[key]
+		end,
+		__newindex = function(_, key, value)
+			self.global[key] = value
+		end,
+	})
+	api.rawset(proxy, "_G", proxy)
+	for _, name in api.pairs({"jit", "bit", "ffi", "debug", "table", "string"}) do
+		if copies[name] ~= nil then
+			api.rawset(proxy, name, copies[name])
+		end
+	end
+	api.rawset(proxy, "package", package_copy)
+
+	local state = {
+		copies = copies,
+		luajit = luajit,
+		proxy = proxy,
+		package = package_copy,
+		loaded = loaded,
+		loading = {},
+	}
+	self.compat[env] = state
+
+	local function require_wrapper(name, ...)
+		local module = self:require_extension(name, state)
+		if module ~= nil then
+			return module
+		end
+		if is_luajit_module(name) then
+			return self:require_lua_extension(name, env, state)
+		end
+		return self.real_require(name, ...)
+	end
+	self.own_functions[require_wrapper] = true
+
+	api.rawset(env, "luajit", luajit)
+	api.rawset(env, "GLOBAL", proxy)
+	for _, name in api.pairs({"jit", "bit", "ffi", "debug", "table", "string"}) do
+		if copies[name] ~= nil then
+			api.rawset(env, name, copies[name])
+		end
+	end
+	api.rawset(env, "package", package_copy)
+	api.rawset(env, "require", require_wrapper)
+	return true
+end
+
+-- Ordinary mods keep the stock PUC surface: copies of the whitelisted libraries with every
+-- LuaJIT-only entry removed, and a require that answers extension names with the stock
+-- "module not found" error. No loader can reach root.modules from here.
+function Manager:scrub_env(modname, env)
+	local api = self.api
+	local function env_field(name)
+		local value = api.rawget(env, name)
+		if value == nil then
+			local ok, indexed = api.pcall(function()
+				return env[name]
+			end)
+			if ok then
+				value = indexed
+			end
+		end
+		return value
+	end
+	local function masked_copy(source, nil_keys)
+		if api.type(source) ~= "table" then
+			return nil
+		end
+		local result = {}
+		for key, value in api.pairs(source) do
+			result[key] = value
+		end
+		for _, key in api.pairs(nil_keys) do
+			result[key] = nil
+		end
+		return result
+	end
+	local debug_copy = masked_copy(env_field("debug") or self.global.debug,
+		{"upvalueid", "upvaluejoin"})
+	if debug_copy then
+		api.rawset(env, "debug", debug_copy)
+	end
+	local table_copy = masked_copy(env_field("table") or self.global.table, {"new", "clear"})
+	if table_copy then
+		api.rawset(env, "table", table_copy)
+	end
+	local string_copy = api.rawget(env, "string")
+	if api.type(string_copy) == "table" then
+		api.rawset(string_copy, "buffer", nil)
+	end
+	local env_package = env_field("package")
+	if api.type(env_package) == "table" then
+		api.rawset(env, "package", self.safe_package or env_package)
+	end
+	local env_require = api.rawget(env, "require")
+	if api.type(env_require) ~= "function" then
+		local ok, indexed = api.pcall(function()
+			return env.require
+		end)
+		if ok then
+			env_require = indexed
+		end
+	end
+	if api.type(env_require) == "function" then
+		api.rawset(env, "require", self.safe_require or env_require)
 	end
 	return true
+end
+
+function Manager:require_extension(name, state)
+	return self:extension_value(name, state)
+end
+
+-- LuaJIT's own jit/*.lua modules (jit.bc, jit.v, jit.dis_*) do not exist as C modules. They
+-- load through this env's private cache: this mod's scripts/jit first, then the loaders saved
+-- at install, always into the calling mod's authorised env. Nothing is written to the shared
+-- package.loaded/preload.
+function Manager:require_lua_extension(name, env, state)
+	local api = self.api
+	local loaded = state.loaded
+	local loading = state.loading
+	if loaded[name] ~= nil then
+		if loaded[name] == loading then
+			api.error("loop or previous error loading module '" .. name .. "'", 2)
+		end
+		return loaded[name]
+	end
+	loaded[name] = loading
+	local ok, result = api.pcall(self.load_lua_extension, self, name, env)
+	if not ok then
+		loaded[name] = nil
+		api.error(result, 0)
+	end
+	if result == nil then
+		result = true
+	end
+	loaded[name] = result
+	if api.type(self.real_package) == "table" and api.type(self.real_package.loaded) == "table" then
+		api.rawset(self.real_package.loaded, name, result)
+	end
+	return result
+end
+
+function Manager:load_lua_extension(name, env)
+	local api = self.api
+	local searched = {}
+	local roots = {}
+	if api.type(self.installer_modroot) == "string" and self.installer_modroot ~= "" then
+		roots[#roots + 1] = self.installer_modroot
+	end
+	local modroot = api.rawget(env, "MODROOT")
+	if api.type(modroot) ~= "string" or modroot == "" then
+		local ok, value = api.pcall(function()
+			return env.MODROOT
+		end)
+		if ok then
+			modroot = value
+		end
+	end
+	if api.type(modroot) == "string" and modroot ~= "" and modroot ~= self.installer_modroot then
+		roots[#roots + 1] = modroot
+	end
+	for _, root in api.pairs(roots) do
+		local filepath = root .. "scripts/" .. name:gsub("%.", "/") .. ".lua"
+		local chunk = self.kleiloadlua(filepath)
+		if api.type(chunk) == "function" then
+			api.setfenv(chunk, env)
+			return chunk(name)
+		end
+		if api.type(chunk) == "string" then
+			searched[#searched + 1] = "\n\tno file '" .. filepath .. "'"
+		end
+	end
+	for index = 1, #self.loaders do
+		local ok, result = api.pcall(self.loaders[index], name)
+		if ok then
+			if api.type(result) == "function" then
+				local set_ok, set_err = api.pcall(api.setfenv, result, env)
+				if not set_ok then
+					api.error("module '" .. name .. "': loader returned a C function ("
+						.. api.tostring(set_err) .. ")", 2)
+				end
+				return result(name)
+			elseif api.type(result) == "string" then
+				searched[#searched + 1] = result
+			end
+		end
+	end
+	api.error("module '" .. name .. "' not found:" .. api.concat(searched), 2)
+end
+
+function Manager:caller_info(start_level)
+	for level = start_level or 2, 16 do
+		local ok, info = self.api.pcall(self.api.getinfo, level, "Sf")
+		if not ok or self.api.type(info) ~= "table" then
+			return nil
+		end
+		if info.what ~= "C" and not self.own_functions[info.func] then
+			local source = info.source
+			if not (self.api.type(source) == "string"
+				and source:find("luajit_mod_blacklist", 1, true)) then
+				return info
+			end
+		end
+	end
+	return nil
+end
+
+function Manager:frame_mod_owner(info)
+	if not info then
+		return nil
+	end
+	local owner = self:locate(info.source)
+	if is_valid_modname(owner) then
+		return owner
+	end
+	local source = info.source
+	if self.api.type(source) == "string"
+		and not source:find("GameLuaInjectFramework", 1, true)
+		and not source:find("luajit_mod_blacklist", 1, true) then
+		local ok, fenv = self.api.pcall(self.api.getfenv, info.func)
+		if ok and self.api.type(fenv) == "table" then
+			owner = self.env_owner[fenv]
+			if is_valid_modname(owner) then
+				return owner
+			end
+		end
+	end
+	return nil
 end
 
 local M = {}
@@ -453,11 +780,12 @@ local function missing_apis(global)
 	need(table_table ~= nil and type(table_table.concat) == "function", "table.concat")
 	local modmanager = global.ModManager
 	need(modmanager ~= nil and type(modmanager.InitializeModMain) == "function", "ModManager.InitializeModMain")
-	need(type(global.kleiloadlua) == "function", "kleiloadlua")
 	local debug_table = global.debug
 	need(debug_table ~= nil and type(debug_table.getinfo) == "function", "debug.getinfo")
 	need(type(global.getfenv) == "function", "getfenv")
-	need(type(global.loadstring) == "function", "loadstring")
+	need(type(global.setfenv) == "function", "setfenv")
+	need(type(global.getmetatable) == "function", "getmetatable")
+	need(type(global.kleiloadlua) == "function", "kleiloadlua")
 	need(type(global.error) == "function", "error")
 	need(type(global.print) == "function", "print")
 	need(type(global.pcall) == "function", "pcall")
@@ -472,28 +800,45 @@ local function missing_apis(global)
 	return missing
 end
 
-function M.install(global, modname, modenv)
-	local missing = missing_apis(global)
+-- The one entry point. `private_root` and `real_registry` are what the native
+-- GameInjector.InitializeModEnvironment returned; the manager never publishes itself on
+-- ModManager or in the shared registry. Every piece of state it owns lives in the root.
+function M.install(global, modname, modenv, private_root, real_registry)
 	local error_fn = global.error
 	if type(error_fn) ~= "function" then
 		error_fn = error
 	end
+	local function init_error(message)
+		error_fn(message, 0)
+	end
+	if type(private_root) ~= "table" then
+		init_error("[luajit] Cannot initialize mod blacklist: private registry root is required")
+	end
+	if type(real_registry) ~= "table" then
+		init_error("[luajit] Cannot initialize mod blacklist: real registry is required")
+	end
+	local modmanager = global.ModManager
+	local existing = private_root.controller
+	if existing ~= nil then
+		if type(existing) ~= "table" or getmetatable(existing) ~= Manager then
+			init_error("[luajit] Cannot initialize mod blacklist: private registry root is already owned")
+		end
+		existing:register_env(modname, modenv)
+		return existing
+	end
+	if private_root[POLICY_KEY] ~= nil then
+		init_error("[luajit] Cannot initialize mod blacklist: registry key " .. POLICY_KEY .. " already in use")
+	end
+	local missing = missing_apis(global)
 	if #missing > 0 then
 		local names = missing[1]
 		for index = 2, #missing do
 			names = names .. ", " .. missing[index]
 		end
-		error_fn("[luajit] Cannot initialize mod blacklist: " .. names, 0)
+		init_error("[luajit] Cannot initialize mod blacklist: " .. names)
 	end
 	if not is_valid_modname(modname) then
-		error_fn("[luajit] Cannot initialize mod blacklist: invalid modname", 0)
-	end
-
-	local modmanager = global.ModManager
-	local existing = global.rawget(modmanager, "_ds_luajit_mod_blacklist_installed")
-	if type(existing) == "table" then
-		existing:register_env(modname, modenv)
-		return existing
+		init_error("[luajit] Cannot initialize mod blacklist: invalid modname")
 	end
 
 	local api = {
@@ -510,6 +855,8 @@ function M.install(global, modname, modenv)
 		decode = global.json.decode,
 		getinfo = global.debug.getinfo,
 		getfenv = global.getfenv,
+		setfenv = global.setfenv,
+		getmetatable = global.getmetatable,
 		loadstring = global.loadstring,
 		setmetatable = global.setmetatable,
 		rawget = global.rawget,
@@ -518,56 +865,278 @@ function M.install(global, modname, modenv)
 	}
 	local recorded, read_err = read_entries(api)
 	if read_err then
-		api.error("[luajit] Cannot initialize mod blacklist: " .. read_err, 0)
+		init_error("[luajit] Cannot initialize mod blacklist: " .. read_err)
 	end
+	-- The native require as it is right now: the file hijack is already installed on it and
+	-- normal modules must keep going through that exact object.
+	local real_require = global.require
 
 	local manager = api.setmetatable({
 		global = global,
 		api = api,
 		modmanager = modmanager,
+		installing_modname = modname,
 		recorded = recorded,
 		persisted = {},
 		env_owner = api.setmetatable({}, { __mode = "k" }),
-		string_copies = api.setmetatable({}, { __mode = "k" }),
 		own_functions = api.setmetatable({}, { __mode = "k" }),
+		envs = {},
 		roots = {},
-		original_dump = global.string.dump,
+		root = private_root,
+		registry = real_registry,
+		modules = {},
+		compat = api.setmetatable({}, { __mode = "k" }),
+		real_require = real_require,
+		kleiloadlua = global.kleiloadlua,
+		loaders = {},
+		has_luajit = api.type(global.jit) == "table",
 	}, Manager)
 	for _, value in api.pairs(Manager) do
 		if api.type(value) == "function" then
 			manager.own_functions[value] = true
 		end
 	end
-
-	-- Hooks in order; the manager is published only after all of them are in.
-	local global_dump_wrapper = function(...)
-		return manager:global_dump(...)
+	-- The installing mod's scripts/jit/*.lua directory is the first place a compatible mod's
+	-- private jit.* loader looks (this module ships them); a caller's own MODROOT is second.
+	local ok_root, installer_root = api.pcall(function()
+		return modenv.MODROOT
+	end)
+	if ok_root and api.type(installer_root) == "string" and installer_root ~= "" then
+		manager.installer_modroot = installer_root
 	end
-	manager.own_functions[global_dump_wrapper] = true
-	api.rawset(global.string, "dump", global_dump_wrapper)
+	-- Publish the owner first: a second install in this state reuses it instead of building a
+	-- second ledger, and a failure below leaves a controller no one can mistake for absent.
+	private_root.controller = manager
 
+	-- Capture the extension surface before the first scrub. C submodules load only when this
+	-- build already exposes them (loaded or preload): a missing module means this VM does not
+	-- ship it, and an existing one that fails to load is an initialization error. Lua jit.*
+	-- modules are loaded lazily per compatible env (require_lua_extension).
+	if manager.has_luajit then
+		manager.modules.jit = global.jit
+		manager.modules.bit = global.bit
+		-- require's C implementation uses the package table in its own environment, which is
+		-- not necessarily the current GLOBAL.package (the engine may have replaced the field).
+		local package_table = global.package
+		local injector = modenv and api.rawget(modenv, "GameInjector")
+		if api.type(injector) ~= "table" then
+			injector = global.GameInjector
+		end
+		local get_env = api.type(injector) == "table"
+			and api.rawget(injector, "GetFunctionEnvironment") or nil
+		if api.type(get_env) == "function" then
+			local ok_env, require_env = api.pcall(get_env, real_require)
+			if ok_env and api.type(require_env) == "table" then
+				package_table = require_env
+			end
+		end
+		manager.source_package = package_table
+		local function available(name)
+			if api.type(package_table) ~= "table" then
+				return false
+			end
+			for _, map_name in api.pairs({"loaded", "preload"}) do
+				local map = package_table[map_name]
+				if api.type(map) == "table" and map[name] ~= nil then
+					return true
+				end
+			end
+			return false
+		end
+		-- table.new / table.clear / string.buffer are require-only modules in LuaJIT (they are
+		-- not fields of the libraries), so they are captured through the loader like ffi.
+		for _, name in api.pairs({"ffi", "memprof", "jit.opt", "jit.util", "jit.profile",
+			"table.new", "table.clear", "string.buffer"}) do
+			if api.type(real_require) == "function" and available(name) then
+				local ok, module = api.pcall(real_require, name)
+				if not ok then
+					init_error("[luajit] Cannot initialize mod blacklist: cannot load " .. name
+						.. ": " .. api.tostring(module))
+				end
+				if module ~= nil then
+					manager.modules[name] = module
+				end
+			end
+		end
+		local debug_table = api.rawget(global, "debug")
+		if api.type(debug_table) == "table" then
+			manager.modules.debug = debug_table
+			manager.modules.upvalueid = api.rawget(debug_table, "upvalueid")
+			manager.modules.upvaluejoin = api.rawget(debug_table, "upvaluejoin")
+		end
+		local table_table = api.rawget(global, "table")
+		if api.type(table_table) == "table" then
+			manager.modules.table = table_table
+		end
+		local string_table = api.rawget(global, "string")
+		if api.type(string_table) == "table" then
+			manager.modules.string = string_table
+		end
+		local loaders = {}
+		if api.type(package_table) == "table" and api.type(package_table.loaders) == "table" then
+			for index = 1, #package_table.loaders do
+				loaders[index] = package_table.loaders[index]
+			end
+		end
+		manager.loaders = loaders
+		api.rawset(private_root, "modules", manager.modules)
+	end
+
+	-- The VM consults this closure through the private root. Another live manager must not be
+	-- silently displaced (checked above, before any state was replaced).
+	if manager.has_luajit then
+		local policy = function()
+			return manager:dump_policy()
+		end
+		manager.own_functions[policy] = true
+		private_root[POLICY_KEY] = policy
+		if private_root[POLICY_KEY] ~= policy then
+			init_error("[luajit] Cannot initialize mod blacklist: cannot publish " .. POLICY_KEY)
+		end
+	end
+
+	-- Build the two package views:
+	--   safe_package: a separate table for ordinary mod envs. Its loaded/preload are the
+	--     scrubbed shared tables, and path/cpath/loaders forward to the stock package that
+	--     require actually uses (so game loaders inserted later stay visible).
+	--   real_package: a separate view for declared mods. Its loaded is an overlay
+	--     (extension entries on top of the safe base); preload/loaders/loadlib match safe.
+	-- The stock package table itself keeps its loaded=registry._LOADED identity, its real
+	-- loader array and its path; only extension entries and loadlib are replaced.
+	if manager.has_luajit then
+		local package_table = manager.source_package or global.package
+		local safe_loaded = api.rawget(package_table, "loaded")
+		if api.type(safe_loaded) ~= "table" then
+			safe_loaded = {}
+		end
+		for key in api.pairs(safe_loaded) do
+			if is_luajit_module(key) then
+				api.rawset(safe_loaded, key, nil)
+			end
+		end
+		local safe_preload = {}
+		if api.type(api.rawget(package_table, "preload")) == "table" then
+			for name, value in api.pairs(package_table.preload) do
+				if not is_luajit_module(name) then
+					safe_preload[name] = value
+				end
+			end
+		end
+		local real_loaded = api.setmetatable({}, { __index = safe_loaded })
+		for name, value in api.pairs(manager.modules) do
+			if is_luajit_module(name) and value ~= nil then
+				api.rawset(real_loaded, name, value)
+			end
+		end
+
+		local safe_loaders = package_table.loaders
+		local real_loadlib = api.rawget(package_table, "loadlib")
+		local function safe_loadlib(path, init)
+			if is_extension_opener(init) then
+				return nil, "LuaJIT extension libraries are disabled in this package"
+			end
+			if api.type(real_loadlib) ~= "function" then
+				return nil, "package.loadlib is unavailable"
+			end
+			return real_loadlib(path, init)
+		end
+
+		-- The stock require closure keeps its original package table and environment. That
+		-- table keeps its loaded=registry._LOADED identity and its loader array (the game adds
+		-- its custom loader after this mod), so only the extension entries and loadlib are
+		-- touched. A separate real view is for declared mods; both are new tables so the
+		-- loader/package identities the game mutates stay intact.
+		api.rawset(package_table, "preload", safe_preload)
+		api.rawset(package_table, "loadlib", safe_loadlib)
+		local function forward_path(path)
+			if api.type(path) ~= "string" then
+				return path
+			end
+			if not path:find("scripts/?.lua", 1, true) then
+				path = path .. ";scripts/?.lua"
+			end
+			if not path:find("scriptlibs/?.lua", 1, true) then
+				path = path .. ";scriptlibs/?.lua"
+			end
+			return path
+		end
+		api.rawset(package_table, "path", forward_path(api.rawget(package_table, "path")))
+
+		local safe_package = {}
+		safe_package.loaded = safe_loaded
+		safe_package.preload = safe_preload
+		safe_package.loaders = safe_loaders
+		safe_package.loadlib = safe_loadlib
+		api.setmetatable(safe_package, {
+			__index = package_table,
+			__newindex = function(_, key, value)
+				api.rawset(package_table, key, value)
+			end,
+		})
+
+		local real_package = {
+			loaded = real_loaded,
+			preload = safe_preload,
+			loaders = safe_loaders,
+			loadlib = safe_loadlib,
+		}
+		api.setmetatable(real_package, { __index = safe_package })
+
+		manager.safe_package = safe_package
+		manager.real_package = real_package
+		-- GLOBAL keeps the stock package identity (its loaded/preload/loadlib are already the
+		-- scrubbed-safe ones); ordinary mod envs get the separate safe_package view.
+		api.rawset(global, "package", package_table)
+
+		-- registry._LOADED is the table stock require consults; it must be the safe base.
+		api.rawset(real_registry, "_LOADED", safe_loaded)
+		api.rawset(real_registry, "_PRELOAD", safe_preload)
+		for _, key in api.pairs({"_LOADED", "_PRELOAD"}) do
+			local map = api.rawget(real_registry, key)
+			if api.type(map) == "table" then
+				for name in api.pairs(map) do
+					if is_luajit_module(name) then
+						api.rawset(map, name, nil)
+					end
+				end
+			end
+		end
+
+		-- Leave the stock require object and its real package environment untouched. The real
+		-- package already has the extension-free preload/loadlib and the safe registry loaded
+		-- table, so `require("jit")` fails naturally while the game's path/custom loaders
+		-- (which are installed after this mod) keep working. Plain envs get that same require.
+		manager.real_require = real_require
+		manager.safe_require = real_require
+
+		api.rawset(global, "jit", nil)
+		-- DST's own scripts use the global `bit` library (e.g. scrapbookpartitions), so the
+		-- engine surface keeps it; only jit/ffi/upvalueid/table.new/string.buffer are masked.
+		if api.type(global.debug) == "table" then
+			api.rawset(global.debug, "upvalueid", nil)
+			api.rawset(global.debug, "upvaluejoin", nil)
+		end
+		if api.type(global.table) == "table" then
+			api.rawset(global.table, "new", nil)
+			api.rawset(global.table, "clear", nil)
+		end
+		if api.type(global.string) == "table" then
+			api.rawset(global.string, "buffer", nil)
+		end
+	end
+
+	-- One InitializeModMain hook: every mod env is registered (attribution) and, before the
+	-- engine runs it, either authorised or scrubbed.
 	local old_initialize = modmanager.InitializeModMain
-	function modmanager:InitializeModMain(register_modname, register_env, ...)
+	local function initialize_hook(self, register_modname, register_env, ...)
 		manager:register_env(register_modname, register_env)
 		return old_initialize(self, register_modname, register_env, ...)
 	end
+	manager.own_functions[initialize_hook] = true
+	modmanager.InitializeModMain = initialize_hook
 
 	manager:register_env(modname, modenv)
-	manager:wrap_loader()
-
-	api.rawset(modmanager, "_ds_luajit_mod_blacklist_installed", manager)
 	return manager
 end
 
-local install = M.install
-
--- modimport("scripts/luajit_mod_blacklist") runs this chunk in the mod env, which
--- carries GLOBAL and modname, so one import is enough. Explicit callers (tests and
--- other loaders) have no modname in this env and call install(...) themselves.
-local auto_global = GLOBAL
-local auto_modname = modname
-if type(auto_global) == "table" and type(auto_modname) == "string" and auto_modname ~= "" then
-	install(auto_global, auto_modname, auto_global.getfenv(1))
-end
-
-return { install = install }
+return { install = M.install }

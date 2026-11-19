@@ -85,7 +85,35 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 # Portable layout uses INSTALL_RPATH=$ORIGIN[/deps|/../lib] + staged Mod/deps.
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
 
+# PUC 5.1 dump service (DS: real Lua 5.1 string.dump for mods). Private static
+# library: it owns the second PUC 5.1 state per call, so the game VM never links a
+# PUC runtime and only ever sees the POD ABI in luajit/src/lua_ds_pucdump.h.
+add_library(ds_puc51_dump STATIC core/LuaPucDumpService.cpp)
+set_target_properties(ds_puc51_dump PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(ds_puc51_dump PRIVATE
+    # PUC 5.1 internal headers first: lobject.h/lstate.h/lundump.h must resolve to
+    # the src/lua51original tree, never to the LuaJIT one.
+    ${PROJECT_SOURCE_DIR}/src/lua51original/src
+    ${CMAKE_BINARY_DIR}/src/lua51original
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    # ABI header only (lua_ds_pucdump.h); it defines no lua_* type. Kept PRIVATE:
+    # Injector compiles against src/lua51original and must not gain a LuaJIT
+    # include path (it would resolve lualib.h/luaconf.h to the other VM).
+    ${PROJECT_SOURCE_DIR}/luajit/src
+)
+target_compile_features(ds_puc51_dump PRIVATE cxx_std_23)
+if (NOT MSVC)
+    set_target_properties(ds_puc51_dump PROPERTIES CXX_VISIBILITY_PRESET hidden)
+endif ()
+if (TARGET liblua_static)
+    target_link_libraries(ds_puc51_dump PRIVATE liblua_static)
+    add_dependencies(ds_puc51_dump liblua_static)
+else()
+    message(FATAL_ERROR "liblua_static (src/lua51original) required for ds_puc51_dump")
+endif ()
+
 add_library(Injector SHARED ${SOURCES})
+target_link_libraries(Injector PRIVATE ds_puc51_dump)
 if (MSVC)
     target_compile_definitions(Injector PRIVATE SUPPORT_PROGRESS)
 endif()

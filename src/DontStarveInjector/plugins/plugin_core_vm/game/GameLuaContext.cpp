@@ -185,20 +185,39 @@ void GameLuaInjectorFramework::init(GameLuaContext &ctx, lua_State *L) {
         }
         ctx->_lua_getglobal(L, GameLuaInjectorName);
         const bool ok = ctx->_lua_istable(L, -1) != 0;
-        ctx->_lua_pop(L, 1);
         if (!ok) {
+            ctx->_lua_pop(L, 1);
             spdlog::error("GameLuaInjector global is not a table after framework init");
             return;
         }
+        // The plugin works from the private root from now on: the mod may clear the real GLOBAL
+        // field while the game is still loading, and every reader below (and in
+        // InjectorFileHijack.cpp) must keep working after that.
+        ctx->push_private_root(L);
+        ctx->_lua_pushvalue(L, -2);
+        ctx->_lua_setfield(L, -2, GameLuaInjectorName);
+        ctx->_lua_pop(L, 2);
 }
 
 void GameLuaInjectorFramework::forceEnabledLuaMod(GameLuaContext &ctx, lua_State *L, const std::string_view &modname) {
         LuaStackGuard guard(ctx, L);
-        int ret = ctx->_luaL_dostring(L, fmt::format(GameLuaInjectorName ".forceEnableLuaMod(true, [[{}]])", modname).c_str());
-        if (ret != LUA_OK) {
-            spdlog::error("{}", ctx->_lua_tostring(L, -1));
+        // Read the framework from the private root, not from GLOBAL: the mod that installs this
+        // plugin removes the GLOBAL field while the game boot continues.
+        ctx->push_game_injector(L);
+        ctx->_lua_getfield(L, -1, "forceEnableLuaMod");
+        if (!ctx->_lua_isfunction(L, -1)) {
+            ctx->_lua_pop(L, 2);
+            spdlog::error("forceEnableLuaMod: GameLuaInjector.forceEnableLuaMod is not a function");
+            return;
         }
-        assert(ret == LUA_OK);
+        ctx->_lua_pushboolean(L, 1);
+        ctx->_lua_pushlstring(L, modname.data(), modname.size());
+        if (ctx->_lua_pcall(L, 2, 0, 0) != LUA_OK) {
+            spdlog::error("{}", ctx->_lua_tostring(L, -1));
+            ctx->_lua_pop(L, 2); // error object + GameLuaInjector
+            return;
+        }
+        ctx->_lua_pop(L, 1); // GameLuaInjector
         spdlog::info("Forced enabled Lua mod: {}", modname);
 }
 
@@ -212,6 +231,8 @@ std::string MakeFullLibraryName(const char *baseName) {
     return std::string(SHARED_LIBRARY_PRE) + baseName + SHARED_LIBRARY_EXT;
 }
 } // namespace
+
+
 
 namespace ds::core_vm::detail {
 
@@ -261,6 +282,11 @@ __attribute__((visibility("default")))
 GameLuaContext &ds_core_vm_get_game_lua_context() {
     return GetGameLuaContext();
 }
+}
+
+extern "C" int ds_core_vm_push_private_root(lua_State *L) {
+    GetGameLuaContext()->push_private_root(L);
+    return 1;
 }
 
 std::string wrapper_game_main_buffer(lua_State *L, std::string_view buffer) {
@@ -368,13 +394,10 @@ std::string wrapper_game_main_buffer(lua_State *L, std::string_view buffer) {
         GameLuaInjector.register_event_game_initialized_injector_file(<injector_file>, <injector_args>)
     */
     auto &ctx = *GameLuaContextImpl::currentCtx;
-    ctx->_lua_getglobal(L, GameLuaInjectorName);
-    if (!ctx->_lua_istable(L, -1)) {
-        const int ty = ctx->_lua_type(L, -1);
-        spdlog::error(GameLuaInjectorName " is not a table (lua_type={}), cannot inject scripts", ty);
-        ctx->_lua_pop(L, 1);
-        return {};
-    }
+    // The framework lives in the private root (GameLuaContextImpl::luaL_openlibs_hooker ->
+    // GameLuaInjectorFramework::init). Reading GLOBAL here would lose every event as soon as
+    // this mod clears the real global while the same chunk is still running.
+    ctx.api.push_game_injector(L);
 
     if (!before_code.empty()) {
         spdlog::info("Inject main before code: {}", before_code);
@@ -474,7 +497,13 @@ std::string wrapper_game_main_buffer(lua_State *L, std::string_view buffer) {
 
     ctx->_luaL_dostring(L, GameLuaInjectorName ".push_event('before_main')");
 
-    auto new_buffer = std::format("{};" GameLuaInjectorName ".push_event('game_initialized');{}", buffer_prefix, buffer_after);
+    // Capture the framework once, at the top of the game's own main chunk: this mod clears the
+    // real GLOBAL.GameLuaInjector while LoadMods runs, and the rest of this chunk still needs the
+    // table for game_initialized and the debugger hook.
+    auto new_buffer = std::format(
+        "local __ds_private_framework = " GameLuaInjectorName ";\n{};"
+        "__ds_private_framework.push_event('game_initialized');{}",
+        buffer_prefix, buffer_after);
     if (ictx->config.enable_lua_debugger) {
         // replace buffer
         if (!ictx->config.disable_lua_debugger_code_patch) {
@@ -482,7 +511,7 @@ std::string wrapper_game_main_buffer(lua_State *L, std::string_view buffer) {
             auto npos = new_buffer.find(target);
             if (npos != std::string_view::npos) {
                 spdlog::info("Enable lua debugger in main.lua");
-                const char *debugger_preload_code = "DEBUGGER_ENABLED =" GameLuaInjectorName ".check_enable_debugger()";
+                const char *debugger_preload_code = "DEBUGGER_ENABLED =__ds_private_framework.check_enable_debugger()";
                 new_buffer = new_buffer.substr(0, npos) + debugger_preload_code + new_buffer.substr(npos + target.size());
             }
         }
@@ -492,6 +521,32 @@ std::string wrapper_game_main_buffer(lua_State *L, std::string_view buffer) {
 }
 
 namespace ds::core_vm::detail {
+
+// GameInjector.InitializeModEnvironment(mod_env): the one hand-off from this mod to the plugin.
+// It binds the injector tables into the mod's environment (the mod clears the real GLOBAL
+// fields right after this) and returns the exact pair the manager needs: (private root, real
+// registry). The root is already invisible to Lua: LuaJIT stores it in the second registry, PUC
+// keeps it as a C holder's upvalue (the 5.1 debug library refuses C upvalues).
+int initialize_mod_environment(lua_State *L) {
+    auto *ctx = GameLuaContextImpl::currentCtx;
+    if (ctx == nullptr) {
+        return luaL_error(L, "cannot install the mod environment: no VM context");
+    }
+    LuaApis &api = ctx->api;
+    api._luaL_checktype(L, 1, LUA_TTABLE);  // the mod's env table
+    api.push_private_root(L);
+
+    // The mod's own environment keeps both injector tables. Nothing is exported to GLOBAL and no
+    // other mod gets these references; the manager hands the local ones to nobody else.
+    api._lua_getfield(L, -1, "GameInjector");
+    api._lua_setfield(L, 1, "GameInjector");
+    api._lua_getfield(L, -1, "GameLuaInjector");
+    api._lua_setfield(L, 1, "GameLuaInjector");
+
+    // results: root, real registry (the manager writes its private caches into both).
+    api._lua_pushvalue(L, LUA_REGISTRYINDEX);
+    return 2;
+}
 
 namespace {
 gpointer g_getsize_target = nullptr;

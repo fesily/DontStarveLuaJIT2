@@ -39,6 +39,7 @@ set(PLUGIN_CORE_VM_GAME_SOURCES
     game/GameLuaContextJit.cpp
     game/GameLuaContextLua51.cpp
     game/CfunctionHook.cpp
+    game/PrivateLuaRegistry.cpp
     game/InjectorFileHijack.cpp
     game/InjectorFileHijackInstall.cpp
     game/VmSwitch.cpp
@@ -77,6 +78,10 @@ add_dependencies(plugin_core_vm GameLuaInjectFramework create_missfuncs)
 
 target_link_libraries(plugin_core_vm PRIVATE
     ds_signature
+    # Header-only view of 3rd/fast_assert (game/PrivateLuaRegistry.cpp). The
+    # implementation is owned and exported by Injector, which this plugin
+    # already links (ds_add_dynamic_plugin), so nothing is compiled twice.
+    fast_assert
     spdlog::spdlog
     nlohmann_json::nlohmann_json
     function_relocation

@@ -177,6 +177,19 @@ function M.run(api)
                                 pack_api[k] = v
                             end
                             pack_api.config_modname = modname
+                            -- An external package belongs to that mod, not to this one: its
+                            -- parent env is the owning mod's authorised local env, and its
+                            -- context is stripped of this plugin's injector/mod_env. The owner
+                            -- env can still be absent while this mod itself is loading, in which
+                            -- case only the shared GLOBAL view is offered — never this mod's env.
+                            pack_api.external = true
+                            local owner_env
+                            if type(api.external_env_for) == "function" then
+                                owner_env = api.external_env_for(modname)
+                            end
+                            -- The fallback still answers normal (non-extension) modules through
+                            -- the real loader, so a package that requires a game module works.
+                            pack_api.parent_env = owner_env or { GLOBAL = _G, require = _G.require }
                             local plugin, err = try_load_package(pack_api, package_root, stem)
                             if plugin then
                                 out[#out + 1] = plugin

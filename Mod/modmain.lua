@@ -1,6 +1,10 @@
 _G = GLOBAL
 local modname = modname
 local modinfo = modinfo
+-- Assigned by the environment hand-off below, read by main() (which cannot see chunk locals
+-- declared after it otherwise).
+local env
+local runtime
 local function main()
 	local old_print = print
 	local function print(...)
@@ -50,28 +54,46 @@ local function main()
 		return not InGamePlay()
 	end
 
+	-- The injector tables live in this mod's env now (bound by the native entry); the real
+	-- GLOBAL no longer carries them.
 	local function LoadGameInjector()
-		return _G.rawget(_G, "GameInjector")
+		return env and env.GameInjector or nil
 	end
 
-	local hasluajit, jit = _G.pcall(require, "jit")
+	-- The environment hand-off already ran: the manager holds the captured LuaJIT surface and
+	-- the string.dump policy, so nothing here probes require("jit") on the shared loader again.
+	local manager = runtime and runtime.manager or nil
+	local hasluajit = manager ~= nil and manager.has_luajit == true
+	local jit = hasluajit and manager.modules.jit or nil
 	local os_is_windows = _G.IsWin32()
 	local GameInjector = LoadGameInjector()
 
-	-- TEMPORARY: the string.dump mod blacklist (detection + refusal) is disabled at
-	-- this entry point: nothing is imported, so no string.dump/kleiloadlua wrapper is
-	-- installed and a recorded mod is not refused. Set GLOBAL._ds_luajit_mod_blacklist_enabled
-	-- to true to re-enable (tests do); otherwise LuaJIT mode enforces it regardless of
-	-- HideGlobalJIT / EnabledJIT / luajit_compatible. The script installs itself from
-	-- this mod's env (modimport) and publishes the manager on ModManager; install it
-	-- before the plugin host so jit.runtime can keep the loader wrapper outermost.
-	local mod_blacklist = nil
-	if hasluajit and _G.rawget(_G, "_ds_luajit_mod_blacklist_enabled") == true then
-		modimport("scripts/luajit_mod_blacklist")
-		mod_blacklist = _G.rawget(ModManager, "_ds_luajit_mod_blacklist_installed")
-		if type(mod_blacklist) ~= "table" then
-			error("[luajit] mod blacklist did not install (scripts/luajit_mod_blacklist.lua)", 2)
-		end
+	-- Release the source text the VM keeps for PUC 5.1 string.dump conversions:
+	-- every text compile saves its own bytes for the whole prototype tree so a
+	-- mod's string.dump can be answered with real Lua 5.1 bytecode, and by the
+	-- time the simulation has run 30 s the load-time probes are long done. Single
+	-- shot per world; a chunk compiled later captures its own source again.
+	-- The function is captured from the manager's private module table (the shared
+	-- jit table is already scrubbed by the time main runs).
+	local puc_dump_clear = hasluajit and jit and jit.puc_dump_clear or nil
+	if _G.type(puc_dump_clear) ~= "function" then
+		print("[luajit] puc dump clear unavailable on this VM")
+	else
+		AddSimPostInit(function()
+			local world = _G.TheWorld
+			if not world or _G.type(world.DoTaskInTime) ~= "function" then
+				print("[luajit] puc dump clear not scheduled: no world")
+				return
+			end
+			world:DoTaskInTime(30, function()
+				local ok, cleared = _G.pcall(puc_dump_clear)
+				if ok then
+					print("[luajit] puc dump source cleared: " .. tostring(cleared))
+				else
+					print("[luajit] puc dump clear failed: " .. tostring(cleared))
+				end
+			end)
+		end)
 	end
 
 	local ModManagerFile = { filepath = nil, json_mode = true }
@@ -729,6 +751,14 @@ local function main()
 						GetModConfigData = GetModConfigData,
 						config_for_mod = config_for_mod,
 						package_load = package_load,
+						-- The owning mod's authorised local env: an external package never
+						-- inherits this mod's env (or its injector tables).
+						external_env_for = function(m)
+							if runtime and runtime.manager then
+								return runtime.manager:mod_env(m)
+							end
+							return nil
+						end,
 						mod_root_for = function(m)
 							local root = rawget(_G, "MODS_ROOT") or "../mods/"
 							if type(root) ~= "string" or root == "" then root = "../mods/" end
@@ -766,13 +796,10 @@ local function main()
 				-- nil when TheWorld is not ready yet; plugins fall back to TheWorld.
 				-- Keep boolean false (client shard) distinct from nil (world not ready).
 				is_mastersim = TheWorld and TheWorld.ismastersim,
-				-- jit.runtime HideGlobalJIT needs the real jit table + this mod env.
-				jit = env.jit or jit,
+				-- The captured real jit table (nil on a VM without LuaJIT).
+				jit = jit,
 				mod_env = env,
 				config_for_mod = config_for_mod,
-				-- Shared string.dump blacklist manager (installed above when LuaJIT
-				-- is the VM); jit.runtime re-wraps kleiloadlua with it.
-				mod_blacklist = mod_blacklist,
 			}
 			print(string.format(
 				"[luajit][plugin] resolve has_luajit=%s is_client=%s LuaVmType=%s",
@@ -813,12 +840,30 @@ local function main()
 	end
 end
 
-local env = _G.getfenv(main)
--- Keep a real jit table on this mod env (not pcall's boolean status).
-env.jit = _G.rawget(_G, "jit") or env.jit
+-- Environment hand-off, before main's execution environment exists. The native entry binds
+-- GameInjector/GameLuaInjector into this mod's env and returns the private root; the manager
+-- installs from there and the real GLOBAL injector fields are cleared. A failure aborts the
+-- mod: a half environment is worse than none.
+local hand_off_env = _G.getfenv(1)
+local bootstrap_path = hand_off_env.MODROOT .. "scripts/luajit_env_bootstrap.lua"
+local bootstrap = _G.kleiloadlua(bootstrap_path)
+if _G.type(bootstrap) ~= "function" then
+	error("[luajit] Cannot load " .. bootstrap_path .. ": " .. _G.tostring(bootstrap), 0)
+end
+_G.setfenv(bootstrap, hand_off_env)
+runtime = bootstrap()
+
+env = _G.getfenv(main)
+-- `_G` stays the real GLOBAL from line 1: the chunk env resolves `GLOBAL` through the manager's
+-- proxy (per-env extension fields) but `rawget(_G, ...)` must keep reading the engine's table,
+-- e.g. config_patch_bootstrap's KnownModIndex probe.
 local new_env = _G.setmetatable({}, {
 	__index = function(t, k)
-		return env[k] or _G[k]
+		local value = env[k]
+		if value ~= nil then
+			return value
+		end
+		return _G[k]
 	end
 })
 _G.setfenv(main, new_env)

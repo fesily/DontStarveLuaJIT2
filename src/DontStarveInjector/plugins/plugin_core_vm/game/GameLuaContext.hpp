@@ -12,6 +12,7 @@
 #include "GameLuaType.hpp"
 #include "LuaEvent.hpp"
 
+class GameLuaContext;
 /*
     this is a struct to hold all lua export functions
     so we can replace them with our own implementation
@@ -89,7 +90,32 @@ struct LuaApis {
             i += _lua_gettop(L) + 1;
         return i;
     }
+
+    // Pushes this context's private root. A broken invariant terminates the process; Lua never
+    // observes a partial root.
+    void push_private_root(lua_State *L) {
+        if (_push_private_root) {
+            _push_private_root(*this, L);
+        }
+    }
+    void push_game_injector(lua_State *L) {
+        if (_push_game_injector) {
+            _push_game_injector(*this, L);
+        }
+    }
+    // Installs the private-root callbacks that use `context`'s registry. GameLuaContext's
+    // constructor calls it; a host that reuses an existing LuaApis copy can call it again.
+    void BindApiHooks(GameLuaContext &context);
+protected:
+    friend class GameLuaContext;
+    void (*_push_private_root)(LuaApis &api, lua_State *L) = nullptr;
+    void (*_push_game_injector)(LuaApis &api, lua_State *L) = nullptr;
+    GameLuaContext *parentContext = nullptr;
 };
+
+namespace ds::core_vm::detail {
+class GameLuaPrivateRegistry;
+}
 
 class GameLuaContext {
 public:
@@ -110,6 +136,7 @@ public:
     GameLuaType luaType;
     lua_State *luaState = nullptr;
     LuaApis api;
+    ds::core_vm::detail::GameLuaPrivateRegistry *privateRegistry = nullptr;
 
     LuaApis *operator->() {
         return &api;
@@ -128,7 +155,8 @@ public:
 
 protected:
     GameLuaContext(const char *shared_library_name, GameLuaType type)
-        : sharedlibraryName(shared_library_name), luaType(type) {
+        : sharedlibraryName(shared_library_name ? shared_library_name : ""), luaType(type) {
+        api.BindApiHooks(*this);
     }
     virtual ~GameLuaContext() = default;
 };

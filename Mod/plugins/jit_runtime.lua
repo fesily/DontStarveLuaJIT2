@@ -1,9 +1,11 @@
--- jit.runtime — ForceJitOpt + EnabledJIT + HideGlobalJIT + frostxx/encrypted kleiloadlua hook.
--- Priority 70: HideGlobalJIT last among jit-related (after debug.profiler prio 20).
+-- jit.runtime — ForceJitOpt + EnabledJIT + frostxx/encrypted kleiloadlua hook.
+-- Priority 70: last among jit-related (after debug.profiler prio 20).
 --
 -- Reads ctx.encrypted_mod_manager / ctx.frostxx_mods produced by jit.tailcall (prio 10).
--- The string.dump mod blacklist lives in scripts/luajit_mod_blacklist.lua; this file only
--- re-wraps kleiloadlua with that manager (ctx.mod_blacklist) so its refusal stays outermost.
+-- GLOBAL/package scrubbing is no longer done here: scripts/luajit_mod_blacklist.lua takes
+-- ownership once per state and hands LuaJIT only to mods that declare `luajit_compatible`.
+-- The string.dump attribution manager installs no loader hook, so this file's
+-- frostxx/encrypted kleiloadlua wrapper stays the only loader chain.
 
 local function get_config(ctx, key)
     local config = ctx and ctx.config
@@ -62,79 +64,9 @@ local function ForceJitOpt(has_luajit)
     )
 end
 
-local function skip_jit()
-    _G.jit = nil
-    if _G.package and _G.package.loaded then
-        _G.package.loaded["jit"] = nil
-    end
-    local reg = _G.debug and _G.debug.getregistry and _G.debug.getregistry()
-    if reg and reg["_LOADED"] then
-        reg["_LOADED"]["jit"] = nil
-    end
-end
-
-local function mod_wants_jit(modinfo)
-    if type(modinfo) ~= "table" then
-        return false
-    end
-    local compatible = modinfo.luajit_compatible
-    return compatible == true or type(compatible) == "table"
-end
-
-local function inject_jit_into_mod_env(modenv, jit_table)
-    if not jit_table or type(modenv) ~= "table" then
-        return false
-    end
-    if not mod_wants_jit(modenv.modinfo) then
-        return false
-    end
-    modenv.jit = jit_table
-    return true
-end
-
-local function HookInitializeModMainForJit(jit_table)
-    local ModManager = _G.ModManager
-    if not ModManager or not ModManager.InitializeModMain then
-        return
-    end
-    if ModManager._ds_luajit_initmodmain_hooked then
-        return
-    end
-    ModManager._ds_luajit_initmodmain_hooked = true
-
-    local old_InitializeModMain = ModManager.InitializeModMain
-    function ModManager:InitializeModMain(modname, env, mainfile, safe, ...)
-        if inject_jit_into_mod_env(env, jit_table) then
-            print("inject jit to mod env:", modname or (env and env.modname) or "?", mainfile or "")
-        end
-        return old_InitializeModMain(self, modname, env, mainfile, safe, ...)
-    end
-end
-
-local function HideGlobalJIT(ctx)
-    if not (ctx and ctx.has_luajit) then
-        return
-    end
-    local hide = get_config(ctx, "HideGlobalJIT")
-    if hide == nil then
-        hide = true
-    end
-    if not hide then
-        return
-    end
-
-    local jit_table = ctx.jit
-    if not jit_table then
-        local mod_env = ctx.mod_env
-        jit_table = (mod_env and mod_env.jit) or jit
-    end
-
-    HookInitializeModMainForJit(jit_table)
-    if ctx.mod_env then
-        inject_jit_into_mod_env(ctx.mod_env, jit_table)
-    end
-    skip_jit()
-end
+-- The only place GLOBAL.jit/package.loaded.jit are removed is the state's manager
+-- (scripts/luajit_mod_blacklist.lua), which also owns the per-mod grant. This plugin keeps
+-- just the execution knobs and the encrypted-mod loader.
 
 local function HookKleiloadlua(encryptedMods, frostxxMods, injector, ctx)
     local function decrypt_file(filename)
@@ -150,12 +82,12 @@ local function HookKleiloadlua(encryptedMods, frostxxMods, injector, ctx)
 
     local hmask = table_hmask(frostxxMods)
     -- Heuristically detected encrypted mods get PROTO_NOJIT so the encrypted
-    -- loader never runs under the JIT. This is not the persistent string.dump
-    -- blacklist (scripts/luajit_mod_blacklist.lua) and never feeds it.
+    -- loader never runs under the JIT. This is not the string.dump attribution
+    -- record (scripts/luajit_mod_blacklist.lua) and never feeds it.
     local emask = table_hmask(encryptedMods)
     if hmask > 0 or emask > 0 then
         local _kleiloadlua = kleiloadlua
-        local jit_table = (ctx and ctx.jit) or jit
+        local jit_table = ctx and ctx.jit or nil
 
         rawset(_G, "kleiloadlua", function(filename, ...)
             local modname = filename2modname(filename)
@@ -192,7 +124,7 @@ return {
     soft_depends = { "jit.tailcall", "debug.profiler" },
     conflicts = {},
     phases = "AfterModMain",
-    -- AlwaysOn when has_luajit: ForceJitOpt + EnabledJIT + HideGlobalJIT always apply from config.
+    -- AlwaysOn when has_luajit: ForceJitOpt + EnabledJIT always apply from config.
     options = { always = true },
     support_reload = false,
     priority = 70,
@@ -208,16 +140,14 @@ return {
 
         -- EnabledJIT uses GetModConfigData / ctx.config
         if has_luajit then
-            local jit_mod = ctx.jit or jit
+            local jit_mod = ctx.jit
             if jit_mod and jit_mod.off then
                 jit_mod.off()
-            elseif jit then
-                jit.off()
             end
             local enabled_jit = get_config(ctx, "EnabledJIT")
             if enabled_jit then
                 AddSimPostInit(function()
-                    local j = (ctx and ctx.jit) or jit
+                    local j = ctx and ctx.jit
                     if j and j.on then
                         j.on()
                     end
@@ -230,16 +160,6 @@ return {
         local encrypted = (manager and manager.EncryptedMods) or {}
         local frostxx = (ctx and ctx.frostxx_mods) or {}
         HookKleiloadlua(encrypted, frostxx, injector, ctx)
-
-        -- Re-install the mod blacklist loader wrapper on top of the chain above, so a
-        -- recorded mod is refused before frostxx decryption or any file load happens.
-        local blacklist = ctx and ctx.mod_blacklist
-        if blacklist and type(blacklist.wrap_loader) == "function" then
-            blacklist:wrap_loader()
-        end
-
-        -- Hide global jit AFTER profiler / other jit.* requires in this phase.
-        HideGlobalJIT(ctx)
     end,
     unload = function(ctx)
         -- Sticky by default.
