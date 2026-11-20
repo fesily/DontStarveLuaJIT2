@@ -1511,6 +1511,34 @@ local function case_access_matrix()
 	end
 end
 
+-- 11. the authorised plugin view: the same grant the installer gets, plus the injector
+-- tables, with `_G` pointing at the view so normal names resolve and engine globals still
+-- fall through to the real (scrubbed) GLOBAL.
+local function case_plugin_view()
+	local sb = new_sandbox()
+	-- The host publishes the native table before the manager installs (one table per state).
+	local native = { marker = 7 }
+	rawset(sb.root, "GameInjector", native)
+	rawset(sb.root, "GameLuaInjector", { framework = true })
+	local manager = install(sb, TOOL, make_mod_env(sb, TOOL))
+	local view = manager:grant_plugin_view()
+
+	assert_eq(type(view), "table", "grant_plugin_view returns a table")
+	assert_true(view == manager:grant_plugin_view(), "the view is built once per state")
+	assert_true(view._G == view, "_G is the view itself")
+	assert_true(view.GameInjector == native, "the view carries the native table")
+	assert_true(view.GameLuaInjector == sb.root.GameLuaInjector, "the view carries the framework")
+	assert_eq(type(view.jit), "table", "the view has the granted jit")
+	assert_true(view.jit.off ~= nil, "the granted jit is the real table")
+	assert_true(view.jit == rawget(view, "jit"), "the granted jit is a raw field of the view")
+	assert_true(view.luajit ~= nil and view.luajit.jit == view.jit, "luajit container matches")
+	assert_true(view.GLOBAL.jit == view.jit, "GLOBAL proxy exposes the same jit object")
+	assert_eq(view.require("jit"), view.jit, "require('jit') resolves to the granted copy")
+	-- Engine globals still resolve through the view; the real GLOBAL stays scrubbed.
+	assert_eq(sb.global.jit, nil, "the engine GLOBAL has no jit")
+	assert_true(view.ModManager == sb.global.ModManager, "engine globals fall through the view")
+end
+
 ---------------------------------------------------------------------------
 -- driver
 
@@ -1526,6 +1554,7 @@ local function run_cases()
 		{ "worldgen_entry", case_worldgen_entry },
 		{ "bootstrap_entry", case_bootstrap_entry },
 		{ "access_matrix", case_access_matrix },
+		{ "plugin_view", case_plugin_view },
 	}
 	for _, case in ipairs(cases) do
 		clear_policy()

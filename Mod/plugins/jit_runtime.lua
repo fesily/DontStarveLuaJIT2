@@ -88,8 +88,11 @@ local function HookKleiloadlua(encryptedMods, frostxxMods, injector, ctx)
     if hmask > 0 or emask > 0 then
         local _kleiloadlua = kleiloadlua
         local jit_table = ctx and ctx.jit or nil
+        -- `_G` is the plugin's authorised view; the engine keeps its own table. Write the
+        -- loader the engine will call into the real one (GLOBAL forwards to it).
+        local engine = rawget(_G, "GLOBAL") or _G
 
-        rawset(_G, "kleiloadlua", function(filename, ...)
+        engine.kleiloadlua = function(filename, ...)
             local modname = filename2modname(filename)
             if modname and hmask > 0 then
                 if frostxxMods[modname] and not filename:find("modinfo.lua", 1, true) then
@@ -113,7 +116,7 @@ local function HookKleiloadlua(encryptedMods, frostxxMods, injector, ctx)
                 end
             end
             return m
-        end)
+        end
     end
 end
 

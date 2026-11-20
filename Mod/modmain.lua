@@ -60,11 +60,12 @@ local function main()
 		return env and env.GameInjector or nil
 	end
 
-	-- The environment hand-off already ran: the manager holds the captured LuaJIT surface and
-	-- the string.dump policy, so nothing here probes require("jit") on the shared loader again.
+	-- The installing mod's env got the same authorised view as a declared mod, so `jit` (the
+	-- private copy) resolves directly and the manager's module ledger stays a construction
+	-- detail of that view.
 	local manager = runtime and runtime.manager or nil
-	local hasluajit = manager ~= nil and manager.has_luajit == true
-	local jit = hasluajit and manager.modules.jit or nil
+	local jit = env and env.jit or nil
+	local hasluajit = _G.type(jit) == "table"
 	local os_is_windows = _G.IsWin32()
 	local GameInjector = LoadGameInjector()
 
@@ -73,9 +74,9 @@ local function main()
 	-- mod's string.dump can be answered with real Lua 5.1 bytecode, and by the
 	-- time the simulation has run 30 s the load-time probes are long done. Single
 	-- shot per world; a chunk compiled later captures its own source again.
-	-- The function is captured from the manager's private module table (the shared
+	-- The function is captured from this mod's own authorised env (the shared
 	-- jit table is already scrubbed by the time main runs).
-	local puc_dump_clear = hasluajit and jit and jit.puc_dump_clear or nil
+	local puc_dump_clear = jit and jit.puc_dump_clear or nil
 	if _G.type(puc_dump_clear) ~= "function" then
 		print("[luajit] puc dump clear unavailable on this VM")
 	else
@@ -692,8 +693,13 @@ local function main()
 		end
 		-- Path A Lua PluginHost (AfterModMain). M4+ features load from plugins/init.
 		-- kleiloadlua chunks do NOT inherit the mod env (strict.lua treats MODROOT as undeclared).
-		-- Always setfenv to main_fenv so MODROOT / modimport / Add*PostInit resolve.
+		-- Plugin chunks run in the state's authorised view (see grant_plugin_view): raw
+		-- MODROOT/loaders here, granted jit/ffi/package and the injector tables through it.
 		do
+			-- Our own Lua faces are not game mods: they run in this mod's authorised view,
+			-- unconditionally (the engine GLOBAL stays scrubbed).
+			local plugin_view = manager and manager:grant_plugin_view() or nil
+			local plugin_parent = plugin_view or main_fenv
 			local function run_mod_chunk(relpath)
 				local path = MODROOT .. relpath
 				local chunk = kleiloadlua(path)
@@ -703,15 +709,19 @@ local function main()
 				if type(chunk) ~= "function" then
 					error(string.format("expected function chunk for %s, got %s", path, type(chunk)), 2)
 				end
-				-- main_fenv is often a proxy (MODROOT only via __index). Give plugin chunks
-				-- a thin env with raw MODROOT/kleiloadlua so rawget and loaders work.
+				-- Thin per-chunk env with raw MODROOT/loaders; everything else resolves
+				-- through the authorised view (which falls through to the real GLOBAL).
 				local plugin_env = setmetatable({
 					MODROOT = MODROOT,
+					modname = modname,
 					kleiloadlua = kleiloadlua,
 					modimport = modimport,
 					GetModConfigData = GetModConfigData,
+					AddGamePostInit = AddGamePostInit,
+					AddSimPostInit = AddSimPostInit,
 					print = print,
-				}, { __index = main_fenv, __newindex = main_fenv })
+					parent_env = plugin_parent,
+				}, { __index = plugin_parent, __newindex = plugin_parent })
 				setfenv(chunk, plugin_env)
 				return chunk()
 			end
@@ -752,7 +762,10 @@ local function main()
 						MODROOT = MODROOT,
 						kleiloadlua = kleiloadlua,
 						modimport = modimport,
-						parent_env = main_fenv,
+						parent_env = plugin_parent,
+						-- Real GLOBAL for external packages whose owner env is not known yet:
+						-- they must never inherit our authorised view.
+						engine_global = _G,
 						GetModConfigData = GetModConfigData,
 						config_for_mod = config_for_mod,
 						package_load = package_load,

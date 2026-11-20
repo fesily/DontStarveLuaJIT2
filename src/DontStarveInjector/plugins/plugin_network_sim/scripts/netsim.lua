@@ -6,14 +6,14 @@
 -- table, so prefer it and keep the GLOBAL read only for pre-hand-off hosts.
 local GameInjector = GameInjector
 if type(GameInjector) ~= "table" then
-    GameInjector = rawget(_G, "GameInjector")
+    GameInjector = _G.GameInjector
 end
 if not GameInjector then return end
 if GameInjector.DS_LUAJIT_net_sim_enable == nil then return end
 
 local ffi_get_stats
 
-local jit_runtime = rawget(_G, "jit")
+local jit_runtime = _G.jit
 if jit_runtime ~= nil then
     local ok_ffi, ffi = pcall(require, "ffi")
     local ok_loader, load_library_ex = pcall(require, "luavm.ffi_load")
@@ -73,7 +73,9 @@ function NetSim.Stop()
     NetSim.Enable(false)
 end
 
-rawset(_G, "NetSim", NetSim)
+-- The view is plugin-local; NetSim is an engine global other scripts read.
+local engine = rawget(_G, "GLOBAL") or _G
+engine.NetSim = NetSim
 
 AddSimPostInit(function()
     if not TheWorld or TheWorld.ismastersim then return end

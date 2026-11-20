@@ -398,6 +398,44 @@ configuration_options = {
     print("PASS: derive_from_configuration_options")
 end
 
+
+local function test_internal_parent_view()
+    -- Our own packages run in the authorised view: the package env's parent is the view, so
+    -- granted fields are raw there, `_G` is the view (not the engine table), and engine names
+    -- still fall through to the real GLOBAL behind it.
+    local dir = tmp_dir("ds_pkg_view")
+    write_fixture(dir, "modinfo.lua", ENGINE .. [[
+plugin_id = "pack.view"
+]])
+    write_fixture(dir, "modmain.lua", [[
+print("jit", tostring(jit ~= nil and jit.marker == true and _G.jit == jit))
+print("injector", tostring(GameInjector ~= nil and GameInjector.marker == 9))
+print("engine", tostring(TheWorld ~= nil and TheWorld.marker == 5))
+print("globalself", tostring(_G.jit == jit and _G.TheWorld == TheWorld))
+]])
+    local engine = setmetatable({ TheWorld = { marker = 5 } }, { __index = _G })
+    local view = { jit = { marker = true }, GameInjector = { marker = 9 } }
+    setmetatable(view, { __index = engine })
+    view._G = view
+    local printed = {}
+    local api = {
+        MODROOT = dir .. "/",
+        kleiloadlua = function(p) return loadfile(p) end,
+        config_modname = "luajit2",
+        parent_env = view,
+        print = function(...) printed[#printed + 1] = table.concat({ ... }, "\t") end,
+    }
+    local plugin = PL.load_package_from_root(dir, "plugin_view", api)
+    plugin.load({ injector = view.GameInjector })
+    local out = table.concat(printed, "\n")
+    assert_true(out:find("jit\ttrue", 1, true) ~= nil, "package env lost the granted jit: " .. out)
+    assert_true(out:find("injector\ttrue", 1, true) ~= nil, "package env lost the injector: " .. out)
+    assert_true(out:find("engine\ttrue", 1, true) ~= nil, "engine globals stopped resolving: " .. out)
+    assert_true(out:find("globalself\ttrue", 1, true) ~= nil, "_G is not the view: " .. out)
+    print("PASS: internal_parent_view")
+end
+
+test_internal_parent_view()
 test_reject_obsolete_options()
 test_require_config_modname()
 test_derive_from_configuration_options()

@@ -362,10 +362,10 @@ function Manager:register_env(modname, env)
 	if modname == self.installing_modname then
 		-- This mod's own env is where the manager itself lives: it gets the same local
 		-- capability containers, plus the private registry and the two injector tables.
-		return self:install_access_env(modname, env, true)
+		return self:grant(env, true)
 	end
 	if self:declares_compat(env) then
-		return self:install_access_env(modname, env, false)
+		return self:grant(env, false)
 	end
 	return self:scrub_env(modname, env)
 end
@@ -449,9 +449,11 @@ function Manager:extension_value(name, state)
 	return nil
 end
 
--- Per-env LuaJIT capability. Every container is private to this env and points at exactly the
--- same function objects; nothing is deep-copied and the VM state stays one.
-function Manager:install_access_env(modname, env, is_installer)
+-- Per-env LuaJIT capability (the "authorised view"). Every container is private to this env
+-- and points at exactly the same function objects; nothing is deep-copied and the VM state
+-- stays one. Callers: a game mod that declares `luajit_compatible`, and this mod's own
+-- environments (installer env and every plugin face/package).
+function Manager:grant(env, is_installer)
 	local api = self.api
 	local copies = {}
 	for _, name in api.pairs({"jit", "bit", "ffi", "debug", "table", "string"}) do
@@ -575,6 +577,45 @@ function Manager:install_access_env(modname, env, is_installer)
 	api.rawset(env, "package", package_copy)
 	api.rawset(env, "require", require_wrapper)
 	return true
+end
+
+-- The authorised view our own Lua faces run in (Mod/plugins/*, plugin packages and the
+-- scripts loaded next to them). Same grant as the installing mod, plus the two injector
+-- tables, and `_G` is the view itself: a normal lookup finds the granted surface, and engine
+-- globals still fall through to the real GLOBAL. Built once per state.
+function Manager:grant_plugin_view()
+	local api = self.api
+	if self.plugin_view ~= nil then
+		return self.plugin_view
+	end
+	local view = {}
+	if self.has_luajit then
+		self:grant(view, true)
+	end
+	api.setmetatable(view, {
+		__index = self.global,
+		__newindex = self.global,
+	})
+	api.rawset(view, "_G", view)
+	api.rawset(view, "GameInjector", api.rawget(self.root, "GameInjector"))
+	api.rawset(view, "GameLuaInjector", api.rawget(self.root, "GameLuaInjector"))
+	-- Add*PostInit are installed into each mod env by the engine, not into GLOBAL; our faces
+	-- call them exactly like the tool mod does.
+	local installer_env = self.envs[self.installing_modname]
+	if api.type(installer_env) == "table" then
+		for _, name in api.pairs({"AddGamePostInit", "AddSimPostInit", "AddPlayerPostInit",
+			"AddPrefabPostInit"}) do
+			-- pcall: a mod env may carry strict.lua, which raises on an undeclared read.
+			local ok, fn = api.pcall(function()
+				return installer_env[name]
+			end)
+			if ok and api.type(fn) == "function" then
+				api.rawset(view, name, fn)
+			end
+		end
+	end
+	self.plugin_view = view
+	return view
 end
 
 -- Ordinary mods keep the stock PUC surface: copies of the whitelisted libraries with every

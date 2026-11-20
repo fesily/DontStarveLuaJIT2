@@ -68,7 +68,7 @@ local function get_modinfo(modname)
 end
 
 local function default_mod_root(modname)
-    local root = rawget(_G, "MODS_ROOT")
+    local root = _G.MODS_ROOT
     if type(root) ~= "string" or root == "" then
         root = "../mods/"
     end
@@ -97,7 +97,7 @@ local function list_package_dirs(mod_root, api)
         end
     end
     -- Production FS listing when available (varies by build).
-    local TheSim = rawget(_G, "TheSim")
+    local TheSim = _G.TheSim
     if type(TheSim) == "table" then
         local listfn = TheSim.ListDirectory or TheSim.GetDirList or TheSim.ListFiles
         if type(listfn) == "function" then
@@ -189,7 +189,11 @@ function M.run(api)
                             end
                             -- The fallback still answers normal (non-extension) modules through
                             -- the real loader, so a package that requires a game module works.
-                            pack_api.parent_env = owner_env or { GLOBAL = _G, require = _G.require }
+                            -- It must be the engine GLOBAL, never this plugin's authorised view:
+                            -- an external package follows its owner's declaration, not ours.
+                            local engine_global = api.engine_global or _G
+                            pack_api.parent_env = owner_env
+                                or { GLOBAL = engine_global, require = engine_global.require }
                             local plugin, err = try_load_package(pack_api, package_root, stem)
                             if plugin then
                                 out[#out + 1] = plugin

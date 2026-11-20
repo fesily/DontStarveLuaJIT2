@@ -10,7 +10,7 @@ local load_library_ex = require("luavm.ffi_load")
 -- table, so prefer it and keep the GLOBAL read only for pre-hand-off hosts.
 local GameInjector = GameInjector
 if type(GameInjector) ~= "table" then
-    GameInjector = _G.rawget(_G, "GameInjector")
+    GameInjector = _G.GameInjector
 end
 if not GameInjector then return end
 

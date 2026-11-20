@@ -2,6 +2,11 @@
 
 ## 未发布
 
+- 变更 **自家 Lua 面的授权视图（`Manager:grant` + `grant_plugin_view`）**：`install_access_env` 抽成 `Manager:grant(env, is_installer)`，并新增每 state 一份的 `Manager:grant_plugin_view()`。`Mod/plugins/*`、插件包与 `run_mod_chunk` 的父 env 不再是 `main_fenv`，而是该视图：无条件持有 `jit/bit/ffi/debug/table/string` 的私有副本、`luajit` 容器、real package 覆盖与 `GameInjector/GameLuaInjector`；视图的 `_G` 指向自身（`__index` 落到真实 GLOBAL），所以 `jit`/`require("ffi")` 按普通名字可用、引擎全局仍可达，而引擎 GLOBAL 的 scrub（`jit`、`debug.upvalueid`、`table.new/clear`、`string.buffer`、`package` 扩展项、`loadlib`）原样保留。安装者 env 走同一个 grant，`modmain` 的 `hasluajit`/`puc_dump_clear` 回到 `env.jit` 的正常解析，`manager.modules` 只用于构造视图。
+- 变更 **外部包的父 env 收口**：`discover_external` 在所属 mod 尚未注册时的 fallback 使用显式传入的真实 `engine_global`，绝不把本插件的授权视图交给外部 mod 的插件包；`init.lua` 的 `parent_env` 优先取宿主绑定的视图，`MODROOT`/`modname`/`Add*PostInit` 由薄 env 直接提供。
+- 变更 **插件写引擎全局的落点**：`_G` 在授权视图里是视图自身，`rawset(_G, …)` 不再命中真实 GLOBAL；`jit.runtime` 的 `kleiloadlua`、`debug.profiler` 的 `ProfilerJitEx/ProfilerJit`、`netsim` 的 `NetSim` 改为写 `GLOBAL`（代理 `__newindex` 落到真实表）。自家 face 的 `rawget(_G, "jit"/"GameInjector"/…)` 一并改为普通名字解析。
+- 验证：`plugin_mod_blacklist(_arenagc)` 新增 `plugin_view` case（视图一 state 一份、`view._G == view`、`view.jit` 是真实表且 `require("jit")` 返回同一对象、`GameInjector` 来自 root、引擎 `GLOBAL.jit == nil`、`view.ModManager` 仍可达）；`plugin_package_load` 新增 `internal_parent_view`（包 env 的父是视图：`jit`/`GameInjector` 可达、`_G` 即视图、引擎名字仍解析）；`plugin_host_lua`、`plugin_injector_file_hijack(_puc51)`、`game_puc_string_dump`、`game_mod_throw_abort` 通过。
+
 - 修复 **状态交接后内置插件读不到 `GameInjector`**：`plugin_network_sim`/`plugin_save_fork`/`plugin_sim_lagcomp` 的脚本用 `rawget(_G, "GameInjector")` 读真实 GLOBAL，而交接成功后该字段已清除，脚本于是静默 `return`（对应插件功能整体失效）；`plugin_manager_screen.lua` 经 `require` 载入（GLOBAL 环境）同样读不到。现在三个脚本优先取包 env 里绑定的 `GameInjector`（保留 GLOBAL 回退给交接前的宿主），管理器界面由 modmain 显式 `set_injector(GameInjector)`。
 - 验证：用 `loadfile` + `setfenv` 构造「GLOBAL 已清除、包 env 绑定存在」的最小复现——旧脚本对 injector 字段的读取次数为 0（提前返回），新脚本读取 1 次并继续执行；5 个改动文件 `loadfile` 语法检查通过，`plugin_host_lua`、`plugin_package_load`、`plugin_mod_blacklist(_arenagc)`、`game_puc_string_dump` 保持通过。
 
