@@ -264,7 +264,18 @@ if (NOT WIN32)
         PREFIX "lib"
         # Keep build-tree stub separate from real Injector output dir.
         LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/stub"
+        # The shell and the real Injector are two modules that both include the bootstrap
+        # headers (`kModFolderAliases`, marker names, ...). GCC emits namespace-scope
+        # `inline constexpr` objects as STB_GNU_UNIQUE, and the dynamic linker unifies them by
+        # name: the PRELOADed shell is loaded first, so a stale shell (built before the array
+        # grew) would serve its shorter object to the real module's longer range-for, reading
+        # past it. Hidden visibility + no-unique give each module its own copy instead.
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON
     )
+    if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(InjectorStub PRIVATE -fno-gnu-unique)
+    endif()
     # The shell keeps its file name (the game PRELOADs bin64/lib64/libInjector.so)
     # but must NOT advertise the real module's SONAME: the loader matches a
     # plugin's DT_NEEDED "libInjector.so" against already-loaded objects by that
