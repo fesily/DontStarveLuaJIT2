@@ -4,6 +4,7 @@
 
 - 修复 **预加载 shell 与真实 Injector 共享 `inline constexpr` 数据导致启动即 SIGSEGV**：GCC 把命名空间级 `inline constexpr`（`kModFolderAliases`、marker 名等）发射成 `STB_GNU_UNIQUE`，动态链接器按名字把先加载的 shell 的定义与真实模块合一。旧 shell 的别名数组只有 6 项（0x60 字节），真实模块的 range-for 按 9 项（0x90 字节）遍历，读到对象之外的垃圾指针（实测 `0xd357`）后在 `std::string` 构造里崩。`InjectorStub` 与 `injector_bootstrap` 现在用 hidden visibility + `-fno-gnu-unique`，两个模块各持自己的副本，`nm -D` 里不再有 `u` 符号。
 - 验证：`nm -D --defined-only`/`grep ' u '` 在 stub 上为 0（修复前 4 个）；`game_mod_throw_abort` 与 `game_puc_string_dump` 通过（同一 shell 下真实模块不再被旧对象截断）。
+- 测试 harness 的 `stage_inject_shell` 改为按内容哈希刷新游戏目录里的 shell：目标存在但哈希与包内副本不同即覆盖，相同则不动（不再“存在即跳过”）；Windows `Winmm.dll`、Linux `lib64/libInjector.so` 都走这条路径。
 
 - 变更 **自家 Lua 面的授权视图（`Manager:grant` + `grant_plugin_view`）**：`install_access_env` 抽成 `Manager:grant(env, is_installer)`，并新增每 state 一份的 `Manager:grant_plugin_view()`。`Mod/plugins/*`、插件包与 `run_mod_chunk` 的父 env 不再是 `main_fenv`，而是该视图：无条件持有 `jit/bit/ffi/debug/table/string` 的私有副本、`luajit` 容器、real package 覆盖与 `GameInjector/GameLuaInjector`；视图的 `_G` 指向自身（`__index` 落到真实 GLOBAL），所以 `jit`/`require("ffi")` 按普通名字可用、引擎全局仍可达，而引擎 GLOBAL 的 scrub（`jit`、`debug.upvalueid`、`table.new/clear`、`string.buffer`、`package` 扩展项、`loadlib`）原样保留。安装者 env 走同一个 grant，`modmain` 的 `hasluajit`/`puc_dump_clear` 回到 `env.jit` 的正常解析，`manager.modules` 只用于构造视图。
 - 变更 **外部包的父 env 收口**：`discover_external` 在所属 mod 尚未注册时的 fallback 使用显式传入的真实 `engine_global`，绝不把本插件的授权视图交给外部 mod 的插件包；`init.lua` 的 `parent_env` 优先取宿主绑定的视图，`MODROOT`/`modname`/`Add*PostInit` 由薄 env 直接提供。
