@@ -528,13 +528,27 @@ add_test(NAME external_plugin_discovery COMMAND test_external_plugin_discovery)
 # arena-GC, no-JIT and macro-off VMs (see the make-tree matrix in the plan).
 add_executable(test_puc_dump_host
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/puc_dump_host.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/puc_dump_reference.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/puc_dump_reference.cpp
+    # The production string.dump attribution (hook + policy + private root) runs in the host
+    # too, so the Lua spec proves the shipped path end to end.
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/puc_dump_attribution_host.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/game/CfunctionHook.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/game/DumpAttribution.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/game/PrivateLuaRegistry.cpp)
 target_include_directories(test_puc_dump_host PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin
     ${PROJECT_SOURCE_DIR}/src/lua51original/src
     ${CMAKE_BINARY_DIR}/src/lua51original
-    ${PROJECT_SOURCE_DIR}/luajit/src)
+    ${PROJECT_SOURCE_DIR}/luajit/src
+    ${DONTSTARVEINJECTOR_ROOT}
+    ${FRIDA_GUM_INCLUDE_DIR}
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/signature_load
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/util
+    ${CMAKE_SOURCE_DIR}/src/FunctionRelocation
+    ${CMAKE_BINARY_DIR}/luajit/variants/default
+    ${CMAKE_SOURCE_DIR}/3rd)
 target_compile_features(test_puc_dump_host PRIVATE cxx_std_23)
 set_target_properties(test_puc_dump_host PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>")
@@ -550,6 +564,7 @@ if (TARGET liblua_static)
 else()
     message(FATAL_ERROR "liblua_static required for test_puc_dump_host")
 endif()
+target_link_libraries(test_puc_dump_host PRIVATE spdlog::spdlog fast_assert fast_assert_owner)
 if (NOT WIN32)
     target_link_libraries(test_puc_dump_host PRIVATE ${CMAKE_DL_LIBS})
 endif()

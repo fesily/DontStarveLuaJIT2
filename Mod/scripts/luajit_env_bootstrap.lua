@@ -1,29 +1,34 @@
 -- Mod/scripts/luajit_env_bootstrap.lua — the one hand-off from the engine to this mod.
 --
--- Loaded with kleiloadlua + setfenv from modmain.lua and modworldgenmain.lua (never modimport:
--- that loses the return value). It
+-- Loaded through modrequire (scripts/env.lua) from modmain.lua and modworldgenmain.lua, so it
+-- keeps its return value and runs in the mod env. It
 --   1. asks the native GameInjector for this state's private registry root, the real registry
 --      and the mod environment binding (GameInjector.InitializeModEnvironment),
---   2. loads scripts/luajit_mod_blacklist.lua explicitly and installs it with that root,
+--   2. installs scripts/luajit_mod_blacklist.lua with that root; the blacklist module owns the
+--      ledger and pulls in scripts/luajit_surface.lua for the hide/inject halves,
 --   3. clears the real GLOBAL.GameInjector / GLOBAL.GameLuaInjector: from here on the injector
 --      tables exist only in this mod's own environment and in the root.
 -- A missing native entry, root or registry is an initialization error; the loader never
--- continues with half an environment.
-local global = GLOBAL
-if type(global) ~= "table" then
-	error("[luajit] Cannot initialize mod environment: GLOBAL", 0)
+-- continues with half an environment. The mod env is a whitelist (no assert/pcall/rawget):
+-- everything privileged is reached through GLOBAL.
+local _G = GLOBAL
+if type(_G) ~= "table" then
+	return
+end
+
+local function fail(message)
+	_G.error("[luajit] Cannot initialize mod environment: " .. message, 0)
 end
 
 local modname = modname
-local modenv = global.getfenv(1)
-
-local function fail(message)
-	global.error("[luajit] Cannot initialize mod environment: " .. message, 0)
+local modenv = _G.getfenv(1)
+if type(modenv) ~= "table" then
+	fail("mod environment")
 end
 
-local native = global.rawget(global, "GameInjector")
+local native = _G.rawget(_G, "GameInjector")
 if type(native) ~= "table"
-	or type(global.rawget(native, "InitializeModEnvironment")) ~= "function" then
+	or type(_G.rawget(native, "InitializeModEnvironment")) ~= "function" then
 	fail("GameInjector.InitializeModEnvironment")
 end
 
@@ -32,30 +37,20 @@ if type(private_root) ~= "table" or type(real_registry) ~= "table" then
 	fail("InitializeModEnvironment did not return (private root, registry)")
 end
 
-local modroot = modenv.MODROOT
-if type(modroot) ~= "string" or modroot == "" then
-	fail("MODROOT")
-end
-local filepath = modroot .. "scripts/luajit_mod_blacklist.lua"
-local chunk, load_error = global.kleiloadlua(filepath)
-if type(chunk) ~= "function" then
-	fail("cannot load scripts/luajit_mod_blacklist.lua: " .. tostring(load_error or chunk))
-end
-global.setfenv(chunk, modenv)
-local module = chunk()
-if type(module) ~= "table" or type(module.install) ~= "function" then
+local installer = modrequire("scripts/luajit_mod_blacklist")
+if type(installer) ~= "function" then
 	fail("scripts/luajit_mod_blacklist.lua returned no install function")
 end
 
-local manager = module.install(global, modname, modenv, private_root, real_registry)
+local manager = installer(_G, modname, modenv, private_root, real_registry)
 if type(manager) ~= "table" then
 	fail("mod blacklist install returned no manager")
 end
 
 -- The two injector tables are bound into this mod's env by the native entry; the real globals
 -- must not offer them to any other mod.
-global.rawset(global, "GameInjector", nil)
-global.rawset(global, "GameLuaInjector", nil)
+_G.rawset(_G, "GameInjector", nil)
+_G.rawset(_G, "GameLuaInjector", nil)
 
 return {
 	manager = manager,

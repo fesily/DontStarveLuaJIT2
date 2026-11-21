@@ -357,6 +357,17 @@ local function new_fake_global(opts)
 	global.kleiloadlua = function(path)
 		return loadfile(path)
 	end
+	-- The mod env helper scripts/env.lua installs (MODROOT-relative kleiloadlua + setfenv).
+	-- The sandbox chunk lives in the fake global, so modules it loads run there too.
+	global.modrequire = function(module_name)
+		local path = ROOT .. "/Mod/" .. tostring(module_name) .. ".lua"
+		local chunk, err = loadfile(path)
+		if type(chunk) ~= "function" then
+			error("modrequire " .. tostring(module_name) .. ": " .. tostring(err), 0)
+		end
+		setfenv(chunk, global)
+		return chunk()
+	end
 	global.print = function(...)
 		local parts = {}
 		for index = 1, select("#", ...) do
@@ -383,7 +394,8 @@ local function new_fake_global(opts)
 		for level = 2, 8 do
 			local info = debug.getinfo(level, "S")
 			if info and type(info.source) == "string"
-				and info.source:find("luajit_mod_blacklist", 1, true) then
+				and (info.source:find("luajit_mod_blacklist", 1, true)
+					or info.source:find("luajit_surface", 1, true)) then
 				from_manager = true
 				break
 			end
@@ -412,9 +424,9 @@ local function new_fake_global(opts)
 	return global
 end
 
--- The VM's own private root: the same table the native string.dump policy reads. The VM no
--- longer exposes a Lua accessor; the test host publishes it as __ds_test_private_root in
--- script mode. A case must never leak a manager or policy into the next one, so every known
+-- The VM's own private root: the table the injector's string.dump C-function hook reads the
+-- attribution policy from (the VM path itself no longer looks at it). The VM exposes no Lua
+-- accessor; the test host publishes it as __ds_test_private_root in script mode. A case must never leak a manager or policy into the next one, so every known
 -- injected field is dropped here.
 local ROOT_FIELDS = {
 	"LJ_DS_PUC51_DUMP_POLICY", "GameLuaInjector", "GameInjector",
@@ -447,7 +459,8 @@ local function new_sandbox(opts)
 	assert_func(chunk, "load " .. MODULE_PATH .. ": " .. tostring(load_err))
 	setfenv(chunk, global)
 	-- The native entry returns the VM's real private root and the real registry. The root is the
-	-- table the VM's dump policy reads (clear_policy above resets it per sandbox); the registry
+	-- table the string.dump hook reads its policy from (clear_policy above resets it per
+	-- sandbox); the registry
 	-- is a sandbox table so scrubbing _LOADED/_PRELOAD cannot poison the process's own module
 	-- caches for later cases.
 	local root = vm_private_root()
@@ -466,11 +479,13 @@ end
 
 local install_fake_native
 
+-- The module chunk returns the install function (scripts/env.lua's modrequire returns chunks
+-- by value; the blacklist module yields its entry point directly).
 local function install(sb, modname, modenv)
 	if type(sb.global.GameInjector) ~= "table" then
 		install_fake_native(sb)
 	end
-	return sb.module.install(sb.global, modname or TOOL, modenv, sb.root, sb.registry)
+	return sb.module(sb.global, modname or TOOL, modenv, sb.root, sb.registry)
 end
 
 -- The native GameInjector.InitializeModEnvironment, as the production plugin exposes it:

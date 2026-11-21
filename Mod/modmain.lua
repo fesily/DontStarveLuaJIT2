@@ -863,6 +863,9 @@ end
 -- installs from there and the real GLOBAL injector fields are cleared. A failure aborts the
 -- mod: a half environment is worse than none.
 local hand_off_env = _G.getfenv(1)
+-- modrequire (scripts/env.lua) is how the hand-off loads its modules; the worldgen entry
+-- point takes the same step before bootstrap.
+modimport("scripts/env")
 local bootstrap_path = hand_off_env.MODROOT .. "scripts/luajit_env_bootstrap.lua"
 local bootstrap = _G.kleiloadlua(bootstrap_path)
 if _G.type(bootstrap) ~= "function" then

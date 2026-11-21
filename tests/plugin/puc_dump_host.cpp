@@ -101,6 +101,11 @@ struct Api {
 
 Api A{};
 
+/* The attribution bridge (puc_dump_attribution_host.cpp) is a separate TU: it needs the
+** plugin's LuaApis/lua.hpp, while this host deliberately uses a minimal void* ABI. */
+extern "C" int ds_host_install_dump_attribution(void *handle, void *state);
+void *g_vm_handle = nullptr;
+
 struct Vm {
     void *handle = nullptr;
     void **bridge_slot = nullptr;
@@ -192,6 +197,7 @@ bool resolve_api(void *handle) {
 // ---------------------------------------------------------------------------
 
 const char *g_policy_name = nullptr;
+int g_policy_calls = 0;
 int g_release_count = 0;
 void *g_pending_owner = nullptr;
 void (*g_pending_release)(void *) = nullptr;
@@ -229,6 +235,7 @@ int counting_dump(const lua_DsPucDumpRequest *request, lua_DsPucDumpResult *resu
 }
 
 int policy_cfunc(lua_State *L) {
+    ++g_policy_calls;
     if (g_policy_name == nullptr) {
         A.pushnil(L);
     } else {
@@ -339,8 +346,9 @@ std::string lua_string_at(lua_State *L, int idx) {
     return p != nullptr ? std::string(p, n) : std::string();
 }
 
-/* The dump policy lives in the VM's second registry (LUA_REGISTRYINDEX2), which is not in the
-** public registry at all. It is a normal C API pseudo-index, exactly like LUA_REGISTRYINDEX.
+/* The attribution policy lives in the private root (LUA_REGISTRYINDEX2, not in the public
+** registry at all); the production string.dump hook (DumpAttribution.cpp) reads it from there.
+** It is a normal C API pseudo-index, exactly like LUA_REGISTRYINDEX.
 */
 bool push_private_root(lua_State *L) {
     const int base = A.gettop(L);
@@ -519,13 +527,16 @@ void check_native_baseline(lua_State *L) {
     ** case, covered by --expect-native. */
     check(is_puc_dump(dumped.bytes), "baseline dump is PUC 5.1 bytecode while the bridge exists");
 
-    /* A policy answering nil must keep exactly the same bytes. */
+    /* A policy answering nil must keep exactly the same bytes, and the hook must be the only
+    ** caller: the VM-side callback was removed, so a resurrected one would make this 2. */
     install_policy(L, true);
     g_policy_name = nullptr;
+    g_policy_calls = 0;
     const DumpResult nil_policy = dump_at(L, 2, nullptr);
     install_policy(L, false);
     check(nil_policy.ok && nil_policy.bytes == dumped.bytes,
           "policy answer does not change the dump format");
+    check(g_policy_calls == 1, "the string.dump hook calls the policy exactly once per dump");
 
     /* The C API must keep the LuaJIT format too, with a policy installed. */
     g_policy_name = "workshop-selftest";
@@ -1085,8 +1096,9 @@ void check_clear_entry(lua_State *L) {
     A.settop(L, 0);
 }
 
-/* The private root is the only place injected state lives: the dump policy is a field of it,
-** and the old top-level registry names (_VMEVENTS, a bare policy key) are gone. */
+/* The private root is the only place injected state lives: the dump attribution policy is a
+** field of it (read by the hook, not by the VM), and the old top-level registry names
+** (_VMEVENTS, a bare policy key) are gone. */
 void check_policy_location(lua_State *L) {
     install_policy(L, true);
     const int base = A.gettop(L);
@@ -1199,6 +1211,11 @@ int run_self_test(Vm &vm) {
         return 1;
     }
     A.L_openlibs(L);
+    if (ds_host_install_dump_attribution(g_vm_handle, L) == 0) {
+        std::fprintf(stderr, "[self-test] cannot install the string.dump attribution hook\n");
+        A.close(L);
+        return 1;
+    }
 
     check_native_baseline(L);
     check_policy_location(L);
@@ -1223,6 +1240,13 @@ int run_script(const std::string &path, int argc, char **argv) {
         return 1;
     }
     A.L_openlibs(L);
+    /* The shipped attribution path: the hook calls the manager's private-root policy, the VM
+    ** path is pure C. A failure here would silently turn every record assertion into a lie. */
+    if (ds_host_install_dump_attribution(g_vm_handle, L) == 0) {
+        std::fprintf(stderr, "[puc-dump-host] cannot install the string.dump attribution hook\n");
+        A.close(L);
+        return 1;
+    }
 
     /* Test-only bootstrap: script-mode fixtures need the private root, and the VM no longer
     ** exposes a Lua accessor for it. Production callers get the root from
@@ -1374,6 +1398,7 @@ int main(int argc, char **argv) {
 
     Vm vm;
     vm.handle = open_library(vm_path);
+    g_vm_handle = vm.handle;
     if (vm.handle == nullptr) {
         std::fprintf(stderr, "[puc-dump-host] cannot load %s: %s\n", vm_path.c_str(),
                      library_error().c_str());

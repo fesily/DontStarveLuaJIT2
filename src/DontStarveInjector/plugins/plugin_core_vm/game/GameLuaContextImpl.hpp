@@ -3,6 +3,7 @@
 
 #include "game/GameLuaContext.hpp"
 #include "game/CfunctionHook.hpp"
+#include "game/DumpAttribution.hpp"
 #include "game/InjectorFileHijack.hpp"
 #include "game/PrivateLuaRegistry.hpp"
 #include "game/GameLuaInternal.hpp"
@@ -158,6 +159,17 @@ struct GameLuaContextImpl : GameLuaContext {
         // up with the same debug.getsize (原版一致性). The engine's own register_debug_getsize
         // step stays hijacked above; this only adds the function to the debug table.
         ds::core_vm::detail::install_debug_getsize(L);
+        // string.dump attribution: the VM's dump path is pure C now, so the caller is
+        // attributed by a C-function hook on the closure, installed once per state before any
+        // mod runs (main and worldgen both come through this hooker). Only the LuaJIT
+        // contexts carry the PUC 5.1 dump bridge; the engine VM keeps its own object.
+        if (luaType == GameLuaType::jit || luaType == GameLuaType::jit_gen) {
+            if (ds::core_vm::detail::puc_dump_available() &&
+                !ds::core_vm::detail::install_dump_attribution(cfuncHooks, api, L)) {
+                spdlog::error("string.dump attribution hook not installed; "
+                              "dump callers are not recorded");
+            }
+        }
          if (InjectorCtx::instance()->config.DisableReplaceLuaIO) {
             spdlog::info("DISABLE_REPLACE_LUA_IO is set, skip replacing io module");
         } else if (UseGameIO()) {

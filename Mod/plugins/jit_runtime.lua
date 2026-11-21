@@ -2,8 +2,8 @@
 -- Priority 70: last among jit-related (after debug.profiler prio 20).
 --
 -- Reads ctx.encrypted_mod_manager / ctx.frostxx_mods produced by jit.tailcall (prio 10).
--- GLOBAL/package scrubbing is no longer done here: scripts/luajit_mod_blacklist.lua takes
--- ownership once per state and hands LuaJIT only to mods that declare `luajit_compatible`.
+-- GLOBAL/package scrubbing is no longer done here: scripts/luajit_surface.lua takes the
+-- surface once per state and hands LuaJIT only to mods that declare `luajit_compatible`.
 -- The string.dump attribution manager installs no loader hook, so this file's
 -- frostxx/encrypted kleiloadlua wrapper stays the only loader chain.
 
@@ -64,9 +64,9 @@ local function ForceJitOpt(has_luajit)
     )
 end
 
--- The only place GLOBAL.jit/package.loaded.jit are removed is the state's manager
--- (scripts/luajit_mod_blacklist.lua), which also owns the per-mod grant. This plugin keeps
--- just the execution knobs and the encrypted-mod loader.
+-- The only place GLOBAL.jit/package.loaded.jit are removed is the state's surface
+-- (scripts/luajit_surface.lua), which also owns the per-mod grant. This plugin keeps just
+-- the execution knobs and the encrypted-mod loader.
 
 local function HookKleiloadlua(encryptedMods, frostxxMods, injector, ctx)
     local function decrypt_file(filename)

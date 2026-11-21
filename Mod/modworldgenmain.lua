@@ -9,24 +9,16 @@
 -- GameInjector/GameLuaInjector 绑定到本 mod env 并给出私有 registry 根，管理器安装
 -- string.dump 归属策略、捕获 LuaJIT 能力、清理共享 GLOBAL/package/registry。缺任何一个原生
 -- 入口都是初始化错误，不带着半套环境继续。
-local global = GLOBAL
-if type(global) ~= "table" then
-    return
+local _G = GLOBAL
+-- The mod env is a whitelist (type is available; assert is not).
+if type(_G) ~= "table" then
+	return
 end
-if global.rawget(global, "WORLDGEN_MAIN") == nil then
-    return
+-- Only the worldgen load installs: the front end and the custom UI load this file too, and
+-- there is no WORLDGEN_MAIN then.
+if _G.rawget(_G, "WORLDGEN_MAIN") == nil then
+	return
 end
 
-local modenv = global.getfenv(1)
-local modroot = modenv.MODROOT
-if type(modroot) ~= "string" or modroot == "" then
-    global.error("[luajit] Cannot initialize mod environment: MODROOT", 0)
-end
-local filepath = modroot .. "scripts/luajit_env_bootstrap.lua"
-local bootstrap = global.kleiloadlua(filepath)
-if type(bootstrap) ~= "function" then
-    global.error("[luajit] Cannot load scripts/luajit_env_bootstrap.lua: "
-        .. tostring(bootstrap), 0)
-end
-global.setfenv(bootstrap, modenv)
-bootstrap()
+modimport("scripts/env")
+modrequire("scripts/luajit_env_bootstrap")

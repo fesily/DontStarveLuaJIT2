@@ -27,7 +27,7 @@
 | VM lexer | `lj_lex_setup`：`LJ_DS_PUC51_LOAD_EOF_RETRY` 在首次 EOF 再调一次 reader，匹配 PUC 5.1 的两次调用；`LJ_DS_REJECT_BINARY_CHUNKS` 编译期拒绝所有 `\x1b`（默认 `LJ_DS`）；`lua_ds_allow_lj_bytecode(L, 1)` 可按 state 关闭它，`LJ_DS_PUC51_DUMP` 仍拒绝 `\x1bLua` |
 | injector `lua_loadx` | **仅 dump**：只有 `dump_lua_mods` 非空（`LuaModDumpEnabled()`）时才安装 hook，命中 mod 时用 `LuaModDumpReader`；不再 peek/回放/做 bytecode 检查；dump 关闭时加载路径无 hook |
 | VM bytecode reader | `bcread_header` 恢复原始实现；`\x1bLJ` 仍可被独立 VM/CLI 加载 |
-| `string.dump` | 有 injector bridge（`lj_ds_puc_dump`）时**无条件 PUC 5.1**；独立 CLI/VM 无 bridge 时保持原生 LuaJIT dump |
+| `string.dump` | 有 injector bridge（`lj_ds_puc_dump`）时**无条件 PUC 5.1**；独立 CLI/VM 无 bridge 时保持原生 LuaJIT dump。调用方归属不再由 VM 回调：注入器在每个 state 的 `luaL_openlibs` 后给 `string.dump` 的闭包装一个 C-function hook（`game/DumpAttribution.cpp`），hook 从私有 root 读 `LJ_DS_PUC51_DUMP_POLICY` 并调用管理器记录，然后调用原实现；VM 的 `string_dump` 是纯 C，不再进入 Lua |
 | `require` | stock require 的 package 表保留原 `loaded=registry._LOADED` 身份和真实 loader 链（游戏启动后插入的 custom loader 仍可见），只清除扩展 `loaded/preload` 并把 `loadlib` 换成拒绝 `luaopen_ffi/bit/jit/memprof/string_buffer/string/table/debug` 的 wrapper；`GLOBAL.package` 仍是这张处理后的真实表，`GLOBAL.require` 仍是 stock C require 原对象，扩展名自然报 stock `module '...' not found:`。声明了 `modinfo.luajit_compatible` 的 mod 拿到独立 `real_package` 视图（`loaded` overlay：扩展 raw + `__index=safe`，`preload/loaders/loadlib` 同安全面）和私有 loader；普通 mod 的 env.package 是独立 safe 视图。`GLOBAL.bit` 保留（DST 脚本使用） |
 | `loadstring` | 不需要 Lua 侧 patch：VM 自己按 PUC 规则报文案与 chunk 名 |
 | `jit` / `package` / registry | 注入器状态全部收进每个 state 的**私有 root**（LuaJIT：`global_State.registry2tv`，与公开 registry 同点初始化、`LUA_REGISTRYINDEX2`/`registry2(L)` 同一套 index2adr 路径；PUC：`registry[GameLuaContext*]` 是一个 C holder，root table 是它的 upvalue 1，5.1 debug 库拒绝 C 函数 upvalue，所以不需要过滤 `debug.getregistry`）。`LUA_REGISTRYINDEX2` 由编译期 `LJ_DS_REGISTRY2` 控制：默认 `0` 时等同 `LUA_REGISTRYINDEX`、不分配 `registry2tv`，CMake 选项默认 `ON` 保持本产品的独立 registry。`jit._private_registry` 已删除；宿主/测试通过 C API（`LUA_REGISTRYINDEX2` 或 `PrivateLuaRegistry`）读取 root。`GLOBAL.jit`、共享 `safe_package.loaded/preload`、`registry._LOADED/_PRELOAD` 清空扩展项；声明兼容的 mod 拿到真实 package（扩展 overlay）和自己的 jit/bit/ffi/debug/table/string 副本 |
@@ -37,7 +37,8 @@
 
 - `Mod/deps/liblua51DS.so`
 - `Mod/plugins/plugin_core_vm/plugin_core_vm.so`
-- `Mod/scripts/luajit_mod_blacklist.lua`（运行时读取）
+- `Mod/scripts/luajit_mod_blacklist.lua`（运行时读取；string.dump 记录与归属）
+- `Mod/scripts/luajit_surface.lua`（运行时读取；隐藏/注入两面与 env 注册）
 
 ## 3. 真正的差异：首次即 EOF 时，reader 调用一次还是两次
 
@@ -281,8 +282,9 @@ gate:
 - `luajit/src/lib_jit.c`：VM 不提供 `jit.new_c_function`/`jit.patch_cfunction`/`jit._private_registry`，也没有 Lua 侧私有 root 入口；
 - `src/DontStarveInjector/plugins/plugin_core_vm/game/GameLuaContextJit.cpp`：
   `lua_loadx` **仅 dump**（`LuaModDumpShouldDump` / `LuaModDumpReader`），且只有 `LuaModDumpEnabled()` 时安装；gate 的 peek/replay 已删除；无运行时开关；
-- `Mod/scripts/luajit_mod_blacklist.lua`：
-  `safe_package`/真实 package 双面、stock require 保持不变、jit/package cache+scrub；
+- `Mod/scripts/luajit_mod_blacklist.lua`：string.dump 的调用方归属与 JSON 记录（策略函数放在私有 root，由注入器的 C-function hook 调用，不再由 VM 调用）；
+- `src/DontStarveInjector/plugins/plugin_core_vm/game/DumpAttribution.{hpp,cpp}`：`string.dump` 的 C-function hook 策略，每个 state 在 `luaL_openlibs_hooker` 安装一次（仅 LuaJIT + 有 dump bridge 时）；
+- `Mod/scripts/luajit_surface.lua`：隐藏（`safe_package`/共享 GLOBAL/registry 清理）与注入（per-env grant、`real_package`、私有 jit.* loader、`grant_plugin_view`）两面，及 env 注册；
 - `luajit/src/lib_base.c`、`lib_debug.c`、`lj_debug.c`、`lj_arch.h`：
   `LJ_DS_NEW_PROXY_PATCH` 已移除。
 
