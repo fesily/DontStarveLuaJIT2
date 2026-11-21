@@ -1,0 +1,40 @@
+name: Build macOS x86_64 dylib
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: macos-13
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build tools
+        run: |
+          brew install cmake ninja
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="10.15"
+
+      - name: Build
+        run: |
+          cmake --build build --config Release
+
+      - name: Inspect binary
+        run: |
+          find build -name "*.dylib" -exec file {} +
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-x86_64-dylib
+          path: build/*/.dylib
