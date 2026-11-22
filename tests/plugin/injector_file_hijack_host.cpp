@@ -862,3 +862,206 @@ TEST_CASE("hook lifecycle: clear reverts the implementation and a new state hook
     REQUIRE(g_lifecycle_body_calls == 4);
     api._lua_close(s3);
 }
+
+namespace {
+
+// The hardest disguise case: while the original code runs, it calls back into Lua (a reader
+// function for `load`, a module body for `require`). That Lua code can walk the frame stack,
+// and the record it builds must be identical with and without the hook.
+const char *kCallbackProbe = R"LUA(
+local function pack(...)
+    return { n = select("#", ...), ... }
+end
+local function describe(...)
+    local t = pack(...)
+    local parts = {}
+    for i = 1, t.n do
+        parts[#parts + 1] = tostring(t[i])
+    end
+    return table.concat(parts, " ")
+end
+local function census()
+    local parts = {}
+    for i = 1, 16 do
+        local info = debug.getinfo(i, "Sl")
+        if not info then
+            break
+        end
+        parts[#parts + 1] = tostring(i) .. "|" .. tostring(info.what) .. "|" ..
+                            tostring(info.source) .. "|" .. tostring(info.currentline)
+    end
+    return table.concat(parts, ";")
+end
+
+local out = {}
+
+-- 1. load(reader): the C loader calls a Lua function for every piece of the chunk.
+local calls, seen = 0, {}
+local src = "local a, b = ...; return (a or 0) + (b or 1)"
+local pos = 1
+local reader = function()
+    calls = calls + 1
+    if calls == 1 then
+        local info = debug.getinfo(2, "Sflun")
+        seen[1] = "lvl2 what=" .. tostring(info.what) .. " src=" .. tostring(info.source) ..
+                  " line=" .. tostring(info.currentline) .. " name=" .. tostring(info.name) ..
+                  " isload=" .. tostring(rawequal(info.func, load)) ..
+                  " nups=" .. tostring(info.nups)
+        seen[2] = "census " .. census()
+        seen[3] = "trace " .. string.gsub(debug.traceback("TB"), "\n", " / ")
+    end
+    if pos > #src then
+        return nil
+    end
+    local piece = src:sub(pos, pos + 7)
+    pos = pos + 8
+    return piece
+end
+local chunk = load(reader)
+out[#out + 1] = "reader chunk=" .. type(chunk) .. " calls=" .. tostring(calls) ..
+                " result=" .. tostring(chunk and chunk(20, 22))
+out[#out + 1] = table.concat(seen, "\n")
+
+-- 2. A function reader keeps argument 2 (the chunk name) verbatim.
+local named_pieces = 0
+local named = load(function()
+    named_pieces = named_pieces + 1
+    if named_pieces > 1 then
+        return nil
+    end
+    return "return 7"
+end, "@reader_named.lua")
+out[#out + 1] = "named src=" .. tostring(named and debug.getinfo(named, "S").source)
+
+-- 3. A bad and a raising reader keep the stock results and diagnostics. (A number is a
+--    string in Lua, so the reader has to return something that is neither.)
+out[#out + 1] = "bad reader=" .. describe(pcall(load, function() return true end))
+out[#out + 1] = "raising reader=" .. describe(pcall(load, function() error("reader boom", 0) end))
+
+-- 4. The hooked object is the stock C closure, not a replacement.
+local up = debug.getinfo(load, "u")
+out[#out + 1] = "load what=" .. tostring(debug.getinfo(load, "S").what) ..
+                " nups=" .. tostring(up and up.nups) ..
+                " up1=" .. tostring(select("#", debug.getupvalue(load, 1)))
+out[#out + 1] = "load identity=" .. tostring(rawequal(load, __load_before))
+out[#out + 1] = "require identity=" .. tostring(rawequal(require, __require_before))
+
+-- 5. require: the module body is the callback, and it runs inside the hooked loader.
+package.loaded.cb_host = nil
+out[#out + 1] = "module " .. tostring(require("cb_host"))
+return table.concat(out, "\n")
+)LUA";
+
+const char *kCallbackModule = R"LUA(
+local info = debug.getinfo(2, "Sflun")
+local parts = {}
+for i = 1, 16 do
+    local d = debug.getinfo(i, "Sl")
+    if not d then
+        break
+    end
+    parts[#parts + 1] = tostring(i) .. "|" .. tostring(d.what) .. "|" ..
+                        tostring(d.source) .. "|" .. tostring(d.currentline)
+end
+return "lvl2 what=" .. tostring(info.what) .. " src=" .. tostring(info.source) ..
+       " line=" .. tostring(info.currentline) .. " name=" .. tostring(info.name) ..
+       " isreq=" .. tostring(rawequal(info.func, require)) ..
+       " nups=" .. tostring(info.nups) .. " census=" .. table.concat(parts, ";")
+)LUA";
+
+// Runs `code` and returns its single string result (or the error text). Explicit
+// loadstring/pcall: luaL_dostring is a macro in 5.1 and the exported symbol does not carry the
+// LUA_MULTRET contract this needs.
+std::string run_lua_string(LuaApis &api, lua_State *L, const char *code) {
+    if (api._luaL_loadstring(L, code) != 0 || api._lua_pcall(L, 0, 1, 0) != 0) {
+        const char *err = api._lua_tostring(L, -1);
+        std::string message = err ? err : "?";
+        api._lua_pop(L, 1);
+        api._lua_settop(L, 0);
+        return "ERROR " + message;
+    }
+    const char *value = api._lua_tostring(L, -1);
+    std::string out = value != nullptr ? value : "<non-string result>";
+    api._lua_settop(L, 0);
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("the proxy stays invisible when the hooked loader calls back into Lua") {
+    Vm &vm = shared_vm();
+    REQUIRE(vm.L != nullptr);
+    LuaApis &api = vm.api;
+    auto &hooks = g_hooks;
+
+    // Own state: the same probe records once with the stock loaders and once with the
+    // production hooks installed, and the two records must be byte-identical.
+    lua_State *L = api._luaL_newstate();
+    REQUIRE(L != nullptr);
+    api._luaL_openlibs(L);
+
+    // Production order: the framework exists first (the policy reads relocations / run_inject
+    // from the private root), then the loader closures get their implementation pointers
+    // redirected.
+    GameLuaContext *key = install_private_root(api, L);
+    REQUIRE(key != nullptr);
+    const char *framework_path = std::getenv("DS_HIJACK_FRAMEWORK");
+    REQUIRE(framework_path != nullptr);
+    REQUIRE(api._luaL_loadfile(L, framework_path) == 0);
+    push_log_stub(api, L);
+    api._lua_pushnil(L);
+    REQUIRE(api._lua_pcall(L, 2, 0, 0) == 0);
+    REQUIRE(adopt_framework(api, L, key));
+
+    const auto dir = std::filesystem::temp_directory_path() /
+                     ("ds_injector_callback_" + std::to_string(host_pid()));
+    std::error_code cleanup_ec;
+    std::filesystem::remove_all(dir, cleanup_ec);
+    std::filesystem::create_directories(dir);
+    {
+        std::ofstream out(dir / "cb_host.lua", std::ios::binary);
+        out << kCallbackModule;
+    }
+    const std::string package_path =
+        "package.path = [[" + dir.generic_string() + "/?.lua;]] .. package.path";
+    REQUIRE(run_lua(api, L, package_path.c_str()).empty());
+
+    // The objects the probe compares against, captured before anything is hooked.
+    api._lua_getglobal(L, "load");
+    api._lua_pushvalue(L, -1);
+    api._lua_setglobal(L, "__load_before");
+    api._lua_pop(L, 1);
+    api._lua_getglobal(L, "require");
+    api._lua_pushvalue(L, -1);
+    api._lua_setglobal(L, "__require_before");
+    api._lua_pop(L, 1);
+
+    const std::string stock = run_lua_string(api, L, kCallbackProbe);
+    // Teeth: the stock record must actually contain the callback observations.
+    REQUIRE(stock.find("lvl2 what=C") != std::string::npos);
+    REQUIRE(stock.find("name=load") != std::string::npos);
+    REQUIRE(stock.find("isload=true") != std::string::npos);
+    REQUIRE(stock.find("isreq=true") != std::string::npos);
+    // The engine-side chunk names strip the '@' (PUC keeps it), so only the name itself is
+    // comparable across VMs; what matters is that it reached the chunk at all.
+    REQUIRE(stock.find("named src=nil") == std::string::npos);
+    REQUIRE(stock.find("reader_named.lua") != std::string::npos);
+    REQUIRE(stock.find("load identity=true") != std::string::npos);
+    REQUIRE(stock.find("require identity=true") != std::string::npos);
+    REQUIRE(stock.find("load what=C nups=0 up1=0") != std::string::npos);
+
+    // `load` is not a production hook; it is the harshest callback case (its original calls a
+    // Lua function per chunk piece), so the production policy goes on it as well as on require.
+    REQUIRE(hooks.hook_global(api, L, "load", &ds::core_vm::detail::file_hijack_policy, key));
+    REQUIRE(hooks.hook_global(api, L, "require", &ds::core_vm::detail::file_hijack_policy, key));
+
+    const std::string hooked = run_lua_string(api, L, kCallbackProbe);
+    if (hooked != stock) {
+        MESSAGE("stock record:\n" << stock);
+        MESSAGE("hooked record:\n" << hooked);
+    }
+    REQUIRE(hooked == stock);
+
+    std::error_code teardown_ec;
+    std::filesystem::remove_all(dir, teardown_ec);
+}
