@@ -51,7 +51,7 @@ else ()
     message(FATAL_ERROR "Not supported platform")
 endif ()
 
-project(DontStarveLuaJIT VERSION 3.5.3)
+project(DontStarveLuaJIT VERSION 3.5.4)
 
 # LuaJIT's LUA_REGISTRYINDEX2 is an alias for LUA_REGISTRYINDEX by default (the
 # VM header default is 0). The DS product enables the separate second registry;

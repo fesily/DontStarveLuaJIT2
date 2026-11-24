@@ -1,0 +1,580 @@
+{
+  "format_version": 1,
+  "platforms": {
+    "linux-x64": {
+      "module": {
+        "digest": "8497a42d9a04eead",
+        "size": 7052224,
+        "version": "763928"
+      },
+      "owners": {
+        "core.vm": {
+          "entries": {
+            "core.vm.execution_error": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "F3 0F 1E FA 48 83 3D ?? ?? ?? ?? 00 74 02 C3 90 41 54 55 48 89 FD 53 48 85 FF 74 ?? 4C 8D 25 ?? ?? ?? ?? 4C 39 E7 74 ?? E8 ?? ?? ?? ?? 48 89 C3 48 3D FF 0F 00 00 76 ?? BB FF 0F 00 00 EB ?? 90 48 83 EB 01 74 ?? 0F B6 44 1D 00 83 E0 C0 3C 80 74 ?? B9 00 10 00 00 48 89 DA 48 89 EE 48 8D 3D ?? ?? ?? ?? E8 ?? ?? ?? ?? 41 C6 04 1C 00 5B 5D",
+              "pattern_offset": 0,
+              "platform_mask": 2,
+              "raw_hit_rvas": [
+                4912880
+              ],
+              "resolve_kind": 0,
+              "target_rva": 4912880
+            },
+            "core.vm.lua_module": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "81 FE F1 D8 FF FF 7D ?? 81 FE EF D8 FF FF 74 ?? 81 FE F0 D8 FF FF",
+              "pattern_offset": 0,
+              "platform_mask": 2,
+              "raw_hit_rvas": [
+                4897336
+              ],
+              "resolve_kind": 1,
+              "target_rva": 4897296
+            },
+            "core.vm.register_debug_getsize": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "48 8B 45 18 48 89 EF 48 8B 40 10 48 8B 70 20",
+              "pattern_offset": 0,
+              "platform_mask": 2,
+              "raw_hit_rvas": [
+                2024373
+              ],
+              "resolve_kind": 1,
+              "target_rva": 2024336
+            }
+          }
+        },
+        "debug.profiler": {
+          "entries": {
+            "debug.profiler.pop": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "64 48 8B 1C 25 F8 FF FF FF",
+              "pattern_offset": 0,
+              "platform_mask": 2,
+              "raw_hit_rvas": [
+                4018424
+              ],
+              "resolve_kind": 1,
+              "target_rva": 4018400
+            },
+            "debug.profiler.push": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "F3 0F 1E FA 0F B6 47 20 84 C0 74 ?? E9",
+              "pattern_offset": 0,
+              "platform_mask": 2,
+              "raw_hit_rvas": [
+                4019552
+              ],
+              "resolve_kind": 1,
+              "target_rva": 4019552
+            },
+            "debug.profiler.push_singleton": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "F3 0F 1E FA 48 8B 3D ?? ?? ?? ?? 0F B6 47 20 84 C0 74 ?? E9",
+              "pattern_offset": 0,
+              "platform_mask": 2,
+              "raw_hit_rvas": [
+                4019584
+              ],
+              "resolve_kind": 1,
+              "target_rva": 4019584
+            }
+          }
+        },
+        "injector": {
+          "entries": {
+            "injector.scripts_zip": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "44 45 56 3D 64 61 74 61 62 75 6E 64 6C 65 73 2F 73 63 72 69 70 74 73 2E 7A 69 70",
+              "pattern_offset": 0,
+              "platform_mask": 2,
+              "raw_hit_rvas": [
+                5062223
+              ],
+              "resolve_kind": 0,
+              "target_rva": 5062223
+            }
+          }
+        },
+        "network.stats": {
+          "entries": {
+            "network.stats.update_net_stats": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "41 56 41 55 41 54 55 53 48 81 EC 10 01 00 00 64 48 8B 04 25 28 00 00 00 48 89 84 24 08 01 00 00 31 C0 48 8B 05 ?? ?? ?? ?? 4C 8B A0 78 02 00 00 4D 85 E4",
+              "pattern_offset": 0,
+              "platform_mask": 2,
+              "raw_hit_rvas": [
+                2771652
+              ],
+              "resolve_kind": 0,
+              "target_rva": 2771652
+            }
+          }
+        }
+      }
+    },
+    "windows-x64": {
+      "module": {
+        "digest": "dd2cf795bed55dbc",
+        "size": 7811072,
+        "version": "762172"
+      },
+      "owners": {
+        "core.vm": {
+          "entries": {
+            "core.vm.build_type": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 2,
+              "pattern": "48 8B 05 ?? ?? ?? ?? C3",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                1054560,
+                1656928,
+                1656944,
+                1656976,
+                1656992,
+                1657008,
+                3924240,
+                4754880
+              ],
+              "resolve_kind": 0,
+              "target_rva": 1656976
+            },
+            "core.vm.execution_error": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "48 83 EC 28 48 83 3D ?? ?? ?? ?? 00 75 76 48 85 C9 48 8D 15 ?? ?? ?? ?? 48 89 5C 24 30 48 8D 1D ?? ?? ?? ?? 48 0F 45 D1 48 3B D3 74 4B 48 83 C9 FF 48 89 7C 24 20 33 C0 48 8B FA F2 AE 48 F7 D1 48 FF C9 48 8B F9 48 81 F9 00 10 00 00 72 15 BF FF 0F 00 00 0F B6 04 17 24 C0 3C 80 75 06 48 83 EF 01 75 F0 4C 8B C7 48 8B CB E8 ?? ?? ?? ?? C6 04 1F 00 48 8B 7C 24 20 48 89 1D ?? ?? ?? ?? 48 8B 5C 24 30 48 83 C4 28 C3",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                4754912
+              ],
+              "resolve_kind": 0,
+              "target_rva": 4754912
+            },
+            "core.vm.lua_module": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "41 B8 EE D8 FF FF 41 3B D0 74 64 81 FA EF D8 FF FF 74 3B",
+              "pattern_offset": -55,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                4727863
+              ],
+              "resolve_kind": 0,
+              "target_rva": 4727808
+            },
+            "core.vm.register_debug_getsize": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "4C 8B 5B 18 48 8B CB 49 8B",
+              "pattern_offset": -39,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                1286823
+              ],
+              "resolve_kind": 0,
+              "target_rva": 1286784
+            }
+          }
+        },
+        "debug.profiler": {
+          "entries": {
+            "debug.profiler.pop": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "81 7F 1C 00 3C 00 00",
+              "pattern_offset": -125,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                3974845
+              ],
+              "resolve_kind": 0,
+              "target_rva": 3974720
+            },
+            "debug.profiler.push": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "44 8B 9B 88 02 00 00",
+              "pattern_offset": -373,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                3974565
+              ],
+              "resolve_kind": 0,
+              "target_rva": 3974192
+            }
+          }
+        },
+        "fps.render": {
+          "entries": {
+            "fps.render.notebook_mode": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "F3 0F 11 89 D8 01 00 00",
+              "pattern_offset": -62,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                39886
+              ],
+              "resolve_kind": 0,
+              "target_rva": 39824
+            }
+          }
+        },
+        "injector": {
+          "entries": {
+            "injector.scripts_zip": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "44 45 56 3D 64 61 74 61 62 75 6E 64 6C 65 73 2F 73 63 72 69 70 74 73 2E 7A 69 70",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                4969008
+              ],
+              "resolve_kind": 0,
+              "target_rva": 4969008
+            },
+            "injector.set_thread_name": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "B9 88 13 6D 40",
+              "pattern_offset": -36,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                1629716
+              ],
+              "resolve_kind": 0,
+              "target_rva": 1629680
+            }
+          }
+        },
+        "network.rpc": {
+          "entries": {
+            "network.rpc.component_ctor": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "48 8D 8B E8 01 00 00 48 89 43 20",
+              "pattern_offset": -7,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                690656
+              ],
+              "resolve_kind": 0,
+              "target_rva": 690649
+            },
+            "network.rpc.component_serialize": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "C7 87 34 01 00 00 03 00 00 00",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                692491
+              ],
+              "resolve_kind": 0,
+              "target_rva": 692491
+            },
+            "network.rpc.ordered_streams": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "48 8D 8B F0 12 00 00 33 D2 41 B8 80",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                3836234
+              ],
+              "resolve_kind": 0,
+              "target_rva": 3836234
+            },
+            "network.rpc.rpc4_signal": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "48 81 EC 30 03 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 20 03 00 00 48 8B 9C 24 90 03 00 00",
+              "pattern_offset": -7,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                3898215
+              ],
+              "resolve_kind": 0,
+              "target_rva": 3898208
+            }
+          }
+        },
+        "network.sim": {
+          "entries": {
+            "network.sim.reliability_dtor": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "48 89 5C 24 10 48 89 74 24 18 57 48 83 EC 20 48 8D 05 ?? ?? ?? ?? 41 B9 03 00 00 00 45 33 C0 48 89 01 48 8D 05 ?? ?? ?? ?? 33 D2 48 89 41 08 48",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                3823520
+              ],
+              "resolve_kind": 0,
+              "target_rva": 3823520
+            },
+            "network.sim.send_bitstream": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "40 53 55 56 57 41 54 41 55 48 83 EC 68 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 44 24 58 41 8B 39 48",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                3836928
+              ],
+              "resolve_kind": 0,
+              "target_rva": 3836928
+            }
+          }
+        },
+        "network.stats": {
+          "entries": {
+            "network.stats.update_net_stats": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "4C 8B DC 53 56 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 8B D9 48 8B B0 B0 02 00 00 48 85 F6",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                2261760
+              ],
+              "resolve_kind": 0,
+              "target_rva": 2261760
+            }
+          }
+        },
+        "network.tick": {
+          "entries": {
+            "network.tick.client_tick_time": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "44 8D 76 64",
+              "pattern_offset": 3,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                1798867
+              ],
+              "resolve_kind": 0,
+              "target_rva": 1798870
+            },
+            "network.tick.reset_value": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "BB 0F 00 00 00 48 83 B9 88 02 00 00 00",
+              "pattern_offset": 1,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                1798791
+              ],
+              "resolve_kind": 0,
+              "target_rva": 1798792
+            },
+            "network.tick.update_fps": {
+              "client_only": false,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "41 BC 0A 00 00 00 85 D2",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                1798738
+              ],
+              "resolve_kind": 0,
+              "target_rva": 1798738
+            }
+          }
+        },
+        "render.shadow": {
+          "entries": {
+            "render.shadow.anim_dcr": {
+              "client_only": true,
+              "definition_revision": 1,
+              "hits_policy": 1,
+              "pattern": "40 53 57 41 56 48 81 EC 90 04 00 00 48 8B D9 48 8B 8A 28 09 00 00 48 8B FA 48 8B 49 28",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                1001760
+              ],
+              "resolve_kind": 0,
+              "target_rva": 1001760
+            },
+            "render.shadow.anim_draw": {
+              "client_only": true,
+              "definition_revision": 1,
+              "hits_policy": 1,
+              "pattern": "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 48 8B 01 41",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                3642368
+              ],
+              "resolve_kind": 0,
+              "target_rva": 3642368
+            },
+            "render.shadow.cache_world": {
+              "client_only": true,
+              "definition_revision": 1,
+              "hits_policy": 1,
+              "pattern": "48 89 54 24 10 56 41 56 48 81 EC 58 02 00 00 48 8B F1 48 8B 89 70 01 00 00",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                100496
+              ],
+              "resolve_kind": 0,
+              "target_rva": 100496
+            },
+            "render.shadow.generate_vb": {
+              "client_only": true,
+              "definition_revision": 1,
+              "hits_policy": 1,
+              "pattern": "48 89 5C 24 18 48 89 6C 24 20 56 57 41 54 48 83 EC 50 48 8B 41 20 48 8B FA 48 8B F1 8B 90 D4 00 00 00",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                585984
+              ],
+              "resolve_kind": 0,
+              "target_rva": 585984
+            },
+            "render.shadow.get_anim_frame": {
+              "client_only": true,
+              "definition_revision": 1,
+              "hits_policy": 1,
+              "pattern": "48 83 EC 28 4C 8B C9 E8 ?? ?? ?? ?? 83 F8 FF 74 13 8B C0 48 8D 14 80",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                1533744
+              ],
+              "resolve_kind": 0,
+              "target_rva": 1533744
+            },
+            "render.shadow.hw_effect_bind": {
+              "client_only": true,
+              "definition_revision": 1,
+              "hits_policy": 1,
+              "pattern": "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 41 8B 40 1C",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                3696704
+              ],
+              "resolve_kind": 0,
+              "target_rva": 3696704
+            },
+            "render.shadow.load_shader": {
+              "client_only": true,
+              "definition_revision": 1,
+              "hits_policy": 1,
+              "pattern": "40 53 55 56 57 41 54 41 55 41 56 48 81 EC 00 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 D0 00 00 00 48 8B F9",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                368736
+              ],
+              "resolve_kind": 0,
+              "target_rva": 368736
+            },
+            "render.shadow.shadow_dcr": {
+              "client_only": true,
+              "definition_revision": 1,
+              "hits_policy": 1,
+              "pattern": "48 89 74 24 10 57 48 83 EC 20 83 BA 38 09 00 00 02 48 8B FA 48 8B F1 0F 85 DA 00 00 00",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                587504
+              ],
+              "resolve_kind": 0,
+              "target_rva": 587504
+            }
+          }
+        },
+        "render.vbpool": {
+          "entries": {
+            "render.vbpool.batcher_flush": {
+              "client_only": true,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "4C 8B DC 49 89 6B 18 57 48 83 EC 70 48 8B 51 78 48 BD AB AA AA AA AA AA AA 2A",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                237744
+              ],
+              "resolve_kind": 0,
+              "target_rva": 237744
+            },
+            "render.vbpool.hwbuffer_dtor": {
+              "client_only": true,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "40 53 48 83 EC 20 48 8D 05 ?? ?? ?? ?? 48 8D 51 10 48 8B D9 48 89 01 B9 01 00 00 00",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                3685152
+              ],
+              "resolve_kind": 0,
+              "target_rva": 3685152
+            },
+            "render.vbpool.hwbuffer_init": {
+              "client_only": true,
+              "definition_revision": 1,
+              "hits_policy": 0,
+              "pattern": "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 54 48 83 EC 20 4C 8B E2 48 8D 51 10 48 8B E9 B9 01 00 00 00",
+              "pattern_offset": 0,
+              "platform_mask": 1,
+              "raw_hit_rvas": [
+                3685424
+              ],
+              "resolve_kind": 0,
+              "target_rva": 3685424
+            }
+          }
+        }
+      }
+    }
+  }
+}

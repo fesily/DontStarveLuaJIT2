@@ -90,7 +90,7 @@ Linux：
 curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.sh | sh
 ```
 
-脚本会自动：挑最新 release（`preview` 或正式版取较新者）→ 从 Steam 安装位置（Windows 注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf`，与 `tools/steam_env.py` 同一套规则）定位游戏根目录 → 把包解到目标目录 → 运行包内安装脚本（装壳）→ 把本次安装的模块绝对路径**覆写**进 `data/unsafedata/ds_luajit_injector.path`（Windows/Linux 两个入口都写；Linux 另做自检）。
+脚本会自动：挑最新主线 release（`master` 的 `preview` 或正式版取较新者，自动排除未合并 PR 的 `preview-pr-*`）→ 从 Steam 安装位置（Windows 注册表 / `libraryfolders.vdf` / `appmanifest_322330.acf`，与 `tools/steam_env.py` 同一套规则）定位游戏根目录 → 把包解到目标目录 → 运行包内安装脚本（装壳）→ 把本次安装的模块绝对路径**覆写**进 `data/unsafedata/ds_luajit_injector.path`（Windows/Linux 两个入口都写；Linux 另做自检）。
 
 目标目录：游戏所在库存在工坊内容（`…\steamapps\workshop\content\322330`）时，Windows 装到 `…\workshop\content\322330\3444078585`（订阅者实际加载的目录，`install.bat` 按 `workshop\content\322330` 分支把壳装回同库的 `common\Don't Starve Together\bin64`）；没有工坊内容时退回 `<游戏>/mods/DontStarveLuaJit2`。
 
@@ -102,7 +102,10 @@ curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/ins
 
 | 选项 | 环境变量 | 说明 |
 |------|----------|------|
-| `--channel auto\|release\|preview` | `DSJ_CHANNEL` | 装哪一类版本，默认 `auto` = 最新 |
+| `--channel auto\|release\|preview\|pr-<N>` | `DSJ_CHANNEL` | 装哪一类版本，默认 `auto` = 最新主线版本（不含未合并 PR） |
+| `-Pr <N>` / `--pr <N>` | `DSJ_PR` | 拉取指定 PR 的滚动预览包（`preview-pr-<N>`） |
+| `-Branch <NAME>` / `--branch <NAME>` | `DSJ_BRANCH` | 按分支名查找开启中的 PR 并拉取对应预览包 |
+| `-Tag <TAG>` / `--tag <TAG>` | `DSJ_TAG` | 拉取指定 Release tag |
 | `--game-dir PATH` | `DSJ_GAME_DIR` | 跳过 Steam 搜索，直接指定游戏根目录 |
 | `--mod-folder NAME` | `DSJ_MOD_FOLDER` | `mods` 下的目录名，默认 `DontStarveLuaJit2`（存在工坊内容目录时不生效） |
 | `--repo OWNER/NAME` | `DSJ_REPO` | GitHub 仓库，默认 `fesily/DontStarveLuaJIT2` |

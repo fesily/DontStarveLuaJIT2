@@ -67,6 +67,10 @@ class DedicatedProc:
             "DST_Master",
             f"-force_enable_mods={force_mods}",
         ]
+        # Extra engine args for repro configurations (e.g. -ugc_directory <steam>).
+        if _extra := os.environ.get("HARNESS_EXTRA_ARGS"):
+            import shlex
+            cmd.extend(shlex.split(_extra))
         safe_print(f"[harness] launch: {' '.join(cmd)}")
         safe_print(f"[harness] cwd={exe.parent} force_enable_mods={force_mods}")
 

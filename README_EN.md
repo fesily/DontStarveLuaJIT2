@@ -56,8 +56,8 @@ Linux:
 curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.sh | sh
 ```
 
-The script picks the newest GitHub release (`preview` or stable, whichever is
-newer), locates the game through Steam (Windows registry / `libraryfolders.vdf` /
+The script picks the newest mainline GitHub release (`master` `preview` or stable,
+whichever is newer; unmerged PR `preview-pr-*` builds are excluded), locates the game through Steam (Windows registry / `libraryfolders.vdf` /
 `appmanifest_322330.acf` - the same rules as `tools/steam_env.py`), stages the
 package, runs the packaged installer (shell deploy) and **overwrites**
 `data/unsafedata/ds_luajit_injector.path` with the absolute path of the module it
@@ -86,7 +86,10 @@ as `$env:DSJ_CHANNEL`):
 
 | Option | Env | Meaning |
 |--------|-----|---------|
-| `--channel auto\|release\|preview` | `DSJ_CHANNEL` | which release to install; `auto` = newest (default) |
+| `--channel auto\|release\|preview\|pr-<N>` | `DSJ_CHANNEL` | which release to install; `auto` = newest mainline (default, excludes PR builds) |
+| `-Pr <N>` / `--pr <N>` | `DSJ_PR` | install the rolling preview build for PR `#N` (`preview-pr-<N>`) |
+| `-Branch <NAME>` / `--branch <NAME>` | `DSJ_BRANCH` | resolve the open PR for a branch and install its preview build |
+| `-Tag <TAG>` / `--tag <TAG>` | `DSJ_TAG` | install an exact release tag |
 | `--game-dir PATH` | `DSJ_GAME_DIR` | skip Steam discovery, use this game root |
 | `--mod-folder NAME` | `DSJ_MOD_FOLDER` | folder under `mods`, default `DontStarveLuaJit2` (unused when Workshop content exists) |
 | `--repo OWNER/NAME` | `DSJ_REPO` | GitHub repository, default `fesily/DontStarveLuaJIT2` |

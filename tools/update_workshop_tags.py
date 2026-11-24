@@ -613,7 +613,9 @@ def verify(item: int, version: str, before: dict, timeout: float, content_pushed
                 f"(SteamCMD with this account, or another platform) took this client's session and it "
                 f"never reconnects on its own; sign in again and re-run")
             log(f"hint: {logs / 'workshop_log.txt'} says 'Getting Workshop info … failed : No Connection' "
-                f"while the client has no session; a long uptime can also wedge UGC writes (restart helps)")
+                f"while the client has no session, or '… failed : File Not Found' when the client's own "
+                f"item cache is wedged; a long uptime can also wedge UGC writes — restart the Steam "
+                f"client and re-run (verify with the public API / --verify-content, never trust 'submitted')")
             return False
         time.sleep(5)
 
