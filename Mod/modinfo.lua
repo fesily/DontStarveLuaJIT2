@@ -44,7 +44,7 @@ priority                   = 2e53
 icon_atlas                 = "modicon.xml"
 icon                       = "modicon.tex"
 
-server_filter_tags         = { "DontStarveLuaJit2" }
+server_filter_tags         = { "DontStarveLuaJit2 v" .. version }
 
 mod_dependencies           = {
     -- "buttonpicker",

@@ -635,7 +635,7 @@ local function main()
 					end
 				end
 			end
-			require "config_patch_bootstrap.bootstrap" ()
+			require "config_patch_bootstrap.bootstrap" (modname)
 		end)
 	end
 
