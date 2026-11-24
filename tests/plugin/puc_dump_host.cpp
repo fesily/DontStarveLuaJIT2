@@ -408,11 +408,11 @@ bool call_at(lua_State *L, int idx, int nresults) {
 }
 
 std::string reference_bytes(const std::string &source, const char *chunkname, int result_index,
-                            int strip, std::string &error) {
+                            std::string &error) {
     void *data = nullptr;
     size_t size = 0;
     char err[512] = {0};
-    if (ds_ref_dump(source.data(), source.size(), chunkname, result_index, strip, &data, &size, err,
+    if (ds_ref_dump(source.data(), source.size(), chunkname, result_index, &data, &size, err,
                     sizeof(err)) == 0) {
         error = err;
         return std::string();
@@ -445,9 +445,10 @@ void check_pair(lua_State *L, const char *label, const std::string &source,
             return;
         }
     }
-    const int strip = (mode != nullptr && std::strchr(mode, 's') != nullptr) ? 1 : 0;
+    /* PUC 5.1's string.dump ignores extra arguments (lua_settop(L,1)); mode "s"
+    ** must still return the full, engine-identical dump. */
     std::string ref_error;
-    const std::string expected = reference_bytes(source, chunkname, result_index, strip, ref_error);
+    const std::string expected = reference_bytes(source, chunkname, result_index, ref_error);
     if (expected.empty()) {
         std::fprintf(stderr, "[self-test] reference dump failed for %s: %s\n", label,
                      ref_error.c_str());
@@ -552,9 +553,42 @@ void check_identity_edges(lua_State *L) {
     /* A root chunk that must not run: the service only ever compiles. */
     check_pair(L, "root chunk with a runtime error in its body",
                "error('must not execute')\nreturn function() return 1 end", "=poison", 0);
-    /* Strict mode strips the debug info; byte-for-byte with the reference. */
-    check_pair(L, "strip mode matches the reference", "return function(n) return n + 7 end",
+    /* The extra argument is ignored (PUC 5.1 has no strip mode): still the full
+    ** debug-bearing dump, byte-for-byte with the reference. */
+    check_pair(L, "second string.dump argument is ignored", "return function(n) return n + 7 end",
                "=strip", 1, "s");
+}
+
+void check_shebang_source(lua_State *L) {
+    /* LuaJIT's lexer skips a leading #! line (PUC 5.1 does so in loadfile, not
+    ** in loadbuffer). The host recompiles the captured source with
+    ** luaL_loadbuffer, so the capture must present the line as a blank line to
+    ** keep both the syntax and the engine's line numbering. */
+    const std::string raw = "#!/usr/bin/env lua\nreturn function() return 41 end";
+    std::string normalized = raw;
+    const size_t nl = normalized.find('\n');
+    for (size_t i = 0; i < nl; ++i) {
+        normalized[i] = ' ';
+    }
+    A.settop(L, 0);
+    if (!load_source(L, raw, "=shebang") || !call_at(L, 1, 1)) {
+        check(false, "shebang fixture compiles");
+        A.settop(L, 0);
+        return;
+    }
+    const DumpResult got = dump_at(L, 2, nullptr);
+    std::string ref_error;
+    const std::string expected = reference_bytes(normalized, "=shebang", 1, ref_error);
+    if (expected.empty()) {
+        std::fprintf(stderr, "[self-test] shebang reference failed: %s\n", ref_error.c_str());
+        check(false, "shebang reference dump");
+    } else {
+        check(got.ok, "shebang function dump succeeds");
+        if (got.ok) {
+            check(got.bytes == expected, "shebang dump keeps PUC 5.1 line numbering");
+        }
+    }
+    A.settop(L, 0);
 }
 
 void check_reader_paths(lua_State *L) {
@@ -574,7 +608,7 @@ void check_reader_paths(lua_State *L) {
     }
     const DumpResult got = dump_at(L, 3, nullptr);
     std::string ref_error;
-    const std::string expected = reference_bytes(assembled, "=puc_dump_dynamic", 1, 0, ref_error);
+    const std::string expected = reference_bytes(assembled, "=puc_dump_dynamic", 1, ref_error);
     check(got.ok && !expected.empty() && got.bytes == expected,
           "dynamically assembled source dumps identically");
     A.settop(L, 0);
@@ -631,7 +665,7 @@ void check_reader_paths(lua_State *L) {
     const bool without_bridge = run_one_byte(false, &calls_without, &ignored);
     *g_bridge = saved;
     std::string reader_ref_error;
-    const std::string reader_expected = reference_bytes(text, "=one_byte", 1, 0, reader_ref_error);
+    const std::string reader_expected = reference_bytes(text, "=one_byte", 1, reader_ref_error);
     check(with_bridge && without_bridge, "one-byte reader compiles both ways");
     check(calls_with == calls_without, "capture does not change the reader call count");
     check(!bytes.empty() && bytes == reader_expected,
@@ -660,9 +694,9 @@ void check_reader_paths(lua_State *L) {
     std::string outer_error;
     std::string nested_error;
     const std::string outer_expected =
-        reference_bytes("return function() return 9 end", "=outer", 0, 0, outer_error);
+        reference_bytes("return function() return 9 end", "=outer", 0, outer_error);
     const std::string nested_expected =
-        reference_bytes("return function() return 3 end", "=nested", 0, 0, nested_error);
+        reference_bytes("return function() return 3 end", "=nested", 0, nested_error);
     check(outer.ok && outer.bytes == outer_expected, "outer chunk captured across a nested load");
     check(nested.ok && nested.bytes == nested_expected, "nested load captured independently");
     A.settop(L, 0);
@@ -695,7 +729,7 @@ void check_gc_retention(lua_State *L) {
     A.gc(L, kGcCollect, 0);
     const DumpResult got = dump_at(L, 1, nullptr);
     std::string ref_error;
-    const std::string expected = reference_bytes(source, "=gc_retain", 1, 0, ref_error);
+    const std::string expected = reference_bytes(source, "=gc_retain", 1, ref_error);
     check(got.ok && !expected.empty() && got.bytes == expected,
           "nested closure still dumps after churn and full GC");
     A.settop(L, 0);
@@ -983,6 +1017,27 @@ void check_clear_entry(lua_State *L) {
     check(cleared_big >= 0.0, "clear ran with a live closure");
     check(released - baseline < 64 * 1024, "a cleared compile releases its text with the closure alive");
     A.settop(L, 0);
+
+    /* A prototype whose sizept crosses ArenaHugeThreshold lives in the huge set,
+    ** not in a POD arena bitmap; the clear must still reach its source. */
+    std::string huge = "return function() return {";
+    for (int i = 0; i < 65000; ++i) {
+        huge += std::to_string(i);
+        huge += ',';
+    }
+    huge += "} end";
+    A.settop(L, 0);
+    if (!load_source(L, huge, "=clear_huge") || !call_at(L, 1, 1)) {
+        check(false, "huge prototype fixture compiles");
+        return;
+    }
+    const DumpResult huge_before = dump_at(L, 2, nullptr);
+    check(huge_before.ok && huge_before.bytes.size() > 6, "huge prototype dumps before the clear");
+    const double cleared_huge = call_puc_dump_clear(L);
+    const DumpResult huge_after = dump_at(L, 2, nullptr);
+    check(cleared_huge >= 2.0, "clear reaches the huge prototype");
+    check(!huge_after.ok, "huge prototype source is cleared too");
+    A.settop(L, 0);
 }
 
 /* The private root is the only place injected state lives; the old top-level registry names
@@ -1096,6 +1151,7 @@ int run_self_test(Vm &vm) {
     check_private_root_runtime(L);
     check_exact_bytes(L);
     check_identity_edges(L);
+    check_shebang_source(L);
     check_reader_paths(L);
     check_gc_retention(L);
     check_error_branches(L, vm);

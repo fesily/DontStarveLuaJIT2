@@ -105,15 +105,16 @@ const Proto *nth_node(const Proto *proto, uint32_t index, uint32_t *cursor) {
 struct DumpCall {
     const Proto *target = nullptr;
     WriterCtx *writer = nullptr;
-    int strip = 0;
     int status = 0;
 };
 
 // Runs inside lua_cpcall: luaU_dump may raise a memory error from inside its
 // allocator, and an unprotected raise would reach the PUC panic handler.
+// PUC 5.1's string.dump has no strip argument (extra arguments are dropped and
+// lua_dump always writes debug info), so pass 0.
 int dump_protected(lua_State *L) {
     auto *call = static_cast<DumpCall *>(lua_touserdata(L, 1));
-    call->status = luaU_dump(L, call->target, write_buffer, call->writer, call->strip);
+    call->status = luaU_dump(L, call->target, write_buffer, call->writer, 0);
     return 0;
 }
 
@@ -209,7 +210,6 @@ int Dump(const lua_DsPucDumpRequest *request, lua_DsPucDumpResult *result) noexc
     DumpCall call;
     call.target = target;
     call.writer = &writer;
-    call.strip = request->strip != 0 ? 1 : 0;
     // Protect the dump: luaU_dump allocates, and an unprotected OOM would abort
     // the process through the PUC panic handler instead of failing this call.
     const int call_status = lua_cpcall(L, dump_protected, &call);

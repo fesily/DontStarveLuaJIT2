@@ -20,7 +20,7 @@ extern "C" {
 
 // 1 on success. On failure returns 0 and writes a NUL-terminated reason.
 int ds_ref_dump(const char *source, size_t source_len, const char *chunkname,
-                int result_index, int strip, void **out_data, size_t *out_size,
+                int result_index, void **out_data, size_t *out_size,
                 char *err, size_t err_cap);
 
 void ds_ref_free(void *data);

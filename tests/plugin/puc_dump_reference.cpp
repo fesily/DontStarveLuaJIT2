@@ -13,9 +13,6 @@
 extern "C" {
 #include "lua.h"
 #include "lauxlib.h"
-#include "lobject.h"
-#include "lstate.h"
-#include "lundump.h"
 }
 
 namespace {
@@ -46,23 +43,16 @@ int write_all(lua_State *, const void *p, size_t size, void *ud) {
     return 0;
 }
 
-/* Mirrors string.dump's second argument: lua_dump always writes the debug info,
-** so a strip request goes straight to the serializer payload. */
-int dump_value(lua_State *L, int strip, std::vector<char> &out) {
-    if (strip != 0) {
-        TValue *o = L->top - 1;
-        if (!isLfunction(o)) {
-            return 1;
-        }
-        return luaU_dump(L, clvalue(o)->l.p, write_all, &out, 1);
-    }
+/* PUC 5.1 string.dump has no strip argument: lua_dump always writes the debug
+** info, so this oracle always calls it the same way the engine does. */
+int dump_value(lua_State *L, std::vector<char> &out) {
     return lua_dump(L, write_all, &out);
 }
 
 } // namespace
 
 extern "C" int ds_ref_dump(const char *source, size_t source_len, const char *chunkname,
-                           int result_index, int strip, void **out_data, size_t *out_size,
+                           int result_index, void **out_data, size_t *out_size,
                            char *err, size_t err_cap) {
     if (out_data == nullptr || out_size == nullptr) {
         return 0;
@@ -87,7 +77,7 @@ extern "C" int ds_ref_dump(const char *source, size_t source_len, const char *ch
         /* Dump the loaded chunk itself without running it: the root prototype is a
         ** legitimate dump target and must never be executed to obtain it. */
         std::vector<char> bytes;
-        const int status = dump_value(L, strip, bytes);
+        const int status = dump_value(L, bytes);
         lua_close(L);
         if (status != 0) {
             set_err(err, err_cap, "lua_dump failed");
@@ -121,7 +111,7 @@ extern "C" int ds_ref_dump(const char *source, size_t source_len, const char *ch
     }
     lua_pushvalue(L, result_index);
     std::vector<char> bytes;
-    const int status = dump_value(L, strip, bytes);
+    const int status = dump_value(L, bytes);
     lua_close(L);
     if (status != 0) {
         set_err(err, err_cap, "lua_dump failed");
