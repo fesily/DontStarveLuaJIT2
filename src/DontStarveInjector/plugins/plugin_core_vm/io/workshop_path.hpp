@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace ds::injector::io {
@@ -44,7 +45,13 @@ inline std::optional<std::filesystem::path> map_workshop_mod_path(
     }
     auto mapped = workshop_root / std::string{split->mod_id};
     if (!split->relative.empty()) {
-        mapped /= std::string{split->relative};
+        // Name a directory level with either separator: on POSIX a backslash is
+        // an ordinary filename byte, so joining it verbatim yields one file.
+        std::string relative{split->relative};
+        for (char &c : relative) {
+            if (c == '\\') c = '/';
+        }
+        mapped /= relative;
     }
     return mapped;
 }
