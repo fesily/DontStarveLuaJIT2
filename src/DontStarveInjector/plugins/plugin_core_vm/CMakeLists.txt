@@ -39,7 +39,6 @@ set(PLUGIN_CORE_VM_GAME_SOURCES
     game/GameLuaContextJit.cpp
     game/GameLuaContextLua51.cpp
     game/CfunctionHook.cpp
-    game/DumpAttribution.cpp
     game/PrivateLuaRegistry.cpp
     game/InjectorFileHijack.cpp
     game/InjectorFileHijackInstall.cpp

@@ -3,7 +3,7 @@
 
 Flow, per round: stage the injector shell, install two local mods into
 ``<GAME_DIR>/mods/`` — the repo's own ``Mod`` tree as ``ds_harness_luajit_puc``
-(it installs the attribution manager) and ``tests/game_mods/puc_dump`` as
+(it installs the runtime/env hand-off) and ``tests/game_mods/puc_dump`` as
 ``ds_harness_puc_dump`` (the probe) — then boot the dedicated server with an
 isolated ``-persistent_storage_root`` and require, in modmain AND in worldgen:
 
@@ -13,11 +13,10 @@ For the plain probe both markers mean it compiled a function with ``GLOBAL.loads
 executed it, called the mod env's ``string.dump`` and got bytes whose first six
 bytes are the Lua 5.1 header (``\\27Lua\\81\\0``), then kept using the function.
 
-Round 2 is the persistence check: every ``luajit_mod_blacklist.json`` written in
-round 1 is copied into round 2's save root at the same relative path before the
-server starts, so the manager initializes from an existing record. A recorded mod
-must still load (main + worldgen) and still get real PUC bytecode — the record is
-a compatibility log, not a refusal.
+There is no per-mod dump policy or record any more: every Lua function dumps real
+PUC 5.1 bytecode while the bridge exists, and nothing is written to
+``unsafedata/``. The probe therefore only asserts the bytecode, the access
+matrix and the 30 s source-cache cleanup.
 
 Path handoff: ``--injector`` and ``--core-vm`` come from this build's CTest, so
 the run never falls back to whatever binaries happen to sit in ``Mod/deps``. The
@@ -31,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import json
 import os
 import shutil
 import sys
@@ -68,7 +66,6 @@ TOOL_SRC = ROOT / "Mod"
 TOOL_FOLDER = "ds_harness_luajit_puc"
 CLUSTER = "DsHarnessPucDump"
 SHARD = "Master"
-BLACKLIST_NAME = "luajit_mod_blacklist.json"
 
 TOKEN_MAIN = "[ds_luajit_env] main ok"
 TOKEN_WORLDGEN = "[ds_luajit_env] worldgen ok"
@@ -194,23 +191,6 @@ def run_round(
 
     refused = [pattern for pattern in REFUSAL_EVIDENCE if proc.logs.contains(pattern)]
     failures = [pattern for pattern in FAILURE_EVIDENCE if proc.logs.contains(pattern)]
-    records = sorted(persist_root.rglob(BLACKLIST_NAME))
-    contents: dict[Path, str] = {}
-    for record in records:
-        contents[record] = record.read_text(encoding="utf-8", errors="replace").strip()
-
-    only_probe = True
-    for path, text in contents.items():
-        try:
-            decoded = json.loads(text)
-        except ValueError as exc:
-            print(f"[harness] {label}: {path.name} is not JSON ({exc})")
-            only_probe = False
-            continue
-        if not isinstance(decoded, list) or sorted(decoded) != [PROBE_FOLDER]:
-            print(f"[harness] {label}: unexpected record in {path.name}: {decoded}")
-            only_probe = False
-
     missing_markers = []
     for folder, _ in PROBES:
         if not proc.logs.contains(f"{TOKEN_MAIN} {folder}"):
@@ -219,6 +199,11 @@ def run_round(
             missing_markers.append(f"{folder}: no worldgen marker")
 
     ok = True
+    records = sorted(persist_root.rglob("luajit_mod_blacklist.json"))
+    if records:
+        print(f"[harness] {label}: unexpected ledger record: "
+              f"{[str(r.relative_to(persist_root)) for r in records]}")
+        ok = False
     if missing_markers:
         print(f"[harness] {label}: probe markers missing: {missing_markers}")
         ok = False
@@ -246,33 +231,13 @@ def run_round(
     if failures:
         print(f"[harness] {label}: failure evidence present: {failures}")
         ok = False
-    if not records:
-        print(f"[harness] {label}: no {BLACKLIST_NAME} under {persist_root}")
-        ok = False
-    if not only_probe:
-        print(f"[harness] {label}: unexpected records: {contents}")
-        ok = False
     if ok:
-        print(f"[harness] {label}: markers ok, cleanup ok, "
-              f"records={[str(r.relative_to(persist_root)) for r in records]}")
+        print(f"[harness] {label}: markers ok, cleanup ok, no ledger record")
     print(f"[harness] {label}: exit status {_fmt_status(status)}")
     if not ok:
         print("[harness] --- log tail ---")
         print(tail(proc.logs.joined()))
     return ok, proc
-
-
-def copy_records(source_root: Path, target_root: Path) -> int:
-    """Copy every blacklist file from round 1 into round 2, same relative path."""
-    copied = 0
-    for source in sorted(source_root.rglob(BLACKLIST_NAME)):
-        relative = source.relative_to(source_root)
-        target = target_root / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
-        copied += 1
-        print(f"[harness] carried record {relative}")
-    return copied
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -318,32 +283,23 @@ def main(argv: list[str]) -> int:
     timeout = float(os.environ.get("DS_T_PUC_DUMP", "300"))
     work = Path(tempfile.mkdtemp(prefix="ds_puc_dump_"))
     round1 = work / "round1"
-    round2 = work / "round2"
 
     ok1 = False
-    ok2 = False
     try:
         with contextlib.ExitStack() as stack:
             for folder, src in PROBES:
                 stack.enter_context(injected_mod(game_dir, src, folder))
             stack.enter_context(injected_mod(game_dir, TOOL_SRC, TOOL_FOLDER))
             ok1, _ = run_round(game_dir, round1, inject_env, timeout, "round1")
-            if ok1:
-                if copy_records(round1, round2) == 0:
-                    print("[harness] FAIL: round1 produced no record to carry")
-                    ok1 = False
-                else:
-                    ok2, _ = run_round(game_dir, round2, inject_env, timeout, "round2")
     finally:
-        for tree in (round1, round2):
-            if tree.exists():
-                remove_persist_tree(tree)
+        if round1.exists():
+            remove_persist_tree(round1)
         shutil.rmtree(work, ignore_errors=True)
 
-    if ok1 and ok2:
-        print(f"[harness] PASS: {TOKEN_MAIN} + {TOKEN_WORLDGEN} in both rounds, record carried")
+    if ok1:
+        print(f"[harness] PASS: {TOKEN_MAIN} + {TOKEN_WORLDGEN} + cleanup, no policy record")
         return 0
-    print(f"[harness] FAIL: round1={ok1} round2={ok2}")
+    print(f"[harness] FAIL: round1={ok1}")
     return 1
 
 

@@ -101,11 +101,6 @@ struct Api {
 
 Api A{};
 
-/* The attribution bridge (puc_dump_attribution_host.cpp) is a separate TU: it needs the
-** plugin's LuaApis/lua.hpp, while this host deliberately uses a minimal void* ABI. */
-extern "C" int ds_host_install_dump_attribution(void *handle, void *state);
-void *g_vm_handle = nullptr;
-
 struct Vm {
     void *handle = nullptr;
     void **bridge_slot = nullptr;
@@ -193,11 +188,9 @@ bool resolve_api(void *handle) {
 }
 
 // ---------------------------------------------------------------------------
-// Bridge policy, release counting and the controlled allocator
+// Bridge service, release counting and the controlled allocator
 // ---------------------------------------------------------------------------
 
-const char *g_policy_name = nullptr;
-int g_policy_calls = 0;
 int g_release_count = 0;
 void *g_pending_owner = nullptr;
 void (*g_pending_release)(void *) = nullptr;
@@ -232,16 +225,6 @@ int counting_dump(const lua_DsPucDumpRequest *request, lua_DsPucDumpResult *resu
         }
     }
     return ok;
-}
-
-int policy_cfunc(lua_State *L) {
-    ++g_policy_calls;
-    if (g_policy_name == nullptr) {
-        A.pushnil(L);
-    } else {
-        A.pushstring(L, g_policy_name);
-    }
-    return 1;
 }
 
 void *test_alloc(void *ud, void *ptr, size_t /*osize*/, size_t nsize) {
@@ -346,9 +329,8 @@ std::string lua_string_at(lua_State *L, int idx) {
     return p != nullptr ? std::string(p, n) : std::string();
 }
 
-/* The attribution policy lives in the private root (LUA_REGISTRYINDEX2, not in the public
-** registry at all); the production string.dump hook (DumpAttribution.cpp) reads it from there.
-** It is a normal C API pseudo-index, exactly like LUA_REGISTRYINDEX.
+/* LUA_REGISTRYINDEX2 is the per-state private root: a normal C API pseudo-index, exactly like
+** LUA_REGISTRYINDEX, and not reachable through the public registry at all.
 */
 bool push_private_root(lua_State *L) {
     const int base = A.gettop(L);
@@ -359,20 +341,6 @@ bool push_private_root(lua_State *L) {
         return false;
     }
     return true;
-}
-
-void install_policy(lua_State *L, bool with_policy) {
-    const int base = A.gettop(L);
-    if (!push_private_root(L)) {
-        return;
-    }
-    if (with_policy) {
-        A.pushcclosure(L, &policy_cfunc, 0);
-    } else {
-        A.pushnil(L);
-    }
-    A.setfield(L, -2, "LJ_DS_PUC51_DUMP_POLICY");
-    A.settop(L, base);
 }
 
 // Calls string.dump on the value at `idx`; leaves the stack unchanged.
@@ -486,11 +454,7 @@ void check_pair(lua_State *L, const char *label, const std::string &source,
         check(false, label);
         return;
     }
-    install_policy(L, true);
-    g_policy_name = "workshop-selftest";
     const DumpResult got = dump_at(L, target, mode);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     if (!got.ok) {
         std::fprintf(stderr, "[self-test] mod dump failed for %s: %s\n", label, got.error.c_str());
         check(false, label);
@@ -512,8 +476,6 @@ void check_pair(lua_State *L, const char *label, const std::string &source,
 
 void check_native_baseline(lua_State *L) {
     A.settop(L, 0);
-    g_policy_name = nullptr;
-    install_policy(L, false);
     const std::string source = "return function(n) return n + 7 end";
     if (!load_source(L, source, "=native_baseline") || !call_at(L, 1, 1)) {
         check(false, "native baseline compiles and runs");
@@ -521,26 +483,12 @@ void check_native_baseline(lua_State *L) {
     }
     const DumpResult dumped = dump_at(L, 2, nullptr);
     check(dumped.ok, "baseline dumps");
-    /* While the host bridge exists the return format is not a policy decision:
-    ** every Lua function dumps real PUC 5.1 bytecode, exactly like stock PUC 5.1
-    ** (the policy only names the caller). Native LuaJIT bytes are the host-off
-    ** case, covered by --expect-native. */
+    /* While the host bridge exists every Lua function dumps real PUC 5.1 bytecode, exactly
+    ** like stock PUC 5.1. Native LuaJIT bytes are the host-off case, covered by
+    ** --expect-native. */
     check(is_puc_dump(dumped.bytes), "baseline dump is PUC 5.1 bytecode while the bridge exists");
 
-    /* A policy answering nil must keep exactly the same bytes, and the hook must be the only
-    ** caller: the VM-side callback was removed, so a resurrected one would make this 2. */
-    install_policy(L, true);
-    g_policy_name = nullptr;
-    g_policy_calls = 0;
-    const DumpResult nil_policy = dump_at(L, 2, nullptr);
-    install_policy(L, false);
-    check(nil_policy.ok && nil_policy.bytes == dumped.bytes,
-          "policy answer does not change the dump format");
-    check(g_policy_calls == 1, "the string.dump hook calls the policy exactly once per dump");
-
-    /* The C API must keep the LuaJIT format too, with a policy installed. */
-    g_policy_name = "workshop-selftest";
-    install_policy(L, true);
+    /* The C API must keep the LuaJIT format too. */
     struct Sink {
         std::string bytes;
     } sink;
@@ -552,8 +500,6 @@ void check_native_baseline(lua_State *L) {
         return 0;
     }, &sink);
     A.settop(L, base);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     check(status == 0 && sink.bytes.size() > 3 &&
               static_cast<unsigned char>(sink.bytes[0]) == 0x1b && sink.bytes[1] == 'L' &&
               sink.bytes[2] == 'J',
@@ -572,11 +518,7 @@ void check_exact_bytes(lua_State *L) {
         check(false, "reference execution of the dump");
         return;
     }
-    install_policy(L, true);
-    g_policy_name = "workshop-selftest";
     const DumpResult got = dump_at(L, 2, nullptr);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     double value = 0.0;
     char err[512] = {0};
     const int ran = got.ok ? ds_ref_execute(got.bytes.data(), got.bytes.size(), 5.0, &value, err,
@@ -630,11 +572,7 @@ void check_reader_paths(lua_State *L) {
         check(false, "dynamic source runs");
         return;
     }
-    install_policy(L, true);
-    g_policy_name = "workshop-selftest";
     const DumpResult got = dump_at(L, 3, nullptr);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     std::string ref_error;
     const std::string expected = reference_bytes(assembled, "=puc_dump_dynamic", 1, 0, ref_error);
     check(got.ok && !expected.empty() && got.bytes == expected,
@@ -675,11 +613,7 @@ void check_reader_paths(lua_State *L) {
             A.settop(L, 0);
             return true;
         }
-        install_policy(L, true);
-        g_policy_name = "workshop-selftest";
         const DumpResult got = dump_at(L, 3, nullptr);
-        install_policy(L, false);
-        g_policy_name = nullptr;
         if (got.ok) {
             *bytes_out = got.bytes;
         }
@@ -721,12 +655,8 @@ void check_reader_paths(lua_State *L) {
         check(false, "nested-load driver runs");
         return;
     }
-    install_policy(L, true);
-    g_policy_name = "workshop-selftest";
     const DumpResult outer = dump_at(L, 2, nullptr);
     const DumpResult nested = dump_at(L, 3, nullptr);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     std::string outer_error;
     std::string nested_error;
     const std::string outer_expected =
@@ -763,11 +693,7 @@ void check_gc_retention(lua_State *L) {
         A.settop(L, 1);
     }
     A.gc(L, kGcCollect, 0);
-    install_policy(L, true);
-    g_policy_name = "workshop-selftest";
     const DumpResult got = dump_at(L, 1, nullptr);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     std::string ref_error;
     const std::string expected = reference_bytes(source, "=gc_retain", 1, 0, ref_error);
     check(got.ok && !expected.empty() && got.bytes == expected,
@@ -805,7 +731,6 @@ void check_error_branches(lua_State *L, Vm &vm) {
         check(false, "reload fixture compiles");
         return;
     }
-    install_policy(L, false);
     /* lua_dump keeps the LuaJIT format even with the bridge installed, so it is the
     ** bytecode source here; the bridged string.dump would hand back PUC bytes that
     ** this VM refuses to reload (LJ_DS_REJECT_BINARY_CHUNKS). */
@@ -829,11 +754,7 @@ void check_error_branches(lua_State *L, Vm &vm) {
         return;
     }
     check(allowed, "lua_ds_allow_lj_bytecode available for the reload fixture");
-    install_policy(L, true);
-    g_policy_name = "workshop-selftest";
     const DumpResult reloaded = dump_at(L, 1, nullptr);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     check(!reloaded.ok, "bytecode reload has no source to convert");
     check_contains(reloaded.error, "source unavailable", "bytecode reload error text");
     A.settop(L, 0);
@@ -842,11 +763,7 @@ void check_error_branches(lua_State *L, Vm &vm) {
     const std::string goto_source = "return function() goto done ::done:: return 1 end";
     A.settop(L, 0);
     if (load_source(L, goto_source, "=goto")) {
-        install_policy(L, true);
-        g_policy_name = "workshop-selftest";
         const DumpResult rejected = dump_at(L, 1, nullptr);
-        install_policy(L, false);
-        g_policy_name = nullptr;
         check(!rejected.ok, "PUC-incompatible source is reported, not faked");
         check_contains(rejected.error, "PUC 5.1 string.dump failed",
                        "PUC-incompatible source error text");
@@ -906,11 +823,7 @@ void check_error_branches(lua_State *L, Vm &vm) {
     }
     void *saved = *vm.bridge_slot;
     *vm.bridge_slot = nullptr;
-    install_policy(L, true);
-    g_policy_name = "workshop-selftest";
     const DumpResult unbridged = dump_at(L, 2, nullptr);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     *vm.bridge_slot = saved;
     check(!unbridged.ok, "missing bridge fails instead of faking bytecode");
     check_contains(unbridged.error, "bridge unavailable", "missing bridge error text");
@@ -924,17 +837,13 @@ void check_error_branches(lua_State *L, Vm &vm) {
     A.settop(L, 0);
 
     /* 5. Mod PUC bytecode is not loadable by the LuaJIT VM, and non-function
-    ** arguments keep their original error even with a policy installed. */
+    ** arguments keep the original LuaJIT error. */
     A.settop(L, 0);
     if (!load_source(L, source, "=nocross") || !call_at(L, 1, 1)) {
         check(false, "cross-load fixture compiles");
         return;
     }
-    install_policy(L, true);
-    g_policy_name = "workshop-selftest";
     const DumpResult puc = dump_at(L, 2, nullptr);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     A.settop(L, 0);
     check(puc.ok && puc.bytes.size() > 3, "mod dump produced for the cross-load check");
     if (puc.ok && !puc.bytes.empty()) {
@@ -944,11 +853,7 @@ void check_error_branches(lua_State *L, Vm &vm) {
     }
 
     A.getfield(L, kGlobalsIndex, "print");
-    install_policy(L, true);
-    g_policy_name = "workshop-selftest";
     const DumpResult cfunc = dump_at(L, 1, nullptr);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     check(!cfunc.ok, "dumping a C function still fails");
     check_contains(cfunc.error, "unable to dump given function", "C function keeps its error");
     check_absent(cfunc.error, "PUC 5.1", "C function error is not a PUC error");
@@ -990,8 +895,6 @@ void check_copy_oom(Vm &vm) {
     ** constant, which is what makes the dump itself large. */
     void *saved = *vm.bridge_slot;
     *vm.bridge_slot = reinterpret_cast<void *>(&counting_dump);
-    install_policy(L, true);
-    g_policy_name = "workshop-oom";
 
     g_release_count = 0;
     g_alloc = &ctl;
@@ -1024,8 +927,6 @@ void check_copy_oom(Vm &vm) {
     check(ok.ok, "dump works again after the OOM");
     check(g_release_count == 1, "host buffer released exactly once on success");
 
-    install_policy(L, false);
-    g_policy_name = nullptr;
     *vm.bridge_slot = saved;
     A.close(L);
 }
@@ -1039,20 +940,12 @@ void check_clear_entry(lua_State *L) {
         check(false, "clear fixture compiles");
         return;
     }
-    install_policy(L, true);
-    g_policy_name = "workshop-clear";
     const DumpResult before = dump_at(L, 2, nullptr);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     check(before.ok && before.bytes.size() > 6, "dump works before the clear");
 
     const double cleared = call_puc_dump_clear(L);
     check(cleared >= 1.0, "clear reports the prototypes it dropped");
-    install_policy(L, true);
-    g_policy_name = "workshop-clear";
     const DumpResult after = dump_at(L, 2, nullptr);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     check(!after.ok, "dump after the clear reports a failure, not fake bytes");
     check_contains(after.error, "source unavailable", "cleared source error text");
 
@@ -1062,11 +955,7 @@ void check_clear_entry(lua_State *L) {
         check(false, "post-clear fixture compiles");
         return;
     }
-    install_policy(L, true);
-    g_policy_name = "workshop-clear";
     const DumpResult again = dump_at(L, 2, nullptr);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     check(again.ok && again.bytes.size() > 6, "a later compile captures its source again");
     A.settop(L, 0);
 
@@ -1096,19 +985,11 @@ void check_clear_entry(lua_State *L) {
     A.settop(L, 0);
 }
 
-/* The private root is the only place injected state lives: the dump attribution policy is a
-** field of it (read by the hook, not by the VM), and the old top-level registry names
+/* The private root is the only place injected state lives; the old top-level registry names
 ** (_VMEVENTS, a bare policy key) are gone. */
-void check_policy_location(lua_State *L) {
-    install_policy(L, true);
+void check_private_root_layout(lua_State *L) {
     const int base = A.gettop(L);
     check(push_private_root(L), "private root reachable through the VM helper");
-    A.getfield(L, -1, "LJ_DS_PUC51_DUMP_POLICY");
-    check(A.type(L, -1) == kTFunction, "the dump policy lives in the private root");
-    A.settop(L, base);
-    A.pushstring(L, "LJ_DS_PUC51_DUMP_POLICY");
-    A.rawget(L, kRegistryIndex);
-    check(A.type(L, -1) == kTNil, "no top-level policy key survives");
     A.settop(L, base);
     A.pushstring(L, "_VMEVENTS");
     A.rawget(L, kRegistryIndex);
@@ -1131,8 +1012,6 @@ void check_policy_location(lua_State *L) {
     A.pushstring(L, "registry2_probe");
     A.pushnil(L);
     A.rawset(L, kRegistry2Index);
-
-    install_policy(L, false);
 }
 
 /* One Lua scene for the shared private services: the C-function proxies (allow / replace /
@@ -1211,14 +1090,9 @@ int run_self_test(Vm &vm) {
         return 1;
     }
     A.L_openlibs(L);
-    if (ds_host_install_dump_attribution(g_vm_handle, L) == 0) {
-        std::fprintf(stderr, "[self-test] cannot install the string.dump attribution hook\n");
-        A.close(L);
-        return 1;
-    }
 
     check_native_baseline(L);
-    check_policy_location(L);
+    check_private_root_layout(L);
     check_private_root_runtime(L);
     check_exact_bytes(L);
     check_identity_edges(L);
@@ -1240,20 +1114,6 @@ int run_script(const std::string &path, int argc, char **argv) {
         return 1;
     }
     A.L_openlibs(L);
-    /* The shipped attribution path: the hook calls the manager's private-root policy, the VM
-    ** path is pure C. A failure here would silently turn every record assertion into a lie. */
-    if (ds_host_install_dump_attribution(g_vm_handle, L) == 0) {
-        std::fprintf(stderr, "[puc-dump-host] cannot install the string.dump attribution hook\n");
-        A.close(L);
-        return 1;
-    }
-
-    /* Test-only bootstrap: script-mode fixtures need the private root, and the VM no longer
-    ** exposes a Lua accessor for it. Production callers get the root from
-    ** InitializeModEnvironment instead. */
-    if (push_private_root(L)) {
-        A.setfield(L, kGlobalsIndex, "__ds_test_private_root");
-    }
 
     /* `arg` mirrors the interpreter: arg[0] is the script path, then its args. */
     A.createtable(L, argc + 1, 0);
@@ -1315,20 +1175,16 @@ int run_expect_native(Vm &vm) {
         A.close(L);
         return 1;
     }
-    /* A registry policy must have no effect when the feature is compiled out. */
-    install_policy(L, true);
-    g_policy_name = "workshop-native";
+    /* A compile-out VM keeps its native dump format. */
     const DumpResult dumped = dump_at(L, 1, nullptr);
-    install_policy(L, false);
-    g_policy_name = nullptr;
     const bool lj_header = dumped.ok && dumped.bytes.size() > 3 &&
                            static_cast<unsigned char>(dumped.bytes[0]) == 0x1b &&
                            dumped.bytes[1] == 'L' && dumped.bytes[2] == 'J';
     if (!lj_header) {
-        std::fprintf(stderr, "[expect-native] FAIL: policy changed the dump format\n");
+        std::fprintf(stderr, "[expect-native] FAIL: the native dump format changed\n");
         ++failures;
     } else {
-        std::printf("[expect-native] policy ignored, dump stays LuaJIT bytecode\n");
+        std::printf("[expect-native] dump stays LuaJIT bytecode\n");
         const int loaded =
             A.L_loadbuffer(L, dumped.bytes.data(), dumped.bytes.size(), "=native_reload");
         if (loaded != 0) {
@@ -1398,7 +1254,6 @@ int main(int argc, char **argv) {
 
     Vm vm;
     vm.handle = open_library(vm_path);
-    g_vm_handle = vm.handle;
     if (vm.handle == nullptr) {
         std::fprintf(stderr, "[puc-dump-host] cannot load %s: %s\n", vm_path.c_str(),
                      library_error().c_str());

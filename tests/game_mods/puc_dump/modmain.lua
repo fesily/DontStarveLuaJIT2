@@ -1,9 +1,8 @@
 -- LuaJIT VM: a mod's string.dump must produce genuine PUC Lua 5.1 bytecode.
--- This also records this mod in unsafedata/luajit_mod_blacklist.json.
 --
 -- The mod env is a whitelist (no loadstring/type/assert), so every privileged API
 -- goes through GLOBAL; only `string` is taken from the env, because that is the
--- table whose `dump` the VM policy fronts.
+-- table whose `dump` the VM's PUC 5.1 bridge fronts.
 local G = GLOBAL
 local tag = "main"
 

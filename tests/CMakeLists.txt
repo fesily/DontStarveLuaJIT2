@@ -529,11 +529,6 @@ add_test(NAME external_plugin_discovery COMMAND test_external_plugin_discovery)
 add_executable(test_puc_dump_host
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/puc_dump_host.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/plugin/puc_dump_reference.cpp
-    # The production string.dump attribution (hook + policy + private root) runs in the host
-    # too, so the Lua spec proves the shipped path end to end.
-    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/puc_dump_attribution_host.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/game/CfunctionHook.cpp
-    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/game/DumpAttribution.cpp
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/plugins/plugin_core_vm/game/PrivateLuaRegistry.cpp)
 target_include_directories(test_puc_dump_host PRIVATE
     ${CMAKE_SOURCE_DIR}/src/DontStarveInjector
@@ -661,33 +656,6 @@ add_test(
 )
 set_tests_properties(plugin_package_load PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-
-# The Lua spec runs inside the real VM through the dual-VM host: no bare or
-# system Lua fallback, and the arena-GC VM is a second registration so both GC
-# implementations answer the same for the same scripts.
-add_test(
-    NAME plugin_mod_blacklist
-    COMMAND ${CMAKE_COMMAND} -E env
-        REPO_ROOT=${CMAKE_SOURCE_DIR}
-        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_mod_blacklist.py
-        --host $<TARGET_FILE:test_puc_dump_host>
-        --vm $<TARGET_FILE:luajit-5.1>
-)
-set_tests_properties(plugin_mod_blacklist PROPERTIES
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    TIMEOUT 600)
-
-add_test(
-    NAME plugin_mod_blacklist_arenagc
-    COMMAND ${CMAKE_COMMAND} -E env
-        REPO_ROOT=${CMAKE_SOURCE_DIR}
-        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_mod_blacklist.py
-        --host $<TARGET_FILE:test_puc_dump_host>
-        --vm $<TARGET_FILE:luajit-5.1-arenagc>
-)
-set_tests_properties(plugin_mod_blacklist_arenagc PROPERTIES
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    TIMEOUT 600)
 
 add_test(
     NAME plugin_option_bake

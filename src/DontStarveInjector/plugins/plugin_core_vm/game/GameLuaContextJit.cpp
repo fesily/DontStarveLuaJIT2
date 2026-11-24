@@ -67,7 +67,6 @@ struct GameLuaContextJit : GameLuaContextImpl {
         // host service instead of defining a same-named function.
         // A missing slot/service is reported here and surfaces to the mod as
         // "bridge unavailable" - never as silently invented LuaJIT bytecode.
-        bool dump_bridge = false;
         if (LuaModule != nullptr) {
             auto *slot = reinterpret_cast<void **>(
                 find_export_by_name(LuaModule, "lj_ds_puc_dump"));
@@ -83,14 +82,9 @@ struct GameLuaContextJit : GameLuaContextImpl {
                 if (*slot != reinterpret_cast<void *>(dump)) {
                     spdlog::error("lj_ds_puc_dump slot fill failed; "
                                   "mod string.dump reports bridge unavailable");
-                } else {
-                    dump_bridge = true;
                 }
             }
         }
-        // The per-state string.dump hook exists only where a conversion can happen; a VM
-        // without the bridge keeps the native dump and records nothing.
-        ds::core_vm::detail::set_puc_dump_available(dump_bridge);
         if (!GameLuaContextImpl::ReplaceApis(signatures, exports)) return false;
         init_luajit_io(LuaModule);
         load_game_fn_io_open(signatures);

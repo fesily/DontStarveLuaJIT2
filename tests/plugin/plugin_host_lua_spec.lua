@@ -1601,7 +1601,7 @@ local function test_jit_runtime_enable_matrix()
         assert_eq(host_nojit:status("jit.runtime"), STATUS.Disabled, "jit.runtime no-luajit Disabled")
 
         -- GLOBAL/package scrubbing and per-env grants moved to the state manager
-        -- (scripts/luajit_mod_blacklist.lua). jit.runtime must leave both alone, even when the
+        -- (scripts/luajit_env_runtime.lua). jit.runtime must leave both alone, even when the
         -- removed HideGlobalJIT key is still present in an old config.
         rawset(_G, "jit", jit_stub)
         local host_hide = PluginHost.new()

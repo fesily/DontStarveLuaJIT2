@@ -9,17 +9,15 @@
 -- inject: a mod that declares `modinfo.luajit_compatible` (and this mod's own faces) gets a
 --   per-env grant: private containers pointing at the same function objects, the real
 --   package overlay, and the private jit.* loader. The installing mod also sees the real
---   registry; our own faces (grant_plugin_view) see a view whose `_G` is the view itself and
---   whose writes land in the real GLOBAL.
+--   registry; our own faces (grant_plugin_view) see a view whose writes land in the real
+--   GLOBAL. `GLOBAL` is the one granted surface; `_G` is not written into any env (a stock mod
+--   env does not define it, and relying on it would be guessing the engine's semantics).
 --
--- The string.dump ledger and its caller attribution live in
--- scripts/luajit_mod_blacklist.lua. This module owns no policy about which mod is
--- recorded: `declares_compat` is the only grant rule and `register_env` is the one place
--- that decides grant vs scrub.
+-- No module above this one owns a per-mod dump policy: `declares_compat` is the only grant
+-- rule and `register_env` is the one place that decides grant vs scrub.
 --
 -- Chunk env: the mod env (loaded through modrequire), so privileged APIs come from the api
--- table the caller built; only `type` and the string/table methods are read from the chunk
--- env, exactly like the blacklist module.
+-- table the caller built; only `type` and the string/table methods are read from the chunk env.
 
 local function is_valid_modname(name)
 	if type(name) ~= "string" or name == "" then
@@ -238,7 +236,6 @@ function Surface:grant(env, is_installer)
 			self.global[key] = value
 		end,
 	})
-	api.rawset(proxy, "_G", proxy)
 	for _, name in api.pairs({"jit", "bit", "ffi", "debug", "table", "string"}) do
 		if copies[name] ~= nil then
 			api.rawset(proxy, name, copies[name])
@@ -282,8 +279,10 @@ end
 
 -- The authorised view our own Lua faces run in (Mod/plugins/*, plugin packages and the
 -- scripts loaded next to them). Same grant as the installing mod, plus the two injector
--- tables, and `_G` is the view itself: a normal lookup finds the granted surface, and engine
--- globals still fall through to the real GLOBAL. Built once per state.
+-- tables: plain names resolve to the granted surface (jit/ffi/.../GameInjector), `GLOBAL` is the
+-- proxy whose reads and writes reach the real GLOBAL, and `_G` is not defined here (it resolves
+-- to the real GLOBAL through the fallthrough, exactly like every other engine name). Built once
+-- per state.
 function Surface:grant_plugin_view()
 	local api = self.api
 	if self.plugin_view ~= nil then
@@ -297,7 +296,6 @@ function Surface:grant_plugin_view()
 		__index = self.global,
 		__newindex = self.global,
 	})
-	api.rawset(view, "_G", view)
 	api.rawset(view, "GameInjector", api.rawget(self.root, "GameInjector"))
 	api.rawset(view, "GameLuaInjector", api.rawget(self.root, "GameLuaInjector"))
 	-- Add*PostInit are installed into each mod env by the engine, not into GLOBAL; our faces

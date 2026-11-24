@@ -82,8 +82,8 @@ local function HookKleiloadlua(encryptedMods, frostxxMods, injector, ctx)
 
     local hmask = table_hmask(frostxxMods)
     -- Heuristically detected encrypted mods get PROTO_NOJIT so the encrypted
-    -- loader never runs under the JIT. This is not the string.dump attribution
-    -- record (scripts/luajit_mod_blacklist.lua) and never feeds it.
+    -- loader never runs under the JIT. This is not a string.dump record: no
+    -- per-mod dump policy exists.
     local emask = table_hmask(encryptedMods)
     if hmask > 0 or emask > 0 then
         local _kleiloadlua = kleiloadlua
