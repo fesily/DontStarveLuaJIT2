@@ -2,6 +2,14 @@
 
 ## 未发布
 
+- 修复 **开启「顶点缓冲池」（`render.vbpool`）后宿主内存随游戏时长单调上升**（`plugins/plugin_render_vbpool/BufferNamePool.hpp`，采纳 issue #54 / @BB-GOAT `d486378` 的方向）。淘汰队列 `globalFifo_` 在每次归还时 push，而 `acquire` 与桶满淘汰都不删除对应条目，只有触发全局上限、真的走到 `evictOldest` 时才顺带丢弃——正常游玩时上限几乎不碰，于是每次流式 VB 归还都留一条 16 字节死记录：100 万次单键复用后队列 100 万条而 `pooled=0`、`sideMap=0`（纯垃圾）；残留旧记录还会把刚复用的 name 提前淘汰。现在队列改为 `std::list`，桶元素保存 `{name, 队列迭代器}`，`acquire` 与两条淘汰路径都精确 `erase` 自己的记录：一个入池 name 恰好一条记录，队列长度 ≤ `totalPooled_`（新增 `totalQueued()` 供测试断言）；因桶里存的是迭代器，删除了池的拷贝构造与赋值。
+
+- 修复 **全局字节预算超限只淘汰一条就放行**：池内 64 个 1MB 时归还 8MB，旧代码只淘汰 1MB，入池后 71MB 超预算。现在循环淘汰全局最旧条目直到装得下，装不下就返回 `false`（调用方保留 `glBufferID` 交给引擎 `glDeleteBuffers`）；单个缓冲（原始 `byteSize` 或其容量桶）超过全部预算时直接拒绝，不再先排空空闲池。
+
+- 辅助修复（本分支新增）：`byteSize > 2^31` 的容量取整 `v++` 回绕（落进 64 字节桶，预算失真且能被 8 字节请求复用；恰好 2^31 不触发）现在截到 `0x80000000`，这类缓冲永远超预算、不入池；容量桶计算收敛为 `BufferNamePool::bucketOf()` 单一实现，删除 `GameRenderHook.cpp` 的 `roundUpPow2_min64` 重复副本（两份漂移会让 `sideMap` 记录的桶与池键不一致）。
+
+- 验证：`BufferNamePool`（doctest，9 → 18 cases / 4,052,937 assertions）。含 issue #54 的 5 个回归用例：100 万次复用队列恒为 0/1、桶内淘汰后队列长度 ≤ 桶容量、归还 8MB 连续淘汰 8 个 1MB（顺序 1..8）、超大缓冲不淘汰存量、复用刷新全局淘汰顺序（复用 1 后淘汰 2 而不是 1）。本分支另加 4 个：反复复用的**存活堆分配**增量须 ≤16（实测 0）、填满预算收 4MB 淘汰 4 个最旧且 `sideMap` 条目已清除、桶满淘汰同样清除队列与 `sideMap`、`>2^31` 拒绝且不动存量。牙：把 `acquire` 与桶满两条 `globalFifo_.erase` 去掉，6 个用例变红（churn 打印存活分配增量 200000 > 16）。`RelWithDebInfo` 与 `Debug` 下 `test_buffer_name_pool`、`plugin_render_vbpool.dll` 构建通过，`ctest -R '^BufferNamePool$'` 通过（0.24 s，Debug 1.5 s）。
+
 ## 3.5.4
 
 - 修复 **`da5b9f0` 引入的 Workshop 路径重复模组 ID**（`plugins/plugin_core_vm/io/gameio.cpp` 的 `lj_fpath_format`）。当 `<游戏>/mods/workshop-<id>` 不存在、需要按 Workshop 内容根解析时，旧代码把仍带 `<id>/` 的 `left_path` 拼到已经包含 ID 的 `workshop_mod` 上，得到 `<content>/<id>/<id>/<file>`。凡是通过 Lua 侧文件访问（`dofile`/`loadfile`/`io2`）打开的工坊模组文件都会指向不存在的目录：专用服实测 `cannot open ../mods/workshop-3435352667/main/ia_preparedfoods.lua: No error`，随后「岛屿冒险 - 核心」被禁用（`ia_loader_utils.lua` 的 `dofile` 路径失败，引擎的 prefab 校验级联）。现在只拼接 ID 之后的相对段，并把纯映射抽到 `io/workshop_path.hpp`。

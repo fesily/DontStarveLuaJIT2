@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
+#include <list>
 #include <unordered_map>
 #include <vector>
 
@@ -28,16 +28,35 @@ struct BufferPoolKeyHash {
 };
 
 class BufferNamePool {
+    using Fifo = std::list<std::pair<BufferPoolKey, uint32_t>>;
+    struct PooledName {
+        uint32_t       name;
+        Fifo::iterator fifoEntry;
+    };
+
 public:
+    BufferNamePool() = default;
+    // Buckets hold iterators into this pool's FIFO; a copy would reference the
+    // source pool's queue.
+    BufferNamePool(const BufferNamePool&) = delete;
+    BufferNamePool& operator=(const BufferNamePool&) = delete;
+
     static constexpr size_t MAX_POOL_SIZE_PER_BUCKET = 128;
     static constexpr size_t MAX_TOTAL_POOLED         = 1024;
     static constexpr size_t MAX_TOTAL_BYTES          = 64u * 1024u * 1024u;
+
+    // Capacity bucket for a byte size. Shared with the hook that records sideMap
+    // entries, so the key used by acquire()/release() and the recorded bucket can
+    // never disagree.
+    static uint32_t bucketOf(uint32_t byteSize) noexcept { return roundUpPow2(byteSize); }
 
     uint32_t acquire(uint32_t target, uint32_t usageType, uint32_t byteSize) {
         const auto key = makeKey(target, usageType, byteSize);
         auto it = pool_.find(key);
         if (it != pool_.end() && !it->second.empty()) {
-            const uint32_t name = it->second.back();
+            const auto entry = it->second.back();
+            const uint32_t name = entry.name;
+            globalFifo_.erase(entry.fifoEntry);
             it->second.pop_back();
             totalPooled_--;
             totalBytes_ -= key.capacityBucket;
@@ -54,13 +73,21 @@ public:
         return releaseWithEvict(name, target, usageType, byteSize, nullptr);
     }
 
-    // Release with eviction: if pool is full, evict oldest name from the largest bucket
-    // and call deleteBuffers on it, making room for the new name.
-    // Returns false only if eviction is impossible (empty pool edge case).
+    // Release with eviction: on overflow, evict the globally oldest pooled names
+    // until the new one fits. Every pooled name keeps exactly one FIFO record, so
+    // the queue can never outgrow the pool.
+    // Returns false (caller keeps the GL name and deletes it) without a delete
+    // callback or when the incoming buffer can never fit the byte budget.
     bool releaseWithEvict(uint32_t name, uint32_t target, uint32_t usageType,
                           uint32_t byteSize,
                           void (*deleteBuffers)(uint32_t, const uint32_t*)) {
         const auto key = makeKey(target, usageType, byteSize);
+        // Neither the raw size nor its rounded bucket may exceed the whole budget;
+        // refusing up front keeps the pool from being drained for nothing.
+        if (byteSize > MAX_TOTAL_BYTES || key.capacityBucket > MAX_TOTAL_BYTES) {
+            stats_.evictions++;
+            return false;
+        }
         auto& bucket = pool_[key];
 
         if (bucket.size() >= MAX_POOL_SIZE_PER_BUCKET) {
@@ -68,15 +95,17 @@ public:
                 stats_.evictions++;
                 return false;
             }
-            uint32_t evicted = bucket.front();
+            const uint32_t evicted = bucket.front().name;
+            globalFifo_.erase(bucket.front().fifoEntry);
             bucket.erase(bucket.begin());
             totalPooled_--;
             totalBytes_ -= key.capacityBucket;
             deleteBuffers(1, &evicted);
             sideMap_.erase(evicted);
             stats_.evictions++;
-        } else if (totalPooled_ >= MAX_TOTAL_POOLED ||
-                   totalBytes_ + key.capacityBucket > MAX_TOTAL_BYTES) {
+        }
+        while (totalPooled_ >= MAX_TOTAL_POOLED ||
+               totalBytes_ + key.capacityBucket > MAX_TOTAL_BYTES) {
             if (!deleteBuffers) {
                 stats_.evictions++;
                 return false;
@@ -87,18 +116,24 @@ public:
             }
         }
 
-        bucket.push_back(name);
+        // One FIFO record per pooled name; acquire() and both eviction paths erase it.
+        const auto fifoEntry = globalFifo_.insert(globalFifo_.end(), {key, name});
+        bucket.push_back({name, fifoEntry});
         totalPooled_++;
         totalBytes_ += key.capacityBucket;
-        globalFifo_.push_back({key, name});
         stats_.deleteSaved++;
         return true;
     }
 
     void drainAll(void (*deleteBuffers)(uint32_t, const uint32_t*)) {
+        std::vector<uint32_t> names;
         for (auto& [key, bucket] : pool_) {
             if (!bucket.empty()) {
-                deleteBuffers(static_cast<uint32_t>(bucket.size()), bucket.data());
+                names.clear();
+                names.reserve(bucket.size());
+                for (const PooledName& entry : bucket)
+                    names.push_back(entry.name);
+                deleteBuffers(static_cast<uint32_t>(names.size()), names.data());
             }
         }
         pool_.clear();
@@ -160,11 +195,16 @@ public:
 
     size_t totalPooled() const noexcept { return totalPooled_; }
     size_t totalBytes()  const noexcept { return totalBytes_; }
+    // FIFO records currently held; must never exceed totalPooled().
+    size_t totalQueued() const noexcept { return globalFifo_.size(); }
 
 private:
+    // Pop the globally oldest record and delete its name. acquire() and the
+    // per-bucket path erase their own record, so the front is always live; the
+    // find_if is the guard for that contract, not a normal path.
     bool evictOldest(void (*deleteBuffers)(uint32_t, const uint32_t*)) {
         while (!globalFifo_.empty()) {
-            auto [key, name] = globalFifo_.front();
+            const auto [key, name] = globalFifo_.front();
             globalFifo_.pop_front();
 
             auto it = pool_.find(key);
@@ -172,7 +212,9 @@ private:
                 continue;
 
             auto& bucket = it->second;
-            auto nameIt = std::find(bucket.begin(), bucket.end(), name);
+            const auto nameIt = std::find_if(
+                bucket.begin(), bucket.end(),
+                [name](const PooledName& entry) { return entry.name == name; });
             if (nameIt == bucket.end())
                 continue;
 
@@ -187,8 +229,12 @@ private:
         return false;
     }
 
+    // Sizes above 2^31 clamp to 2^31 instead of wrapping to 0 (v++ overflow),
+    // which would file a multi-GB buffer under the 64-byte bucket and let the
+    // byte budget under-count it.
     static uint32_t roundUpPow2(uint32_t v) noexcept {
         if (v == 0) return 64u;
+        if (v > 0x80000000u) return 0x80000000u;
         v--;
         v |= v >> 1;
         v |= v >> 2;
@@ -201,12 +247,12 @@ private:
 
     static BufferPoolKey makeKey(uint32_t target, uint32_t usageType,
                                  uint32_t byteSize) noexcept {
-        return {target, usageType, roundUpPow2(byteSize)};
+        return {target, usageType, bucketOf(byteSize)};
     }
 
-    std::unordered_map<BufferPoolKey, std::vector<uint32_t>, BufferPoolKeyHash> pool_;
+    std::unordered_map<BufferPoolKey, std::vector<PooledName>, BufferPoolKeyHash> pool_;
     std::unordered_map<uint32_t, SideMapEntry> sideMap_;
-    std::deque<std::pair<BufferPoolKey, uint32_t>> globalFifo_;
+    Fifo globalFifo_;
 
     size_t totalPooled_ = 0;
     size_t totalBytes_  = 0;
