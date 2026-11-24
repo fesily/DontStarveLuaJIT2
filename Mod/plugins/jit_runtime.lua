@@ -144,7 +144,10 @@ local function HookKleiloadlua(encryptedMods, frostxxMods, injector, ctx)
         local str = injector.DS_LUAJIT_Fengxun_Decrypt(filename)
         if str ~= nil then
             assert(type(str) == "string")
-            return loadstring(str, filename)
+            -- '@' marks a file chunk: mods that derive names from
+            -- debug.getinfo(1, "S").source (e.g. workshop-2979177306's
+            -- components) would otherwise see "[string \"...\"]".
+            return loadstring(str, "@" .. filename)
         end
     end
 
