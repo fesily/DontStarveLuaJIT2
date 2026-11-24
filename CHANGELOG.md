@@ -2,6 +2,9 @@
 
 ## 未发布
 
+- 新增 **同仓库 PR 准备阶段滚动预览打包（`preview-pr-<N>`）与一行安装拉取**：`.github/workflows/release.yaml` 对同仓库开启/更新的 PR（含 Draft）新增 `publish-pr-preview` 任务，按 PR 编号将 `windows_Mod.zip`、`linux_Mod.zip`、`plugins-manifest.json`、单插件 zip 与 `windows_symbols.zip` 滚动覆盖发布到预发布 tag `preview-pr-<N>`（`makeLatest=false`，`plugins-manifest.json` 同步写入 `release_tag: preview-pr-<N>`，并清理被替换版本的旧插件资产）；PR 连续推送自动取消在途旧构建，PR 合并或关闭时由 `cleanup-pr-preview` 自动删除对应 `preview-pr-<N>` Release 与 tag（零编译耗时）；外部 Fork PR 自动跳过发布任务。`install.ps1`（及 `install.zh.json`）与 `install.sh` 新增 `-Pr`/`--pr`（`DSJ_PR`）、`-Branch`/`--branch`（`DSJ_BRANCH`，按分支名反查开启中的 PR）、`-Tag`/`--tag`（`DSJ_TAG`）以及 `-Channel pr-<N>` 简写；默认 `auto` 与 `preview` 通道显式排除 `preview-pr-*`，避免未合并分支包进入主线安装，`install.ps1` 的 `release` 通道改为直走 `/releases/latest` 消除分页窗口限制。
+- 验证：`release.yaml` YAML 结构与全部 23 个 bash step 通过语法校验；`install.ps1` 纯 ASCII 无 BOM、与 `install.zh.json` 59 个词条及占位符 1:1 对齐；Windows PowerShell 5.1（`zh-CN`）工坊沙盒与 `dash install.sh` 端到端测试（`auto`/`preview` 排除 `preview-pr-*`、`release` 走 `/releases/latest`、`-Pr`/`-Channel pr-<N>`/`irm|iex`/`-Branch`/`-Tag` 落盘与 marker 校验、缺失 PR 404 及参数冲突错误提示）全部通过。
+
 ## 3.5.4
 
 - 修复 **`da5b9f0` 引入的 Workshop 路径重复模组 ID**（`plugins/plugin_core_vm/io/gameio.cpp` 的 `lj_fpath_format`）。当 `<游戏>/mods/workshop-<id>` 不存在、需要按 Workshop 内容根解析时，旧代码把仍带 `<id>/` 的 `left_path` 拼到已经包含 ID 的 `workshop_mod` 上，得到 `<content>/<id>/<id>/<file>`。凡是通过 Lua 侧文件访问（`dofile`/`loadfile`/`io2`）打开的工坊模组文件都会指向不存在的目录：专用服实测 `cannot open ../mods/workshop-3435352667/main/ia_preparedfoods.lua: No error`，随后「岛屿冒险 - 核心」被禁用（`ia_loader_utils.lua` 的 `dofile` 路径失败，引擎的 prefab 校验级联）。现在只拼接 ID 之后的相对段，并把纯映射抽到 `io/workshop_path.hpp`。
