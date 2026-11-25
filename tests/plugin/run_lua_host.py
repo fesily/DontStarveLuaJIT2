@@ -8,7 +8,8 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("REPO_ROOT", Path(__file__).resolve().parents[2]))
 SELF_DIR = Path(__file__).resolve().parent
-SCRIPT = SELF_DIR / "plugin_host_lua_spec.lua"
+SCRIPT = (Path(sys.argv[1]).resolve() if len(sys.argv) > 1
+          else SELF_DIR / "plugin_host_lua_spec.lua")
 
 
 def lua_command_candidates() -> list[list[str]]:

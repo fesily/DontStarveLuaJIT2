@@ -721,6 +721,18 @@ add_test(
 set_tests_properties(plugin_host_lua PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
+# Mod/scripts/luajit_surface.lua: the granted env's GLOBAL proxy under DST's
+# scripts/strict.lua (main-chunk declarations, function refusals, __declared bookkeeping).
+add_test(
+    NAME lua_surface
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_lua_host.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/lua_surface/luajit_surface_spec.lua
+)
+set_tests_properties(lua_surface PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
 add_test(
     NAME config_patch_screen
     COMMAND ${CMAKE_COMMAND} -E env
