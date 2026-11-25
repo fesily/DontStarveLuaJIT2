@@ -43,6 +43,7 @@ dist/
 .idea/
 
 cmake-build-debug/
+.vcpkg-downloads/
 
 vcpkg_installed/
 src/missfunc.h

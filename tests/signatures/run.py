@@ -11,6 +11,8 @@ The gate fails unless
 
 * ``create`` writes a complete DB for both client and server in the current
   ``format_version`` and a section for this build's platform,
+* every successful write lands indented (``dump(2)``-style) JSON, so the
+  tracked DB keeps a reviewable diff,
 * the following ``update`` leaves every stored offset untouched,
 * with ``--check-cache`` an intentionally ambiguous cached pattern is repaired
   in place without moving its entry (the Linux ``--check-cache`` regression),
@@ -78,16 +80,25 @@ def mod_signatures_state() -> dict[Path, tuple[int, int]]:
     return state
 
 
-def run_tool(tool: Path, mode: str, output_dir: Path) -> None:
+def run_tool(tool: Path, mode: str, output_dir: Path | None) -> None:
     env = dict(os.environ)
-    env["SIGNATURE_TOOL_OUTPUT_DIR"] = str(output_dir)
+    if output_dir is not None:
+        env["SIGNATURE_TOOL_OUTPUT_DIR"] = str(output_dir)
+    else:
+        env.pop("SIGNATURE_TOOL_OUTPUT_DIR", None)# default: the mod root
     # The tool needs its own (config-matched) runtime DLLs next to the exe.
     env["PATH"] = f"{tool.parent}{os.pathsep}{env.get('PATH', '')}"
     print(f"== signature_updater {mode}")
     proc = subprocess.run([str(tool), mode], cwd=str(tool.parent), env=env,
                           capture_output=True, text=True)
     if proc.returncode != 0:
-        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-20:]
+        combined = ((proc.stderr or "") + "\n" + (proc.stdout or "")).splitlines()
+        # The tool reports the interesting line ("can't load", "failed to write",
+        # "cache not written") long before its per-entry tail, so keep those.
+        interesting = [line for line in combined
+                       if any(key in line.lower() for key in
+                              ("error", "fail", "cannot", "denied", "not found", "stale", "invalid"))]
+        tail = (interesting or combined)[-20:]
         raise SystemExit(fail(f"{mode} exited {proc.returncode:#x}:\n" + "\n".join(tail)))
 
 
@@ -120,6 +131,32 @@ def load_db(output_dir: Path, variant: str) -> dict:
 
 def write_db(output_dir: Path, variant: str, db: dict) -> None:
     (output_dir / f"signatures_{variant}.json").write_text(json.dumps(db))
+
+
+def check_formatted(output_dir: Path, variant: str) -> str | None:
+    """A successful write must land indented JSON, not a one-line blob.
+
+    The DB is tracked in git: compact output turns every offset change into an
+    unreviewable whole-file diff. `SignatureJson::update_signatures` writes
+    `doc.dump(2)`, which serializes exactly like `json.dumps(indent=2)`.
+    """
+    path = output_dir / f"signatures_{variant}.json"
+    # Raw bytes: `read_text()` would translate CRLF to LF and hide exactly the
+    # regression this check exists to catch.
+    raw = path.read_bytes()
+    text = raw.decode("utf-8")
+    # The committed DB (and therefore the writer) ends with a final newline; that is
+    # what keeps `git status` clean for a document git already holds.
+    expected = json.dumps(json.loads(text), indent=2, ensure_ascii=False) + "\n"
+    if text != expected:
+        if b"\r\n" in raw:
+            reason = "CRLF separators"
+        elif not raw.endswith(b"\n"):
+            reason = "no final newline"
+        else:
+            reason = "not dump(2)-shaped"
+        return f"{path.name}: {reason}; the tool must write dump(2) with LF and a final newline"
+    return None
 
 
 def offsets(db: dict, variant: str) -> dict[str, int]:
@@ -164,14 +201,59 @@ def check_rebuilt(output_dir: Path, variant: str, baseline: dict[str, int], tag:
     return None
 
 
+TRACKED_DBS = ("Mod/signatures_client.json", "Mod/signatures_server.json",
+               "Mod/plugin_signatures_client.json", "Mod/plugin_signatures_server.json")
+
+
+def require_fresh(tool: Path) -> int:
+    """The shipped DBs must already hold what a fresh resolve produces.
+
+    The runtime and this tool share the writer (`SignatureJson::update_signatures`),
+    and git tracks both DBs with `eol=lf`. So the witness is exact: let the tool
+    update a *copy* of the tracked DBs and compare the bytes. Equal bytes mean the
+    committed copy already holds a fresh resolve; any difference is staleness or a
+    writer that no longer emits the tracked shape.
+
+    The update runs against a seeded scratch directory, never the live `Mod/`: a
+    concurrent test must not be able to turn this gate into a false stale verdict,
+    and a failing gate should not leave the worktree half-written.
+    """
+    scratch = Path(tempfile.mkdtemp(prefix="ds-signatures-fresh-"))
+    try:
+        for relative in TRACKED_DBS:
+            shutil.copy2(ROOT / relative, scratch / Path(relative).name)
+        run_tool(tool, "update", scratch)
+        moved = subprocess.run(["git", "status", "--porcelain", "--", *TRACKED_DBS],
+                               cwd=str(ROOT), capture_output=True, text=True)
+        if moved.returncode != 0:
+            return fail(f"git status failed: {(moved.stderr or '').strip()}")
+        if moved.stdout.strip():
+            print(moved.stdout, file=sys.stderr)
+            return fail("Mod/signatures_*.json changed while the gate ran; "
+                        "another process rewrote them, re-run the suite")
+        stale = [relative for relative in TRACKED_DBS
+                 if (scratch / Path(relative).name).read_bytes() != (ROOT / relative).read_bytes()]
+        if stale:
+            for relative in stale:
+                print(f"stale: {relative}", file=sys.stderr)
+            return fail("signature DBs are stale: a fresh resolve differs from the committed copy. "
+                        "Run `cmake --build <build dir> --target update_signatures` and commit them.")
+        print("PASS: signature DBs already match a fresh resolve")
+        return 0
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
-        print("usage: run.py <signature_updater.exe> [--check-cache]", file=sys.stderr)
+        print("usage: run.py <signature_updater.exe> [--check-cache | --require-fresh]", file=sys.stderr)
         return 2
     tool = Path(argv[1]).resolve()
     check_cache = "--check-cache" in argv[2:]
     if not tool.is_file():
         return fail(f"tool not found: {tool}")
+    if "--require-fresh" in argv[2:]:
+        return require_fresh(tool)
 
     before_mod = mod_signatures_state()
     scratch = Path(tempfile.mkdtemp(prefix="ds-signatures-"))
@@ -182,6 +264,9 @@ def main(argv: list[str]) -> int:
         for variant, entries in created_offsets.items():
             print(f"created {variant}: {len(entries)} entries, "
                   f"version {platform_section(created[variant], variant)['version']}")
+            error = check_formatted(scratch, variant)
+            if error:
+                return fail(error)
 
         run_tool(tool, "update", scratch)
         for variant in VARIANTS:
@@ -189,6 +274,9 @@ def main(argv: list[str]) -> int:
             if offsets(updated, variant) != created_offsets[variant]:
                 return fail(f"{variant} offset drift: "
                             + diff_offsets(created_offsets[variant], offsets(updated, variant)))
+            error = check_formatted(scratch, variant)
+            if error:
+                return fail(error)
             print(f"updated {variant}: {len(offsets(updated, variant))} offsets preserved")
 
         # A DB written by an older format_version must be regenerated, never

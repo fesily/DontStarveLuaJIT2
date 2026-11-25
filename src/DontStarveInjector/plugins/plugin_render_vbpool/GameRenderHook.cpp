@@ -134,12 +134,6 @@ inline bool ensureGlFunctions() {
 }
 #endif
 
-static uint32_t roundUpPow2_min64(uint32_t v) noexcept {
-    if (v == 0) return 64u;
-    v--; v |= v>>1; v |= v>>2; v |= v>>4; v |= v>>8; v |= v>>16; v++;
-    return v < 64u ? 64u : v;
-}
-
 static void doGlDeleteBuffers(uint32_t count, const uint32_t* names) {
 #ifdef _WIN32
     if (g_glDeleteBuffers)
@@ -191,7 +185,7 @@ inline void hooked_HWBufferInit(void* hwBuffer, const void* data) {
         }
         g_bufferNamePool.registerName(pooledName, target,
                                       static_cast<uint32_t>(buf->usageType),
-                                      roundUpPow2_min64(byteSize));
+                                      BufferNamePool::bucketOf(byteSize));
         return;
     }
 
@@ -200,7 +194,7 @@ inline void hooked_HWBufferInit(void* hwBuffer, const void* data) {
     if (buf->glBufferID != 0) {
         g_bufferNamePool.registerName(buf->glBufferID, target,
                                       static_cast<uint32_t>(buf->usageType),
-                                      roundUpPow2_min64(byteSize));
+                                      BufferNamePool::bucketOf(byteSize));
     }
 }
 

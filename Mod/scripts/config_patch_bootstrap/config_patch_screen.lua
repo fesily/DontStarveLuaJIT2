@@ -2,11 +2,41 @@ local helpers = require("config_patch_bootstrap/config_patch_helpers")
 local ModConfigurationScreen = require "screens/redux/modconfigurationscreen"
 local PopupDialogScreen = require "screens/redux/popupdialog"
 
-local _original_ctor = ModConfigurationScreen._ctor
+-- Keep the refresh logic in a local function. DST's Class() shallow-copies a
+-- base class when another mod subclasses it (Epic Healthbar's
+-- ConfigurationScreen = Class(ModConfigurationScreen, ...)); that copy can be
+-- taken before this patch installs, so self:RefreshDisabledStates() is a nil
+-- method on such an instance while ModConfigurationScreen._ctor(self, ...)
+-- still runs our wrapper.
+local function refresh_disabled_states(screen)
+    if type(screen.options) ~= "table" or type(screen.options_scroll_list) ~= "table" then
+        return
+    end
 
-ModConfigurationScreen._ctor = function(self, modname, client_config)
-    _original_ctor(self, modname, client_config)
+    local options_by_name = {}
+    for _, opt in ipairs(screen.options) do
+        options_by_name[opt.name] = opt
+    end
 
+    for _, opt in ipairs(screen.options) do
+        opt.is_disabled = helpers.IsOptionDisabled(opt, options_by_name)
+    end
+
+    for _, widget in ipairs(screen.options_scroll_list.widgets_to_update or {}) do
+        if widget.opt and widget.opt.data and widget.opt.data.option then
+            local opt = widget.opt.data.option
+            if opt.is_disabled then
+                widget.opt.spinner:Disable()
+                widget.opt.label:SetColour(0.5, 0.5, 0.5, 1)
+            else
+                widget.opt.spinner:Enable()
+                widget.opt.label:SetColour(UICOLOURS.GOLD)
+            end
+        end
+    end
+end
+
+local function initialize_options(self)
     local raw_by_name = {}
     if self.config and type(self.config) == "table" then
         for _, v in ipairs(self.config) do
@@ -31,7 +61,7 @@ ModConfigurationScreen._ctor = function(self, modname, client_config)
             local screen = self
             widget.opt.spinner.OnChanged = function(spinner_self, data)
                 original_on_changed(spinner_self, data)
-                screen:RefreshDisabledStates()
+                refresh_disabled_states(screen)
             end
         end
     end
@@ -41,74 +71,76 @@ ModConfigurationScreen._ctor = function(self, modname, client_config)
     local screen             = self
     scroll_list.RefreshView  = function(sl, ...)
         original_refresh(sl, ...)
-        screen:RefreshDisabledStates()
+        refresh_disabled_states(screen)
     end
 
-    self:RefreshDisabledStates()
+    refresh_disabled_states(self)
 end
 
-function ModConfigurationScreen:RefreshDisabledStates()
-    local options_by_name = {}
-    for _, opt in ipairs(self.options) do
-        options_by_name[opt.name] = opt
+local function show_restart_prompt(self)
+    local settings = self:CollectSettings()
+    TheFrontEnd:PushScreen(PopupDialogScreen(
+        STRINGS.UI.MODSSCREEN.RESTART_TITLE,
+        STRINGS.UI.MODSSCREEN.RESTART_REQUIRED,
+        {
+            {
+                text = STRINGS.UI.MODSSCREEN.RESTART,
+                cb = function()
+                    KnownModIndex:SaveConfigurationOptions(function()
+                        self:MakeDirty(false)
+                        TheSim:Quit()
+                    end, self.modname, settings, self.client_config)
+                end,
+            },
+            {
+                text = STRINGS.UI.MODSSCREEN.CANCEL,
+                cb = function()
+                    TheFrontEnd:PopScreen()
+                end,
+            },
+        }
+    ))
+end
+
+-- Installed once per boot. The caller passes the owning mod's name so these
+-- config-screen enhancements only apply to that mod's own settings page; other
+-- mods' screens (and the Class() subclasses they create) pass through untouched.
+return function(owner_modname)
+    assert(type(owner_modname) == "string" and owner_modname ~= "",
+        "config_patch_screen requires the owning mod name")
+
+    -- Kept for callers that still use the method form.
+    function ModConfigurationScreen:RefreshDisabledStates()
+        return refresh_disabled_states(self)
     end
 
-    for _, opt in ipairs(self.options) do
-        opt.is_disabled = helpers.IsOptionDisabled(opt, options_by_name)
-    end
-
-    for _, widget in ipairs(self.options_scroll_list.widgets_to_update or {}) do
-        if widget.opt and widget.opt.data and widget.opt.data.option then
-            local opt = widget.opt.data.option
-            if opt.is_disabled then
-                widget.opt.spinner:Disable()
-                widget.opt.label:SetColour(0.5, 0.5, 0.5, 1)
-            else
-                widget.opt.spinner:Enable()
-                widget.opt.label:SetColour(UICOLOURS.GOLD)
-            end
+    local original_ctor = ModConfigurationScreen._ctor
+    ModConfigurationScreen._ctor = function(self, modname, client_config, ...)
+        local result = original_ctor(self, modname, client_config, ...)
+        if modname == owner_modname then
+            initialize_options(self)
         end
+        return result
     end
-end
 
-local _original_reset = ModConfigurationScreen.ResetToDefaultValues
-function ModConfigurationScreen:ResetToDefaultValues()
-    _original_reset(self)
-    self:RefreshDisabledStates()
-end
-
-local _original_apply = ModConfigurationScreen.Apply
-function ModConfigurationScreen:Apply()
-    if self:IsDirty() then
-        if helpers.HasRequireRestartChanges(self.options) then
-            local settings = self:CollectSettings()
-            TheFrontEnd:PushScreen(PopupDialogScreen(
-                STRINGS.UI.MODSSCREEN.RESTART_TITLE,
-                STRINGS.UI.MODSSCREEN.RESTART_REQUIRED,
-                {
-                    {
-                        text = STRINGS.UI.MODSSCREEN.RESTART,
-                        cb = function()
-                            KnownModIndex:SaveConfigurationOptions(function()
-                                self:MakeDirty(false)
-                                TheSim:Quit()
-                            end, self.modname, settings, self.client_config)
-                        end,
-                    },
-                    {
-                        text = STRINGS.UI.MODSSCREEN.CANCEL,
-                        cb = function()
-                            TheFrontEnd:PopScreen()
-                        end,
-                    },
-                }
-            ))
-        else
-            _original_apply(self)
+    local original_reset = ModConfigurationScreen.ResetToDefaultValues
+    function ModConfigurationScreen:ResetToDefaultValues(...)
+        local result = original_reset(self, ...)
+        if self.modname == owner_modname then
+            refresh_disabled_states(self)
         end
-    else
-        _original_apply(self)
+        return result
     end
-end
 
-return true
+    local original_apply = ModConfigurationScreen.Apply
+    function ModConfigurationScreen:Apply(...)
+        if self.modname == owner_modname and self:IsDirty()
+            and helpers.HasRequireRestartChanges(self.options) then
+            show_restart_prompt(self)
+            return
+        end
+        return original_apply(self, ...)
+    end
+
+    return true
+end

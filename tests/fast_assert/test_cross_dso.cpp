@@ -11,6 +11,7 @@
 #include <fast_assert/fast_assert.hpp>
 
 #include <cstdlib>
+#include <ostream>
 #include <string_view>
 
 #if defined(_WIN32)

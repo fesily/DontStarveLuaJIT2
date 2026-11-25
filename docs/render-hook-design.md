@@ -509,9 +509,9 @@ using HWBufferDtor_t = void (*)(void* hwBuffer);           // non-deleting dtor
 
 | 参数 | 值 | 说明 |
 |------|------|------|
-| MAX_POOL_SIZE_PER_BUCKET | 32 | 单个 `(target, usageType, capacityBucket)` 最大缓存数 |
-| MAX_TOTAL_POOLED | 256 | 全局池上限（name 个数） |
-| MAX_TOTAL_BYTES | 16MB | 总显存预算 |
+| MAX_POOL_SIZE_PER_BUCKET | 128 | 单个 `(target, usageType, capacityBucket)` 最大缓存数 |
+| MAX_TOTAL_POOLED | 1024 | 全局池上限（name 个数） |
+| MAX_TOTAL_BYTES | 64MB | 总显存预算 |
 
 ### 淘汰策略
 
@@ -519,10 +519,14 @@ using HWBufferDtor_t = void (*)(void* hwBuffer);           // non-deleting dtor
 
 | 触发条件 | 淘汰方式 | 复杂度 |
 |---------|---------|--------|
-| 同 bucket 满（≥32） | 同 bucket FIFO：pop front（最旧 name），glDeleteBuffers | O(1) |
-| 全局总量/字节超限 | 全局 FIFO（`globalFifo_` deque）：取最旧入池 name，删除 | O(1) 摊销 |
+| 同 bucket 满（≥128） | 同 bucket FIFO：pop front（最旧 name），同步删除其队列记录，glDeleteBuffers | O(1) |
+| 总量/字节超限 | 循环从全局 FIFO 取最旧入池 name 淘汰，直到新缓冲装得下；装不下返回 `false` | O(1) × 淘汰次数 |
 
-热数据保护机制：高频复用的 name 被 acquire 取走后不在 bucket 中，全局 FIFO 遍历时自动跳过已不存在的 name。
+队列是 `std::list<...>`，桶元素保存 `{name, 队列迭代器}`：`acquire` 取走 name 时删除其记录，两条淘汰路径删除被淘汰者的记录，因此**一个入池 name 恰好一条记录**（`totalQueued() ≤ totalPooled()`），复用会刷新它在队列中的位置（再次归还排到队尾）。槽里存迭代器，故 `BufferNamePool` 不可拷贝。
+
+单个缓冲的原始 `byteSize` 或其容量桶大于 `MAX_TOTAL_BYTES`（例如 `byteSize > 2^31` 被截断到 2GB 桶）时直接拒绝，不再清空空闲池；淘汰仍装不下也返回 `false`，由调用方保留 `glBufferID` 交给引擎 `glDeleteBuffers`。
+
+热数据保护：高频复用的 name 被 acquire 取走后不在任何 bucket 中，因此既不会被淘汰，也不留在 sideMap（sideMap 只记录在用的 name，dtor 先 `unregisterName` 再入池）。
 
 ### 统计指标
 

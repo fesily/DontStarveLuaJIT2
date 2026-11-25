@@ -18,6 +18,8 @@
 #include "core/CoreVmBootstrap.hpp"
 #include "core/LuaPucDumpService.hpp"
 #include "core/PluginServices.hpp"
+#include "core/alloc/AllocShim.hpp"
+#include <mimalloc.h>
 #ifdef ENABLE_STEAM_SUPPORT
 #include "sdk/steam/Steam.hpp"
 #endif
@@ -34,10 +36,15 @@
 #else
 #include <pthread.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 #endif
 
 #include <string>
 #include <algorithm>
+#include <cstring>
+#include <iterator>
 #include <map>
 #include <cstdint>
 #include <list>
@@ -63,6 +70,140 @@ extern "C" {
 #include "util/tools.hpp"
 
 using namespace std;
+
+namespace {
+
+#ifndef _WIN32
+    bool name_contains_dontstarve(const char *name, size_t length) noexcept {
+        constexpr char needle[] = "dontstarve";
+        constexpr size_t needle_length = sizeof(needle) - 1;
+        if (length < needle_length) return false;
+        for (size_t i = 0; i + needle_length <= length; ++i) {
+            bool match = true;
+            for (size_t k = 0; k < needle_length; ++k) {
+                char c = name[i + k];
+                if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+                if (c != needle[k]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return true;
+        }
+        return false;
+    }
+#endif
+
+    // phase 0 guard: stack buffer only. getExePath() returns std::filesystem::path,
+    // which allocates through the CRT this code is about to replace.
+    bool is_dontstarve_process() noexcept {
+#ifdef _WIN32
+        wchar_t path[1024];
+        const DWORD length = GetModuleFileNameW(nullptr, path, static_cast<DWORD>(std::size(path)));
+        if (length == 0 || length >= std::size(path)) return false;
+        const wchar_t *name = path;
+        for (const wchar_t *p = path; *p != L'\0'; ++p) {
+            if (*p == L'\\' || *p == L'/') name = p + 1;
+        }
+        size_t name_length = 0;
+        while (name[name_length] != L'\0') ++name_length;
+        constexpr wchar_t needle[] = L"dontstarve";
+        constexpr size_t needle_length = 10;
+        if (name_length < needle_length) return false;
+        for (size_t i = 0; i + needle_length <= name_length; ++i) {
+            bool match = true;
+            for (size_t k = 0; k < needle_length; ++k) {
+                wchar_t c = name[i + k];
+                if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c - L'A' + L'a');
+                if (c != needle[k]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return true;
+        }
+        return false;
+#else
+        char path[4096];
+#ifdef __APPLE__
+        uint32_t size = static_cast<uint32_t>(sizeof(path));
+        if (_NSGetExecutablePath(path, &size) != 0) return false;
+        const char *name = std::strrchr(path, '/');
+        name = name != nullptr ? name + 1 : path;
+        return name_contains_dontstarve(name, std::strlen(name));
+#else
+        const ssize_t length = readlink("/proc/self/exe", path, sizeof(path) - 1);
+        if (length <= 0) return false;
+        path[length] = '\0';
+        const char *name = std::strrchr(path, '/');
+        name = name != nullptr ? name + 1 : path;
+        return name_contains_dontstarve(name, static_cast<size_t>(length) - static_cast<size_t>(name - path));
+#endif
+#endif
+    }
+
+    ds::alloc::Options alloc_shim_options() noexcept {
+        ds::alloc::Options options{};
+        options.enabled = ds::alloc::read_env_switch();
+        options.stats = ds::alloc::read_env_stats();
+        options.patch_all_modules = true;
+        return options;
+    }
+
+    // phase 1: the allocator installed in phase 0 cannot log there (no logger, no
+    // file IO, no InjectorCtx), so its state is reported once logging exists.
+    void log_alloc_shim_state() {
+        if (!ds::alloc::installed()) {
+            if (!ds::alloc::read_env_switch()) {
+                spdlog::info("alloc shim: disabled by DS_ALLOC_SHIM");
+                std::fprintf(stderr, "[alloc] disabled by DS_ALLOC_SHIM\n");
+            } else if (ds::alloc::skipped_debug_crt()) {
+                spdlog::info("alloc shim: skipped (debug CRT image loaded; release CRT only)");
+                std::fprintf(stderr, "[alloc] skipped: debug CRT image\n");
+            } else {
+                spdlog::error("alloc shim: install failed backend={} failures={}",
+                              ds::alloc::backend_name(), ds::alloc::failure_count());
+                std::fprintf(stderr, "[alloc] install failed backend=%s failures=%zu\n",
+                             ds::alloc::backend_name(), ds::alloc::failure_count());
+            }
+            return;
+        }
+        spdlog::info("alloc shim: backend={} primary={} slots={} failures={}",
+                     ds::alloc::backend_name(), ds::alloc::primary_target_patched() ? 1 : 0,
+                     ds::alloc::patched_slot_count(), ds::alloc::failure_count());
+        std::fprintf(stderr, "[alloc] backend=%s primary=%d slots=%zu failures=%zu\n",
+                     ds::alloc::backend_name(), ds::alloc::primary_target_patched() ? 1 : 0,
+                     ds::alloc::patched_slot_count(), ds::alloc::failure_count());
+        if (!ds::alloc::primary_target_patched()) {
+            spdlog::error("alloc shim: primary target not patched, allocations stay on the CRT");
+            std::fprintf(stderr, "[alloc] primary target not patched\n");
+        } else if (ds::alloc::failure_count() != 0) {
+            spdlog::warn("alloc shim: {} entries failed (partial coverage)", ds::alloc::failure_count());
+        }
+    }
+
+    void mimalloc_stats_line(const char *message, void *) {
+        if (message == nullptr) return;
+        std::string_view line{message};
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.remove_suffix(1);
+        if (!line.empty()) spdlog::info("[mimalloc] {}", line);
+    }
+
+    // DS_ALLOC_SHIM_STATS: own/foreign counters plus the allocator's own stats.
+    // mi_option_show_stats is never used: it would LoadLibrary("psapi.dll") during
+    // DLL_PROCESS_DETACH.
+    void log_alloc_shim_stats() {
+        if (!ds::alloc::installed() || !ds::alloc::read_env_stats()) return;
+        const auto s = ds::alloc::stats();
+        spdlog::info("alloc shim stats: malloc={} free_own={} free_foreign={} realloc_foreign={}",
+                     s.malloc_calls, s.free_own, s.free_foreign, s.realloc_foreign);
+        std::fprintf(stderr, "[alloc] stats malloc=%llu free_own=%llu free_foreign=%llu realloc_foreign=%llu\n",
+                     static_cast<unsigned long long>(s.malloc_calls), static_cast<unsigned long long>(s.free_own),
+                     static_cast<unsigned long long>(s.free_foreign), static_cast<unsigned long long>(s.realloc_foreign));
+        mi_stats_print_out(&mimalloc_stats_line, nullptr);
+    }
+
+}// namespace
 
 
 void wait_for_debugger_before_inject() {
@@ -189,6 +330,13 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
     }
     spdlog::info("Inject start: isClient={} debuggerAttached={}", isClient, gum_process_is_debugger_attached());
 
+#ifndef _WIN32
+    // Whatever dlopen()ed between phase 0 and now (before the rescan hook existed).
+    ds::alloc::detail::rescan_modules();
+#endif
+    log_alloc_shim_state();
+    log_alloc_shim_stats();
+
 #ifdef ENABLE_STEAM_SUPPORT
     ds::sdk::steam::Initialize(isClient);
 #endif
@@ -313,12 +461,41 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         (void) g_plugin_host.load_phase(PluginPhase::EarlyNative);
     }
 
+#ifndef _WIN32
+    // Backstop for images the dlopen hook did not see (namespace loads, failed hook).
+    ds::alloc::detail::rescan_modules();
+#endif
+
     DisableScriptZip();
+    log_alloc_shim_stats();
 }
 
 
 #ifndef _WIN32
 #include <dlfcn.h>
+
+// Task 6: images loaded after phase 0 must join the shim too. The dlopen return is
+// the cheapest reliable trigger; a failed install only costs coverage, never the
+// process. macOS needs none of this - dyld reports image additions itself.
+#if !defined(__APPLE__)
+using DlopenFn = void *(*)(const char *, int);
+using DlmopenFn = void *(*)(const char *, int, long);
+
+DlopenFn original_dlopen = nullptr;
+DlmopenFn original_dlmopen = nullptr;
+
+void *dlopen_rescan_hook(const char *path, int flags) {
+    void *handle = original_dlopen(path, flags);
+    if (handle != nullptr) ds::alloc::detail::rescan_modules();
+    return handle;
+}
+
+void *dlmopen_rescan_hook(const char *path, int flags, long namespace_id) {
+    void *handle = original_dlmopen(path, flags, namespace_id);
+    if (handle != nullptr) ds::alloc::detail::rescan_modules();
+    return handle;
+}
+#endif
 
 int (*origin)(const char *path);
 int chdir_hook(const char *path) {
@@ -361,19 +538,46 @@ static bool install_posix_startup_hook() {
         posix_startup_hook_installed = false;
         return false;
     }
+
+#if !defined(__APPLE__)
+    static bool rescan_hooks_installed = false;
+    if (!rescan_hooks_installed) {
+        rescan_hooks_installed = true;
+        if (auto *dlopen_fn = dlsym(RTLD_DEFAULT, "dlopen"); dlopen_fn != nullptr) {
+            ds::gum::replace(interceptor, dlopen_fn, reinterpret_cast<void *>(&dlopen_rescan_hook),
+                             reinterpret_cast<void **>(&original_dlopen));
+            if (original_dlopen == nullptr) {
+                std::fprintf(stderr, "[alloc] dlopen rescan hook rejected; later images stay unshimmed\n");
+            }
+        }
+        if (auto *dlmopen_fn = dlsym(RTLD_DEFAULT, "dlmopen"); dlmopen_fn != nullptr) {
+            ds::gum::replace(interceptor, dlmopen_fn, reinterpret_cast<void *>(&dlmopen_rescan_hook),
+                             reinterpret_cast<void **>(&original_dlmopen));
+        }
+    }
+#endif
     return true;
 }
 
 __attribute__((constructor)) void init() {
-    if (!ds::util::path_to_native_lossy(getExePath()).contains("dontstarve")) {
+    if (!is_dontstarve_process()) {
         return;
     }
+    // phase 0: no logging, no file IO, no InjectorCtx - only the GOT rewrite.
+    (void) ds::alloc::install_early(alloc_shim_options());
     (void) install_posix_startup_hook();
 }
 
 __attribute__((destructor)) void fini() {
+    ds::alloc::set_shutting_down();
     if (!gum_initialized) {
         return;
+    }
+    if (ds::alloc::installed() && ds::alloc::read_env_stats()) {
+        const auto s = ds::alloc::stats();
+        std::fprintf(stderr, "[alloc] final stats malloc=%llu free_own=%llu free_foreign=%llu realloc_foreign=%llu\n",
+                     static_cast<unsigned long long>(s.malloc_calls), static_cast<unsigned long long>(s.free_own),
+                     static_cast<unsigned long long>(s.free_foreign), static_cast<unsigned long long>(s.realloc_foreign));
     }
     _exit(0);
 }
@@ -422,7 +626,17 @@ DONTSTARVEINJECTOR_API bool HookStartupEntry() {
         return true;
     }
 
+    if (!is_dontstarve_process()) {
+        startup_hook_installed = false;
+        return false;
+    }
+
     gum_init_embedded();
+
+    // phase 0: replace the CRT allocation entry points before anything else in this
+    // process allocates again. No getExePath() and no InjectorCtx::instance() above
+    // this line: both allocate, and InjectorCtx would build the config first.
+    (void) ds::alloc::install_early(alloc_shim_options());
 
     const auto kernel32 = GetModuleHandleW(L"kernel32.dll");
     if (!kernel32) {
@@ -436,7 +650,7 @@ DONTSTARVEINJECTOR_API bool HookStartupEntry() {
         return false;
     }
 
-    auto interceptor = InjectorCtx::instance()->GetGumInterceptor();
+    auto interceptor = gum_interceptor_obtain();// same singleton, without InjectorCtx
     ds::gum::replace(
         interceptor,
         set_current_directory_w,
@@ -444,6 +658,16 @@ DONTSTARVEINJECTOR_API bool HookStartupEntry() {
         reinterpret_cast<void **>(&original_SetCurrentDirectoryW));
 
     return original_SetCurrentDirectoryW != nullptr;
+}
+
+// Pinning (GET_MODULE_HANDLE_EX_FLAG_PIN) makes DLL_PROCESS_DETACH mean process
+// exit, so this is the one point where a late module can still call the shim:
+// release stays disabled from here on instead of touching a dying allocator.
+BOOL APIENTRY DllMain(HMODULE, DWORD reason, LPVOID) {
+    if (reason == DLL_PROCESS_DETACH) {
+        ds::alloc::set_shutting_down();
+    }
+    return TRUE;
 }
 
 

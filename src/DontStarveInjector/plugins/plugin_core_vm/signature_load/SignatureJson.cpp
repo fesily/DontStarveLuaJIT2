@@ -23,6 +23,7 @@
 #include <filesystem>
 #include "SignatureModRoot.hpp"
 #include "util/ModulePath.hpp"
+
 #ifdef _WIN32
 #  ifndef NOMINMAX
 #    define NOMINMAX
@@ -340,8 +341,13 @@ void SignatureJson::update_signatures(const Signatures &signatures) {
     doc["platforms"][platform_name()] = platform_section_json(signatures);
     spdlog::info("update signatures to file:[{}], platform: {}, version: {}", output, platform_name(),
                  signatures.version);
-    std::ofstream sf(output);
-    sf << doc;
+    // Format the document on the way out: the DB is under version control, and a
+    // one-line JSON blob has no reviewable diff. Indent matches SignatureCache's
+    // plugin_signatures_*.json so both DBs look alike; the trailing newline and
+    // the LF separators are the shape git stores (`eol=lf`), so re-resolving an
+    // unchanged DB rewrites identical bytes and the worktree stays clean.
+    std::ofstream sf(output, std::ios::binary);
+    sf << doc.dump(2) << '\n';
     sf.flush();
     // An unwritable mod dir used to be silent: generation "succeeded", the DB never
     // landed and every launch regenerated from scratch.

@@ -111,6 +111,63 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64
     add_test(NAME fast_hook COMMAND test_fast_hook)
 endif()
 
+# AllocShim wrapper semantics: ownership dispatch, provider fallbacks, zero-size
+# rules. Links the real static mimalloc, so the harbour of every assertion is the
+# same allocator the injector installs.
+find_package(mimalloc CONFIG REQUIRED)
+get_target_property(_ds_mimalloc_type mimalloc-static TYPE)
+if (NOT _ds_mimalloc_type STREQUAL "STATIC_LIBRARY")
+    message(FATAL_ERROR "test_alloc_shim needs a STATIC mimalloc-static, got '${_ds_mimalloc_type}'")
+endif()
+add_executable(test_alloc_shim
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_alloc_shim.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/AllocShim.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/backend_win.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/backend_elf.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/backend_macho.cpp)
+target_include_directories(test_alloc_shim PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_alloc_shim PRIVATE cxx_std_23)
+target_link_libraries(test_alloc_shim PRIVATE mimalloc-static)
+# The backends are the injector's real hook implementations; Windows needs gum and
+# its runtime next to the executable, POSIX needs nothing beyond libc.
+if (WIN32)
+    target_sources(test_alloc_shim PRIVATE ${DONTSTARVEINJECTOR_UTIL_DIR}/FastHook.cpp)
+    target_include_directories(test_alloc_shim PRIVATE ${DONTSTARVEINJECTOR_ROOT} ${FRIDA_GUM_INCLUDE_DIR})
+    target_link_libraries(test_alloc_shim PRIVATE Frida::Gum)
+    add_custom_command(TARGET test_alloc_shim POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${FRIDA_GUM_RUNTIME}" "$<TARGET_FILE_DIR:test_alloc_shim>"
+        VERBATIM)
+endif()
+add_test(NAME alloc_shim COMMAND test_alloc_shim)
+
+# Separate executable: installing the real backend rewires this process's CRT, so it
+# must not share a process with the hook-free wrapper tests.
+if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
+    add_executable(test_alloc_shim_install
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_alloc_shim_install.cpp
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/AllocShim.cpp
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/backend_win.cpp
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/backend_elf.cpp
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/backend_macho.cpp)
+    target_include_directories(test_alloc_shim_install PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+    target_compile_features(test_alloc_shim_install PRIVATE cxx_std_23)
+    target_link_libraries(test_alloc_shim_install PRIVATE mimalloc-static)
+    if (WIN32)
+        target_sources(test_alloc_shim_install PRIVATE ${DONTSTARVEINJECTOR_UTIL_DIR}/FastHook.cpp)
+        target_include_directories(test_alloc_shim_install PRIVATE
+            ${DONTSTARVEINJECTOR_ROOT} ${FRIDA_GUM_INCLUDE_DIR})
+        target_link_libraries(test_alloc_shim_install PRIVATE Frida::Gum)
+        add_custom_command(TARGET test_alloc_shim_install POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${FRIDA_GUM_RUNTIME}" "$<TARGET_FILE_DIR:test_alloc_shim_install>"
+            VERBATIM)
+    endif()
+    add_test(NAME alloc_shim_install COMMAND test_alloc_shim_install)
+endif()
+
 # Injector file hijack: the production relocation/afterload policy driven through a real C
 # entry hook on the VM's stock `require` (dlopen'd, never linked). The policy TU is compiled
 # in directly; the installer (InjectorFileHijackInstall.cpp) stays game-side.
@@ -131,7 +188,7 @@ if(TARGET luajit-5.1 AND TARGET ds_test_doctest)
         ${CMAKE_BINARY_DIR}/luajit/variants/default
         ${CMAKE_SOURCE_DIR}/3rd)
     target_compile_features(test_injector_file_hijack_host PRIVATE cxx_std_23)
-    target_link_libraries(test_injector_file_hijack_host PRIVATE ds_test_doctest spdlog::spdlog fast_assert fast_assert_owner ${CMAKE_DL_LIBS})
+    target_link_libraries(test_injector_file_hijack_host PRIVATE ds_test_doctest spdlog::spdlog fast_assert fast_assert_owner Frida::Gum ${CMAKE_DL_LIBS})
     add_test(NAME plugin_injector_file_hijack
         COMMAND ${CMAKE_COMMAND} -E env
             DS_HIJACK_VM=$<TARGET_FILE:luajit-5.1>
@@ -569,7 +626,7 @@ if (TARGET liblua_static)
 else()
     message(FATAL_ERROR "liblua_static required for test_puc_dump_host")
 endif()
-target_link_libraries(test_puc_dump_host PRIVATE spdlog::spdlog fast_assert fast_assert_owner)
+target_link_libraries(test_puc_dump_host PRIVATE spdlog::spdlog fast_assert fast_assert_owner Frida::Gum)
 if (NOT WIN32)
     target_link_libraries(test_puc_dump_host PRIVATE ${CMAKE_DL_LIBS})
 endif()
@@ -656,6 +713,15 @@ add_test(
         ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/plugin/run_lua_host.py
 )
 set_tests_properties(plugin_host_lua PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+add_test(
+    NAME config_patch_screen
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/config_patch/run_spec.py
+)
+set_tests_properties(config_patch_screen PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 add_test(
@@ -1135,6 +1201,19 @@ if (WIN32 AND TARGET signature_updater)
                 $<TARGET_FILE:signature_updater> --check-cache)
         set_tests_properties(windows_signatures_cache PROPERTIES
             LABELS windows_game_signatures TIMEOUT 1800)
+        # Staleness witness: the runtime and signature_updater share the writer, the
+        # DB is tracked by git, and an unchanged document is not rewritten. So running
+        # the update here and finding a tracked file modified means the committed copy
+        # is stale - fail, and let the game tests wait for this setup (FIXTURES_REQUIRED
+        # below) instead of each run rewriting Mod/ underneath the gates.
+        add_test(NAME signatures_up_to_date
+            COMMAND ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/signatures/run.py
+                $<TARGET_FILE:signature_updater> --require-fresh)
+        set_tests_properties(signatures_up_to_date PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            LABELS windows_game_signatures
+            FIXTURES_SETUP signature_db
+            TIMEOUT 1800)
     endif()
 endif()
 
@@ -1197,6 +1276,8 @@ set(DS_DOCTEST_RUNNER_TARGETS
     test_buffer_name_pool
     test_fast_assert_cross_dso
     test_fast_hook
+    test_alloc_shim
+    test_alloc_shim_install
     test_plugin_host_graph
     test_plugin_option_rules
     test_config_schema
@@ -1329,9 +1410,33 @@ ds_test_append_lock(ds_relocation_log
     eh_frame_starts
     elf_plt_symbols)
 ds_test_append_lock(ds_signature_tool_log
+    signatures_up_to_date
     windows_signatures
     windows_signatures_cache
     linux_signatures_client
     linux_signatures_server
     linux_signatures_cache_client
     linux_signatures_cache_server)
+
+# The freshness setup must finish before anything launches the game (which would
+# otherwise rewrite Mod/signatures_*.json mid-run) or snapshots those files.
+if ("signatures_up_to_date" IN_LIST DS_REGISTERED_TESTS)
+    foreach(_ds_sig_consumer IN ITEMS
+            plugin_dedicated_sim_pause
+            plugin_client_inject_smoke
+            plugin_client_host_smoke
+            game_mod_throw_abort
+            game_puc_string_dump
+            game_performance_worldgen
+            game_performance_startup
+            windows_signatures
+            windows_signatures_cache
+            linux_signatures_client
+            linux_signatures_server
+            linux_signatures_cache_client
+            linux_signatures_cache_server)
+        if (_ds_sig_consumer IN_LIST DS_REGISTERED_TESTS)
+            set_property(TEST ${_ds_sig_consumer} APPEND PROPERTY FIXTURES_REQUIRED signature_db)
+        endif()
+    endforeach()
+endif()
