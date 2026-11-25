@@ -21,6 +21,16 @@ SERVER_EXE_RELATIVE = (
     Path("MacOS") / "dontstarve_dedicated_server_nullrenderer",
 )
 
+# Client binary names, in preference order. ``_1`` is the real ELF left behind
+# by ``Mod/install_linux.sh``, which replaces the shipped name with an LD_PRELOAD
+# wrapper script.
+CLIENT_EXE_RELATIVE = (
+    Path("bin64") / "dontstarve_steam_x64.exe",
+    Path("bin64") / "dontstarve_steam_x64",
+    Path("bin64") / "dontstarve_steam_x64_1",
+    Path("bin64") / "dontstarve_steam.exe",
+)
+
 # Wrapper scripts under bin64 may be smaller; real renderer binaries are not.
 _MIN_REAL_EXE_BYTES = 1_000_000
 
@@ -46,6 +56,17 @@ def default_game_dirs() -> List[Path]:
 
 def find_server_exe(game_dir: Path) -> Optional[Path]:
     candidates = [game_dir / rel for rel in SERVER_EXE_RELATIVE]
+    for candidate in candidates:
+        if candidate.is_file() and candidate.stat().st_size > _MIN_REAL_EXE_BYTES:
+            return candidate
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def find_client_exe(game_dir: Path) -> Optional[Path]:
+    candidates = [game_dir / rel for rel in CLIENT_EXE_RELATIVE]
     for candidate in candidates:
         if candidate.is_file() and candidate.stat().st_size > _MIN_REAL_EXE_BYTES:
             return candidate

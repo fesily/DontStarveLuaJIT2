@@ -40,6 +40,11 @@ if str(TESTS_DIR) not in sys.path:
 from harness.cluster import remove_persist_tree, write_offline_cluster  # noqa: E402
 from harness.ports import free_udp_port  # noqa: E402
 from harness.logs import safe_print  # noqa: E402
+# Real binaries only: ``Mod/install_linux.sh`` leaves an LD_PRELOAD wrapper under
+# the shipped name and the ELF as ``<name>_1``. Launching the wrapper would keep
+# the game alive as its child after stop() kills the script, and the leaked
+# client then holds the cluster's UDP port for every later game test.
+from harness.game_dir import find_client_exe  # noqa: E402
 
 # Child output is decoded with errors="replace"; a legacy console code page
 # (GBK) cannot encode the resulting U+FFFD, and killing the reader thread would
@@ -87,18 +92,6 @@ def resolve_game_dir() -> Optional[Path]:
     for d in defaults:
         if d.exists():
             return d
-    return None
-
-
-def find_client_exe(game_dir: Path) -> Optional[Path]:
-    for name in (
-        "dontstarve_steam_x64.exe",
-        "dontstarve_steam_x64",
-        "dontstarve_steam.exe",
-    ):
-        p = game_dir / "bin64" / name
-        if p.exists():
-            return p
     return None
 
 

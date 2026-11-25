@@ -1175,6 +1175,15 @@ if (TARGET verify_linux_signatures)
         else()
             set(_ds_game_binary "${GAME_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64")
         endif()
+        # Mod/install_linux.sh replaces the shipped name with an LD_PRELOAD wrapper
+        # script and keeps the ELF as <name>_1 (same convention as
+        # tests/harness/game_dir.py); the tool scans ELF images and refuses a script.
+        if (EXISTS "${_ds_game_binary}_1")
+            file(READ "${_ds_game_binary}" _ds_game_magic HEX LIMIT 4)
+            if (NOT _ds_game_magic STREQUAL "7f454c46")
+                set(_ds_game_binary "${_ds_game_binary}_1")
+            endif()
+        endif()
         if (EXISTS "${_ds_game_binary}" AND EXISTS "${LUA_LIBRARIES_PATH}")
             add_test(NAME linux_signatures_${_ds_variant}
                 COMMAND verify_linux_signatures "${LUA_LIBRARIES_PATH}" "${_ds_game_binary}")
