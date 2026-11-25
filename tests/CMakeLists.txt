@@ -614,6 +614,12 @@ target_include_directories(test_puc_dump_host PRIVATE
 target_compile_features(test_puc_dump_host PRIVATE cxx_std_23)
 set_target_properties(test_puc_dump_host PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>")
+# PrivateLuaRegistry.cpp includes lua.hpp, which pulls the generated
+# variants/default/luajit.h; that header is a custom-command output of the VM
+# target, so the include dir alone does not order the compile after it.
+if (TARGET luajit-5.1)
+    add_dependencies(test_puc_dump_host luajit-5.1)
+endif()
 if (TARGET ds_puc51_dump)
     target_link_libraries(test_puc_dump_host PRIVATE ds_puc51_dump)
     add_dependencies(test_puc_dump_host ds_puc51_dump)
