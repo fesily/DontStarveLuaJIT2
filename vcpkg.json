@@ -42,6 +42,10 @@
       "name": "mimalloc"
     },
     {
+      "name": "mimalloc-override",
+      "platform": "!windows"
+    },
+    {
       "name": "sol2"
     },
     {

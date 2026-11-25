@@ -75,6 +75,16 @@ find_package(spdlog CONFIG REQUIRED)
 find_package(range-v3 CONFIG REQUIRED)
 find_package(Tracy CONFIG REQUIRED)
 find_package(mimalloc CONFIG REQUIRED)
+find_package(Threads REQUIRED)
+# POSIX preload stub: a MI_OVERRIDE=ON archive, kept separate from the
+# MI_OVERRIDE=OFF one the Windows CRT shim consumes. Linux links the archive
+# directly; macOS force-loads it so the __DATA,__interpose table is present.
+if (UNIX)
+    find_library(DS_MIMALLOC_OVERRIDE_LIBRARY NAMES mimalloc-override)
+    if (NOT DS_MIMALLOC_OVERRIDE_LIBRARY)
+        message(FATAL_ERROR "mimalloc-override static archive is required for the POSIX InjectorStub")
+    endif()
+endif ()
 find_package(Boost REQUIRED COMPONENTS pfr)
 find_package(slikenet CONFIG REQUIRED)
 # SLikeNet find_dependency(OpenSSL): vcpkg MODULE pins a single debug/lib
@@ -280,6 +290,21 @@ if (NOT WIN32)
     add_library(InjectorStub SHARED
         ${DONTSTARVEINJECTOR_ROOT}/loader/injector_stub.cpp)
     target_link_libraries(InjectorStub PRIVATE injector_bootstrap ${CMAKE_DL_LIBS})
+    if (UNIX)
+        # The stub is the preload object, so its allocator definitions must be
+        # the process-wide ones. Linux uses direct symbol definitions; macOS
+        # uses mimalloc's __DATA,__interpose table, which requires loading every
+        # object from the archive (-force_load) instead of --undefined=malloc.
+        target_link_libraries(InjectorStub PRIVATE Threads::Threads)
+        if (APPLE)
+            target_link_options(InjectorStub PRIVATE
+                "LINKER:-force_load,${DS_MIMALLOC_OVERRIDE_LIBRARY}")
+        else ()
+            target_link_libraries(InjectorStub PRIVATE
+                "${DS_MIMALLOC_OVERRIDE_LIBRARY}")
+            target_link_options(InjectorStub PRIVATE "LINKER:--undefined=malloc")
+        endif ()
+    endif ()
     target_include_directories(InjectorStub PRIVATE ${DONTSTARVEINJECTOR_ROOT})
     target_compile_features(InjectorStub PRIVATE cxx_std_23)
     set_target_properties(InjectorStub PROPERTIES

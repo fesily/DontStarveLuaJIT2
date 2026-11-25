@@ -1,0 +1,14 @@
+{
+  "name": "mimalloc-override",
+  "version": "2.2.3",
+  "description": "mimalloc static archive with the standard allocation symbols, for the POSIX preload stub",
+  "homepage": "https://github.com/microsoft/mimalloc",
+  "license": "MIT",
+  "supports": "!windows",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    }
+  ]
+}
