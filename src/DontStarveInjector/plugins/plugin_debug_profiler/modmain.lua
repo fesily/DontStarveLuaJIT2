@@ -15,19 +15,24 @@ if not injector then
     return
 end
 
+-- `_G` is the plugin's authorised view; ProfilerJitEx/ProfilerJit are consumed by engine
+-- scripts, so write them into the real GLOBAL (the view forwards assignments, but rawset
+-- would keep them local).
+local engine = rawget(_G, "GLOBAL") or _G
+
 local function EnableProfiler(mode)
     local zone = require("jit.zone")
     local sim = getmetatable(TheSim).__index
     local old_profiler_push = sim.ProfilerPush
     local old_profiler_pop = sim.ProfilerPop
-    rawset(_G, "ProfilerJitEx", {
+    engine.ProfilerJitEx = {
         start = function(m)
             injector.DS_LUAJIT_enable_profiler(1)
         end,
         stop = function()
             injector.DS_LUAJIT_enable_profiler(0)
         end,
-    })
+    }
     local profiler = require("jit.p")
     local enabled_profiler = false
     sim.ProfilerPush = function(self, name, ...)
@@ -42,7 +47,7 @@ local function EnableProfiler(mode)
         end
         old_profiler_pop(...)
     end
-    rawset(_G, "ProfilerJit", {
+    engine.ProfilerJit = {
         start = function(m)
             enabled_profiler = true
             profiler.start(m or mode, "unsafedata/profiler.txt")
@@ -51,7 +56,7 @@ local function EnableProfiler(mode)
             enabled_profiler = false
             profiler.stop()
         end,
-    })
+    }
 end
 
 local function EnableTracy()

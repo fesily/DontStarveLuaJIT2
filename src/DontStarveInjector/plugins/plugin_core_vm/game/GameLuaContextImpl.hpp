@@ -2,6 +2,9 @@
 #pragma once
 
 #include "game/GameLuaContext.hpp"
+#include "game/CfunctionHook.hpp"
+#include "game/InjectorFileHijack.hpp"
+#include "game/PrivateLuaRegistry.hpp"
 #include "game/GameLuaInternal.hpp"
 #include "DontStarveSignature.hpp"
 #include "CoreVmSignatures.hpp"
@@ -27,7 +30,9 @@
 #include <array>
 #include <cassert>
 #include <cstdio>
+#include <exception>
 #include <spdlog/spdlog.h>
+#include <fast_assert/fast_assert.hpp>
 #include <fmt/format.h>
 #include <frida-gum.h>
 
@@ -37,8 +42,6 @@ using ds::core_vm::detail::replace_game_io_open;
 using ds::core_vm::detail::load_game_fn_io_open;
 using ds::core_vm::detail::CreateLuaStateForCurrentVm;
 using ds::core_vm::detail::MarkLuaStateClosed;
-
-#define GameLuaInjectorName "GameLuaInjector"
 
 namespace ds::core_vm::detail {
 // Hijack of the engine's register_debug_getsize (implemented in GameLuaContext.cpp).
@@ -51,6 +54,11 @@ void hook_register_debug_getsize(void *addr);
 // valid under both the game Lua 5.1 and LuaJIT; injected from our luaL_openlibs path so both
 // VMs expose the same debug.getsize (原版一致性).
 void install_debug_getsize(lua_State *L);
+// Hand the environment over to this mod: binds GameInjector/GameLuaInjector into the mod env and
+// returns (root, real registry). Called from Lua (GameInjector.InitializeModEnvironment) before
+// the mod clears the real GLOBAL fields. The root is invisible to Lua by construction (LuaJIT
+// second registry / PUC holder upvalue), so no registry filter is installed.
+int initialize_mod_environment(lua_State *L);
 } // namespace ds::core_vm::detail
 
 struct LuaStackGuard {
@@ -84,6 +92,16 @@ struct GameLuaContextImpl : GameLuaContext {
     GameLuaContextImpl(const char *sharedLibraryName, GameLuaType type)
         : GameLuaContext{sharedLibraryName, type} {
     }
+
+    // C-function hooks owned by this VM: installed when a state loads main.lua, cleared by
+    // ResetApis when the VM is torn down.
+    ds::core_vm::detail::CfunctionHook cfuncHooks;
+
+    // Injector file hijack (relocation + one-shot module afterload): the file-hijack policy is
+    // attached to the global `require`/`kleiloadlua` closures by pointing their implementation
+    // pointers at dedicated thunks (InjectorFileHijackInstall.cpp, policy in
+    // InjectorFileHijack.cpp). Installed when the state loads main.lua.
+    void install_injector_file_hooks(lua_State *L);
 
     void cleanup_lua_io_lib(lua_State *L) {
         // Drop global io table reference.
@@ -130,6 +148,12 @@ struct GameLuaContextImpl : GameLuaContext {
 
     virtual void luaL_openlibs_hooker(lua_State *L) {
         api._luaL_openlibs(L);
+        // One private root per state: LuaJIT exposes it as the second registry
+        // (LUA_REGISTRYINDEX2 / global_State.registry2tv), PUC through a C holder keyed by
+        // this context's LuaApis address. A missing/mismatched mode is a hard error: running on without the root would
+        // silently lose every policy this plugin installs.
+        privateRegistry = ds::core_vm::detail::GameLuaPrivateRegistry::initialize(this->api, this->luaType, L);
+        FAST_ASSUME(privateRegistry != nullptr);
         // Both VMs run this hooker (the game context calls it through the chain), so both end
         // up with the same debug.getsize (原版一致性). The engine's own register_debug_getsize
         // step stays hijacked above; this only adds the function to the debug table.
@@ -150,6 +174,31 @@ struct GameLuaContextImpl : GameLuaContext {
             spdlog::info("Injector luaopen_io2");
         }
 
+        // The native table must exist before the framework chunk runs: the framework captures it
+        // by reference in the event environment it builds, and this mod clears the real GLOBAL
+        // field while the game keeps booting. One table per state: luaopen_GameInjector
+        // allocates a fresh table on every call, so a second publish would orphan the reference
+        // the framework already captured.
+        api._lua_getglobal(L, "GameInjector");
+        const bool native_published = api._lua_istable(L, -1) != 0;
+        api._lua_pop(L, 1);
+        if (!native_published) {
+            int luaopen_GameInjector(lua_State *L);
+            api._lua_pushcfunction(L, luaopen_GameInjector);
+            api._lua_pushstring(L, "GameInjector");
+            api._lua_call(L, 1, 0);
+        }
+        // Deferred code reads the native table from the private root: the hand-off clears
+        // GLOBAL.GameInjector/GameLuaInjector right after binding them into the mod env.
+        {
+            const int top = api._lua_gettop(L);
+            api.push_private_root(L);
+            api._lua_getglobal(L, "GameInjector");
+            FAST_ASSERT(api._lua_istable(L, -1) != 0);
+            api._lua_setfield(L, -2, "GameInjector");
+            api._lua_settop(L, top);
+        }
+
         do_lua_env(*this, L, "GAME_INIT");
         gameLuaInjectorFramework.init(*this, L);
 
@@ -166,12 +215,6 @@ struct GameLuaContextImpl : GameLuaContext {
                 }
             }
         }
-
-        // register game injector
-        int luaopen_GameInjector(lua_State *L);
-        api._lua_pushcfunction(L, luaopen_GameInjector);
-        api._lua_pushstring(L, "GameInjector");
-        api._lua_call(L, 1, 0);
 
         InjectorConfig::EnvOrCmdOptValue force_enable_opts{"force_enable_mods"};
         auto force_enable_str = static_cast<const char *>(force_enable_opts);
@@ -296,6 +339,8 @@ struct GameLuaContextImpl : GameLuaContext {
             lua_event_notifyer(LUA_EVENT::close_state, L);
             spdlog::info("lua_close:{}", (void *) L);
             (*currentCtx)->_lua_close(L);
+            // The state's closures are gone with it: release their hook slots.
+            (*currentCtx).cfuncHooks.drop_state(L);
             MarkLuaStateClosed(L, "lua_close");
         };
         HOOK_LUA_API(luaL_openlibs) + [](lua_State *L) {
@@ -305,13 +350,7 @@ struct GameLuaContextImpl : GameLuaContext {
         HOOK_LUA_API(luaL_loadbuffer) + [](lua_State *L, const char *buff, size_t size, const char *name) {
             auto &ctx = *currentCtx;
             if (name == "@scripts/main.lua"sv) {
-                if (ctx->_luaL_dostring(L, GameLuaInjectorName ".init()") != LUA_OK) {
-                    const char *err = ctx->_lua_tostring(L, -1);
-                    spdlog::error("GameLuaInjector.init failed: {}", err ? err : "?");
-                    if (err) {
-                        ctx->_lua_pop(L, 1);
-                    }
-                }
+                ctx.install_injector_file_hooks(L);
                 int top = ctx->_lua_gettop(L);
                 auto new_buffer = wrapper_game_main_buffer(L, {buff, size});
                 assert(ctx->_lua_gettop(L) == top);
@@ -458,6 +497,12 @@ struct GameLuaContextImpl : GameLuaContext {
         spdlog::info("Reverted {} base lua api targets for vm={} (failed={})", reverted, GameLuaTypeToString(luaType),
                      failed);
         replacedTargets.assign(pending.begin(), pending.end());
+        // The root table dies with the state. The mode object is intentionally leaked with the
+        // process-lifetime context; it must not be released here.
+        // Unconditional: the VM is being torn down, so its hook slots go too. The next state that
+        // loads main.lua attaches them again (a closed state's closures are already gone, so
+        // clear() only frees slots and never writes into them).
+        cfuncHooks.clear();
     }
 
     virtual void HotfixApis(const std::string &mainPath) {

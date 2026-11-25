@@ -527,15 +527,39 @@ static char* compat53_strerror(int en, char* buff, size_t sz) {
 }
 
 
-static void compat53_call_lua(lua_State* L, char const code[], size_t len, int nargs, int nret) {
-	lua_rawgetp(L, LUA_REGISTRYINDEX, (void*)code);
-	if (lua_type(L, -1) != LUA_TFUNCTION) {
+// The compiled compat53 shims are keyed by their code address in the private registry root
+// (root.compat53, see game/PrivateLuaRegistry.cpp). They are injector state like every policy
+// record, so they live under the same single lightuserdata entry instead of a second top-level
+// registry slot. Declared as plain C because this TU remaps every lua_* name.
+extern "C" int ds_core_vm_push_private_root(lua_State* L);
+
+// Pushes root.compat53, creating the root table on first use.
+static void compat53_push_cache(lua_State* L) {
+	if (!ds_core_vm_push_private_root(L))
+		luaL_error(L, "invalid private registry root");
+	lua_getfield(L, -1, "compat53");
+	if (lua_type(L, -1) != LUA_TTABLE) {
 		lua_pop(L, 1);
-		if (luaL_loadbuffer(L, code, len, "=none"))
-			lua_error(L);
+		lua_newtable(L);
 		lua_pushvalue(L, -1);
-		lua_rawsetp(L, LUA_REGISTRYINDEX, (void*)code);
+		lua_setfield(L, -3, "compat53");
 	}
+	lua_remove(L, -2);  /* root */
+}
+
+static void compat53_call_lua(lua_State* L, char const code[], size_t len, int nargs, int nret) {
+	compat53_push_cache(L);                        /* cache */
+	lua_pushlightuserdata(L, (void*)code);         /* cache, key */
+	lua_rawget(L, -2);                             /* cache, fn */
+	if (lua_type(L, -1) != LUA_TFUNCTION) {
+		lua_pop(L, 1);                             /* cache */
+		if (luaL_loadbuffer(L, code, len, "=none"))
+			lua_error(L);                          /* cache, fn */
+		lua_pushlightuserdata(L, (void*)code);     /* cache, fn, key */
+		lua_pushvalue(L, -2);                      /* cache, fn, key, fn */
+		lua_rawset(L, -4);                         /* cache, fn */
+	}
+	lua_remove(L, -2);                             /* fn */
 	lua_insert(L, -nargs - 1);
 	lua_call(L, nargs, nret);
 }
@@ -1235,6 +1259,26 @@ static sol::object game_injector_readfile_abs(sol::this_state ts, const std::str
     return sol::make_object(L, source);
 }
 
+// Reads a C function's environment (the stock require package table). The manager needs this
+// before it replaces GLOBAL.package; debug.getfenv is not part of the mod surface.
+static int game_injector_get_function_environment(lua_State *L) {
+    if (!lua_isfunction(L, 1)) {
+        return luaL_error(L, "GetFunctionEnvironment: function expected");
+    }
+    lua_getfenv(L, 1);
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_pushnil(L);
+    }
+    return 1;
+}
+
+// game/GameLuaContext.cpp — the mod-owned hand-off (see game/PrivateLuaRegistry.hpp). Declared
+// here instead of through that header: this TU remaps every lua_* name.
+namespace ds::core_vm::detail {
+int initialize_mod_environment(lua_State *L);
+}
+
 int luaopen_GameInjector(lua_State* L) {
     sol::state_view lua(L);
     sol::table module = lua.create_table();
@@ -1250,8 +1294,14 @@ int luaopen_GameInjector(lua_State* L) {
     module.set_function("DS_LUAJIT_plugin_root", &game_injector_plugin_root);
     module.set_function("DS_LUAJIT_readfile_abs", &game_injector_readfile_abs);
 
-    // Typed exports from plugins (GiSig trampolines / LuaCFunction).
+    // Typed exports from plugins (GiSig trampolines / LuaCFunction), plus the one entry this
+    // mod calls before it clears the real GLOBAL fields. A plain C function keeps the return
+    // pair exact: sol would collapse (root, registry) into one converted value.
     module.push();
+    lua_pushcclosure(L, &ds::core_vm::detail::initialize_mod_environment, 0);
+    lua_setfield(L, -2, "InitializeModEnvironment");
+    lua_pushcclosure(L, &game_injector_get_function_environment, 0);
+    lua_setfield(L, -2, "GetFunctionEnvironment");
     ds::core_vm::apply_game_injector_exports(L, -1);
     lua_settop(L, lua_gettop(L) - 1);
 

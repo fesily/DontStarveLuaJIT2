@@ -224,8 +224,86 @@ end
     print("PASS: when_sees_thenet_from_g")
 end
 
+-- An external (another mod's) package must not inherit this plugin's injector or context:
+-- its parent is the owning mod's authorised env, so capability follows that env only.
+local function test_external_package_isolation()
+    local dir = tmp_dir("ds_pkg_external")
+    write_fixture(dir, "modinfo.lua", [[
+name = "Pack"
+description = "d"
+author = "a"
+version = "1.0.0"
+api_version = 10
+dst_compatible = true
+dont_starve_compatible = false
+reign_of_giants_compatible = false
+client_only_mod = false
+server_only_mod = true
+all_clients_require_mod = false
+plugin_id = "pack.external"
+]])
+    write_fixture(dir, "modmain.lua", [[
+print("injector", tostring(GameInjector))
+print("luajit", tostring(luajit ~= nil))
+print("jitcopy", tostring(GLOBAL.jit ~= nil))
+]])
+    local function run(api, ctx)
+        local printed = {}
+        api.print = function(...)
+            printed[#printed + 1] = table.concat({ ... }, "\t")
+        end
+        local plugin = PL.load_package_from_root(dir, "plugin_external", api)
+        local load_ctx = ctx
+        plugin.load(load_ctx)
+        return table.concat(printed, "\n")
+    end
+    local base = {
+        MODROOT = dir .. "/",
+        kleiloadlua = function(p) return loadfile(p) end,
+        config_modname = "workshop-owner",
+    }
+
+    -- External + a compatible owner env: capability reaches the package through parent_env,
+    -- the injector tables do not (neither from GLOBAL nor from the stripped ctx).
+    local compat_env = {
+        GLOBAL = { jit = { fake = true } },
+        luajit = { jit = { fake = true } },
+        GameInjector = { leaked = true },
+    }
+    setmetatable(compat_env, { __index = _G })
+    local external_api = {}
+    for k, v in pairs(base) do external_api[k] = v end
+    external_api.parent_env = compat_env
+    external_api.external = true
+    local out = run(external_api, { injector = { leaked = true }, mod_env = compat_env, controller = {} })
+    assert_true(out:find("injector\tnil", 1, true) ~= nil, "external package saw an injector: " .. out)
+    assert_true(out:find("luajit\ttrue", 1, true) ~= nil, "external package lost its capability: " .. out)
+    assert_true(out:find("jitcopy\ttrue", 1, true) ~= nil, "external package lost GLOBAL.jit: " .. out)
+
+    -- External + an undeclared owner env: no capability at all.
+    local plain_env = { GLOBAL = {}, GameInjector = { leaked = true } }
+    setmetatable(plain_env, { __index = _G })
+    local plain_api = {}
+    for k, v in pairs(base) do plain_api[k] = v end
+    plain_api.parent_env = plain_env
+    plain_api.external = true
+    out = run(plain_api, { injector = { leaked = true }, mod_env = plain_env })
+    assert_true(out:find("injector\tnil", 1, true) ~= nil, "plain external package saw an injector")
+    assert_true(out:find("luajit\tfalse", 1, true) ~= nil, "plain external package gained luajit")
+
+    -- Internal package: the host context still supplies the injector.
+    local internal_api = {}
+    for k, v in pairs(base) do internal_api[k] = v end
+    internal_api.parent_env = setmetatable({ GLOBAL = {} }, { __index = _G })
+    out = run(internal_api, { injector = { leaked = true } })
+    assert_true(out:find("injector\ttable", 1, true) ~= nil,
+        "internal package lost its injector: " .. out)
+    print("PASS: external_package_isolation")
+end
+
 test_missing_api_version_fails()
 test_host_marker_true()
+test_external_package_isolation()
 test_engine_safe_without_marker()
 test_modimport_rebind_on_load()
 test_when_sees_thenet_from_g()
@@ -320,6 +398,44 @@ configuration_options = {
     print("PASS: derive_from_configuration_options")
 end
 
+
+local function test_internal_parent_view()
+    -- Our own packages run in the authorised view: the package env's parent is the view, so
+    -- granted fields are raw there, `_G` is the view (not the engine table), and engine names
+    -- still fall through to the real GLOBAL behind it.
+    local dir = tmp_dir("ds_pkg_view")
+    write_fixture(dir, "modinfo.lua", ENGINE .. [[
+plugin_id = "pack.view"
+]])
+    write_fixture(dir, "modmain.lua", [[
+print("jit", tostring(jit ~= nil and jit.marker == true and _G.jit == jit))
+print("injector", tostring(GameInjector ~= nil and GameInjector.marker == 9))
+print("engine", tostring(TheWorld ~= nil and TheWorld.marker == 5))
+print("globalself", tostring(_G.jit == jit and _G.TheWorld == TheWorld))
+]])
+    local engine = setmetatable({ TheWorld = { marker = 5 } }, { __index = _G })
+    local view = { jit = { marker = true }, GameInjector = { marker = 9 } }
+    setmetatable(view, { __index = engine })
+    view._G = view
+    local printed = {}
+    local api = {
+        MODROOT = dir .. "/",
+        kleiloadlua = function(p) return loadfile(p) end,
+        config_modname = "luajit2",
+        parent_env = view,
+        print = function(...) printed[#printed + 1] = table.concat({ ... }, "\t") end,
+    }
+    local plugin = PL.load_package_from_root(dir, "plugin_view", api)
+    plugin.load({ injector = view.GameInjector })
+    local out = table.concat(printed, "\n")
+    assert_true(out:find("jit\ttrue", 1, true) ~= nil, "package env lost the granted jit: " .. out)
+    assert_true(out:find("injector\ttrue", 1, true) ~= nil, "package env lost the injector: " .. out)
+    assert_true(out:find("engine\ttrue", 1, true) ~= nil, "engine globals stopped resolving: " .. out)
+    assert_true(out:find("globalself\ttrue", 1, true) ~= nil, "_G is not the view: " .. out)
+    print("PASS: internal_parent_view")
+end
+
+test_internal_parent_view()
 test_reject_obsolete_options()
 test_require_config_modname()
 test_derive_from_configuration_options()

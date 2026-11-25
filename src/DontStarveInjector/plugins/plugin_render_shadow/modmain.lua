@@ -7,7 +7,7 @@ local function export(name)
     if injector and injector[name] then
         return injector[name]
     end
-    return rawget(_G, name)
+    return _G[name]
 end
 
 local sun_enabled = false

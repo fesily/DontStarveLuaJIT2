@@ -4,7 +4,9 @@
 (``build_inject_env``) with ``ROOT`` = :func:`harness.game_dir.repo_root`.
 ``stage_inject_shell`` mirrors ``tests/plugin_client/run_client_inject_smoke.py``
 (``ensure_injector``): the real Injector stays mod-local, the game bin64 only
-receives the thin shell (``Winmm.dll`` / POSIX stub).
+receives the thin shell (``Winmm.dll`` / POSIX stub). A shell already present in
+game bin64 is refreshed when its content differs from the package one (hash
+compare), because a stale shell must not serve its data to a newer real module.
 
 Real-Injector discovery matches the runtime resolution order
 (``DS_LUAJIT_INJECTOR`` → ``DS_LUAJIT_INJECTOR_DIR`` → mod root).
@@ -12,6 +14,7 @@ Real-Injector discovery matches the runtime resolution order
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import sys
@@ -31,6 +34,35 @@ def _first_existing(paths: List[Path]) -> Optional[Path]:
 def _env_path(name: str) -> Optional[Path]:
     value = os.environ.get(name, "").strip()
     return Path(value) if value else None
+
+
+def _file_digest(path: Path) -> Optional[str]:
+    """sha256 of ``path``, or None when it cannot be read."""
+    try:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
+def _copy_if_different(src: Path, dst: Path) -> bool:
+    """Copy ``src`` over ``dst`` unless both exist with identical content.
+
+    Existence is not enough for a shell: a game-dir copy left by an older run is
+    stale even though the file is there, and a stale POSIX shell now corrupts the
+    real module through shared ``STB_GNU_UNIQUE`` data instead of failing loudly.
+    Returns True when a copy happened.
+    """
+    if dst.exists():
+        src_digest = _file_digest(src)
+        if src_digest is not None and src_digest == _file_digest(dst):
+            return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return True
 
 
 def _real_injector(game_dir: Path) -> Optional[Path]:
@@ -149,12 +181,15 @@ def stage_inject_shell(game_dir: Path) -> bool:
                 root / "Mod" / "bin64" / "windows" / "winmm.dll",
             ]
         )
-        if not winmm.exists() and not winmm_alt.exists():
-            if mod_winmm is None:
-                print(f"[harness] Winmm shell missing under {bin64} and Mod package")
-                return False
-            shutil.copy2(mod_winmm, winmm)
-            print(f"[harness] installed Winmm.dll shell -> {winmm}")
+        if mod_winmm is not None:
+            target = winmm if winmm.exists() else (winmm_alt if winmm_alt.exists() else winmm)
+            existed = target.exists()
+            if _copy_if_different(mod_winmm, target):
+                action = "refreshed" if existed else "installed"
+                print(f"[harness] {action} Winmm.dll shell -> {target}")
+        elif not winmm.exists() and not winmm_alt.exists():
+            print(f"[harness] Winmm shell missing under {bin64} and Mod package")
+            return False
 
         real = _real_injector(game_dir)
         if real is None:
@@ -181,10 +216,11 @@ def stage_inject_shell(game_dir: Path) -> bool:
                 root / "Mod" / "bin64" / "linux" / "shell" / "libInjector.so",
             ]
         )
-        if not stub_dst.exists() and stub_src is not None:
-            stub_dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(stub_src, stub_dst)
-            print(f"[harness] installed POSIX stub shell -> {stub_dst}")
+        if stub_src is not None:
+            existed = stub_dst.exists()
+            if _copy_if_different(stub_src, stub_dst):
+                action = "refreshed" if existed else "installed"
+                print(f"[harness] {action} POSIX stub shell -> {stub_dst}")
 
         if real is None and not stub_dst.exists():
             print("[harness] libInjector real/stub missing under Mod package and game bin64")
