@@ -6,7 +6,7 @@
 // test at runtime, by absolute path, with RTLD_NOW|RTLD_LOCAL (LoadLibraryW on
 // Windows) and resolves every lua_* entry point from that handle. Nothing is
 // linked against LuaJIT and no lua_* symbol is taken from the process:
-//   * the host's own PUC 5.1 (src/lua51original, hidden visibility) must never
+//   * the host's own PUC 5.1 (3rd/lua51original, hidden visibility) must never
 //     answer a call meant for the loaded VM;
 //   * the same host binary drives the default VM, the arena-GC VM, the no-JIT
 //     VM and the macro-off (native-only) VM, so the build matrix is one binary.
@@ -46,7 +46,7 @@ namespace {
 // ---------------------------------------------------------------------------
 
 constexpr int kRegistryIndex = -10000;
-constexpr int kRegistry2Index = -11000;  /* LUA_REGISTRYINDEX2 (luajit/src/lua.h) */
+constexpr int kRegistry2Index = -11000;  /* LUA_REGISTRYINDEX2 (3rd/luajit/src/lua.h) */
 constexpr int kGlobalsIndex = -10002;
 constexpr int kGcCollect = 2;
 constexpr int kGcCount = 3;

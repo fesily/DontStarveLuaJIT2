@@ -3,7 +3,7 @@
 //
 // Split into its own translation unit (puc_dump_reference.cpp) so no build unit
 // ever mixes the PUC 5.1 headers with the dynamically loaded LuaJIT ones: this
-// header exposes only plain C types, and the implementation owns the src/lua51original
+// header exposes only plain C types, and the implementation owns the 3rd/lua51original
 // state. It is the *reference* oracle, not the production path:
 //   * ds_ref_dump  compiles a trusted fixture, executes it once and dumps the
 //                  requested returned function with PUC's own lua_dump;

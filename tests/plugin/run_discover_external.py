@@ -16,11 +16,11 @@ def lua_command_candidates() -> list[list[str]]:
     if env_lua:
         candidates.append([env_lua, str(SCRIPT)])
     build_roots = [
-        ROOT / "builds" / "ninja-multi-vcpkg" / "luajit" / "Release" / "luajit.exe",
-        ROOT / "builds" / "ninja-multi-vcpkg" / "luajit" / "RelWithDebInfo" / "luajit.exe",
-        ROOT / "builds" / "ninja-multi-vcpkg" / "luajit" / "Debug" / "luajit.exe",
-        Path("C:/Users/fesil/DontStarveLuaJIT2/builds/ninja-multi-vcpkg/luajit/Release/luajit.exe"),
-        Path("C:/Users/fesil/DontStarveLuaJIT2/builds/ninja-multi-vcpkg/luajit/RelWithDebInfo/luajit.exe"),
+        ROOT / "builds" / "ninja-multi-vcpkg" / "3rd" / "luajit" / "Release" / "luajit.exe",
+        ROOT / "builds" / "ninja-multi-vcpkg" / "3rd" / "luajit" / "RelWithDebInfo" / "luajit.exe",
+        ROOT / "builds" / "ninja-multi-vcpkg" / "3rd" / "luajit" / "Debug" / "luajit.exe",
+        Path("C:/Users/fesil/DontStarveLuaJIT2/builds/ninja-multi-vcpkg/3rd/luajit/Release/luajit.exe"),
+        Path("C:/Users/fesil/DontStarveLuaJIT2/builds/ninja-multi-vcpkg/3rd/luajit/RelWithDebInfo/luajit.exe"),
     ]
     for path in build_roots:
         if path.is_file():

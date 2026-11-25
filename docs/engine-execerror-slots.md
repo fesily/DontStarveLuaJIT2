@@ -1,7 +1,7 @@
 # Engine execution-error storage — locating the data slots
 
 Recon for wiring the host-side hooks `extern_error_message_buffer` /
-`extern_had_execution_error` (see `src/lua51original/src/ldo.c` and the
+`extern_had_execution_error` (see `3rd/lua51original/src/ldo.c` and the
 `luajit` submodule's `lj_api.c`).
 
 ## Engine shape (all platforms)
