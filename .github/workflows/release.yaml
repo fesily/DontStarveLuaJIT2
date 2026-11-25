@@ -9,12 +9,23 @@ on:
       - master
     tags:
       - "*"
+      - "!preview-*"
   pull_request:
     branches:
       - master
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - closed
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   compile:
+    if: ${{ github.event_name != 'pull_request' || github.event.action != 'closed' }}
     env:
       # Single source for the CMake configuration of shipped plugins: it decides both
       # the build and the build_config stamp in meta/manifest (installs refuse mismatches).
@@ -536,9 +547,12 @@ jobs:
           fi
           test -n "$(ls -A "$PDIR" 2>/dev/null)" || { echo "ERROR: empty plugins dir: $PDIR"; exit 1; }
           VERSION=$(python -c "import re, pathlib; t=pathlib.Path('CMakeLists.txt').read_text(encoding='utf-8'); m=re.search(r'project\\([^)]*VERSION\\s+([0-9]+\\.[0-9]+\\.[0-9]+)', t); assert m, 'version not found'; print(m.group(1))")
-          TAG="${GITHUB_REF_NAME:-}"
-          if [[ "${GITHUB_REF:-}" == refs/heads/master ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            TAG="preview-pr-${{ github.event.pull_request.number }}"
+          elif [[ "${GITHUB_REF:-}" == refs/heads/master ]]; then
             TAG="preview-${{ github.run_id }}-${GITHUB_SHA:0:7}"
+          else
+            TAG="${GITHUB_REF_NAME:-}"
           fi
           mkdir -p dist
           python tools/gen_plugins_manifest.py \
@@ -598,6 +612,7 @@ jobs:
 
   merge-plugins-manifest:
     needs: compile
+    if: ${{ github.event_name != 'pull_request' || github.event.action != 'closed' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -696,7 +711,7 @@ jobs:
 
   publish-preview:
     needs: [compile, merge-plugins-manifest]
-    if: ${{ github.ref == 'refs/heads/master' }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -728,3 +743,118 @@ jobs:
           tag: preview-${{ github.run_id }}-${{ steps.project-version.outputs.short_sha }}
           name: Preview v${{ steps.project-version.outputs.version }} (${{ steps.project-version.outputs.short_sha }})
           commit: ${{ github.sha }}
+
+  publish-pr-preview:
+    needs: [compile, merge-plugins-manifest]
+    if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ github.workspace }}/artifacts
+
+      - name: Publish rolling PR preview release
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="preview-pr-${PR_NUMBER}"
+          VERSION=$(python -c "import re, pathlib; t=pathlib.Path('CMakeLists.txt').read_text(encoding='utf-8'); m=re.search(r'project\\([^)]*VERSION\\s+([0-9]+\\.[0-9]+\\.[0-9]+)', t); assert m, 'version not found'; print(m.group(1))")
+
+          # Force-point the rolling PR tag at the branch head commit (exists on the
+          # server even though the PR checkout is a shallow merge ref).
+          if ! gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+                 -f sha="${PR_HEAD_SHA}" -F force=true >/dev/null 2>&1; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${TAG}" -f sha="${PR_HEAD_SHA}" >/dev/null
+          fi
+
+          rm -rf release-assets
+          mkdir -p release-assets
+          shopt -s nullglob
+          for f in \
+            artifacts/*/*_Mod.zip \
+            artifacts/plugins-manifest/plugins-manifest.json \
+            artifacts/*-plugins/*.zip \
+            artifacts/*-symbols/*_symbols.zip
+          do
+            cp -f "$f" release-assets/
+          done
+          for req in windows_Mod.zip linux_Mod.zip plugins-manifest.json; do
+            [ -f "release-assets/$req" ] || { echo "::error::missing expected PR preview asset: $req"; exit 1; }
+          done
+
+          python - <<'PY'
+          import os, pathlib
+          pr = os.environ["PR_NUMBER"]
+          branch = os.environ["PR_HEAD_REF"]
+          sha = os.environ["PR_HEAD_SHA"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          notes = (
+              f"Rolling preview build for #{pr} (`{branch}` @ `{sha[:7]}`).\n\n"
+              f"Windows (PowerShell):\n"
+              f"```powershell\n"
+              f"$env:DSJ_PR = '{pr}'; irm https://raw.githubusercontent.com/{repo}/master/install.ps1 | iex\n"
+              f"```\n\n"
+              f"Linux:\n"
+              f"```sh\n"
+              f"curl -fsSL https://raw.githubusercontent.com/{repo}/master/install.sh | sh -s -- --pr {pr}\n"
+              f"```\n"
+          )
+          pathlib.Path("release-notes.md").write_text(notes, encoding="utf-8")
+          PY
+
+          TITLE="PR #${PR_NUMBER} Preview v${VERSION} (${PR_HEAD_SHA:0:7})"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/* --clobber
+            while IFS= read -r old; do
+              [ -n "$old" ] || continue
+              if [ ! -e "release-assets/$old" ]; then
+                gh release delete-asset "$TAG" "$old" --yes
+              fi
+            done < <(gh release view "$TAG" --json assets --jq '.assets[].name')
+            gh release edit "$TAG" \
+              --title "$TITLE" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --latest=false
+          else
+            gh release create "$TAG" release-assets/* \
+              --verify-tag \
+              --prerelease \
+              --latest=false \
+              --title "$TITLE" \
+              --notes-file release-notes.md
+          fi
+
+  cleanup-pr-preview:
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: preview-pr-${{ github.event.pull_request.number }}
+    steps:
+      - name: Delete PR preview release and tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --cleanup-tag --yes
+            echo "Deleted PR preview release and tag: $TAG"
+          else
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" >/dev/null 2>&1 || true
+            echo "No PR preview release found for $TAG"
+          fi

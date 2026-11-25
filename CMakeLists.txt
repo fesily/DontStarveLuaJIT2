@@ -53,6 +53,16 @@ endif ()
 
 project(DontStarveLuaJIT VERSION 3.5.4)
 
+# LuaJIT's LUA_REGISTRYINDEX2 is an alias for LUA_REGISTRYINDEX by default (the
+# VM header default is 0). The DS product enables the separate second registry;
+# pass -DLJ_DS_REGISTRY2=OFF for the alias-only build.
+option(LJ_DS_REGISTRY2 "Use the separate DS second registry" ON)
+if(LJ_DS_REGISTRY2)
+    add_compile_definitions(LJ_DS_REGISTRY2=1)
+else()
+    add_compile_definitions(LJ_DS_REGISTRY2=0)
+endif()
+
 message(STATUS "CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
 message(STATUS "VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}")
 message(STATUS "VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR}")
@@ -423,6 +433,10 @@ find_package(keystone REQUIRED)
 
 set(DONTSTARVEINJECTOR_ROOT ${PROJECT_SOURCE_DIR}/src/DontStarveInjector)
 set(DONTSTARVEINJECTOR_UTIL_DIR ${DONTSTARVEINJECTOR_ROOT}/util)
+
+# Vendored third-party: fast_assert (ASSERT/DEBUG_ASSERT/ASSUME/PANIC/UNREACHABLE).
+# One static library owns the switchable handler for the whole process.
+add_subdirectory("3rd/fast_assert")
 
 add_subdirectory("src/lua51original")
 

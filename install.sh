@@ -3,9 +3,11 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- --channel preview
+#   curl -fsSL .../install.sh | sh -s -- --pr 42
+#   curl -fsSL .../install.sh | sh -s -- --branch feat/my-branch
 #
 # What it does:
-#   1. picks a GitHub release (auto = newest of release/preview, or forced)
+#   1. picks a GitHub release (auto = newest mainline of release/preview, or PR/tag)
 #   2. downloads <platform>_Mod.zip
 #   3. locates the game through Steam (registry-free: env overrides, ~/.steam,
 #      libraryfolders.vdf libraries, appmanifest_322330.acf) unless --game-dir
@@ -20,17 +22,27 @@
 #      in the mod, marker + launcher rewrite, [CHECK] self-check)
 #
 # Options (flags win over env):
-#   --channel auto|release|preview   which release to install   (DSJ_CHANNEL)
-#   --game-dir PATH                  skip Steam discovery       (DSJ_GAME_DIR)
-#   --mod-folder NAME                folder under <game>/mods   (DSJ_MOD_FOLDER)
-#   --repo OWNER/NAME                GitHub repo                (DSJ_REPO)
+#   --channel auto|release|preview|pr-<N>  which release to install   (DSJ_CHANNEL)
+#   --pr NUMBER                            rolling preview for PR #N  (DSJ_PR)
+#   --branch NAME                          open PR preview for branch (DSJ_BRANCH)
+#   --tag TAG                              exact release tag          (DSJ_TAG)
+#   --game-dir PATH                        skip Steam discovery       (DSJ_GAME_DIR)
+#   --mod-folder NAME                      folder under <game>/mods   (DSJ_MOD_FOLDER)
+#   --repo OWNER/NAME                      GitHub repo                (DSJ_REPO)
 #
 # POSIX sh only: safe to pipe into dash (`curl ... | sh`).
 
 set -eu
 
 REPO="${DSJ_REPO:-fesily/DontStarveLuaJIT2}"
+CHANNEL_SET="${DSJ_CHANNEL:+1}"
 CHANNEL="${DSJ_CHANNEL:-auto}"
+PR_SET="${DSJ_PR:+1}"
+PR="${DSJ_PR:-}"
+BRANCH_SET="${DSJ_BRANCH:+1}"
+BRANCH="${DSJ_BRANCH:-}"
+TAG_SET="${DSJ_TAG:+1}"
+TAG_OVERRIDE="${DSJ_TAG:-}"
 GAME_DIR_OVERRIDE="${DSJ_GAME_DIR:-}"
 MOD_FOLDER="${DSJ_MOD_FOLDER:-DontStarveLuaJit2}"
 APPID="322330"
@@ -42,25 +54,72 @@ die() { printf '[install] ERROR: %s\n' "$*" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --channel)    [ $# -ge 2 ] || die "--channel needs a value"; CHANNEL="$2"; shift 2 ;;
-        --channel=*)  CHANNEL="${1#*=}"; shift ;;
-        --game-dir)   [ $# -ge 2 ] || die "--game-dir needs a value"; GAME_DIR_OVERRIDE="$2"; shift 2 ;;
-        --game-dir=*) GAME_DIR_OVERRIDE="${1#*=}"; shift ;;
-        --mod-folder) [ $# -ge 2 ] || die "--mod-folder needs a value"; MOD_FOLDER="$2"; shift 2 ;;
+        --channel)     [ $# -ge 2 ] || die "--channel needs a value"; CHANNEL="$2"; CHANNEL_SET=1; shift 2 ;;
+        --channel=*)   CHANNEL="${1#*=}"; CHANNEL_SET=1; shift ;;
+        --pr)          [ $# -ge 2 ] || die "--pr needs a value"; PR="$2"; PR_SET=1; shift 2 ;;
+        --pr=*)        PR="${1#*=}"; PR_SET=1; shift ;;
+        --branch)      [ $# -ge 2 ] || die "--branch needs a value"; BRANCH="$2"; BRANCH_SET=1; shift 2 ;;
+        --branch=*)    BRANCH="${1#*=}"; BRANCH_SET=1; shift ;;
+        --tag)         [ $# -ge 2 ] || die "--tag needs a value"; TAG_OVERRIDE="$2"; TAG_SET=1; shift 2 ;;
+        --tag=*)       TAG_OVERRIDE="${1#*=}"; TAG_SET=1; shift ;;
+        --game-dir)    [ $# -ge 2 ] || die "--game-dir needs a value"; GAME_DIR_OVERRIDE="$2"; shift 2 ;;
+        --game-dir=*)  GAME_DIR_OVERRIDE="${1#*=}"; shift ;;
+        --mod-folder)  [ $# -ge 2 ] || die "--mod-folder needs a value"; MOD_FOLDER="$2"; shift 2 ;;
         --mod-folder=*) MOD_FOLDER="${1#*=}"; shift ;;
-        --repo)       [ $# -ge 2 ] || die "--repo needs a value"; REPO="$2"; shift 2 ;;
-        --repo=*)     REPO="${1#*=}"; shift ;;
+        --repo)        [ $# -ge 2 ] || die "--repo needs a value"; REPO="$2"; shift 2 ;;
+        --repo=*)      REPO="${1#*=}"; shift ;;
         -h|--help)
-            printf 'usage: install.sh [--channel auto|release|preview] [--game-dir PATH] [--mod-folder NAME] [--repo OWNER/NAME]\n'
+            printf 'usage: install.sh [--channel auto|release|preview|pr-<N>] [--pr NUMBER] [--branch NAME] [--tag TAG] [--game-dir PATH] [--mod-folder NAME] [--repo OWNER/NAME]\n'
             exit 0 ;;
-        *)            die "unknown argument: $1" ;;
+        *)             die "unknown argument: $1" ;;
     esac
 done
 
-case "$CHANNEL" in
-    auto|release|preview) ;;
-    *) die "--channel must be auto|release|preview (got '$CHANNEL')" ;;
-esac
+if [ -n "$CHANNEL_SET" ]; then
+    case "$CHANNEL" in
+        pr-*|PR-*|pr:*|PR:*|pr/*|PR/*|\#*)
+            [ -z "$PR_SET" ] || die "conflicting release selectors: pass only one of --pr, --branch, --tag or --channel"
+            PR="$CHANNEL"
+            PR_SET=1
+            CHANNEL="auto"
+            CHANNEL_SET=""
+            ;;
+    esac
+fi
+
+selectors=0
+[ -n "$PR_SET" ] && selectors=$((selectors + 1))
+[ -n "$BRANCH_SET" ] && selectors=$((selectors + 1))
+[ -n "$TAG_SET" ] && selectors=$((selectors + 1))
+if [ "$selectors" -gt 1 ] || { [ "$selectors" -eq 1 ] && [ -n "$CHANNEL_SET" ]; }; then
+    die "conflicting release selectors: pass only one of --pr, --branch, --tag or --channel"
+fi
+
+if [ -n "$PR_SET" ]; then
+    raw_pr="$PR"
+    PR="${PR#\#}"
+    PR="${PR#[pP][rR][-:/]}"
+    case "$PR" in
+        ''|*[!0-9]*) die "--pr must be a positive PR number (got '$raw_pr')" ;;
+    esac
+    PR="$(printf '%s' "$PR" | sed 's/^0*//')"
+    [ -n "$PR" ] || die "--pr must be a positive PR number (got '$raw_pr')"
+elif [ -n "$BRANCH_SET" ]; then
+    BRANCH="${BRANCH#refs/heads/}"
+    case "$BRANCH" in
+        ''|*[[:space:]]*) die "--branch must be a non-empty branch name (got '$BRANCH')" ;;
+    esac
+elif [ -n "$TAG_SET" ]; then
+    TAG_OVERRIDE="${TAG_OVERRIDE#refs/tags/}"
+    case "$TAG_OVERRIDE" in
+        ''|*/*|*[[:space:]]*) die "--tag must be a plain tag name (got '$TAG_OVERRIDE')" ;;
+    esac
+else
+    case "$CHANNEL" in
+        auto|release|preview) ;;
+        *) die "--channel must be auto|release|preview|pr-<N> (got '$CHANNEL')" ;;
+    esac
+fi
 
 case "$MOD_FOLDER" in
     ''|.|..|*/*) die "invalid --mod-folder '$MOD_FOLDER' (plain folder name required)" ;;
@@ -105,8 +164,9 @@ pick_tag_from_atom() { # $1 atom-file
         }
         /<\/entry>/ {
             if (tag != "" && ts != "") {
+                is_pr = (tag ~ /^preview-pr-/)
                 is_pre = (tag ~ /^preview-/)
-                want = (chan == "auto") || (chan == "preview" && is_pre) || (chan == "release" && !is_pre)
+                want = (!is_pr) && ((chan == "auto") || (chan == "preview" && is_pre) || (chan == "release" && !is_pre))
                 if (want && ts > best_ts) { best_ts = ts; best_tag = tag }
             }
             tag = ""; ts = ""
@@ -123,6 +183,37 @@ latest_stable_tag() {
         */releases/tag/*) printf '%s\n' "${url##*/releases/tag/}" ;;
         *) return 1 ;;
     esac
+}
+
+uri_encode() { # $1 raw-string
+    LC_ALL=C awk 'BEGIN {
+        for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i
+    }
+    {
+        out = ""
+        for (i = 1; i <= length($0); i++) {
+            c = substr($0, i, 1)
+            if (c ~ /[A-Za-z0-9._~-]/) out = out c
+            else out = out sprintf("%%%02X", ord[c])
+        }
+        print out
+    }' <<EOF
+$1
+EOF
+}
+
+resolve_pr_for_branch() { # $1 branch
+    case "$1" in
+        *:*) head_ref="$1" ;;
+        *)   head_ref="${REPO%%/*}:$1" ;;
+    esac
+    enc_head="$(uri_encode "$head_ref")"
+    pulls="$TMP/pulls.json"
+    http_get "https://api.github.com/repos/$REPO/pulls?state=open&head=$enc_head&per_page=10" "$pulls" \
+        || die "cannot query open PRs for branch '$1' in $REPO"
+    tr ',' '\n' < "$pulls" \
+        | sed -n 's|.*"url"[[:space:]]*:[[:space:]]*"[^"]*/repos/[^"]*/pulls/\([0-9][0-9]*\)".*|\1|p' \
+        | head -n1
 }
 
 # ------------------------------------------------------- Steam game discovery
@@ -188,20 +279,40 @@ extract_zip() { # $1 zip, $2 dest
 }
 
 # ---------------------------------------------------------------------- main
-log "repository: $REPO   channel: $CHANNEL"
-
-log "resolving the latest release ..."
-atom="$TMP/releases.atom"
-http_get "https://github.com/$REPO/releases.atom" "$atom" \
-    || die "cannot read the release feed for $REPO (no network?)"
-
-TAG="$(pick_tag_from_atom "$atom")"
-if [ -z "$TAG" ] && [ "$CHANNEL" = "release" ]; then
-    log "no stable release inside the feed window; falling back to /releases/latest"
-    TAG="$(latest_stable_tag || true)"
+if [ -n "$PR_SET" ]; then
+    TARGET_LABEL="pr #$PR"
+elif [ -n "$BRANCH_SET" ]; then
+    TARGET_LABEL="branch $BRANCH"
+elif [ -n "$TAG_SET" ]; then
+    TARGET_LABEL="tag $TAG_OVERRIDE"
+else
+    TARGET_LABEL="$CHANNEL"
 fi
-[ -n "$TAG" ] || die "no matching release found (channel=$CHANNEL)"
+log "repository: $REPO   channel: $TARGET_LABEL"
 
+if [ -n "$PR_SET" ]; then
+    TAG="preview-pr-$PR"
+elif [ -n "$BRANCH_SET" ]; then
+    log "resolving open PR for branch '$BRANCH' ..."
+    PR="$(resolve_pr_for_branch "$BRANCH")"
+    [ -n "$PR" ] || die "no open PR found for branch '$BRANCH' (open a PR first so CI builds its preview)"
+    log "branch '$BRANCH' -> PR #$PR"
+    TAG="preview-pr-$PR"
+elif [ -n "$TAG_SET" ]; then
+    TAG="$TAG_OVERRIDE"
+else
+    log "resolving the latest release ..."
+    atom="$TMP/releases.atom"
+    http_get "https://github.com/$REPO/releases.atom" "$atom" \
+        || die "cannot read the release feed for $REPO (no network?)"
+
+    TAG="$(pick_tag_from_atom "$atom")"
+    if [ -z "$TAG" ] && { [ "$CHANNEL" = "release" ] || [ "$CHANNEL" = "auto" ]; }; then
+        log "no matching release inside the feed window; falling back to /releases/latest"
+        TAG="$(latest_stable_tag || true)"
+    fi
+    [ -n "$TAG" ] || die "no matching release found (channel=$CHANNEL)"
+fi
 ASSET_NAME="linux_Mod.zip"
 ASSET_URL="https://github.com/$REPO/releases/download/$TAG/$ASSET_NAME"
 log "selected: $TAG ($ASSET_NAME)"
@@ -236,7 +347,12 @@ fi
 
 log "downloading $ASSET_NAME ..."
 zip="$TMP/$ASSET_NAME"
-http_get "$ASSET_URL" "$zip" || die "download failed: $ASSET_URL"
+if ! http_get "$ASSET_URL" "$zip"; then
+    if [ -n "$PR" ]; then
+        die "download failed: $ASSET_URL (PR #$PR may not have a finished CI preview build yet)"
+    fi
+    die "download failed: $ASSET_URL"
+fi
 
 log "unpacking ..."
 extract_zip "$zip" "$TMP/pkg"

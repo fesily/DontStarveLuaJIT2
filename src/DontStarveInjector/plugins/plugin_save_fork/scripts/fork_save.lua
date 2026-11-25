@@ -1,4 +1,9 @@
-local GameInjector = _G.rawget(_G, "GameInjector")
+-- The state hand-off clears GLOBAL.GameInjector; the package env carries the owning mod's
+-- table, so prefer it and keep the GLOBAL read only for pre-hand-off hosts.
+local GameInjector = GameInjector
+if type(GameInjector) ~= "table" then
+    GameInjector = _G.GameInjector
+end
 if not GameInjector or not GameInjector.DS_LUAJIT_fork_save then
     return
 end

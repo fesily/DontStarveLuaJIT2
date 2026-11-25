@@ -2,7 +2,9 @@
 #include "game/GameLuaContextImpl.hpp"
 #include "game/GameLuaInternal.hpp"
 #include "game/LuaModDump.hpp"
+#include "core/PluginServices.hpp"
 #include "io/gameio.h"
+#include "lua_ds_pucdump.h"  /* host ABI only: no lua_State, no Proto */
 #include <spdlog/spdlog.h>
 
 using ds::core_vm::detail::CreateLuaStateForCurrentVm;
@@ -155,6 +157,30 @@ struct GameLuaContextJit : GameLuaContextImpl {
     void LoadMyLuaApi() override;
 
     bool ReplaceApis(const Signatures &signatures, const ListExports_t &exports) override {
+        // Fill the VM's PUC 5.1 dump slot BEFORE any engine hook goes in: the slot is
+        // read by the first mod string.dump call, which can happen as soon as a state
+        // compiles a script, and it is a data symbol so core.vm must point it at the
+        // host service instead of defining a same-named function.
+        // A missing slot/service is reported here and surfaces to the mod as
+        // "bridge unavailable" - never as silently invented LuaJIT bytecode.
+        if (LuaModule != nullptr) {
+            auto *slot = reinterpret_cast<void **>(
+                find_export_by_name(LuaModule, "lj_ds_puc_dump"));
+            auto *dump = ds::plugin::request_service<lua_DsPucDumpFn>("ds_lua_puc51_dump");
+            if (slot == nullptr) {
+                spdlog::error("lj_ds_puc_dump slot not found in the loaded VM; "
+                              "mod string.dump reports bridge unavailable");
+            } else if (dump == nullptr) {
+                spdlog::error("service ds_lua_puc51_dump missing; "
+                              "mod string.dump reports bridge unavailable");
+            } else {
+                *slot = reinterpret_cast<void *>(dump);
+                if (*slot != reinterpret_cast<void *>(dump)) {
+                    spdlog::error("lj_ds_puc_dump slot fill failed; "
+                                  "mod string.dump reports bridge unavailable");
+                }
+            }
+        }
         if (!GameLuaContextImpl::ReplaceApis(signatures, exports)) return false;
         init_luajit_io(LuaModule);
         load_game_fn_io_open(signatures);

@@ -68,7 +68,7 @@ local function get_modinfo(modname)
 end
 
 local function default_mod_root(modname)
-    local root = rawget(_G, "MODS_ROOT")
+    local root = _G.MODS_ROOT
     if type(root) ~= "string" or root == "" then
         root = "../mods/"
     end
@@ -97,7 +97,7 @@ local function list_package_dirs(mod_root, api)
         end
     end
     -- Production FS listing when available (varies by build).
-    local TheSim = rawget(_G, "TheSim")
+    local TheSim = _G.TheSim
     if type(TheSim) == "table" then
         local listfn = TheSim.ListDirectory or TheSim.GetDirList or TheSim.ListFiles
         if type(listfn) == "function" then
@@ -177,6 +177,23 @@ function M.run(api)
                                 pack_api[k] = v
                             end
                             pack_api.config_modname = modname
+                            -- An external package belongs to that mod, not to this one: its
+                            -- parent env is the owning mod's authorised local env, and its
+                            -- context is stripped of this plugin's injector/mod_env. The owner
+                            -- env can still be absent while this mod itself is loading, in which
+                            -- case only the shared GLOBAL view is offered — never this mod's env.
+                            pack_api.external = true
+                            local owner_env
+                            if type(api.external_env_for) == "function" then
+                                owner_env = api.external_env_for(modname)
+                            end
+                            -- The fallback still answers normal (non-extension) modules through
+                            -- the real loader, so a package that requires a game module works.
+                            -- It must be the engine GLOBAL, never this plugin's authorised view:
+                            -- an external package follows its owner's declaration, not ours.
+                            local engine_global = api.engine_global or _G
+                            pack_api.parent_env = owner_env
+                                or { GLOBAL = engine_global, require = engine_global.require }
                             local plugin, err = try_load_package(pack_api, package_root, stem)
                             if plugin then
                                 out[#out + 1] = plugin

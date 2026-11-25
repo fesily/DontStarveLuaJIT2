@@ -95,13 +95,48 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 # Portable layout uses INSTALL_RPATH=$ORIGIN[/deps|/../lib] + staged Mod/deps.
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
 
+# PUC 5.1 dump service (DS: real Lua 5.1 string.dump for mods). Private static
+# library: it owns the second PUC 5.1 state per call, so the game VM never links a
+# PUC runtime and only ever sees the POD ABI in luajit/src/lua_ds_pucdump.h.
+add_library(ds_puc51_dump STATIC core/LuaPucDumpService.cpp)
+set_target_properties(ds_puc51_dump PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(ds_puc51_dump PRIVATE
+    # PUC 5.1 internal headers first: lobject.h/lstate.h/lundump.h must resolve to
+    # the src/lua51original tree, never to the LuaJIT one.
+    ${PROJECT_SOURCE_DIR}/src/lua51original/src
+    ${CMAKE_BINARY_DIR}/src/lua51original
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    # ABI header only (lua_ds_pucdump.h); it defines no lua_* type. Kept PRIVATE:
+    # Injector compiles against src/lua51original and must not gain a LuaJIT
+    # include path (it would resolve lualib.h/luaconf.h to the other VM).
+    ${PROJECT_SOURCE_DIR}/luajit/src
+)
+target_compile_features(ds_puc51_dump PRIVATE cxx_std_23)
+if (NOT MSVC)
+    set_target_properties(ds_puc51_dump PROPERTIES CXX_VISIBILITY_PRESET hidden)
+endif ()
+if (TARGET liblua_static)
+    target_link_libraries(ds_puc51_dump PRIVATE liblua_static)
+    add_dependencies(ds_puc51_dump liblua_static)
+else()
+    message(FATAL_ERROR "liblua_static (src/lua51original) required for ds_puc51_dump")
+endif ()
+
 add_library(Injector SHARED ${SOURCES})
+target_link_libraries(Injector PRIVATE ds_puc51_dump)
 if (MSVC)
     target_compile_definitions(Injector PRIVATE SUPPORT_PROGRESS)
 endif()
 target_compile_definitions(Injector PRIVATE MOD_VERSION="${CMAKE_PROJECT_VERSION}")
 target_compile_definitions(Injector PRIVATE DONTSTARVEINJECTOR_BUILD)
 target_include_directories(Injector PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# fast_assert implementation: the Injector is its single owner in this process
+# (fast_assert_owner is compiled with FAST_ASSERT_BUILD, so every entry point is
+# dllexport / visibility("default") here). Plugins link only the header-only
+# `fast_assert` view and import the code through Injector's import library /
+# DT_NEEDED — same arrangement as core/PluginPath.
+target_link_libraries(Injector PRIVATE fast_assert fast_assert_owner)
 
 if (ENABLE_STEAM_SUPPORT)
     target_compile_definitions(Injector PRIVATE ENABLE_STEAM_SUPPORT)
@@ -252,7 +287,18 @@ if (NOT WIN32)
         PREFIX "lib"
         # Keep build-tree stub separate from real Injector output dir.
         LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:Injector>/stub"
+        # The shell and the real Injector are two modules that both include the bootstrap
+        # headers (`kModFolderAliases`, marker names, ...). GCC emits namespace-scope
+        # `inline constexpr` objects as STB_GNU_UNIQUE, and the dynamic linker unifies them by
+        # name: the PRELOADed shell is loaded first, so a stale shell (built before the array
+        # grew) would serve its shorter object to the real module's longer range-for, reading
+        # past it. Hidden visibility + no-unique give each module its own copy instead.
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON
     )
+    if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(InjectorStub PRIVATE -fno-gnu-unique)
+    endif()
     # The shell keeps its file name (the game PRELOADs bin64/lib64/libInjector.so)
     # but must NOT advertise the real module's SONAME: the loader matches a
     # plugin's DT_NEEDED "libInjector.so" against already-loaded objects by that

@@ -3,15 +3,18 @@
 #   irm https://raw.githubusercontent.com/fesily/DontStarveLuaJIT2/master/install.ps1 | iex
 #
 # Piped runs cannot take parameters - configure through environment variables:
-#   $env:DSJ_CHANNEL    = 'auto' | 'release' | 'preview'   (default auto = newest)
+#   $env:DSJ_CHANNEL    = 'auto' | 'release' | 'preview' | 'pr-<N>'   (default auto = newest mainline)
+#   $env:DSJ_PR         = '42'                 (install rolling preview for PR #42)
+#   $env:DSJ_BRANCH     = 'feat/my-branch'     (resolve open PR for branch -> preview)
+#   $env:DSJ_TAG        = 'v3.5.3'             (install an exact release tag)
 #   $env:DSJ_GAME_DIR   = 'D:\Steam\steamapps\common\Don''t Starve Together'
 #   $env:DSJ_MOD_FOLDER = 'DontStarveLuaJit2'   (only used when the Workshop
 #                                              content folder is absent)
 #   $env:DSJ_REPO       = 'fesily/DontStarveLuaJIT2'
 #   $env:DSJ_ALLOW_KILL = '1'   (force-close a running game without asking;
 #                                the piped form cannot answer the prompt)
-# When run as a file the same options are available as -Channel/-GameDir/
-# -ModFolder/-Repo/-AllowKill.
+# When run as a file the same options are available as -Channel/-Pr/-Branch/-Tag/
+# -GameDir/-ModFolder/-Repo/-AllowKill.
 #
 # Messages follow the Windows UI language: Chinese for zh*, English otherwise.
 #
@@ -51,7 +54,14 @@ $DsjScriptArgs = $args
     } catch { }
 
     $Repo       = if ($env:DSJ_REPO)       { $env:DSJ_REPO }       else { 'fesily/DontStarveLuaJIT2' }
-    $Channel    = if ($env:DSJ_CHANNEL)    { $env:DSJ_CHANNEL }    else { 'auto' }
+    $ChannelSet = (-not [string]::IsNullOrWhiteSpace($env:DSJ_CHANNEL))
+    $Channel    = if ($ChannelSet)         { $env:DSJ_CHANNEL }    else { 'auto' }
+    $PrSet      = (-not [string]::IsNullOrWhiteSpace($env:DSJ_PR))
+    $Pr         = if ($PrSet)              { $env:DSJ_PR }         else { '' }
+    $BranchSet  = (-not [string]::IsNullOrWhiteSpace($env:DSJ_BRANCH))
+    $Branch     = if ($BranchSet)          { $env:DSJ_BRANCH }     else { '' }
+    $TagSet     = (-not [string]::IsNullOrWhiteSpace($env:DSJ_TAG))
+    $Tag        = if ($TagSet)             { $env:DSJ_TAG }        else { '' }
     $GameDirEnv = if ($env:DSJ_GAME_DIR)   { $env:DSJ_GAME_DIR }   else { '' }
     $ModFolder  = if ($env:DSJ_MOD_FOLDER) { $env:DSJ_MOD_FOLDER } else { 'DontStarveLuaJit2' }
     $AllowKill  = ($env:DSJ_ALLOW_KILL -match '(?i)^(1|true|yes|y)$')
@@ -68,9 +78,17 @@ $DsjScriptArgs = $args
     $En = @{
         'prefix.error'      = 'ERROR:'
         'prefix.warn'       = 'WARNING:'
-        'arg.unknown'       = 'unknown argument: {0} (use -Channel/-GameDir/-ModFolder/-Repo/-AllowKill)'
+        'arg.unknown'       = 'unknown argument: {0} (use -Channel/-Pr/-Branch/-Tag/-GameDir/-ModFolder/-Repo/-AllowKill)'
         'arg.allowkill'     = '-AllowKill does not take a value (got ''{0}'')'
-        'channel.bad'       = '-Channel/$env:DSJ_CHANNEL must be auto|release|preview (got ''{0}'')'
+        'channel.bad'       = '-Channel/$env:DSJ_CHANNEL must be auto|release|preview|pr-<N> (got ''{0}'')'
+        'target.conflict'   = 'conflicting release selectors: pass only one of -Pr, -Branch, -Tag or -Channel'
+        'pr.bad'            = '-Pr/$env:DSJ_PR must be a positive PR number (got ''{0}'')'
+        'pr.norelease'      = 'PR #{0} has no preview release yet (tag {1} not found - wait for CI or check PR status)'
+        'branch.bad'        = '-Branch/$env:DSJ_BRANCH must be a non-empty branch name (got ''{0}'')'
+        'branch.nopr'       = 'no open PR found for branch ''{0}'' (open a PR first so CI builds its preview)'
+        'branch.resolved'   = 'branch ''{0}'' -> PR #{1}'
+        'tag.bad'           = '-Tag/$env:DSJ_TAG must be a plain tag name (got ''{0}'')'
+        'tag.norelease'     = 'release tag ''{0}'' not found'
         'repo.line'         = 'repository: {0}   channel: {1}'
         'release.resolve'   = 'resolving the latest release ...'
         'release.none'      = 'no releases returned by the GitHub API'
@@ -125,14 +143,25 @@ $DsjScriptArgs = $args
     } catch { }
     $Messages = $En
     if ($Lang -eq 'zh') {
-        try {
-            $zh = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/$Repo/master/install.zh.json" `
-                -Headers @{ 'User-Agent' = 'dsj-install' }
-            $table = @{}
-            foreach ($p in $zh.PSObject.Properties) { $table[$p.Name] = [string]$p.Value }
-            # Accept the translation only when it covers every English key.
-            if (@($En.Keys | Where-Object { -not $table.ContainsKey($_) }).Count -eq 0) { $Messages = $table }
-        } catch { }
+        $zhRefs = @('master')
+        if ($BranchSet) {
+            $bRef = "$Branch".Trim()
+            if ($bRef.StartsWith('refs/heads/')) { $bRef = $bRef.Substring(11) }
+            if ($bRef -and $bRef -ne 'master') { $zhRefs = @($bRef, 'master') }
+        }
+        foreach ($zhRef in $zhRefs) {
+            try {
+                $zh = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/$Repo/$zhRef/install.zh.json" `
+                    -Headers @{ 'User-Agent' = 'dsj-install' }
+                $table = @{}
+                foreach ($p in $zh.PSObject.Properties) { $table[$p.Name] = [string]$p.Value }
+                # Accept the translation only when it covers every English key.
+                if (@($En.Keys | Where-Object { -not $table.ContainsKey($_) }).Count -eq 0) {
+                    $Messages = $table
+                    break
+                }
+            } catch { }
+        }
     }
 
     function Msg($key, $fmt = $null) {
@@ -159,18 +188,45 @@ $DsjScriptArgs = $args
                 }
                 $v = if ($i + 1 -lt $DsjScriptArgs.Count) { [string]$DsjScriptArgs[$i + 1] } else { $null }
                 $inline = $null
-                if ($a -match '^-(channel|gamedir|modfolder|repo)=(.*)$') { $a = "-$($Matches[1])"; $inline = $Matches[2] }
-                if ($inline) { $v = $inline; $i-- }
+                if ($a -match '^-(channel|pr|branch|tag|gamedir|modfolder|repo)=(.*)$') { $a = "-$($Matches[1])"; $inline = $Matches[2] }
+                if ($null -ne $inline) { $v = $inline; $i-- }
                 switch -Regex ($a) {
-                    '^-(channel)$'  { $Channel = $v; $i++ }
-                    '^-(gamedir)$'  { $GameDirEnv = $v; $i++ }
+                    '^-(channel)$'   { $Channel = [string]$v; $ChannelSet = $true; $i++ }
+                    '^-(pr)$'        { $Pr = [string]$v; $PrSet = $true; $i++ }
+                    '^-(branch)$'    { $Branch = [string]$v; $BranchSet = $true; $i++ }
+                    '^-(tag)$'       { $Tag = [string]$v; $TagSet = $true; $i++ }
+                    '^-(gamedir)$'   { $GameDirEnv = $v; $i++ }
                     '^-(modfolder)$' { $ModFolder = $v; $i++ }
-                    '^-(repo)$'     { $Repo = $v; $i++ }
-                    default         { throw (Msg 'arg.unknown' $a) }
+                    '^-(repo)$'      { $Repo = $v; $i++ }
+                    default          { throw (Msg 'arg.unknown' $a) }
                 }
             }
         }
-        if ($Channel -notin @('auto', 'release', 'preview')) {
+        if ($ChannelSet -and $Channel -match '^(?i)(?:pr[-:/]|#)(.*)$') {
+            if ($PrSet) { throw (Msg 'target.conflict') }
+            $Pr = $Matches[1]
+            $PrSet = $true
+            $Channel = 'auto'
+            $ChannelSet = $false
+        }
+        $selectorCount = @($PrSet, $BranchSet, $TagSet | Where-Object { $_ }).Count
+        if ($selectorCount -gt 1 -or ($selectorCount -eq 1 -and $ChannelSet)) {
+            throw (Msg 'target.conflict')
+        }
+        if ($PrSet) {
+            $Pr = "$Pr".Trim()
+            if ($Pr -match '^(?i)(?:pr[-:/]|#)(.*)$') { $Pr = $Matches[1] }
+            if ($Pr -notmatch '^\d+$' -or [int]$Pr -le 0) { throw (Msg 'pr.bad' $Pr) }
+            $Pr = [string][int]$Pr
+        } elseif ($BranchSet) {
+            $Branch = "$Branch".Trim()
+            if ($Branch.StartsWith('refs/heads/')) { $Branch = $Branch.Substring(11) }
+            if (-not $Branch -or $Branch -match '\s') { throw (Msg 'branch.bad' $Branch) }
+        } elseif ($TagSet) {
+            $Tag = "$Tag".Trim()
+            if ($Tag.StartsWith('refs/tags/')) { $Tag = $Tag.Substring(10) }
+            if (-not $Tag -or $Tag -match '[\s/]') { throw (Msg 'tag.bad' $Tag) }
+        } elseif ($Channel -notin @('auto', 'release', 'preview')) {
             throw (Msg 'channel.bad' $Channel)
         }
     } catch {
@@ -189,14 +245,77 @@ $DsjScriptArgs = $args
     }
 
     # --- release selection --------------------------------------------------
+    function Test-HttpNotFound($err) {
+        try {
+            $resp = $err.Exception.Response
+            if ($null -ne $resp -and $null -ne $resp.StatusCode -and ([int]$resp.StatusCode -eq 404)) {
+                return $true
+            }
+        } catch { }
+        return $false
+    }
+
+    function Get-ReleaseByTag($tagName, $missingMessage) {
+        $escaped = [uri]::EscapeDataString($tagName)
+        try {
+            return Get-RestJson "https://api.github.com/repos/$Repo/releases/tags/$escaped"
+        } catch {
+            if (Test-HttpNotFound $_) { throw $missingMessage }
+            throw
+        }
+    }
+
+    # PR previews carry tag "preview-pr-<N>" and are excluded from both auto and
+    # preview so unmerged branch builds never leak into mainline installs.
     function Select-Release($releases, $channel) {
-        if (-not $releases -or $releases.Count -eq 0) { throw (Msg 'release.none') }
-        $sorted = @($releases) | Sort-Object -Property published_at -Descending
+        if (-not $releases -or @($releases).Count -eq 0) { throw (Msg 'release.none') }
+        $mainline = @($releases | Where-Object { $_ -and ([string]$_.tag_name -notlike 'preview-pr-*') })
+        if ($mainline.Count -eq 0) { throw (Msg 'release.nochannel' $channel) }
+        $sorted = @($mainline) | Sort-Object -Property published_at -Descending
         if ($channel -eq 'auto') { return $sorted | Select-Object -First 1 }
         $wantPre = ($channel -eq 'preview')
         $match = $sorted | Where-Object { [bool]$_.prerelease -eq $wantPre } | Select-Object -First 1
         if (-not $match) { throw (Msg 'release.nochannel' $channel) }
         return $match
+    }
+
+    function Resolve-TargetRelease {
+        if ($PrSet) {
+            $prTag = "preview-pr-$Pr"
+            return Get-ReleaseByTag $prTag (Msg 'pr.norelease' $Pr, $prTag)
+        }
+        if ($BranchSet) {
+            $head = if ($Branch -match '^[^:]+:.+$') { $Branch } else { "$(($Repo -split '/')[0]):$Branch" }
+            $pullsUri = "https://api.github.com/repos/$Repo/pulls?state=open&head=$([uri]::EscapeDataString($head))&per_page=10"
+            $prs = @(Get-RestJson $pullsUri | Where-Object { $null -ne $_ })
+            if ($prs.Count -eq 0) { throw (Msg 'branch.nopr' $Branch) }
+            $prNum = [string]$prs[0].number
+            Write-Log (Msg 'branch.resolved' $Branch, $prNum)
+            $prTag = "preview-pr-$prNum"
+            return Get-ReleaseByTag $prTag (Msg 'pr.norelease' $prNum, $prTag)
+        }
+        if ($TagSet) {
+            return Get-ReleaseByTag $Tag (Msg 'tag.norelease' $Tag)
+        }
+        if ($Channel -eq 'release') {
+            try {
+                return Get-RestJson "https://api.github.com/repos/$Repo/releases/latest"
+            } catch {
+                if (Test-HttpNotFound $_) { throw (Msg 'release.nochannel' 'release') }
+                throw
+            }
+        }
+        $releases = Get-RestJson "https://api.github.com/repos/$Repo/releases?per_page=50"
+        try {
+            return Select-Release $releases $Channel
+        } catch {
+            if ($Channel -eq 'auto') {
+                try {
+                    return Get-RestJson "https://api.github.com/repos/$Repo/releases/latest"
+                } catch { }
+            }
+            throw
+        }
     }
 
     # --- Steam game discovery (mirrors tools/steam_env.py) ------------------
@@ -362,11 +481,11 @@ $DsjScriptArgs = $args
 
     # --- install -------------------------------------------------------------
     function Invoke-DsjInstall {
-        Write-Log (Msg 'repo.line' $Repo, $Channel)
+        $targetLabel = if ($PrSet) { "pr #$Pr" } elseif ($BranchSet) { "branch $Branch" } elseif ($TagSet) { "tag $Tag" } else { $Channel }
+        Write-Log (Msg 'repo.line' $Repo, $targetLabel)
 
         Write-Log (Msg 'release.resolve')
-        $releases = Get-RestJson "https://api.github.com/repos/$Repo/releases?per_page=30"
-        $release = Select-Release $releases $Channel
+        $release = Resolve-TargetRelease
         $asset = $release.assets | Where-Object { $_.name -like 'windows_Mod.zip' } | Select-Object -First 1
         if (-not $asset) {
             $asset = $release.assets | Where-Object { $_.name -like '*windows*_Mod.zip' } | Select-Object -First 1

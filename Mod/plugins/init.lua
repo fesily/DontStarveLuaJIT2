@@ -13,22 +13,26 @@
 
 local function get_api()
     local env = getfenv(1)
-    local root = (type(env) == "table" and (rawget(env, "MODROOT") or env.MODROOT)) or rawget(_G, "MODROOT")
-    local loadlua = (type(env) == "table" and (rawget(env, "kleiloadlua") or env.kleiloadlua)) or rawget(_G, "kleiloadlua")
-    local modimport = (type(env) == "table" and (rawget(env, "modimport") or env.modimport)) or rawget(_G, "modimport")
+    -- Parent for our package envs: the authorised view the host bound to this chunk
+    -- (`env.parent_env`), not the chunk env itself, so `jit`/`ffi`/`package` resolve to the
+    -- granted surface while engine names still fall through to the real GLOBAL.
+    local parent = (type(env) == "table" and rawget(env, "parent_env")) or env
+    local root = (type(env) == "table" and (rawget(env, "MODROOT") or env.MODROOT)) or _G.MODROOT
+    local loadlua = (type(env) == "table" and (rawget(env, "kleiloadlua") or env.kleiloadlua)) or _G.kleiloadlua
+    local modimport = (type(env) == "table" and (rawget(env, "modimport") or env.modimport)) or _G.modimport
     return {
         MODROOT = root,
         kleiloadlua = loadlua,
         modimport = modimport,
-        parent_env = env,
+        parent_env = parent,
         GetModConfigData = (type(env) == "table" and env.GetModConfigData) or GetModConfigData,
         config_modname = (type(env) == "table" and (rawget(env, "modname") or env.modname))
-            or rawget(_G, "modname")
+            or _G.modname
             or "DontStarveLuaJit2",
         -- Late-bind so host tests can stub _G.AddGamePostInit after requiring init.
         AddGamePostInit = function(fn)
             local f = (type(env) == "table" and (rawget(env, "AddGamePostInit") or env.AddGamePostInit))
-                or rawget(_G, "AddGamePostInit")
+                or _G.AddGamePostInit
             if type(f) == "function" then
                 return f(fn)
             end
@@ -49,7 +53,7 @@ local function get_api()
                 error("package modimport failed: " .. path .. " " .. tostring(chunk))
             end
             -- Test path: honor parent/global modimport stub when kleiloadlua is absent.
-            local mi = modimport or rawget(_G, "modimport")
+            local mi = modimport or _G.modimport
             if type(mi) == "function" then
                 return mi(rel)
             end

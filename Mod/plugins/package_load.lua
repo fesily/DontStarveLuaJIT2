@@ -157,15 +157,45 @@ local function build_plugin_table(env, package_root, stem, api)
         when = rawget(env, "when"),  -- rawget: parent may be strict.lua (no bare when)
         load = function(ctx)
             local modmain_path = package_root .. "modmain.lua"
+            -- External (other mod's) packages get neither this plugin's context nor its
+            -- injector: only the owning mod's authorised env and generic config lookups.
+            local external = api.external == true
+            if external and type(ctx) == "table" then
+                local stripped = {}
+                for key, value in pairs(ctx) do
+                    if key ~= "injector" and key ~= "mod_env" and key ~= "controller" then
+                        stripped[key] = value
+                    end
+                end
+                ctx = stripped
+            end
             local parent_modimport = api.modimport
             local parent_env = api.parent_env or _G
+            -- An external package's modimport must stay inside its own package root: this mod's
+            -- modimport resolves relative to its own MODROOT, which would load the wrong file.
+            local package_modimport = api.package_modimport
+            if external and type(package_modimport) ~= "function" then
+                package_modimport = function(root, rel, package_env)
+                    local path = root .. rel .. ".lua"
+                    local loader = api.kleiloadlua
+                    if type(loader) ~= "function" then
+                        error("external package modimport needs kleiloadlua: " .. path, 2)
+                    end
+                    local chunk = loader(path)
+                    if type(chunk) ~= "function" then
+                        error("package modimport failed: " .. path .. " " .. tostring(chunk), 2)
+                    end
+                    setfenv(chunk, package_env or parent_env)
+                    return chunk()
+                end
+            end
             local mod_env
             local bound_modimport
             bound_modimport = function(name)
                 -- Prefer package-root relative paths (DST-style scripts/...).
                 local rel = normalize_modimport_name(name)
-                if api.package_modimport then
-                    return api.package_modimport(package_root, rel, mod_env)
+                if package_modimport then
+                    return package_modimport(package_root, rel, mod_env)
                 end
                 if parent_modimport then
                     -- Fallback: call parent with package-relative path string for tests.
@@ -173,8 +203,12 @@ local function build_plugin_table(env, package_root, stem, api)
                 end
                 error("modimport not available in package load")
             end
-            -- Host gate_ctx supplies injector/config; fall back to parent globals.
-            local injector = (ctx and ctx.injector) or rawget(_G, "GameInjector")
+            -- Host gate_ctx supplies injector/config for this mod's own packages. An external
+            -- package gets no injector at all: GameInjector/GameLuaInjector are this mod's.
+            local injector = nil
+            if not external then
+                injector = (ctx and ctx.injector) or rawget(_G, "GameInjector")
+            end
             local get_config = config_lookup or api.GetModConfigData
             if type(get_config) ~= "function" and ctx and type(ctx.config) == "function" then
                 get_config = ctx.config
@@ -184,14 +218,28 @@ local function build_plugin_table(env, package_root, stem, api)
                     return cfg[key]
                 end
             end
-            mod_env = setmetatable({
+            local env_fields = {
                 modimport = bound_modimport,
                 MODROOT = package_root, -- package-local for this chunk only
                 print = api.print or print,
                 GetModConfigData = get_config,
-                GameInjector = injector,
                 AddGamePostInit = api.AddGamePostInit or function(fn) fn() end,
-            }, { __index = parent_env, __newindex = parent_env })
+            }
+            if injector ~= nil then
+                env_fields.GameInjector = injector
+            end
+            -- The owning mod may carry its own bound injector tables; an external package must
+            -- not reach them through its parent env (that is how they used to leak).
+            local function parent_lookup(_, key)
+                if external and (key == "GameInjector" or key == "GameLuaInjector") then
+                    return nil
+                end
+                return parent_env[key]
+            end
+            mod_env = setmetatable(env_fields, {
+                __index = external and parent_lookup or parent_env,
+                __newindex = parent_env,
+            })
             local loader = api.kleiloadlua or function(p)
                 local f, err = loadfile(p)
                 if not f then return err end

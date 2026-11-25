@@ -7,16 +7,19 @@ Run directly (``python tests/harness/test_harness_unit.py``) or via CTest
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 TESTS_DIR = Path(__file__).resolve().parents[1]
 if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
 
+from harness.inject_env import _copy_if_different, stage_inject_shell  # noqa: E402
 from harness.logs import LogWatcher  # noqa: E402
 from harness.mods import injected_mod  # noqa: E402
 
@@ -42,6 +45,81 @@ class InjectedModTest(unittest.TestCase):
 
             self.assertFalse(dest.exists(), "injected mod folder must be removed on exit")
             self.assertTrue((sibling / "x.lua").is_file(), "sibling mods must survive")
+
+
+class ShellRefreshTest(unittest.TestCase):
+    def test_copy_if_different_skips_identical(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src.bin"
+            dst = Path(tmp) / "dst.bin"
+            src.write_bytes(b"shell-v1")
+            dst.write_bytes(b"shell-v1")
+            os.utime(dst, (1_600_000_000, 1_600_000_000))
+
+            self.assertFalse(_copy_if_different(src, dst))
+            self.assertEqual(int(dst.stat().st_mtime), 1_600_000_000)
+
+    def test_copy_if_different_refreshes_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src.bin"
+            dst = Path(tmp) / "nested" / "dst.bin"
+            src.write_bytes(b"shell-v2")
+            dst.parent.mkdir()
+            dst.write_bytes(b"shell-v1")
+
+            self.assertTrue(_copy_if_different(src, dst))
+            self.assertEqual(dst.read_bytes(), b"shell-v2")
+
+    def test_copy_if_different_installs_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src.bin"
+            dst = Path(tmp) / "dst.bin"
+            src.write_bytes(b"shell-v1")
+            self.assertTrue(_copy_if_different(src, dst))
+            self.assertEqual(dst.read_bytes(), b"shell-v1")
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "POSIX stub staging")
+    def test_stage_refreshes_stale_game_shell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            root = tmp / "repo"
+            pkg = root / "Mod" / "bin64" / "linux" / "lib64"
+            pkg.mkdir(parents=True)
+            (pkg / "libInjector.so").write_bytes(b"stub-v2")
+            game = tmp / "game"
+            env = {
+                "REPO_ROOT": str(root),
+                "DS_LUAJIT_INJECTOR": "",
+                "DS_LUAJIT_INJECTOR_DIR": "",
+            }
+            with mock.patch.dict(os.environ, env):
+                self.assertTrue(stage_inject_shell(game))
+                dst = game / "bin64" / "lib64" / "libInjector.so"
+                self.assertEqual(dst.read_bytes(), b"stub-v2")
+
+                # Identical content: the staged shell is left untouched.
+                os.utime(dst, (1_600_000_000, 1_600_000_000))
+                self.assertTrue(stage_inject_shell(game))
+                self.assertEqual(int(dst.stat().st_mtime), 1_600_000_000)
+
+                # A game-dir shell from an older build is replaced.
+                dst.write_bytes(b"stub-v1")
+                self.assertTrue(stage_inject_shell(game))
+                self.assertEqual(dst.read_bytes(), b"stub-v2")
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "POSIX stub staging")
+    def test_stage_reports_missing_shell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            root = tmp / "repo"
+            root.mkdir()
+            env = {
+                "REPO_ROOT": str(root),
+                "DS_LUAJIT_INJECTOR": "",
+                "DS_LUAJIT_INJECTOR_DIR": "",
+            }
+            with mock.patch.dict(os.environ, env):
+                self.assertFalse(stage_inject_shell(tmp / "game"))
 
 
 class LogWatcherTest(unittest.TestCase):

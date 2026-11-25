@@ -16,6 +16,8 @@
 #include "core/RegisterBuiltinPlugins.hpp"
 #include "core/DynamicPluginLoader.hpp"
 #include "core/CoreVmBootstrap.hpp"
+#include "core/LuaPucDumpService.hpp"
+#include "core/PluginServices.hpp"
 #include "core/alloc/AllocShim.hpp"
 #include <mimalloc.h>
 #ifdef ENABLE_STEAM_SUPPORT
@@ -381,6 +383,13 @@ DONTSTARVEINJECTOR_API void Inject(bool isClient) {
         // Business keys come only from plugins (OB-S4).
         RegisterCoreOptionSchema(g_plugin_host.option_schema());
         RegisterBuiltinPlugins(g_plugin_host);
+        // The VM's lj_ds_puc_dump slot is filled by core.vm (jit/jit_gen) from this
+        // service, so it must be published before any plugin module is initialized:
+        // a missing service is a hard failure for the mod dump path, not a silent
+        // fallback to LuaJIT bytecode.
+        if (!register_service("ds_lua_puc51_dump", &ds::puc51::Dump)) {
+            spdlog::error("cannot register service ds_lua_puc51_dump (PUC 5.1 mod string.dump unavailable)");
+        }
         {
             static DynamicPluginLoader g_dyn_loader;
             auto report = g_dyn_loader.load_all(g_plugin_host, isClient);

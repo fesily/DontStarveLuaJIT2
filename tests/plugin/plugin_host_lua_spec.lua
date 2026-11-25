@@ -1583,25 +1583,16 @@ local function test_jit_runtime_enable_matrix()
         end
         cfg.EnabledJIT = true
         cfg.HideGlobalJIT = false
-        -- The blacklist manager must be re-wrapped so its refusal stays outermost.
-        local blacklist_spy = { wrapped = 0 }
-        function blacklist_spy:wrap_loader()
-            self.wrapped = self.wrapped + 1
-            self.loader_at_wrap = rawget(_G, "kleiloadlua")
-            return self
-        end
         host:resolve(cfg, {
             injector = inj,
             has_luajit = true,
             is_windows = true,
             jit = jit_stub,
             mod_env = { modinfo = { luajit_compatible = true }, jit = jit_stub },
-            mod_blacklist = blacklist_spy,
         })
         local lr = host:load_phase(PHASE.AfterModMain)
         assert_eq(host:status("jit.runtime"), STATUS.Loaded, "jit.runtime Loaded")
         assert_true(pos(lr.loaded_order, "jit.runtime") ~= nil, "jit.runtime in order")
-        assert_eq(blacklist_spy.wrapped, 1, "jit.runtime calls mod_blacklist:wrap_loader()")
 
         local host_nojit = PluginHost.new()
         host_nojit:register_all(list)
@@ -1609,7 +1600,9 @@ local function test_jit_runtime_enable_matrix()
         host_nojit:load_phase(PHASE.AfterModMain)
         assert_eq(host_nojit:status("jit.runtime"), STATUS.Disabled, "jit.runtime no-luajit Disabled")
 
-        -- HideGlobalJIT true clears global jit
+        -- GLOBAL/package scrubbing and per-env grants moved to the state manager
+        -- (scripts/luajit_env_runtime.lua). jit.runtime must leave both alone, even when the
+        -- removed HideGlobalJIT key is still present in an old config.
         rawset(_G, "jit", jit_stub)
         local host_hide = PluginHost.new()
         host_hide:register_all(list)
@@ -1628,9 +1621,9 @@ local function test_jit_runtime_enable_matrix()
             mod_env = compat_env,
         })
         host_hide:load_phase(PHASE.AfterModMain)
-        assert_eq(host_hide:status("jit.runtime"), STATUS.Loaded, "hide path Loaded")
-        assert_eq(rawget(_G, "jit"), nil, "global jit hidden")
-        assert_eq(rawget(compat_env, "jit"), jit_stub, "a luajit_compatible env gets jit")
+        assert_eq(host_hide:status("jit.runtime"), STATUS.Loaded, "obsolete-key path Loaded")
+        assert_eq(rawget(_G, "jit"), jit_stub, "jit.runtime no longer hides the global jit")
+        assert_eq(rawget(compat_env, "jit"), nil, "jit.runtime no longer injects into mod envs")
 
         rawset(_G, "jit", jit_stub)
         local plain_env = { modinfo = {} }
@@ -1666,12 +1659,6 @@ local function test_jit_runtime_enable_matrix()
         end
         cfg3.EnabledJIT = true
         cfg3.HideGlobalJIT = false
-        local enc_blacklist = { wrapped = 0 }
-        function enc_blacklist:wrap_loader()
-            self.wrapped = self.wrapped + 1
-            self.loader_at_wrap = rawget(_G, "kleiloadlua")
-            return self
-        end
         host_enc:resolve(cfg3, {
             injector = inj,
             has_luajit = true,
@@ -1679,7 +1666,6 @@ local function test_jit_runtime_enable_matrix()
             jit = jit_stub,
             encrypted_mod_manager = { EncryptedMods = { ["workshop-enc"] = true } },
             frostxx_mods = {},
-            mod_blacklist = enc_blacklist,
         })
         host_enc:load_phase(PHASE.AfterModMain)
         -- jit.runtime load() always calls jit.off() once before re-enabling; only
@@ -1694,10 +1680,8 @@ local function test_jit_runtime_enable_matrix()
 
         hooked("../mods/workshop-plain/modmain.lua")
         assert_eq(#off_calls, 1, "plain mod keeps JIT")
-        assert_eq(enc_blacklist.wrapped, 1, "jit.runtime re-wraps after the encrypted hook")
-        assert_true(enc_blacklist.loader_at_wrap ~= nil
-            and enc_blacklist.loader_at_wrap ~= prev_kleiloadlua,
-            "wrap_loader sees the hook installed by jit.runtime, so it can go outermost")
+        assert_true(rawget(_G, "kleiloadlua") ~= prev_kleiloadlua,
+            "jit.runtime owns the loader chain after resolving")
         rawset(_G, "kleiloadlua", prev_kleiloadlua)
     end)
     restore_m4_game_stubs(prev)
