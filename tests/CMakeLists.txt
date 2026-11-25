@@ -111,6 +111,63 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64
     add_test(NAME fast_hook COMMAND test_fast_hook)
 endif()
 
+# AllocShim wrapper semantics: ownership dispatch, provider fallbacks, zero-size
+# rules. Links the real static mimalloc, so the harbour of every assertion is the
+# same allocator the injector installs.
+find_package(mimalloc CONFIG REQUIRED)
+get_target_property(_ds_mimalloc_type mimalloc-static TYPE)
+if (NOT _ds_mimalloc_type STREQUAL "STATIC_LIBRARY")
+    message(FATAL_ERROR "test_alloc_shim needs a STATIC mimalloc-static, got '${_ds_mimalloc_type}'")
+endif()
+add_executable(test_alloc_shim
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_alloc_shim.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/AllocShim.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/backend_win.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/backend_elf.cpp
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/backend_macho.cpp)
+target_include_directories(test_alloc_shim PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+target_compile_features(test_alloc_shim PRIVATE cxx_std_23)
+target_link_libraries(test_alloc_shim PRIVATE mimalloc-static)
+# The backends are the injector's real hook implementations; Windows needs gum and
+# its runtime next to the executable, POSIX needs nothing beyond libc.
+if (WIN32)
+    target_sources(test_alloc_shim PRIVATE ${DONTSTARVEINJECTOR_UTIL_DIR}/FastHook.cpp)
+    target_include_directories(test_alloc_shim PRIVATE ${DONTSTARVEINJECTOR_ROOT} ${FRIDA_GUM_INCLUDE_DIR})
+    target_link_libraries(test_alloc_shim PRIVATE Frida::Gum)
+    add_custom_command(TARGET test_alloc_shim POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${FRIDA_GUM_RUNTIME}" "$<TARGET_FILE_DIR:test_alloc_shim>"
+        VERBATIM)
+endif()
+add_test(NAME alloc_shim COMMAND test_alloc_shim)
+
+# Separate executable: installing the real backend rewires this process's CRT, so it
+# must not share a process with the hook-free wrapper tests.
+if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
+    add_executable(test_alloc_shim_install
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_alloc_shim_install.cpp
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/AllocShim.cpp
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/backend_win.cpp
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/backend_elf.cpp
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector/core/alloc/backend_macho.cpp)
+    target_include_directories(test_alloc_shim_install PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/DontStarveInjector)
+    target_compile_features(test_alloc_shim_install PRIVATE cxx_std_23)
+    target_link_libraries(test_alloc_shim_install PRIVATE mimalloc-static)
+    if (WIN32)
+        target_sources(test_alloc_shim_install PRIVATE ${DONTSTARVEINJECTOR_UTIL_DIR}/FastHook.cpp)
+        target_include_directories(test_alloc_shim_install PRIVATE
+            ${DONTSTARVEINJECTOR_ROOT} ${FRIDA_GUM_INCLUDE_DIR})
+        target_link_libraries(test_alloc_shim_install PRIVATE Frida::Gum)
+        add_custom_command(TARGET test_alloc_shim_install POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${FRIDA_GUM_RUNTIME}" "$<TARGET_FILE_DIR:test_alloc_shim_install>"
+            VERBATIM)
+    endif()
+    add_test(NAME alloc_shim_install COMMAND test_alloc_shim_install)
+endif()
+
 # --- PluginHost pure-logic unit tests (M0) ---
 find_path(SOL2_INCLUDE_DIRS "sol/abort.hpp")
 set(PLUGIN_HOST_SOURCES
@@ -1053,6 +1110,8 @@ set_tests_properties(
 set(DS_DOCTEST_RUNNER_TARGETS
     test_buffer_name_pool
     test_fast_hook
+    test_alloc_shim
+    test_alloc_shim_install
     test_plugin_host_graph
     test_plugin_option_rules
     test_config_schema

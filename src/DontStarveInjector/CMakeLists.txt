@@ -50,6 +50,16 @@ set(SOURCES
         core/EnabledDstMods.cpp
 )
 
+# Allocator shim: one portable kernel plus the platform backend (core/alloc/).
+list(APPEND SOURCES core/alloc/AllocShim.cpp)
+if (WIN32)
+    list(APPEND SOURCES core/alloc/backend_win.cpp)
+elseif (APPLE)
+    list(APPEND SOURCES core/alloc/backend_macho.cpp)
+else ()
+    list(APPEND SOURCES core/alloc/backend_elf.cpp)
+endif ()
+
 
 if (ENABLE_STEAM_SUPPORT)
     list(APPEND SOURCES sdk/steam/Steam.cpp)
@@ -121,13 +131,26 @@ target_link_libraries(Injector PRIVATE spdlog::spdlog)
 target_link_libraries(Injector PRIVATE range-v3::meta range-v3::concepts range-v3::range-v3)
 target_link_libraries(Injector PRIVATE SLikeNet)
 target_include_directories(Injector PRIVATE ${PLF_HIVE_INCLUDE_DIRS})
-#target_link_libraries(Injector PRIVATE $<IF:$<TARGET_EXISTS:mimalloc-static>,mimalloc-static,mimalloc>)
+# The shim calls mi_* directly, so mimalloc must be a static library: a mimalloc
+# DLL would either be missing from Mod/deps or expose a second, foreign heap.
+get_target_property(_mi_type mimalloc-static TYPE)
+if (NOT _mi_type STREQUAL "STATIC_LIBRARY")
+    message(FATAL_ERROR "mimalloc-static must be STATIC_LIBRARY, got '${_mi_type}'")
+endif()
+target_link_libraries(Injector PRIVATE mimalloc-static)
+unset(_mi_type)
 if (NOT DISABLE_TRACY_FUTURE)
     target_link_libraries(Injector PRIVATE Tracy::TracyClient)
 else()
     target_compile_definitions(Injector PRIVATE DISABLE_TRACY_FUTURE)
 endif()
 target_link_libraries(Injector PRIVATE function_relocation)
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+    # The DST Linux client indirect-calls through .plt.sec (IBT), so the shim entries
+    # it reaches must begin with ENDBR64.
+    set_source_files_properties(core/alloc/AllocShim.cpp PROPERTIES COMPILE_OPTIONS "-fcf-protection=branch")
+endif ()
 # Fixed-signature machinery (shared, global-state-free): the Manager is the only
 # runtime registry, this lib supplies scan/cache/runner primitives.
 target_link_libraries(Injector PRIVATE ds_signature_provider)
