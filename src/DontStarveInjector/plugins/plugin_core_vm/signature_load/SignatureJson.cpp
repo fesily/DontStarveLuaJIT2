@@ -24,17 +24,6 @@
 #include "SignatureModRoot.hpp"
 #include "util/ModulePath.hpp"
 
-namespace {
-    // The DB lives in git with `eol=lf`; compare the way git will, i.e. without
-    // relying on the separator the on-disk copy happens to use.
-    bool file_holds(const std::string &path, const std::string &text) {
-        std::ifstream in(path, std::ios::binary);
-        if (!in.is_open()) return false;
-        std::string disk((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        disk.erase(std::remove(disk.begin(), disk.end(), '\r'), disk.end());
-        return disk == text;
-    }
-}  // namespace
 #ifdef _WIN32
 #  ifndef NOMINMAX
 #    define NOMINMAX
@@ -353,19 +342,12 @@ void SignatureJson::update_signatures(const Signatures &signatures) {
     spdlog::info("update signatures to file:[{}], platform: {}, version: {}", output, platform_name(),
                  signatures.version);
     // Format the document on the way out: the DB is under version control, and a
-    // one-line JSON blob has no reviewable diff. Same indent as SignatureCache's
-    // plugin_signatures_*.json so both DBs look alike. The trailing newline and
-    // the LF separators match the committed file, and an unchanged document is
-    // not rewritten at all - every game launch resolves the same entries, and the
-    // repeated write used to dirty the worktree (mtime included) with content git
-    // already had.
-    const std::string text = doc.dump(2) + "\n";
-    if (file_holds(output, text)) {
-        spdlog::debug("signatures unchanged, {} left untouched", output);
-        return;
-    }
+    // one-line JSON blob has no reviewable diff. Indent matches SignatureCache's
+    // plugin_signatures_*.json so both DBs look alike; the trailing newline and
+    // the LF separators are the shape git stores (`eol=lf`), so re-resolving an
+    // unchanged DB rewrites identical bytes and the worktree stays clean.
     std::ofstream sf(output, std::ios::binary);
-    sf << text;
+    sf << doc.dump(2) << '\n';
     sf.flush();
     // An unwritable mod dir used to be silent: generation "succeeded", the DB never
     // landed and every launch regenerated from scratch.

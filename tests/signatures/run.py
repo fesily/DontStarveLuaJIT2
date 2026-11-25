@@ -141,12 +141,21 @@ def check_formatted(output_dir: Path, variant: str) -> str | None:
     `doc.dump(2)`, which serializes exactly like `json.dumps(indent=2)`.
     """
     path = output_dir / f"signatures_{variant}.json"
-    text = path.read_text(encoding="utf-8")
+    # Raw bytes: `read_text()` would translate CRLF to LF and hide exactly the
+    # regression this check exists to catch.
+    raw = path.read_bytes()
+    text = raw.decode("utf-8")
     # The committed DB (and therefore the writer) ends with a final newline; that is
     # what keeps `git status` clean for a document git already holds.
     expected = json.dumps(json.loads(text), indent=2, ensure_ascii=False) + "\n"
     if text != expected:
-        return f"{path.name} is not indented JSON; the tool must write dump(2)-style output"
+        if b"\r\n" in raw:
+            reason = "CRLF separators"
+        elif not raw.endswith(b"\n"):
+            reason = "no final newline"
+        else:
+            reason = "not dump(2)-shaped"
+        return f"{path.name}: {reason}; the tool must write dump(2) with LF and a final newline"
     return None
 
 
@@ -196,17 +205,14 @@ TRACKED_DBS = ("Mod/signatures_client.json", "Mod/signatures_server.json",
                "Mod/plugin_signatures_client.json", "Mod/plugin_signatures_server.json")
 
 
-def _normalised(path: Path) -> bytes:
-    return path.read_bytes().replace(b"\r\n", b"\n")
-
-
 def require_fresh(tool: Path) -> int:
     """The shipped DBs must already hold what a fresh resolve produces.
 
     The runtime and this tool share the writer (`SignatureJson::update_signatures`),
-    both DBs are tracked by git, and an unchanged document is not rewritten. So the
-    witness is exact: let the tool update a *copy* of the tracked DBs and compare.
-    A difference means the committed copy is stale.
+    and git tracks both DBs with `eol=lf`. So the witness is exact: let the tool
+    update a *copy* of the tracked DBs and compare the bytes. Equal bytes mean the
+    committed copy already holds a fresh resolve; any difference is staleness or a
+    writer that no longer emits the tracked shape.
 
     The update runs against a seeded scratch directory, never the live `Mod/`: a
     concurrent test must not be able to turn this gate into a false stale verdict,
@@ -226,7 +232,7 @@ def require_fresh(tool: Path) -> int:
             return fail("Mod/signatures_*.json changed while the gate ran; "
                         "another process rewrote them, re-run the suite")
         stale = [relative for relative in TRACKED_DBS
-                 if _normalised(scratch / Path(relative).name) != _normalised(ROOT / relative)]
+                 if (scratch / Path(relative).name).read_bytes() != (ROOT / relative).read_bytes()]
         if stale:
             for relative in stale:
                 print(f"stale: {relative}", file=sys.stderr)

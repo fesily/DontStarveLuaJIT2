@@ -5,7 +5,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
 #include <string_view>
 
 #include <nlohmann/json.hpp>
@@ -342,16 +341,13 @@ bool cache_write_owner(const char *file_path, uint32_t platform, const char *own
     // Merge into whatever is on disk: other platform sections and other owners
     // of this platform must survive a run that only touched one provider.
     nlohmann::json doc = nlohmann::json::object();
-    std::string on_disk;
     {
-        std::ifstream raw(file_path, std::ios::binary);
-        if (raw.is_open()) {
-            on_disk.assign(std::istreambuf_iterator<char>(raw), std::istreambuf_iterator<char>());
+        std::ifstream in(file_path);
+        if (in.is_open()) {
             try {
-                doc = nlohmann::json::parse(on_disk);
+                in >> doc;
             } catch (const std::exception &) {
                 doc = nlohmann::json::object();
-                on_disk.clear();
             }
         }
     }
@@ -389,15 +385,6 @@ bool cache_write_owner(const char *file_path, uint32_t platform, const char *own
     }
     section["owners"][owner] = std::move(owner_json);
 
-    // The cache is tracked by git and the signature gates snapshot the DBs next
-    // to it: a rewrite with identical bytes only churns its mtime, so leave it
-    // alone when the resolved document did not move.
-    const std::string text = doc.dump(2);
-    if (text == on_disk) {
-        (void) lock.held();
-        return true;
-    }
-
     // Write through a temporary so a crash never leaves a truncated document
     // that the next run has to rebuild from scratch.
     const std::string temp = std::string{file_path} + ".tmp";
@@ -407,7 +394,7 @@ bool cache_write_owner(const char *file_path, uint32_t platform, const char *own
             set_detail(detail, detail_cap, "cannot open the cache temp file for writing");
             return false;
         }
-        out << text;
+        out << doc.dump(2);
         out.flush();
         if (!out) {
             set_detail(detail, detail_cap, "cannot write the cache temp file");
