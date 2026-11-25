@@ -15,7 +15,7 @@
 # Design constraints:
 #   * Registration must NOT require the targets to exist yet — it only records
 #     descriptor strings.  This allows the module to be included and the
-#     variant to be registered before add_subdirectory(luajit) runs.
+#     variant to be registered before add_subdirectory("3rd/luajit") runs.
 #   * The registry is build-artifact metadata only; it does not build anything.
 #   * Compatibility variables (LUAJIT_INCLUDE_DIR, LUAJIT_LIBRARIES) are
 #     derived from the registry by the caller, not by this module.

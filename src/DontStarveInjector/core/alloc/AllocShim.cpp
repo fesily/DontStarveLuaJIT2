@@ -9,6 +9,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <dlfcn.h>
 #include <unistd.h>
 #endif
 
@@ -483,7 +484,11 @@ namespace ds::alloc {
         return !env_disables(value);
 #else
         const char *value = getenv("DS_ALLOC_SHIM");
-        return value == nullptr || !env_disables(value);
+        if (value == nullptr || value[0] == '\0' || env_disables(value)) return false;
+        // The POSIX stub preloads the MI_OVERRIDE=ON archive, so malloc/free
+        // already resolve to mimalloc before the real Injector is dlopen()ed.
+        // Installing the ELF GOT shim on top would create a second heap.
+        return dlsym(RTLD_DEFAULT, "ds_stub_alloc_override") == nullptr;
 #endif
     }
 

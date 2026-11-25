@@ -8,7 +8,8 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("REPO_ROOT", Path(__file__).resolve().parents[2]))
 SELF_DIR = Path(__file__).resolve().parent
-SCRIPT = SELF_DIR / "plugin_host_lua_spec.lua"
+SCRIPT = (Path(sys.argv[1]).resolve() if len(sys.argv) > 1
+          else SELF_DIR / "plugin_host_lua_spec.lua")
 
 
 def lua_command_candidates() -> list[list[str]]:
@@ -19,10 +20,10 @@ def lua_command_candidates() -> list[list[str]]:
 
     # Prefer project-built LuaJIT when present (Windows multi-config tree).
     build_roots = [
-        ROOT / "builds" / "ninja-multi-vcpkg" / "luajit" / "Release" / "luajit.exe",
-        ROOT / "builds" / "ninja-multi-vcpkg" / "luajit" / "Debug" / "luajit.exe",
-        ROOT / "build" / "luajit" / "luajit",
-        ROOT / "build" / "luajit" / "luajit.exe",
+        ROOT / "builds" / "ninja-multi-vcpkg" / "3rd" / "luajit" / "Release" / "luajit.exe",
+        ROOT / "builds" / "ninja-multi-vcpkg" / "3rd" / "luajit" / "Debug" / "luajit.exe",
+        ROOT / "build" / "3rd" / "luajit" / "luajit",
+        ROOT / "build" / "3rd" / "luajit" / "luajit.exe",
     ]
     for path in build_roots:
         if path.is_file():

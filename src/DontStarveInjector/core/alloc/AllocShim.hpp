@@ -84,7 +84,7 @@ namespace ds::alloc {
     bool shutting_down() noexcept;
 
     // phase 0 accessors: no allocation, no logging, no InjectorCtx.
-    bool read_env_switch() noexcept;// DS_ALLOC_SHIM: unset => true; off/0/no => false
+    bool read_env_switch() noexcept;// DS_ALLOC_SHIM: Windows unset => true; POSIX opt-in only without the preload stub; off/0/no => false
     bool read_env_stats() noexcept; // DS_ALLOC_SHIM_STATS=1
 
     namespace detail {

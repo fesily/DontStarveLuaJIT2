@@ -14,7 +14,7 @@
 --         =[C] in function 'xpcall'
 --         <chunk>(5,1) in function 'wrapper'        -- caller frame, named
 --         <chunk>(6,1) in main chunk
--- This VM now prints the same (LUA_COMPAT_TAILCALL_CFRAME, luajit/src/lj_arch.h):
+-- This VM now prints the same (LUA_COMPAT_TAILCALL_CFRAME, 3rd/luajit/src/lj_arch.h):
 -- BC_CALLT splits on the callee's ffid, a C/FF callee runs as a normal call and
 -- the parser-appended BC_RETM forwards its results, so the frame survives and
 -- the C frame is named from the tail-call site:

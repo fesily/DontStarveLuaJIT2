@@ -32,7 +32,7 @@
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-LUAJIT_SRC="${LUAJIT_SRC:-$REPO_ROOT/luajit}"
+LUAJIT_SRC="${LUAJIT_SRC:-$REPO_ROOT/3rd/luajit}"
 BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/builds/ninja-multi-vcpkg}"
 ASAN_LIB="${ASAN_LIB:-/usr/lib/x86_64-linux-gnu/libasan.so.8}"
 CLUSTER="${CLUSTER:-Cluster_1}"
@@ -97,7 +97,7 @@ ts="$(date +%Y%m%d-%H%M%S)"
 if [[ -z "$EVIDENCE_DIR" ]]; then
   EVIDENCE_DIR="$REPO_ROOT/.omo/evidence/debug-asan-$ts"
 fi
-# Absolute path: suite/game lanes pushd into luajit/ or game bin64.
+# Absolute path: suite/game lanes pushd into 3rd/luajit/ or game bin64.
 mkdir -p "$EVIDENCE_DIR"
 EVIDENCE_DIR="$(cd "$EVIDENCE_DIR" && pwd)"
 SUMMARY="$EVIDENCE_DIR/SUMMARY.md"
@@ -359,8 +359,8 @@ deploy_to_game() {
   local src_gengc src_real_inj src_stub
   src_gengc="$(_first_existing \
     "$mod_deps/liblua51DS_gengc.so" \
-    "$BUILD_DIR/luajit/Debug/liblua51DS_gengc.so" \
-    "$BUILD_DIR/luajit/liblua51DS_gengc.so" \
+    "$BUILD_DIR/3rd/luajit/Debug/liblua51DS_gengc.so" \
+    "$BUILD_DIR/3rd/luajit/liblua51DS_gengc.so" \
     "$mod_root/bin64/linux/lib64/liblua51DS_gengc.so" \
   )" || die "liblua51DS_gengc.so not found (build lane 2 / cmake --install first)"
 

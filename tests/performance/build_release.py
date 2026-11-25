@@ -153,7 +153,7 @@ def build(source: Path, build_dir: Path) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, default=ROOT / "luajit")
+    parser.add_argument("--source", type=Path, default=ROOT / "3rd" / "luajit")
     parser.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD)
     parser.add_argument("--runtime", action="store_true",
                         help="Also build Release injector/plugins from the configured root build")

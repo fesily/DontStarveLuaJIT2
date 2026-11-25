@@ -1,4 +1,4 @@
--- C-callee tail calls (LUA_COMPAT_TAILCALL_CFRAME, luajit/src/lj_arch.h): the
+-- C-callee tail calls (LUA_COMPAT_TAILCALL_CFRAME, 3rd/luajit/src/lj_arch.h): the
 -- caller frame survives and the C/fast function's results are forwarded
 -- unchanged (0..N values), ditto the engine-embedded Lua 5.1 (OP_TAILCALL PCRC
 -- calls the C callee normally, src/lua51/src/lvm.c:611-636).
@@ -7,7 +7,7 @@
 -- caller when its prototype or the engine is JIT-disabled; the appended
 -- BC_RETM forwards results. JIT-eligible callers use native replacement,
 -- including during warmup. Frame parity is interpreter-only; native trace
--- and stitching assertions live in luajit/test/tailcall/native.lua.
+-- and stitching assertions live in 3rd/luajit/test/tailcall/native.lua.
 --
 -- Gated by LUA_COMPAT_TAILCALL_CFRAME ("-DLUA_COMPAT_TAILCALL_CFRAME=0", or a
 -- backend without the split — x64 without GC64, x86, arm — restores the stock

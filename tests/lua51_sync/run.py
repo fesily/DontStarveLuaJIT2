@@ -41,8 +41,8 @@ def default_runtime_path(*parts: str) -> Path:
     return build_dir.joinpath(*parts[:-1], build_configs()[0], parts[-1])
 
 
-DEFAULT_LUA51 = default_runtime_path("src", "lua51original", "lua.exe")
-DEFAULT_LUAJIT = default_runtime_path("luajit", "luajit.exe")
+DEFAULT_LUA51 = default_runtime_path("3rd", "lua51original", "lua.exe")
+DEFAULT_LUAJIT = default_runtime_path("3rd", "luajit", "luajit.exe")
 DEFAULT_STRFMT_PUSHFSTRING_MODULE = default_runtime_path(
     "tests", "lua51_sync", "strfmt_pushfstring_module.dll"
 )

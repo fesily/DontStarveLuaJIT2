@@ -6,7 +6,9 @@
 #include "core/alloc/AllocShim.hpp"
 
 #include <doctest/doctest.h>
+#ifdef _WIN32
 #include <frida-gum.h>
+#endif
 #include <mimalloc.h>
 
 #include <cstdlib>
@@ -39,7 +41,9 @@ TEST_CASE("alloc_shim_install/live process dispatches through mimalloc") {
         return;
     }
 
+#ifdef _WIN32
     gum_init_embedded();// production calls this before install_early
+#endif
 
     ds::alloc::Options options{};
     options.enabled = true;

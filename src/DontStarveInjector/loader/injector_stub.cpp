@@ -34,3 +34,12 @@ struct BootstrapOnce {
 static BootstrapOnce g_bootstrap_once;
 
 } // namespace
+
+#if defined(__linux__) || defined(__APPLE__)
+// Read by the real Injector's allocator shim: the POSIX stub owns the
+// process-wide allocator through the static MI_OVERRIDE=ON archive, so the late
+// GOT rewrite must stay off even if DS_ALLOC_SHIM is set.
+extern "C" __attribute__((visibility("default"))) int ds_stub_alloc_override(void) {
+    return 1;
+}
+#endif

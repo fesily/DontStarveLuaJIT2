@@ -83,7 +83,10 @@ function Surface.new(api, opts)
 		own_functions = api.setmetatable({}, { __mode = "k" }),
 		real_require = opts.global.require,
 		kleiloadlua = opts.global.kleiloadlua,
-		has_luajit = api.type(opts.global.jit) == "table",
+		-- rawget: GLOBAL carries scripts/strict.lua's metatable, whose __declared set never
+		-- lists a VM-installed `jit` (a stock PUC state has no such global at all), so a plain
+		-- read is a strict violation instead of a nil.
+		has_luajit = api.type(api.rawget(opts.global, "jit")) == "table",
 	}, Surface)
 	-- Frames of this module and of the blacklist module are never attribution candidates.
 	for _, value in api.pairs(Surface) do
@@ -227,12 +230,42 @@ function Surface:grant(env, is_installer)
 	-- Local GLOBAL: explicit extension fields stay here, every other game field is read live
 	-- from the real GLOBAL and ordinary writes keep going to the shared table, so the game's
 	-- state (TheWorld, ...) is one table for all mods.
+	--
+	-- scripts/strict.lua only lets a main chunk (or C) declare a new global, and it decides by
+	-- looking at the frame that performs the assignment. A write through this proxy reaches
+	-- the real table from a Lua frame in this module, so the real metatable would see "Lua"
+	-- and refuse a declaration the same chunk could make directly. Apply strict's caller rule
+	-- at this level (2 is the write site), keep its __declared table in step so later reads
+	-- pass, then let the real metatable (which may be absent on a stock state) do the write.
+	-- `GLOBAL.rawget`/`GLOBAL.rawset` must be this env's wrappers (assigned below). Resolving
+	-- them in __index instead of storing them on the proxy keeps the proxy's raw contents equal
+	-- to what the view actually owns (extension copies + package): a plain read gets the
+	-- wrapper, while `pairs(GLOBAL)` still lists only those owned fields and a raw read of that
+	-- name still returns the engine function.
+	local rawget_view, rawset_view
 	local proxy = {}
 	api.setmetatable(proxy, {
 		__index = function(_, key)
+			if key == "rawget" then
+				return rawget_view
+			end
+			if key == "rawset" then
+				return rawset_view
+			end
 			return self.global[key]
 		end,
 		__newindex = function(_, key, value)
+			local mt = api.getmetatable(self.global)
+			local declared = api.type(mt) == "table" and api.rawget(mt, "__declared") or nil
+			if api.type(declared) == "table" and api.rawget(self.global, "__STRICT") ~= false
+				and not api.rawget(declared, key) then
+				local info = api.getinfo(2, "S")
+				local what = info ~= nil and api.rawget(info, "what") or "C"
+				if what ~= "main" and what ~= "C" then
+					api.error("assign to undeclared variable '" .. api.tostring(key) .. "'", 2)
+				end
+				api.rawset(declared, key, true)
+			end
 			self.global[key] = value
 		end,
 	})
@@ -242,6 +275,53 @@ function Surface:grant(env, is_installer)
 		end
 	end
 	api.rawset(proxy, "package", package_copy)
+
+	-- rawget/rawset have no metamethods, so the real functions a granted env resolves would
+	-- read and write the proxy's own raw table: `rawget(GLOBAL, "TheWorld")` came back nil and
+	-- `rawset(GLOBAL, "x", v)` never reached the game table. This env gets wrappers for the one
+	-- GLOBAL view it owns: a key the proxy stores raw (the extension copies, package) stays
+	-- local, every other key is raw access to the real GLOBAL -- same split as the metatable
+	-- path above, still without metamethods. Any other table keeps the stock functions.
+	rawget_view = function(t, key)
+		if t == proxy then
+			-- The two accessors are view surface, not proxy data: a raw read of the name must
+			-- give the same wrapper `GLOBAL.rawget` does, never the engine function that would
+			-- read the shared table directly.
+			if key == "rawget" then
+				return rawget_view
+			end
+			if key == "rawset" then
+				return rawset_view
+			end
+			if api.rawget(proxy, key) == nil then
+				return api.rawget(self.global, key)
+			end
+		end
+		return api.rawget(t, key)
+	end
+	rawset_view = function(t, key, value)
+		local target = t
+		if t == proxy then
+			-- Same rule for writes: the accessors belong to the view, so replacing one changes
+			-- this env's GLOBAL only and never the engine's shared function.
+			if key == "rawget" then
+				rawget_view = value
+				return t
+			end
+			if key == "rawset" then
+				rawset_view = value
+				return t
+			end
+			if api.rawget(proxy, key) == nil then
+				target = self.global
+			end
+		end
+		api.rawset(target, key, value)
+		-- rawset returns the table it was given, never the real GLOBAL it forwarded to.
+		return t
+	end
+	self.own_functions[rawget_view] = true
+	self.own_functions[rawset_view] = true
 
 	local state = {
 		copies = copies,
@@ -274,6 +354,8 @@ function Surface:grant(env, is_installer)
 	end
 	api.rawset(env, "package", package_copy)
 	api.rawset(env, "require", require_wrapper)
+	api.rawset(env, "rawget", rawget_view)
+	api.rawset(env, "rawset", rawset_view)
 	return true
 end
 

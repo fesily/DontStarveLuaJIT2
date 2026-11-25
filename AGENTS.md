@@ -24,8 +24,9 @@ Don't Starve / Don't Starve Together LuaJIT 优化补丁项目。通过 DLL 注�
 ## 项目结构
 
 - `src/` - 核心源码 (注入器、Lua 框架等)
-- `luajit/` - LuaJIT 引擎 (子模块)
-- `3rd/` - 第三方依赖
+- `3rd/luajit/` - LuaJIT 引擎 (子模块)
+- `3rd/lua51original/` - 原版 Lua 5.1 (对照/静态嵌入)
+- `3rd/` - 第三方依赖与引擎 VM 源码
 - `Mod/` - 游戏 Mod 文件
 - `tests/` - 测试
 - `cmake/` & `tools/` - 构建工具链
