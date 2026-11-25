@@ -188,7 +188,7 @@ if(TARGET luajit-5.1 AND TARGET ds_test_doctest)
         ${CMAKE_BINARY_DIR}/luajit/variants/default
         ${CMAKE_SOURCE_DIR}/3rd)
     target_compile_features(test_injector_file_hijack_host PRIVATE cxx_std_23)
-    target_link_libraries(test_injector_file_hijack_host PRIVATE ds_test_doctest spdlog::spdlog fast_assert fast_assert_owner ${CMAKE_DL_LIBS})
+    target_link_libraries(test_injector_file_hijack_host PRIVATE ds_test_doctest spdlog::spdlog fast_assert fast_assert_owner Frida::Gum ${CMAKE_DL_LIBS})
     add_test(NAME plugin_injector_file_hijack
         COMMAND ${CMAKE_COMMAND} -E env
             DS_HIJACK_VM=$<TARGET_FILE:luajit-5.1>
@@ -626,7 +626,7 @@ if (TARGET liblua_static)
 else()
     message(FATAL_ERROR "liblua_static required for test_puc_dump_host")
 endif()
-target_link_libraries(test_puc_dump_host PRIVATE spdlog::spdlog fast_assert fast_assert_owner)
+target_link_libraries(test_puc_dump_host PRIVATE spdlog::spdlog fast_assert fast_assert_owner Frida::Gum)
 if (NOT WIN32)
     target_link_libraries(test_puc_dump_host PRIVATE ${CMAKE_DL_LIBS})
 endif()

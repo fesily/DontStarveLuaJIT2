@@ -29,6 +29,11 @@ target_include_directories(fast_assert
     INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
+# The macros in fast_assert.hpp forward their optional message with __VA_OPT__;
+# cl.exe only understands it with the conforming preprocessor, which /std:c++latest
+# does not imply on its own. Enabling it here keeps every consumer (Tests, the
+# Injector, tools) compiling the header without per-target flags.
+target_compile_options(fast_assert INTERFACE $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/Zc:preprocessor>)
 
 # The implementation. Link this into exactly one module per process.
 add_library(fast_assert_owner OBJECT

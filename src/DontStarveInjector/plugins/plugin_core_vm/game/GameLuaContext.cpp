@@ -10,6 +10,7 @@
 #include "io/gameio.h"
 #include "lua_debugger_helper.hpp"
 #include <zlib.h>
+#include <fast_assert/fast_assert.hpp>
 #include <filesystem>
 #include <vector>
 #include <fmt/format.h>
@@ -530,7 +531,10 @@ namespace ds::core_vm::detail {
 int initialize_mod_environment(lua_State *L) {
     auto *ctx = GameLuaContextImpl::currentCtx;
     if (ctx == nullptr) {
-        return luaL_error(L, "cannot install the mod environment: no VM context");
+        // Broken invariant, not a Lua-level error: this closure is installed by the injector
+        // only after the context exists, and this module links no Lua symbols (the API table
+        // is the only way to talk to the VM). Mirrors PrivateLuaRegistry's convention.
+        FAST_PANIC("cannot install the mod environment: no VM context");
     }
     LuaApis &api = ctx->api;
     api._luaL_checktype(L, 1, LUA_TTABLE);  // the mod's env table
