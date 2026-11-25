@@ -92,7 +92,13 @@ def run_tool(tool: Path, mode: str, output_dir: Path | None) -> None:
     proc = subprocess.run([str(tool), mode], cwd=str(tool.parent), env=env,
                           capture_output=True, text=True)
     if proc.returncode != 0:
-        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-20:]
+        combined = ((proc.stderr or "") + "\n" + (proc.stdout or "")).splitlines()
+        # The tool reports the interesting line ("can't load", "failed to write",
+        # "cache not written") long before its per-entry tail, so keep those.
+        interesting = [line for line in combined
+                       if any(key in line.lower() for key in
+                              ("error", "fail", "cannot", "denied", "not found", "stale", "invalid"))]
+        tail = (interesting or combined)[-20:]
         raise SystemExit(fail(f"{mode} exited {proc.returncode:#x}:\n" + "\n".join(tail)))
 
 
@@ -136,7 +142,9 @@ def check_formatted(output_dir: Path, variant: str) -> str | None:
     """
     path = output_dir / f"signatures_{variant}.json"
     text = path.read_text(encoding="utf-8")
-    expected = json.dumps(json.loads(text), indent=2, ensure_ascii=False)
+    # The committed DB (and therefore the writer) ends with a final newline; that is
+    # what keeps `git status` clean for a document git already holds.
+    expected = json.dumps(json.loads(text), indent=2, ensure_ascii=False) + "\n"
     if text != expected:
         return f"{path.name} is not indented JSON; the tool must write dump(2)-style output"
     return None
@@ -188,27 +196,46 @@ TRACKED_DBS = ("Mod/signatures_client.json", "Mod/signatures_server.json",
                "Mod/plugin_signatures_client.json", "Mod/plugin_signatures_server.json")
 
 
+def _normalised(path: Path) -> bytes:
+    return path.read_bytes().replace(b"\r\n", b"\n")
+
+
 def require_fresh(tool: Path) -> int:
     """The shipped DBs must already hold what a fresh resolve produces.
 
     The runtime and this tool share the writer (`SignatureJson::update_signatures`),
-    both DBs are tracked by git, and the writer leaves an unchanged document alone.
-    So the witness is exact: run the update into the mod root, and if git reports a
-    tracked DB as modified, the committed copy was stale.
+    both DBs are tracked by git, and an unchanged document is not rewritten. So the
+    witness is exact: let the tool update a *copy* of the tracked DBs and compare.
+    A difference means the committed copy is stale.
+
+    The update runs against a seeded scratch directory, never the live `Mod/`: a
+    concurrent test must not be able to turn this gate into a false stale verdict,
+    and a failing gate should not leave the worktree half-written.
     """
-    run_tool(tool, "update", None)
-    proc = subprocess.run(["git", "status", "--porcelain", "--", *TRACKED_DBS],
-                          cwd=str(ROOT), capture_output=True, text=True)
-    if proc.returncode != 0:
-        return fail(f"git status failed: {(proc.stderr or '').strip()}")
-    dirty = [line for line in proc.stdout.splitlines() if line.strip()]
-    if dirty:
-        for line in dirty:
-            print(line, file=sys.stderr)
-        return fail("signature DBs are stale: the update rewrote tracked files. "
-                    "Run `cmake --build <build dir> --target update_signatures` and commit them.")
-    print("PASS: signature DBs already match a fresh resolve")
-    return 0
+    scratch = Path(tempfile.mkdtemp(prefix="ds-signatures-fresh-"))
+    try:
+        for relative in TRACKED_DBS:
+            shutil.copy2(ROOT / relative, scratch / Path(relative).name)
+        run_tool(tool, "update", scratch)
+        moved = subprocess.run(["git", "status", "--porcelain", "--", *TRACKED_DBS],
+                               cwd=str(ROOT), capture_output=True, text=True)
+        if moved.returncode != 0:
+            return fail(f"git status failed: {(moved.stderr or '').strip()}")
+        if moved.stdout.strip():
+            print(moved.stdout, file=sys.stderr)
+            return fail("Mod/signatures_*.json changed while the gate ran; "
+                        "another process rewrote them, re-run the suite")
+        stale = [relative for relative in TRACKED_DBS
+                 if _normalised(scratch / Path(relative).name) != _normalised(ROOT / relative)]
+        if stale:
+            for relative in stale:
+                print(f"stale: {relative}", file=sys.stderr)
+            return fail("signature DBs are stale: a fresh resolve differs from the committed copy. "
+                        "Run `cmake --build <build dir> --target update_signatures` and commit them.")
+        print("PASS: signature DBs already match a fresh resolve")
+        return 0
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def main(argv: list[str]) -> int:

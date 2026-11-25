@@ -1410,6 +1410,7 @@ ds_test_append_lock(ds_relocation_log
     eh_frame_starts
     elf_plt_symbols)
 ds_test_append_lock(ds_signature_tool_log
+    signatures_up_to_date
     windows_signatures
     windows_signatures_cache
     linux_signatures_client
