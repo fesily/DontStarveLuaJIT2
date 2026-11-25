@@ -1201,6 +1201,19 @@ if (WIN32 AND TARGET signature_updater)
                 $<TARGET_FILE:signature_updater> --check-cache)
         set_tests_properties(windows_signatures_cache PROPERTIES
             LABELS windows_game_signatures TIMEOUT 1800)
+        # Staleness witness: the runtime and signature_updater share the writer, the
+        # DB is tracked by git, and an unchanged document is not rewritten. So running
+        # the update here and finding a tracked file modified means the committed copy
+        # is stale - fail, and let the game tests wait for this setup (FIXTURES_REQUIRED
+        # below) instead of each run rewriting Mod/ underneath the gates.
+        add_test(NAME signatures_up_to_date
+            COMMAND ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/signatures/run.py
+                $<TARGET_FILE:signature_updater> --require-fresh)
+        set_tests_properties(signatures_up_to_date PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            LABELS windows_game_signatures
+            FIXTURES_SETUP signature_db
+            TIMEOUT 1800)
     endif()
 endif()
 
@@ -1403,3 +1416,26 @@ ds_test_append_lock(ds_signature_tool_log
     linux_signatures_server
     linux_signatures_cache_client
     linux_signatures_cache_server)
+
+# The freshness setup must finish before anything launches the game (which would
+# otherwise rewrite Mod/signatures_*.json mid-run) or snapshots those files.
+if ("signatures_up_to_date" IN_LIST DS_REGISTERED_TESTS)
+    foreach(_ds_sig_consumer IN ITEMS
+            plugin_dedicated_sim_pause
+            plugin_client_inject_smoke
+            plugin_client_host_smoke
+            game_mod_throw_abort
+            game_puc_string_dump
+            game_performance_worldgen
+            game_performance_startup
+            windows_signatures
+            windows_signatures_cache
+            linux_signatures_client
+            linux_signatures_server
+            linux_signatures_cache_client
+            linux_signatures_cache_server)
+        if (_ds_sig_consumer IN_LIST DS_REGISTERED_TESTS)
+            set_property(TEST ${_ds_sig_consumer} APPEND PROPERTY FIXTURES_REQUIRED signature_db)
+        endif()
+    endforeach()
+endif()

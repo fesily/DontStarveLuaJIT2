@@ -11,6 +11,8 @@ The gate fails unless
 
 * ``create`` writes a complete DB for both client and server in the current
   ``format_version`` and a section for this build's platform,
+* every successful write lands indented (``dump(2)``-style) JSON, so the
+  tracked DB keeps a reviewable diff,
 * the following ``update`` leaves every stored offset untouched,
 * with ``--check-cache`` an intentionally ambiguous cached pattern is repaired
   in place without moving its entry (the Linux ``--check-cache`` regression),
@@ -78,9 +80,12 @@ def mod_signatures_state() -> dict[Path, tuple[int, int]]:
     return state
 
 
-def run_tool(tool: Path, mode: str, output_dir: Path) -> None:
+def run_tool(tool: Path, mode: str, output_dir: Path | None) -> None:
     env = dict(os.environ)
-    env["SIGNATURE_TOOL_OUTPUT_DIR"] = str(output_dir)
+    if output_dir is not None:
+        env["SIGNATURE_TOOL_OUTPUT_DIR"] = str(output_dir)
+    else:
+        env.pop("SIGNATURE_TOOL_OUTPUT_DIR", None)# default: the mod root
     # The tool needs its own (config-matched) runtime DLLs next to the exe.
     env["PATH"] = f"{tool.parent}{os.pathsep}{env.get('PATH', '')}"
     print(f"== signature_updater {mode}")
@@ -120,6 +125,21 @@ def load_db(output_dir: Path, variant: str) -> dict:
 
 def write_db(output_dir: Path, variant: str, db: dict) -> None:
     (output_dir / f"signatures_{variant}.json").write_text(json.dumps(db))
+
+
+def check_formatted(output_dir: Path, variant: str) -> str | None:
+    """A successful write must land indented JSON, not a one-line blob.
+
+    The DB is tracked in git: compact output turns every offset change into an
+    unreviewable whole-file diff. `SignatureJson::update_signatures` writes
+    `doc.dump(2)`, which serializes exactly like `json.dumps(indent=2)`.
+    """
+    path = output_dir / f"signatures_{variant}.json"
+    text = path.read_text(encoding="utf-8")
+    expected = json.dumps(json.loads(text), indent=2, ensure_ascii=False)
+    if text != expected:
+        return f"{path.name} is not indented JSON; the tool must write dump(2)-style output"
+    return None
 
 
 def offsets(db: dict, variant: str) -> dict[str, int]:
@@ -164,14 +184,43 @@ def check_rebuilt(output_dir: Path, variant: str, baseline: dict[str, int], tag:
     return None
 
 
+TRACKED_DBS = ("Mod/signatures_client.json", "Mod/signatures_server.json",
+               "Mod/plugin_signatures_client.json", "Mod/plugin_signatures_server.json")
+
+
+def require_fresh(tool: Path) -> int:
+    """The shipped DBs must already hold what a fresh resolve produces.
+
+    The runtime and this tool share the writer (`SignatureJson::update_signatures`),
+    both DBs are tracked by git, and the writer leaves an unchanged document alone.
+    So the witness is exact: run the update into the mod root, and if git reports a
+    tracked DB as modified, the committed copy was stale.
+    """
+    run_tool(tool, "update", None)
+    proc = subprocess.run(["git", "status", "--porcelain", "--", *TRACKED_DBS],
+                          cwd=str(ROOT), capture_output=True, text=True)
+    if proc.returncode != 0:
+        return fail(f"git status failed: {(proc.stderr or '').strip()}")
+    dirty = [line for line in proc.stdout.splitlines() if line.strip()]
+    if dirty:
+        for line in dirty:
+            print(line, file=sys.stderr)
+        return fail("signature DBs are stale: the update rewrote tracked files. "
+                    "Run `cmake --build <build dir> --target update_signatures` and commit them.")
+    print("PASS: signature DBs already match a fresh resolve")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
-        print("usage: run.py <signature_updater.exe> [--check-cache]", file=sys.stderr)
+        print("usage: run.py <signature_updater.exe> [--check-cache | --require-fresh]", file=sys.stderr)
         return 2
     tool = Path(argv[1]).resolve()
     check_cache = "--check-cache" in argv[2:]
     if not tool.is_file():
         return fail(f"tool not found: {tool}")
+    if "--require-fresh" in argv[2:]:
+        return require_fresh(tool)
 
     before_mod = mod_signatures_state()
     scratch = Path(tempfile.mkdtemp(prefix="ds-signatures-"))
@@ -182,6 +231,9 @@ def main(argv: list[str]) -> int:
         for variant, entries in created_offsets.items():
             print(f"created {variant}: {len(entries)} entries, "
                   f"version {platform_section(created[variant], variant)['version']}")
+            error = check_formatted(scratch, variant)
+            if error:
+                return fail(error)
 
         run_tool(tool, "update", scratch)
         for variant in VARIANTS:
@@ -189,6 +241,9 @@ def main(argv: list[str]) -> int:
             if offsets(updated, variant) != created_offsets[variant]:
                 return fail(f"{variant} offset drift: "
                             + diff_offsets(created_offsets[variant], offsets(updated, variant)))
+            error = check_formatted(scratch, variant)
+            if error:
+                return fail(error)
             print(f"updated {variant}: {len(offsets(updated, variant))} offsets preserved")
 
         # A DB written by an older format_version must be regenerated, never

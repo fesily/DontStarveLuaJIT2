@@ -132,9 +132,9 @@
     },
     "windows-x64": {
       "module": {
-        "digest": "dd2cf795bed55dbc",
-        "size": 7811072,
-        "version": "762172"
+        "digest": "475fc99f973434c4",
+        "size": 7815168,
+        "version": "763928"
       },
       "owners": {
         "core.vm": {
@@ -147,17 +147,17 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                1054560,
-                1656928,
-                1656944,
-                1656976,
-                1656992,
-                1657008,
-                3924240,
-                4754880
+                1054640,
+                1654624,
+                1654640,
+                1654672,
+                1654688,
+                1654704,
+                3924272,
+                4756560
               ],
               "resolve_kind": 0,
-              "target_rva": 1656976
+              "target_rva": 1654672
             },
             "core.vm.execution_error": {
               "client_only": false,
@@ -167,10 +167,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                4754912
+                4756592
               ],
               "resolve_kind": 0,
-              "target_rva": 4754912
+              "target_rva": 4756592
             },
             "core.vm.lua_module": {
               "client_only": false,
@@ -180,10 +180,10 @@
               "pattern_offset": -55,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                4727863
+                4729559
               ],
               "resolve_kind": 0,
-              "target_rva": 4727808
+              "target_rva": 4729504
             },
             "core.vm.register_debug_getsize": {
               "client_only": false,
@@ -193,10 +193,10 @@
               "pattern_offset": -39,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                1286823
+                1284119
               ],
               "resolve_kind": 0,
-              "target_rva": 1286784
+              "target_rva": 1284080
             }
           }
         },
@@ -210,10 +210,10 @@
               "pattern_offset": -125,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                3974845
+                3974909
               ],
               "resolve_kind": 0,
-              "target_rva": 3974720
+              "target_rva": 3974784
             },
             "debug.profiler.push": {
               "client_only": false,
@@ -223,10 +223,10 @@
               "pattern_offset": -373,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                3974565
+                3974629
               ],
               "resolve_kind": 0,
-              "target_rva": 3974192
+              "target_rva": 3974256
             }
           }
         },
@@ -240,10 +240,10 @@
               "pattern_offset": -62,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                39886
+                40638
               ],
               "resolve_kind": 0,
-              "target_rva": 39824
+              "target_rva": 40576
             }
           }
         },
@@ -270,10 +270,10 @@
               "pattern_offset": -36,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                1629716
+                1626964
               ],
               "resolve_kind": 0,
-              "target_rva": 1629680
+              "target_rva": 1626928
             }
           }
         },
@@ -287,10 +287,10 @@
               "pattern_offset": -7,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                690656
+                695296
               ],
               "resolve_kind": 0,
-              "target_rva": 690649
+              "target_rva": 695289
             },
             "network.rpc.component_serialize": {
               "client_only": false,
@@ -300,10 +300,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                692491
+                697115
               ],
               "resolve_kind": 0,
-              "target_rva": 692491
+              "target_rva": 697115
             },
             "network.rpc.ordered_streams": {
               "client_only": false,
@@ -313,10 +313,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                3836234
+                3835690
               ],
               "resolve_kind": 0,
-              "target_rva": 3836234
+              "target_rva": 3835690
             },
             "network.rpc.rpc4_signal": {
               "client_only": false,
@@ -326,10 +326,10 @@
               "pattern_offset": -7,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                3898215
+                3898231
               ],
               "resolve_kind": 0,
-              "target_rva": 3898208
+              "target_rva": 3898224
             }
           }
         },
@@ -343,10 +343,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                3823520
+                3823840
               ],
               "resolve_kind": 0,
-              "target_rva": 3823520
+              "target_rva": 3823840
             },
             "network.sim.send_bitstream": {
               "client_only": false,
@@ -356,10 +356,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                3836928
+                3836384
               ],
               "resolve_kind": 0,
-              "target_rva": 3836928
+              "target_rva": 3836384
             }
           }
         },
@@ -373,10 +373,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                2261760
+                2259312
               ],
               "resolve_kind": 0,
-              "target_rva": 2261760
+              "target_rva": 2259312
             }
           }
         },
@@ -390,10 +390,10 @@
               "pattern_offset": 3,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                1798867
+                1796003
               ],
               "resolve_kind": 0,
-              "target_rva": 1798870
+              "target_rva": 1796006
             },
             "network.tick.reset_value": {
               "client_only": false,
@@ -403,10 +403,10 @@
               "pattern_offset": 1,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                1798791
+                1795927
               ],
               "resolve_kind": 0,
-              "target_rva": 1798792
+              "target_rva": 1795928
             },
             "network.tick.update_fps": {
               "client_only": false,
@@ -416,10 +416,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                1798738
+                1795874
               ],
               "resolve_kind": 0,
-              "target_rva": 1798738
+              "target_rva": 1795874
             }
           }
         },
@@ -433,10 +433,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                1001760
+                1003232
               ],
               "resolve_kind": 0,
-              "target_rva": 1001760
+              "target_rva": 1003232
             },
             "render.shadow.anim_draw": {
               "client_only": true,
@@ -446,10 +446,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                3642368
+                3640336
               ],
               "resolve_kind": 0,
-              "target_rva": 3642368
+              "target_rva": 3640336
             },
             "render.shadow.cache_world": {
               "client_only": true,
@@ -459,10 +459,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                100496
+                97856
               ],
               "resolve_kind": 0,
-              "target_rva": 100496
+              "target_rva": 97856
             },
             "render.shadow.generate_vb": {
               "client_only": true,
@@ -472,10 +472,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                585984
+                592080
               ],
               "resolve_kind": 0,
-              "target_rva": 585984
+              "target_rva": 592080
             },
             "render.shadow.get_anim_frame": {
               "client_only": true,
@@ -485,10 +485,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                1533744
+                1532112
               ],
               "resolve_kind": 0,
-              "target_rva": 1533744
+              "target_rva": 1532112
             },
             "render.shadow.hw_effect_bind": {
               "client_only": true,
@@ -498,10 +498,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                3696704
+                3696048
               ],
               "resolve_kind": 0,
-              "target_rva": 3696704
+              "target_rva": 3696048
             },
             "render.shadow.load_shader": {
               "client_only": true,
@@ -511,10 +511,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                368736
+                3667040
               ],
               "resolve_kind": 0,
-              "target_rva": 368736
+              "target_rva": 3667040
             },
             "render.shadow.shadow_dcr": {
               "client_only": true,
@@ -524,10 +524,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                587504
+                593600
               ],
               "resolve_kind": 0,
-              "target_rva": 587504
+              "target_rva": 593600
             }
           }
         },
@@ -541,10 +541,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                237744
+                240624
               ],
               "resolve_kind": 0,
-              "target_rva": 237744
+              "target_rva": 240624
             },
             "render.vbpool.hwbuffer_dtor": {
               "client_only": true,
@@ -554,10 +554,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                3685152
+                3684560
               ],
               "resolve_kind": 0,
-              "target_rva": 3685152
+              "target_rva": 3684560
             },
             "render.vbpool.hwbuffer_init": {
               "client_only": true,
@@ -567,10 +567,10 @@
               "pattern_offset": 0,
               "platform_mask": 1,
               "raw_hit_rvas": [
-                3685424
+                3684832
               ],
               "resolve_kind": 0,
-              "target_rva": 3685424
+              "target_rva": 3684832
             }
           }
         }
