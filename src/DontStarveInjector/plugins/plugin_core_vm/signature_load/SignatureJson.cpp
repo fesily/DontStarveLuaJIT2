@@ -341,7 +341,10 @@ void SignatureJson::update_signatures(const Signatures &signatures) {
     spdlog::info("update signatures to file:[{}], platform: {}, version: {}", output, platform_name(),
                  signatures.version);
     std::ofstream sf(output);
-    sf << doc;
+    // Format the document on the way out: the DB is under version control, and a
+    // one-line JSON blob has no reviewable diff. Same indent as SignatureCache's
+    // plugin_signatures_*.json so both DBs look alike.
+    sf << doc.dump(2);
     sf.flush();
     // An unwritable mod dir used to be silent: generation "succeeded", the DB never
     // landed and every launch regenerated from scratch.
