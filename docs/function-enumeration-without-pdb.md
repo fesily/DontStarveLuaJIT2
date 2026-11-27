@@ -220,7 +220,7 @@ void walk(uint32_t start, uint32_t end, uint32_t owner) {
 
 发现阶段耗时 527 ms（客户端）/ 430 ms（专服）/ 56 ms（`lua51.dll`）。两个 exe 的 TLS 目录都不可用（`unusable TLS callback table`），所以种子只剩 `AddressOfEntryPoint` 与 2 条导出。
 
-### 6.3 `.text` 空洞分类（客户端，`.pdata` range 之外）
+### 6.3 `.text` 空洞分类（客户端，`.pdata` range 之外；Python 参考实现）
 
 | 分类 | 字节 | 占比 |
 |---|---|---|
