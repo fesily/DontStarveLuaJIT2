@@ -1,9 +1,3 @@
-
-# Nucleus CFG stack (function body authority). Built as nucleus_static.
-if (NOT TARGET nucleus_static)
-    add_subdirectory(${CMAKE_SOURCE_DIR}/3rd/nucleus ${CMAKE_BINARY_DIR}/3rd/nucleus)
-endif()
-
 find_package(pe-parse CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
@@ -16,15 +10,68 @@ set(SOURCE
         disasm.h
         ScanCtx.cpp
         FunctionRanges.cpp
-        NucleusAdapter.cpp
+        FunctionDiscovery.cpp
         GraphSeed.cpp
         CallTargetResolver.cpp
         UniqueSignature.cpp
 )
 
 find_package(spdlog CONFIG REQUIRED)
-find_package(libdwarf CONFIG REQUIRED)
+# libdwarf parses the ELF .eh_frame FDE table; only the Linux enumerator uses it.
+if (UNIX AND NOT APPLE)
+    find_package(libdwarf CONFIG REQUIRED)
+endif()
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# ---------------------------------------------------------------------------
+# Mach-O function starts probe (Apple).
+# ---------------------------------------------------------------------------
+# The staged Frida devkit exposes either the current GumMacho API or the older
+# GumDarwin names. Probe what this devkit actually provides, refresh the result
+# on every configure, and let the translation unit pick matching declarations.
+if (APPLE)
+    include(CheckCXXSourceCompiles)
+    unset(DS_GUM_HAS_MACHO_FUNCTION_STARTS CACHE)
+    unset(DS_GUM_HAS_DARWIN_FUNCTION_STARTS CACHE)
+    set(_ds_gum_probe_includes ${CMAKE_REQUIRED_INCLUDES})
+    set(_ds_gum_probe_libraries ${CMAKE_REQUIRED_LIBRARIES})
+    set(CMAKE_REQUIRED_INCLUDES ${FRIDA_GUM_INCLUDE_DIR})
+    if (TARGET Frida::Gum)
+        set(CMAKE_REQUIRED_LIBRARIES Frida::Gum)
+    endif()
+    check_cxx_source_compiles("
+        #include <frida-gum.h>
+        int main(int, char **) {
+          GumMachoModule * module = gum_macho_module_new_from_memory(
+              \"probe\", 0, 0, GUM_MACHO_MODULE_FLAGS_NONE, nullptr);
+          (void) module;
+          void (*enumerate)(GumMachoModule *, GumFoundMachoFunctionStartsFunc, gpointer) =
+              &gum_macho_module_enumerate_function_starts;
+          (void) enumerate;
+          GumMachoFunctionStartsDetails details{};
+          (void) details.vm_address;
+          (void) details.size;
+          return 0;
+        }" DS_GUM_HAS_MACHO_FUNCTION_STARTS)
+    check_cxx_source_compiles("
+        #include <frida-gum.h>
+        int main(int, char **) {
+          GumDarwinModule * module = gum_darwin_module_new_from_memory(
+              \"probe\", 0, 0, GUM_DARWIN_MODULE_FLAGS_NONE, nullptr);
+          (void) module;
+          void (*enumerate)(GumDarwinModule *, GumFoundDarwinFunctionStartsFunc, gpointer) =
+              &gum_darwin_module_enumerate_function_starts;
+          (void) enumerate;
+          GumDarwinFunctionStartsDetails details{};
+          (void) details.vm_address;
+          (void) details.size;
+          return 0;
+        }" DS_GUM_HAS_DARWIN_FUNCTION_STARTS)
+    set(CMAKE_REQUIRED_INCLUDES ${_ds_gum_probe_includes})
+    set(CMAKE_REQUIRED_LIBRARIES ${_ds_gum_probe_libraries})
+    message(STATUS "Frida Mach-O function starts: MACHO=${DS_GUM_HAS_MACHO_FUNCTION_STARTS} "
+            "DARWIN=${DS_GUM_HAS_DARWIN_FUNCTION_STARTS}")
+endif()
 
 # ---------------------------------------------------------------------------
 # Gum resolution policy
@@ -45,6 +92,14 @@ function(_function_relocation_common_config target)
             ${FRIDA_GUM_INCLUDE_DIR})
     target_link_libraries(${target} PRIVATE nlohmann_json::nlohmann_json)
     target_link_libraries(${target} PRIVATE spdlog::spdlog)
+    if (APPLE)
+        # Native Mach-O fallback vs. the Frida devkit's own function-starts API.
+        if (DS_GUM_HAS_MACHO_FUNCTION_STARTS)
+            target_compile_definitions(${target} PRIVATE DS_GUM_HAS_MACHO_FUNCTION_STARTS=1)
+        elseif (DS_GUM_HAS_DARWIN_FUNCTION_STARTS)
+            target_compile_definitions(${target} PRIVATE DS_GUM_HAS_DARWIN_FUNCTION_STARTS=1)
+        endif()
+    endif()
     if (MSVC)
         target_link_libraries(${target} PRIVATE pe-parse::pe-parse)
     else()
@@ -54,12 +109,10 @@ function(_function_relocation_common_config target)
         else()
             target_link_libraries(${target} PRIVATE ${KEYSTONE_LIBRARIES})
         endif()
-        target_link_libraries(${target} PRIVATE libdwarf::dwarf)
+        if (UNIX AND NOT APPLE)
+            target_link_libraries(${target} PRIVATE libdwarf::dwarf)
+        endif()
     endif()
-    # Nucleus PE/CFG stack for NucleusAdapter (do not re-export Nucleus types).
-    # nucleus_static does not carry frida-gum link deps; SHARED resolves gum via
-    # Injector import below, STATIC/tools via their own ${FRIDA_GUM_LIBRARIES}.
-    target_link_libraries(${target} PRIVATE nucleus_static)
 endfunction()
 
 if (WIN32)

@@ -530,8 +530,8 @@
       "funcs": {
         "luaL_addlstring": {
           "offset": 7744,
-          "pattern": "84 ?? ?? ?? ?? 48 89 6c 24 18",
-          "pattern_offset": -4
+          "pattern": "4d 85 c0 0f 84 88 00 00",
+          "pattern_offset": 0
         },
         "luaL_addvalue": {
           "offset": 7984,
@@ -665,13 +665,13 @@
         },
         "luaL_prepbuffer": {
           "offset": 7648,
-          "pattern": "5c 24 30 48 8d 59 18 48 8b 49 10 48 8b d3 e8 ?? ?? ?? ?? ff 47 08 48 8b",
-          "pattern_offset": -23
+          "pattern": "8b f9 4c 2b c1 49 83 e8 18 74 32",
+          "pattern_offset": -10
         },
         "luaL_pushresult": {
           "offset": 7904,
-          "pattern": "74 ?? 48 89 5c 24 30 48 8d 59 18 48 8b 49 10 48 8b d3 e8 ?? ?? ?? ?? ff 47 08 48 89",
-          "pattern_offset": -19
+          "pattern": "8b f9 4c 2b c1 49 83 e8 18 74 20",
+          "pattern_offset": -10
         },
         "luaL_ref": {
           "offset": 8208,
@@ -975,8 +975,8 @@
         },
         "lua_setupvalue": {
           "offset": 5936,
-          "pattern": "83 78 08 06 4c 8b d8 74",
-          "pattern_offset": -17
+          "pattern": "40 57 48 83 ec 20 4d 63",
+          "pattern_offset": 0
         },
         "lua_status": {
           "offset": 4960,

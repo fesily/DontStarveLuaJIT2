@@ -84,7 +84,6 @@ namespace function_relocation {
         // found" is a deterministic 0..0 range instead of stack garbage (the
         // test suite and in_plt()/in_got_plt() rely on that).
         GumMemoryRange text{};
-        GumMemoryRange pdata{};
         GumMemoryRange rodata{};
         GumMemoryRange plt{};
         GumMemoryRange got_plt{};
@@ -98,7 +97,6 @@ namespace function_relocation {
         return name.base_address <= address && address <= name.base_address + name.size; \
     }
         MODULESECTION_IN_RANGE(text)
-        MODULESECTION_IN_RANGE(pdata)
         MODULESECTION_IN_RANGE(rodata)
         MODULESECTION_IN_RANGE(bss)
 #ifndef _WIN32
@@ -130,14 +128,13 @@ namespace function_relocation {
         std::unordered_map<uintptr_t, CodeBlock*> address_blocks;
         std::unordered_map<std::string, Function *> known_functions;
 
-        // Process-VA Nucleus spans (preferred ImageBase remapped to load base).
-        // Empty until apply_nucleus_function_table runs for this module.
-        // The adapter refines ELF bodies with exact FDE extents. This table is
-        // the sole authority consumed by the matcher for start|end|size.
+        // Process-VA function entries (discover_module_functions installs them).
+        // Empty until detail::install_function_spans runs for this module. This
+        // table is the sole authority consumed by the matcher for start|end|size.
         FunctionTable function_table;
 
-        // Symbol names collected during init (before Nucleus rebuild). address -> name.
-        // Used only to label Function objects after FunctionTable is applied.
+        // Symbol names collected during init (before the table is installed).
+        // address -> name. Used only to label Function objects afterwards.
         std::unordered_map<uintptr_t, std::string> symbol_names;
 
         // Static import table read from the module file: GOT/PLT slot -> imported
@@ -149,7 +146,7 @@ namespace function_relocation {
 
         // Defined GLOBAL/WEAK functions from the file: name -> address. Dynamic
         // definitions referenced by PLT relocations take precedence over .symtab.
-        // Available after init, before Nucleus function tables exist.
+        // Available after init, before the function table exists.
         std::unordered_map<std::string, uintptr_t> own_symbol_addresses;
 
         uintptr_t own_definition_address(std::string_view name) const {
@@ -176,7 +173,7 @@ namespace function_relocation {
         }
 
         Function *find_function(uintptr_t addr) {
-            // address_functions is maintained by apply_nucleus_function_table and
+            // address_functions is maintained by install_function_spans and
             // covers every materialized span start. The linear fallback below is
             // O(functions) (~4e5 spans) and used to dominate short-body matching.
             if (const auto it = address_functions.find(addr); it != address_functions.end()) {
@@ -228,22 +225,13 @@ namespace function_relocation {
     };
 
     // Load section ranges + symbol name map only. Does NOT invent function
-    // boundaries (no CALL/FDE/ret heuristics). Call apply_nucleus_function_table
+    // boundaries (no CALL/FDE/ret heuristics). Call discover_module_functions
     // then scan_module_function_features to populate Function bodies.
     FUNCTION_RELOCATION_API bool init_module_signature(const char *path, uintptr_t scan_start_address, ModuleSections &sections);
     FUNCTION_RELOCATION_API bool get_module_sections(const char *path, ModuleSections &sections);
 
-    // Remap Nucleus image-VA table into process VA (sole start|end authority).
-    // Rebuilds sections.functions from spans (one Function per span start).
-    // Labels known exports via symbol_names. Does NOT split on ScanCtx heuristics.
-    // image_base may be 0 (ELF ET_DYN RVA space).
-    // Returns false if image_table is empty after remap.
-    FUNCTION_RELOCATION_API bool apply_nucleus_function_table(ModuleSections &sections,
-                                                             const FunctionTable &image_table,
-                                                             uint64_t image_base);
-
     // Eager features for named exports (train); game modules stay lazy
-    // (Function shells only). Requires apply_nucleus_function_table first.
+    // (Function shells only). Requires discover_module_functions first.
     FUNCTION_RELOCATION_API bool scan_module_function_features(ModuleSections &sections);
 
     // P2: bytes from entry to first RET / external JMP (cap 256). Cheap.

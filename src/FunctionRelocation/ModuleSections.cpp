@@ -24,6 +24,7 @@
 #include "ScanCtx.hpp"
 #include "config.hpp"
 #include "FunctionTable.hpp"
+#include "FunctionDiscovery.hpp"
 #ifdef _WIN32
 #include <windows.h>
 #include <filesystem>
@@ -52,6 +53,7 @@ struct std::hash<function_relocation::CodeBlock> {
 };
 
 namespace function_relocation {
+#if defined(__linux__)
     // JUMP_SLOT relocation type of the host architecture (ELF PLT/GOT table).
     static bool is_jump_slot_relocation(uint32_t type) {
 #if defined(__x86_64__)
@@ -69,6 +71,7 @@ namespace function_relocation {
         return false;
 #endif
     }
+#endif
     using namespace std::literals;
 
 
@@ -127,8 +130,6 @@ namespace function_relocation {
                     sections->text = { real_address, len };
                 else if (secName == ".rdata")
                     sections->rodata = { real_address, len };
-                else if (secName == ".pdata")
-                    sections->pdata = { real_address, len };
                 else if (secName == ".data")
                     sections->bss = { real_address, len };
                 sections->sections[secName] = { real_address, len };
@@ -170,8 +171,8 @@ namespace function_relocation {
             spdlog::get(logger_name)->error("cannot get_module_sections: {}", path);
             return false;
         }
-        // Sections + symbol names only. Function start|end come from Nucleus
-        // (apply_nucleus_function_table). Do not run CALL/FDE/ret heuristics.
+        // Sections + symbol names only. Function start|end come from
+        // discover_module_functions. Do not run CALL/FDE/ret heuristics here.
 #ifdef _WIN32
         static auto loadflag = std::once_flag{};
         std::call_once(loadflag, [] {
@@ -184,7 +185,7 @@ namespace function_relocation {
         // Static GOT/PLT slot -> symbol name table (file semantics, interposition-proof).
         sections.import_slot_names.clear();
         sections.own_symbol_addresses.clear();
-#ifndef _WIN32
+#if defined(__linux__)
         // ELF: enumerate every JUMP_SLOT relocation. Self-references matter here —
         // the training library imports its OWN luaL_loadbuffer through its PLT, and
         // those entries are exactly what the training-library call graph needs.
@@ -361,41 +362,12 @@ namespace function_relocation {
         return std::nullopt;
     }
 
-    bool apply_nucleus_function_table(ModuleSections &sections,
-                                      const FunctionTable &image_table,
-                                      uint64_t image_base) {
-        sections.function_table.clear();
+    namespace detail {
+    bool install_function_spans(ModuleSections &sections,
+                                std::vector<FunctionSpan> spans,
+                                std::vector<FunctionFragment> fragments) {
         auto log = spdlog::get(logger_name);
-        if (image_table.empty()) {
-            if (log) {
-                log->error("apply_nucleus_function_table: empty table for {}",
-                           sections.details.path);
-            }
-            return false;
-        }
-
-        const auto process_base = sections.details.range.base_address;
-        std::vector<FunctionSpan> remapped;
-        remapped.reserve(image_table.spans().size());
-        for (const auto &sp: image_table.spans()) {
-            if (sp.end <= sp.start) {
-                continue;
-            }
-            const uint64_t start = process_base + (sp.start - image_base);
-            const uint64_t end = process_base + (sp.end - image_base);
-            remapped.push_back(FunctionSpan{start, end});
-        }
-        sections.function_table.assign(std::move(remapped));
-
-        if (sections.function_table.empty()) {
-            if (log) {
-                log->error("apply_nucleus_function_table: remapped table empty for {}",
-                           sections.details.path);
-            }
-            return false;
-        }
-
-        // Rebuild Function list strictly from Nucleus spans. No ScanCtx split.
+        sections.function_table.clear();
         sections.functions.clear();
         sections.blocks.clear();
         sections.Consts.clear();
@@ -403,23 +375,29 @@ namespace function_relocation {
         sections.address_blocks.clear();
         sections.known_functions.clear();
 
+        if (spans.empty()) {
+            if (log) {
+                log->error("install_function_spans: empty span table for {}",
+                           sections.details.path);
+            }
+            return false;
+        }
+        sections.function_table.assign(std::move(spans), std::move(fragments));
+
+        // One Function per installed entry. Bodies that start outside .text
+        // cannot be scanned by this module's Capstone window.
+        const uint64_t text_end = sections.text.base_address + sections.text.size;
         for (const auto &sp: sections.function_table.spans()) {
-            if (sp.end <= sp.start) {
+            if (sp.end <= sp.start || !sections.in_text(sp.start)) {
                 continue;
             }
-            // Only materialize bodies that start in .text (Nucleus may emit
-            // spans covering non-exec ranges on messy game binaries).
-            if (!sections.in_text(sp.start)) {
-                continue;
-            }
-            Function fn;
-            fn.address = sp.start;
             // Clamp size to remaining .text so feature scan cannot walk off.
-            const uint64_t text_end = sections.text.base_address + sections.text.size;
             const uint64_t clamped_end = (std::min)(sp.end, text_end);
             if (clamped_end <= sp.start) {
                 continue;
             }
+            Function fn;
+            fn.address = sp.start;
             fn.size = static_cast<size_t>(clamped_end - sp.start);
             fn.module = &sections;
             if (auto it = sections.symbol_names.find(sp.start); it != sections.symbol_names.end()) {
@@ -435,37 +413,15 @@ namespace function_relocation {
             }
         }
 
-        // Exports that sit strictly inside a parent span (rare on ELF after
-        // NucleusAdapter export split; still label for train-side lookup).
-        // Do NOT cut FunctionTable — entry for soft match is always span.start.
-        for (const auto &[addr, name]: sections.symbol_names) {
-            if (sections.address_functions.contains(addr)) {
-                continue;
-            }
-            const FunctionSpan *sp = sections.function_table.span_containing(addr);
-            if (!sp) {
-                continue;
-            }
-            // Named export interior to a span: keep a Function* at the export
-            // VA for train known_functions lookup, size = remaining parent body.
-            Function fn;
-            fn.address = addr;
-            fn.size = static_cast<size_t>(sp->end - addr);
-            fn.name = name;
-            fn.module = &sections;
-            sections.functions.push_back(std::move(fn));
-            auto *p = &sections.functions.back();
-            sections.address_functions[addr] = p;
-            sections.known_functions[name] = p;
-        }
-
         if (log) {
-            log->info("apply_nucleus_function_table: {} spans, {} functions, {} named ({})",
-                      sections.function_table.size(), sections.functions.size(),
-                      sections.known_functions.size(), sections.details.path);
+            log->info("install_function_spans: {} spans, {} fragments, {} functions, {} named ({})",
+                      sections.function_table.size(), sections.function_table.fragments().size(),
+                      sections.functions.size(), sections.known_functions.size(),
+                      sections.details.path);
         }
         return !sections.functions.empty();
     }
+    }// namespace detail
 
     size_t function_leaf_size(const Function &fn, size_t cap) {
         if (fn.size == 0 || fn.address == 0) {

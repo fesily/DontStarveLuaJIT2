@@ -96,7 +96,7 @@ namespace function_relocation::match_policy {
     struct FunctionFeatures {
         std::vector<std::string> consts;  // rodata string refs
         std::vector<int64_t> imms;        // stable immediates (pre-filtered)
-        uint64_t size = 0;                // Function::size (Nucleus span)
+        uint64_t size = 0;                // Function::size (discovered span)
     };
 
     // ------------------------------------------------------------------

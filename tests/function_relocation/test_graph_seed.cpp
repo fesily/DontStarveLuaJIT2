@@ -1,6 +1,6 @@
 // Caller-graph seed: intersect unclaimed CALL targets across resolved
 // callers. lua_isnumber is the unique common callee of luaL_checknumber
-// and luaL_checkinteger even when Nucleus merged it into a parent span.
+// and luaL_checkinteger even when discovery merged it into a parent span.
 
 #include "GraphSeed.hpp"
 #include "ModuleSections.hpp"

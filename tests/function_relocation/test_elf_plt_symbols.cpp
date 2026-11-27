@@ -1,6 +1,6 @@
+#include "FunctionRanges.hpp"
 #include "GraphSeed.hpp"
 #include "ModuleSections.hpp"
-#include "NucleusAdapter.hpp"
 #include "support/fr_context_env.hpp"
 
 #include <algorithm>
@@ -48,9 +48,9 @@ static uintptr_t symbol(void *library, const char *name) {
 
 static void analyze(const std::string &path, ModuleSections &module) {
     REQUIRE(function_relocation::init_module_signature(path.c_str(), 0, module));
-    auto table = function_relocation::nucleus_analyze_file(path);
-    REQUIRE(table);
-    REQUIRE(function_relocation::apply_nucleus_function_table(module, table->table, table->image_base));
+    // FDE-derived entries; the PLT/GOT symbol precedence is a property of the
+    // static import table read by init_module_signature.
+    REQUIRE(function_relocation::discover_module_functions(module));
 }
 
 static uintptr_t runtime_import(const ModuleSections &module, const char *name) {
@@ -97,7 +97,7 @@ TEST_CASE("test_elf_plt_symbols/local_global_weak_interposition") {
     }
 
     // Only a LOCAL definition exists here. It must not substitute for the
-    // genuinely external dynamic import, including after Nucleus names it.
+    // genuinely external dynamic import, including after discovery names it.
     const auto external_path = std::filesystem::absolute(g_external_path).string();
     DlHandle external_guard{dlopen(external_path.c_str(), RTLD_NOW | RTLD_LOCAL)};
     REQUIRE_NE(external_guard.handle, nullptr);

@@ -1,4 +1,6 @@
 #include "FunctionRanges.hpp"
+#include "FunctionDiscovery.hpp"
+#include "config.hpp"
 #include <algorithm>
 #include <spdlog/spdlog.h>
 #include "disasm.h"
@@ -6,15 +8,16 @@
 #include <limits>
 #include <cstring>
 
-#ifdef _WIN32
-#define NOMINMAX
-#include <windows.h>
+#if defined(_WIN32)
 #elif defined(__linux__)
 #include <elf.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <libdwarf.h>
 #include <dwarf.h>
+#elif defined(__APPLE__)
+#include <mach-o/loader.h>
+#include <mach/mach.h>
 #endif
 
 namespace function_relocation {
@@ -50,19 +53,33 @@ namespace function_relocation {
         Dwarf_Fde *fdes = nullptr;
         Dwarf_Signed cie_count = 0, fde_count = 0;
         if (dwarf_get_fde_list_eh(debug, &cies, &cie_count, &fdes, &fde_count, &error) == DW_DLV_OK) {
+            const uintptr_t text_end = m.text.base_address + m.text.size;
             for (Dwarf_Signed i = 0; i < fde_count; ++i) {
                 Dwarf_Addr start = 0;
                 Dwarf_Unsigned size = 0;
                 if (dwarf_get_fde_range(fdes[i], &start, &size, nullptr, nullptr, nullptr, nullptr, nullptr, &error) != DW_DLV_OK) continue;
+                if (size == 0 || start > UINTPTR_MAX - bias) continue;
                 const uintptr_t address = bias + start;
-                if (size != 0 && m.in_text(address) && size <= m.text.base_address + m.text.size - address)
-                    out.push_back({address, address + size, FuncRange::Source::EhFrame});
+                if (!m.in_text(address) || address > text_end) continue;
+                if (size > text_end - address) continue;
+                out.push_back({address, address + static_cast<uintptr_t>(size)});
             }
             dwarf_dealloc_fde_cie_list(debug, cies, cie_count, fdes, fde_count);
         }
         dwarf_finish(debug);
         close(fd);
         std::ranges::sort(out, {}, &FuncRange::start);
+        // Same start keeps the longest FDE; different starts keep their own end.
+        std::vector<FuncRange> dedup;
+        dedup.reserve(out.size());
+        for (const auto &range: out) {
+            if (!dedup.empty() && dedup.back().start == range.start) {
+                dedup.back().end = std::max(dedup.back().end, range.end);
+            } else {
+                dedup.push_back(range);
+            }
+        }
+        out.swap(dedup);
         return !out.empty();
 #else
         (void) m;
@@ -84,80 +101,226 @@ namespace function_relocation {
     }
 
     const FuncRange *find_range_containing(const std::vector<FuncRange> &ranges, uintptr_t addr) {
+        if (ranges.empty()) return nullptr;
+        // Exact entry first: an exact start always beats an enclosing range.
+        const auto exact = std::lower_bound(ranges.begin(), ranges.end(), addr,
+                                            [](const FuncRange &range, uintptr_t value) {
+                                                return range.start < value;
+                                            });
+        if (exact != ranges.end() && exact->start == addr) return &*exact;
+        // Interior: shortest containing range, ties keep the later start.
         const auto it = std::upper_bound(ranges.begin(), ranges.end(), addr,
                                          [](uintptr_t value, const FuncRange &range) { return value < range.start; });
-        if (it == ranges.begin()) return nullptr;
-        const auto &range = *std::prev(it);
-        return addr < range.end ? &range : nullptr;
+        const FuncRange *best = nullptr;
+        for (auto cursor = it; cursor != ranges.begin();) {
+            --cursor;
+            if (addr < cursor->start || addr >= cursor->end) continue;
+            if (!best || (cursor->end - cursor->start) < (best->end - best->start) ||
+                ((cursor->end - cursor->start) == (best->end - best->start) &&
+                 cursor->start > best->start)) {
+                best = &*cursor;
+            }
+        }
+        return best;
     }
 
-    bool enumerate_function_ranges_win(const ModuleSections &m, std::vector<FuncRange> &out) {
-        out.clear();
-#ifndef _WIN32
-    (void)m;
-    return false;
+#if defined(__APPLE__)
+    namespace {
+
+        struct BlobList {
+            std::vector<std::vector<uint8_t>> blobs;
+        };
+
+        bool push_blob(BlobList &list, GumAddress vm_address, guint32 size) {
+            if (vm_address == 0 || size == 0) return true;
+            const auto *bytes = reinterpret_cast<const void *>(vm_address);
+            if (!gum_memory_is_readable(bytes, size)) return true;
+            const auto *first = static_cast<const uint8_t *>(bytes);
+            list.blobs.emplace_back(first, first + size);
+            return true;
+        }
+
+#if defined(DS_GUM_HAS_MACHO_FUNCTION_STARTS) || defined(DS_GUM_HAS_DARWIN_FUNCTION_STARTS)
+        // Private Gum seam: the relocated Mach-O module for the loaded slice.
+        bool collect_gum_function_starts(const ModuleSections &m, BlobList &list) {
+#if defined(DS_GUM_HAS_MACHO_FUNCTION_STARTS)
+            GumMachoModule *module = gum_macho_module_new_from_memory(
+                    m.details.path.c_str(), mach_task_self(), m.details.range.base_address,
+                    GUM_MACHO_MODULE_FLAGS_NONE, nullptr);
+            if (module == nullptr) return false;
+            gum_macho_module_enumerate_function_starts(
+                    module,
+                    +[](const GumMachoFunctionStartsDetails *details, gpointer user_data) -> gboolean {
+                        return push_blob(*static_cast<BlobList *>(user_data), details->vm_address,
+                                         details->size)
+                                       ? TRUE
+                                       : FALSE;
+                    },
+                    &list);
+            g_object_unref(module);
 #else
-    if (m.pdata.base_address == 0 || m.pdata.size < sizeof(RUNTIME_FUNCTION))
-        return false;
-
-    const auto image_base = m.details.range.base_address;
-    auto* ptr = reinterpret_cast<const uint8_t*>(m.pdata.base_address);
-    const auto* end = ptr + m.pdata.size;
-
-    uintptr_t logical_begin = 0;
-    uintptr_t logical_end = 0;
-    bool open = false;
-
-    auto flush = [&]() {
-        if (!open) return;
-        FuncRange r{};
-        r.start = logical_begin;
-        r.end = logical_end;
-        r.source = FuncRange::Source::Pdata;
-        out.push_back(r);
-        open = false;
-    };
-
-    for (; ptr + sizeof(RUNTIME_FUNCTION) <= end; ptr += sizeof(RUNTIME_FUNCTION)) {
-        const auto* rf = reinterpret_cast<const RUNTIME_FUNCTION*>(ptr);
-        if (rf->BeginAddress == 0)
-            break;
-
-        const uintptr_t b = image_base + rf->BeginAddress;
-        const uintptr_t e = image_base + rf->EndAddress;
-
-        // Skip entries that do not land in text (best-effort).
-        if (!m.in_text(b) || e < b) {
-            continue;
-        }
-
-        if (open && b == logical_end) {
-            // Adjacent chain: extend end.
-            logical_end = e;
-            continue;
-        }
-
-        flush();
-        logical_begin = b;
-        logical_end = e;
-        open = true;
-    }
-    flush();
-
-    std::sort(out.begin(), out.end(),
-              [](const FuncRange& a, const FuncRange& b) { return a.start < b.start; });
-    // Dedupe same start: keep longer end.
-    std::vector<FuncRange> dedup;
-    for (const auto& r : out) {
-        if (!dedup.empty() && dedup.back().start == r.start) {
-            dedup.back().end = std::max(dedup.back().end, r.end);
-        } else {
-            dedup.push_back(r);
-        }
-    }
-    out.swap(dedup);
-    return !out.empty();
+            GumDarwinModule *module = gum_darwin_module_new_from_memory(
+                    m.details.path.c_str(), mach_task_self(), m.details.range.base_address,
+                    GUM_DARWIN_MODULE_FLAGS_NONE, nullptr);
+            if (module == nullptr) return false;
+            gum_darwin_module_enumerate_function_starts(
+                    module,
+                    +[](const GumDarwinFunctionStartsDetails *details, gpointer user_data) -> gboolean {
+                        return push_blob(*static_cast<BlobList *>(user_data), details->vm_address,
+                                         details->size)
+                                       ? TRUE
+                                       : FALSE;
+                    },
+                    &list);
+            g_object_unref(module);
 #endif
+            return !list.blobs.empty();
+        }
+#endif
+
+        // Native fallback: walk the loaded header's load commands and locate the
+        // LC_FUNCTION_STARTS payload inside __LINKEDIT. Coordinate math follows
+        // core/alloc/backend_macho.cpp::scan_image.
+        bool collect_load_command_function_starts(const ModuleSections &m, BlobList &list) {
+            if (m.details.range.size < sizeof(mach_header_64)) return false;
+            const auto base = m.details.range.base_address;
+            const auto *header = reinterpret_cast<const mach_header_64 *>(base);
+            if (!gum_memory_is_readable(header, sizeof(mach_header_64))) return false;
+            if (header->magic != MH_MAGIC_64 || header->cputype != CPU_TYPE_X86_64) return false;
+            const uint64_t commands_end = sizeof(mach_header_64) + header->sizeofcmds;
+            if (commands_end > m.details.range.size) return false;
+
+            uint64_t text_vmaddr = 0;
+            bool have_text = false;
+            uint64_t linkedit_vmaddr = 0;
+            uint64_t linkedit_fileoff = 0;
+            uint64_t linkedit_filesize = 0;
+            bool have_linkedit = false;
+            const linkedit_data_command *function_starts = nullptr;
+            size_t function_starts_count = 0;
+
+            const char *cursor = reinterpret_cast<const char *>(header) + sizeof(mach_header_64);
+            for (uint32_t i = 0; i < header->ncmds; ++i) {
+                if (!gum_memory_is_readable(cursor, sizeof(load_command))) return false;
+                const auto *command = reinterpret_cast<const load_command *>(cursor);
+                if (command->cmdsize < sizeof(load_command)) return false;
+                if (static_cast<uint64_t>(cursor - reinterpret_cast<const char *>(header)) +
+                            command->cmdsize >
+                    commands_end) {
+                    return false;
+                }
+                switch (command->cmd) {
+                    case LC_SEGMENT_64: {
+                        if (command->cmdsize < sizeof(segment_command_64)) return false;
+                        const auto *segment = reinterpret_cast<const segment_command_64 *>(command);
+                        if (std::strcmp(segment->segname, "__TEXT") == 0 && segment->fileoff == 0) {
+                            text_vmaddr = segment->vmaddr;
+                            have_text = true;
+                        } else if (std::strcmp(segment->segname, "__LINKEDIT") == 0) {
+                            linkedit_vmaddr = segment->vmaddr;
+                            linkedit_fileoff = segment->fileoff;
+                            linkedit_filesize = segment->filesize;
+                            have_linkedit = true;
+                        }
+                        break;
+                    }
+                    case LC_FUNCTION_STARTS:
+                        if (command->cmdsize < sizeof(linkedit_data_command)) return false;
+                        function_starts = reinterpret_cast<const linkedit_data_command *>(command);
+                        ++function_starts_count;
+                        break;
+                    default:
+                        break;
+                }
+                cursor += command->cmdsize;
+            }
+
+            if (!have_text || !have_linkedit || function_starts == nullptr) return false;
+            if (function_starts_count != 1) return false;// ambiguous command set
+            const auto dataoff = function_starts->dataoff;
+            const auto datasize = function_starts->datasize;
+            if (datasize == 0) return false;
+            if (dataoff < linkedit_fileoff) return false;
+            const uint64_t offset_in_linkedit = dataoff - linkedit_fileoff;
+            if (offset_in_linkedit > linkedit_filesize ||
+                datasize > linkedit_filesize - offset_in_linkedit) {
+                return false;
+            }
+            const uint64_t slide = base - text_vmaddr;
+            if (linkedit_vmaddr > std::numeric_limits<uint64_t>::max() - slide) return false;
+            const uint64_t blob_address = slide + linkedit_vmaddr + offset_in_linkedit;
+            if (blob_address > UINTPTR_MAX) return false;
+            return push_blob(list, static_cast<GumAddress>(blob_address), datasize);
+        }
+
+    }// namespace
+
+    bool discover_macho(const ModuleSections &m, std::vector<FunctionSpan> &spans) {
+        spans.clear();
+        if (m.details.range.base_address == 0 || m.text.size == 0) return false;
+        BlobList list;
+#if defined(DS_GUM_HAS_MACHO_FUNCTION_STARTS) || defined(DS_GUM_HAS_DARWIN_FUNCTION_STARTS)
+        if (!collect_gum_function_starts(m, list))
+#endif
+        {
+            if (!collect_load_command_function_starts(m, list)) return false;
+        }
+
+        const uint64_t text_end = m.text.base_address + m.text.size;
+        std::vector<uint64_t> entries;
+        for (const auto &blob: list.blobs) {
+            std::vector<FunctionSpan> decoded;
+            if (!detail::decode_macho_function_starts(m.details.range.base_address, m.text, blob,
+                                                      decoded)) {
+                continue;
+            }
+            for (const auto &span: decoded) entries.push_back(span.start);
+        }
+        if (entries.empty()) return false;
+        std::sort(entries.begin(), entries.end());
+        entries.erase(std::unique(entries.begin(), entries.end()), entries.end());
+        spans.reserve(entries.size());
+        for (size_t i = 0; i < entries.size(); ++i) {
+            const uint64_t end = i + 1 < entries.size() ? entries[i + 1] : text_end;
+            spans.push_back({entries[i], end});
+        }
+        return true;
+    }
+#endif
+
+    bool discover_module_functions(ModuleSections &module) {
+        std::vector<FunctionSpan> spans;
+        std::vector<FunctionFragment> fragments;
+        const char *source = "unknown";
+        bool discovered = false;
+#if defined(_WIN32)
+        source = "pe-x64";
+        discovered = detail::discover_pe_x64(module, spans, fragments);
+#elif defined(__APPLE__)
+        source = "macho-function-starts";
+        discovered = discover_macho(module, spans);
+#else
+        source = "elf-eh-frame";
+        std::vector<FuncRange> ranges;
+        if (enumerate_function_ranges_elf(module, ranges)) {
+            const uintptr_t text_end = module.text.base_address + module.text.size;
+            spans.reserve(ranges.size());
+            for (const auto &range: ranges) {
+                if (range.end <= range.start) continue;
+                if (!module.in_text(range.start) || range.end > text_end) continue;
+                spans.push_back({range.start, range.end});
+            }
+            discovered = !spans.empty();
+        }
+#endif
+        if (!discovered) {
+            if (auto log = spdlog::get(logger_name)) {
+                log->error("discover_module_functions: no function entries from {} ({})", source,
+                           module.details.path);
+            }
+            return false;
+        }
+        return detail::install_function_spans(module, std::move(spans), std::move(fragments));
     }
 
-} // namespace function_relocation
+}// namespace function_relocation

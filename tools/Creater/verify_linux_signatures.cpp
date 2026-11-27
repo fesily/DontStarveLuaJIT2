@@ -4,7 +4,6 @@
 #include "FunctionRanges.hpp"
 #include "MemorySignature.hpp"
 #include "ModuleSections.hpp"
-#include "NucleusAdapter.hpp"
 #include "ctx.hpp"
 #include "UniqueSignature.hpp"
 #include "ProviderDesc.hpp"
@@ -132,11 +131,9 @@ namespace {
         ElfImage(const ElfImage &) = delete;
 
         void analyze() {
-            auto table = function_relocation::nucleus_analyze_file(module.details.path);
-            if (!table) throw std::runtime_error(table.error());
-            if (table->image_base != preferred_base) throw std::runtime_error("incorrect ELF image base");
-            if (!function_relocation::apply_nucleus_function_table(module, table->table, table->image_base) ||
-                !function_relocation::scan_module_function_features(module)) throw std::runtime_error("function analysis failed");
+            if (!function_relocation::discover_module_functions(module) ||
+                !function_relocation::scan_module_function_features(module))
+                throw std::runtime_error("function analysis failed");
         }
     };
 

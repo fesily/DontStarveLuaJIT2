@@ -20,12 +20,12 @@
 #include "ctx.hpp"
 #include "ModuleSections.hpp"
 #include "FunctionRanges.hpp"
+#include "CallTargetResolver.hpp"
 #include "Signature.hpp"
 #include "GraphSeed.hpp"
 #include "InstructionPattern.hpp"
 #include "UniqueSignature.hpp"
 #include "SignatureJson.hpp"
-#include "NucleusAdapter.hpp"
 #include "disasm.h"
 #include "missfunc.h"
 #include "range/v3/range/conversion.hpp"
@@ -227,98 +227,27 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
         }
         spdlog::info("phase init_module_signature: {} ms", phase_ms());
 
-        // Phase 2: Nucleus is sole start|end|size authority (export split only inside
-        // nucleus_analyze_file for real SYM_TYPE_FUNC). No ScanCtx table cuts.
+        // Phase 2: platform entry discovery - PE x64 `.pdata` primaries + seeds +
+        // block-scoped recursive descent, ELF `.eh_frame` FDE extents, Mach-O
+        // LC_FUNCTION_STARTS. No ScanCtx table cuts.
         {
-            auto train_nt = function_relocation::nucleus_analyze_file(lua51_path);
-            if (!train_nt) {
-                throw update_signatures_exception{
-                        fmt::format("nucleus_analyze_file(lua51) failed: {}", train_nt.error())};
+            set_progress(0, "Discover function entries...");
+            if (!function_relocation::discover_module_functions(modulelua51)) {
+                throw update_signatures_exception{"discover_module_functions(lua51) failed"};
             }
-            spdlog::info("phase nucleus(train): {} ms", phase_ms());
-            if (!function_relocation::apply_nucleus_function_table(modulelua51, train_nt->table,
-                                                                   train_nt->image_base)) {
-                throw update_signatures_exception{"apply_nucleus_function_table(lua51) failed"};
+            spdlog::info("phase discover(lua51): {} ms", phase_ms());
+            if (!function_relocation::discover_module_functions(moduleMain)) {
+                throw update_signatures_exception{"discover_module_functions(game) failed"};
             }
-            spdlog::info("phase apply(train): {} ms", phase_ms());
+            spdlog::info("phase discover(game): {} ms", phase_ms());
 
-            set_progress(0, "Analyze game module (nucleus)...");
-            auto target_nt = function_relocation::nucleus_analyze_file(game_path);
-            if (!target_nt) {
-                throw update_signatures_exception{
-                        fmt::format("nucleus_analyze_file(game) failed: {}", target_nt.error())};
-            }
-            spdlog::info("phase nucleus(game): {} ms", phase_ms());
-            if (!function_relocation::apply_nucleus_function_table(moduleMain, target_nt->table,
-                                                                   target_nt->image_base)) {
-                throw update_signatures_exception{"apply_nucleus_function_table(game) failed"};
-            }
-            spdlog::info("phase apply(game): {} ms", phase_ms());
-
-            // Phase 3: disasm each Nucleus body for soft-match features.
+            // Phase 3: disasm each discovered body for soft-match features.
             set_progress(0, "Scan function features...");
             if (!function_relocation::scan_module_function_features(modulelua51) ||
                 !function_relocation::scan_module_function_features(moduleMain)) {
                 throw update_signatures_exception{"scan_module_function_features failed"};
             }
             spdlog::info("phase scan_features: {} ms", phase_ms());
-
-            // Optional pdata cross-check (log only; Nucleus remains authority).
-            {
-                std::vector<function_relocation::FuncRange> pdata_ranges;
-                if (function_relocation::enumerate_function_ranges_win(moduleMain, pdata_ranges)) {
-                    size_t compared = 0;
-                    size_t mismatches = 0;
-                    // spans x ranges was quadratic (4e5 x 1.3e4). Sort by start and
-                    // keep a prefix max end so the backwards containment walk stops
-                    // as soon as no earlier range can reach the span start.
-                    std::sort(pdata_ranges.begin(), pdata_ranges.end(),
-                              [](const function_relocation::FuncRange &l,
-                                 const function_relocation::FuncRange &r) { return l.start < r.start; });
-                    std::vector<uint64_t> prefix_max_end(pdata_ranges.size());
-                    uint64_t running_max = 0;
-                    for (size_t i = 0; i < pdata_ranges.size(); ++i) {
-                        running_max = (std::max)(running_max, pdata_ranges[i].end);
-                        prefix_max_end[i] = running_max;
-                    }
-                    for (const auto &sp: moduleMain.function_table.spans()) {
-                        const function_relocation::FuncRange *hit = nullptr;
-                        size_t hits = 0;
-                        auto it = std::upper_bound(
-                                pdata_ranges.begin(), pdata_ranges.end(), sp.start,
-                                [](uint64_t value, const function_relocation::FuncRange &range) {
-                                    return value < range.start;
-                                });
-                        for (size_t idx = static_cast<size_t>(it - pdata_ranges.begin()); idx > 0;) {
-                            --idx;
-                            if (prefix_max_end[idx] <= sp.start) break;
-                            const auto &pr = pdata_ranges[idx];
-                            if (pr.start <= sp.start && sp.start < pr.end) {
-                                hit = &pr;
-                                ++hits;
-                            }
-                        }
-                        if (hits != 1 || hit == nullptr) {
-                            continue;
-                        }
-                        ++compared;
-                        if (hit->end != sp.end) {
-                            ++mismatches;
-                            const auto delta = static_cast<intptr_t>(hit->end) -
-                                               static_cast<intptr_t>(sp.end);
-                            if (delta >= 0x20 || delta <= -0x20) {
-                                spdlog::warn(
-                                        "pdata/nucleus end mismatch start={} nucleus_end={} pdata_end={} delta={}",
-                                        (void *) sp.start, (void *) sp.end, (void *) hit->end, delta);
-                            }
-                        }
-                    }
-                    spdlog::info("pdata cross-check: compared={} mismatches={} ({} ranges, {} ms)",
-                                 compared, mismatches, pdata_ranges.size(), phase_ms());
-                } else {
-                    spdlog::info("pdata cross-check: no .pdata ranges for {}", moduleMain.details.path);
-                }
-            }
         }
     }
     auto lua51_module = prepared_train ? nullptr : gum_process_find_module_by_name(lua51_name);
@@ -349,7 +278,12 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
         auto original = (void *) export_address(name);
 
 #ifdef _WIN32
-        original = format_address((uint8_t *) original);
+        // Entry thunks (`E9 rel32` / `FF 25 [rip+IAT]`) own no body: resolve them
+        // to the real function before looking it up in the discovered table.
+        if (original != nullptr) {
+            original = (void *) function_relocation::resolve_pe_discovery_target(
+                    modulelua51, (uintptr_t) original);
+        }
 #endif
         if (original == nullptr || !modulelua51.find_function((uintptr_t) original)) {
             throw update_signatures_exception{fmt::format("can't find address: {}", name)};
@@ -361,7 +295,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
         }
         if (originalFunc->size == 0) {
             throw update_signatures_exception{
-                    fmt::format("func[{}] has size 0 after Nucleus sizing (no containing span)", name)};
+                    fmt::format("func[{}] has size 0 after function discovery (no containing span)", name)};
         }
     }
     set_progress(1, "");
@@ -410,7 +344,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
             continue;
         }
         // Resolve to a Function* when possible. If soft/unique_const refined an
-        // entry that is not a Nucleus span start (coarse over-merge), keep it —
+        // entry that is not a discovered span start (coarse over-merge), keep it —
         // do NOT snap back to containing() which can be thousands of bytes away.
         if (moduleMain.find_function(target) == nullptr) {
             if (!moduleMain.function_table.empty()) {
@@ -425,14 +359,14 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                         throw update_signatures_exception{
                                 fmt::format("func[{}] match not in target FunctionTable", name)};
                     }
-                    spdlog::info("keep refined entry [{}] outside Nucleus span starts",
+                    spdlog::info("keep refined entry [{}] outside discovered span starts",
                                  (void *) target);
                 } else {
                     const auto match = signature.pattern_offset == 0
                                                ? target
                                                : pattern_address;
                     const auto dist = target >= entry ? target - entry : entry - target;
-                    // Only adopt Nucleus start when we are still in the prologue
+                    // Only adopt the discovered entry when we are still in the prologue
                     // region (pattern hit near entry). Far distances mean unique_const
                     // / train-off recovered a real interior export start.
                     if (dist <= 16) {
@@ -444,7 +378,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                         target = static_cast<uintptr_t>(entry);
                     } else {
                         spdlog::info(
-                                "keep refined entry [{}] (Nucleus containing {:#x} dist={})",
+                                "keep refined entry [{}] (containing {:#x} dist={})",
                                 (void *) target, entry, dist);
                     }
                 }
@@ -468,8 +402,9 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                 signature.pattern_offset = pattern_offset;
             }
         }
-        // Snap only when target is a few bytes past a Nucleus start (mid-prologue
-        // hit). Never pull a refined far entry back into a coarse over-merged span.
+        // Snap only when the target is a few bytes past a discovered entry
+        // (mid-prologue hit). Never pull a refined far entry back into a coarse
+        // over-merged span.
         if (!moduleMain.function_table.empty()) {
             const uint64_t entry = moduleMain.function_table.containing(target);
             if (entry != 0 && entry != target) {
@@ -480,7 +415,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
                                                    static_cast<intptr_t>(signature.pattern_offset));
                     const auto new_po =
                             static_cast<intptr_t>(entry) - static_cast<intptr_t>(pattern_address);
-                    spdlog::info("snap signature [{}] {} -> nucleus entry {} (pattern_offset {}->{})",
+                    spdlog::info("snap signature [{}] {} -> entry {} (pattern_offset {}->{})",
                                  name, (void *) target, (void *) entry,
                                  signature.pattern_offset, new_po);
                     signature.pattern_offset = static_cast<int>(new_po);
@@ -509,7 +444,7 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
 
     // --- Call-graph seed pass -------------------------------------------------
     // Recover unresolved exports from the deterministic Lua caller graph.
-    // Game Nucleus does not split at interior non-PE-export entries (lua_isnumber),
+    // Game discovery does not split at interior non-PE-export entries (lua_isnumber),
     // so we intersect *raw* E8/E9 CALL targets of every resolved train-caller —
     // not FunctionTable starts. Example: luaL_checknumber ∩ luaL_checkinteger
     // unclaimed callees = lua_isnumber.

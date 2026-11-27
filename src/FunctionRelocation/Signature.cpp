@@ -239,7 +239,7 @@ namespace function_relocation {
         void *scan_by_signature(const std::string &signature, int signature_offset, bool skip_check = false) {
             if (!original || original->size == 0) {
                 if (auto logger = spdlog::get(logger_name)) {
-                    logger->error("scan_by_signature: original body size is 0 (need Nucleus sizes) for {}",
+                    logger->error("scan_by_signature: original body size is 0 (need discovered sizes) for {}",
                                   original ? original->name : "<null>");
                 }
                 return nullptr;
@@ -266,7 +266,7 @@ namespace function_relocation {
                 if (training_hit != original->address) {
                     return nullptr;
                 }
-                // match_addr = training_hit - signature_offset must sit in Nucleus body.
+                // match_addr = training_hit - signature_offset must sit in the discovered body.
                 const intptr_t train_match =
                         static_cast<intptr_t>(training_hit) - static_cast<intptr_t>(signature_offset);
                 if (train_match < static_cast<intptr_t>(original->address) ||
@@ -286,7 +286,7 @@ namespace function_relocation {
 
             if (target->function_table.empty()) {
                 if (auto logger = spdlog::get(logger_name)) {
-                    logger->error("scan_by_signature: target FunctionTable empty; run apply_nucleus_function_table");
+                    logger->error("scan_by_signature: target FunctionTable empty; run discover_module_functions");
                 }
                 return nullptr;
             }
@@ -379,7 +379,7 @@ namespace function_relocation {
             const uint64_t body_begin = original->address;
             const uint64_t body_end = original->address + original->size; // exclusive
 
-            // Reject blocks that do not overlap the Nucleus body at all.
+            // Reject blocks that do not overlap the discovered body at all.
             if (block->address >= body_end || block->address + block->size <= body_begin) {
                 return nullptr;
             }
@@ -446,7 +446,7 @@ namespace function_relocation {
             return nullptr;
         }
 
-        // Decode the Nucleus-clamped body into a MicroInsn stream for the core
+        // Decode the span-clamped body into a MicroInsn stream for the core
         // micro-window generator. Reuses create_signature's per-insn wildcard
         // rules (RIP-relative, call imm, external, module-imm mov) WITHOUT the
         // recursive callee-prologue embed path. CALL and unconditional JMP are
@@ -455,7 +455,7 @@ namespace function_relocation {
         generate_micro_window_insns(const Function &fn) {
             std::vector<micro_window::MicroInsn> out;
             const uint64_t body_begin = fn.address;
-            // Clamp to leaf so overshot Nucleus spans do not explode windows.
+            // Clamp to leaf so overshot spans do not explode windows.
             const size_t leaf = function_leaf_size(fn, 256);
             const size_t body_len = leaf > 0 ? leaf : std::min(fn.size, size_t{256});
             const uint64_t body_end = fn.address + body_len;
@@ -732,7 +732,7 @@ namespace function_relocation {
                 auto entry_earliest = scan_str_xrefs(hits[0]);
                 // Prefer entries where the xref is near the prologue (first 24B).
                 // Unique string with a single xref is strong evidence — accept even
-                // when Nucleus span size ratios look wrong (over-merged spans).
+                // when span size ratios look wrong (over-merged spans).
                 std::vector<std::pair<uint64_t, uintptr_t>> candidates;
                 candidates.reserve(entry_earliest.size());
                 for (const auto &[e, m]: entry_earliest) {
@@ -809,7 +809,7 @@ namespace function_relocation {
 
         // Short / distinctive bodies: whole-body hex pattern (same wildcards as
         // create_signature). Accept only when train hits stay inside original and
-        // target hits collapse to a single Nucleus entry. Covers tiny exports
+        // target hits collapse to a single discovered entry. Covers tiny exports
         // (e.g. lua_pushnil 17B) where micro-windows lack SCORE_T signal.
         void *scan_by_short_body() {
             PhaseClock phase_clock{"short_body"};
@@ -1484,7 +1484,7 @@ namespace function_relocation {
     fix_func_address_by_signature(ModuleSections &target, const Function &original, uintptr_t limit_address,
                                   SignatureInfo *signature) {
         // knowns_signature table intentionally empty: soft micro-window +
-        // Nucleus FunctionTable only (no hardcoded seed patterns).
+        // FunctionTable only (no hardcoded seed patterns).
         spdlog::get(logger_name)->warn("fix_func_address_by_signature: {}", original.name);
         Creator creator{&target, &original, limit_address, signature};
         // Soft path: byte match first (short-body, micro-windows). unique_const
@@ -1545,7 +1545,7 @@ namespace function_relocation {
         // When a target FunctionTable is present, signatures must come from
         // scan_by_block/scan_by_signature so pattern_offset is target-local.
         // Accepting LCS would return an entry (or raw match site) without rewriting
-        // training pattern_offset — forbidden under the Nucleus contract.
+        // training pattern_offset — forbidden under the FunctionTable contract.
         if (!target.function_table.empty()) {
             if (auto logger = spdlog::get(logger_name)) {
                 logger->error(

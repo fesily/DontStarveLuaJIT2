@@ -995,42 +995,43 @@ foreach(_ds_cfg_tgt IN LISTS DS_CONFIG_SCHEMA_TARGETS)
 endforeach()
 
 if (WIN32)
-  add_executable(test_function_ranges
-      ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_function_ranges.cpp)
-  target_include_directories(test_function_ranges PRIVATE
+  # PE x64 entry discovery: synthetic PE32+ buffers for .pdata/chained/TLS/seed
+  # handling and recursive descent, plus the real Mod/deps/lua51.dll against an
+  # independent .pdata/export oracle.
+  add_executable(test_pe_function_discovery
+      ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_pe_function_discovery.cpp)
+  target_include_directories(test_pe_function_discovery PRIVATE
       ${FUNCTION_RELOCATION_INCLUDE_DIR}
       ${FRIDA_GUM_INCLUDE_DIR})
-  target_compile_features(test_function_ranges PRIVATE cxx_std_23)
+  target_compile_features(test_pe_function_discovery PRIVATE cxx_std_23)
   # Prefer static so the test does not delay-load Injector for gum.
   # Static reloc TUs pull frida-gum via headers; tools/tests must link gum.
-  target_link_libraries(test_function_ranges PRIVATE function_relocation_static Frida::Gum)
-  if (DEFINED FRIDA_GUM_RUNTIME)
-    add_custom_command(TARGET test_function_ranges POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          "${FRIDA_GUM_RUNTIME}"
-          "$<TARGET_FILE_DIR:test_function_ranges>"
-      VERBATIM)
-  endif()
-  add_test(NAME function_ranges COMMAND test_function_ranges)
-
-  add_executable(test_nucleus_adapter
-      ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_nucleus_adapter.cpp)
-  target_include_directories(test_nucleus_adapter PRIVATE
-      ${FUNCTION_RELOCATION_INCLUDE_DIR}
-      ${FRIDA_GUM_INCLUDE_DIR})
-  target_compile_features(test_nucleus_adapter PRIVATE cxx_std_23)
-  # Static reloc: tools/tests link frida-gum directly (no Injector delay-load).
-  target_link_libraries(test_nucleus_adapter PRIVATE function_relocation_static ${FRIDA_GUM_LIBRARIES})
+  target_link_libraries(test_pe_function_discovery PRIVATE function_relocation_static Frida::Gum)
   # Stage imported runtime DLLs (frida-gum.dll, pe-parse.dll) next to the exe;
   # a clean build otherwise fails with 0xc0000135 (DLL not found).
-  add_custom_command(TARGET test_nucleus_adapter POST_BUILD
+  add_custom_command(TARGET test_pe_function_discovery POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          $<TARGET_RUNTIME_DLLS:test_nucleus_adapter>
-          "$<TARGET_FILE_DIR:test_nucleus_adapter>"
+          $<TARGET_RUNTIME_DLLS:test_pe_function_discovery>
+          "$<TARGET_FILE_DIR:test_pe_function_discovery>"
       COMMAND_EXPAND_LISTS
       VERBATIM)
-  add_test(NAME nucleus_adapter COMMAND test_nucleus_adapter)
-  set_tests_properties(nucleus_adapter PROPERTIES
+  add_test(NAME pe_function_discovery COMMAND test_pe_function_discovery)
+  set_tests_properties(pe_function_discovery PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+endif()
+
+if (APPLE)
+  # Mach-O entry discovery: the test executable's own LC_FUNCTION_STARTS plus the
+  # shared ULEB128 blob decoder (bounds/termination/overflow negatives).
+  add_executable(test_macho_function_discovery
+      ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_macho_function_discovery.cpp)
+  target_include_directories(test_macho_function_discovery PRIVATE
+      ${FUNCTION_RELOCATION_INCLUDE_DIR}
+      ${FRIDA_GUM_INCLUDE_DIR})
+  target_compile_features(test_macho_function_discovery PRIVATE cxx_std_23)
+  target_link_libraries(test_macho_function_discovery PRIVATE function_relocation_static Frida::Gum)
+  add_test(NAME macho_function_discovery COMMAND test_macho_function_discovery)
+  set_tests_properties(macho_function_discovery PROPERTIES
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif()
 
@@ -1120,14 +1121,6 @@ add_test(NAME fast_assert_cross_dso
         DS_FA_CONSUMER=$<TARGET_FILE:fa_test_consumer>
         DS_FA_CONSUMER_OWN=$<TARGET_FILE:fa_test_consumer_own>
         $<TARGET_FILE:test_fast_assert_cross_dso>)
-
-# Header-only interval refinement: authoritative extents plus uncovered fallback.
-add_executable(test_function_table_refinement
-    ${CMAKE_CURRENT_SOURCE_DIR}/function_relocation/test_function_table_refinement.cpp)
-target_include_directories(test_function_table_refinement PRIVATE
-    ${FUNCTION_RELOCATION_INCLUDE_DIR})
-target_compile_features(test_function_table_refinement PRIVATE cxx_std_23)
-add_test(NAME function_table_refinement COMMAND test_function_table_refinement)
 
 # Soft-match accept policy primitives (plan function-relocation-match-v2 todo 1).
 # Header-only: depends only on MatchPolicy.hpp + the C++23 standard library, so
@@ -1341,10 +1334,9 @@ set(DS_DOCTEST_RUNNER_TARGETS
     test_external_discover_gate
     test_net_stats_decode
     test_game_info_arguments
-    test_function_ranges
-    test_nucleus_adapter
+    test_pe_function_discovery
+    test_macho_function_discovery
     test_eh_frame_starts
-    test_function_table_refinement
     test_match_accept_policy
     test_micro_windows
     test_xref_pattern
@@ -1435,12 +1427,14 @@ ds_test_append_label(game_signatures
 
 # Every test that initializes the function_relocation ctx writes the same
 # tests/<Config>/FunctionRelocation.log. memory_signature_abi / fast_hook only
-# use gum and nucleus_adapter never initializes ctx, so they stay unlocked.
+# use gum, so they stay unlocked.
 ds_test_append_lock(ds_relocation_log
     xref_pattern
     graph_seed
     unique_signature
     net_stats_decode
+    pe_function_discovery
+    macho_function_discovery
     eh_frame_starts
     elf_plt_symbols)
 ds_test_append_lock(ds_signature_tool_log

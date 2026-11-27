@@ -130,7 +130,8 @@ target_link_libraries(signature_updater PRIVATE Frida::Gum)
 
 target_link_libraries(signature_updater PRIVATE nlohmann_json::nlohmann_json)
 # Order matters for static archives: dependents first, then providers.
-# ds_signature calls nucleus_analyze_file / apply_nucleus_* in function_relocation_static.
+# ds_signature calls discover_module_functions / scan_module_function_features in
+# function_relocation_static.
 target_link_libraries(signature_updater PRIVATE ds_signature ds_signature_provider function_relocation_static)
 if (TARGET stage_lua51_training)
     add_dependencies(signature_updater stage_lua51_training)

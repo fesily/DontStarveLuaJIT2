@@ -5,28 +5,40 @@
 #include <algorithm>
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace function_relocation {
 
-// Half-open [start, end) span in image VA space (image_base + RVA).
-// Nucleus Function::end is exclusive (BB end is first byte past last insn).
+// Half-open [start, end) span in process VA space (image_base + RVA).
+// `end` is exclusive.
 struct FunctionSpan {
   uint64_t start = 0; // entry / function start VA
   uint64_t end = 0;   // exclusive end VA
 };
 
+// Code owned by a function whose primary body starts elsewhere: PE .pdata
+// chained records (cold paths, SEH funclets, separated code). `owner` is the
+// primary entry VA. owner == 0 marks an orphan fragment — it only blocks
+// scanning and never names an entry.
+struct FunctionFragment {
+  FunctionSpan span{};
+  uint64_t owner = 0;
+};
+
 // Sorted table of function spans with binary-search containing queries.
+// `spans()` is the primary (contiguous, non-overlapping) entry set; fragments
+// are consulted only by `containing()`, never by `span_containing()`.
 class FUNCTION_RELOCATION_API FunctionTable {
 public:
   void clear() {
     spans_.clear();
+    fragments_.clear();
     laminar_.reset();
   }
 
   // Keep sorted by start. Invalid / empty spans are ignored.
-  // Overlaps / nesting are allowed (Nucleus may emit a large outer body that
-  // wholly contains later entry-points). Lookup picks the tightest container.
+  // Overlaps / nesting are allowed; lookup picks the tightest container.
   void add(FunctionSpan span) {
     if (span.end <= span.start) {
       return;
@@ -40,68 +52,70 @@ public:
     spans_.insert(it, span);
   }
 
-  // Bulk load: one sort instead of N sorted inserts (apply_nucleus_function_table
-  // feeds ~4e5 spans, where insert-per-span is quadratic).
-  void assign(std::vector<FunctionSpan> spans) {
+  // Bulk load: one sort instead of N sorted inserts (discovery feeds tens of
+  // thousands of spans, where insert-per-span is quadratic).
+  // Same start keeps the longest end; identical fragments are deduped.
+  void assign(std::vector<FunctionSpan> spans,
+              std::vector<FunctionFragment> fragments = {}) {
     laminar_.reset();
     spans.erase(std::remove_if(spans.begin(), spans.end(),
                                [](const FunctionSpan &s) { return s.end <= s.start; }),
                 spans.end());
     std::sort(spans.begin(), spans.end(),
-              [](const FunctionSpan &a, const FunctionSpan &b) { return a.start < b.start; });
-    spans_ = std::move(spans);
-  }
-
-  // Refine spans so every known entry VA that falls strictly inside a parent
-  // becomes a sub-span start: [S, e0), [e0, e1), …, [en, End).
-  // Used for PE SYM_TYPE_FUNC exports and module-known function addresses so
-  // interior exports (e.g. lua_resume inside a lua_yield outer body) map
-  // containing(E) → E instead of the outer start.
-  // Does not hardcode symbol names — any address list works.
-  void split_at_known_entries(const std::vector<uint64_t> &entries) {
-    if (spans_.empty() || entries.empty()) {
-      return;
-    }
-    std::vector<uint64_t> pts = entries;
-    std::sort(pts.begin(), pts.end());
-    pts.erase(std::unique(pts.begin(), pts.end()), pts.end());
-
-    std::vector<FunctionSpan> out;
-    out.reserve(spans_.size() + pts.size());
-    for (const auto &sp : spans_) {
-      std::vector<uint64_t> cuts;
-      for (uint64_t e : pts) {
-        if (e > sp.start && e < sp.end) {
-          cuts.push_back(e);
-        }
-      }
-      if (cuts.empty()) {
-        out.push_back(sp);
+              [](const FunctionSpan &a, const FunctionSpan &b) {
+                return a.start < b.start || (a.start == b.start && a.end < b.end);
+              });
+    std::vector<FunctionSpan> primaries;
+    primaries.reserve(spans.size());
+    for (const auto &span: spans) {
+      if (!primaries.empty() && primaries.back().start == span.start) {
+        primaries.back().end = (std::max)(primaries.back().end, span.end);
         continue;
       }
-      uint64_t cur = sp.start;
-      for (uint64_t c : cuts) {
-        if (c > cur) {
-          out.push_back(FunctionSpan{cur, c});
-        }
-        cur = c;
-      }
-      if (sp.end > cur) {
-        out.push_back(FunctionSpan{cur, sp.end});
-      }
+      primaries.push_back(span);
     }
-    std::sort(out.begin(), out.end(),
-              [](const FunctionSpan &a, const FunctionSpan &b) {
-                return a.start < b.start;
+    spans_ = std::move(primaries);
+
+    fragments.erase(std::remove_if(fragments.begin(), fragments.end(),
+                                   [](const FunctionFragment &f) {
+                                     return f.span.end <= f.span.start;
+                                   }),
+                    fragments.end());
+    std::sort(fragments.begin(), fragments.end(),
+              [](const FunctionFragment &a, const FunctionFragment &b) {
+                return a.span.start < b.span.start ||
+                       (a.span.start == b.span.start && a.span.end < b.span.end);
               });
-    spans_ = std::move(out);
-    laminar_.reset();
+    fragments.erase(std::unique(fragments.begin(), fragments.end(),
+                                [](const FunctionFragment &a, const FunctionFragment &b) {
+                                  return a.span.start == b.span.start &&
+                                         a.span.end == b.span.end && a.owner == b.owner;
+                                }),
+                    fragments.end());
+    fragments_ = std::move(fragments);
   }
 
-  // Returns start of the tightest (innermost) function containing addr, or 0.
+  // Returns start of the function owning addr: the tightest primary container,
+  // otherwise the owner of the containing cold fragment (0 when orphan).
   uint64_t containing(uint64_t addr) const {
-    const FunctionSpan *s = span_containing(addr);
-    return s ? s->start : 0;
+    if (const FunctionSpan *s = span_containing(addr)) {
+      return s->start;
+    }
+    if (fragments_.empty()) {
+      return 0;
+    }
+    auto it = std::upper_bound(
+        fragments_.begin(), fragments_.end(), addr,
+        [](uint64_t value, const FunctionFragment &f) { return value < f.span.start; });
+    // Walking back from the last fragment start <= addr: the first fragment
+    // that still reaches addr owns the byte (fragments are disjoint).
+    while (it != fragments_.begin()) {
+      --it;
+      if (addr < it->span.end) {
+        return it->owner;
+      }
+    }
+    return 0;
   }
 
   // Prefer the smallest containing span (deepest nest). Ties keep the rightmost
@@ -118,6 +132,13 @@ public:
     auto it = std::upper_bound(
         spans_.begin(), spans_.end(), addr,
         [](uint64_t a, const FunctionSpan &s) { return a < s.start; });
+    // An exact entry always wins, even when an enclosing span also covers it.
+    if (it != spans_.begin()) {
+      const auto previous = std::prev(it);
+      if (previous->start == addr) {
+        return &*previous;
+      }
+    }
     if (is_laminar()) {
       // Nested or disjoint: walking back from the last start <= addr, the first
       // span that still reaches addr is the innermost (tightest) one.
@@ -145,6 +166,7 @@ public:
   }
 
   const std::vector<FunctionSpan> &spans() const { return spans_; }
+  const std::vector<FunctionFragment> &fragments() const { return fragments_; }
   bool empty() const { return spans_.empty(); }
   size_t size() const { return spans_.size(); }
 
@@ -169,7 +191,8 @@ private:
     return laminar;
   }
 
-  std::vector<FunctionSpan> spans_; // sorted by start
+  std::vector<FunctionSpan> spans_;         // primary entries, sorted by start
+  std::vector<FunctionFragment> fragments_; // cold fragments, sorted by start
   mutable std::optional<bool> laminar_;
 };
 
