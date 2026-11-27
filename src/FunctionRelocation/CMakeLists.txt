@@ -45,7 +45,8 @@ if (APPLE)
           GumMachoModule * module = gum_macho_module_new_from_memory(
               \"probe\", 0, 0, GUM_MACHO_MODULE_FLAGS_NONE, nullptr);
           (void) module;
-          void (*enumerate)(GumMachoModule *, GumFoundMachoFunctionStartsFunc, gpointer) =
+          // Assign through a volatile so the undefined-symbol check survives -O2.
+          auto volatile enumerate =
               &gum_macho_module_enumerate_function_starts;
           (void) enumerate;
           GumMachoFunctionStartsDetails details{};
@@ -59,7 +60,7 @@ if (APPLE)
           GumDarwinModule * module = gum_darwin_module_new_from_memory(
               \"probe\", 0, 0, GUM_DARWIN_MODULE_FLAGS_NONE, nullptr);
           (void) module;
-          void (*enumerate)(GumDarwinModule *, GumFoundDarwinFunctionStartsFunc, gpointer) =
+          auto volatile enumerate =
               &gum_darwin_module_enumerate_function_starts;
           (void) enumerate;
           GumDarwinFunctionStartsDetails details{};

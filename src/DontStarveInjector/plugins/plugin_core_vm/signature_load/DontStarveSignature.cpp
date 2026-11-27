@@ -278,9 +278,12 @@ Generator<int> update_signatures(Signatures &signatures, uintptr_t targetLuaModu
         auto original = (void *) export_address(name);
 
 #ifdef _WIN32
-        // Entry thunks (`E9 rel32` / `FF 25 [rip+IAT]`) own no body: resolve them
-        // to the real function before looking it up in the discovered table.
-        if (original != nullptr) {
+        // Entry thunks (`E9 rel32` / `FF 25 [rip+IAT]`) own no body, so an export
+        // that points at one is followed to the real function. A `.pdata` primary
+        // may itself begin with a jump, though: prefer the address that is already
+        // an installed entry instead of chasing it.
+        if (original != nullptr &&
+            modulelua51.find_function((uintptr_t) original) == nullptr) {
             original = (void *) function_relocation::resolve_pe_discovery_target(
                     modulelua51, (uintptr_t) original);
         }

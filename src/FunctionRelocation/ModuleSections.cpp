@@ -385,10 +385,12 @@ namespace function_relocation {
         sections.function_table.assign(std::move(spans), std::move(fragments));
 
         // One Function per installed entry. Bodies that start outside .text
-        // cannot be scanned by this module's Capstone window.
-        const uint64_t text_end = sections.text.base_address + sections.text.size;
+        // cannot be scanned by this module's Capstone window. The start check is
+        // half-open: an entry at the exclusive end has no .text byte to decode.
+        const uint64_t text_begin = sections.text.base_address;
+        const uint64_t text_end = text_begin + sections.text.size;
         for (const auto &sp: sections.function_table.spans()) {
-            if (sp.end <= sp.start || !sections.in_text(sp.start)) {
+            if (sp.end <= sp.start || sp.start < text_begin || sp.start >= text_end) {
                 continue;
             }
             // Clamp size to remaining .text so feature scan cannot walk off.

@@ -1064,7 +1064,10 @@ if (UNIX AND NOT APPLE)
       ${FUNCTION_RELOCATION_INCLUDE_DIR}
       ${FRIDA_GUM_INCLUDE_DIR})
   target_compile_features(test_eh_frame_starts PRIVATE cxx_std_23)
-  target_link_libraries(test_eh_frame_starts PRIVATE function_relocation_static Frida::Gum)
+  # The test reads the reference FDE table through libdwarf itself, so the
+  # include directory and the library must be explicit here.
+  target_link_libraries(test_eh_frame_starts PRIVATE function_relocation_static
+      Frida::Gum libdwarf::dwarf)
   add_test(NAME eh_frame_starts COMMAND test_eh_frame_starts)
   set_tests_properties(eh_frame_starts PROPERTIES
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

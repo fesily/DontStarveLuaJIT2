@@ -40,6 +40,9 @@ namespace function_relocation {
             if (ph.p_type == PT_LOAD) preferred_base = std::min(preferred_base, uintptr_t(ph.p_vaddr & ~uint64_t{0xfff}));
         }
         if (preferred_base == std::numeric_limits<uintptr_t>::max()) return false;
+        // A load bias is never negative: a base below the image's preferred base
+        // means the range does not belong to this file.
+        if (m.details.range.base_address < preferred_base) return false;
         const uintptr_t bias = m.details.range.base_address - preferred_base;
         const int fd = open(m.details.path.c_str(), O_RDONLY);
         if (fd < 0) return false;
@@ -60,7 +63,7 @@ namespace function_relocation {
                 if (dwarf_get_fde_range(fdes[i], &start, &size, nullptr, nullptr, nullptr, nullptr, nullptr, &error) != DW_DLV_OK) continue;
                 if (size == 0 || start > UINTPTR_MAX - bias) continue;
                 const uintptr_t address = bias + start;
-                if (!m.in_text(address) || address > text_end) continue;
+                if (!m.in_text(address)) continue;
                 if (size > text_end - address) continue;
                 out.push_back({address, address + static_cast<uintptr_t>(size)});
             }
@@ -246,6 +249,9 @@ namespace function_relocation {
                 datasize > linkedit_filesize - offset_in_linkedit) {
                 return false;
             }
+            // The slide is unsigned; a module mapped below its own __TEXT vmaddr
+            // cannot be this image.
+            if (base < text_vmaddr) return false;
             const uint64_t slide = base - text_vmaddr;
             if (linkedit_vmaddr > std::numeric_limits<uint64_t>::max() - slide) return false;
             const uint64_t blob_address = slide + linkedit_vmaddr + offset_in_linkedit;

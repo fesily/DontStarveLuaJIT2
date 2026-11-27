@@ -25,10 +25,12 @@
 - 它**不会把一个函数切碎**：任意两条 range 互不重叠（实测 5 个 DLL + DST 两个 exe，重叠数恒为 0）。
 - 条目开头有两种身份：
 
-| 身份 | 判定 |
+| 身份 | 判定（按此顺序） |
 |---|---|
-| 函数入口 primary | `unwind_info[0] & 0x20 == 0` |
+| 函数入口 primary | `UnwindData == 0`（无 unwind 信息的 leaf） |
+| indirect 片段 | `UnwindData & 1 == 1`：`UnwindData` 本身指向**另一条** `RUNTIME_FUNCTION`（`& ~1` 后取该条目的记录，再重新分类） |
 | 同函数片段 chained（冷路径 / SEH funclet / separated code） | `unwind_info[0] & 0x20 != 0` |
+| 函数入口 primary | `unwind_info[0] & 0x20 == 0` |
 
 **常见错误**：`(unwind_info[0] & 0x07) == 4` 是 **Version 字段**（恒为 1），不是 `UNW_FLAG_CHAININFO`。用错会把冷片段当成独立函数，分母直接翻倍（`lua51DS.dll`：1185 primary 变 2120）。
 
@@ -46,7 +48,7 @@ static uint32_t parent_of(uint32_t unwind_rva) {
 }
 ```
 
-多级链（parent 也是 chained）需要迭代到根，上限 8 跳。
+多级链（parent 也是 chained / indirect）需要迭代到根。**跳数只数父转移**：`kMaxChainHops = 8` 表示 8 次父转移仍然解析成功（第 9 次即判孤儿），起始记录本身不算一跳。环、断链、以及「内嵌父副本与该 parent 自己的 `.pdata` 记录不一致」三种情况都按孤儿处理：片段仍然保留字节（不重复扫描），但永不命名入口。
 
 实测：DST 客户端 10,026 条 chained **100 %** 归并成功、0 孤儿；开发期 DLL 有 15/146 孤儿（多级链或父被 ICF 折叠）。
 
@@ -68,12 +70,12 @@ flowchart TB
 
 ### 3.1 步骤
 
-1. **解析**：按 12 字节步长读 `.pdata`，分类 primary / chained，建立 `begin → EndAddress` 与 `begin → UnwindInfoAddress` 两张表。
-2. **归并**：每条 chained 迭代到 primary 父；`fragment_end[start] = 自己的 EndAddress`。
+1. **解析**：按 12 字节步长读 `.pdata`；目录长度不是 12 的倍数说明尾部有半条 `RUNTIME_FUNCTION`，按**损坏**处理（整份枚举失败），而不是静默截断。随后按 §2 的顺序分类，建立 `BeginAddress → 规范记录` 与 `record RVA → 规范记录` 两张表（同一条记录被多个间接条目引用时，每个 RVA 都保留映射）；记录必须整体落在**同一个可执行 section** 内，否则跳过（端点检查会把跨非执行段的记录当成函数，从而把空洞发布成代码）。
+2. **归并**：每条 chained / indirect 迭代到 primary 父（indirect 先取 `UnwindData & ~1` 指向的记录再分类）；`fragment_end[start] = 自己的 EndAddress`。超出跳数、成环、断链都记为孤儿。
 3. **种子**：`.pdata` primary ∪ 导出表 RVA ∪ `AddressOfEntryPoint` ∪ TLS callbacks（`.tls` 目录 `AddressOfCallBacks` 指向的以 0 结尾的指针数组）。
 4. **递归下降**（见 §3.2）：函数体用**块内工作栈**扫，不是线性扫到第一个 `ret` 就停。
-5. **采纳**：直接 `call` 的 imm 目标，若（a）不在任何已声明指令地址上，（b）在可执行 section 内，（c）首指令不是 thunk，则作为新函数入口入队。
-6. **拒绝 thunk**：首指令 `FF 25`（`jmp [rip+IAT]`）或 `E9`（`jmp rel32` 别名）一律不进入函数集，只用于追真身。**这一步是 precision 的全部来源**（见 §6.1）。
+5. **采纳**：直接 `call` 的 imm 目标，若（a）不在任何已声明指令地址上，（b）在可执行 section 内，（c）首指令不是 thunk，（d）**不落在任何已发布的函数体内部**，则作为新函数入口入队。（d）是必需的：函数体内可能有分支没走到的字节（跳过的 padding、`jcc` 之间的空隙），那些字节属于该函数，不是新函数。
+6. **拒绝 thunk**：首指令 `FF 25`（`jmp [rip+IAT]`）或 `E9`（`jmp rel32` 别名）一律不进入函数集，只用于追真身。**这一步是 precision 的全部来源**（见 §6.1）。追真身必须是三态判定：槽位不可读、槽位为 0（惰性绑定）、`FF 25` 的位移不可解，都整条入口作废——六个字节的跳板绝不当作函数体（把它当函数会得到一个只有 6 字节的假函数，且真身被它遮住）。
 7. **迭代到不动点**：采纳出的函数体继续扫，直到没有新入口。
 8. **统计 + 自检**（§7）。
 
@@ -125,12 +127,19 @@ void walk(uint32_t start, uint32_t end, uint32_t owner) {
 
 ### 3.3 函数体边界（end 的来源）
 
+区间一律**半开** `[start, end)`：`end` 是最后一条指令之后的第一个字节，`containing(end)` 不命中。
+
 | 函数来源 | end |
 |---|---|
 | `.pdata` primary | 该条目的 `EndAddress`（精确） |
 | chained fragment | 片段自己的 `EndAddress`，指令归属到 parent |
-| 采纳的入口（无 unwind） | 下一个已知入口的地址；上限 `start + 0x8000` |
+| 采纳的入口（无 unwind） | 本次扫描声明到的最远指令尾；从未解码出一条指令则不入表 |
 | 32 位 | 无 `.pdata`，只能靠 `claimed` 冲突与上限截断（不推荐，见 §6.4） |
+
+安装时的两道几何约束：
+
+- 入口 `start` 必须落在 `.text` 的半开区间 `[base, base+size)` 内（`start == base+size` 没有可解码字节，不能发布）；
+- 函数体按 `.text` 截断，`size = min(end, text_end) - start`，扫描器永远不走出 `.text`。
 
 ## 4. 终止条件汇总
 
@@ -138,6 +147,7 @@ void walk(uint32_t start, uint32_t end, uint32_t owner) {
 |---|---|
 | `ret` / `retf` / `iret` | 结束当前块 |
 | `int3` / `hlt` / `ud2` | 结束当前块 |
+| `jmp far`（`FF /5`，LJMP） | 结束当前块（64 位模式下无 fall-through） |
 | 无条件 `jmp`（直接、落在本函数内） | 目标入队，结束当前块 |
 | 无条件 `jmp`（落到界外） | 结束当前块（尾调用，不采纳为入口） |
 | 条件跳转（直接、落在本函数内） | 目标入队，继续 fall-through |
@@ -145,8 +155,9 @@ void walk(uint32_t start, uint32_t end, uint32_t owner) {
 | 非法字节 | 结束当前块 |
 | 命中其他函数已声明的地址 | 结束该函数扫描 |
 | 走出可执行 section | 结束 |
-| 单函数指令数 > 200,000 | 硬熔断（损坏数据保护） |
+| 已声明 200,000 条指令 | 硬熔断（在声明第 200,001 条**之前**停止；同一 owner 的后续片段不再重新扫描） |
 | 采纳轮数 > 8 | 硬熔断 |
+| chained 父转移 > 8 | 该片段记孤儿 |
 
 ## 5. 落库位置（本仓库）
 
@@ -177,7 +188,7 @@ void walk(uint32_t start, uint32_t end, uint32_t owner) {
 
 「拒绝 thunk」一步跳过了 1,367 个候选，是 precision 从 69.7 % 回到 98.7 % 的全部原因。残差 16 % 是无 unwind 的小访问器（`mov rax,[rcx+..]; ret`），只被 `luaL_Reg` 注册函数调用，而后者唯一进入点是脚本。
 
-### 6.2 DST 实测（r759671 构建，MSVC x64，无本地 PDB）
+### 6.2 DST 实测（r759671 构建，MSVC x64，无本地 PDB；Python 参考实现）
 
 | 指标 | `dontstarve_steam_x64.exe` | `dontstarve_dedicated_server_nullrenderer_x64.exe` |
 |---|---|---|
@@ -194,6 +205,20 @@ void walk(uint32_t start, uint32_t end, uint32_t owner) {
 | 0 直接调用者 | 5,841（36.4 %） | 5,339 |
 | thunk 形状的 primary | 0 | 0 |
 | 耗时（Python 单线程参考实现） | 5.7 s | 5.2 s |
+
+### 6.2.1 仓库内 C++ 实现（`signature_updater create` + `DS_FR_LOG=1`，RelWithDebInfo）
+
+| 指标 | 客户端 exe | 专服 exe | `Mod/deps/lua51.dll` |
+|---|---|---|---|
+| `.pdata` primary | 14,381 | 13,184 | 606 |
+| chained 归并 / 孤儿 | 10,026 / 0 | 9,276 / 0 | 189 / 0 |
+| 无 unwind 种子（导出 + 入口点 + TLS） | 2 | 2 | 26 |
+| 采纳 | 1,689 | 1,631 | 60 |
+| **最终入口数** | **16,070** | **14,815** | **666** |
+| 被声明的 `.text` 字节 | 4,605,649 | 4,157,860 | 111,044 |
+| 预算熔断 | 0 | 0 | 0 |
+
+发现阶段耗时 527 ms（客户端）/ 430 ms（专服）/ 56 ms（`lua51.dll`）。两个 exe 的 TLS 目录都不可用（`unusable TLS callback table`），所以种子只剩 `AddressOfEntryPoint` 与 2 条导出。
 
 ### 6.3 `.text` 空洞分类（客户端，`.pdata` range 之外）
 
@@ -218,7 +243,7 @@ void walk(uint32_t start, uint32_t end, uint32_t owner) {
 | 每个采纳入口至少 1 个引用者 | 1,669/1,669 |
 | 每个 primary 都是解码起点 | 成立（从其开始解码） |
 | 未归属代码占比可量化且可解释 | 2.69 % 真实代码 + 1.9 % padding + 0.7 % 数据 |
-| 已知导出的 RVA 落在函数集内 | 成立（导出直接作为种子） |
+| 已知导出的 RVA 落在函数集内 | 成立**但有三条前提**：EAT 整表须在映像内、条目不是转发器（RVA 落在导出目录内）、不是非可执行 RVA；入口若是 `E9`/`FF 25` 跳板则先追到真身，且该跳板本身若不是 `.pdata` primary 就不在函数集里 |
 
 ## 8. 不能当判据的东西（真值上验证过）
 
@@ -246,10 +271,10 @@ void walk(uint32_t start, uint32_t end, uint32_t owner) {
 | 参数 | 取值 | 说明 |
 |---|---|---|
 | 每次解码块大小 | 2,048 B | 减少 `disasm` 调用次数 |
-| 采纳入口的 end 上限 | `+0x8000` | 没有 unwind 信息时的保护 |
-| chained 归并跳数上限 | 8 | 多级链 |
+| 采纳入口的 end 上限 | `+0x8000` | 没有 unwind 信息时的保护（与「下一个已知入口」取小） |
+| chained 父转移上限 | 8 | 多级链 / indirect 链；只数父跳转 |
 | 采纳轮数上限 | 8 | 不动点前的熔断 |
-| 单函数指令上限 | 200,000 | 损坏数据保护 |
+| 单 owner 指令上限 | 200,000 | 在声明第 200,001 条之前停止；同一 owner 的后续片段直接跳过 |
 | 解码器 | capstone 5.x，`CS_MODE_64`，`disasm_lite` 足够（只需要助记符 + 操作数字符串） | 需要操作数细节时用 detail 模式 |
 
 参考实现（Python 单文件）在上述参数下对 7 MB 的 DST 客户端耗时 **5.7 s**；移植到 C++（capstone C API + 本仓 `FunctionRanges`）预计 **0.2–0.5 s**。

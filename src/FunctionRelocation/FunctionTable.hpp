@@ -178,14 +178,20 @@ private:
     if (laminar_) {
       return *laminar_;
     }
-    uint64_t max_end = 0;
+    // Stack of the ends of the currently enclosing spans. A span is allowed
+    // either completely inside the innermost encloser (nested) or after it
+    // (disjoint); crossing its end means arbitrary overlap.
     bool laminar = true;
+    std::vector<uint64_t> enclosing;
     for (const auto &span: spans_) {
-      if (span.start < max_end && span.end > max_end) {
+      while (!enclosing.empty() && span.start >= enclosing.back()) {
+        enclosing.pop_back();
+      }
+      if (!enclosing.empty() && span.end > enclosing.back()) {
         laminar = false;
         break;
       }
-      max_end = (std::max)(max_end, span.end);
+      enclosing.push_back(span.end);
     }
     laminar_ = laminar;
     return laminar;

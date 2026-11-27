@@ -588,6 +588,191 @@ TEST_CASE("test_pe_function_discovery/tail_jump_ends_body") {
     REQUIRE_EQ(covered, 0);
 }
 
+TEST_CASE("test_pe_function_discovery/published_span_rejects_interior_candidate") {
+    REQUIRE(ensure_reloc_context());
+    PeScratch scratch;
+    // Primary P seeds two adopted bodies in round one.
+    scratch.call(0x000, 0x200);
+    scratch.call(0x005, 0x300);
+    scratch.bytes(0x00a, {0xc3});
+    // Adopted body A jumps over two bytes of padding; only 0x200 and 0x208 are
+    // claimed, so 0x204 is unclaimed INSIDE A's published range.
+    scratch.bytes(0x200, {0xeb, 0x06});// jmp +6 -> 0x208
+    scratch.bytes(0x208, {0xc3});
+    // Adopted body B calls A's unclaimed padding byte (round-two candidate).
+    scratch.call(0x300, 0x204);
+    scratch.bytes(0x305, {0xc3});
+    const uint32_t primary = scratch.unwind_primary();
+    scratch.pdata_record(0x000, 0x010, primary);
+    scratch.finalize();
+
+    auto module = scratch.module();
+    REQUIRE(function_relocation::discover_module_functions(module));
+
+    const auto *body = span_at(module, scratch.va(scratch.text_va_offset(0x200)));
+    REQUIRE_NE(body, nullptr);
+    REQUIRE_EQ(body->end, scratch.va(scratch.text_va_offset(0x209)));
+    // The branch-skipped bytes stay owned by A: no nested entry appears.
+    REQUIRE(span_at(module, scratch.va(scratch.text_va_offset(0x204))) == nullptr);
+    for (const auto &span: module.function_table.spans()) {
+        if (span.start > scratch.va(scratch.text_va_offset(0x200)) &&
+            span.start < body->end) {
+            FAIL("nested entry inside a published body");
+        }
+    }
+}
+
+TEST_CASE("test_pe_function_discovery/partial_pdata_record_fails") {
+    REQUIRE(ensure_reloc_context());
+    PeScratch scratch;
+    scratch.bytes(0x000, {0xc3});
+    const uint32_t unwind = scratch.unwind_primary();
+    scratch.pdata_record(0x000, 0x010, unwind);
+    scratch.finalize();
+    auto module = scratch.module();
+    // A trailing half record cannot be decoded as a RUNTIME_FUNCTION: the table
+    // is malformed, not merely truncated.
+    const uint32_t size = 12 + 6;
+    std::memcpy(scratch.image() + 0x58 + 112 + 3 * 8 + 4, &size, 4);
+    REQUIRE_FALSE(function_relocation::discover_module_functions(module));
+    REQUIRE(module.function_table.empty());
+}
+
+TEST_CASE("test_pe_function_discovery/record_crossing_non_exec_gap_skipped") {
+    REQUIRE(ensure_reloc_context());
+    PeScratch scratch;
+    scratch.bytes(0x000, {0xc3});
+    scratch.bytes(0x0f0, {0xc3});
+    const uint32_t unwind = scratch.unwind_primary();
+    scratch.pdata_record(0x000, 0x010, unwind);
+    // Begins in .text, ends inside .pdata: the tail is not decodable code, so the
+    // record must be dropped instead of publishing the gap as function bytes.
+    const uint32_t tail = scratch.unwind_primary();
+    scratch.pdata_record(0x0f0, 0x1010, tail);
+    scratch.finalize();
+    auto module = scratch.module();
+    REQUIRE(function_relocation::discover_module_functions(module));
+    REQUIRE_NE(span_at(module, scratch.va(scratch.text_va_offset(0x000))), nullptr);
+    REQUIRE(span_at(module, scratch.va(scratch.text_va_offset(0x0f0))) == nullptr);
+}
+
+TEST_CASE("test_pe_function_discovery/directories_bounded_by_optional_header_size") {
+    REQUIRE(ensure_reloc_context());
+    PeScratch scratch;
+    scratch.bytes(0x000, {0xc3});
+    const uint32_t unwind = scratch.unwind_primary();
+    scratch.pdata_record(0x000, 0x010, unwind);
+    scratch.finalize();
+    auto module = scratch.module();
+    // SizeOfOptionalHeader covers the 112 fixed bytes only: NumberOfRvaAndSizes
+    // claims 16 directories but none of them exist. Reading past the declared
+    // header would treat unrelated bytes as the exception directory.
+    const uint16_t optional_size = 112;
+    std::memcpy(scratch.image() + 0x40 + 4 + 16, &optional_size, sizeof(optional_size));
+    REQUIRE_FALSE(function_relocation::discover_module_functions(module));
+    REQUIRE(module.function_table.empty());
+}
+
+TEST_CASE("test_pe_function_discovery/chain_hop_limit_counts_transitions") {
+    REQUIRE(ensure_reloc_context());
+    PeScratch scratch;
+    // Root primary plus nine chained fragments; each fragment's embedded parent
+    // copy is the previous record.
+    scratch.bytes(0x400, {0xc3});
+    const uint32_t root_begin = scratch.text_va_offset(0x400);
+    const uint32_t root_end = scratch.text_va_offset(0x410);
+    uint32_t parent_begin = root_begin;
+    uint32_t parent_end = root_end;
+    uint32_t parent_unwind = scratch.unwind_primary();
+    scratch.pdata_record(0x400, 0x410, parent_unwind);
+    std::vector<uint32_t> fragment_offsets;
+    for (uint32_t level = 1; level <= 9; ++level) {
+        const uint32_t offset = 0x400 + level * 0x10;
+        scratch.bytes(offset, {0xc3});
+        const uint32_t chained =
+                scratch.unwind_chained(parent_begin, parent_end, parent_unwind);
+        scratch.pdata_record(offset, offset + 0x10, chained);
+        parent_begin = scratch.text_va_offset(offset);
+        parent_end = scratch.text_va_offset(offset + 0x10);
+        parent_unwind = chained;
+        fragment_offsets.push_back(offset);
+    }
+    scratch.finalize();
+
+    auto module = scratch.module();
+    REQUIRE(function_relocation::discover_module_functions(module));
+    const uint64_t root_va = scratch.va(scratch.text_va_offset(0x400));
+    // Eight transitions still reach the root...
+    for (size_t i = 0; i + 1 < fragment_offsets.size(); ++i) {
+        const uint64_t address = scratch.va(scratch.text_va_offset(fragment_offsets[i]));
+        REQUIRE_EQ(module.function_table.containing(address), root_va);
+        REQUIRE(span_at(module, address) == nullptr);
+    }
+    // ...and the ninth is deeper than the limit: an orphan, not a root fragment.
+    const uint64_t orphan = scratch.va(scratch.text_va_offset(fragment_offsets.back()));
+    REQUIRE_EQ(module.function_table.containing(orphan), 0);
+}
+
+TEST_CASE("test_pe_function_discovery/unreadable_thunk_slot_is_not_a_body") {
+    REQUIRE(ensure_reloc_context());
+    PeScratch scratch;
+    scratch.call(0x000, 0x1d0);// call the IAT thunk
+    scratch.bytes(0x005, {0xc3});
+    scratch.iat_thunk(0x1d0, kIatOffset + 8);// slot stays zero (lazy / unbound)
+    // FF 25 with a displacement far outside the image: the slot is unmapped.
+    scratch.bytes(0x1e0, {0xff, 0x25, 0x00, 0x00, 0xff, 0x7f});
+    scratch.exports({{scratch.text_va_offset(0x1d0), "nil_thunk", false},
+                     {scratch.text_va_offset(0x1e0), "unmapped_thunk", false}});
+    const uint32_t primary = scratch.unwind_primary();
+    scratch.pdata_record(0x000, 0x010, primary);
+    scratch.finalize();
+
+    auto module = scratch.module();
+    REQUIRE(function_relocation::discover_module_functions(module));
+    // A thunk whose slot cannot be read has no body: publishing the stub would
+    // give the assembler a body that is really six bytes of jump.
+    REQUIRE(span_at(module, scratch.va(scratch.text_va_offset(0x1d0))) == nullptr);
+    REQUIRE(span_at(module, scratch.va(scratch.text_va_offset(0x1e0))) == nullptr);
+}
+
+TEST_CASE("test_pe_function_discovery/table_nesting_and_half_open") {
+    using function_relocation::FunctionTable;
+    FunctionTable table;
+    std::vector<function_relocation::FunctionSpan> spans{
+            {100, 200},// outer
+            {120, 160},// nested
+            {300, 400},// disjoint
+    };
+    table.assign(spans);
+    // Tightest container, exact entry wins, half-open misses.
+    REQUIRE_EQ(table.span_containing(130)->start, 120u);
+    REQUIRE_EQ(table.span_containing(170)->start, 100u);
+    REQUIRE_EQ(table.span_containing(120)->start, 120u);
+    REQUIRE_EQ(table.span_containing(100)->start, 100u);
+    REQUIRE(table.span_containing(200) == nullptr);// exclusive end
+    REQUIRE(table.span_containing(400) == nullptr);
+    REQUIRE_EQ(table.containing(300), 300u);
+    REQUIRE_EQ(table.containing(200), 0u);
+
+    // Arbitrary overlap (crossing) disables the laminar fast path and keeps the
+    // tightest-wins rule.
+    FunctionTable crossing;
+    crossing.assign(std::vector<function_relocation::FunctionSpan>{{100, 200}, {150, 250}});
+    REQUIRE_EQ(crossing.span_containing(160)->start, 150u);
+    REQUIRE_EQ(crossing.span_containing(110)->start, 100u);
+    REQUIRE_EQ(crossing.span_containing(230)->start, 150u);
+    REQUIRE(crossing.span_containing(260) == nullptr);
+
+    // Fragments resolve through their owner and orphans name nothing.
+    FunctionTable with_fragments;
+    with_fragments.assign(std::vector<function_relocation::FunctionSpan>{{100, 200}},
+                          std::vector<function_relocation::FunctionFragment>{
+                                  {{400, 420}, 100}, {{500, 520}, 0}});
+    REQUIRE_EQ(with_fragments.containing(410), 100u);
+    REQUIRE(with_fragments.span_containing(410) == nullptr);
+    REQUIRE_EQ(with_fragments.containing(510), 0u);
+}
+
 // ---------------------------------------------------------------------------
 // Real reference DLL: the production path (LoadLibrary + get_module_sections +
 // discover_module_functions) against an independent .pdata/export oracle.

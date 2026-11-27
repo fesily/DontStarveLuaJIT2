@@ -310,9 +310,23 @@ namespace function_relocation::detail {
             image.preferred_base = optional_header.image_base;
             image.address_of_entry_point = optional_header.address_of_entry_point;
 
+            // The directory array belongs to the declared optional header: a header
+            // that ends before it must not be read past (its tail is section-table
+            // bytes, i.e. attacker-controlled "directories").
+            const uint64_t optional_offset = optional - image.base;
+            if (file.size_of_optional_header > image.image_size - optional_offset) {
+                error = "optional header lies outside the mapped image";
+                return false;
+            }
+            const size_t declared_directories =
+                    file.size_of_optional_header > sizeof(OptionalHeader64)
+                            ? static_cast<size_t>((file.size_of_optional_header - sizeof(OptionalHeader64)) /
+                                                  sizeof(DirectoryRange))
+                            : 0;
             image.directories.assign(kDirectoryCount, {});
-            const size_t directory_count =
-                    (std::min)(static_cast<size_t>(optional_header.number_of_rva_and_sizes), kDirectoryCount);
+            const size_t directory_count = (std::min)(
+                    {static_cast<size_t>(optional_header.number_of_rva_and_sizes),
+                     kDirectoryCount, declared_directories});
             const uintptr_t directory_table = optional + sizeof(OptionalHeader64);
             for (size_t i = 0; i < directory_count; ++i) {
                 DirectoryRange range{};
@@ -324,6 +338,18 @@ namespace function_relocation::detail {
             }
 
             const uintptr_t section_table = optional + file.size_of_optional_header;
+            const uint64_t section_table_bytes =
+                    static_cast<uint64_t>(file.number_of_sections) * sizeof(SectionHeader);
+            if (section_table - image.base > image.image_size ||
+                section_table_bytes > image.image_size - (section_table - image.base)) {
+                error = "section table lies outside the mapped image";
+                return false;
+            }
+            if (!gum_memory_is_readable(reinterpret_cast<const void *>(section_table),
+                                        static_cast<size_t>(section_table_bytes))) {
+                error = "section table is not mapped";
+                return false;
+            }
             image.sections.reserve(file.number_of_sections);
             for (uint32_t i = 0; i < file.number_of_sections; ++i) {
                 SectionHeader header{};
@@ -416,7 +442,8 @@ namespace function_relocation::detail {
         }
 
         struct PdataTable {
-            std::vector<PdataRecord> records;
+            std::vector<PdataRecord> records;   // every record, sorted, duplicates kept
+            std::vector<PdataRecord> canonical; // distinct records, indices used by the maps
             std::unordered_map<uint32_t, size_t> by_begin;
             std::unordered_map<uint32_t, size_t> by_record_rva;
         };
@@ -434,6 +461,10 @@ namespace function_relocation::detail {
             if (!gum_memory_is_readable(reinterpret_cast<const void *>(image.base + directory.rva),
                                         directory.size)) {
                 error = "exception directory is unreadable";
+                return false;
+            }
+            if (directory.size % sizeof(RuntimeFunction) != 0) {
+                error = "exception directory ends inside a RUNTIME_FUNCTION";
                 return false;
             }
             const size_t count = directory.size / sizeof(RuntimeFunction);
@@ -464,19 +495,23 @@ namespace function_relocation::detail {
                       [](const PdataRecord &l, const PdataRecord &r) {
                           return l.begin < r.begin || (l.begin == r.begin && l.end < r.end);
                       });
-            table.records.erase(std::unique(table.records.begin(), table.records.end(),
-                                            [](const PdataRecord &l, const PdataRecord &r) {
-                                                return l.begin == r.begin && l.end == r.end &&
-                                                       l.unwind == r.unwind;
-                                            }),
-                                table.records.end());
 
+            // Identical records are emitted once as a span, but every original
+            // record RVA stays resolvable: an indirect entry points at a
+            // RUNTIME_FUNCTION address, and that copy can be the deduplicated one.
             uint32_t previous_bounds = 0;
-            for (size_t i = 0; i < table.records.size(); ++i) {
-                const auto &record = table.records[i];
-                if (i != 0) {
-                    const auto &previous = table.records[i - 1];
-                    if (record.begin == previous.begin) {
+            bool have_previous = false;
+            table.canonical.clear();
+            table.canonical.reserve(table.records.size());
+            for (const auto &record: table.records) {
+                if (have_previous && record.begin == table.canonical.back().begin &&
+                    record.end == table.canonical.back().end &&
+                    record.unwind == table.canonical.back().unwind) {
+                    table.by_record_rva.emplace(record.record_rva, table.canonical.size() - 1);
+                    continue;
+                }
+                if (have_previous) {
+                    if (record.begin == table.canonical.back().begin) {
                         error = "two different .pdata records share a BeginAddress";
                         return false;
                     }
@@ -485,9 +520,12 @@ namespace function_relocation::detail {
                         return false;
                     }
                 }
+                table.canonical.push_back(record);
+                const size_t index = table.canonical.size() - 1;
+                table.by_begin.emplace(record.begin, index);
+                table.by_record_rva.emplace(record.record_rva, index);
                 previous_bounds = record.end;
-                table.by_begin.emplace(record.begin, i);
-                table.by_record_rva.emplace(record.record_rva, i);
+                have_previous = true;
             }
             return true;
         }
@@ -501,15 +539,18 @@ namespace function_relocation::detail {
         };
 
         // Walk one record's parent chain to the primary it belongs to.
+        // `hops` counts parent transitions, so a chain of exactly kMaxChainHops
+        // links still resolves (the starting record is not a hop).
         bool resolve_chain_root(const PeImage &image, const PdataTable &table, size_t start_index,
                                uint32_t &root_begin, uint32_t &root_end) {
             std::unordered_set<uint32_t> visited;
-            uint32_t current_rva = table.records[start_index].record_rva;
-            for (size_t hop = 0; hop < kMaxChainHops; ++hop) {
+            uint32_t current_rva = table.canonical[start_index].record_rva;
+            for (size_t hops = 0;; ++hops) {
+                if (hops > kMaxChainHops) return false;// chain deeper than the hop limit
                 if (!visited.insert(current_rva).second) return false;// cycle
                 const auto found = table.by_record_rva.find(current_rva);
                 if (found == table.by_record_rva.end()) return false;
-                const auto &record = table.records[found->second];
+                const auto &record = table.canonical[found->second];
                 RecordKind kind = RecordKind::Primary;
                 if (!classify_record(image, record, kind)) return false;
                 if (kind == RecordKind::Primary) {
@@ -525,22 +566,38 @@ namespace function_relocation::detail {
                 if (!chained_parent(image, record, parent)) return false;
                 const auto parent_index = table.by_begin.find(parent.begin_address);
                 if (parent_index == table.by_begin.end()) return false;
-                const auto &parent_record = table.records[parent_index->second];
+                const auto &parent_record = table.canonical[parent_index->second];
                 if (parent_record.end != parent.end_address ||
                     parent_record.unwind != parent.unwind_data) {
                     return false;// embedded copy disagrees with .pdata
                 }
                 current_rva = parent_record.record_rva;
             }
-            return false;// chain deeper than the hop limit
+        }
+
+        // A record belongs to the decoder only when the whole range sits in one
+        // executable section: endpoint-only checks would accept a record that
+        // bridges a non-executable gap and publish the gap as function bytes.
+        bool record_in_single_exec_section(const PeImage &image, const PdataRecord &record) {
+            int section = -1;
+            for (size_t i = 0; i < image.sections.size(); ++i) {
+                const auto &candidate = image.sections[i];
+                if (!candidate.executable()) continue;
+                if (record.begin >= candidate.rva && record.begin < candidate.rva + candidate.extent) {
+                    section = static_cast<int>(i);
+                    break;
+                }
+            }
+            if (section < 0) return false;
+            const auto &owner = image.sections[static_cast<size_t>(section)];
+            return record.end <= owner.rva + owner.extent;
         }
 
         bool classify_pdata(const PeImage &image, const PdataTable &table, Classification &out,
                             std::string &error) {
-            for (size_t i = 0; i < table.records.size(); ++i) {
-                const auto &record = table.records[i];
-                if (!image.rva_in_exec_section(record.begin) ||
-                    !image.rva_in_exec_section(record.end - 1)) {
+            for (size_t i = 0; i < table.canonical.size(); ++i) {
+                const auto &record = table.canonical[i];
+                if (!record_in_single_exec_section(image, record)) {
                     // Not code we can decode; leave it out instead of failing the
                     // whole module on a stale record.
                     continue;
@@ -572,14 +629,8 @@ namespace function_relocation::detail {
                 error = "no unwind primary in .pdata";
                 return false;
             }
-
-            std::sort(out.primaries.begin(), out.primaries.end(),
-                      [](const FunctionSpan &l, const FunctionSpan &r) { return l.start < r.start; });
-            out.primaries.erase(std::unique(out.primaries.begin(), out.primaries.end(),
-                                            [](const FunctionSpan &l, const FunctionSpan &r) {
-                                                return l.start == r.start && l.end == r.end;
-                                            }),
-                                out.primaries.end());
+            // `table.canonical` is sorted by BeginAddress with one record per start,
+            // so `out.primaries` is already strictly ascending.
             std::sort(out.fragments.begin(), out.fragments.end(),
                       [](const FunctionFragment &l, const FunctionFragment &r) {
                           return l.span.start < r.span.start;
@@ -614,6 +665,7 @@ namespace function_relocation::detail {
                 case X86_INS_UD0:
                 case X86_INS_UD1:
                 case X86_INS_UD2:
+                case X86_INS_LJMP:// FF /5 far jump: no fall-through
                     return true;
                 default:
                     return false;
@@ -638,7 +690,10 @@ namespace function_relocation::detail {
                 : module(m), image(img), instruction(insn) {
                 claimed.resize(image.sections.size());
                 reserved.resize(image.sections.size());
+                // Only executable sections are ever indexed (exec_section_of filters
+                // the rest), so a huge .bss costs no bookkeeping.
                 for (size_t i = 0; i < image.sections.size(); ++i) {
+                    if (!image.sections[i].executable()) continue;
                     claimed[i].assign(static_cast<size_t>(image.sections[i].extent), 0);
                     reserved[i].assign(static_cast<size_t>(image.sections[i].extent), 0);
                 }
@@ -707,6 +762,15 @@ namespace function_relocation::detail {
                 const uint64_t section_va = ranges.va;
                 end = (std::min)(end, ranges.end);
                 uint64_t furthest = start;
+                if (owner_instructions[owner] >= kMaxOwnerInstructions) {
+                    // A previous range of this owner already burned the budget.
+                    ++budget_trips;
+                    if (auto log = spdlog::get(logger_name)) {
+                        log->warn("discover_pe_x64: instruction budget already spent for owner {}",
+                                  (void *) owner);
+                    }
+                    return start;
+                }
                 std::vector<uint64_t> work;
                 work.push_back(start);
                 while (!work.empty()) {
@@ -724,6 +788,17 @@ namespace function_relocation::detail {
                             size > claims.size() - offset) {
                             break;
                         }
+                        // The cap is a hard instruction limit: stop before claiming
+                        // instruction kMaxOwnerInstructions + 1.
+                        auto &count = owner_instructions[owner];
+                        if (count >= kMaxOwnerInstructions) {
+                            ++budget_trips;
+                            if (auto log = spdlog::get(logger_name)) {
+                                log->warn("discover_pe_x64: instruction budget exhausted at {} owner {}",
+                                          (void *) pc, (void *) owner);
+                            }
+                            return furthest;
+                        }
                         bool free = true;
                         for (uint64_t i = 0; i < size; ++i) {
                             if (claims[offset + i] != 0) {
@@ -735,15 +810,7 @@ namespace function_relocation::detail {
                         for (uint64_t i = 0; i < size; ++i) claims[offset + i] = 1;
                         covered_bytes += static_cast<size_t>(size);
                         furthest = (std::max)(furthest, pc + size);
-                        auto &count = owner_instructions[owner];
-                        if (++count > kMaxOwnerInstructions) {
-                            ++budget_trips;
-                            if (auto log = spdlog::get(logger_name)) {
-                                log->warn("discover_pe_x64: instruction budget exhausted at {} owner {}",
-                                          (void *) pc, (void *) owner);
-                            }
-                            return furthest;
-                        }
+                        ++count;
                         const auto &x86 = instruction.detail->x86;
                         const auto &op0 = x86.operands[0];
                         switch (instruction.id) {
@@ -785,10 +852,24 @@ namespace function_relocation::detail {
             }
         };
 
-        void insert_sorted(std::vector<uint64_t> &values, uint64_t value) {
-            const auto it = std::lower_bound(values.begin(), values.end(), value);
-            if (it != values.end() && *it == value) return;
-            values.insert(it, value);
+        // Both inputs are sorted: merge once instead of shifting the tail per entry.
+        void merge_sorted(std::vector<uint64_t> &values, const std::vector<uint64_t> &sorted) {
+            if (sorted.empty()) return;
+            std::vector<uint64_t> merged;
+            merged.reserve(values.size() + sorted.size());
+            std::set_union(values.begin(), values.end(), sorted.begin(), sorted.end(),
+                           std::back_inserter(merged));
+            values.swap(merged);
+        }
+
+        // Published adopted ranges stay sorted by start; `containing` rejects
+        // candidates that fall inside them.
+        void insert_published(std::vector<FunctionSpan> &published, FunctionSpan span) {
+            const auto it = std::lower_bound(published.begin(), published.end(), span.start,
+                                             [](const FunctionSpan &l, uint64_t value) {
+                                                 return l.start < value;
+                                             });
+            published.insert(it, span);
         }
 
         bool is_entry_thunk(const cs_insn &insn) {
@@ -805,23 +886,41 @@ namespace function_relocation::detail {
             std::vector<uint64_t> seeds;
             const auto directory = image.directories[kDirectoryExport];
             if (directory.rva == 0 || directory.size < sizeof(ExportDirectory)) return seeds;
+            if (directory.rva > image.image_size ||
+                directory.size > image.image_size - directory.rva) {
+                if (auto log = spdlog::get(logger_name)) {
+                    log->warn("discover_pe_x64: export directory outside the image ({})",
+                              (void *) image.base);
+                }
+                return seeds;
+            }
             ExportDirectory exports{};
             if (!read_at(image.base + directory.rva, exports)) return seeds;
             if (exports.number_of_functions == 0 || exports.address_of_functions == 0) return seeds;
+            // The EAT is a counted array: validate its whole extent before trusting
+            // (or allocating for) the count.
+            const uint64_t eat_bytes =
+                    static_cast<uint64_t>(exports.number_of_functions) * sizeof(uint32_t);
+            const uint64_t eat_rva = exports.address_of_functions;
+            if (eat_rva > image.image_size || eat_bytes > image.image_size - eat_rva) {
+                if (auto log = spdlog::get(logger_name)) {
+                    log->warn("discover_pe_x64: export address table outside the image ({})",
+                              (void *) image.base);
+                }
+                return seeds;
+            }
             // Forwarders are EAT entries whose RVA falls inside the export
             // directory itself.
             const uint64_t directory_end = static_cast<uint64_t>(directory.rva) + directory.size;
             seeds.reserve(exports.number_of_functions);
             for (uint32_t i = 0; i < exports.number_of_functions; ++i) {
                 uint32_t rva = 0;
-                const uint64_t slot = static_cast<uint64_t>(exports.address_of_functions) +
-                                      static_cast<uint64_t>(i) * sizeof(uint32_t);
-                if (slot > image.image_size || sizeof(uint32_t) > image.image_size - slot) return seeds;
+                const uint64_t slot = eat_rva + static_cast<uint64_t>(i) * sizeof(uint32_t);
                 if (!read_at(image.base + slot, rva)) return seeds;
                 if (rva == 0) continue;// unused ordinal
                 if (rva >= directory.rva && rva < directory_end) continue;// forwarder
                 if (!image.rva_in_exec_section(rva)) continue;
-                    seeds.push_back(image.base + rva);
+                seeds.push_back(image.base + rva);
             }
             return seeds;
         }
@@ -848,27 +947,27 @@ namespace function_relocation::detail {
                 const uint64_t table_rva = tls.address_of_callbacks - base;
                 if (table_rva >= image.image_size) continue;
                 const uint64_t table_va = image.base + table_rva;
+                // Every slot and the terminating zero must live inside the image;
+                // readable bytes past the module end are not part of this table.
+                const uint64_t max_slots = (image.image_size - table_rva) / sizeof(uint64_t);
+                const uint64_t slot_limit = (std::min)(max_slots, uint64_t{65});
                 std::vector<uint64_t> collected;
-                bool valid = true;
-                for (size_t i = 0; i < 64; ++i) {
+                bool valid = false;
+                for (uint64_t i = 0; i < slot_limit; ++i) {
                     uint64_t value = 0;
-                    if (!read_at(table_va + i * sizeof(uint64_t), value)) {
-                        valid = false;
+                    if (!read_at(table_va + i * sizeof(uint64_t), value)) break;
+                    if (value == 0) {
+                        valid = true;// in-image terminator
                         break;
                     }
-                    if (value == 0) break;// terminator
-                    if (value < base) {
-                        valid = false;
-                        break;
-                    }
+                    if (value < base) break;
                     const uint64_t rva = value - base;
                     if (rva >= image.image_size ||
                         !image.rva_in_exec_section(static_cast<uint32_t>(rva))) {
-                        valid = false;
                         break;
                     }
+                    if (i + 1 >= 64) break;// 64 callbacks without a terminator
                     collected.push_back(image.base + rva);
-                    if (i + 1 == 64) valid = false;// no terminator within the cap
                 }
                 if (valid && !collected.empty()) {
                     seeds.insert(seeds.end(), collected.begin(), collected.end());
@@ -995,6 +1094,22 @@ namespace function_relocation::detail {
         }
 
         std::vector<FunctionSpan> adopted;
+        // Published adopted ranges, ascending. Candidates inside one keep that
+        // range's ownership: only bytes outside every published range are new
+        // entries (a branch may skip bytes inside a body, and those are not a
+        // separate function).
+        std::vector<FunctionSpan> published;
+        const auto inside_published = [&](uint64_t address) {
+            auto it = std::upper_bound(published.begin(), published.end(), address,
+                                       [](uint64_t value, const FunctionSpan &span) {
+                                           return value < span.start;
+                                       });
+            while (it != published.begin()) {
+                --it;
+                if (address < it->end) return true;
+            }
+            return false;
+        };
         const auto entry_bound = [&](uint64_t entry) {
             const int section = image.exec_section_of(entry);
             uint64_t bound = (std::min)(image.sections[static_cast<size_t>(section)].end,
@@ -1004,11 +1119,14 @@ namespace function_relocation::detail {
             return bound > entry ? bound : image.sections[static_cast<size_t>(section)].end;
         };
         const auto scan_entries = [&](const std::vector<uint64_t> &entries) {
-            for (const uint64_t entry: entries) insert_sorted(known_starts, entry);
+            merge_sorted(known_starts, entries);
             for (const uint64_t entry: entries) {
                 if (descender.claimed_at(entry) || descender.reserved_at(entry)) continue;
+                if (inside_published(entry)) continue;
                 const uint64_t end = descender.walk(entry, entry_bound(entry), entry);
-                if (end > entry) adopted.push_back({entry, end});
+                if (end <= entry) continue;
+                adopted.push_back({entry, end});
+                insert_published(published, {entry, end});
             }
         };
 
@@ -1054,12 +1172,19 @@ namespace function_relocation::detail {
 
         // Assemble: `.text` primaries keep their exact unwind bounds, adopted
         // entries end at their furthest decoded instruction, and only fragments of
-        // installed primaries survive.
+        // installed primaries survive. Entry starts are half-open: an executable
+        // section beginning exactly at `.text`'s exclusive end owns no `.text`
+        // bytes, and `install_function_spans` cannot materialise a body for it.
+        const uint64_t text_begin = module.text.base_address;
+        const uint64_t text_limit = module.text.base_address + module.text.size;
+        const auto starts_in_text = [&](uint64_t address) {
+            return address >= text_begin && address < text_limit;
+        };
         for (const auto &span: classification.primaries) {
-            if (module.in_text(span.start)) spans.push_back(span);
+            if (starts_in_text(span.start)) spans.push_back(span);
         }
         for (const auto &span: adopted) {
-            if (!module.in_text(span.start)) continue;
+            if (!starts_in_text(span.start)) continue;
             if (descender.reserved_at(span.start)) continue;
             spans.push_back(span);
         }
@@ -1073,7 +1198,7 @@ namespace function_relocation::detail {
 
         for (const auto &fragment: classification.fragments) {
             if (fragment.owner == 0) continue;
-            if (!module.in_text(fragment.owner)) continue;
+            if (!starts_in_text(fragment.owner)) continue;
             fragments.push_back(fragment);
         }
 
