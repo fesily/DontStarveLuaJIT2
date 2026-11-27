@@ -5,6 +5,76 @@ local modinfo = modinfo
 -- declared after it otherwise).
 local env
 local runtime
+
+-- The one user-facing notice for "the native injector never bound its tables". Chunk-level (not
+-- inside main) so the env gate below can show it after loading nothing else, and shared by
+-- main's no-injector branch. A dedicated server has no front end: it only logs.
+local function no_injector_locale(g, text)
+	local loc = g.rawget(g, "LOC")
+	local lc = loc and loc.GetLocaleCode and loc.GetLocaleCode() or nil
+	return text[lc] or text.en
+end
+
+-- `is_crash` is a function: the crash marker is read only when the dialog is actually built.
+-- Everything below is read through rawget from the captured GLOBAL: this closure can also run in
+-- a strict environment (the worldgen state runs AddGamePostInit straight away), where a plain
+-- undeclared-name read raises instead of returning nil.
+local function push_no_injector_prompt(is_crash)
+	local g = _G
+	AddGamePostInit(function()
+		local frontend = g.rawget(g, "TheFrontEnd")
+		if frontend == nil then
+			return
+		end
+		local net = g.rawget(g, "TheNet")
+		local on_server = false
+		g.pcall(function()
+			on_server = net ~= nil and net:GetIsServer() and net:GetServerIsDedicated()
+		end)
+		if on_server then
+			return
+		end
+		local migrating = g.rawget(g, "IsMigrating")
+		if migrating and migrating() then
+			return
+		end
+		local in_game = g.rawget(g, "InGamePlay")
+		if in_game and in_game() then
+			return
+		end
+		local ok, PopupDialogScreen = g.pcall(g.require, "screens/popupdialog")
+		if not ok then
+			return
+		end
+		local strings = g.rawget(g, "STRINGS")
+		if type(is_crash) == "function" and is_crash() then
+			frontend:PushScreen(PopupDialogScreen(strings.UI.MODSSCREEN.RESTART_TITLE, no_injector_locale(g, {
+					zh = "检测luajit未成功加载,是否再次尝试?\n\n(还失败可能需要更新,请联系作者)",
+					en =
+					"Detected that luajit failed to load, do you want to try again?\n\n(If it fails again, it may need to be updated, please contact the author)"
+				}),
+				{
+					{
+						text = strings.UI.MAINSCREEN.RESTART,
+						cb = function()
+							g.TheSim:Quit()
+						end
+					},
+					{ text = strings.UI.MAINSCREEN.OK, cb = function() frontend:PopScreen() end }
+				}))
+		else
+			frontend:PushScreen(PopupDialogScreen(strings.UI.MAINSCREEN.MODFAILTITLE, no_injector_locale(g, {
+					zh = [[当前luajit模组未成功安装,前往该模组所在的文件夹,运行install.bat]],
+					en =
+					"The current luajit mod has not been successfully installed, please go to the folder where the luajit mod is located, and run install.bat/.sh to execute the installation"
+				}),
+				{
+					{ text = strings.UI.MAINSCREEN.OK, cb = function() frontend:PopScreen() end }
+				}))
+		end
+	end)
+end
+
 local function main()
 	local old_print = print
 	local function print(...)
@@ -232,37 +302,7 @@ local function main()
 	end
 
 	function _M:NoInjectorMain()
-		AddGamePostInit(function()
-			if should_show_dig() then
-				local PopupDialogScreen = require "screens/popupdialog"
-				-- check crash
-				if luajit_crash:is_crash() then
-					TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MODSSCREEN.RESTART_TITLE, translate({
-							zh = "检测luajit未成功加载,是否再次尝试?\n\n(还失败可能需要更新,请联系作者)",
-							en =
-							"Detected that luajit failed to load, do you want to try again?\n\n(If it fails again, it may need to be updated, please contact the author)"
-						}),
-						{
-							{
-								text = STRINGS.UI.MAINSCREEN.RESTART,
-								cb = function()
-									TheSim:Quit()
-								end
-							},
-							{ text = STRINGS.UI.MAINSCREEN.OK, cb = function() TheFrontEnd:PopScreen() end }
-						}))
-				else
-					TheFrontEnd:PushScreen(PopupDialogScreen(STRINGS.UI.MAINSCREEN.MODFAILTITLE, translate({
-							zh = [[当前luajit模组未成功安装,前往该模组所在的文件夹,运行install.bat]],
-							en =
-							"The current luajit mod has not been successfully installed, please go to the folder where the luajit mod is located, and run install.bat/.sh to execute the installation"
-						}),
-						{
-							{ text = STRINGS.UI.MAINSCREEN.OK, cb = function() TheFrontEnd:PopScreen() end }
-						}))
-				end
-			end
-		end)
+		push_no_injector_prompt(function() return luajit_crash:is_crash() end)
 	end
 
 	local function IsConfigDisabledByRule(rule, get_raw_config, get_local_config)
@@ -862,6 +902,19 @@ end
 -- GameInjector/GameLuaInjector into this mod's env and returns the private root; the manager
 -- installs from there and the real GLOBAL injector fields are cleared. A failure aborts the
 -- mod: a half environment is worse than none.
+--
+-- Native side gate: the injector binds GameInjector into GLOBAL before this mod loads. Without
+-- it (mod installed but never injected, or `-DontStarveInjectorDisable`) there is nothing to hand
+-- off to, so nothing else is loaded here - no scripts/env, no runtime, no main, no plugins - and
+-- only the install-failure notice remains.
+local native_injector = _G.rawget(_G, "GameInjector")
+if _G.type(native_injector) ~= "table"
+	or _G.type(native_injector.InitializeModEnvironment) ~= "function" then
+	print("[luajit] native GameInjector missing: the injector is not installed (run install.bat/.sh)"
+		.. "; no module is loaded")
+	push_no_injector_prompt(nil)
+	return
+end
 local hand_off_env = _G.getfenv(1)
 -- modrequire (scripts/env.lua) is how the hand-off loads its modules; the worldgen entry
 -- point takes the same step before bootstrap.

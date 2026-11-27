@@ -15,7 +15,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from harness.game_dir import find_server_exe
 from harness.inject_env import build_inject_env
@@ -40,6 +40,7 @@ class DedicatedProc:
         shard: str = "Master",
         force_mods: str = "",
         extra_env: Optional[dict] = None,
+        extra_args: Optional[List[str]] = None,
     ) -> None:
         exe = find_server_exe(game_dir)
         if exe is None:
@@ -67,6 +68,9 @@ class DedicatedProc:
             "DST_Master",
             f"-force_enable_mods={force_mods}",
         ]
+        # Caller-supplied injector/engine switches (e.g. -DontStarveInjectorDisable).
+        if extra_args:
+            cmd.extend(extra_args)
         # Extra engine args for repro configurations (e.g. -ugc_directory <steam>).
         if _extra := os.environ.get("HARNESS_EXTRA_ARGS"):
             import shlex

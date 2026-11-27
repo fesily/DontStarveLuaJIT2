@@ -2,6 +2,10 @@
 
 ## 未发布
 
+- 修复 **原生注入器没加载时 Lua 侧模组把整个启动打断**：`modmain.lua` 的交接块原来无条件 `modimport("scripts/env")` 并加载 `scripts/luajit_env_bootstrap.lua`，后者第一条 assert 就要求 `GameInjector.InitializeModEnvironment`，于是「模组已安装/已启用但注入器没跑」（`-DontStarveInjectorDisable`、装完没跑 install.bat/.sh、注入被安全模式跳过）时变成 `MOD ERROR` → `Error loading main.lua` → 引擎重启循环。现在两道交接都在**加载任何模块之前**先看原生入口：`GLOBAL.GameInjector.InitializeModEnvironment` 不在就只打一行 `[luajit] native GameInjector missing ...`（`modmain`）或 `worldgen hand-off skipped`（`modworldgenmain`）并直接返回——`scripts/env`、runtime、surface、插件、`main()` 一律不加载，只保留安装失败提示（前端弹窗，专用服就是那行日志）。提示闭包的所有引擎表都改从捕获的 GLOBAL 用 `rawget` 取：世界生成状态会直接执行 `AddGamePostInit` 回调且环境是 strict 的，直接读名字会抛错（实测会走到 `json.lua` 的 `tracked_assert` 并 fail-fast `0xC0000409`）。
+
+- 验证：`game_disable_flag_boot`（真实 763928 专用服 + `-DontStarveInjectorDisable` + 引擎 `modoverrides.lua` 启用本模组，构建号验证 `../modoverrides.lua` 解析到 `<cluster>/<shard>/`）从「`MOD ERROR` → 重启循环 → `0xC0000409`」变为 22 s PASS：只出现提示行、无 `MOD ERROR`、无 `luajit_env_bootstrap`，分片正常 `Sim paused`、退出码 0。牙：去掉该 flag 重跑，注入器在、提示不出现，用例失败。正常路径未受影响：`plugin_client_inject_smoke`、`game_mod_throw_abort` 仍通过。
+
 - 变更 **签名 DB 成功写出时改为格式化 JSON**：`SignatureJson::update_signatures` 落盘从 `sf << doc`（整份文档一行）改为 `doc.dump(2)`，`Mod/signatures_{client,server}.json` 与 `plugin_signatures_{client,server}.json` 的缩进风格一致，任何偏移变化都变成逐行可审阅的 diff，而不是整文件一行替换。格式化发生在写文件这一步，因此只有 `create`/`update` 真正解析并验证通过、重写该平台节时才生效；失败（`create_or_update` 返回错误）时旧文件原样保留。运行期的自动生成/刷新走同一写入口，产物一致。
 
 - 验证：`tests/signatures/run.py` 新增 `check_formatted`，在 `create` 与 `update` 之后把落盘文本与 `json.dumps(indent=2)` 逐字节比对（nlohmann `dump(2)` 的序列化结果与 Python 该设置等价，已对现有 `plugin_signatures_client.json` 复核相等）。本机 Windows + 真实 763928 客户端/专用服二进制（RelWithDebInfo）：`create`/`update`/陈旧 `format_version` 重建/缺平台节重建/`--check-cache` 修复全部 PASS（`create+update preserved 208 offsets`）。牙：把写出临时改回 `sf << doc` 重建，门禁在第一条 `create` 之后即 `FAIL: signatures_client.json is not indented JSON; the tool must write dump(2)-style output`，恢复后转绿。

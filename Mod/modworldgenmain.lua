@@ -19,6 +19,14 @@ end
 if _G.rawget(_G, "WORLDGEN_MAIN") == nil then
 	return
 end
+-- Native side gate, same rule as modmain: without the injector's entry point there is nothing to
+-- hand off to, and the worldgen entry loads no further module (the front-end notice belongs to
+-- modmain).
+local GameInjector = _G.rawget(_G, "GameInjector")
+if type(GameInjector) ~= "table" or type(GameInjector.InitializeModEnvironment) ~= "function" then
+	print("[luajit] native GameInjector missing: worldgen hand-off skipped")
+	return
+end
 
 modimport("scripts/env")
 modrequire("scripts/luajit_env_bootstrap")

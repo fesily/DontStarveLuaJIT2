@@ -883,6 +883,23 @@ set_tests_properties(game_puc_string_dump PROPERTIES
     TIMEOUT 1800
     LABELS "game;harness")
 
+# game_disable_flag_boot: native side off, Lua side on. `-DontStarveInjectorDisable`
+# returns from Inject() before any signature/VM work, while the engine still loads
+# the mod through modoverrides.lua; the hand-off must then refuse to run on the
+# missing GameInjector (luajit_env_bootstrap.lua:19) instead of booting half a
+# runtime, the engine must disable the broken mod, and the process must not fault.
+add_test(NAME game_disable_flag_boot
+    COMMAND ${CMAKE_COMMAND} -E env
+        REPO_ROOT=${CMAKE_SOURCE_DIR}
+        PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+        GAME_DIR=${DS_TEST_GAME_DIR}
+        DST_GAME_DIR=${DS_TEST_GAME_DIR}
+        ${PYTHON_EXECUTABLE_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/game_mods/test_disable_flag_boot.py)
+set_tests_properties(game_disable_flag_boot PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 600
+    LABELS "game;harness")
+
 # Game-launching tests share the installed game, the injected files/Mod tree,
 # the save environment and runtime caches; the cluster server.ini also pins
 # ServerPort 10999 / SteamAuthPort 8766 / SteamMasterServerPort 27016, so a
@@ -895,6 +912,7 @@ set_tests_properties(
     plugin_client_host_smoke
     game_mod_throw_abort
     game_puc_string_dump
+    game_disable_flag_boot
     PROPERTIES RESOURCE_LOCK dst_game_server)
 
 # --- LuaJIT traceback engine-parity ---
@@ -1403,6 +1421,7 @@ ds_test_append_label(game
     plugin_client_inject_smoke
     plugin_client_host_smoke
     game_mod_throw_abort
+    game_disable_flag_boot
     game_performance_worldgen
     game_performance_startup)
 # Platform signature gates: windows_* on Windows, linux_* on Linux.
