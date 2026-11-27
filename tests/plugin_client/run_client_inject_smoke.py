@@ -72,6 +72,15 @@ FATAL_PATTERNS = (
 
 TOKEN_PREFIX = "[lc_probe] TOKEN "
 
+# Injection is proven from the injector's own log lines, not from a probe token: since the
+# V3.6.0 hand-off, Mod/scripts/luajit_env_bootstrap.lua clears GLOBAL.GameInjector before the
+# first game mod runs, so a stock (non `luajit_compatible`) mod must not see the injector tables.
+# Every needle of one entry has to appear on the same line.
+INJECT_LOG_MARKERS = (
+    ("LG_CLIENT_INJECT_OK", ("[luajit]", "current vm type:")),
+    ("LG_CLIENT_PLUGINS_OK", ("[luajit][plugin] plugin=", "status=Loaded")),
+)
+
 
 def eprint(*args: object) -> None:
     print(*args, file=sys.stderr)
@@ -373,6 +382,11 @@ class LogProcess:
                     print(f"[lc] log-token {tok} {body}".rstrip())
                 except Exception:
                     pass
+            for tok, needles in INJECT_LOG_MARKERS:
+                if tok not in self.tokens and all(n in line for n in needles):
+                    self.tokens.add(tok)
+                    self.token_bodies.setdefault(tok, "injector log")
+                    print(f"[lc] log-token {tok} (injector log marker)")
             for pat in FATAL_PATTERNS:
                 if pat.lower() in line.lower():
                     self.fatal = True
@@ -670,8 +684,8 @@ def run_p1b(
             ("LG_CLIENT_MOD_LOADED", "LG_CLIENT_INJECT_OK", "LG_CLIENT_PLUGINS_OK"),
             T_INJECT,
         ):
-            if "LG_CLIENT_INJECT_MISSING" in client.tokens:
-                eprint("[lc] inject missing")
+            if "LG_CLIENT_INJECT_SCRUBBED" in client.tokens:
+                eprint("[lc] injector tables scrubbed (expected); no injector log marker")
             return 1
 
         if profile:
@@ -729,8 +743,8 @@ def run_p1_host(
             ("LG_CLIENT_MOD_LOADED", "LG_CLIENT_INJECT_OK", "LG_CLIENT_PLUGINS_OK"),
             T_INJECT,
         ):
-            if "LG_CLIENT_INJECT_MISSING" in client.tokens:
-                eprint("[lc] inject missing")
+            if "LG_CLIENT_INJECT_SCRUBBED" in client.tokens:
+                eprint("[lc] injector tables scrubbed (expected); no injector log marker")
             return 1
 
         if profile and not verify_profile_tokens(client, profile):

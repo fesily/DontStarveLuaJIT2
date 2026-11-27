@@ -414,7 +414,11 @@ AddGamePostInit(function()
         token("LG_CLIENT_PLUGINS_OK", "inject_present")
         token("LG_CLIENT_VM_TYPE", gi.DS_LUAJIT_get_vm_type_name(0))
     else
-        token("LG_CLIENT_INJECT_MISSING", "GameInjector nil")
+        -- Expected for a stock mod: the injector's hand-off clears GLOBAL.GameInjector before
+        -- the first game mod runs (Mod/scripts/luajit_env_bootstrap.lua), and only a
+        -- `luajit_compatible` mod on the LuaJIT VM is granted the injector tables. Injection
+        -- itself is asserted from the injector's log lines by the smoke harness.
+        token("LG_CLIENT_INJECT_SCRUBBED", "GameInjector nil (expected for a stock mod)")
     end
     emit_config_samples()
 end)

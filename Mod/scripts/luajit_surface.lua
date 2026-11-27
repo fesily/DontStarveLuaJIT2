@@ -83,7 +83,10 @@ function Surface.new(api, opts)
 		own_functions = api.setmetatable({}, { __mode = "k" }),
 		real_require = opts.global.require,
 		kleiloadlua = opts.global.kleiloadlua,
-		has_luajit = api.type(opts.global.jit) == "table",
+		-- rawget: under a stock (PUC) VM there is no `jit` in GLOBAL, and a dev-branch client
+		-- installs scripts/strict.lua as GLOBAL's __index, which turns that probe into
+		-- "variable 'jit' is not declared" and aborts the whole mod load.
+		has_luajit = api.type(api.rawget(opts.global, "jit")) == "table",
 	}, Surface)
 	-- Frames of this module and of the blacklist module are never attribution candidates.
 	for _, value in api.pairs(Surface) do
